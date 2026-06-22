@@ -1,6 +1,5 @@
 name: CI/CD BistroLink
 
-
 on:
   push:
     branches: [develop, main]
@@ -8,40 +7,37 @@ on:
   pull_request:
     branches: [develop, main]
 
-
 env:
   IMAGE: ghcr.io/${{ github.repository }}
-  TAG:   ${{ github.sha }}
-
+  TAG: ${{ github.sha }}
 
 jobs:
   # ── INTEGRACIÓN CONTINUA ──────────────────────────────────────
   ci:
     name: Lint · Tests · SAST · Build · Trivy
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      packages: write
     steps:
       - uses: actions/checkout@v4
-
 
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: npm
 
-
       - name: Instalar dependencias
         run: npm ci
 
-
       - name: Lint (ESLint + Prettier)
         run: npm run lint
-
 
       - name: Tests Jest con cobertura minima 80%
         run: npm run test:cov
         env:
           CI: true
-
 
       - name: SAST CodeQL
         uses: github/codeql-action/init@v3
@@ -49,10 +45,8 @@ jobs:
           languages: javascript
       - uses: github/codeql-action/analyze@v3
 
-
       - name: Build NestJS + Next.js
         run: npm run build
-
 
       - name: Construir imagen Docker
         run: |
@@ -60,17 +54,15 @@ jobs:
             -t ${{ env.IMAGE }}:${{ env.TAG }} \
             -t ${{ env.IMAGE }}:latest .
 
-
       - name: Escaneo Trivy (bloquea CRITICAL y HIGH)
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.IMAGE }}:${{ env.TAG }}
-          severity:  CRITICAL,HIGH
+          severity: CRITICAL,HIGH
           exit-code: 1
 
-
       - name: Publicar imagen en GHCR
-        if: github.ref == "refs/heads/develop" || startsWith(github.ref, "refs/tags/")
+        if: github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/tags/')
         run: |
           echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io \
             -u ${{ github.actor }} --password-stdin
@@ -82,41 +74,40 @@ jobs:
             docker push ${{ env.IMAGE }}:${VERSION}
           fi
 
-
   # ── DEPLOY STAGING (automático al hacer merge en develop) ──────
   deploy-staging:
     name: Deploy → staging
     needs: ci
-    if: github.ref == "refs/heads/develop"
+    if: github.ref == 'refs/heads/develop'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Trigger deploy en Railway (staging)
         run: curl -fX POST "${{ secrets.RAILWAY_STAGING_WEBHOOK }}"
-
 
       - name: Health check staging
         run: |
           sleep 40
           curl -f https://staging.bistrolink.app/health
 
-
       - name: Tests E2E Playwright en staging
         run: npx playwright test --reporter=github
         env:
           BASE_URL: https://staging.bistrolink.app
 
-
   # ── DEPLOY PRODUCCIÓN (manual, solo en tag v*.*.*) ────────────
   deploy-prod:
     name: Deploy → produccion (aprobacion manual requerida)
     needs: deploy-staging
-    if: startsWith(github.ref, "refs/tags/v")
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
-    environment: production          # pausa hasta aprobacion en GitHub
+    permissions:
+      contents: read
+    environment: production # pausa hasta aprobacion en GitHub
     steps:
       - name: Trigger deploy en Railway (produccion)
         run: curl -fX POST "${{ secrets.RAILWAY_PROD_WEBHOOK }}"
-
 
       - name: Health check produccion
         run: |

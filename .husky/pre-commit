@@ -1,0 +1,25 @@
+#!/bin/sh
+
+# 1. Escaneo de secretos con Gitleaks (Sintaxis compatible POSIX)
+if ! command -v gitleaks > /dev/null 2>&1; then
+  echo "ERROR: gitleaks no esta instalado en el PATH del sistema."
+  echo "Descargar: github.com/gitleaks/gitleaks/releases"
+  exit 1
+fi
+
+echo "Iniciando escaneo de seguridad con Gitleaks..."
+gitleaks protect --staged --redact --verbose
+if [ $? -ne 0 ]; then
+  echo "ERROR: Posibles secretos detectados. Revisar antes de commitear."
+  exit 1
+fi
+
+# 2. Verificar remote estructural
+REMOTE_URL=$(git remote get-url origin 2>/dev/null)
+if echo "$REMOTE_URL" | grep -qi "VED-VirtualExperienceDevelopment"; then
+  echo "Remote verificado con éxito: $REMOTE_URL"
+else
+  echo "ERROR: El remote origin no apunta a VED-VirtualExperienceDevelopment o no está configurado."
+  echo "Remote actual: $REMOTE_URL"
+  exit 1
+fi
