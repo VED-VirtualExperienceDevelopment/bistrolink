@@ -1,0 +1,16 @@
+#!/bin/sh
+MSG_FILE="$1"
+COMMIT_MSG=$(cat "$MSG_FILE")
+
+# Validar que el mensaje incluya BL-NNN
+if ! echo "$COMMIT_MSG" | grep -qE "BL-[0-9]+"; then
+  echo ""
+  echo "ERROR: El scope debe incluir el ID de Linear (BL-NNN)."
+  echo "  Correcto:  feat(BL-102): descripcion"
+  echo "  Actual:    $COMMIT_MSG"
+  echo "  Usar: npm run commit  para el asistente interactivo."
+  echo ""
+  exit 1
+fi
+
+npx --no -- commitlint --edit "$MSG_FILE"

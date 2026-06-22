@@ -1,0 +1,80 @@
+# docker-compose.yml
+# Levanta la infraestructura local de BistroLink.
+# bistrolink-api y bistrolink-web corren fuera de Docker con 'npm run dev'.
+services:
+  # ── PostgreSQL ──────────────────────────────────────────────────────────
+  bistrolink-db:
+    image: postgres:16.4-alpine
+    container_name: bistrolink-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: bistrolink
+      POSTGRES_PASSWORD: bistrolink_dev
+      POSTGRES_DB: bistrolink_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - bistrolink-db-data:/var/lib/postgresql/data
+      - ./scripts/db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bistrolink -d bistrolink_dev"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ── Keycloak ────────────────────────────────────────────────────────────
+  bistrolink-auth:
+    image: quay.io/keycloak/keycloak:24.0.5
+    container_name: bistrolink-auth
+    restart: unless-stopped
+    command: start-dev
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin # solo desarrollo local
+      KC_DB: dev-file
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_ENABLED: "true"
+    ports:
+      - "8080:8080"
+    volumes:
+      - bistrolink-auth-data:/opt/keycloak/data
+    healthcheck:
+      test:
+        ["CMD-SHELL", "curl -f http://localhost:8080/health/ready || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # ── Portainer ───────────────────────────────────────────────────────────
+  bistrolink-portainer:
+    image: portainer/portainer-ce:2.21.0
+    container_name: bistrolink-portainer
+    restart: unless-stopped
+    ports:
+      - "9009:9009"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - bistrolink-portainer-data:/data
+
+  # ── Evolution API (WhatsApp) ─────────────────────────────────────────────
+  bistrolink-evo:
+    image: evoapicloud/evolution-api:v2.1.1
+    container_name: bistrolink-evo
+    restart: unless-stopped
+    ports:
+      - "8081:8080" # 8081 externo para no colisionar con Keycloak en 8080
+    environment:
+      SERVER_TYPE: http
+      SERVER_PORT: 8080
+      AUTHENTICATION_TYPE: apikey
+      AUTHENTICATION_API_KEY: dev_key_local
+    volumes:
+      - bistrolink-evo-data:/evolution/instances
+
+volumes:
+  bistrolink-db-data:
+  bistrolink-auth-data:
+  bistrolink-portainer-data:
+  bistrolink-evo-data:

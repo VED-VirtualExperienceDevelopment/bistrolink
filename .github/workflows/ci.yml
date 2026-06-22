@@ -1,0 +1,165 @@
+name: CI/CD BistroLink
+
+on:
+  push:
+    branches: [develop, main]
+    tags: ["v*.*.*"]
+  pull_request:
+    branches: [develop, main]
+
+env:
+  IMAGE_API: ghcr.io/${{ github.repository }}-api # NestJS — apps/backend/Dockerfile
+  IMAGE_WEB: ghcr.io/${{ github.repository }}-web # Next.js — apps/frontend/Dockerfile
+  TAG: ${{ github.sha }}
+
+jobs:
+  ci:
+    name: Lint · Tests · Contratos · SAST · Build · Escaneo
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.1.7
+        with:
+          fetch-depth: 0 # SonarCloud necesita historial completo
+
+      - uses: actions/setup-node@v4.0.3
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Lint (ESLint + Prettier)
+        run: npm run lint
+
+      # ── Nivel 1: Jest ───────────────────────────────────────────────────────
+      - name: Tests Jest (cobertura mínima 80%)
+        run: npm run test:cov
+
+      - name: Upload results to Testiny
+        if: always()
+        env:
+          TESTINY_API_KEY: ${{ secrets.TESTINY_API_KEY }}
+        run: npx -y @testiny/cli automation --format junit --input coverage/junit.xml --project "BISTROLINK-VED"
+
+      # ── Nivel 2: PactJS ─────────────────────────────────────────────────────
+      - name: Tests de contrato PactJS
+        run: npm run test:pact
+
+      # ── Gitleaks ─────────────────────────────────────────────────────────────
+      - name: Escaneo de secretos con Gitleaks
+        uses: gitleaks/gitleaks-action@v2.3.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── CodeQL ───────────────────────────────────────────────────────────────
+      - name: SAST CodeQL — init
+        uses: github/codeql-action/init@v3.26.6
+        with:
+          languages: javascript
+      - uses: github/codeql-action/analyze@v3.26.6
+
+      # ── SonarCloud ───────────────────────────────────────────────────────────
+      - name: SAST SonarCloud
+        uses: SonarSource/sonarcloud-github-action@v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+      # ── Snyk ─────────────────────────────────────────────────────────────────
+      - name: Auditoría de dependencias — Snyk
+        uses: snyk/actions/node@0.4.0
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=high
+
+      # ── Build API (NestJS) ─────────────────────────────────────────────────────
+      - name: Construir imagen API (NestJS)
+        run: |
+          docker build \
+            -t ${{ env.IMAGE_API }}:${{ env.TAG }} \
+            -t ${{ env.IMAGE_API }}:latest \
+            -f apps/backend/Dockerfile \
+            apps/backend/
+
+      # ── Build Web (Next.js) ──────────────────────────────────────────────────────
+      - name: Construir imagen Web (Next.js)
+        run: |
+          docker build \
+            -t ${{ env.IMAGE_WEB }}:${{ env.TAG }} \
+            -t ${{ env.IMAGE_WEB }}:latest \
+            --build-arg NEXT_PUBLIC_API_URL=https://staging.bistrolink.app \
+            --build-arg NEXT_PUBLIC_WS_URL=wss://staging.bistrolink.app \
+            --build-arg NEXT_PUBLIC_KEYCLOAK_URL=https://staging-auth.bistrolink.app \
+            --build-arg NEXT_PUBLIC_KEYCLOAK_REALM=bistrolink \
+            --build-arg NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=bistrolink-frontend \
+            -f apps/frontend/Dockerfile \
+            apps/frontend/
+
+      # ── Trivy — escaneo de ambas imágenes ───────────────────────────────────────
+      - name: Trivy — escaneo imagen API
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: ${{ env.IMAGE_API }}:${{ env.TAG }}
+          severity: CRITICAL,HIGH
+          exit-code: 1
+
+      - name: Trivy — escaneo imagen Web
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: ${{ env.IMAGE_WEB }}:${{ env.TAG }}
+          severity: CRITICAL,HIGH
+          exit-code: 1
+
+      - name: Publicar imágenes en GHCR
+        if: github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/tags/')
+        run: |
+          echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          docker push ${{ env.IMAGE_API }}:${{ env.TAG }}
+          docker push ${{ env.IMAGE_WEB }}:${{ env.TAG }}
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/}
+            docker tag ${{ env.IMAGE_API }}:${{ env.TAG }} ${{ env.IMAGE_API }}:${VERSION}
+            docker tag ${{ env.IMAGE_WEB }}:${{ env.TAG }} ${{ env.IMAGE_WEB }}:${VERSION}
+            docker push ${{ env.IMAGE_API }}:${VERSION}
+            docker push ${{ env.IMAGE_WEB }}:${VERSION}
+          fi
+
+  deploy-staging:
+    name: Deploy a staging (Railway)
+    needs: ci
+    if: github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    steps:
+      - run: curl -fX POST "${{ secrets.RAILWAY_STAGING_WEBHOOK }}"
+      - run: sleep 40 && curl -f https://staging.bistrolink.app/health
+      # Nivel 3: Playwright E2E
+      - run: npx playwright test --reporter=github
+        env:
+          BASE_URL: https://staging.bistrolink.app
+
+  k6-load-test:
+    name: Pruebas de carga K6 (70 VUs, p95 < 1.5 s)
+    needs: deploy-staging
+    if: github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.1.7
+      - name: Instalar K6
+        run: |
+          sudo apt-get update && sudo apt-get install -y k6
+      - name: Ejecutar prueba de carga
+        run: k6 run --vus 70 --duration 60s k6/load-test.js
+        env:
+          BASE_URL: https://staging.bistrolink.app
+
+  deploy-prod:
+    name: Deploy a producción (requiere aprobación manual)
+    needs: [deploy-staging, k6-load-test]
+    if: startsWith(github.ref, 'refs/tags/v')
+    environment: production
+    runs-on: ubuntu-latest
+    steps:
+      - run: curl -fX POST "${{ secrets.RAILWAY_PROD_WEBHOOK }}"
+      - run: sleep 40 && curl -f https://api.bistrolink.app/health
