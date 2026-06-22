@@ -7,6 +7,10 @@ on:
   pull_request:
     branches: [develop, main]
 
+permissions:
+  contents: read
+  packages: write
+
 env:
   IMAGE: ghcr.io/${{ github.repository }}
   TAG: ${{ github.sha }}
@@ -20,6 +24,7 @@ jobs:
       contents: read
       security-events: write
       packages: write
+
     steps:
       - uses: actions/checkout@v4
 
@@ -55,7 +60,7 @@ jobs:
             -t ${{ env.IMAGE }}:latest .
 
       - name: Escaneo Trivy (bloquea CRITICAL y HIGH)
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.25.0
         with:
           image-ref: ${{ env.IMAGE }}:${{ env.TAG }}
           severity: CRITICAL,HIGH
@@ -82,6 +87,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+
     steps:
       - name: Trigger deploy en Railway (staging)
         run: curl -fX POST "${{ secrets.RAILWAY_STAGING_WEBHOOK }}"
@@ -104,6 +110,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+
     environment: production # pausa hasta aprobacion en GitHub
     steps:
       - name: Trigger deploy en Railway (produccion)
