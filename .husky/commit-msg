@@ -1,16 +1,22 @@
 #!/bin/sh
 MSG_FILE="$1"
-COMMIT_MSG=$(cat "$MSG_FILE")
+
+# Limpiar caracteres de control (CRLF de Windows en WSL)
+COMMIT_MSG=$(cat "$MSG_FILE" | tr -d '\r')
 
 # Validar que el mensaje incluya BL-NNN
-if ! echo "$COMMIT_MSG" | grep -qE "BL-[0-9]+"; then
+if ! echo "$COMMIT_MSG" | grep -qE "^(feat|fix|chore|ci|docs|test|refactor|perf|revert)\(BL-[0-9]+\):"; then
   echo ""
   echo "ERROR: El scope debe incluir el ID de Linear (BL-NNN)."
-  echo "  Correcto:  feat(BL-102): descripcion"
-  echo "  Actual:    $COMMIT_MSG"
-  echo "  Usar: npm run commit  para el asistente interactivo."
+  echo "  Formato correcto:  TYPE(BL-NNN): descripción"
+  echo "  Tipos válidos:     feat, fix, chore, ci, docs, test, refactor, perf, revert"
+  echo "  Ejemplo:           feat(BL-102): agregar autenticación"
+  echo "  Mensaje actual:    $COMMIT_MSG"
+  echo ""
+  echo "💡 Usa: npm run commit   para el asistente interactivo"
   echo ""
   exit 1
 fi
 
+# Ejecutar commitlint
 npx --no -- commitlint --edit "$MSG_FILE"
