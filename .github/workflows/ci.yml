@@ -6,6 +6,10 @@ on:
     tags: ["v*.*.*"]
   pull_request:
     branches: [develop, main]
+# 👇PERMISOS (Aplica a todos los jobs por defecto)
+permissions:
+  contents: read       # Permite clonar y leer el código del monorepo
+  security-events: write # Requerido si usas CodeQL para subir los reportes de vulnerabilidades
 
 env:
   IMAGE_API: ghcr.io/${{ github.repository }}-api # NestJS — apps/backend/Dockerfile
@@ -13,6 +17,8 @@ env:
   TAG: ${{ github.sha }}
 
 jobs:
+    # Tus jobs actuales (lint, test, build, etc.)
+    
   ci:
     name: Lint · Tests · Contratos · SAST · Build · Escaneo
     runs-on: ubuntu-latest
