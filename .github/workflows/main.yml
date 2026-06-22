@@ -55,7 +55,7 @@ jobs:
             -t ${{ env.IMAGE }}:latest .
 
       - name: Escaneo Trivy (bloquea CRITICAL y HIGH)
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.25.0
         with:
           image-ref: ${{ env.IMAGE }}:${{ env.TAG }}
           severity: CRITICAL,HIGH
