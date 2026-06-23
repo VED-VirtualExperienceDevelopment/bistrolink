@@ -106,14 +106,14 @@ jobs:
 
       # ── Trivy — escaneo de ambas imágenes ─────────────────────────────────
       - name: Trivy — escaneo imagen API
-        uses: aquasecurity/trivy-action@0.29.0
+        uses: aquasecurity/trivy-action@0.28.0
         with:
           image-ref: ${{ env.IMAGE_API }}:${{ env.TAG }}
           severity: CRITICAL,HIGH
           exit-code: "1"
 
       - name: Trivy — escaneo imagen Web
-        uses: aquasecurity/trivy-action@0.29.0
+        uses: aquasecurity/trivy-action@0.28.0
         with:
           image-ref: ${{ env.IMAGE_WEB }}:${{ env.TAG }}
           severity: CRITICAL,HIGH
