@@ -90,7 +90,6 @@ jobs:
             -t ${{ env.IMAGE_API }}:${{ env.TAG }} \
             -t ${{ env.IMAGE_API }}:latest \
             -f apps/backend/Dockerfile \
-            apps/backend/
 
       - name: Construir imagen Web (Next.js)
         run: |
