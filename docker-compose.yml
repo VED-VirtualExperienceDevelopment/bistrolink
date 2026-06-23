@@ -53,7 +53,7 @@ services:
     container_name: bistrolink-portainer
     restart: unless-stopped
     ports:
-      - "9009:9009"
+      - "9009:9000" # externo:interno — Portainer siempre escucha en 9000 internamente
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - bistrolink-portainer-data:/data
