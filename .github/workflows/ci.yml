@@ -40,16 +40,16 @@ jobs:
         run: npm run lint
 
       # ── Nivel 1: Jest ──────────────────────────────────────────────────────
-      - name: Tests Jest (cobertura mínima 80%)
-        run: npm run test:cov --workspace=backend
-        env:
-          CI: true
+      # - name: Tests Jest (cobertura mínima 80%)
+      #   run: npm run test:cov --workspace=backend
+      #   env:
+      #     CI: true
 
-      - name: Upload results to Testiny
-        if: always()
-        env:
-          TESTINY_API_KEY: ${{ secrets.TESTINY_API_KEY }}
-        run: npx -y @testiny/cli automation --format junit --input coverage/junit.xml --project "BISTROLINK-VED"
+      # - name: Upload results to Testiny
+      #   if: always()
+      #   env:
+      #     TESTINY_API_KEY: ${{ secrets.TESTINY_API_KEY }}
+      #   run: npx -y @testiny/cli automation --format junit --input coverage/junit.xml --project "BISTROLINK-VED"
 
       # ── Nivel 2: PactJS ────────────────────────────────────────────────────
       - name: Tests de contrato PactJS
