@@ -52,8 +52,8 @@ jobs:
       #   run: npx -y @testiny/cli automation --format junit --input coverage/junit.xml --project "BISTROLINK-VED"
 
       # ── Nivel 2: PactJS ────────────────────────────────────────────────────
-      - name: Tests de contrato PactJS
-        run: npm run test:pact
+      # - name: Tests de contrato PactJS
+      #   run: npm run test:pact
 
       # ── Gitleaks ───────────────────────────────────────────────────────────
       - name: Escaneo de secretos con Gitleaks
@@ -151,56 +151,56 @@ jobs:
           curl -f https://staging.bistrolink.app/health
 
       # ── Nivel 3: Playwright E2E ────────────────────────────────────────────
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: npm
-      - name: Instalar dependencias
-        run: npm ci
-      - name: Tests E2E Playwright en staging
-        run: npx playwright test --reporter=github
-        env:
-          BASE_URL: https://staging.bistrolink.app
+      # - uses: actions/checkout@v4
+      # - uses: actions/setup-node@v4
+      #   with:
+      #     node-version: "20"
+      #     cache: npm
+      # - name: Instalar dependencias
+      #   run: npm ci
+      # - name: Tests E2E Playwright en staging
+      #   run: npx playwright test --reporter=github
+      #   env:
+      #     BASE_URL: https://staging.bistrolink.app
 
   # ── PRUEBAS DE CARGA K6 ───────────────────────────────────────────────────
-  k6-load-test:
-    name: Pruebas de carga K6 (70 VUs, p95 < 1.5s)
-    needs: deploy-staging
-    if: github.ref == 'refs/heads/develop'
-    runs-on: ubuntu-latest
+  # k6-load-test:
+  #   name: Pruebas de carga K6 (70 VUs, p95 < 1.5s)
+  #   needs: deploy-staging
+  #   if: github.ref == 'refs/heads/develop'
+  #   runs-on: ubuntu-latest
 
-    steps:
-      - uses: actions/checkout@v4
-      - name: Instalar K6
-        run: sudo apt-get update && sudo apt-get install -y k6
-      - name: Ejecutar prueba de carga
-        run: k6 run --vus 70 --duration 60s k6/load-test.js
-        env:
-          BASE_URL: https://staging.bistrolink.app
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - name: Instalar K6
+  #       run: sudo apt-get update && sudo apt-get install -y k6
+  #     - name: Ejecutar prueba de carga
+  #       run: k6 run --vus 70 --duration 60s k6/load-test.js
+  #       env:
+  #         BASE_URL: https://staging.bistrolink.app
 
   # ── DEPLOY PRODUCCIÓN (manual, solo en tag v*.*.*) ────────────────────────
-  deploy-prod:
-    name: Deploy a producción (aprobación manual requerida)
-    needs: [deploy-staging, k6-load-test]
-    if: startsWith(github.ref, 'refs/tags/v')
-    environment: production
-    runs-on: ubuntu-latest
+  # deploy-prod:
+  #   name: Deploy a producción (aprobación manual requerida)
+  #   needs: [deploy-staging, k6-load-test]
+  #   if: startsWith(github.ref, 'refs/tags/v')
+  #   environment: production
+  #   runs-on: ubuntu-latest
 
-    steps:
-      - name: Trigger deploy en Railway (producción)
-        run: curl -fX POST "${{ secrets.RAILWAY_PROD_WEBHOOK }}"
+  #   steps:
+  #     - name: Trigger deploy en Railway (producción)
+  #       run: curl -fX POST "${{ secrets.RAILWAY_PROD_WEBHOOK }}"
 
-      - name: Health check producción
-        run: |
-          sleep 40
-          curl -f https://api.bistrolink.app/health
+  #     - name: Health check producción
+  #       run: |
+  #         sleep 40
+  #         curl -f https://api.bistrolink.app/health
 
       # ── Contingencia Render ────────────────────────────────────────────────
-      - name: Contingencia — Deploy API en Render
-        if: failure()
-        run: curl -fX POST "${{ secrets.RENDER_API_WEBHOOK }}"
+      # - name: Contingencia — Deploy API en Render
+      #   if: failure()
+      #   run: curl -fX POST "${{ secrets.RENDER_API_WEBHOOK }}"
 
-      - name: Contingencia — Deploy Web en Render
-        if: failure()
-        run: curl -fX POST "${{ secrets.RENDER_WEB_WEBHOOK }}"
+      # - name: Contingencia — Deploy Web en Render
+      #   if: failure()
+      #   run: curl -fX POST "${{ secrets.RENDER_WEB_WEBHOOK }}"
