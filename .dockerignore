@@ -1,11 +1,28 @@
 # Dependencias
-node_modules/ && apps/*/node_modules/
-# Secretos — NUNCA en ninguna imagen
-.env && .env.* && !.env.example
+node_modules
+apps/frontend/node_modules
+
+# Secretos
+.env
+.env.*
+!.env.example
+
 # Git
-.git/ && .gitignore && .github/
+.git
+.gitignore
+.github
+
 # Build artifacts
-dist/ && .next/ && coverage/
+dist
+.next
+coverage
+
 # Dev tools
-.husky/ && jest.config.* && playwright.config.* && k6/ && scripts/
-*.log && README.md && CONTRIBUTING.md
+.husky
+jest.config.*
+playwright.config.*
+k6
+scripts
+*.log
+README.md
+CONTRIBUTING.md
