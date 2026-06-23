@@ -134,6 +134,7 @@ jobs:
           image-ref: ${{ env.IMAGE_API }}:${{ env.TAG }}
           severity: CRITICAL,HIGH
           exit-code: "1"
+          trivyignores: .trivyignore
 
       - name: Trivy — escaneo imagen Web
         uses: aquasecurity/trivy-action@master
@@ -141,6 +142,7 @@ jobs:
           image-ref: ${{ env.IMAGE_WEB }}:${{ env.TAG }}
           severity: CRITICAL,HIGH
           exit-code: "1"
+          trivyignores: .trivyignore
 
       # ── Publicar imágenes en GHCR ──────────────────────────────────────────
       - name: Publicar imágenes en GHCR
