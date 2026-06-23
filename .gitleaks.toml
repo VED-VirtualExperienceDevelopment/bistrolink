@@ -1,0 +1,6 @@
+[allowlist]
+  description = "Falsos positivos conocidos"
+  paths = [
+    '''.env.example''',
+    '''apps/backend/README.md'''
+  ]
