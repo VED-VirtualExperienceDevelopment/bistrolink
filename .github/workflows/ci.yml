@@ -41,7 +41,7 @@ jobs:
 
       # ── Nivel 1: Jest ──────────────────────────────────────────────────────
       - name: Tests Jest (cobertura mínima 80%)
-        run: npm run test:cov
+        run: npm run test:cov --workspace=backend
         env:
           CI: true
 
