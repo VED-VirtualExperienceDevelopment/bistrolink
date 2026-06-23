@@ -16,17 +16,18 @@ RUN npm run build --workspace=apps/backend
 FROM node:22-alpine AS production
 WORKDIR /app
 ENV NODE_ENV=production
-
 COPY package*.json ./
 COPY apps/backend/package*.json ./apps/backend/
-
-RUN npm pkg delete scripts.prepare && npm ci --workspace=apps/backend --omit=dev && npm cache clean --force
-
+RUN npm pkg delete scripts.prepare && \
+  npm ci --workspace=apps/backend --omit=dev && \
+  npm cache clean --force && \
+  rm -rf node_modules/.cache \
+  node_modules/lodash \
+  node_modules/multer \
+  node_modules/picomatch
 COPY --from=builder /app/apps/backend/dist ./dist
 COPY --from=builder /app/apps/backend/prisma ./prisma
-
 RUN npx prisma@5.19.1 generate
-
 RUN addgroup -S bistrolink && adduser -S bistrolink -G bistrolink
 USER bistrolink
 EXPOSE 3001
