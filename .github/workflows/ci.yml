@@ -13,8 +13,8 @@ permissions:
   packages: write
 
 env:
-  IMAGE_API: ghcr.io/${{ github.repository }}-api
-  IMAGE_WEB: ghcr.io/${{ github.repository }}-web
+  IMAGE_API: ghcr.io/ved-virtualexperiencedevelopment/bistrolink-api
+  IMAGE_WEB: ghcr.io/ved-virtualexperiencedevelopment/bistrolink-web
   TAG: ${{ github.sha }}
 
 jobs:
