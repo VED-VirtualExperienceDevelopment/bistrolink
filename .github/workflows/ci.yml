@@ -6,28 +6,29 @@ on:
     tags: ["v*.*.*"]
   pull_request:
     branches: [develop, main]
-# 👇PERMISOS (Aplica a todos los jobs por defecto)
+
 permissions:
-  contents: read       # Permite clonar y leer el código del monorepo
-  security-events: write # Requerido si usas CodeQL para subir los reportes de vulnerabilidades
+  contents: read
+  security-events: write
+  packages: write
 
 env:
-  IMAGE_API: ghcr.io/${{ github.repository }}-api # NestJS — apps/backend/Dockerfile
-  IMAGE_WEB: ghcr.io/${{ github.repository }}-web # Next.js — apps/frontend/Dockerfile
+  IMAGE_API: ghcr.io/${{ github.repository }}-api
+  IMAGE_WEB: ghcr.io/${{ github.repository }}-web
   TAG: ${{ github.sha }}
 
 jobs:
-    # Tus jobs actuales (lint, test, build, etc.)
-    
+  # ── INTEGRACIÓN CONTINUA ──────────────────────────────────────────────────
   ci:
     name: Lint · Tests · Contratos · SAST · Build · Escaneo
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4.1.7
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0 # SonarCloud necesita historial completo
 
-      - uses: actions/setup-node@v4.0.3
+      - uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: npm
@@ -38,9 +39,11 @@ jobs:
       - name: Lint (ESLint + Prettier)
         run: npm run lint
 
-      # ── Nivel 1: Jest ───────────────────────────────────────────────────────
+      # ── Nivel 1: Jest ──────────────────────────────────────────────────────
       - name: Tests Jest (cobertura mínima 80%)
         run: npm run test:cov
+        env:
+          CI: true
 
       - name: Upload results to Testiny
         if: always()
@@ -48,31 +51,31 @@ jobs:
           TESTINY_API_KEY: ${{ secrets.TESTINY_API_KEY }}
         run: npx -y @testiny/cli automation --format junit --input coverage/junit.xml --project "BISTROLINK-VED"
 
-      # ── Nivel 2: PactJS ─────────────────────────────────────────────────────
+      # ── Nivel 2: PactJS ────────────────────────────────────────────────────
       - name: Tests de contrato PactJS
         run: npm run test:pact
 
-      # ── Gitleaks ─────────────────────────────────────────────────────────────
+      # ── Gitleaks ───────────────────────────────────────────────────────────
       - name: Escaneo de secretos con Gitleaks
         uses: gitleaks/gitleaks-action@v2.3.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # ── CodeQL ───────────────────────────────────────────────────────────────
+      # ── CodeQL ─────────────────────────────────────────────────────────────
       - name: SAST CodeQL — init
-        uses: github/codeql-action/init@v3.26.6
+        uses: github/codeql-action/init@v3
         with:
           languages: javascript
-      - uses: github/codeql-action/analyze@v3.26.6
+      - uses: github/codeql-action/analyze@v3
 
-      # ── SonarCloud ───────────────────────────────────────────────────────────
+      # ── SonarCloud ─────────────────────────────────────────────────────────
       - name: SAST SonarCloud
         uses: SonarSource/sonarcloud-github-action@v3.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
-      # ── Snyk ─────────────────────────────────────────────────────────────────
+      # ── Snyk ───────────────────────────────────────────────────────────────
       - name: Auditoría de dependencias — Snyk
         uses: snyk/actions/node@0.4.0
         env:
@@ -80,7 +83,7 @@ jobs:
         with:
           args: --severity-threshold=high
 
-      # ── Build API (NestJS) ─────────────────────────────────────────────────────
+      # ── Build imágenes Docker ──────────────────────────────────────────────
       - name: Construir imagen API (NestJS)
         run: |
           docker build \
@@ -89,7 +92,6 @@ jobs:
             -f apps/backend/Dockerfile \
             apps/backend/
 
-      # ── Build Web (Next.js) ──────────────────────────────────────────────────────
       - name: Construir imagen Web (Next.js)
         run: |
           docker build \
@@ -103,21 +105,23 @@ jobs:
             -f apps/frontend/Dockerfile \
             apps/frontend/
 
-      # ── Trivy — escaneo de ambas imágenes ───────────────────────────────────────
+      # ── Trivy — escaneo de ambas imágenes ─────────────────────────────────
       - name: Trivy — escaneo imagen API
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.29.0
+
         with:
           image-ref: ${{ env.IMAGE_API }}:${{ env.TAG }}
           severity: CRITICAL,HIGH
-          exit-code: 1
+          exit-code: "1"
 
       - name: Trivy — escaneo imagen Web
-        uses: aquasecurity/trivy-action@0.25.0
+        uses: aquasecurity/trivy-action@0.29.0
         with:
           image-ref: ${{ env.IMAGE_WEB }}:${{ env.TAG }}
           severity: CRITICAL,HIGH
-          exit-code: 1
+          exit-code: "1"
 
+      # ── Publicar imágenes en GHCR ──────────────────────────────────────────
       - name: Publicar imágenes en GHCR
         if: github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/tags/')
         run: |
@@ -132,40 +136,73 @@ jobs:
             docker push ${{ env.IMAGE_WEB }}:${VERSION}
           fi
 
+  # ── DEPLOY STAGING (automático al hacer merge en develop) ─────────────────
   deploy-staging:
     name: Deploy a staging (Railway)
     needs: ci
     if: github.ref == 'refs/heads/develop'
     runs-on: ubuntu-latest
+
     steps:
-      - run: curl -fX POST "${{ secrets.RAILWAY_STAGING_WEBHOOK }}"
-      - run: sleep 40 && curl -f https://staging.bistrolink.app/health
-      # Nivel 3: Playwright E2E
-      - run: npx playwright test --reporter=github
+      - name: Trigger deploy en Railway (staging)
+        run: curl -fX POST "${{ secrets.RAILWAY_STAGING_WEBHOOK }}"
+
+      - name: Health check staging
+        run: |
+          sleep 40
+          curl -f https://staging.bistrolink.app/health
+
+      # ── Nivel 3: Playwright E2E ────────────────────────────────────────────
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - name: Instalar dependencias
+        run: npm ci
+      - name: Tests E2E Playwright en staging
+        run: npx playwright test --reporter=github
         env:
           BASE_URL: https://staging.bistrolink.app
 
+  # ── PRUEBAS DE CARGA K6 ───────────────────────────────────────────────────
   k6-load-test:
-    name: Pruebas de carga K6 (70 VUs, p95 < 1.5 s)
+    name: Pruebas de carga K6 (70 VUs, p95 < 1.5s)
     needs: deploy-staging
     if: github.ref == 'refs/heads/develop'
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4.1.7
+      - uses: actions/checkout@v4
       - name: Instalar K6
-        run: |
-          sudo apt-get update && sudo apt-get install -y k6
+        run: sudo apt-get update && sudo apt-get install -y k6
       - name: Ejecutar prueba de carga
         run: k6 run --vus 70 --duration 60s k6/load-test.js
         env:
           BASE_URL: https://staging.bistrolink.app
 
+  # ── DEPLOY PRODUCCIÓN (manual, solo en tag v*.*.*) ────────────────────────
   deploy-prod:
-    name: Deploy a producción (requiere aprobación manual)
+    name: Deploy a producción (aprobación manual requerida)
     needs: [deploy-staging, k6-load-test]
     if: startsWith(github.ref, 'refs/tags/v')
     environment: production
     runs-on: ubuntu-latest
+
     steps:
-      - run: curl -fX POST "${{ secrets.RAILWAY_PROD_WEBHOOK }}"
-      - run: sleep 40 && curl -f https://api.bistrolink.app/health
+      - name: Trigger deploy en Railway (producción)
+        run: curl -fX POST "${{ secrets.RAILWAY_PROD_WEBHOOK }}"
+
+      - name: Health check producción
+        run: |
+          sleep 40
+          curl -f https://api.bistrolink.app/health
+
+      # ── Contingencia Render ────────────────────────────────────────────────
+      - name: Contingencia — Deploy API en Render
+        if: failure()
+        run: curl -fX POST "${{ secrets.RENDER_API_WEBHOOK }}"
+
+      - name: Contingencia — Deploy Web en Render
+        if: failure()
+        run: curl -fX POST "${{ secrets.RENDER_WEB_WEBHOOK }}"
