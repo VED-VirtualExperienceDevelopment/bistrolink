@@ -20,7 +20,7 @@ ENV NODE_ENV=production
 COPY package*.json ./
 COPY apps/backend/package*.json ./apps/backend/
 
-RUN npm ci --workspace=apps/backend --omit=dev && npm cache clean --force
+RUN npm pkg delete scripts.prepare && npm ci --workspace=apps/backend --omit=dev && npm cache clean --force
 
 COPY --from=builder /app/apps/backend/dist ./dist
 COPY --from=builder /app/apps/backend/prisma ./prisma
