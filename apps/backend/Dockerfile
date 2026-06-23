@@ -1,21 +1,32 @@
 # Stage 1: compilación
 FROM node:20-alpine AS builder
 WORKDIR /app
-COPY package*.json ./
-RUN npm ci
-COPY . .
-RUN npm run build
 
+# Copiar lockfile y package.json raíz + workspace backend
+COPY package*.json ./
+COPY apps/backend/package*.json ./apps/backend/
+
+RUN npm ci --workspace=apps/backend
+
+COPY apps/backend/ ./apps/backend/
+
+RUN npm run build --workspace=apps/backend
 
 # Stage 2: producción
 FROM node:20-alpine AS production
 WORKDIR /app
 ENV NODE_ENV=production
+
 COPY package*.json ./
-RUN npm ci --omit=dev && npm cache clean --force
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/prisma ./prisma
+COPY apps/backend/package*.json ./apps/backend/
+
+RUN npm ci --workspace=apps/backend --omit=dev && npm cache clean --force
+
+COPY --from=builder /app/apps/backend/dist ./dist
+COPY --from=builder /app/apps/backend/prisma ./prisma
+
 RUN npx prisma@5.19.1 generate
+
 RUN addgroup -S bistrolink && adduser -S bistrolink -G bistrolink
 USER bistrolink
 EXPOSE 3001
