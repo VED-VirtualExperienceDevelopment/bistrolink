@@ -1,5 +1,5 @@
 # Stage 1: compilación
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 WORKDIR /app
 
 # Copiar lockfile y package.json raíz + workspace backend
@@ -13,7 +13,7 @@ COPY apps/backend/ ./apps/backend/
 RUN npm run build --workspace=apps/backend
 
 # Stage 2: producción
-FROM node:20-alpine AS production
+FROM node:22-alpine AS production
 WORKDIR /app
 ENV NODE_ENV=production
 
