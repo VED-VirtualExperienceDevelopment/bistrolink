@@ -6,7 +6,7 @@ WORKDIR /app
 COPY package*.json ./
 COPY apps/backend/package*.json ./apps/backend/
 
-RUN npm ci --workspace=apps/backend
+RUN  npm pkg delete scripts.prepare && npm ci --workspace=apps/backend
 
 COPY apps/backend/ ./apps/backend/
 
