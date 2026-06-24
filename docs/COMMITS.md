@@ -152,6 +152,35 @@ El merge solo está disponible cuando todos los checks pasan.
 
 ---
 
+## Cuándo corre el pipeline
+
+El pipeline de checks **siempre corre** en cada PR y push a `develop` — esto garantiza que los checks requeridos siempre se completen.
+
+El **deploy a staging en Railway** es selectivo:
+
+| Cambio | ¿Corre el pipeline? | ¿Deployea a staging? |
+|--------|--------------------|--------------------|
+| `apps/**` | ✅ Sí | ✅ Sí |
+| `packages/**` | ✅ Sí | ✅ Sí |
+| `docs/**` | ✅ Sí | ❌ No |
+| `scripts/**` | ✅ Sí | ❌ No |
+| `.github/workflows/**` | ✅ Sí | ❌ No |
+| Deploy manual | ✅ Sí | ✅ Sí |
+
+Esto evita consumir créditos de Railway en cambios que no afectan el código de la aplicación.
+
+### Deploy manual
+
+Si necesitás deployar a staging sin pushear código nuevo:
+
+1. Ir a **GitHub → Actions → CI/CD BistroLink**
+2. Click en **Run workflow**
+3. Seleccionar rama `develop`
+4. Opcionalmente escribir el motivo
+5. Click en **Run workflow**
+
+---
+
 ## Después del merge — npm run sync
 
 Una vez que el PR fue mergeado en GitHub, corré:
