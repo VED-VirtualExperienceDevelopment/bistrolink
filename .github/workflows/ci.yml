@@ -167,7 +167,7 @@ jobs:
 
     steps:
       - name: Trigger deploy en Railway (staging)
-        run: curl -fX POST "${{ secrets.RAILWAY_STAGING_WEBHOOK }}"
+        run: curl -fX POST "${{ secrets.RAILWAY_TOKEN }}"
 
       - name: Health check staging
         run: |
