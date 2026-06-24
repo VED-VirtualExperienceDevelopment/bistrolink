@@ -1,1 +1,8 @@
-CVE-2026-33671
+# multer CVEs - dependencia transitiva de @nestjs/platform-express@10.4.22
+# El override npm no puede forzar la versión porque es una dependencia interna fija.
+# Se mitiga en producción eliminando multer del stage final del Dockerfile.
+# Pendiente: actualizar @nestjs/platform-express cuando publiquen fix.
+CVE-2026-2359
+CVE-2026-3304
+CVE-2026-3520
+CVE-2026-5079

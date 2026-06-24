@@ -26,6 +26,10 @@
     "@commitlint/config-conventional": "19.5.0"
   },
   "overrides": {
-    "picomatch": "4.0.4"
+    "picomatch": "4.0.4",
+    "multer": "2.2.0",
+    "@nestjs/platform-express": {
+      "multer": "2.2.0"
+    }
   }
 }
