@@ -23,7 +23,6 @@ RUN npm pkg delete scripts.prepare && \
   npm cache clean --force && \
   rm -rf node_modules/.cache \
   node_modules/lodash \
-  node_modules/multer \
   node_modules/picomatch
 COPY --from=builder /app/apps/backend/dist ./dist
 COPY --from=builder /app/apps/backend/prisma ./prisma
