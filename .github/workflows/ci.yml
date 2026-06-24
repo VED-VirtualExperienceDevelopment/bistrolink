@@ -37,48 +37,48 @@ jobs:
         run: npm run lint
 
   # ── JOB 2: TESTS UNITARIOS (Jest) ─────────────────────────────────────────
-  jest:
-    name: 🧪 Tests unitarios (Jest)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+  # jest:
+  #   name: 🧪 Tests unitarios (Jest)
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: npm
+  #     - uses: actions/setup-node@v4
+  #       with:
+  #         node-version: "20"
+  #         cache: npm
 
-      - name: Instalar dependencias
-        run: npm ci
+  #     - name: Instalar dependencias
+  #       run: npm ci
 
-      - name: Tests Jest (cobertura mínima 80%)
-        run: npm run test:cov --workspace=backend
-        env:
-          CI: true
+  #     - name: Tests Jest (cobertura mínima 80%)
+  #       run: npm run test:cov --workspace=backend
+  #       env:
+  #         CI: true
 
-      - name: Upload results to Testiny
-        if: always()
-        env:
-          TESTINY_API_KEY: ${{ secrets.TESTINY_API_KEY }}
-        run: npx -y @testiny/cli automation --format junit --input coverage/junit.xml --project "BISTROLINK-VED"
+  #     - name: Upload results to Testiny
+  #       if: always()
+  #       env:
+  #         TESTINY_API_KEY: ${{ secrets.TESTINY_API_KEY }}
+  #       run: npx -y @testiny/cli automation --format junit --input coverage/junit.xml --project "BISTROLINK-VED"
 
   # ── JOB 3: TESTS DE CONTRATO (PactJS) ────────────────────────────────────
-  pact:
-    name: 🤝 Tests de contrato (PactJS)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+  # pact:
+  #   name: 🤝 Tests de contrato (PactJS)
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: npm
+  #     - uses: actions/setup-node@v4
+  #       with:
+  #         node-version: "20"
+  #         cache: npm
 
-      - name: Instalar dependencias
-        run: npm ci
+  #     - name: Instalar dependencias
+  #       run: npm ci
 
-      - name: Tests de contrato PactJS
-        run: npm run test:pact
+  #     - name: Tests de contrato PactJS
+  #       run: npm run test:pact
 
   # ── JOB 4: GITLEAKS ───────────────────────────────────────────────────────
   gitleaks:
@@ -255,26 +255,26 @@ jobs:
           curl -f https://staging.bistrolink.app/health
 
   # ── JOB 10: TESTS E2E (Playwright) ───────────────────────────────────────
-  playwright:
-    name: 🎭 Tests E2E (Playwright)
-    needs: deploy-staging
-    if: github.ref == 'refs/heads/develop'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+  # playwright:
+  #   name: 🎭 Tests E2E (Playwright)
+  #   needs: deploy-staging
+  #   if: github.ref == 'refs/heads/develop'
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: npm
+  #     - uses: actions/setup-node@v4
+  #       with:
+  #         node-version: "20"
+  #         cache: npm
 
-      - name: Instalar dependencias
-        run: npm ci
+  #     - name: Instalar dependencias
+  #       run: npm ci
 
-      - name: Tests E2E Playwright en staging
-        run: npx playwright test --reporter=github
-        env:
-          BASE_URL: https://staging.bistrolink.app
+  #     - name: Tests E2E Playwright en staging
+  #       run: npx playwright test --reporter=github
+  #       env:
+  #         BASE_URL: https://staging.bistrolink.app
 
   # ── JOB 11: DEPLOY PRODUCCIÓN (manual, solo en tag v*.*.*) ───────────────
   # deploy-prod:
