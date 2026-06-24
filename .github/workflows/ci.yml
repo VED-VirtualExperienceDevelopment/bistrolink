@@ -98,7 +98,6 @@ jobs:
 
       # ── Snyk ───────────────────────────────────────────────────────────────
       - name: Auditoría de dependencias — Snyk
-        continue-on-error: true
         uses: snyk/actions/node@0.4.0
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
@@ -221,11 +220,11 @@ jobs:
   #         sleep 40
   #         curl -f https://api.bistrolink.app/health
 
-      # ── Contingencia Render ────────────────────────────────────────────────
-      # - name: Contingencia — Deploy API en Render
-      #   if: failure()
-      #   run: curl -fX POST "${{ secrets.RENDER_API_WEBHOOK }}"
+  # ── Contingencia Render ────────────────────────────────────────────────
+  # - name: Contingencia — Deploy API en Render
+  #   if: failure()
+  #   run: curl -fX POST "${{ secrets.RENDER_API_WEBHOOK }}"
 
-      # - name: Contingencia — Deploy Web en Render
-      #   if: failure()
-      #   run: curl -fX POST "${{ secrets.RENDER_WEB_WEBHOOK }}"
+  # - name: Contingencia — Deploy Web en Render
+  #   if: failure()
+  #   run: curl -fX POST "${{ secrets.RENDER_WEB_WEBHOOK }}"
