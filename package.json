@@ -15,7 +15,7 @@
     "test": "npm run test --workspaces",
     "test:cov": "npm run test:cov --workspaces",
     "test:pact": "npm run test:pact --workspaces",
-    "commit": "bash scripts/commit.sh",
+    "commit": "bash -i scripts/commit.sh",
     "prepare": "husky"
   },
   "devDependencies": {
@@ -24,7 +24,7 @@
     "@commitlint/cli": "19.5.0",
     "@commitlint/config-conventional": "19.5.0"
   },
-    "overrides": {
+  "overrides": {
     "picomatch": "4.0.4"
   }
 }
