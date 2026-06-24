@@ -257,8 +257,11 @@ if ! git commit -m "$COMMIT_MSG"; then
 fi
 
 # ── 12. Push ──────────────────────────────────────────────────────────────────
-TARGET_BRANCH="${IS_FEATURE_BRANCH:+$CURRENT_BRANCH}"
-TARGET_BRANCH="${TARGET_BRANCH:-$BRANCH_NAME}"
+if [[ "$IS_FEATURE_BRANCH" == true ]]; then
+  TARGET_BRANCH="$CURRENT_BRANCH"
+else
+  TARGET_BRANCH="$BRANCH_NAME"
+fi
 
 echo ""
 echo -e "🚀 Pusheando ${CYAN}${TARGET_BRANCH}${RESET} a origin..."
