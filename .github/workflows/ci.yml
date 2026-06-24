@@ -4,18 +4,8 @@ on:
   push:
     branches: [develop, main]
     tags: ["v*.*.*"]
-    paths:
-      - "apps/**"
-      - "packages/**"
-      - "package.json"
-      - "package-lock.json"
   pull_request:
     branches: [develop, main]
-    paths:
-      - "apps/**"
-      - "packages/**"
-      - "package.json"
-      - "package-lock.json"
   workflow_dispatch:
     inputs:
       reason:
@@ -250,7 +240,15 @@ jobs:
   deploy-staging:
     name: 🚀 Deploy staging (Railway)
     needs: [gitleaks, codeql, sonarcloud, snyk, build]
-    if: github.ref == 'refs/heads/develop'
+    if: |
+      github.ref == 'refs/heads/develop' &&
+      (
+        github.event_name == 'workflow_dispatch' ||
+        contains(toJson(github.event.head_commit.modified), 'apps/') ||
+        contains(toJson(github.event.head_commit.added), 'apps/') ||
+        contains(toJson(github.event.head_commit.modified), 'packages/') ||
+        contains(toJson(github.event.head_commit.added), 'packages/')
+      )
     runs-on: ubuntu-latest
     steps:
       - name: Instalar Railway CLI
