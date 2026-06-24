@@ -4,8 +4,24 @@ on:
   push:
     branches: [develop, main]
     tags: ["v*.*.*"]
+    paths:
+      - "apps/**"
+      - "packages/**"
+      - "package.json"
+      - "package-lock.json"
   pull_request:
     branches: [develop, main]
+    paths:
+      - "apps/**"
+      - "packages/**"
+      - "package.json"
+      - "package-lock.json"
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "Motivo del deploy manual"
+        required: false
+        default: "deploy manual"
 
 permissions:
   contents: read
