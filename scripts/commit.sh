@@ -188,10 +188,13 @@ echo -e "${BOLD}3. Descripción en minúsculas (máx. 72 chars):${RESET}"
 while true; do
   read -rp "   > " DESCRIPTION
   DESCRIPTION=$(echo "$DESCRIPTION" | tr -d '\r')
+  FIRST_CHAR="${DESCRIPTION:0:1}"
   if [[ -z "$DESCRIPTION" ]]; then
     echo -e "   ${RED}La descripción no puede estar vacía.${RESET}"
   elif [[ ${#DESCRIPTION} -gt 72 ]]; then
     echo -e "   ${RED}Demasiado largo (${#DESCRIPTION} chars). Máximo 72.${RESET}"
+  elif [[ "$FIRST_CHAR" =~ [A-Z] ]]; then
+    echo -e "   ${RED}La descripción debe empezar en minúscula.${RESET}"
   else
     break
   fi

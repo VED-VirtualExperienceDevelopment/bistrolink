@@ -16,6 +16,7 @@
     "test:cov": "npm run test:cov --workspaces",
     "test:pact": "npm run test:pact --workspaces",
     "commit": "bash -i scripts/commit.sh",
+    "sync": "bash -i scripts/sync.sh",
     "prepare": "husky"
   },
   "devDependencies": {

@@ -149,3 +149,36 @@ PR abierto
 ```
 
 El merge solo está disponible cuando todos los checks pasan.
+
+---
+
+## Después del merge — npm run sync
+
+Una vez que el PR fue mergeado en GitHub, corré:
+
+```bash
+npm run sync
+```
+
+Este comando:
+1. Cambia a `develop` si estás en otra rama
+2. Hace `git pull origin develop` para traer los cambios mergeados
+3. Ofrece eliminar la rama local que ya fue mergeada
+4. Limpia referencias a ramas remotas eliminadas (`git fetch --prune`)
+5. Muestra los últimos 5 commits para confirmar que todo está al día
+
+### Flujo completo recomendado
+
+```
+npm run commit        → creás la rama, commiteás y pusheás
+↓
+Abrís el PR en GitHub
+↓
+El pipeline CI/CD corre automáticamente
+↓
+Se aprueba y mergea el PR en GitHub
+↓
+npm run sync          → volvés a develop limpio y actualizado
+↓
+npm run commit        → siguiente tarea
+```
