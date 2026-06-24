@@ -3,7 +3,7 @@ FROM node:22-alpine AS deps
 WORKDIR /app
 COPY package*.json ./
 COPY apps/frontend/package*.json ./apps/frontend/
-RUN npm ci --workspace=apps/frontend
+RUN npm pkg delete scripts.prepare && npm ci --workspace=apps/frontend
 
 # Stage 2: compilación
 FROM node:20-alpine AS builder
