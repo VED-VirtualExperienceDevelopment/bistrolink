@@ -228,8 +228,8 @@ jobs:
           echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
           docker push ${{ env.IMAGE_API }}:${{ env.TAG }}
           docker push ${{ env.IMAGE_WEB }}:${{ env.TAG }}
-          docker push ${{ env.IMAGE_API }}:latest        # ← agregar
-          docker push ${{ env.IMAGE_WEB }}:latest        # ← agregar 
+          docker push ${{ env.IMAGE_API }}:latest        
+          docker push ${{ env.IMAGE_WEB }}:latest        
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
             VERSION=${GITHUB_REF#refs/tags/}
             docker tag ${{ env.IMAGE_API }}:${{ env.TAG }} ${{ env.IMAGE_API }}:${VERSION}
