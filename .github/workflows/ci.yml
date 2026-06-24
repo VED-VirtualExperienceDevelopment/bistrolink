@@ -125,7 +125,7 @@ jobs:
             --build-arg NEXT_PUBLIC_KEYCLOAK_REALM=bistrolink \
             --build-arg NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=bistrolink-frontend \
             -f apps/frontend/Dockerfile \
-            apps/frontend/
+            .
 
       # ── Trivy — escaneo de ambas imágenes ─────────────────────────────────
       - name: Trivy — escaneo imagen API
