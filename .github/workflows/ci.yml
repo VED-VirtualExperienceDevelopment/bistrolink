@@ -253,7 +253,7 @@ jobs:
       - name: Health check staging
         run: |
           sleep 40
-          curl -f https://staging.bistrolink.app/health
+          curl -f https://bistrolink-api-staging.up.railway.app/health
 
   # ── JOB 10: TESTS E2E (Playwright) ───────────────────────────────────────
   # playwright:
