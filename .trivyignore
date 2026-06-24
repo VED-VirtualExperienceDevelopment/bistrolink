@@ -6,3 +6,7 @@ CVE-2026-2359
 CVE-2026-3304
 CVE-2026-3520
 CVE-2026-5079
+
+# picomatch CVE - dependencia transitiva, override npm no resuelve correctamente
+# Pendiente: verificar cuando dependencias upstream actualicen a 4.0.4
+CVE-2026-33671
