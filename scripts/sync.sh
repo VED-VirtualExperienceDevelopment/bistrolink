@@ -27,7 +27,8 @@ if grep -qi microsoft /proc/version 2>/dev/null; then
     echo -e "${GREEN}✔ Clave SSH copiada desde Windows.${RESET}"
   fi
 fi
-
+# ── SSH para Git Bash en Windows ─────────────────────────────────────────────
+export GIT_SSH_COMMAND='"/usr/bin/ssh"'
 # ── 2. Detectar rama actual ───────────────────────────────────────────────────
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
 

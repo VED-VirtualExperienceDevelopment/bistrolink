@@ -115,12 +115,12 @@ jobs:
             --log-level=debug \
             --log-opts="--no-merges"
 
-      - name: Subir reporte Gitleaks
+      - name: Subir reporte Gitleaks al Code Scanning
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: github/codeql-action/upload-sarif@v3
         with:
-          name: gitleaks-results
-          path: gitleaks-results
+          sarif_file: gitleaks-results
+          category: "gitleaks"
 
   # ── JOB 5: CODEQL ─────────────────────────────────────────────────────────
   codeql:
@@ -138,6 +138,9 @@ jobs:
 
       - name: CodeQL — análisis
         uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:javascript"
+          upload: always
 
   # ── JOB 6: SONARCLOUD ─────────────────────────────────────────────────────
   sonarcloud:
