@@ -138,6 +138,9 @@ jobs:
 
       - name: CodeQL — análisis
         uses: github/codeql-action/analyze@v3
+        with:
+             category: "/language:javascript"
+             upload: always
 
   # ── JOB 6: SONARCLOUD ─────────────────────────────────────────────────────
   sonarcloud:
