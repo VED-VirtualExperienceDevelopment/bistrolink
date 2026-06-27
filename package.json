@@ -17,7 +17,9 @@
     "test:pact": "npm run test:pact --workspaces",
     "commit": "bash -i scripts/commit.sh",
     "sync": "bash -i scripts/sync.sh",
-    "prepare": "husky"
+    "prepare": "husky",
+    "staging:down": "bash -i scripts/staging-down.sh",
+    "staging:up": "bash -i scripts/staging-up.sh"
   },
   "devDependencies": {
     "concurrently": "8.2.2",
