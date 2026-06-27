@@ -32,7 +32,7 @@ echo ""
 echo -e "${BOLD}1. Levantando infraestructura...${RESET}"
 for SERVICE in "${SERVICES_INFRA[@]}"; do
   echo -e "🔼 Encendiendo ${CYAN}${SERVICE}${RESET}..."
-  if railway scale --service "$SERVICE" --environment "$ENVIRONMENT" --replicas 1 2>/dev/null; then
+if railway service scale --service "$SERVICE" --environment "$ENVIRONMENT" us-west=1 2>/dev/null; then
     echo -e "${GREEN}✔ ${SERVICE} encendido.${RESET}"
   else
     echo -e "${RED}✘ Error al encender ${SERVICE}.${RESET}"
@@ -49,7 +49,7 @@ echo ""
 echo -e "${BOLD}2. Levantando servicios de app...${RESET}"
 for SERVICE in "${SERVICES_APP[@]}"; do
   echo -e "🔼 Encendiendo ${CYAN}${SERVICE}${RESET}..."
-  if railway scale --service "$SERVICE" --environment "$ENVIRONMENT" --replicas 1 2>/dev/null; then
+  if railway service scale --service "$SERVICE" --environment "$ENVIRONMENT" us-west=1 2>/dev/null; then
     echo -e "${GREEN}✔ ${SERVICE} encendido.${RESET}"
   else
     echo -e "${RED}✘ Error al encender ${SERVICE}.${RESET}"

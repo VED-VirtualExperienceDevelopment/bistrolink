@@ -10,7 +10,6 @@ SEPARATOR="━━━━━━━━━━━━━━━━━━━━━━━
 
 SERVICES=("bistrolink-api" "bistrolink-web" "bistrolink-db" "bistrolink-auth")
 ENVIRONMENT="staging"
-REPLICAS=0
 
 echo ""
 echo -e "${BOLD}${SEPARATOR}${RESET}"
@@ -31,7 +30,7 @@ echo ""
 
 for SERVICE in "${SERVICES[@]}"; do
   echo -e "🔽 Bajando ${CYAN}${SERVICE}${RESET}..."
-  if railway scale --service "$SERVICE" --environment "$ENVIRONMENT" --replicas "$REPLICAS" 2>/dev/null; then
+if railway service scale --service "$SERVICE" --environment "$ENVIRONMENT" us-west=0 ; then
     echo -e "${GREEN}✔ ${SERVICE} apagado.${RESET}"
   else
     echo -e "${RED}✘ Error al apagar ${SERVICE}. Verificá el nombre o el token.${RESET}"
