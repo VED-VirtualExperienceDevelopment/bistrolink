@@ -33,8 +33,5 @@
     "@nestjs/platform-express": {
       "multer": "2.2.0"
     }
-  },
-  "dependencies": {
-    "multer": "^2.2.0"
   }
 }
