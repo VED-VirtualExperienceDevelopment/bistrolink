@@ -37,7 +37,7 @@ jobs:
           # cache: npm
 
       - name: Instalar dependencias
-        run: npm ci
+        run: npm install
 
       - name: Lint
         run: npm run lint
@@ -170,7 +170,7 @@ jobs:
           # cache: npm
 
       - name: Instalar dependencias
-        run: npm ci
+        run: npm install
 
       - name: Auditoría Snyk
         uses: snyk/actions/node@0.4.0
