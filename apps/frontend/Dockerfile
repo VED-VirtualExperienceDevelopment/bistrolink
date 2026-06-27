@@ -32,6 +32,7 @@ RUN addgroup -S bistrolink && adduser -S bistrolink -G bistrolink
 COPY --from=builder /app/apps/frontend/.next/standalone ./
 COPY --from=builder /app/apps/frontend/.next/static ./.next/static
 COPY --from=builder /app/apps/frontend/public ./public
+COPY --from=builder /app/apps/frontend/node_modules ./node_modules
 USER bistrolink
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
