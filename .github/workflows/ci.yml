@@ -274,6 +274,14 @@ jobs:
           sleep 40
           curl -f https://bistrolink-api-staging.up.railway.app/health
 
+      - name: Scale down tras verificación
+        if: always()
+        run: |
+           railway scale --service bistrolink-api --environment staging --replicas 0
+           railway scale --service bistrolink-web --environment staging --replicas 0
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+
   # ── JOB 10: TESTS E2E (Playwright) ───────────────────────────────────────
   # playwright:
   #   name: 🎭 Tests E2E (Playwright)
