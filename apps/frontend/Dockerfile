@@ -22,6 +22,7 @@ ENV NEXT_PUBLIC_KEYCLOAK_URL=$NEXT_PUBLIC_KEYCLOAK_URL
 ENV NEXT_PUBLIC_KEYCLOAK_REALM=$NEXT_PUBLIC_KEYCLOAK_REALM
 ENV NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=$NEXT_PUBLIC_KEYCLOAK_CLIENT_ID
 WORKDIR /app/apps/frontend
+ARG CACHEBUST=1
 RUN npm run build
 
 # Stage 3: producción (standalone)
@@ -35,5 +36,5 @@ COPY --from=builder /app/apps/frontend/public ./public
 USER bistrolink
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-CMD wget -qO- http://localhost:3000/api/health || exit 1
+  CMD wget -qO- http://localhost:3000/api/health || exit 1
 CMD ["node", "server.js"]
