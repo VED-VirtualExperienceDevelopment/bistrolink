@@ -1,0 +1,107 @@
+{
+  "realm": "bistrolink",
+  "enabled": true,
+  "displayName": "BistroLink",
+  "accessTokenLifespan": 3600,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "revokeRefreshToken": true,
+  "refreshTokenMaxReuse": 0,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+
+  "roles": {
+    "realm": [
+      {
+        "name": "ADMIN",
+        "description": "Administrador del establecimiento (acceso completo dentro de su tenant)"
+      },
+      {
+        "name": "MOZO",
+        "description": "Colaborador de sala: gestiona mesas, pedidos y notificaciones"
+      },
+      {
+        "name": "COCINA",
+        "description": "Personal de cocina: KDS en modo solo lectura"
+      },
+      {
+        "name": "COMENSAL",
+        "description": "Cliente final: sesión limitada a la mesa activa"
+      }
+    ]
+  },
+
+  "clients": [
+    {
+      "clientId": "bistrolink-frontend",
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "https://staging.bistrolink.app/*",
+        "http://localhost:3000/*"
+      ],
+      "webOrigins": ["https://staging.bistrolink.app", "http://localhost:3000"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "https://staging.bistrolink.app/*##http://localhost:3000/*"
+      }
+    },
+    {
+      "clientId": "bistrolink-backend",
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "bearerOnly": false,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "authorizationServicesEnabled": false,
+      "secret": "${BISTROLINK_BACKEND_CLIENT_SECRET}",
+      "description": "Cliente de servicio usado por NestJS para operaciones administrativas contra la Admin API de Keycloak (alta/baja de usuarios, HU-013)"
+    }
+  ],
+
+  "clientScopes": [
+    {
+      "name": "tenant",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      },
+      "protocolMappers": [
+        {
+          "name": "tenant-id-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "user.attribute": "tenant_id",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "tenant_id",
+            "jsonType.label": "String"
+          }
+        }
+      ]
+    }
+  ],
+
+  "defaultDefaultClientScopes": [
+    "profile",
+    "email",
+    "roles",
+    "web-origins",
+    "tenant"
+  ],
+
+  "attributes": {
+    "userProfileEnabled": "true"
+  }
+}

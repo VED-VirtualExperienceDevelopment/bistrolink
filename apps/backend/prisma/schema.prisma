@@ -1,21 +1,269 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
-generator client {
-  provider = "prisma-client-js"
-}
+// apps/backend/prisma/schema.prisma
+// Modelo de datos según Anexo 6 — Modelo de Datos y Diagrama Entidad-Relación
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
-model Restaurant {
-  id        String   @id @default(cuid())
-  name      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ── Enums ──────────────────────────────────────────────────────────────────
+
+enum UsuarioRol {
+  ADMIN
+  MOZO
+}
+
+enum MesaEstado {
+  LIBRE
+  OCUPADA
+}
+
+enum PedidoEstado {
+  RECIBIDO
+  EN_PREPARACION
+  LISTO_PARA_ENTREGAR
+  ENTREGADO
+  CANCELADO
+}
+
+enum PedidoCanal {
+  QR
+  WEB
+  WHATSAPP
+  VOZ
+}
+
+enum PagoEstado {
+  PENDIENTE
+  APROBADO
+  RECHAZADO
+  REEMBOLSADO
+}
+
+// ── 4.1 Tenant ───────────────────────────────────────────────────────────────
+// Raíz del aislamiento multi-tenant. NO lleva RLS (es la raíz, no un dato
+// dependiente de un tenant).
+
+model Tenant {
+  id          String   @id @default(uuid()) @db.Uuid
+  razonSocial String   @map("razon_social")
+  rut         String
+  plan        String // p.ej. "BASICO" — sin enum: el Anexo 6 no cierra los valores permitidos
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  restaurantes Restaurante[]
+
+  @@map("tenant")
+}
+
+// ── 4.2 Restaurante ──────────────────────────────────────────────────────────
+
+model Restaurante {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  nombre    String
+  direccion String
+  timezone  String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant     Tenant           @relation(fields: [tenantId], references: [id])
+  usuarios   Usuario[]
+  mesas      Mesa[]
+  categorias CategoriaCarta[]
+  pedidos    Pedido[]
+
+  @@index([tenantId])
+  @@map("restaurante")
+}
+
+// ── 4.3 Usuario ──────────────────────────────────────────────────────────────
+// Modela mozos y administradores. El comensal no siempre tiene fila acá.
+
+model Usuario {
+  id            String     @id @default(uuid()) @db.Uuid
+  tenantId      String     @map("tenant_id") @db.Uuid
+  restauranteId String     @map("restaurante_id") @db.Uuid
+  keycloakId    String     @unique @map("keycloak_id") @db.Uuid
+  rol           UsuarioRol
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
+
+  restaurante     Restaurante             @relation(fields: [restauranteId], references: [id])
+  pedidosComoMozo Pedido[]                @relation("PedidoUsuario")
+  historial       PedidoEstadoHistorial[]
+
+  @@index([tenantId])
+  @@map("usuario")
+}
+
+// ── 4.4 Mesa ─────────────────────────────────────────────────────────────────
+
+model Mesa {
+  id            String     @id @default(uuid()) @db.Uuid
+  tenantId      String     @map("tenant_id") @db.Uuid
+  restauranteId String     @map("restaurante_id") @db.Uuid
+  numero        Int
+  estado        MesaEstado
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
+
+  restaurante Restaurante @relation(fields: [restauranteId], references: [id])
+  pedidos     Pedido[]
+
+  @@unique([restauranteId, numero])
+  @@index([tenantId])
+  @@map("mesa")
+}
+
+// ── 4.5 CategoriaCarta / ItemCarta ───────────────────────────────────────────
+
+model CategoriaCarta {
+  id            String   @id @default(uuid()) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  restauranteId String   @map("restaurante_id") @db.Uuid
+  nombre        String
+  orden         Int      @default(0)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  restaurante Restaurante @relation(fields: [restauranteId], references: [id])
+  items       ItemCarta[]
+
+  @@index([tenantId])
+  @@map("categoria_carta")
+}
+
+model ItemCarta {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  categoriaId String   @map("categoria_id") @db.Uuid
+  nombre      String
+  precio      Decimal  @db.Decimal(10, 2)
+  disponible  Boolean  @default(true)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  categoria    CategoriaCarta @relation(fields: [categoriaId], references: [id])
+  lineasPedido LineaPedido[]
+
+  @@index([tenantId])
+  @@map("item_carta")
+}
+
+// ── 4.6 Pedido ────────────────────────────────────────────────────────────────
+
+model Pedido {
+  id             String       @id @default(uuid()) @db.Uuid
+  tenantId       String       @map("tenant_id") @db.Uuid
+  restauranteId  String       @map("restaurante_id") @db.Uuid
+  mesaId         String       @map("mesa_id") @db.Uuid
+  usuarioId      String?      @map("usuario_id") @db.Uuid
+  idempotencyKey String       @unique @map("idempotency_key") @db.VarChar(64)
+  estado         PedidoEstado
+  canal          PedidoCanal
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  restaurante      Restaurante             @relation(fields: [restauranteId], references: [id])
+  mesa             Mesa                    @relation(fields: [mesaId], references: [id])
+  usuario          Usuario?                @relation("PedidoUsuario", fields: [usuarioId], references: [id])
+  lineas           LineaPedido[]
+  pagos            Pago[]
+  comprobantes     ComprobanteFiscal[]
+  historialEstados PedidoEstadoHistorial[]
+
+  @@index([tenantId])
+  @@map("pedido")
+}
+
+// ── 4.7 LineaPedido ───────────────────────────────────────────────────────────
+
+model LineaPedido {
+  id                     String   @id @default(uuid()) @db.Uuid
+  tenantId               String   @map("tenant_id") @db.Uuid
+  pedidoId               String   @map("pedido_id") @db.Uuid
+  itemCartaId            String   @map("item_carta_id") @db.Uuid
+  nombreSnapshot         String   @map("nombre_snapshot")
+  precioUnitarioSnapshot Decimal  @map("precio_unitario_snapshot") @db.Decimal(10, 2)
+  cantidad               Int
+  subtotal               Decimal  @db.Decimal(10, 2)
+  createdAt              DateTime @default(now()) @map("created_at")
+  updatedAt              DateTime @updatedAt @map("updated_at")
+
+  pedido    Pedido    @relation(fields: [pedidoId], references: [id])
+  itemCarta ItemCarta @relation(fields: [itemCartaId], references: [id])
+
+  @@index([tenantId])
+  @@map("linea_pedido")
+}
+
+// ── 4.8 Pago ──────────────────────────────────────────────────────────────────
+
+model Pago {
+  id                 String     @id @default(uuid()) @db.Uuid
+  tenantId           String     @map("tenant_id") @db.Uuid
+  pedidoId           String     @map("pedido_id") @db.Uuid
+  idempotencyKey     String     @unique @map("idempotency_key") @db.VarChar(64)
+  monto              Decimal    @db.Decimal(10, 2)
+  medioPago          String     @map("medio_pago") // sin enum: no está cerrado en el Anexo 6
+  estado             PagoEstado
+  pasarelaReferencia String?    @map("pasarela_referencia")
+  createdAt          DateTime   @default(now()) @map("created_at")
+  updatedAt          DateTime   @updatedAt @map("updated_at")
+
+  pedido       Pedido              @relation(fields: [pedidoId], references: [id])
+  comprobantes ComprobanteFiscal[]
+
+  @@index([tenantId])
+  @@map("pago")
+}
+
+// ── 4.9 ComprobanteFiscal ─────────────────────────────────────────────────────
+
+model ComprobanteFiscal {
+  id             String   @id @default(uuid()) @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  pedidoId       String   @map("pedido_id") @db.Uuid
+  pagoId         String?  @map("pago_id") @db.Uuid
+  tipoCfe        String   @map("tipo_cfe")
+  serie          String
+  numero         Int
+  urlXml         String   @map("url_xml")
+  urlPdf         String   @map("url_pdf")
+  hashSha256     String   @unique @map("hash_sha256") @db.Char(64)
+  fechaEmision   DateTime @map("fecha_emision")
+  retencionHasta DateTime @map("retencion_hasta") @db.Date
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  pedido Pedido @relation(fields: [pedidoId], references: [id])
+  pago   Pago?  @relation(fields: [pagoId], references: [id])
+
+  @@index([tenantId])
+  @@map("comprobante_fiscal")
+}
+
+// ── 4.10 PedidoEstadoHistorial ────────────────────────────────────────────────
+// Append-only: nunca se actualiza ni se borra.
+
+model PedidoEstadoHistorial {
+  id             String       @id @default(uuid()) @db.Uuid
+  tenantId       String       @map("tenant_id") @db.Uuid
+  pedidoId       String       @map("pedido_id") @db.Uuid
+  usuarioId      String?      @map("usuario_id") @db.Uuid
+  estadoAnterior PedidoEstado @map("estado_anterior")
+  estadoNuevo    PedidoEstado @map("estado_nuevo")
+  timestamp      DateTime     @default(now())
+
+  pedido  Pedido   @relation(fields: [pedidoId], references: [id])
+  usuario Usuario? @relation(fields: [usuarioId], references: [id])
+
+  @@index([tenantId])
+  @@map("pedido_estado_historial")
 }
