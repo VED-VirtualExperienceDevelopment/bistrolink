@@ -4,9 +4,9 @@ import { Strategy } from 'passport-jwt';
 import { passportJwtSecret } from 'jwks-rsa';
 
 export interface AuthenticatedUser {
-  sub: string;          // ID de usuario en Keycloak (mapea a Usuario.keycloak_id)
-  tenantId: string;     // claim custom "tenant_id" (ver protocolMapper del realm)
-  roles: string[];      // realm_access.roles: ADMIN | MOZO | COCINA | COMENSAL
+  sub: string; // ID de usuario en Keycloak (mapea a Usuario.keycloak_id)
+  tenantId: string; // claim custom "tenant_id" (ver protocolMapper del realm)
+  roles: string[]; // realm_access.roles: ADMIN | MOZO | COCINA | COMENSAL
 }
 
 // Derivadas de KEYCLOAK_URL + KEYCLOAK_REALM (ya existen en el .env real del

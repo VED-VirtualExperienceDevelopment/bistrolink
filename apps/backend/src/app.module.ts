@@ -3,7 +3,8 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { HealthController } from './health.controller';
 import { LoggerModule } from 'nestjs-pino';
-
+import { AuthModule } from './auth/auth.module';
+import { PrismaModule } from './prisma/prisma.module';
 @Module({
   imports: [
     LoggerModule.forRoot({
@@ -26,6 +27,8 @@ import { LoggerModule } from 'nestjs-pino';
         },
       },
     }),
+    AuthModule,
+    PrismaModule,
   ],
   controllers: [AppController, HealthController],
   providers: [AppService],
