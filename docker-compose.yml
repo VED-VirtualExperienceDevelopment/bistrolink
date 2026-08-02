@@ -22,13 +22,14 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+  
 
   # ── Keycloak ────────────────────────────────────────────────────────────
   bistrolink-auth:
     image: quay.io/keycloak/keycloak:24.0.5
     container_name: bistrolink-auth
     restart: unless-stopped
-    command: start-dev
+    command: ["start-dev","--import-realm"]
     environment:
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: admin # solo desarrollo local
@@ -39,6 +40,7 @@ services:
       - "8080:8080"
     volumes:
       - bistrolink-auth-data:/opt/keycloak/data
+      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
     healthcheck:
       test:
         ["CMD-SHELL", "curl -f http://localhost:8080/health/ready || exit 1"]
