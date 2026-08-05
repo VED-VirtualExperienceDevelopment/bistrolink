@@ -11,8 +11,9 @@ RUN npm pkg delete scripts.prepare && npm ci --workspace=apps/backend
 
 COPY apps/backend/ ./apps/backend/
 
-# Generar el cliente de Prisma UNA VEZ, acá en el builder. El resultado (node_modules/.prisma) se
-# copia después al stage de producción — ahí nunca se vuelve a invocar npx/prisma.
+# Generar el cliente de Prisma UNA VEZ, acá en el builder (que sí tiene el CLI de
+# Prisma instalado como devDependency). El resultado (node_modules/.prisma) se
+# copia después al stage de producción.
 RUN npx prisma@5.19.1 generate --schema=apps/backend/prisma/schema.prisma
 
 RUN npm run build --workspace=apps/backend
@@ -28,13 +29,20 @@ RUN npm pkg delete scripts.prepare && \
   npm cache clean --force && \
   rm -rf node_modules/.cache \
   node_modules/lodash \
-  node_modules/picomatch
+  node_modules/picomatch && \
+  # El backend corre con "node dist/main.js" — nunca necesita npm en runtime.
+  # node:22-alpine trae el CLI de npm empaquetado (con sus propias dependencias
+  # internas: tar, sigstore, brace-expansion, ip-address), que es justo lo que
+  # Trivy venía marcando como CRITICAL/HIGH. Una vez que npm ci terminó de
+  # instalar, borramos npm y corepack de la imagen final por completo.
+  rm -rf /usr/local/lib/node_modules/npm \
+  /usr/local/lib/node_modules/corepack \
+  /usr/local/bin/npm \
+  /usr/local/bin/npx \
+  /usr/local/bin/corepack
+
 COPY --from=builder /app/apps/backend/dist ./dist
 COPY --from=builder /app/apps/backend/prisma ./prisma
-
-# Cliente de Prisma ya generado en el builder — reemplaza el antiguo
-# `RUN npx prisma@5.19.1 generate` que se ejecutaba acá y arrastraba el CLI
-# completo de npm (tar, sigstore, adm-zip, brace-expansion) a la imagen final.
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 
 RUN addgroup -S bistrolink && adduser -S bistrolink -G bistrolink
