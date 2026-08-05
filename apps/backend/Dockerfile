@@ -6,9 +6,14 @@ WORKDIR /app
 COPY package*.json ./
 COPY apps/backend/package*.json ./apps/backend/
 
-RUN  npm pkg delete scripts.prepare && npm ci --workspace=apps/backend
+# npm ci SIN --omit=dev acá: necesitamos prisma (devDependency) para generar el cliente
+RUN npm pkg delete scripts.prepare && npm ci --workspace=apps/backend
 
 COPY apps/backend/ ./apps/backend/
+
+# Generar el cliente de Prisma UNA VEZ, acá en el builder. El resultado (node_modules/.prisma) se
+# copia después al stage de producción — ahí nunca se vuelve a invocar npx/prisma.
+RUN npx prisma@5.19.1 generate --schema=apps/backend/prisma/schema.prisma
 
 RUN npm run build --workspace=apps/backend
 
@@ -26,7 +31,12 @@ RUN npm pkg delete scripts.prepare && \
   node_modules/picomatch
 COPY --from=builder /app/apps/backend/dist ./dist
 COPY --from=builder /app/apps/backend/prisma ./prisma
-RUN npx prisma@5.19.1 generate
+
+# Cliente de Prisma ya generado en el builder — reemplaza el antiguo
+# `RUN npx prisma@5.19.1 generate` que se ejecutaba acá y arrastraba el CLI
+# completo de npm (tar, sigstore, adm-zip, brace-expansion) a la imagen final.
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+
 RUN addgroup -S bistrolink && adduser -S bistrolink -G bistrolink
 USER bistrolink
 EXPOSE 3001
