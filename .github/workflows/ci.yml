@@ -29,9 +29,8 @@ jobs:
     name: 🔍 Lint (ESLint + Prettier)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: "20"
           # cache: npm
@@ -47,9 +46,9 @@ jobs:
   #   name: 🧪 Tests unitarios (Jest)
   #   runs-on: ubuntu-latest
   #   steps:
-  #     - uses: actions/checkout@v4
+  #     - uses: actions/checkout@v7
 
-  #     - uses: actions/setup-node@v4
+  #     - uses: actions/setup-node@v7
   #       with:
   #         node-version: "20"
   #         cache: npm
@@ -73,9 +72,9 @@ jobs:
   #   name: 🤝 Tests de contrato (PactJS)
   #   runs-on: ubuntu-latest
   #   steps:
-  #     - uses: actions/checkout@v4
+  #     - uses: actions/checkout@v7
 
-  #     - uses: actions/setup-node@v4
+  #     - uses: actions/setup-node@v7
   #       with:
   #         node-version: "20"
   #         cache: npm
@@ -91,7 +90,7 @@ jobs:
     name: 🔐 Secretos (Gitleaks)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -101,7 +100,7 @@ jobs:
           GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
         run: |
           set -euo pipefail
-          VERSION=8.12.0
+          VERSION=8.30.1
           TMPDIR=$(mktemp -d)
           curl -sSL -o "${TMPDIR}/gitleaks.tar.gz" \
             "https://github.com/zricethezav/gitleaks/releases/download/v${VERSION}/gitleaks_${VERSION}_linux_x64.tar.gz"
@@ -117,7 +116,7 @@ jobs:
 
       - name: Subir reporte Gitleaks al Code Scanning
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: gitleaks-results
           category: "gitleaks"
@@ -127,17 +126,17 @@ jobs:
     name: 🛡️ SAST (CodeQL)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: CodeQL — init
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@v4
         with:
           languages: javascript
 
       - name: CodeQL — análisis
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@v4
         with:
           category: "/language:javascript"
           upload: always
@@ -162,9 +161,9 @@ jobs:
     name: 📦 Dependencias (Snyk)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "20"
           # cache: npm
@@ -186,7 +185,7 @@ jobs:
     # Cuando jest y pact esten prontos, agregarlos en needs!!
     needs: [lint]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Construir imagen API (NestJS)
         run: |
@@ -210,7 +209,7 @@ jobs:
             .
 
       - name: Trivy — escaneo imagen API
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           image-ref: ${{ env.IMAGE_API }}:${{ env.TAG }}
           severity: CRITICAL,HIGH
@@ -218,7 +217,7 @@ jobs:
           trivyignores: .trivyignore
 
       - name: Trivy — escaneo imagen Web
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           image-ref: ${{ env.IMAGE_WEB }}:${{ env.TAG }}
           severity: CRITICAL,HIGH
@@ -289,9 +288,9 @@ jobs:
   #   if: github.ref == 'refs/heads/develop'
   #   runs-on: ubuntu-latest
   #   steps:
-  #     - uses: actions/checkout@v4
+  #     - uses: actions/checkout@v7
 
-  #     - uses: actions/setup-node@v4
+  #     - uses: actions/setup-node@v7
   #       with:
   #         node-version: "20"
   #         cache: npm
