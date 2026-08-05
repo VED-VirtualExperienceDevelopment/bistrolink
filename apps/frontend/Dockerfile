@@ -30,11 +30,30 @@ FROM node:22-alpine AS production
 WORKDIR /app
 ENV NODE_ENV=production
 RUN addgroup -S bistrolink && adduser -S bistrolink -G bistrolink
+
+# Con outputFileTracingRoot apuntando a la raíz del monorepo, "standalone"
+# replica la ruta completa desde esa raíz: server.js queda en
+# standalone/apps/frontend/server.js, no en standalone/server.js.
+# .next/static y public tampoco se incluyen automáticamente en standalone
+# (documentado por Next.js) — hay que copiarlos a mano en la ruta anidada
+# equivalente para que server.js los encuentre en runtime.
 COPY --from=builder /app/apps/frontend/.next/standalone ./
-COPY --from=builder /app/apps/frontend/.next/static ./.next/static
-COPY --from=builder /app/apps/frontend/public ./public
+COPY --from=builder /app/apps/frontend/.next/static ./apps/frontend/.next/static
+COPY --from=builder /app/apps/frontend/public ./apps/frontend/public
+
+# node:22-alpine trae el CLI de npm empaquetado (con tar, sigstore,
+# brace-expansion, ip-address como dependencias internas), aunque este stage
+# nunca lo use — solo copiamos el build de Next.js standalone ya compilado y
+# corremos "node server.js". Lo borramos para que Trivy deje de marcar CVEs
+# de un binario que ni siquiera se ejecuta en runtime.
+RUN rm -rf /usr/local/lib/node_modules/npm \
+  /usr/local/lib/node_modules/corepack \
+  /usr/local/bin/npm \
+  /usr/local/bin/npx \
+  /usr/local/bin/corepack
+
 USER bistrolink
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
   CMD wget -qO- http://localhost:3000/api/health || exit 1
-CMD ["node", "server.js"]
+CMD ["node", "apps/frontend/server.js"]
