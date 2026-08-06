@@ -141,3 +141,6 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+apps/backend/src/**/*.js
+apps/backend/src/**/*.js.map

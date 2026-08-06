@@ -30,6 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+
       - uses: actions/setup-node@v7
         with:
           node-version: "20"
@@ -42,30 +43,42 @@ jobs:
         run: npm run lint
 
   # ── JOB 2: TESTS UNITARIOS (Jest) ─────────────────────────────────────────
-  # jest:
-  #   name: 🧪 Tests unitarios (Jest)
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v7
+  jest:
+    name: 🧪 Tests unitarios (Jest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
 
-  #     - uses: actions/setup-node@v7
-  #       with:
-  #         node-version: "20"
-  #         cache: npm
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+          cache: npm
 
-  #     - name: Instalar dependencias
-  #       run: npm ci
+      - name: Instalar dependencias
+        run: npm ci
+        env:
+          # prisma generate corre solo (postinstall) y necesita que la variable
+          # exista, aunque no se conecte a ninguna base real durante "generate".
+          DATABASE_URL: "postgresql://dummy:dummy@localhost:5432/dummy"
 
-  #     - name: Tests Jest (cobertura mínima 80%)
-  #       run: npm run test:cov --workspace=backend
-  #       env:
-  #         CI: true
+      - name: Tests Jest (cobertura mínima 80%)
+        run: npm run test:cov --workspace=backend
+        env:
+          CI: true
 
-  #     - name: Upload results to Testiny
-  #       if: always()
-  #       env:
-  #         TESTINY_API_KEY: ${{ secrets.TESTINY_API_KEY }}
-  #       run: npx -y @testiny/cli automation --format junit --input coverage/junit.xml --project "BISTROLINK-VED"
+      - name: Upload results to Testiny
+        if: always()
+        continue-on-error: true
+        env:
+          TESTINY_API_KEY: ${{ secrets.TESTINY_API_KEY }}
+        run: npx -y @testiny/cli automation --project "BLVED" --source "backend-unit-tests" --junit apps/backend/coverage/junit.xml
+
+  # NOTA: este job corre solo los tests UNITARIOS (npm run test:cov), no el
+  # test:e2e de aislamiento multi-tenant (tenant-isolation.e2e-spec.ts) — ese
+  # necesita Keycloak + Postgres reales con el realm importado y 3 fixtures
+  # de usuario ya creados (Cocina, sin-tenant, tenant B), y todavía no tiene
+  # su propio job de CI con service containers + script de seed. Queda
+  # pendiente como paquete aparte (correspondería a EDT 1.8.6, corrido en CI).
 
   # ── JOB 3: TESTS DE CONTRATO (PactJS) ────────────────────────────────────
   # pact:
@@ -100,6 +113,8 @@ jobs:
           GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
         run: |
           set -euo pipefail
+          # v8.12.0 -> v8.30.1: última versión estable (Gitleaks quedó feature-complete,
+          # solo recibe parches de seguridad; conviene revisar este número cada tanto).
           VERSION=8.30.1
           TMPDIR=$(mktemp -d)
           curl -sSL -o "${TMPDIR}/gitleaks.tar.gz" \
@@ -146,7 +161,7 @@ jobs:
     name: 📊 SAST (SonarCloud)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -182,8 +197,8 @@ jobs:
   build:
     name: 🐳 Build + Escaneo de imágenes (Trivy)
     runs-on: ubuntu-latest
-    # Cuando jest y pact esten prontos, agregarlos en needs!!
-    needs: [lint]
+    # pact sigue comentado — agregarlo a needs cuando esté listo.
+    needs: [lint, jest]
     steps:
       - uses: actions/checkout@v7
 
@@ -209,6 +224,10 @@ jobs:
             .
 
       - name: Trivy — escaneo imagen API
+        # @master -> @0.35.0: fijar a una versión concreta. En marzo de 2026 se
+        # reescribieron 75 de 76 tags de este repo con un payload malicioso que
+        # robaba secrets del pipeline; @master queda expuesto a que el próximo
+        # push del mantenedor se ejecute acá sin revisión de nadie del equipo.
         uses: aquasecurity/trivy-action@0.35.0
         with:
           image-ref: ${{ env.IMAGE_API }}:${{ env.TAG }}

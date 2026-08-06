@@ -13,7 +13,9 @@ import { PrismaClient } from '@prisma/client';
  */
 @Injectable({ scope: Scope.REQUEST })
 export class TenantPrismaService {
-  private readonly prisma = new PrismaClient();
+  private readonly prisma = new PrismaClient({
+    datasourceUrl: process.env.RUNTIME_DATABASE_URL,
+  });
 
   async runInTenantContext<T>(
     tenantId: string,
