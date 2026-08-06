@@ -70,7 +70,7 @@ jobs:
         if: always()
         env:
           TESTINY_API_KEY: ${{ secrets.TESTINY_API_KEY }}
-        run: npx -y @testiny/cli automation --project "BLVED" --source "backend-unit-tests" --junit coverage/junit.xml
+        run: npx -y @testiny/cli automation --project "BLVED" --source "backend-unit-tests" --junit apps/backend/coverage/junit.xml
 
   # NOTA: este job corre solo los tests UNITARIOS (npm run test:cov), no el
   # test:e2e de aislamiento multi-tenant (tenant-isolation.e2e-spec.ts) — ese
