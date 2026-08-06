@@ -7,6 +7,7 @@ import { AuthModule } from './auth/auth.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { TestController } from './test/test.controller';
 import { MenuModule } from './menu/menu.module';
+import { UsuariosModule } from './usuarios/usuarios.module';
 @Module({
   imports: [
     LoggerModule.forRoot({
@@ -32,6 +33,7 @@ import { MenuModule } from './menu/menu.module';
     AuthModule,
     PrismaModule,
     MenuModule,
+    UsuariosModule,
   ],
   controllers: [AppController, HealthController, TestController],
   providers: [AppService],

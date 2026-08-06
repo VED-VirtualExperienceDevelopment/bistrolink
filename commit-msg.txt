@@ -1,0 +1,1 @@
+feat(BL-32): campo activo, condicion de carrera rf.19, compensacion en crear, mapeo errores keycloak
