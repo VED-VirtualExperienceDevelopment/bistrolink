@@ -42,7 +42,7 @@ jobs:
       - name: Lint
         run: npm run lint
 
-  # ── JOB 2: TESTS UNITARIOS (Jest) ─────────────────────────────────────────
+# ── JOB 2: TESTS UNITARIOS (Jest) ─────────────────────────────────────────
    jest:
     name: 🧪 Tests unitarios (Jest)
     runs-on: ubuntu-latest
@@ -51,15 +51,15 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-           node-version: "20"
-           cache: npm
+          node-version: "20"
+          cache: npm
       - name: Instalar dependencias
         run: npm ci
 
       - name: Tests Jest (cobertura mínima 80%)
         run: npm run test:cov --workspace=backend
         env:
-        CI: true
+         CI: true
 
       - name: Upload results to Testiny
         if: always()
