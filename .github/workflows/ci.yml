@@ -24,6 +24,7 @@ env:
   TAG: ${{ github.sha }}
 
 jobs:
+  
   # ── JOB 1: LINT ───────────────────────────────────────────────────────────
   lint:
     name: 🔍 Lint (ESLint + Prettier)
