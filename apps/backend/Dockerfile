@@ -7,7 +7,7 @@ COPY package*.json ./
 COPY apps/backend/package*.json ./apps/backend/
 
 # npm ci SIN --omit=dev acá: necesitamos prisma (devDependency) para generar el cliente
-RUN npm pkg delete scripts.prepare && npm ci --workspace=apps/backend
+RUN npm pkg delete scripts.prepare && npm ci --workspace=apps/backend --ignore-scripts
 
 COPY apps/backend/ ./apps/backend/
 
