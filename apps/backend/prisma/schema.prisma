@@ -3,7 +3,7 @@
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  url = env("DATABASE_URL")
 }
 
 generator client {
@@ -144,8 +144,10 @@ model ItemCarta {
   tenantId    String   @map("tenant_id") @db.Uuid
   categoriaId String   @map("categoria_id") @db.Uuid
   nombre      String
+  descripcion String?
   precio      Decimal  @db.Decimal(10, 2)
   disponible  Boolean  @default(true)
+  imagenKey   String?  @map("imagen_key")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
