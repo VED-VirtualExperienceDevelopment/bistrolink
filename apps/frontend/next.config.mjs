@@ -7,6 +7,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const nextConfig = {
   output: "standalone",
   outputFileTracingRoot: path.join(__dirname, "../../"),
+  images: {
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "*.s3.*.amazonaws.com",
+      },
+    ],
+  },
 };
 
 export default nextConfig;
