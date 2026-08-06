@@ -68,6 +68,7 @@ jobs:
 
       - name: Upload results to Testiny
         if: always()
+        continue-on-error: true
         env:
           TESTINY_API_KEY: ${{ secrets.TESTINY_API_KEY }}
         run: npx -y @testiny/cli automation --project "BLVED" --source "backend-unit-tests" --junit apps/backend/coverage/junit.xml
