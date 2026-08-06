@@ -20,6 +20,7 @@ export class TenantPrismaService {
   async runInTenantContext<T>(
     tenantId: string,
     fn: (tx: PrismaClient) => Promise<T>,
+    options?: { timeout?: number; maxWait?: number },
   ): Promise<T> {
     if (!tenantId) {
       throw new Error('runInTenantContext: tenantId requerido');
@@ -31,6 +32,6 @@ export class TenantPrismaService {
         tenantId,
       );
       return fn(tx as unknown as PrismaClient);
-    });
+    }, options);
   }
 }

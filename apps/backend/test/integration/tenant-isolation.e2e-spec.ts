@@ -3,7 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 import request = require('supertest');
-import { AppModule } from '../src/app.module';
+import { AppModule } from '../../src/app.module';
 
 // ── Config de Keycloak para pedir tokens reales (password grant) ───────────
 const KEYCLOAK_URL = process.env.KEYCLOAK_URL ?? 'http://localhost:8080';
@@ -51,6 +51,16 @@ async function getToken(username: string, password: string): Promise<string> {
 describe('Aislamiento multi-tenant (Keycloak + RLS) - e2e', () => {
   let app: INestApplication;
 
+  // Igual que en usuarios.e2e-spec.ts: saltamos explícitamente con it.skip
+  // cuando falta una fixture, en vez de retornar en silencio desde adentro
+  // del test — así Jest reporta "skipped" y no "passed" cuando no se pudo
+  // verificar nada.
+  const itConAdmin = ADMIN_PASS ? it : it.skip;
+  const itConCocina = COCINA_USER && COCINA_PASS ? it : it.skip;
+  const itSinTenant = NO_TENANT_USER && NO_TENANT_PASS ? it : it.skip;
+  const itConTenantB =
+    ADMIN_PASS && TENANT_B_USER && TENANT_B_PASS ? it : it.skip;
+
   beforeAll(async () => {
     const moduleRef: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
@@ -69,45 +79,39 @@ describe('Aislamiento multi-tenant (Keycloak + RLS) - e2e', () => {
   });
 
   // ── Caso base: ADMIN válido puede leer los datos de su propio tenant ──
-  it('un ADMIN autenticado puede leer los datos de su propio tenant (200)', async () => {
-    if (!ADMIN_PASS) {
-      console.warn(
-        'Saltando: falta TEST_ADMIN_PASSWORD en el entorno de test.',
-      );
-      return;
-    }
-    const token = await getToken(ADMIN_USER, ADMIN_PASS);
-    const res = await request(app.getHttpServer())
-      .get('/test/mi-tenant')
-      .set('Authorization', `Bearer ${token}`)
-      .expect(200);
-    expect(Array.isArray(res.body)).toBe(true);
-  });
+  itConAdmin(
+    'un ADMIN autenticado puede leer los datos de su propio tenant (200)',
+    async () => {
+      const token = await getToken(ADMIN_USER as string, ADMIN_PASS as string);
+      const res = await request(app.getHttpServer())
+        .get('/test/mi-tenant')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(Array.isArray(res.body)).toBe(true);
+    },
+  );
 
   // ── Requiere un usuario de prueba con rol COCINA (ver Setup requerido) ──
-  it('un rol COCINA recibe 403 en un endpoint solo-admin', async () => {
-    if (!COCINA_USER || !COCINA_PASS) {
-      console.warn(
-        'Saltando: faltan TEST_COCINA_USERNAME/TEST_COCINA_PASSWORD.',
+  itConCocina(
+    'un rol COCINA recibe 403 en un endpoint solo-admin',
+    async () => {
+      const token = await getToken(
+        COCINA_USER as string,
+        COCINA_PASS as string,
       );
-      return;
-    }
-    const token = await getToken(COCINA_USER, COCINA_PASS);
-    await request(app.getHttpServer())
-      .get('/test/solo-admin')
-      .set('Authorization', `Bearer ${token}`)
-      .expect(403);
-  });
+      await request(app.getHttpServer())
+        .get('/test/solo-admin')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+    },
+  );
 
   // ── Requiere un usuario de prueba SIN el atributo tenant_id (ver Setup) ──
-  it('un usuario sin tenant_id es rechazado (401)', async () => {
-    if (!NO_TENANT_USER || !NO_TENANT_PASS) {
-      console.warn(
-        'Saltando: faltan TEST_NO_TENANT_USERNAME/TEST_NO_TENANT_PASSWORD.',
-      );
-      return;
-    }
-    const token = await getToken(NO_TENANT_USER, NO_TENANT_PASS);
+  itSinTenant('un usuario sin tenant_id es rechazado (401)', async () => {
+    const token = await getToken(
+      NO_TENANT_USER as string,
+      NO_TENANT_PASS as string,
+    );
     await request(app.getHttpServer())
       .get('/test/mi-tenant')
       .set('Authorization', `Bearer ${token}`)
@@ -115,29 +119,28 @@ describe('Aislamiento multi-tenant (Keycloak + RLS) - e2e', () => {
   });
 
   // ── Requiere un segundo tenant + usuario (ver Setup requerido) ──
-  it('el tenant B no ve datos del tenant A (aislamiento cruzado)', async () => {
-    if (!ADMIN_PASS || !TENANT_B_USER || !TENANT_B_PASS) {
-      console.warn(
-        'Saltando: faltan TEST_TENANT_B_USERNAME/TEST_TENANT_B_PASSWORD (o TEST_ADMIN_PASSWORD).',
+  itConTenantB(
+    'el tenant B no ve datos del tenant A (aislamiento cruzado)',
+    async () => {
+      const tokenA = await getToken(ADMIN_USER as string, ADMIN_PASS as string);
+      const resA = await request(app.getHttpServer())
+        .get('/test/mi-tenant')
+        .set('Authorization', `Bearer ${tokenA}`)
+        .expect(200);
+      const idsA = resA.body.map((r: { id: string }) => r.id);
+
+      const tokenB = await getToken(
+        TENANT_B_USER as string,
+        TENANT_B_PASS as string,
       );
-      return;
-    }
+      const resB = await request(app.getHttpServer())
+        .get('/test/mi-tenant')
+        .set('Authorization', `Bearer ${tokenB}`)
+        .expect(200);
+      const idsB = resB.body.map((r: { id: string }) => r.id);
 
-    const tokenA = await getToken(ADMIN_USER, ADMIN_PASS);
-    const resA = await request(app.getHttpServer())
-      .get('/test/mi-tenant')
-      .set('Authorization', `Bearer ${tokenA}`)
-      .expect(200);
-    const idsA = resA.body.map((r: { id: string }) => r.id);
-
-    const tokenB = await getToken(TENANT_B_USER, TENANT_B_PASS);
-    const resB = await request(app.getHttpServer())
-      .get('/test/mi-tenant')
-      .set('Authorization', `Bearer ${tokenB}`)
-      .expect(200);
-    const idsB = resB.body.map((r: { id: string }) => r.id);
-
-    // Ningún id del tenant A debería aparecer en la respuesta del tenant B
-    expect(idsA.some((id: string) => idsB.includes(id))).toBe(false);
-  });
+      // Ningún id del tenant A debería aparecer en la respuesta del tenant B
+      expect(idsA.some((id: string) => idsB.includes(id))).toBe(false);
+    },
+  );
 });
