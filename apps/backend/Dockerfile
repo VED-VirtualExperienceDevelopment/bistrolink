@@ -25,7 +25,7 @@ ENV NODE_ENV=production
 COPY package*.json ./
 COPY apps/backend/package*.json ./apps/backend/
 RUN npm pkg delete scripts.prepare && \
-  npm ci --workspace=apps/backend --omit=dev && \
+  npm ci --workspace=apps/backend --omit=dev --ignore-scripts && \
   npm cache clean --force && \
   rm -rf node_modules/.cache \
   node_modules/lodash \
