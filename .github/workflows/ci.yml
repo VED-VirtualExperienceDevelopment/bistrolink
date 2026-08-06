@@ -42,30 +42,29 @@ jobs:
         run: npm run lint
 
   # ── JOB 2: TESTS UNITARIOS (Jest) ─────────────────────────────────────────
-  # jest:
-  #   name: 🧪 Tests unitarios (Jest)
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v7
+   jest:
+    name: 🧪 Tests unitarios (Jest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
 
-  #     - uses: actions/setup-node@v7
-  #       with:
-  #         node-version: "20"
-  #         cache: npm
+      - uses: actions/setup-node@v7
+        with:
+           node-version: "20"
+           cache: npm
+      - name: Instalar dependencias
+        run: npm ci
 
-  #     - name: Instalar dependencias
-  #       run: npm ci
+      - name: Tests Jest (cobertura mínima 80%)
+        run: npm run test:cov --workspace=backend
+        env:
+        CI: true
 
-  #     - name: Tests Jest (cobertura mínima 80%)
-  #       run: npm run test:cov --workspace=backend
-  #       env:
-  #         CI: true
-
-  #     - name: Upload results to Testiny
-  #       if: always()
-  #       env:
-  #         TESTINY_API_KEY: ${{ secrets.TESTINY_API_KEY }}
-  #       run: npx -y @testiny/cli automation --format junit --input coverage/junit.xml --project "BISTROLINK-VED"
+      - name: Upload results to Testiny
+        if: always()
+        env:
+           TESTINY_API_KEY: ${{ secrets.TESTINY_API_KEY }}
+        run: npx -y @testiny/cli automation --format junit --input coverage/junit.xml --project "BISTROLINK-VED"
 
   # ── JOB 3: TESTS DE CONTRATO (PactJS) ────────────────────────────────────
   # pact:
@@ -183,7 +182,7 @@ jobs:
     name: 🐳 Build + Escaneo de imágenes (Trivy)
     runs-on: ubuntu-latest
     # Cuando jest y pact esten prontos, agregarlos en needs!!
-    needs: [lint]
+    needs: [lint, jest]
     steps:
       - uses: actions/checkout@v7
 

@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
-import * as request from 'supertest';
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+import request = require('supertest');
 import { AppModule } from './../src/app.module';
 
 describe('AppController (e2e)', () => {

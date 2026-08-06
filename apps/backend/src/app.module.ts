@@ -5,6 +5,7 @@ import { HealthController } from './health.controller';
 import { LoggerModule } from 'nestjs-pino';
 import { AuthModule } from './auth/auth.module';
 import { PrismaModule } from './prisma/prisma.module';
+import {TestController} from './test/test.controller';
 @Module({
   imports: [
     LoggerModule.forRoot({
@@ -30,7 +31,7 @@ import { PrismaModule } from './prisma/prisma.module';
     AuthModule,
     PrismaModule,
   ],
-  controllers: [AppController, HealthController],
+  controllers: [AppController, HealthController, TestController],
   providers: [AppService],
 })
 export class AppModule {}
