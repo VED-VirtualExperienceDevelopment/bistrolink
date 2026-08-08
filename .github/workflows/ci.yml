@@ -22,6 +22,12 @@ env:
   IMAGE_API: ghcr.io/ved-virtualexperiencedevelopment/bistrolink-api
   IMAGE_WEB: ghcr.io/ved-virtualexperiencedevelopment/bistrolink-web
   TAG: ${{ github.sha }}
+  # prisma.config.ts usa env() de 'prisma/config', que desde Prisma 6 valida
+  # de forma estricta que DATABASE_URL exista — incluso en "prisma generate",
+  # que no necesita conexión real. Se define acá (nivel workflow) para que
+  # TODOS los jobs que corren npm install/ci (postinstall dispara ese
+  # generate) lo tengan disponible, no solo el job "jest".
+  DATABASE_URL: "postgresql://dummy:dummy@localhost:5432/dummy"
 
 jobs:
   # ── JOB 1: LINT ───────────────────────────────────────────────────────────
@@ -65,6 +71,14 @@ jobs:
         run: npm run test:cov --workspace=backend
         env:
           CI: true
+          # keycloak-admin.service.spec.ts instancia KeycloakAdminService sin
+          # mockear nada y sí ejercita getAdminToken() (con fetch mockeado) —
+          # necesita que el getter clientSecret encuentre algo, aunque sea
+          # dummy, para no lanzar. No se conecta a un Keycloak real en CI.
+          KEYCLOAK_URL: "http://localhost:8080"
+          KEYCLOAK_REALM: "bistrolink"
+          KEYCLOAK_CLIENT_ID: "bistrolink-backend-test"
+          KEYCLOAK_CLIENT_SECRET: "dummy-secret-for-ci"
 
       - name: Upload results to Testiny
         if: always()

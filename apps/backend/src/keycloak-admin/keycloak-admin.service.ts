@@ -4,16 +4,6 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 
-const KEYCLOAK_URL = process.env.KEYCLOAK_URL ?? 'http://localhost:8080';
-const REALM = process.env.KEYCLOAK_REALM ?? 'bistrolink';
-const CLIENT_ID = process.env.KEYCLOAK_CLIENT_ID ?? 'bistrolink-backend';
-const CLIENT_SECRET = process.env.KEYCLOAK_CLIENT_SECRET;
-if (!CLIENT_SECRET) {
-  throw new Error(
-    'Falta KEYCLOAK_CLIENT_SECRET en el .env — KeycloakAdminService no puede autenticarse sin esto.',
-  );
-}
-
 export interface KeycloakUserPayload {
   username: string;
   email?: string;
@@ -29,16 +19,44 @@ export interface KeycloakUserPayload {
  */
 @Injectable()
 export class KeycloakAdminService {
+  // Se leen de forma perezosa (no a nivel de módulo) para que el archivo se
+  // pueda importar y la clase se pueda instanciar sin que exista todavía
+  // KEYCLOAK_CLIENT_SECRET — por ejemplo desde un TestingModule de Nest en
+  // tests unitarios que no llegan a invocar ningún método real. El error
+  // solo se lanza si efectivamente se intenta pedir un token de admin sin
+  // el secreto configurado.
+  private get keycloakUrl(): string {
+    return process.env.KEYCLOAK_URL ?? 'http://localhost:8080';
+  }
+
+  private get realm(): string {
+    return process.env.KEYCLOAK_REALM ?? 'bistrolink';
+  }
+
+  private get clientId(): string {
+    return process.env.KEYCLOAK_CLIENT_ID ?? 'bistrolink-backend';
+  }
+
+  private get clientSecret(): string {
+    const secret = process.env.KEYCLOAK_CLIENT_SECRET;
+    if (!secret) {
+      throw new Error(
+        'Falta KEYCLOAK_CLIENT_SECRET en el .env — KeycloakAdminService no puede autenticarse sin esto.',
+      );
+    }
+    return secret;
+  }
+
   private async getAdminToken(): Promise<string> {
     const res = await fetch(
-      `${KEYCLOAK_URL}/realms/${REALM}/protocol/openid-connect/token`,
+      `${this.keycloakUrl}/realms/${this.realm}/protocol/openid-connect/token`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({
           grant_type: 'client_credentials',
-          client_id: CLIENT_ID,
-          client_secret: CLIENT_SECRET,
+          client_id: this.clientId,
+          client_secret: this.clientSecret,
         }),
       },
     );
@@ -53,14 +71,17 @@ export class KeycloakAdminService {
 
   private async adminFetch(path: string, init: RequestInit = {}) {
     const token = await this.getAdminToken();
-    const res = await fetch(`${KEYCLOAK_URL}/admin/realms/${REALM}${path}`, {
-      ...init,
-      headers: {
-        ...init.headers,
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
+    const res = await fetch(
+      `${this.keycloakUrl}/admin/realms/${this.realm}${path}`,
+      {
+        ...init,
+        headers: {
+          ...init.headers,
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
       },
-    });
+    );
     return res;
   }
 
