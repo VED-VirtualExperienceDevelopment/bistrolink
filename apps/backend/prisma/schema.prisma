@@ -3,7 +3,7 @@
 
 datasource db {
   provider = "postgresql"
-  url = env("DATABASE_URL")
+  url      = env("DATABASE_URL")
 }
 
 generator client {
@@ -90,6 +90,8 @@ model Usuario {
   tenantId      String     @map("tenant_id") @db.Uuid
   restauranteId String     @map("restaurante_id") @db.Uuid
   keycloakId    String     @unique @map("keycloak_id") @db.Uuid
+  username      String?
+  email         String?
   rol           UsuarioRol
   activo        Boolean    @default(true)
   createdAt     DateTime   @default(now()) @map("created_at")
