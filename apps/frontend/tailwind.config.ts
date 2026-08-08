@@ -1,25 +1,98 @@
-import type { Config } from "tailwindcss";
+import type { Config } from 'tailwindcss';
 
-const config: Config = {
+// Tokens transcriptos 1:1 desde vistas_admin_analiticas.html (el prototipo
+// ya renderizado) — mismas keys planas, para no romper clases por mismatch
+// de nombres al reusar patrones de ese archivo.
+export default {
   content: [
-    "./src/pages/**/*.{js,ts,jsx,tsx,mdx}",
-    "./src/components/**/*.{js,ts,jsx,tsx,mdx}",
-    "./src/app/**/*.{js,ts,jsx,tsx,mdx}",
+    './src/pages/**/*.{js,ts,jsx,tsx,mdx}',
+    './src/components/**/*.{js,ts,jsx,tsx,mdx}',
+    './src/app/**/*.{js,ts,jsx,tsx,mdx}',
   ],
+  darkMode: 'class',
   theme: {
     extend: {
       colors: {
-        background: "var(--background)",
-        foreground: "var(--foreground)",
-        brand: {
-          50: "#f5f3ff",
-          100: "#ede9fe",
-          600: "#7c3aed",
-          700: "#6d28d9",
-        },
+        'surface-tint': '#6750a4',
+        'surface-container-low': '#f7f2fa',
+        'on-error': '#ffffff',
+        background: '#fdf8ff',
+        'tertiary-container': '#c9a74d',
+        'secondary-fixed-dim': '#cdc0e8',
+        'on-tertiary-fixed': '#241a00',
+        'on-primary-fixed': '#22005c',
+        'on-primary-container': '#c0a7ff',
+        'inverse-surface': '#312f35',
+        'on-tertiary-fixed-variant': '#594400',
+        'on-secondary-fixed-variant': '#4a4263',
+        'primary-container': '#4f378a',
+        'outline-variant': '#cbc4d2',
+        'on-surface-variant': '#494551',
+        outline: '#7a7582',
+        secondary: '#63597c',
+        'error-container': '#ffdad6',
+        'on-tertiary': '#ffffff',
+        tertiary: '#765b00',
+        'surface-bright': '#fdf8ff',
+        'secondary-fixed': '#e8ddff',
+        error: '#ba1a1a',
+        'surface-container-highest': '#e6e1e9',
+        'on-surface': '#1c1b20',
+        'on-secondary-container': '#635a7c',
+        'on-primary': '#ffffff',
+        'secondary-container': '#e0d4fd',
+        'on-tertiary-container': '#503d00',
+        'surface-container-high': '#ebe6ee',
+        'on-background': '#1c1b20',
+        'surface-variant': '#e6e1e9',
+        'primary-fixed': '#e9ddff',
+        surface: '#fdf8ff',
+        'tertiary-fixed-dim': '#e7c365',
+        'surface-dim': '#ddd8e0',
+        'primary-fixed-dim': '#d0bcff',
+        'inverse-on-surface': '#f4eff7',
+        'surface-container-lowest': '#ffffff',
+        'on-error-container': '#93000a',
+        'on-secondary-fixed': '#1e1635',
+        'surface-container': '#f1ecf4',
+        primary: '#381e72',
+        'inverse-primary': '#d0bcff',
+        'tertiary-fixed': '#ffdf93',
+        'on-secondary': '#ffffff',
+        'on-primary-fixed-variant': '#4f378a',
+      },
+      borderRadius: {
+        DEFAULT: '0.25rem',
+        lg: '0.5rem',
+        xl: '0.75rem',
+        full: '9999px',
+      },
+      spacing: {
+        unit: '4px',
+        'margin-desktop': '24px',
+        'container-max': '1280px',
+        gutter: '16px',
+        'margin-mobile': '16px',
+      },
+      fontFamily: {
+        sans: ['Plus Jakarta Sans', 'system-ui', 'sans-serif'],
+      },
+      fontSize: {
+        'body-sm': ['12px', { lineHeight: '16px', fontWeight: '400' }],
+        'headline-lg-mobile': ['24px', { lineHeight: '32px', fontWeight: '600' }],
+        'headline-md': ['24px', { lineHeight: '32px', fontWeight: '600' }],
+        'label-sm': ['10px', { lineHeight: '14px', letterSpacing: '0.05em', fontWeight: '600' }],
+        'headline-lg': ['32px', { lineHeight: '40px', fontWeight: '600' }],
+        'body-lg': ['16px', { lineHeight: '24px', fontWeight: '400' }],
+        'body-md': ['14px', { lineHeight: '20px', fontWeight: '400' }],
+        'headline-sm': ['20px', { lineHeight: '28px', fontWeight: '600' }],
+        'label-md': ['12px', { lineHeight: '16px', letterSpacing: '0.05em', fontWeight: '600' }],
+        display: ['48px', { lineHeight: '56px', letterSpacing: '-0.02em', fontWeight: '700' }],
+      },
+      maxWidth: {
+        container: '1280px',
       },
     },
   },
   plugins: [],
-};
-export default config;
+} satisfies Config;

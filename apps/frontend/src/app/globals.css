@@ -17,11 +17,21 @@
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
 }
 
 @layer utilities {
   .text-balance {
     text-wrap: balance;
   }
+}
+
+/* Material Symbols (íconos) — usados en el panel de admin (sidebar, header,
+   diálogos). Sin esto, los <span className="material-symbols-outlined">
+   muestran el nombre del ícono como texto plano en vez del glifo. */
+.material-symbols-outlined {
+  font-variation-settings:
+    'FILL' 0,
+    'wght' 400,
+    'GRAD' 0,
+    'opsz' 24;
 }
