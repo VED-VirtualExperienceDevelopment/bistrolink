@@ -10,6 +10,12 @@ import { PrismaClient } from '@prisma/client';
  * de un request (o del handler que la use) debe correr a través de
  * runInTenantContext() para que las políticas RLS de la migración
  * 20260802150000_enable_rls tengan de dónde leer current_setting('app.tenant_id').
+ *
+ * NOTA: nos quedamos en Prisma 6.x (no 7) — ver ticket de upgrade a Prisma 7
+ * pendiente. datasourceUrl sigue siendo válido en 6.x; los driver adapters
+ * (@prisma/adapter-pg) recién son obligatorios en 7, y hoy mismo tienen un
+ * desajuste de versiones entre el paquete del adapter y el client generado,
+ * así que no vale la pena introducirlos todavía.
  */
 @Injectable({ scope: Scope.REQUEST })
 export class TenantPrismaService {

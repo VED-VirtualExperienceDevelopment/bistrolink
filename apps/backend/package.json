@@ -32,7 +32,6 @@
     "@nestjs/platform-express": "^10.0.0",
     "@nestjs/platform-socket.io": "^10.3.10",
     "@nestjs/websockets": "^10.3.10",
-    "@prisma/adapter-pg": "^5.19.1",
     "@prisma/client": "^6.19.3",
     "@sentry/nestjs": "^8.30.0",
     "class-transformer": "^0.5.1",
