@@ -37,10 +37,24 @@ export function Dialog({ open, onClose, title, children }: DialogProps) {
 
   if (!open) return null;
 
+  // Cerrar al hacer clic en el fondo (no en el panel). En vez de un onClick
+  // "stopPropagation" en el panel (que dispara la regla de accesibilidad
+  // click-events-have-key-events al no tener un manejador de teclado
+  // equivalente), comparamos target === currentTarget acá: solo cierra si
+  // el clic fue directamente sobre el fondo, no si vino de un hijo.
+  const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.target === e.currentTarget) onClose();
+  };
+  const handleBackdropKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Escape' || e.key === 'Enter') onClose();
+  };
+
   return (
     <div
+      role="presentation"
+      onClick={handleBackdropClick}
+      onKeyDown={handleBackdropKeyDown}
       className="fixed inset-0 z-50 flex items-center justify-center bg-on-surface/40 p-4"
-      onClick={onClose}
     >
       <div
         ref={panelRef}
@@ -48,7 +62,6 @@ export function Dialog({ open, onClose, title, children }: DialogProps) {
         aria-modal="true"
         aria-labelledby="dialog-title"
         tabIndex={-1}
-        onClick={(e) => e.stopPropagation()}
         className="w-full max-w-md rounded-xl border border-outline-variant bg-surface-container-lowest p-6 shadow-lg outline-none"
       >
         <div className="mb-4 flex items-start justify-between">
