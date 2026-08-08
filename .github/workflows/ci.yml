@@ -22,6 +22,12 @@ env:
   IMAGE_API: ghcr.io/ved-virtualexperiencedevelopment/bistrolink-api
   IMAGE_WEB: ghcr.io/ved-virtualexperiencedevelopment/bistrolink-web
   TAG: ${{ github.sha }}
+  # prisma.config.ts usa env() de 'prisma/config', que desde Prisma 6 valida
+  # de forma estricta que DATABASE_URL exista — incluso en "prisma generate",
+  # que no necesita conexión real. Se define acá (nivel workflow) para que
+  # TODOS los jobs que corren npm install/ci (postinstall dispara ese
+  # generate) lo tengan disponible, no solo el job "jest".
+  DATABASE_URL: "postgresql://dummy:dummy@localhost:5432/dummy"
 
 jobs:
   # ── JOB 1: LINT ───────────────────────────────────────────────────────────
