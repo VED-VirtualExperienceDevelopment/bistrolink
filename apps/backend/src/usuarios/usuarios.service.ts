@@ -9,6 +9,8 @@ import { randomBytes } from 'crypto';
 import { PrismaClient } from '@prisma/client';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { KeycloakAdminService } from '../keycloak-admin/keycloak-admin.service';
+import { AuditLogService } from '../audit-log/audit-log.service';
+import { AuditAction } from '../audit-log/audit-action.enum';
 import { CreateUsuarioDto } from './dto/create-usuario.dto';
 import { UpdateUsuarioDto } from './dto/update-usuario.dto';
 
@@ -19,6 +21,7 @@ export class UsuariosService {
   constructor(
     private readonly tenantPrisma: TenantPrismaService,
     private readonly keycloakAdmin: KeycloakAdminService,
+    private readonly auditLog: AuditLogService,
   ) {}
 
   async listar(tenantId: string) {
@@ -38,7 +41,11 @@ export class UsuariosService {
     );
   }
 
-  async crear(tenantId: string, dto: CreateUsuarioDto) {
+  async crear(
+    tenantId: string,
+    actorKeycloakId: string,
+    dto: CreateUsuarioDto,
+  ) {
     // Verificar que el restaurante indicado pertenezca al tenant del Admin
     // que hace la request. RLS ya filtra esta query por tenant_id, así que
     // si el restaurante es de otro tenant, simplemente no aparece acá —
@@ -83,6 +90,17 @@ export class UsuariosService {
           }),
       );
 
+      // [S] DoD HU-013: alta de cuenta auditada en Pino, nivel INFO.
+      // El campo `rol` en el detalle permite filtrar específicamente las
+      // altas de cuentas Administrador en Grafana Loki.
+      this.auditLog.registrar({
+        action: AuditAction.USUARIO_CREADO,
+        tenantId,
+        actorKeycloakId,
+        targetUsuarioId: usuario.id,
+        detalle: { rol: usuario.rol, restauranteId: usuario.restauranteId },
+      });
+
       return { ...usuario, temporaryPassword };
     } catch (error) {
       // Compensación: la identidad en Keycloak ya existe, pero algo falló
@@ -106,37 +124,58 @@ export class UsuariosService {
 
   async actualizarRol(
     tenantId: string,
+    actorKeycloakId: string,
     usuarioId: string,
     dto: UpdateUsuarioDto,
   ) {
-    return this.tenantPrisma.runInTenantContext(
+    const { actualizado, rolAnterior } =
+      await this.tenantPrisma.runInTenantContext(
+        tenantId,
+        async (tx) => {
+          // Advisory lock por tenant: serializa las operaciones que dependen
+          // del conteo de Admins activos (RF.19), para que dos requests
+          // concurrentes no lean el mismo conteo antes de que la primera
+          // termine de escribir su cambio.
+          await this.lockTenant(tx, tenantId);
+
+          const usuario = await this.obtenerOFallar(tx, usuarioId);
+
+          if (usuario.rol === 'ADMIN' && dto.rol !== 'ADMIN') {
+            await this.asegurarNoEsUltimoAdmin(tx, usuarioId);
+          }
+
+          await this.keycloakAdmin.assignRealmRole(usuario.keycloakId, dto.rol);
+
+          const actualizado = await tx.usuario.update({
+            where: { id: usuarioId },
+            data: { rol: dto.rol },
+          });
+
+          return { actualizado, rolAnterior: usuario.rol };
+        },
+        { timeout: 10_000 }, // margen extra: la transacción espera a Keycloak
+      );
+
+    // [S] DoD HU-013: todo cambio de rol se audita en Pino, nivel INFO —
+    // fuera de la transacción, para no loguear un cambio que terminó en
+    // rollback si algo posterior a esta línea fallara.
+    this.auditLog.registrar({
+      action: AuditAction.USUARIO_ROL_MODIFICADO,
       tenantId,
-      async (tx) => {
-        // Advisory lock por tenant: serializa las operaciones que dependen
-        // del conteo de Admins activos (RF.19), para que dos requests
-        // concurrentes no lean el mismo conteo antes de que la primera
-        // termine de escribir su cambio.
-        await this.lockTenant(tx, tenantId);
+      actorKeycloakId,
+      targetUsuarioId: usuarioId,
+      detalle: { rolAnterior, rolNuevo: actualizado.rol },
+    });
 
-        const usuario = await this.obtenerOFallar(tx, usuarioId);
-
-        if (usuario.rol === 'ADMIN' && dto.rol !== 'ADMIN') {
-          await this.asegurarNoEsUltimoAdmin(tx, usuarioId);
-        }
-
-        await this.keycloakAdmin.assignRealmRole(usuario.keycloakId, dto.rol);
-
-        return tx.usuario.update({
-          where: { id: usuarioId },
-          data: { rol: dto.rol },
-        });
-      },
-      { timeout: 10_000 }, // margen extra: la transacción espera a Keycloak
-    );
+    return actualizado;
   }
 
-  async desactivar(tenantId: string, usuarioId: string) {
-    return this.tenantPrisma.runInTenantContext(
+  async desactivar(
+    tenantId: string,
+    actorKeycloakId: string,
+    usuarioId: string,
+  ) {
+    const resultado = await this.tenantPrisma.runInTenantContext(
       tenantId,
       async (tx) => {
         await this.lockTenant(tx, tenantId);
@@ -144,7 +183,23 @@ export class UsuariosService {
         const usuario = await this.obtenerOFallar(tx, usuarioId);
 
         if (usuario.rol === 'ADMIN') {
-          await this.asegurarNoEsUltimoAdmin(tx, usuarioId);
+          try {
+            await this.asegurarNoEsUltimoAdmin(tx, usuarioId);
+          } catch (error) {
+            if (error instanceof ConflictException) {
+              // [S] DoD HU-013: el intento rechazado también es un evento
+              // de seguridad relevante (alguien intentó dejar el tenant
+              // sin Administrador) — se audita igual que el caso exitoso.
+              this.auditLog.registrar({
+                action: AuditAction.USUARIO_DESACTIVACION_RECHAZADA,
+                tenantId,
+                actorKeycloakId,
+                targetUsuarioId: usuarioId,
+                detalle: { rol: usuario.rol, motivo: 'ultimo_admin_activo' },
+              });
+            }
+            throw error;
+          }
         }
 
         // Si esto falla, la transacción entera hace rollback — el lock se
@@ -157,10 +212,20 @@ export class UsuariosService {
           data: { activo: false },
         });
 
-        return { desactivado: true, id: usuarioId };
+        return { desactivado: true, id: usuarioId, rol: usuario.rol };
       },
       { timeout: 10_000 },
     );
+
+    this.auditLog.registrar({
+      action: AuditAction.USUARIO_DESACTIVADO,
+      tenantId,
+      actorKeycloakId,
+      targetUsuarioId: usuarioId,
+      detalle: { rol: resultado.rol },
+    });
+
+    return { desactivado: resultado.desactivado, id: resultado.id };
   }
 
   private async obtenerOFallar(tx: PrismaClient, usuarioId: string) {

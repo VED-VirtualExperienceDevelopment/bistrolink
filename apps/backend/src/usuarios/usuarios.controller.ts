@@ -32,7 +32,9 @@ export class UsuariosController {
     @Req() req: { user: AuthenticatedUser },
     @Body() dto: CreateUsuarioDto,
   ) {
-    return this.usuariosService.crear(req.user.tenantId, dto);
+    // req.user.sub: ID de Keycloak del Administrador que ejecuta la acción
+    // (nunca del body) — es lo que AuditLogService registra como actor.
+    return this.usuariosService.crear(req.user.tenantId, req.user.sub, dto);
   }
 
   @Patch(':id')
@@ -41,11 +43,16 @@ export class UsuariosController {
     @Param('id') id: string,
     @Body() dto: UpdateUsuarioDto,
   ) {
-    return this.usuariosService.actualizarRol(req.user.tenantId, id, dto);
+    return this.usuariosService.actualizarRol(
+      req.user.tenantId,
+      req.user.sub,
+      id,
+      dto,
+    );
   }
 
   @Delete(':id')
   desactivar(@Req() req: { user: AuthenticatedUser }, @Param('id') id: string) {
-    return this.usuariosService.desactivar(req.user.tenantId, id);
+    return this.usuariosService.desactivar(req.user.tenantId, req.user.sub, id);
   }
 }
