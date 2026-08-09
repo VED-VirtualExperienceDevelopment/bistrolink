@@ -4,11 +4,11 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
-import { UsuariosService } from './usuarios.service';
-import { TenantPrismaService } from '../prisma/tenant-prisma.service';
-import { KeycloakAdminService } from '../keycloak-admin/keycloak-admin.service';
-import { AuditLogService } from '../audit-log/audit-log.service';
-import { AuditAction } from '../audit-log/audit-action.enum';
+import { UsuariosService } from '../../src/usuarios/usuarios.service';
+import { TenantPrismaService } from '../../src/prisma/tenant-prisma.service';
+import { KeycloakAdminService } from '../../src/keycloak-admin/keycloak-admin.service';
+import { AuditLogService } from '../../src/audit-log/audit-log.service';
+import { AuditAction } from '../../src/audit-log/audit-action.enum';
 
 const TENANT_ID = '554915d0-f7ed-4053-b841-56479df29fd9';
 const RESTAURANTE_ID = '87152395-a721-4651-99b8-f21075d1d8ae';
@@ -76,7 +76,7 @@ describe('UsuariosService', () => {
   const tx = () => (service as any).__tx;
 
   describe('crear', () => {
-    it('crea el usuario cuando el restaurante pertenece al tenant', async () => {
+    it('[TC-U-008] UsuariosService.crear crea el usuario cuando el restaurante pertenece al tenant', async () => {
       tx().restaurante.findUnique.mockResolvedValue({
         id: RESTAURANTE_ID,
         tenantId: TENANT_ID,
@@ -109,7 +109,7 @@ describe('UsuariosService', () => {
       expect(resultado.temporaryPassword).toBeDefined();
     });
 
-    it('rechaza con 403 si el restaurante no pertenece al tenant', async () => {
+    it('[TC-U-009] UsuariosService.crear rechaza con 403 si el restaurante no pertenece al tenant', async () => {
       // RLS ya filtra esta query — si el restaurante es de otro tenant,
       // simplemente no aparece, y el mock lo simula devolviendo null.
       tx().restaurante.findUnique.mockResolvedValue(null);
@@ -126,7 +126,7 @@ describe('UsuariosService', () => {
       expect(auditLog.registrar).not.toHaveBeenCalled();
     });
 
-    it('revierte el usuario en Keycloak si falla la creación en Postgres', async () => {
+    it('[TC-U-010] UsuariosService.crear revierte el usuario en Keycloak si falla la creación en Postgres', async () => {
       tx().restaurante.findUnique.mockResolvedValue({
         id: RESTAURANTE_ID,
         tenantId: TENANT_ID,
@@ -154,7 +154,7 @@ describe('UsuariosService', () => {
       expect(auditLog.registrar).not.toHaveBeenCalled();
     });
 
-    it('revierte el usuario en Keycloak si falla assignRealmRole', async () => {
+    it('[TC-U-011] UsuariosService.crear revierte el usuario en Keycloak si falla assignRealmRole', async () => {
       tx().restaurante.findUnique.mockResolvedValue({
         id: RESTAURANTE_ID,
         tenantId: TENANT_ID,
@@ -179,7 +179,7 @@ describe('UsuariosService', () => {
       expect(auditLog.registrar).not.toHaveBeenCalled();
     });
 
-    it('no oculta el error original aunque la compensación también falle', async () => {
+    it('[TC-U-012] UsuariosService.crear no oculta el error original aunque la compensación también falle', async () => {
       tx().restaurante.findUnique.mockResolvedValue({
         id: RESTAURANTE_ID,
         tenantId: TENANT_ID,
@@ -236,7 +236,7 @@ describe('UsuariosService', () => {
   });
 
   describe('desactivar (RF.19)', () => {
-    it('rechaza con 409 si es el único Admin del tenant, y audita el intento', async () => {
+    it('[TC-U-014] UsuariosService.desactivar rechaza con 409 si es el único Admin del tenant, y audita el intento', async () => {
       tx().usuario.findUnique.mockResolvedValue({
         id: ADMIN_A_ID,
         rol: 'ADMIN',
@@ -261,7 +261,7 @@ describe('UsuariosService', () => {
       );
     });
 
-    it('el conteo de RF.19 excluye Admins ya desactivados (activo: false)', async () => {
+    it('[TC-U-015] UsuariosService.desactivar el conteo de RF.19 excluye Admins ya desactivados (activo:false)', async () => {
       // Regresión del bug encontrado en auditoría: sin el filtro activo:true,
       // un Admin ya deshabilitado en una operación previa seguía contando
       // como "Admin disponible" para la siguiente desactivación/degradación,
@@ -282,7 +282,7 @@ describe('UsuariosService', () => {
       });
     });
 
-    it('permite desactivar un Admin si existe al menos otro Admin activo, y lo audita', async () => {
+    it('[TC-U-016] UsuariosService.desactivar permite desactivar un Admin si existe al menos otro Admin activo, y lo audita', async () => {
       tx().usuario.findUnique.mockResolvedValue({
         id: ADMIN_A_ID,
         rol: 'ADMIN',
@@ -325,7 +325,7 @@ describe('UsuariosService', () => {
       );
     });
 
-    it('permite desactivar un Mozo sin verificar la regla de Admins', async () => {
+    it('[TC-U-017] UsuariosService.desactivar permite desactivar un Mozo sin verificar la regla de Admins', async () => {
       tx().usuario.findUnique.mockResolvedValue({
         id: 'usuario-mozo',
         rol: 'MOZO',
@@ -347,7 +347,7 @@ describe('UsuariosService', () => {
       });
     });
 
-    it('devuelve 404 si el usuario no existe en el tenant', async () => {
+    it('[TC-U-018] UsuariosService.desactivar devuelve 404 si el usuario no existe en el tenant', async () => {
       tx().usuario.findUnique.mockResolvedValue(null);
 
       await expect(
@@ -355,7 +355,7 @@ describe('UsuariosService', () => {
       ).rejects.toThrow(NotFoundException);
     });
 
-    it('no marca activo: false en Postgres si Keycloak falla al desactivar', async () => {
+    it('[TC-U-019] UsuariosService.desactivar no marca activo:false en Postgres si Keycloak falla al desactivar', async () => {
       tx().usuario.findUnique.mockResolvedValue({
         id: 'usuario-mozo',
         rol: 'MOZO',
@@ -377,7 +377,7 @@ describe('UsuariosService', () => {
   });
 
   describe('actualizarRol (RF.19 al degradar un Admin)', () => {
-    it('rechaza con 409 si se intenta bajar de rol al único Admin', async () => {
+    it('[TC-U-020] UsuariosService.actualizarRol rechaza con 409 si se intenta bajar de rol al único Admin', async () => {
       tx().usuario.findUnique.mockResolvedValue({
         id: ADMIN_A_ID,
         rol: 'ADMIN',
@@ -397,7 +397,7 @@ describe('UsuariosService', () => {
       expect(auditLog.registrar).not.toHaveBeenCalled();
     });
 
-    it('permite bajar de rol a un Admin si existe otro Admin activo, y lo audita', async () => {
+    it('[TC-U-021] UsuariosService.actualizarRol permite bajar de rol a un Admin si existe otro Admin activo, y lo audita', async () => {
       tx().usuario.findUnique.mockResolvedValue({
         id: ADMIN_A_ID,
         rol: 'ADMIN',

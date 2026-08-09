@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test:cov": "echo \"No hay tests de frontend todavía (Jest/RTL pendiente) — no-op para no romper npm run test:cov --workspaces\" && exit 0"
   },
   "dependencies": {
     "@sentry/nextjs": "^8.30.0",

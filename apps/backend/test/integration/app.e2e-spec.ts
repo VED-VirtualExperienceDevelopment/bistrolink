@@ -16,7 +16,7 @@ describe('AppController (e2e)', () => {
     await app.init();
   });
 
-  it('/ (GET)', () => {
+  it('[TC-I-009] AppController (e2e) / (GET) devuelve 200 y "Hello World!"', () => {
     return request(app.getHttpServer())
       .get('/')
       .expect(200)

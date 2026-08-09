@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { RestaurantesService } from './restaurantes.service';
-import { TenantPrismaService } from '../prisma/tenant-prisma.service';
+import { RestaurantesService } from '../../src/restaurantes/restaurantes.service';
+import { TenantPrismaService } from '../../src/prisma/tenant-prisma.service';
 
 const TENANT_ID = '554915d0-f7ed-4053-b841-56479df29fd9';
 
@@ -36,7 +36,7 @@ describe('RestaurantesService', () => {
   const tx = () => (service as any).__tx;
 
   describe('listar', () => {
-    it('consulta findMany filtrado por tenantId, con el select y orderBy esperados', async () => {
+    it('[TC-U-005] RestaurantesService.listar consulta findMany filtrado por tenantId, con el select y orderBy esperados', async () => {
       tx().restaurante.findMany.mockResolvedValue([]);
 
       await service.listar(TENANT_ID);
@@ -53,7 +53,7 @@ describe('RestaurantesService', () => {
       });
     });
 
-    it('devuelve los restaurantes que resuelve Prisma, tal cual', async () => {
+    it('[TC-U-006] RestaurantesService.listar devuelve los restaurantes que resuelve Prisma', async () => {
       const restaurantesMock = [
         {
           id: '22222222-2222-2222-2222-222222222222',
@@ -69,7 +69,7 @@ describe('RestaurantesService', () => {
       expect(resultado).toEqual(restaurantesMock);
     });
 
-    it('devuelve un array vacío si el tenant no tiene restaurantes', async () => {
+    it('[TC-U-007] RestaurantesService.listar devuelve un array vací­o si el tenant no tiene restaurantes', async () => {
       tx().restaurante.findMany.mockResolvedValue([]);
 
       const resultado = await service.listar(TENANT_ID);
