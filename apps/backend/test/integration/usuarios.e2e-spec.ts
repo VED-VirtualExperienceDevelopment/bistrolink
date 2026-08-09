@@ -66,7 +66,7 @@ describe('Gestión de usuarios (HU-013) - e2e', () => {
   });
 
   itConAdmin(
-    'un ADMIN puede crear un Mozo dentro de su propio restaurante (201)',
+    '[TC-I-006] Gestión de usuarios e2e un ADMIN puede crear un Mozo dentro de su propio restaurante (201)',
     async () => {
       const token = await getToken(ADMIN_USER, ADMIN_PASS as string);
 
@@ -91,7 +91,7 @@ describe('Gestión de usuarios (HU-013) - e2e', () => {
   );
 
   itConAdmin(
-    'rechaza crear un usuario en un restaurante de otro tenant (403)',
+    '[TC-I-007] Gestión de usuarios e2e rechaza crear un usuario en un restaurante de otro tenant (403)',
     async () => {
       const token = await getToken(ADMIN_USER, ADMIN_PASS as string);
 
@@ -107,7 +107,7 @@ describe('Gestión de usuarios (HU-013) - e2e', () => {
     },
   );
 
-  it('rechaza el request sin token (401)', async () => {
+  it('[TC-I-008] Gestión de usuarios e2e rechaza el request sin token (401)', async () => {
     await request(app.getHttpServer())
       .post('/usuarios')
       .send({

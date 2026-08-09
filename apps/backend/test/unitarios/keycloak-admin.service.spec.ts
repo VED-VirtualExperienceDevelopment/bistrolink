@@ -3,7 +3,7 @@ import {
   ConflictException,
   InternalServerErrorException,
 } from '@nestjs/common';
-import { KeycloakAdminService } from './keycloak-admin.service';
+import { KeycloakAdminService } from '../../src/keycloak-admin/keycloak-admin.service';
 
 describe('KeycloakAdminService', () => {
   let service: KeycloakAdminService;
@@ -29,7 +29,7 @@ describe('KeycloakAdminService', () => {
     });
 
   describe('createUser', () => {
-    it('lanza ConflictException si Keycloak devuelve 409 (username/email duplicado)', async () => {
+    it('[TC-U-002] KeycloakAdminService.createUser lanza ConflictException si Keycloak devuelve 409 (username/email duplicado)', async () => {
       mockTokenRequest();
       fetchMock.mockResolvedValueOnce({
         status: 409,
@@ -46,7 +46,7 @@ describe('KeycloakAdminService', () => {
       ).rejects.toThrow(ConflictException);
     });
 
-    it('lanza InternalServerErrorException ante otros errores de Keycloak', async () => {
+    it('[TC-U-003] KeycloakAdminService.createUser lanza InternalServerErrorException ante otros errores de Keycloak', async () => {
       mockTokenRequest();
       fetchMock.mockResolvedValueOnce({
         status: 500,
@@ -63,7 +63,7 @@ describe('KeycloakAdminService', () => {
       ).rejects.toThrow(InternalServerErrorException);
     });
 
-    it('devuelve el keycloakId cuando la creación es exitosa (201)', async () => {
+    it('[TC-U-004] KeycloakAdminService.createUser devuelve el keycloakId cuando la creación es exitosa (201)', async () => {
       mockTokenRequest();
       fetchMock.mockResolvedValueOnce({
         status: 201,

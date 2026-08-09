@@ -90,18 +90,18 @@
       "json",
       "ts"
     ],
-    "rootDir": "src",
+    "rootDir": ".",
     "setupFiles": [
       "dotenv/config"
     ],
-    "testRegex": ".*\\.spec\\.ts$",
+    "testRegex": "test/unitarios/.*\\.spec\\.ts$",
     "transform": {
       "^.+\\.(t|j)s$": "ts-jest"
     },
     "collectCoverageFrom": [
-      "**/*.(t|j)s"
+      "src/**/*.(t|j)s"
     ],
-    "coverageDirectory": "../coverage",
+    "coverageDirectory": "coverage",
     "testEnvironment": "node",
     "reporters": [
       "default",
