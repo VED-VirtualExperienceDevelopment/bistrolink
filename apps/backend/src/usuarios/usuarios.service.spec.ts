@@ -7,14 +7,18 @@ import {
 import { UsuariosService } from './usuarios.service';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { KeycloakAdminService } from '../keycloak-admin/keycloak-admin.service';
+import { AuditLogService } from '../audit-log/audit-log.service';
+import { AuditAction } from '../audit-log/audit-action.enum';
 
 const TENANT_ID = '554915d0-f7ed-4053-b841-56479df29fd9';
 const RESTAURANTE_ID = '87152395-a721-4651-99b8-f21075d1d8ae';
 const ADMIN_A_ID = 'usuario-admin-a';
+const ACTOR_KEYCLOAK_ID = 'kc-actor-admin'; // quien ejecuta la acción, no el target
 
 describe('UsuariosService', () => {
   let service: UsuariosService;
   let keycloakAdmin: jest.Mocked<KeycloakAdminService>;
+  let auditLog: jest.Mocked<AuditLogService>;
 
   // Helper: simula runInTenantContext ejecutando directamente el callback
   // con un mock de "tx" (el cliente de Prisma dentro de la transacción).
@@ -45,16 +49,22 @@ describe('UsuariosService', () => {
       deleteUser: jest.fn(),
     };
 
+    const auditLogMock = {
+      registrar: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         UsuariosService,
         { provide: TenantPrismaService, useValue: tenantPrismaMock },
         { provide: KeycloakAdminService, useValue: keycloakAdminMock },
+        { provide: AuditLogService, useValue: auditLogMock },
       ],
     }).compile();
 
     service = module.get(UsuariosService);
     keycloakAdmin = module.get(KeycloakAdminService);
+    auditLog = module.get(AuditLogService);
 
     // Exponemos el mock de "tx" en el test vía closure — se referencia abajo
     // a través de (tenantPrisma.runInTenantContext as jest.Mock).mock, pero
@@ -80,7 +90,7 @@ describe('UsuariosService', () => {
         rol: 'MOZO',
       });
 
-      const resultado = await service.crear(TENANT_ID, {
+      const resultado = await service.crear(TENANT_ID, ACTOR_KEYCLOAK_ID, {
         username: 'mozo-nuevo',
         rol: 'MOZO',
         restauranteId: RESTAURANTE_ID,
@@ -105,7 +115,7 @@ describe('UsuariosService', () => {
       tx().restaurante.findUnique.mockResolvedValue(null);
 
       await expect(
-        service.crear(TENANT_ID, {
+        service.crear(TENANT_ID, ACTOR_KEYCLOAK_ID, {
           username: 'intento-cruzado',
           rol: 'MOZO',
           restauranteId: 'restaurante-de-otro-tenant',
@@ -113,6 +123,7 @@ describe('UsuariosService', () => {
       ).rejects.toThrow(ForbiddenException);
 
       expect(keycloakAdmin.createUser).not.toHaveBeenCalled();
+      expect(auditLog.registrar).not.toHaveBeenCalled();
     });
 
     it('revierte el usuario en Keycloak si falla la creación en Postgres', async () => {
@@ -126,7 +137,7 @@ describe('UsuariosService', () => {
       );
 
       await expect(
-        service.crear(TENANT_ID, {
+        service.crear(TENANT_ID, ACTOR_KEYCLOAK_ID, {
           username: 'mozo-nuevo',
           rol: 'MOZO',
           restauranteId: RESTAURANTE_ID,
@@ -139,6 +150,8 @@ describe('UsuariosService', () => {
       expect(keycloakAdmin.deleteUser).toHaveBeenCalledWith(
         'keycloak-id-huerfano',
       );
+      // No hubo alta real → no debe quedar auditada como si hubiera ocurrido.
+      expect(auditLog.registrar).not.toHaveBeenCalled();
     });
 
     it('revierte el usuario en Keycloak si falla assignRealmRole', async () => {
@@ -152,7 +165,7 @@ describe('UsuariosService', () => {
       );
 
       await expect(
-        service.crear(TENANT_ID, {
+        service.crear(TENANT_ID, ACTOR_KEYCLOAK_ID, {
           username: 'mozo-nuevo',
           rol: 'MOZO',
           restauranteId: RESTAURANTE_ID,
@@ -163,6 +176,7 @@ describe('UsuariosService', () => {
         'keycloak-id-huerfano',
       );
       expect(tx().usuario.create).not.toHaveBeenCalled();
+      expect(auditLog.registrar).not.toHaveBeenCalled();
     });
 
     it('no oculta el error original aunque la compensación también falle', async () => {
@@ -181,17 +195,48 @@ describe('UsuariosService', () => {
       // El error que debe ver quien hizo el request es el original de
       // Postgres, no el de la compensación fallida.
       await expect(
-        service.crear(TENANT_ID, {
+        service.crear(TENANT_ID, ACTOR_KEYCLOAK_ID, {
           username: 'mozo-nuevo',
           rol: 'MOZO',
           restauranteId: RESTAURANTE_ID,
         }),
       ).rejects.toThrow('Postgres no disponible');
     });
+
+    it('[HU-013 DoD] audita el alta de una cuenta Administrador con el actor y el rol', async () => {
+      tx().restaurante.findUnique.mockResolvedValue({
+        id: RESTAURANTE_ID,
+        tenantId: TENANT_ID,
+      });
+      keycloakAdmin.createUser.mockResolvedValue('keycloak-id-admin-nuevo');
+      tx().usuario.create.mockResolvedValue({
+        id: 'usuario-admin-nuevo',
+        tenantId: TENANT_ID,
+        restauranteId: RESTAURANTE_ID,
+        keycloakId: 'keycloak-id-admin-nuevo',
+        rol: 'ADMIN',
+      });
+
+      await service.crear(TENANT_ID, ACTOR_KEYCLOAK_ID, {
+        username: 'admin-nuevo',
+        rol: 'ADMIN',
+        restauranteId: RESTAURANTE_ID,
+      });
+
+      expect(auditLog.registrar).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: AuditAction.USUARIO_CREADO,
+          tenantId: TENANT_ID,
+          actorKeycloakId: ACTOR_KEYCLOAK_ID,
+          targetUsuarioId: 'usuario-admin-nuevo',
+          detalle: expect.objectContaining({ rol: 'ADMIN' }),
+        }),
+      );
+    });
   });
 
   describe('desactivar (RF.19)', () => {
-    it('rechaza con 409 si es el único Admin del tenant', async () => {
+    it('rechaza con 409 si es el único Admin del tenant, y audita el intento', async () => {
       tx().usuario.findUnique.mockResolvedValue({
         id: ADMIN_A_ID,
         rol: 'ADMIN',
@@ -199,10 +244,21 @@ describe('UsuariosService', () => {
       });
       tx().usuario.count.mockResolvedValue(0); // no quedan otros Admins
 
-      await expect(service.desactivar(TENANT_ID, ADMIN_A_ID)).rejects.toThrow(
-        ConflictException,
-      );
+      await expect(
+        service.desactivar(TENANT_ID, ACTOR_KEYCLOAK_ID, ADMIN_A_ID),
+      ).rejects.toThrow(ConflictException);
       expect(keycloakAdmin.setEnabled).not.toHaveBeenCalled();
+
+      // [HU-013 DoD] el intento rechazado también es un evento auditable:
+      // alguien intentó dejar el tenant sin ningún Administrador.
+      expect(auditLog.registrar).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: AuditAction.USUARIO_DESACTIVACION_RECHAZADA,
+          tenantId: TENANT_ID,
+          actorKeycloakId: ACTOR_KEYCLOAK_ID,
+          targetUsuarioId: ADMIN_A_ID,
+        }),
+      );
     });
 
     it('el conteo de RF.19 excluye Admins ya desactivados (activo: false)', async () => {
@@ -217,16 +273,16 @@ describe('UsuariosService', () => {
       });
       tx().usuario.count.mockResolvedValue(0);
 
-      await expect(service.desactivar(TENANT_ID, ADMIN_A_ID)).rejects.toThrow(
-        ConflictException,
-      );
+      await expect(
+        service.desactivar(TENANT_ID, ACTOR_KEYCLOAK_ID, ADMIN_A_ID),
+      ).rejects.toThrow(ConflictException);
 
       expect(tx().usuario.count).toHaveBeenCalledWith({
         where: { rol: 'ADMIN', activo: true, id: { not: ADMIN_A_ID } },
       });
     });
 
-    it('permite desactivar un Admin si existe al menos otro Admin activo', async () => {
+    it('permite desactivar un Admin si existe al menos otro Admin activo, y lo audita', async () => {
       tx().usuario.findUnique.mockResolvedValue({
         id: ADMIN_A_ID,
         rol: 'ADMIN',
@@ -238,7 +294,11 @@ describe('UsuariosService', () => {
         activo: false,
       });
 
-      const resultado = await service.desactivar(TENANT_ID, ADMIN_A_ID);
+      const resultado = await service.desactivar(
+        TENANT_ID,
+        ACTOR_KEYCLOAK_ID,
+        ADMIN_A_ID,
+      );
 
       expect(keycloakAdmin.setEnabled).toHaveBeenCalledWith(
         'kc-admin-a',
@@ -252,6 +312,17 @@ describe('UsuariosService', () => {
         data: { activo: false },
       });
       expect(resultado).toEqual({ desactivado: true, id: ADMIN_A_ID });
+
+      // [HU-013 DoD] baja de cuenta Administrador auditada en Pino/INFO.
+      expect(auditLog.registrar).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: AuditAction.USUARIO_DESACTIVADO,
+          tenantId: TENANT_ID,
+          actorKeycloakId: ACTOR_KEYCLOAK_ID,
+          targetUsuarioId: ADMIN_A_ID,
+          detalle: expect.objectContaining({ rol: 'ADMIN' }),
+        }),
+      );
     });
 
     it('permite desactivar un Mozo sin verificar la regla de Admins', async () => {
@@ -265,7 +336,7 @@ describe('UsuariosService', () => {
         activo: false,
       });
 
-      await service.desactivar(TENANT_ID, 'usuario-mozo');
+      await service.desactivar(TENANT_ID, ACTOR_KEYCLOAK_ID, 'usuario-mozo');
 
       // La regla RF.19 solo aplica a ADMIN — no debería ni consultar el count.
       expect(tx().usuario.count).not.toHaveBeenCalled();
@@ -280,7 +351,7 @@ describe('UsuariosService', () => {
       tx().usuario.findUnique.mockResolvedValue(null);
 
       await expect(
-        service.desactivar(TENANT_ID, 'usuario-inexistente'),
+        service.desactivar(TENANT_ID, ACTOR_KEYCLOAK_ID, 'usuario-inexistente'),
       ).rejects.toThrow(NotFoundException);
     });
 
@@ -295,12 +366,13 @@ describe('UsuariosService', () => {
       );
 
       await expect(
-        service.desactivar(TENANT_ID, 'usuario-mozo'),
+        service.desactivar(TENANT_ID, ACTOR_KEYCLOAK_ID, 'usuario-mozo'),
       ).rejects.toThrow('Keycloak no disponible');
 
       // Si Keycloak falla, el usuario sigue habilitado en la realidad —
       // Postgres no debe quedar desincronizado marcándolo inactivo igual.
       expect(tx().usuario.update).not.toHaveBeenCalled();
+      expect(auditLog.registrar).not.toHaveBeenCalled();
     });
   });
 
@@ -314,15 +386,18 @@ describe('UsuariosService', () => {
       tx().usuario.count.mockResolvedValue(0);
 
       await expect(
-        service.actualizarRol(TENANT_ID, ADMIN_A_ID, { rol: 'MOZO' }),
+        service.actualizarRol(TENANT_ID, ACTOR_KEYCLOAK_ID, ADMIN_A_ID, {
+          rol: 'MOZO',
+        }),
       ).rejects.toThrow(ConflictException);
       expect(keycloakAdmin.assignRealmRole).not.toHaveBeenCalled();
       expect(tx().usuario.count).toHaveBeenCalledWith({
         where: { rol: 'ADMIN', activo: true, id: { not: ADMIN_A_ID } },
       });
+      expect(auditLog.registrar).not.toHaveBeenCalled();
     });
 
-    it('permite bajar de rol a un Admin si existe otro Admin activo', async () => {
+    it('permite bajar de rol a un Admin si existe otro Admin activo, y lo audita', async () => {
       tx().usuario.findUnique.mockResolvedValue({
         id: ADMIN_A_ID,
         rol: 'ADMIN',
@@ -334,15 +409,29 @@ describe('UsuariosService', () => {
         rol: 'MOZO',
       });
 
-      const resultado = await service.actualizarRol(TENANT_ID, ADMIN_A_ID, {
-        rol: 'MOZO',
-      });
+      const resultado = await service.actualizarRol(
+        TENANT_ID,
+        ACTOR_KEYCLOAK_ID,
+        ADMIN_A_ID,
+        { rol: 'MOZO' },
+      );
 
       expect(keycloakAdmin.assignRealmRole).toHaveBeenCalledWith(
         'kc-admin-a',
         'MOZO',
       );
       expect(resultado.rol).toBe('MOZO');
+
+      // [HU-013 DoD] cambio de rol auditado con rol anterior y nuevo.
+      expect(auditLog.registrar).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: AuditAction.USUARIO_ROL_MODIFICADO,
+          tenantId: TENANT_ID,
+          actorKeycloakId: ACTOR_KEYCLOAK_ID,
+          targetUsuarioId: ADMIN_A_ID,
+          detalle: { rolAnterior: 'ADMIN', rolNuevo: 'MOZO' },
+        }),
+      );
     });
   });
 });
