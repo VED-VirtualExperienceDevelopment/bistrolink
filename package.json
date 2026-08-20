@@ -19,17 +19,14 @@
     "sync": "bash -i scripts/sync.sh",
     "prepare": "husky",
     "staging:down": "bash -i scripts/staging-down.sh",
-    "staging:up": "bash -i scripts/staging-up.sh",
-    "test:e2e": "playwright test"
+    "staging:up": "bash -i scripts/staging-up.sh"
   },
   "devDependencies": {
     "@commitlint/cli": "19.5.0",
     "@commitlint/config-conventional": "19.5.0",
     "concurrently": "8.2.2",
     "husky": "9.1.6",
-    "jest-junit": "^17.0.0",
-    "@playwright/test": "^1.47.0",
-    "@axe-core/playwright": "^4.10.0"
+    "jest-junit": "^17.0.0"
   },
   "overrides": {
     "picomatch": "4.0.4",
