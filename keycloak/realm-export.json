@@ -11,7 +11,6 @@
   "registrationAllowed": false,
   "loginWithEmailAllowed": true,
   "duplicateEmailsAllowed": false,
-
   "roles": {
     "realm": [
       {
@@ -32,7 +31,6 @@
       }
     ]
   },
-
   "clients": [
     {
       "clientId": "bistrolink-frontend",
@@ -58,14 +56,13 @@
       "publicClient": false,
       "bearerOnly": false,
       "standardFlowEnabled": false,
-      "directAccessGrantsEnabled": false,
+      "directAccessGrantsEnabled": true,
       "serviceAccountsEnabled": true,
       "authorizationServicesEnabled": false,
       "secret": "${BISTROLINK_BACKEND_CLIENT_SECRET}",
-      "description": "Cliente de servicio usado por NestJS para operaciones administrativas contra la Admin API de Keycloak (alta/baja de usuarios, HU-013)"
+      "description": "Cliente de servicio usado por NestJS para operaciones administrativas contra la Admin API de Keycloak (alta/baja de usuarios, HU-013). directAccessGrantsEnabled=true: solo para tests e2e (password grant), no para el login real (PKCE)."
     }
   ],
-
   "clientScopes": [
     {
       "name": "tenant",
@@ -92,7 +89,6 @@
       ]
     }
   ],
-
   "defaultDefaultClientScopes": [
     "profile",
     "email",
@@ -100,7 +96,6 @@
     "web-origins",
     "tenant"
   ],
-
   "attributes": {
     "userProfileEnabled": "true"
   }
