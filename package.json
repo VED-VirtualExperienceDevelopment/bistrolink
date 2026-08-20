@@ -39,6 +39,7 @@
     "engine.io": "6.6.7",
     "lodash": "4.18.0",
     "postcss": "8.5.18",
-    "sharp": "0.35.0"
+    "sharp": "0.35.0",
+    "deepmerge-ts": "8.0.0"
   }
 }
