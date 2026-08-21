@@ -1,0 +1,18 @@
+# Dockerfile.auth
+# Imagen de Keycloak para BistroLink con el realm "bistrolink" ya incluido.
+# Se usa para el servicio bistrolink-auth en Railway (Staging/Producción).
+#
+# Motivo: en local, docker-compose.yml monta ./keycloak/realm-export.json como
+# bind mount desde el disco del desarrollador. Railway no puede montar un bind
+# mount de una máquina local, así que el archivo tiene que copiarse DENTRO de
+# la imagen en build time para que --import-realm tenga algo que importar.
+
+FROM quay.io/keycloak/keycloak:24.0.5
+
+# Copiamos el export del realm a la carpeta de importación estándar de Keycloak.
+# Al arrancar con --import-realm, Keycloak busca acá y lo carga automáticamente.
+COPY keycloak/realm-export.json /opt/keycloak/data/import/realm-export.json
+
+# El comando de arranque real lo define el "Custom Start Command" de Railway,
+# no hace falta CMD acá — pero se deja un default por si se corre suelta.
+CMD ["start-dev", "--http-port=8080", "--import-realm"]
