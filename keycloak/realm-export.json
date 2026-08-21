@@ -45,6 +45,13 @@
         "http://localhost:3000/*"
       ],
       "webOrigins": ["https://staging.bistrolink.app", "http://localhost:3000"],
+      "defaultClientScopes": [
+        "profile",
+        "email",
+        "roles",
+        "web-origins",
+        "tenant"
+      ],
       "attributes": {
         "pkce.code.challenge.method": "S256",
         "post.logout.redirect.uris": "https://staging.bistrolink.app/*##http://localhost:3000/*"
@@ -59,7 +66,14 @@
       "directAccessGrantsEnabled": true,
       "serviceAccountsEnabled": true,
       "authorizationServicesEnabled": false,
-      "secret": "${BISTROLINK_BACKEND_CLIENT_SECRET}",
+      "secret": "${KEYCLOAK_CLIENT_SECRET}",
+      "defaultClientScopes": [
+        "profile",
+        "email",
+        "roles",
+        "web-origins",
+        "tenant"
+      ],
       "description": "Cliente de servicio usado por NestJS para operaciones administrativas contra la Admin API de Keycloak (alta/baja de usuarios, HU-013). directAccessGrantsEnabled=true: solo para tests e2e (password grant), no para el login real (PKCE)."
     }
   ],
@@ -87,6 +101,47 @@
           }
         }
       ]
+    },
+    {
+      "name": "roles",
+      "description": "Scope OpenID Connect que agrega los roles del usuario al token. Keycloak no lo crea automáticamente al importar un realm vía --import-realm (solo cuando el realm se crea desde la consola de admin), así que hay que definirlo a mano acá.",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "false",
+        "display.on.consent.screen": "true"
+      },
+      "protocolMappers": [
+        {
+          "name": "realm roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "foo",
+            "access.token.claim": "true",
+            "id.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "claim.name": "realm_access.roles",
+            "jsonType.label": "String",
+            "multivalued": "true"
+          }
+        },
+        {
+          "name": "client roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-client-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "foo",
+            "access.token.claim": "true",
+            "id.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "claim.name": "resource_access.${client_id}.roles",
+            "jsonType.label": "String",
+            "multivalued": "true"
+          }
+        }
+      ]
     }
   ],
   "defaultDefaultClientScopes": [
@@ -95,6 +150,93 @@
     "roles",
     "web-origins",
     "tenant"
+  ],
+  "users": [
+    {
+      "id": "c832535d-6122-449d-8b21-2371d8b7d9d0",
+      "username": "${TEST_ADMIN_USERNAME}",
+      "email": "admin-test@bistrolink.dev.com",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Admin",
+      "lastName": "Test",
+      "attributes": {
+        "tenant_id": ["554915d0-f7ed-4053-b841-56479df29fd9"]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${TEST_ADMIN_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["ADMIN"]
+    },
+    {
+      "id": "d1a2b3c4-5566-4778-8899-aabbccddeeff",
+      "username": "${TEST_COCINA_USERNAME}",
+      "email": "cocina-test@bistrolink.dev.com",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Cocina",
+      "lastName": "Test",
+      "attributes": {
+        "tenant_id": ["554915d0-f7ed-4053-b841-56479df29fd9"]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${TEST_COCINA_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["COCINA"]
+    },
+    {
+      "id": "e2b3c4d5-6677-4889-99aa-bbccddeeff00",
+      "username": "${TEST_NO_TENANT_USERNAME}",
+      "email": "sin-tenant-test@bistrolink.dev.com",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "SinTenant",
+      "lastName": "Test",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${TEST_NO_TENANT_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["MOZO"]
+    },
+    {
+      "id": "f3c4d5e6-7788-4990-aabb-ccddeeff0011",
+      "username": "${TEST_TENANT_B_USERNAME}",
+      "email": "admin-b-test@bistrolink.dev.com",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Admin",
+      "lastName": "TenantB",
+      "attributes": {
+        "tenant_id": ["b02579f2-2bb0-496b-abf2-33c494c93122"]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${TEST_TENANT_B_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["ADMIN"]
+    },
+    {
+      "username": "service-account-bistrolink-backend",
+      "enabled": true,
+      "serviceAccountClientId": "bistrolink-backend",
+      "clientRoles": {
+        "realm-management": ["manage-users", "view-users", "query-users"]
+      }
+    }
   ],
   "attributes": {
     "userProfileEnabled": "true"

@@ -20,6 +20,28 @@ const CATEGORIA_ID = '44444444-4444-4444-4444-444444444444';
 const ITEM_CON_IMAGEN_ID = '55555555-5555-5555-5555-555555555555';
 const ITEM_SIN_IMAGEN_ID = '66666666-6666-6666-6666-666666666666';
 
+// Tenants "Ejemplo" y "B": no nacieron del seed original, sino que se crearon
+// a mano en Prisma Studio durante el desarrollo de HU-013 y ya quedaron
+// hardcodeados como fixtures en usuarios.service.spec.ts y en los e2e
+// (usuarios.e2e-spec.ts, tenant-isolation.e2e-spec.ts). Los IDs de acá deben
+// coincidir exactamente con esos archivos de test — si cambian, hay que
+// actualizar ambos lados.
+const TENANT_EJEMPLO_ID = '554915d0-f7ed-4053-b841-56479df29fd9';
+const RESTAURANTE_EJEMPLO_ID = '87152395-a721-4651-99b8-f21075d1d8ae';
+
+const TENANT_B_ID = 'b02579f2-2bb0-496b-abf2-33c494c93122';
+const RESTAURANTE_B_ID = 'a46faef3-7412-45ae-af80-3829cd27b990';
+
+// Admin real del tenant Ejemplo: creado a mano en la consola de Keycloak
+// (no vía POST /usuarios, porque ese endpoint exige ya tener un Admin
+// autenticado — problema de huevo/gallina para el primer Admin de cada
+// tenant). Tiene rol ADMIN asignado, está Enabled, y coincide con el
+// username por defecto que usan los e2e (TEST_ADMIN_USERNAME ?? 'admin-test').
+// Es, a la fecha de este seed, el ÚNICO Admin activo del tenant Ejemplo —
+// por eso sirve como fixture para el test de RF.19 (rechazo 409 al intentar
+// desactivar/degradar al último Admin).
+const ADMIN_EJEMPLO_KEYCLOAK_ID = 'c832535d-6122-449d-8b21-2371d8b7d9d0';
+
 async function main() {
   // 1. Tenant: NO tiene RLS (es la raíz del aislamiento), se puede insertar
   //    sin fijar ninguna variable de sesión antes.
@@ -110,8 +132,90 @@ async function main() {
     },
   });
 
+  // ── Tenant Ejemplo: fixture de HU-013 (gestión de usuarios/roles) ────────
+  // No tiene mesa/categoría/ítems propios porque no se usa para probar
+  // HU-001 (menú), sino la gestión de usuarios — si en el futuro hace falta
+  // probar el menú también sobre este tenant, agregar esos bloques acá.
+  await prisma.tenant.upsert({
+    where: { id: TENANT_EJEMPLO_ID },
+    update: {},
+    create: {
+      id: TENANT_EJEMPLO_ID,
+      razonSocial: 'Restaurante Ejemplo SRL',
+      rut: '210000000000',
+      plan: 'BASICO',
+    },
+  });
+
+  await prisma.$executeRawUnsafe(
+    `SELECT set_config('app.tenant_id', $1, false)`,
+    TENANT_EJEMPLO_ID,
+  );
+
+  await prisma.restaurante.upsert({
+    where: { id: RESTAURANTE_EJEMPLO_ID },
+    update: {},
+    create: {
+      id: RESTAURANTE_EJEMPLO_ID,
+      tenantId: TENANT_EJEMPLO_ID,
+      nombre: 'Restaurante Ejemplo - Sucursal Centro',
+      direccion: 'Av. 18 de Julio 1234, Montevideo',
+      timezone: 'America/Montevideo',
+    },
+  });
+
+  // Nota: usamos where:{ keycloakId } porque es el dato estable que no
+  // cambia si en algún momento se recrea la fila de Postgres — a diferencia
+  // de un id de Postgres autogenerado, que sería distinto cada vez.
+  await prisma.usuario.upsert({
+    where: { keycloakId: ADMIN_EJEMPLO_KEYCLOAK_ID },
+    update: {},
+    create: {
+      tenantId: TENANT_EJEMPLO_ID,
+      restauranteId: RESTAURANTE_EJEMPLO_ID,
+      keycloakId: ADMIN_EJEMPLO_KEYCLOAK_ID,
+      username: 'admin-test',
+      email: 'admin-test@bistrolink.dev.com',
+      rol: 'ADMIN',
+      activo: true,
+    },
+  });
+
+  // ── Tenant B: fixture usada para probar aislamiento cruzado (RD.07) ─────
+  // Su único propósito en los tests es NO pertenecer al Admin del tenant
+  // Ejemplo — ver TC-I-007 (rechazo 403) y TC-I-005 (aislamiento de lectura).
+  await prisma.tenant.upsert({
+    where: { id: TENANT_B_ID },
+    update: {},
+    create: {
+      id: TENANT_B_ID,
+      razonSocial: 'Restaurante Tenant B',
+      rut: '210000000001',
+      plan: 'BASICO',
+    },
+  });
+
+  await prisma.$executeRawUnsafe(
+    `SELECT set_config('app.tenant_id', $1, false)`,
+    TENANT_B_ID,
+  );
+
+  await prisma.restaurante.upsert({
+    where: { id: RESTAURANTE_B_ID },
+    update: {},
+    create: {
+      id: RESTAURANTE_B_ID,
+      tenantId: TENANT_B_ID,
+      nombre: 'Restaurante B - Sucursal',
+      direccion: 'Otra dirección 456',
+      timezone: 'America/Montevideo',
+    },
+  });
+
   console.log('✅ Seed aplicado. Probá:');
   console.log(`   GET /menu/${TENANT_ID}/${MESA_ID}`);
+  console.log(`   Tenant Ejemplo: ${TENANT_EJEMPLO_ID}`);
+  console.log(`   Tenant B:       ${TENANT_B_ID}`);
 }
 
 main()

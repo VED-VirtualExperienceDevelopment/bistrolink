@@ -30,6 +30,12 @@ services:
     container_name: bistrolink-auth
     restart: unless-stopped
     command: ["start-dev","--import-realm"]
+    # Carga TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD y KEYCLOAK_CLIENT_SECRET
+    # directo del .env del backend — así el realm se importa igual para
+    # cualquiera del equipo con solo correr 'docker compose up -d', sin
+    # tener que setear variables de sesión ni pasar --env-file a mano.
+    env_file:
+      - ./apps/backend/.env
     environment:
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: admin # solo desarrollo local
@@ -51,6 +57,7 @@ services:
       timeout: 10s
       retries: 5
       start_period: 60s
+ 
 
   # ── Portainer ───────────────────────────────────────────────────────────
   bistrolink-portainer:
