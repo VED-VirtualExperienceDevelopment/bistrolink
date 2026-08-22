@@ -21,7 +21,7 @@
 # realm-export.json si en algún momento se necesita mostrar email/nombre real
 # del usuario en la UI.
 
-FROM quay.io/keycloak/keycloak:26.5.7
+FROM quay.io/keycloak/keycloak:26.7.0
 
 # Copiamos el export del realm a la carpeta de importación estándar de Keycloak.
 # Al arrancar con --import-realm, Keycloak busca acá y lo carga automáticamente.
