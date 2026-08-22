@@ -13,3 +13,16 @@ CVE-2026-33671
 CVE-2024-47068
 CVE-2026-27606
 CVE-2026-48779
+
+# Keycloak (imagen keycloak/Dockerfile.auth) — CVEs específicos de
+# org.keycloak:keycloak-services y keycloak-saml-core sin fix público
+# disponible al día de hoy (22/08). Trivy reporta "Fixed Version: 26.6.x",
+# pero esa serie todavía no existe como release publicado en quay.io — es
+# la próxima versión planificada, no algo instalable hoy. Confirmado
+# manualmente: sigue igual entre 24.0.5 y 26.5.7 (la más reciente disponible
+# actualmente), no es un problema de que falte actualizar la imagen.
+# Pendiente (BL-137): revisar cuando Keycloak publique 26.6.x y actualizar.
+CVE-2026-7504
+CVE-2026-7507
+CVE-2026-7571
+CVE-2026-9795

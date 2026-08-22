@@ -26,7 +26,7 @@ services:
 
   # ── Keycloak ────────────────────────────────────────────────────────────
   bistrolink-auth:
-    image: quay.io/keycloak/keycloak:26.5.7
+    image: quay.io/keycloak/keycloak:26.7.0
     container_name: bistrolink-auth
     restart: unless-stopped
     command: ["start-dev","--import-realm"]
