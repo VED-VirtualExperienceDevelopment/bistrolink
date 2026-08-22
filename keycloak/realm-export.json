@@ -42,9 +42,14 @@
       "serviceAccountsEnabled": false,
       "redirectUris": [
         "https://staging.bistrolink.app/*",
+        "https://bistrolink-web-staging.up.railway.app/*",
         "http://localhost:3000/*"
       ],
-      "webOrigins": ["https://staging.bistrolink.app", "http://localhost:3000"],
+      "webOrigins": [
+        "https://staging.bistrolink.app",
+        "https://bistrolink-web-staging.up.railway.app",
+        "http://localhost:3000"
+      ],
       "defaultClientScopes": [
         "profile",
         "email",
@@ -54,7 +59,7 @@
       ],
       "attributes": {
         "pkce.code.challenge.method": "S256",
-        "post.logout.redirect.uris": "https://staging.bistrolink.app/*##http://localhost:3000/*"
+        "post.logout.redirect.uris": "https://staging.bistrolink.app/*##https://bistrolink-web-staging.up.railway.app/*##http://localhost:3000/*"
       }
     },
     {

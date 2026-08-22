@@ -339,6 +339,28 @@ jobs:
       WEB_SERVICE_ID: 070e5864-c5af-47e3-89d4-89c3041bc98b
       AUTH_SERVICE_ID: dd1b662a-4bcb-450c-a57e-fa0fe6fb5773
     steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Instalar dependencias (solo backend, para prisma migrate)
+        run: npm ci --workspace=apps/backend
+
+      # NOTA (hallazgo BL-137): la base de staging quedó sin ninguna tabla
+      # por un buen tiempo sin que nadie lo notara — el pipeline nunca
+      # aplicaba migraciones ahí, solo contra la base efímera del job de
+      # tests. Este paso corre ANTES de los deploys de servicios para que el
+      # código nuevo siempre arranque contra un esquema ya al día. No corre
+      # el seed (son datos de prueba, no forman parte de un deploy real).
+      - name: Aplicar migraciones de Prisma en staging
+        working-directory: apps/backend
+        env:
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+        run: npx prisma migrate deploy
+
       # NOTA: ya NO usamos "railway redeploy" — ese comando solo vuelve a
       # desplegar el commit/imagen que el servicio ya tenía configurado, no
       # fuerza un pull nuevo del tag actualizado. Por eso el servicio se
