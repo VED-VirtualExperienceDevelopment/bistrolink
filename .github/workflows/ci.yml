@@ -21,6 +21,7 @@ permissions:
 env:
   IMAGE_API: ghcr.io/ved-virtualexperiencedevelopment/bistrolink-api
   IMAGE_WEB: ghcr.io/ved-virtualexperiencedevelopment/bistrolink-web
+  IMAGE_AUTH: ghcr.io/ved-virtualexperiencedevelopment/bistrolink-auth
   TAG: ${{ github.sha }}
   # prisma.config.ts usa env() de 'prisma/config', que desde Prisma 6 valida
   # de forma estricta que DATABASE_URL exista — incluso en "prisma generate",
@@ -264,6 +265,14 @@ jobs:
             -f apps/frontend/Dockerfile \
             .
 
+      - name: Construir imagen Keycloak (con realm incluido)
+        run: |
+          docker build \
+            -t ${{ env.IMAGE_AUTH }}:${{ env.TAG }} \
+            -t ${{ env.IMAGE_AUTH }}:latest \
+            -f keycloak/Dockerfile.auth \
+            .
+
       - name: Trivy — escaneo imagen API
         # @master -> @0.35.0: fijar a una versión concreta. En marzo de 2026 se
         # reescribieron 75 de 76 tags de este repo con un payload malicioso que
@@ -284,20 +293,32 @@ jobs:
           exit-code: "1"
           trivyignores: .trivyignore
 
+      - name: Trivy — escaneo imagen Keycloak
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          image-ref: ${{ env.IMAGE_AUTH }}:${{ env.TAG }}
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          trivyignores: .trivyignore
+
       - name: Publicar imágenes en GHCR
         if: github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/tags/')
         run: |
           echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
           docker push ${{ env.IMAGE_API }}:${{ env.TAG }}
           docker push ${{ env.IMAGE_WEB }}:${{ env.TAG }}
+          docker push ${{ env.IMAGE_AUTH }}:${{ env.TAG }}
           docker push ${{ env.IMAGE_API }}:latest        
           docker push ${{ env.IMAGE_WEB }}:latest        
+          docker push ${{ env.IMAGE_AUTH }}:latest
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
             VERSION=${GITHUB_REF#refs/tags/}
             docker tag ${{ env.IMAGE_API }}:${{ env.TAG }} ${{ env.IMAGE_API }}:${VERSION}
             docker tag ${{ env.IMAGE_WEB }}:${{ env.TAG }} ${{ env.IMAGE_WEB }}:${VERSION}
+            docker tag ${{ env.IMAGE_AUTH }}:${{ env.TAG }} ${{ env.IMAGE_AUTH }}:${VERSION}
             docker push ${{ env.IMAGE_API }}:${VERSION}
             docker push ${{ env.IMAGE_WEB }}:${VERSION}
+            docker push ${{ env.IMAGE_AUTH }}:${VERSION}
           fi
 
   # ── JOB 9: DEPLOY STAGING ─────────────────────────────────────────────────
@@ -316,6 +337,7 @@ jobs:
       ENVIRONMENT_ID: bfeb236f-2012-4a5e-a681-5c4728e6830a
       API_SERVICE_ID: 45dc82be-fd53-4b80-ba9c-384bbbdba034
       WEB_SERVICE_ID: 070e5864-c5af-47e3-89d4-89c3041bc98b
+      AUTH_SERVICE_ID: dd1b662a-4bcb-450c-a57e-fa0fe6fb5773
     steps:
       # NOTA: ya NO usamos "railway redeploy" — ese comando solo vuelve a
       # desplegar el commit/imagen que el servicio ya tenía configurado, no
@@ -369,6 +391,29 @@ jobs:
               variables: { serviceId: $s, environmentId: $e }
             }')"
 
+      - name: Actualizar y deployar Keycloak (tag por SHA)
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          set -euo pipefail
+          IMAGE="${{ env.IMAGE_AUTH }}:${{ env.TAG }}"
+
+          curl -sSf -X POST "$RAILWAY_GRAPHQL" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg s "$AUTH_SERVICE_ID" --arg e "$ENVIRONMENT_ID" --arg img "$IMAGE" '{
+              query: "mutation($serviceId: String!, $environmentId: String!, $input: ServiceInstanceUpdateInput!) { serviceInstanceUpdate(serviceId: $serviceId, environmentId: $environmentId, input: $input) }",
+              variables: { serviceId: $s, environmentId: $e, input: { source: { image: $img } } }
+            }')"
+
+          curl -sSf -X POST "$RAILWAY_GRAPHQL" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg s "$AUTH_SERVICE_ID" --arg e "$ENVIRONMENT_ID" '{
+              query: "mutation($serviceId: String!, $environmentId: String!) { serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId) }",
+              variables: { serviceId: $s, environmentId: $e }
+            }')"
+
       - name: Health check staging
         run: |
           sleep 40
@@ -383,6 +428,7 @@ jobs:
         run: |
           railway scale --service bistrolink-api --environment staging --replicas 0
           railway scale --service bistrolink-web --environment staging --replicas 0
+          railway scale --service bistrolink-auth --environment staging --replicas 0
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
 
