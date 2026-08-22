@@ -30,6 +30,31 @@ env:
   DATABASE_URL: "postgresql://dummy:dummy@localhost:5432/dummy"
 
 jobs:
+  # ── JOB 0: DETECTAR CAMBIOS ────────────────────────────────────────────────
+  # Reemplaza la detección vía github.event.head_commit.modified/added: ese
+  # campo se calcula comparando el commit contra su padre inmediato, y con
+  # "Squash and merge" hecho desde la UI de GitHub, ese cálculo viene vacío o
+  # incompleto de forma no confiable (limitación documentada del payload del
+  # evento push, no un bug de este workflow). dorny/paths-filter en cambio
+  # hace un git diff explícito contra el commit anterior al push
+  # (github.event.before), así que detecta los cambios reales sin importar
+  # si el commit vino de un push directo, un merge commit o un squash.
+  changes:
+    name: 🔎 Detectar cambios (paths-filter)
+    runs-on: ubuntu-latest
+    outputs:
+      apps: ${{ steps.filter.outputs.apps }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            apps:
+              - 'apps/**'
+              - 'packages/**'
+
   # ── JOB 1: LINT ───────────────────────────────────────────────────────────
   lint:
     name: 🔍 Lint (ESLint + Prettier)
@@ -278,15 +303,12 @@ jobs:
   # ── JOB 9: DEPLOY STAGING ─────────────────────────────────────────────────
   deploy-staging:
     name: 🚀 Deploy staging (Railway)
-    needs: [gitleaks, codeql, sonarcloud, snyk, build]
+    needs: [gitleaks, codeql, sonarcloud, snyk, build, changes]
     if: |
       github.ref == 'refs/heads/develop' &&
       (
         github.event_name == 'workflow_dispatch' ||
-        contains(toJson(github.event.head_commit.modified), 'apps/') ||
-        contains(toJson(github.event.head_commit.added), 'apps/') ||
-        contains(toJson(github.event.head_commit.modified), 'packages/') ||
-        contains(toJson(github.event.head_commit.added), 'packages/')
+        needs.changes.outputs.apps == 'true'
       )
     runs-on: ubuntu-latest
     env:
