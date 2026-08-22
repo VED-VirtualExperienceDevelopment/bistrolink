@@ -221,6 +221,7 @@ jobs:
           docker build \
             -t ${{ env.IMAGE_API }}:${{ env.TAG }} \
             -t ${{ env.IMAGE_API }}:latest \
+            --build-arg GIT_SHA=${{ env.TAG }} \
             -f apps/backend/Dockerfile \
             .
 
@@ -234,6 +235,7 @@ jobs:
             --build-arg NEXT_PUBLIC_KEYCLOAK_URL=https://bistrolink-auth-staging.up.railway.app \
             --build-arg NEXT_PUBLIC_KEYCLOAK_REALM=bistrolink \
             --build-arg NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=bistrolink-frontend \
+            --build-arg NEXT_PUBLIC_APP_VERSION=${{ env.TAG }} \
             -f apps/frontend/Dockerfile \
             .
 

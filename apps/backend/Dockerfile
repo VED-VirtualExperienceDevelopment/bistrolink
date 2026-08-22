@@ -22,6 +22,14 @@ RUN npm run build --workspace=apps/backend
 FROM node:22-alpine AS production
 WORKDIR /app
 ENV NODE_ENV=production
+
+# SHA del commit horneado en build time (pasado por el CI vía --build-arg).
+# Se expone como env var en runtime para que /version pueda devolverlo sin
+# depender de variables que Railway ya no inyecta al pasar a "Docker Image"
+# como source (RAILWAY_GIT_COMMIT_SHA solo existe si el source es un repo).
+ARG GIT_SHA=unknown
+ENV APP_VERSION=$GIT_SHA
+
 COPY package*.json ./
 COPY apps/backend/package*.json ./apps/backend/
 RUN npm pkg delete scripts.prepare && \
