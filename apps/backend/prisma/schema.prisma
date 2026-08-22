@@ -7,7 +7,15 @@ datasource db {
 }
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  // Sin esto, "prisma generate" falla en detectar automáticamente la versión
+  // de OpenSSL del builder Alpine (node:22-alpine) y genera el motor para
+  // "openssl-1.1.x" por defecto — pero el runtime real (también Alpine) usa
+  // OpenSSL 3.0.x. El mismatch no se nota en el build ni al arrancar Nest:
+  // recién explota cuando algo intenta ejecutar una query real y Prisma
+  // intenta cargar el motor nativo (PrismaClientInitializationError:
+  // "could not locate the Query Engine for runtime linux-musl-openssl-3.0.x").
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
 }
 
 // ── Enums ──────────────────────────────────────────────────────────────────
