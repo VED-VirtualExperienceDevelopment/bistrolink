@@ -16,11 +16,20 @@ import { PrismaClient } from '@prisma/client';
  * (@prisma/adapter-pg) recién son obligatorios en 7, y hoy mismo tienen un
  * desajuste de versiones entre el paquete del adapter y el client generado,
  * así que no vale la pena introducirlos todavía.
+ *
+ * NOTA (BL-133): antes leía process.env.RUNTIME_DATABASE_URL, variable que
+ * nunca existió en .env.example ni en Railway — no era una separación
+ * intencional (por ejemplo, un rol de Postgres con permisos restringidos
+ * en runtime), sino un nombre mal escrito. Al pasar datasourceUrl: undefined,
+ * Prisma caía de vuelta al valor de env("DATABASE_URL") declarado en el
+ * propio schema.prisma, así que funcionaba por una coincidencia silenciosa,
+ * no porque el código pidiera la variable correcta. Corregido para leer
+ * DATABASE_URL explícitamente, alineado con .env.example, el CI y Railway.
  */
 @Injectable({ scope: Scope.REQUEST })
 export class TenantPrismaService {
   private readonly prisma = new PrismaClient({
-    datasourceUrl: process.env.RUNTIME_DATABASE_URL,
+    datasourceUrl: process.env.DATABASE_URL,
   });
 
   async runInTenantContext<T>(

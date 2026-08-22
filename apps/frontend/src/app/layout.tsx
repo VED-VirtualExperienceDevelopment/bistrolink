@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import { Plus_Jakarta_Sans } from "next/font/google";
 import { KeycloakProvider } from "@/components/providers/KeycloakProvider";
+import { VersionInfo } from "@/components/ui/versioninfo";
 import "./globals.css";
 
 const geistSans = localFont({
@@ -43,6 +44,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} ${plusJakarta.className} antialiased`}
       >
         <KeycloakProvider>{children}</KeycloakProvider>
+        <VersionInfo />
       </body>
     </html>
   );
