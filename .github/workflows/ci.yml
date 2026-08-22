@@ -347,7 +347,11 @@ jobs:
           cache: npm
 
       - name: Instalar dependencias (solo backend, para prisma migrate)
-        run: npm ci --workspace=apps/backend
+        # npm pkg delete scripts.prepare: sin esto, "npm ci" dispara el
+        # script "prepare" (husky) del package.json raíz, y falla con
+        # "husky: not found" porque --workspace no instala esa devDependency
+        # de la raíz. Mismo ajuste que ya usan los Dockerfiles de API/Web.
+        run: npm pkg delete scripts.prepare && npm ci --workspace=apps/backend
 
       # NOTA (hallazgo BL-137): la base de staging quedó sin ninguna tabla
       # por un buen tiempo sin que nadie lo notara — el pipeline nunca
