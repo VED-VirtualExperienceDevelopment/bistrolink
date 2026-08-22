@@ -229,9 +229,9 @@ jobs:
           docker build \
             -t ${{ env.IMAGE_WEB }}:${{ env.TAG }} \
             -t ${{ env.IMAGE_WEB }}:latest \
-            --build-arg NEXT_PUBLIC_API_URL=https://staging.bistrolink.app \
-            --build-arg NEXT_PUBLIC_WS_URL=wss://staging.bistrolink.app \
-            --build-arg NEXT_PUBLIC_KEYCLOAK_URL=https://staging-auth.bistrolink.app \
+            --build-arg NEXT_PUBLIC_API_URL=https://bistrolink-api-staging.up.railway.app \
+            --build-arg NEXT_PUBLIC_WS_URL=wss://bistrolink-api-staging.up.railway.app \
+            --build-arg NEXT_PUBLIC_KEYCLOAK_URL=https://bistrolink-auth-staging.up.railway.app \
             --build-arg NEXT_PUBLIC_KEYCLOAK_REALM=bistrolink \
             --build-arg NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=bistrolink-frontend \
             -f apps/frontend/Dockerfile \
@@ -287,24 +287,72 @@ jobs:
         contains(toJson(github.event.head_commit.added), 'packages/')
       )
     runs-on: ubuntu-latest
+    env:
+      RAILWAY_GRAPHQL: https://backboard.railway.com/graphql/v2
+      ENVIRONMENT_ID: bfeb236f-2012-4a5e-a681-5c4728e6830a
+      API_SERVICE_ID: 45dc82be-fd53-4b80-ba9c-384bbbdba034
+      WEB_SERVICE_ID: 070e5864-c5af-47e3-89d4-89c3041bc98b
     steps:
-      - name: Instalar Railway CLI
-        run: npm install -g @railway/cli
-
-      - name: Deploy API en staging
-        run: railway redeploy --service bistrolink-api --environment staging --yes
+      # NOTA: ya NO usamos "railway redeploy" — ese comando solo vuelve a
+      # desplegar el commit/imagen que el servicio ya tenía configurado, no
+      # fuerza un pull nuevo del tag actualizado. Por eso el servicio se
+      # quedaba corriendo la imagen vieja aunque GHCR ya tuviera una nueva.
+      # En su lugar: serviceInstanceUpdate (cambia el tag de imagen) +
+      # serviceInstanceDeployV2 (dispara el deploy con ese tag ya seteado).
+      - name: Actualizar y deployar API (tag por SHA)
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          set -euo pipefail
+          IMAGE="${{ env.IMAGE_API }}:${{ env.TAG }}"
 
-      - name: Deploy Web en staging
-        run: railway redeploy --service bistrolink-web --environment staging --yes
+          curl -sSf -X POST "$RAILWAY_GRAPHQL" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg s "$API_SERVICE_ID" --arg e "$ENVIRONMENT_ID" --arg img "$IMAGE" '{
+              query: "mutation($serviceId: String!, $environmentId: String!, $input: ServiceInstanceUpdateInput!) { serviceInstanceUpdate(serviceId: $serviceId, environmentId: $environmentId, input: $input) }",
+              variables: { serviceId: $s, environmentId: $e, input: { source: { image: $img } } }
+            }')"
+
+          curl -sSf -X POST "$RAILWAY_GRAPHQL" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg s "$API_SERVICE_ID" --arg e "$ENVIRONMENT_ID" '{
+              query: "mutation($serviceId: String!, $environmentId: String!) { serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId) }",
+              variables: { serviceId: $s, environmentId: $e }
+            }')"
+
+      - name: Actualizar y deployar Web (tag por SHA)
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          set -euo pipefail
+          IMAGE="${{ env.IMAGE_WEB }}:${{ env.TAG }}"
+
+          curl -sSf -X POST "$RAILWAY_GRAPHQL" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg s "$WEB_SERVICE_ID" --arg e "$ENVIRONMENT_ID" --arg img "$IMAGE" '{
+              query: "mutation($serviceId: String!, $environmentId: String!, $input: ServiceInstanceUpdateInput!) { serviceInstanceUpdate(serviceId: $serviceId, environmentId: $environmentId, input: $input) }",
+              variables: { serviceId: $s, environmentId: $e, input: { source: { image: $img } } }
+            }')"
+
+          curl -sSf -X POST "$RAILWAY_GRAPHQL" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg s "$WEB_SERVICE_ID" --arg e "$ENVIRONMENT_ID" '{
+              query: "mutation($serviceId: String!, $environmentId: String!) { serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId) }",
+              variables: { serviceId: $s, environmentId: $e }
+            }')"
 
       - name: Health check staging
         run: |
           sleep 40
           curl -f https://bistrolink-api-staging.up.railway.app/health
+
+      - name: Instalar Railway CLI (solo para scale down)
+        if: always()
+        run: npm install -g @railway/cli
 
       - name: Scale down tras verificación
         if: always()
