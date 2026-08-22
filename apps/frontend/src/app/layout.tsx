@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import { Plus_Jakarta_Sans } from "next/font/google";
 import { KeycloakProvider } from "@/components/providers/KeycloakProvider";
-import { VersionInfo } from "@/components/ui/versioninfo";
+import { VersionInfo } from "@/components/ui/VersionInfo";
 import "./globals.css";
 
 const geistSans = localFont({
