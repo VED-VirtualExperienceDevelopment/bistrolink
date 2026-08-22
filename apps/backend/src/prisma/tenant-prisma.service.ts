@@ -17,19 +17,26 @@ import { PrismaClient } from '@prisma/client';
  * desajuste de versiones entre el paquete del adapter y el client generado,
  * así que no vale la pena introducirlos todavía.
  *
- * NOTA (BL-133): antes leía process.env.RUNTIME_DATABASE_URL, variable que
- * nunca existió en .env.example ni en Railway — no era una separación
- * intencional (por ejemplo, un rol de Postgres con permisos restringidos
- * en runtime), sino un nombre mal escrito. Al pasar datasourceUrl: undefined,
- * Prisma caía de vuelta al valor de env("DATABASE_URL") declarado en el
- * propio schema.prisma, así que funcionaba por una coincidencia silenciosa,
- * no porque el código pidiera la variable correcta. Corregido para leer
- * DATABASE_URL explícitamente, alineado con .env.example, el CI y Railway.
+ * REVERT (BL-XXX, corrige regresión introducida en BL-133): este servicio
+ * SÍ debe usar RUNTIME_DATABASE_URL, no DATABASE_URL. Es una separación de
+ * roles intencional: DATABASE_URL apunta al rol usado por Prisma CLI para
+ * migraciones (necesita permisos de owner/DDL, y en local ES superusuario:
+ * rolsuper=t, rolbypassrls=t). RUNTIME_DATABASE_URL apunta a un rol
+ * restringido (NOSUPERUSER, NOBYPASSRLS) que sí respeta las políticas RLS.
+ * Si este servicio usa el rol equivocado (DATABASE_URL), el aislamiento
+ * multi-tenant queda completamente bypasseado sin que ningún error lo
+ * avise — se detectó porque los tests e2e de aislamiento (TC-I-005,
+ * TC-I-007) empezaron a fallar tras el cambio incorrecto de BL-133.
+ * El error de BL-133 fue asumir que la variable "nunca existió" solo
+ * porque no estaba en .env.example ni en Railway — sí existía en el
+ * .env real de desarrollo, simplemente nunca se propagó a esos otros
+ * dos lugares. Ver .env.example y variables de Railway, actualizados
+ * en el mismo cambio que este revert.
  */
 @Injectable({ scope: Scope.REQUEST })
 export class TenantPrismaService {
   private readonly prisma = new PrismaClient({
-    datasourceUrl: process.env.DATABASE_URL,
+    datasourceUrl: process.env.RUNTIME_DATABASE_URL,
   });
 
   async runInTenantContext<T>(

@@ -13,3 +13,32 @@ CVE-2026-33671
 CVE-2024-47068
 CVE-2026-27606
 CVE-2026-48779
+
+# Keycloak (imagen keycloak/Dockerfile.auth) — CVEs de dependencias internas
+# de Keycloak 26.7.0 (la versión estable más reciente disponible hoy,
+# 22/08). Los 4 CVEs específicos de Keycloak que motivaron el upgrade desde
+# 26.5.7 (CVE-2026-7504, 7507, 7571, 9795) YA NO APARECEN en el escaneo de
+# 26.7.0 — confirmado, el upgrade los resolvió. Lo que queda acá son CVEs
+# nuevos y distintos, de librerías de terceros empaquetadas dentro de la
+# imagen (jackson, netty, micrometer, mssql-jdbc, el driver JDBC interno de
+# postgresql que usa Keycloak) — no de código propio del proyecto. La
+# mayoría ya tiene "Fixed Version" publicada por esas librerías, pero
+# Keycloak todavía no las empaquetó en un patch release. No hay una versión
+# de Keycloak más nueva disponible que ya las incluya.
+# Pendiente (BL-137): revisar en el próximo patch release de Keycloak
+# (26.7.x) si estos CVEs ya se resolvieron, y sacar las excepciones que
+# correspondan en vez de dejarlas indefinidamente.
+CVE-2026-22020
+GHSA-r7wm-3cxj-wff9
+CVE-2026-54512
+CVE-2026-54513
+CVE-2025-59250
+CVE-2026-40983
+CVE-2026-40984
+CVE-2026-59901
+CVE-2026-55851
+CVE-2026-55831
+CVE-2026-55833
+CVE-2026-56745
+CVE-2026-56819
+CVE-2026-54291

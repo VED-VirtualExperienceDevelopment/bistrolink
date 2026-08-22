@@ -6,8 +6,22 @@
 # bind mount desde el disco del desarrollador. Railway no puede montar un bind
 # mount de una máquina local, así que el archivo tiene que copiarse DENTRO de
 # la imagen en build time para que --import-realm tenga algo que importar.
+#
+# 24.0.5 -> 26.5.7 (BL-137): la 24.0.5 acumuló 67 CVEs sin parche disponible
+# en esa serie (varios específicos de Keycloak: CVE-2026-7504, 7507, 7571,
+# 4634, 4636, 9795), varios con fix confirmado recién en 26.x. Verificado
+# localmente que el realm-export.json importa sin errores bloqueantes y que
+# el login end-to-end (token + rutas protegidas) funciona igual en 26.5.7.
+#
+# Único cambio de comportamiento notado: los clientScopes estándar (profile,
+# email, web-origins) ya no se crean automáticamente al importar un realm en
+# 26.x como sí pasaba en 24.x — el JWT resultante no incluye email/nombre
+# (el backend no los usa, solo tenant_id y roles, así que no rompe nada hoy).
+# Pendiente como mejora: definir esos clientScopes explícitamente en
+# realm-export.json si en algún momento se necesita mostrar email/nombre real
+# del usuario en la UI.
 
-FROM quay.io/keycloak/keycloak:24.0.5
+FROM quay.io/keycloak/keycloak:26.7.0
 
 # Copiamos el export del realm a la carpeta de importación estándar de Keycloak.
 # Al arrancar con --import-realm, Keycloak busca acá y lo carga automáticamente.
