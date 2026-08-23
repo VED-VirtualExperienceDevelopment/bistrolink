@@ -9,7 +9,7 @@ import { TestController } from './test/test.controller';
 import { MenuModule } from './menu/menu.module';
 import { UsuariosModule } from './usuarios/usuarios.module';
 import { RestaurantesModule } from './restaurantes/restaurantes.module';
-
+import { stdTimeFunctions } from 'pino';
 const isProd = process.env.NODE_ENV === 'production';
 
 const targets = [
@@ -50,6 +50,7 @@ const targets = [
   imports: [
     LoggerModule.forRoot({
       pinoHttp: {
+        timestamp: stdTimeFunctions.isoTime,
         base: {
           developer: process.env.DEV_NAME ?? 'unknown',
         },
