@@ -21,11 +21,59 @@
 # realm-export.json si en algún momento se necesita mostrar email/nombre real
 # del usuario en la UI.
 
+# ── STAGE 1: sustituir los placeholders ${VAR} del realm-export.json ────────
+# El mecanismo standalone de Keycloak (--import-realm) NO interpola variables
+# de entorno sobre el JSON (a diferencia del Keycloak Operator o de
+# herramientas como keycloak-config-cli), así que hay que resolverlas antes
+# con envsubst — pero la imagen final de Keycloak es la variante "micro" de
+# Red Hat UBI, que a propósito NO trae ningún gestor de paquetes (ni
+# microdnf, ni nada) para minimizar superficie de ataque. Por eso este paso
+# corre en una imagen aparte que sí tiene herramientas, y solo el archivo
+# JSON ya resuelto se copia a la imagen final — sin instalar nada en Keycloak.
+FROM debian:bookworm-slim AS realm-templater
+ARG TEST_ADMIN_USERNAME
+ARG TEST_ADMIN_PASSWORD
+ARG TEST_COCINA_USERNAME
+ARG TEST_COCINA_PASSWORD
+ARG TEST_NO_TENANT_USERNAME
+ARG TEST_NO_TENANT_PASSWORD
+ARG TEST_TENANT_B_USERNAME
+ARG TEST_TENANT_B_PASSWORD
+ARG KEYCLOAK_CLIENT_SECRET
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends gettext-base && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY keycloak/realm-export.json /tmp/realm-export.json
+
+# IMPORTANTE: se le pasa a envsubst la lista explícita de variables a
+# sustituir (primer argumento entre comillas), en vez de dejarlo actuar sobre
+# TODO lo que tenga forma de "${...}". Sin esto, envsubst también pisaba
+# "${client_id}" del protocolMapper "client roles" (clientScopes > roles) —
+# ese placeholder es propio de Keycloak, pensado para resolverse en runtime
+# por cliente al generar el JWT, no algo que nosotros debamos tocar en build
+# time. Al no existir una env var real llamada "client_id", quedaba
+# reemplazado por string vacío y rompía ese mapper (hallazgo BL-140).
+RUN TEST_ADMIN_USERNAME="$TEST_ADMIN_USERNAME" \
+    TEST_ADMIN_PASSWORD="$TEST_ADMIN_PASSWORD" \
+    TEST_COCINA_USERNAME="$TEST_COCINA_USERNAME" \
+    TEST_COCINA_PASSWORD="$TEST_COCINA_PASSWORD" \
+    TEST_NO_TENANT_USERNAME="$TEST_NO_TENANT_USERNAME" \
+    TEST_NO_TENANT_PASSWORD="$TEST_NO_TENANT_PASSWORD" \
+    TEST_TENANT_B_USERNAME="$TEST_TENANT_B_USERNAME" \
+    TEST_TENANT_B_PASSWORD="$TEST_TENANT_B_PASSWORD" \
+    KEYCLOAK_CLIENT_SECRET="$KEYCLOAK_CLIENT_SECRET" \
+    envsubst '$TEST_ADMIN_USERNAME $TEST_ADMIN_PASSWORD $TEST_COCINA_USERNAME $TEST_COCINA_PASSWORD $TEST_NO_TENANT_USERNAME $TEST_NO_TENANT_PASSWORD $TEST_TENANT_B_USERNAME $TEST_TENANT_B_PASSWORD $KEYCLOAK_CLIENT_SECRET' \
+    < /tmp/realm-export.json > /tmp/realm-export.resuelto.json
+
+# ── STAGE 2: imagen final de Keycloak, sin tocar su gestor de paquetes ──────
 FROM quay.io/keycloak/keycloak:26.7.0
 
-# Copiamos el export del realm a la carpeta de importación estándar de Keycloak.
-# Al arrancar con --import-realm, Keycloak busca acá y lo carga automáticamente.
-COPY keycloak/realm-export.json /opt/keycloak/data/import/realm-export.json
+# Copiamos el JSON YA con los valores reales (no el original con placeholders)
+# a la carpeta de importación estándar. Al arrancar con --import-realm,
+# Keycloak busca acá y lo carga automáticamente.
+COPY --from=realm-templater /tmp/realm-export.resuelto.json /opt/keycloak/data/import/realm-export.json
 
 # El comando de arranque real lo define el "Custom Start Command" de Railway,
 # no hace falta CMD acá — pero se deja un default por si se corre suelta.
