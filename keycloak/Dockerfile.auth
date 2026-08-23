@@ -74,7 +74,13 @@ FROM quay.io/keycloak/keycloak:26.7.0
 # a la carpeta de importación estándar. Al arrancar con --import-realm,
 # Keycloak busca acá y lo carga automáticamente.
 COPY --from=realm-templater /tmp/realm-export.resuelto.json /opt/keycloak/data/import/realm-export.json
-
+# Tema custom de login (paleta/tipografía de BistroLink) — en local se monta
+# vía bind mount en docker-compose.yml (./keycloak/themes/bistrolink), pero
+# igual que con realm-export.json, Railway no puede montar nada del disco
+# local, así que acá se copia dentro de la imagen en build time. Probado
+# primero en local (bind mount) antes de este COPY para no depender de un
+# build completo en cada iteración de CSS.
+COPY keycloak/themes/bistrolink /opt/keycloak/themes/bistrolink
 # El comando de arranque real lo define el "Custom Start Command" de Railway,
 # no hace falta CMD acá — pero se deja un default por si se corre suelta.
 CMD ["start-dev", "--http-port=8080", "--import-realm"]

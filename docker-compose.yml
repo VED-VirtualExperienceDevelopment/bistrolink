@@ -48,6 +48,7 @@ services:
     volumes:
       - bistrolink-auth-data:/opt/keycloak/data
       - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+      - ./keycloak/themes/bistrolink:/opt/keycloak/themes/bistrolink:r
     healthcheck:
       test:
         - CMD-SHELL

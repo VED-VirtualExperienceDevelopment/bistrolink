@@ -43,7 +43,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       <aside className="hidden md:flex w-64 h-screen flex-col shrink-0 border-r border-outline-variant bg-surface-container-lowest">
         <div className="p-6">
           <div className="text-headline-md font-bold leading-tight text-primary">Bistro Link</div>
-          <div className="text-label-md text-on-surface-variant">Management Suite</div>
+          <div className="text-label-md text-on-surface-variant">Portal de Administración</div>
         </div>
 
         <nav className="mt-4 flex-1 overflow-y-auto">
