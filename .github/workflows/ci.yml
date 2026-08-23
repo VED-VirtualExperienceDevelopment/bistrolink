@@ -234,91 +234,82 @@ jobs:
           args: --severity-threshold=high
 
   # ── JOB 8: BUILD + TRIVY ──────────────────────────────────────────────────
+  # Matrix: las 3 imágenes se buildean y escanean en paralelo (3 runners
+  # simultáneos) en vez de secuencialmente en uno solo. "needs: [build]" en
+  # deploy-staging sigue funcionando igual — GitHub Actions espera a que las
+  # 3 entradas del matrix terminen antes de considerar el job completo.
+  # La DB de vulnerabilidades de Trivy se cachea por separado en cada entrada
+  # del matrix (runners distintos = cache distinto), pero sigue evitando la
+  # descarga repetida en corridas sucesivas del mismo runner de GitHub.
   build:
-    name: 🐳 Build + Escaneo de imágenes (Trivy)
+    name: 🐳 Build + Escaneo (${{ matrix.name }})
     runs-on: ubuntu-latest
     # pact sigue comentado — agregarlo a needs cuando esté listo.
     needs: [lint, jest]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: API
+            image: ghcr.io/ved-virtualexperiencedevelopment/bistrolink-api
+            dockerfile: apps/backend/Dockerfile
+            extra_args: --build-arg GIT_SHA=${{ github.sha }}
+          - name: Web
+            image: ghcr.io/ved-virtualexperiencedevelopment/bistrolink-web
+            dockerfile: apps/frontend/Dockerfile
+            extra_args: >-
+              --build-arg NEXT_PUBLIC_API_URL=https://bistrolink-api-staging.up.railway.app
+              --build-arg NEXT_PUBLIC_WS_URL=wss://bistrolink-api-staging.up.railway.app
+              --build-arg NEXT_PUBLIC_KEYCLOAK_URL=https://bistrolink-auth-staging.up.railway.app
+              --build-arg NEXT_PUBLIC_KEYCLOAK_REALM=bistrolink
+              --build-arg NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=bistrolink-frontend
+              --build-arg NEXT_PUBLIC_APP_VERSION=${{ github.sha }}
+          - name: Auth
+            image: ghcr.io/ved-virtualexperiencedevelopment/bistrolink-auth
+            dockerfile: keycloak/Dockerfile.auth
+            extra_args: ""
     steps:
       - uses: actions/checkout@v7
 
-      - name: Construir imagen API (NestJS)
+      - name: Cache DB de vulnerabilidades Trivy
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/trivy
+          key: trivy-db-${{ github.run_id }}
+          restore-keys: trivy-db-
+
+      - name: Construir imagen (${{ matrix.name }})
         run: |
           docker build \
-            -t ${{ env.IMAGE_API }}:${{ env.TAG }} \
-            -t ${{ env.IMAGE_API }}:latest \
-            --build-arg GIT_SHA=${{ env.TAG }} \
-            -f apps/backend/Dockerfile \
+            -t ${{ matrix.image }}:${{ env.TAG }} \
+            -t ${{ matrix.image }}:latest \
+            ${{ matrix.extra_args }} \
+            -f ${{ matrix.dockerfile }} \
             .
 
-      - name: Construir imagen Web (Next.js)
-        run: |
-          docker build \
-            -t ${{ env.IMAGE_WEB }}:${{ env.TAG }} \
-            -t ${{ env.IMAGE_WEB }}:latest \
-            --build-arg NEXT_PUBLIC_API_URL=https://bistrolink-api-staging.up.railway.app \
-            --build-arg NEXT_PUBLIC_WS_URL=wss://bistrolink-api-staging.up.railway.app \
-            --build-arg NEXT_PUBLIC_KEYCLOAK_URL=https://bistrolink-auth-staging.up.railway.app \
-            --build-arg NEXT_PUBLIC_KEYCLOAK_REALM=bistrolink \
-            --build-arg NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=bistrolink-frontend \
-            --build-arg NEXT_PUBLIC_APP_VERSION=${{ env.TAG }} \
-            -f apps/frontend/Dockerfile \
-            .
-
-      - name: Construir imagen Keycloak (con realm incluido)
-        run: |
-          docker build \
-            -t ${{ env.IMAGE_AUTH }}:${{ env.TAG }} \
-            -t ${{ env.IMAGE_AUTH }}:latest \
-            -f keycloak/Dockerfile.auth \
-            .
-
-      - name: Trivy — escaneo imagen API
+      - name: Trivy — escaneo (${{ matrix.name }})
         # @master -> @0.35.0: fijar a una versión concreta. En marzo de 2026 se
         # reescribieron 75 de 76 tags de este repo con un payload malicioso que
         # robaba secrets del pipeline; @master queda expuesto a que el próximo
         # push del mantenedor se ejecute acá sin revisión de nadie del equipo.
         uses: aquasecurity/trivy-action@0.35.0
         with:
-          image-ref: ${{ env.IMAGE_API }}:${{ env.TAG }}
+          image-ref: ${{ matrix.image }}:${{ env.TAG }}
           severity: CRITICAL,HIGH
           exit-code: "1"
           trivyignores: .trivyignore
+          cache-dir: ~/.cache/trivy
 
-      - name: Trivy — escaneo imagen Web
-        uses: aquasecurity/trivy-action@0.35.0
-        with:
-          image-ref: ${{ env.IMAGE_WEB }}:${{ env.TAG }}
-          severity: CRITICAL,HIGH
-          exit-code: "1"
-          trivyignores: .trivyignore
-
-      - name: Trivy — escaneo imagen Keycloak
-        uses: aquasecurity/trivy-action@0.35.0
-        with:
-          image-ref: ${{ env.IMAGE_AUTH }}:${{ env.TAG }}
-          severity: CRITICAL,HIGH
-          exit-code: "1"
-          trivyignores: .trivyignore
-
-      - name: Publicar imágenes en GHCR
+      - name: Publicar imagen en GHCR (${{ matrix.name }})
         if: github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/tags/')
         run: |
           echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-          docker push ${{ env.IMAGE_API }}:${{ env.TAG }}
-          docker push ${{ env.IMAGE_WEB }}:${{ env.TAG }}
-          docker push ${{ env.IMAGE_AUTH }}:${{ env.TAG }}
-          docker push ${{ env.IMAGE_API }}:latest        
-          docker push ${{ env.IMAGE_WEB }}:latest        
-          docker push ${{ env.IMAGE_AUTH }}:latest
+          docker push ${{ matrix.image }}:${{ env.TAG }}
+          docker push ${{ matrix.image }}:latest
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
             VERSION=${GITHUB_REF#refs/tags/}
-            docker tag ${{ env.IMAGE_API }}:${{ env.TAG }} ${{ env.IMAGE_API }}:${VERSION}
-            docker tag ${{ env.IMAGE_WEB }}:${{ env.TAG }} ${{ env.IMAGE_WEB }}:${VERSION}
-            docker tag ${{ env.IMAGE_AUTH }}:${{ env.TAG }} ${{ env.IMAGE_AUTH }}:${VERSION}
-            docker push ${{ env.IMAGE_API }}:${VERSION}
-            docker push ${{ env.IMAGE_WEB }}:${VERSION}
-            docker push ${{ env.IMAGE_AUTH }}:${VERSION}
+            docker tag ${{ matrix.image }}:${{ env.TAG }} ${{ matrix.image }}:${VERSION}
+            docker push ${{ matrix.image }}:${VERSION}
           fi
 
   # ── JOB 9: DEPLOY STAGING ─────────────────────────────────────────────────
@@ -365,7 +356,7 @@ jobs:
           DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
         run: |
           for i in 1 2 3 4 5; do
-            npx prisma migrate deploy && break
+            npx prisma migrate deploy && exit 0
             echo "Intento $i falló, esperando 10s..."
             sleep 10
           done
