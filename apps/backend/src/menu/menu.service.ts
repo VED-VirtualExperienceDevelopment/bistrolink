@@ -21,32 +21,14 @@ export class MenuService {
           'Mesa no encontrada para este establecimiento',
         );
       }
+
       const categorias = await tx.categoriaCarta.findMany({
         where: { restauranteId: mesa.restauranteId },
         orderBy: { orden: 'asc' },
-        include: {
-          items: { orderBy: { nombre: 'asc' } },
-        },
+        include: { items: { orderBy: { nombre: 'asc' } } },
       });
 
-      const categoriasConUrls = await Promise.all(
-        categorias.map(async (categoria) => ({
-          id: categoria.id,
-          nombre: categoria.nombre,
-          items: await Promise.all(
-            categoria.items.map(async (item) => ({
-              id: item.id,
-              nombre: item.nombre,
-              descripcion: item.descripcion,
-              precio: item.precio,
-              disponible: item.disponible,
-              imagenUrl: item.imagenKey
-                ? await this.storage.getSignedImageUrl(item.imagenKey)
-                : null,
-            })),
-          ),
-        })),
-      );
+      const categoriasConUrls = await this.armarCategoriasConUrls(categorias);
 
       return {
         restaurante: {
@@ -58,25 +40,18 @@ export class MenuService {
     });
   }
 
-  /**
-   * HU-002: Obtiene el menú completo de un restaurante para acceso público.
-   * No requiere mesaId porque es para pedidos desde fuera del local.
-   */
   async getMenuByRestaurante(tenantId: string, restauranteId: string) {
     return this.tenantPrisma.runInTenantContext(tenantId, async (tx) => {
-      // 1. Buscar el restaurante directamente (sin pasar por mesa)
       const restaurante = await tx.restaurante.findUnique({
         where: { id: restauranteId },
       });
 
-      // 2. Validar que el restaurante exista
       if (!restaurante) {
         throw new NotFoundException(
           'Restaurante no encontrado para este establecimiento',
         );
       }
 
-      // 3. Obtener categorías con sus items (solo disponibles)
       const categorias = await tx.categoriaCarta.findMany({
         where: { restauranteId },
         orderBy: { orden: 'asc' },
@@ -88,27 +63,8 @@ export class MenuService {
         },
       });
 
-      // 4. Generar URLs firmadas para las imágenes
-      const categoriasConUrls = await Promise.all(
-        categorias.map(async (categoria) => ({
-          id: categoria.id,
-          nombre: categoria.nombre,
-          items: await Promise.all(
-            categoria.items.map(async (item) => ({
-              id: item.id,
-              nombre: item.nombre,
-              descripcion: item.descripcion,
-              precio: item.precio,
-              disponible: item.disponible,
-              imagenUrl: item.imagenKey
-                ? await this.storage.getSignedImageUrl(item.imagenKey)
-                : null,
-            })),
-          ),
-        })),
-      );
+      const categoriasConUrls = await this.armarCategoriasConUrls(categorias);
 
-      // 5. Respuesta con el id del restaurante incluido
       return {
         restaurante: {
           id: restaurante.id,
@@ -118,5 +74,30 @@ export class MenuService {
         categorias: categoriasConUrls,
       };
     });
+  }
+
+  /**
+   * Helper privado que arma el array de categorías con URLs firmadas de S3.
+   * Reutilizado por ambos endpoints (HU-001 y HU-002) para evitar duplicación.
+   */
+  private async armarCategoriasConUrls(categorias: any[]) {
+    return Promise.all(
+      categorias.map(async (categoria) => ({
+        id: categoria.id,
+        nombre: categoria.nombre,
+        items: await Promise.all(
+          categoria.items.map(async (item) => ({
+            id: item.id,
+            nombre: item.nombre,
+            descripcion: item.descripcion,
+            precio: item.precio,
+            disponible: item.disponible,
+            imagenUrl: item.imagenKey
+              ? await this.storage.getSignedImageUrl(item.imagenKey)
+              : null,
+          })),
+        ),
+      })),
+    );
   }
 }

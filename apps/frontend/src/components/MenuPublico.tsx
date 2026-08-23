@@ -9,10 +9,10 @@ import type {
 } from '@/types/menu';
 
 interface MenuPublicoProps {
-  restaurante: RestaurantePublico;
-  categorias: CategoriaCarta[];
-  tenantId: string;
-  restauranteId: string;
+  readonly restaurante: RestaurantePublico;
+  readonly categorias: readonly CategoriaCarta[];
+  readonly tenantId: string;
+  readonly restauranteId: string;
 }
 
 /**
@@ -34,7 +34,7 @@ export default function MenuPublico({
    */
   const agregarAlCarrito = (item: ItemCarta) => {
     setCarrito((prevCarrito) => {
-      const itemExistente = prevCarrito.find((i) => i.itemCartaId === item.id);
+      const itemExistente = prevCarrito.some((i) => i.itemCartaId === item.id);
 
       if (itemExistente) {
         // Si ya está en el carrito, incrementar cantidad
@@ -129,18 +129,17 @@ export default function MenuPublico({
                       key={item.id}
                       className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow flex flex-col"
                     >
-
-                      {/* Aca puse el onError para cuando fallan las imagens en cargar, no mostrar el broken image */}
-                     {item.imagenUrl && (
-                      <img
-                src={item.imagenUrl}
-                alt={item.nombre}
-                className="w-full h-48 object-cover rounded-md mb-3"
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none'
-                }}
-              />
-            )}
+                      {/* onError para que no carguen imagenes rotas y se vea el broken image icon */}
+                      {item.imagenUrl && (
+                        <img
+                          src={item.imagenUrl}
+                          alt={item.nombre}
+                          className="w-full h-48 object-cover rounded-md mb-3"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                          }}
+                        />
+                      )}
 
                       <h3 className="font-semibold text-gray-900 mb-1">
                         {item.nombre}
@@ -157,6 +156,7 @@ export default function MenuPublico({
                           ${formatearPrecio(Number(item.precio))}
                         </span>
                         <button
+                          type="button"
                           onClick={() => agregarAlCarrito(item)}
                           className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
                           aria-label={`Agregar ${item.nombre} al carrito`}
@@ -182,6 +182,7 @@ export default function MenuPublico({
               {cantidadTotalItems === 1 ? 'item' : 'items'})
             </h3>
             <button
+              type="button"
               onClick={() => setCarrito([])}
               className="text-sm text-red-600 hover:text-red-700 font-medium"
               aria-label="Vaciar carrito"
@@ -215,8 +216,9 @@ export default function MenuPublico({
             </div>
 
             <button
+              type="button"
               onClick={() => {
-                // TODO: Implementar creación de pedido en Fase 3
+                // Pendiente: integrar con endpoint de pedidos (HU-003).
                 alert(
                   `Pedido listo para enviar:\n\nTenant: ${tenantId}\nRestaurante: ${restauranteId}\nItems: ${cantidadTotalItems}\nTotal: $${totalCarrito.toFixed(2)}`,
                 );
