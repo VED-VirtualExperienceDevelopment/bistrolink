@@ -144,3 +144,9 @@ vite.config.ts.timestamp-*
 
 apps/backend/src/**/*.js
 apps/backend/src/**/*.js.map
+
+# Playwright — reportes y resultados de corridas E2E, no son código
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/

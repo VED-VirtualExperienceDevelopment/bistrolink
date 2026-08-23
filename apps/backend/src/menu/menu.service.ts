@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { StorageService } from './storage.service';
+import { mapItemToDto } from './menu.mapper';
 
 @Injectable()
 export class MenuService {
@@ -25,21 +26,27 @@ export class MenuService {
       const categorias = await tx.categoriaCarta.findMany({
         where: { restauranteId: mesa.restauranteId },
         orderBy: { orden: 'asc' },
-        include: { items: { orderBy: { nombre: 'asc' } } },
+        include: {
+          items: { orderBy: { nombre: 'asc' } },
+        },
       });
 
-      const categoriasConUrls = await this.armarCategoriasConUrls(categorias);
+      const categoriasConUrls =
+        await this.categoriasConUrlsFirmadas(categorias);
 
       return {
         restaurante: {
           nombre: mesa.restaurante.nombre,
-          direccion: mesa.restaurante.direccion,
         },
         categorias: categoriasConUrls,
       };
     });
   }
 
+  /**
+   * HU-002: Obtiene el menú completo de un restaurante para acceso público.
+   * No requiere mesaId porque es para pedidos desde fuera del local.
+   */
   async getMenuByRestaurante(tenantId: string, restauranteId: string) {
     return this.tenantPrisma.runInTenantContext(tenantId, async (tx) => {
       const restaurante = await tx.restaurante.findUnique({
@@ -52,6 +59,9 @@ export class MenuService {
         );
       }
 
+      // Decisión de negocio HU-002: para pedidos "para llevar" se muestran
+      // solo los items disponibles. A diferencia de HU-001, donde los no
+      // disponibles se muestran bloqueados visualmente (ver menu.mapper.ts).
       const categorias = await tx.categoriaCarta.findMany({
         where: { restauranteId },
         orderBy: { orden: 'asc' },
@@ -63,7 +73,8 @@ export class MenuService {
         },
       });
 
-      const categoriasConUrls = await this.armarCategoriasConUrls(categorias);
+      const categoriasConUrls =
+        await this.categoriasConUrlsFirmadas(categorias);
 
       return {
         restaurante: {
@@ -77,25 +88,23 @@ export class MenuService {
   }
 
   /**
-   * Helper privado que arma el array de categorías con URLs firmadas de S3.
-   * Reutilizado por ambos endpoints (HU-001 y HU-002) para evitar duplicación.
+   * Arma las categorías con URLs firmadas de S3 para las imágenes.
+   * El mapeo de cada item se delega a `mapItemToDto` (menu.mapper.ts,
+   * introducido en BL-25) para no duplicar esa lógica y mantener un
+   * único estándar de mapeo en el módulo.
    */
-  private async armarCategoriasConUrls(categorias: any[]) {
+  private async categoriasConUrlsFirmadas(categorias: any[]) {
     return Promise.all(
       categorias.map(async (categoria) => ({
         id: categoria.id,
         nombre: categoria.nombre,
         items: await Promise.all(
-          categoria.items.map(async (item) => ({
-            id: item.id,
-            nombre: item.nombre,
-            descripcion: item.descripcion,
-            precio: item.precio,
-            disponible: item.disponible,
-            imagenUrl: item.imagenKey
+          categoria.items.map(async (item) => {
+            const imagenUrl = item.imagenKey
               ? await this.storage.getSignedImageUrl(item.imagenKey)
-              : null,
-          })),
+              : null;
+            return mapItemToDto(item, imagenUrl);
+          }),
         ),
       })),
     );
