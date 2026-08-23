@@ -9,7 +9,6 @@ import { TestController } from './test/test.controller';
 import { MenuModule } from './menu/menu.module';
 import { UsuariosModule } from './usuarios/usuarios.module';
 import { RestaurantesModule } from './restaurantes/restaurantes.module';
-import { stdTimeFunctions } from 'pino';
 const isProd = process.env.NODE_ENV === 'production';
 
 const targets = [
@@ -50,14 +49,20 @@ const targets = [
   imports: [
     LoggerModule.forRoot({
       pinoHttp: {
-        timestamp: stdTimeFunctions.isoTime,
         base: {
           developer: process.env.DEV_NAME ?? 'unknown',
+        },
+        mixin() {
+          return {
+            readableTime: new Date().toLocaleString('es-UY', {
+              timeZone: 'America/Montevideo',
+            }),
+          };
         },
         customLogLevel: (req, res, err) => {
           if (res.statusCode >= 500 || err) return 'error';
           if (res.statusCode >= 400) return 'warn';
-          if (res.statusCode >= 300) return 'silent';
+          if (res.statusCode >= 300) return 'info'; // antes: 'silent'
           return 'info';
         },
         redact: {
