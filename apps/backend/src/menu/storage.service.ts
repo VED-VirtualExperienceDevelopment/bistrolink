@@ -20,13 +20,21 @@ export class StorageService {
     return this.s3Client;
   }
 
-  async getSignedImageUrl(key: string): Promise<string> {
-    const command = new GetObjectCommand({
-      Bucket: process.env.S3_BUCKET_IMAGES,
-      Key: key,
-    });
-    return getSignedUrl(this.getClient(), command, {
-      expiresIn: SIGNED_URL_TTL_SECONDS,
-    });
+  async getSignedImageUrl(key: string): Promise<string | null> {
+    try {
+      const command = new GetObjectCommand({
+        Bucket: process.env.S3_BUCKET_IMAGES,
+        Key: key,
+      });
+      return await getSignedUrl(this.getClient(), command, {
+        expiresIn: SIGNED_URL_TTL_SECONDS,
+      });
+    } catch (error) {
+      // No dejamos que un problema de S3 (bucket mal configurado, credenciales
+      // vencidas, etc.) tire abajo el menú entero — el comensal sigue viendo
+      // nombre/descripción/precio, solo sin imagen para ese ítem puntual.
+      console.error(`No se pudo generar la URL firmada para "${key}":`, error);
+      return null;
+    }
   }
 }
