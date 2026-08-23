@@ -376,21 +376,31 @@ jobs:
           set -euo pipefail
           IMAGE="${{ env.IMAGE_API }}:${{ env.TAG }}"
 
-          curl -sSf -X POST "$RAILWAY_GRAPHQL" \
+          # La API GraphQL de Railway devuelve HTTP 200 incluso cuando hay un
+          # error (ej. "Not Authorized" por token inválido/mal scopeado): el
+          # error viaja dentro del body JSON, no como status code. "curl -f"
+          # no lo detecta, así que cada respuesta se valida explícitamente
+          # con jq para que el step falle de verdad si Railway devolvió
+          # "errors", en vez de seguir de largo en silencio.
+          RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
             -H "Authorization: Bearer $RAILWAY_TOKEN" \
             -H "Content-Type: application/json" \
             -d "$(jq -n --arg s "$API_SERVICE_ID" --arg e "$ENVIRONMENT_ID" --arg img "$IMAGE" '{
               query: "mutation($serviceId: String!, $environmentId: String!, $input: ServiceInstanceUpdateInput!) { serviceInstanceUpdate(serviceId: $serviceId, environmentId: $environmentId, input: $input) }",
               variables: { serviceId: $s, environmentId: $e, input: { source: { image: $img } } }
-            }')"
+            }')")
+          echo "$RESPONSE"
+          echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
 
-          curl -sSf -X POST "$RAILWAY_GRAPHQL" \
+          RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
             -H "Authorization: Bearer $RAILWAY_TOKEN" \
             -H "Content-Type: application/json" \
             -d "$(jq -n --arg s "$API_SERVICE_ID" --arg e "$ENVIRONMENT_ID" '{
               query: "mutation($serviceId: String!, $environmentId: String!) { serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId) }",
               variables: { serviceId: $s, environmentId: $e }
-            }')"
+            }')")
+          echo "$RESPONSE"
+          echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
 
       - name: Actualizar y deployar Web (tag por SHA)
         env:
@@ -399,21 +409,25 @@ jobs:
           set -euo pipefail
           IMAGE="${{ env.IMAGE_WEB }}:${{ env.TAG }}"
 
-          curl -sSf -X POST "$RAILWAY_GRAPHQL" \
+          RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
             -H "Authorization: Bearer $RAILWAY_TOKEN" \
             -H "Content-Type: application/json" \
             -d "$(jq -n --arg s "$WEB_SERVICE_ID" --arg e "$ENVIRONMENT_ID" --arg img "$IMAGE" '{
               query: "mutation($serviceId: String!, $environmentId: String!, $input: ServiceInstanceUpdateInput!) { serviceInstanceUpdate(serviceId: $serviceId, environmentId: $environmentId, input: $input) }",
               variables: { serviceId: $s, environmentId: $e, input: { source: { image: $img } } }
-            }')"
+            }')")
+          echo "$RESPONSE"
+          echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
 
-          curl -sSf -X POST "$RAILWAY_GRAPHQL" \
+          RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
             -H "Authorization: Bearer $RAILWAY_TOKEN" \
             -H "Content-Type: application/json" \
             -d "$(jq -n --arg s "$WEB_SERVICE_ID" --arg e "$ENVIRONMENT_ID" '{
               query: "mutation($serviceId: String!, $environmentId: String!) { serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId) }",
               variables: { serviceId: $s, environmentId: $e }
-            }')"
+            }')")
+          echo "$RESPONSE"
+          echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
 
       - name: Actualizar y deployar Keycloak (tag por SHA)
         env:
@@ -422,21 +436,25 @@ jobs:
           set -euo pipefail
           IMAGE="${{ env.IMAGE_AUTH }}:${{ env.TAG }}"
 
-          curl -sSf -X POST "$RAILWAY_GRAPHQL" \
+          RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
             -H "Authorization: Bearer $RAILWAY_TOKEN" \
             -H "Content-Type: application/json" \
             -d "$(jq -n --arg s "$AUTH_SERVICE_ID" --arg e "$ENVIRONMENT_ID" --arg img "$IMAGE" '{
               query: "mutation($serviceId: String!, $environmentId: String!, $input: ServiceInstanceUpdateInput!) { serviceInstanceUpdate(serviceId: $serviceId, environmentId: $environmentId, input: $input) }",
               variables: { serviceId: $s, environmentId: $e, input: { source: { image: $img } } }
-            }')"
+            }')")
+          echo "$RESPONSE"
+          echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
 
-          curl -sSf -X POST "$RAILWAY_GRAPHQL" \
+          RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
             -H "Authorization: Bearer $RAILWAY_TOKEN" \
             -H "Content-Type: application/json" \
             -d "$(jq -n --arg s "$AUTH_SERVICE_ID" --arg e "$ENVIRONMENT_ID" '{
               query: "mutation($serviceId: String!, $environmentId: String!) { serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId) }",
               variables: { serviceId: $s, environmentId: $e }
-            }')"
+            }')")
+          echo "$RESPONSE"
+          echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
 
       - name: Health check staging
         run: |
