@@ -246,6 +246,22 @@ jobs:
     runs-on: ubuntu-latest
     # pact sigue comentado — agregarlo a needs cuando esté listo.
     needs: [lint, jest]
+    # Los 9 secrets de Auth NO pueden ir dentro de strategy.matrix — GitHub
+    # Actions resuelve las entradas del matrix ANTES de que el contexto
+    # "secrets" esté disponible para el job, así que cualquier ${{ secrets.* }}
+    # ahí adentro falla con "Unrecognized named-value: 'secrets'". Por eso
+    # viven acá, a nivel de job, y el step de build los usa condicionalmente
+    # según matrix.name.
+    env:
+      TEST_ADMIN_USERNAME: ${{ secrets.TEST_ADMIN_USERNAME }}
+      TEST_ADMIN_PASSWORD: ${{ secrets.TEST_ADMIN_PASSWORD }}
+      TEST_COCINA_USERNAME: ${{ secrets.TEST_COCINA_USERNAME }}
+      TEST_COCINA_PASSWORD: ${{ secrets.TEST_COCINA_PASSWORD }}
+      TEST_NO_TENANT_USERNAME: ${{ secrets.TEST_NO_TENANT_USERNAME }}
+      TEST_NO_TENANT_PASSWORD: ${{ secrets.TEST_NO_TENANT_PASSWORD }}
+      TEST_TENANT_B_USERNAME: ${{ secrets.TEST_TENANT_B_USERNAME }}
+      TEST_TENANT_B_PASSWORD: ${{ secrets.TEST_TENANT_B_PASSWORD }}
+      KEYCLOAK_CLIENT_SECRET: ${{ secrets.KEYCLOAK_CLIENT_SECRET }}
     strategy:
       fail-fast: false
       matrix:
@@ -267,16 +283,7 @@ jobs:
           - name: Auth
             image: ghcr.io/ved-virtualexperiencedevelopment/bistrolink-auth
             dockerfile: keycloak/Dockerfile.auth
-            extra_args: >-
-              --build-arg TEST_ADMIN_USERNAME=${{ secrets.TEST_ADMIN_USERNAME }}
-              --build-arg TEST_ADMIN_PASSWORD=${{ secrets.TEST_ADMIN_PASSWORD }}
-              --build-arg TEST_COCINA_USERNAME=${{ secrets.TEST_COCINA_USERNAME }}
-              --build-arg TEST_COCINA_PASSWORD=${{ secrets.TEST_COCINA_PASSWORD }}
-              --build-arg TEST_NO_TENANT_USERNAME=${{ secrets.TEST_NO_TENANT_USERNAME }}
-              --build-arg TEST_NO_TENANT_PASSWORD=${{ secrets.TEST_NO_TENANT_PASSWORD }}
-              --build-arg TEST_TENANT_B_USERNAME=${{ secrets.TEST_TENANT_B_USERNAME }}
-              --build-arg TEST_TENANT_B_PASSWORD=${{ secrets.TEST_TENANT_B_PASSWORD }}
-              --build-arg KEYCLOAK_CLIENT_SECRET=${{ secrets.KEYCLOAK_CLIENT_SECRET }}
+            extra_args: ""
     steps:
       - uses: actions/checkout@v7
 
@@ -289,12 +296,29 @@ jobs:
 
       - name: Construir imagen (${{ matrix.name }})
         run: |
-          docker build \
-            -t ${{ matrix.image }}:${{ env.TAG }} \
-            -t ${{ matrix.image }}:latest \
-            ${{ matrix.extra_args }} \
-            -f ${{ matrix.dockerfile }} \
-            .
+          if [ "${{ matrix.name }}" = "Auth" ]; then
+            docker build \
+              -t ${{ matrix.image }}:${{ env.TAG }} \
+              -t ${{ matrix.image }}:latest \
+              --build-arg TEST_ADMIN_USERNAME="$TEST_ADMIN_USERNAME" \
+              --build-arg TEST_ADMIN_PASSWORD="$TEST_ADMIN_PASSWORD" \
+              --build-arg TEST_COCINA_USERNAME="$TEST_COCINA_USERNAME" \
+              --build-arg TEST_COCINA_PASSWORD="$TEST_COCINA_PASSWORD" \
+              --build-arg TEST_NO_TENANT_USERNAME="$TEST_NO_TENANT_USERNAME" \
+              --build-arg TEST_NO_TENANT_PASSWORD="$TEST_NO_TENANT_PASSWORD" \
+              --build-arg TEST_TENANT_B_USERNAME="$TEST_TENANT_B_USERNAME" \
+              --build-arg TEST_TENANT_B_PASSWORD="$TEST_TENANT_B_PASSWORD" \
+              --build-arg KEYCLOAK_CLIENT_SECRET="$KEYCLOAK_CLIENT_SECRET" \
+              -f ${{ matrix.dockerfile }} \
+              .
+          else
+            docker build \
+              -t ${{ matrix.image }}:${{ env.TAG }} \
+              -t ${{ matrix.image }}:latest \
+              ${{ matrix.extra_args }} \
+              -f ${{ matrix.dockerfile }} \
+              .
+          fi
 
       - name: Trivy — escaneo (${{ matrix.name }})
         # @master -> @0.35.0: fijar a una versión concreta. En marzo de 2026 se
