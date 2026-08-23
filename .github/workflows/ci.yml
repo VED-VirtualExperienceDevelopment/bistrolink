@@ -363,7 +363,14 @@ jobs:
         working-directory: apps/backend
         env:
           DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
-        run: npx prisma migrate deploy
+        run: |
+          for i in 1 2 3 4 5; do
+            npx prisma migrate deploy && break
+            echo "Intento $i falló, esperando 10s..."
+            sleep 10
+          done
+          echo "Las migraciones fallaron tras 5 intentos"
+          exit 1
 
       # NOTA: ya NO usamos "railway redeploy" — ese comando solo vuelve a
       # desplegar el commit/imagen que el servicio ya tenía configurado, no
@@ -444,6 +451,9 @@ jobs:
         run: |
           sleep 40
           curl -f https://bistrolink-api-staging.up.railway.app/health
+          curl -f https://bistrolink-api-staging.up.railway.app/health/ready
+          curl -f https://bistrolink-web-staging.up.railway.app
+          curl -f https://bistrolink-auth-staging.up.railway.app/realms/bistrolink/.well-known/openid-configuration
 
   # ── JOB 10: TESTS E2E (Playwright) ───────────────────────────────────────
   # playwright:
