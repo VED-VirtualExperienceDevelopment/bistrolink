@@ -22,6 +22,7 @@ export class MenuService {
           'Mesa no encontrada para este establecimiento',
         );
       }
+
       const categorias = await tx.categoriaCarta.findMany({
         where: { restauranteId: mesa.restauranteId },
         orderBy: { orden: 'asc' },
@@ -30,20 +31,8 @@ export class MenuService {
         },
       });
 
-      const categoriasConUrls = await Promise.all(
-        categorias.map(async (categoria) => ({
-          id: categoria.id,
-          nombre: categoria.nombre,
-          items: await Promise.all(
-            categoria.items.map(async (item) => {
-                const imagenUrl = item.imagenKey
-                ? await this.storage.getSignedImageUrl(item.imagenKey)
-                : null;
-                return mapItemToDto(item, imagenUrl);
-            }),
-            ),
-        })),
-        )
+      const categoriasConUrls =
+        await this.categoriasConUrlsFirmadas(categorias);
 
       return {
         restaurante: {
@@ -52,5 +41,72 @@ export class MenuService {
         categorias: categoriasConUrls,
       };
     });
+  }
+
+  /**
+   * HU-002: Obtiene el menú completo de un restaurante para acceso público.
+   * No requiere mesaId porque es para pedidos desde fuera del local.
+   */
+  async getMenuByRestaurante(tenantId: string, restauranteId: string) {
+    return this.tenantPrisma.runInTenantContext(tenantId, async (tx) => {
+      const restaurante = await tx.restaurante.findUnique({
+        where: { id: restauranteId },
+      });
+
+      if (!restaurante) {
+        throw new NotFoundException(
+          'Restaurante no encontrado para este establecimiento',
+        );
+      }
+
+      // Decisión de negocio HU-002: para pedidos "para llevar" se muestran
+      // solo los items disponibles. A diferencia de HU-001, donde los no
+      // disponibles se muestran bloqueados visualmente (ver menu.mapper.ts).
+      const categorias = await tx.categoriaCarta.findMany({
+        where: { restauranteId },
+        orderBy: { orden: 'asc' },
+        include: {
+          items: {
+            where: { disponible: true },
+            orderBy: { nombre: 'asc' },
+          },
+        },
+      });
+
+      const categoriasConUrls =
+        await this.categoriasConUrlsFirmadas(categorias);
+
+      return {
+        restaurante: {
+          id: restaurante.id,
+          nombre: restaurante.nombre,
+          direccion: restaurante.direccion,
+        },
+        categorias: categoriasConUrls,
+      };
+    });
+  }
+
+  /**
+   * Arma las categorías con URLs firmadas de S3 para las imágenes.
+   * El mapeo de cada item se delega a `mapItemToDto` (menu.mapper.ts,
+   * introducido en BL-25) para no duplicar esa lógica y mantener un
+   * único estándar de mapeo en el módulo.
+   */
+  private async categoriasConUrlsFirmadas(categorias: any[]) {
+    return Promise.all(
+      categorias.map(async (categoria) => ({
+        id: categoria.id,
+        nombre: categoria.nombre,
+        items: await Promise.all(
+          categoria.items.map(async (item) => {
+            const imagenUrl = item.imagenKey
+              ? await this.storage.getSignedImageUrl(item.imagenKey)
+              : null;
+            return mapItemToDto(item, imagenUrl);
+          }),
+        ),
+      })),
+    );
   }
 }
