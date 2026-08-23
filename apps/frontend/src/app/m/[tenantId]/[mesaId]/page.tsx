@@ -16,7 +16,7 @@ type CategoriaMenu = {
 };
 
 type MenuResponse = {
-  restaurante: { nombre: string; direccion: string };
+  restaurante: { nombre: string };
   categorias: CategoriaMenu[];
 };
 
@@ -68,7 +68,6 @@ export default async function MenuPage({
     <main className="mx-auto max-w-md pb-16">
       <header className="bg-brand-700 px-4 pb-6 pt-8 text-white">
         <h1 className="text-2xl font-bold">{restaurante.nombre}</h1>
-        <p className="text-sm text-brand-100/80">{restaurante.direccion}</p>
       </header>
 
       <div className="px-4">

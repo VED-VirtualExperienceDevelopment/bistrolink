@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { StorageService } from './storage.service';
+import { mapItemToDto } from './menu.mapper';
 
 @Injectable()
 export class MenuService {
@@ -34,24 +35,19 @@ export class MenuService {
           id: categoria.id,
           nombre: categoria.nombre,
           items: await Promise.all(
-            categoria.items.map(async (item) => ({
-              id: item.id,
-              nombre: item.nombre,
-              descripcion: item.descripcion,
-              precio: item.precio,
-              disponible: item.disponible,
-              imagenUrl: item.imagenKey
+            categoria.items.map(async (item) => {
+                const imagenUrl = item.imagenKey
                 ? await this.storage.getSignedImageUrl(item.imagenKey)
-                : null,
-            })),
-          ),
+                : null;
+                return mapItemToDto(item, imagenUrl);
+            }),
+            ),
         })),
-      );
+        )
 
       return {
         restaurante: {
           nombre: mesa.restaurante.nombre,
-          direccion: mesa.restaurante.direccion,
         },
         categorias: categoriasConUrls,
       };
