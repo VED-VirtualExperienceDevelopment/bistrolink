@@ -3,9 +3,9 @@ import MenuPublico from '@/components/MenuPublico';
 import type { MenuPublicoResponse } from '@/types/menu';
 
 interface PageProps {
-  params: Promise<{
-    tenantId: string;
-    restauranteId: string;
+  readonly params: Promise<{
+    readonly tenantId: string;
+    readonly restauranteId: string;
   }>;
 }
 
