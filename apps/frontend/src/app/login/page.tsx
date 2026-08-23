@@ -45,7 +45,7 @@ function LoginRedirect() {
     <main className="flex h-screen items-center justify-center bg-background px-4">
       <div className="w-full max-w-sm rounded-xl border border-outline-variant bg-surface-container-lowest p-8 text-center shadow-sm">
         <div className="text-headline-md font-bold leading-tight text-primary">Bistro Link</div>
-        <p className="mb-6 text-label-md text-on-surface-variant">Management Suite</p>
+        <p className="mb-6 text-label-md text-on-surface-variant">Portal de Administración</p>
         <div className="flex items-center justify-center gap-2 text-body-md text-on-surface-variant">
           <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
           Redirigiendo a inicio de sesión…

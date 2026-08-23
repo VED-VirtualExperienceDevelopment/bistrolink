@@ -1,7 +1,9 @@
 {
   "realm": "bistrolink",
+  "loginTheme": "bistrolink",
   "enabled": true,
   "displayName": "BistroLink",
+  "displayNameHtml": "BistroLink<span class=\"bl-subtitle\">Portal de Administración</span>",
   "accessTokenLifespan": 3600,
   "ssoSessionIdleTimeout": 1800,
   "ssoSessionMaxLifespan": 36000,

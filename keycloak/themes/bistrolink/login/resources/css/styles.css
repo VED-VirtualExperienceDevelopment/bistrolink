@@ -1,0 +1,110 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap');
+
+:root {
+  --bl-primary: #381e72;
+  --bl-primary-container: #4f378a;
+  --bl-on-primary: #ffffff;
+  --bl-on-primary-container: #c0a7ff;
+  --bl-surface: #fdf8ff;
+  --bl-surface-container: #f1ecf4;
+  --bl-surface-container-lowest: #ffffff;
+  --bl-on-surface: #1c1b20;
+  --bl-on-surface-variant: #494551;
+  --bl-outline: #7a7582;
+  --bl-outline-variant: #cbc4d2;
+  --bl-error: #ba1a1a;
+}
+
+/* !important a propósito: forzamos que gane sobre cualquier fondo del
+   theme base (la imagen oscura que se ve desbordada). */
+.login-pf-page {
+  background: var(--bl-surface) !important;
+  background-image: none !important;
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  display: flex !important;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  min-height: 100vh;
+  padding: 24px;
+}
+
+/* Centrado y ancho acotado del card, sin depender del theme base */
+.login-pf-page .card-pf {
+  width: 100%;
+  max-width: 440px;
+  background: var(--bl-surface-container-lowest);
+  border: 1px solid var(--bl-outline-variant);
+  border-radius: 0.75rem;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08) !important;
+  padding: 32px;
+}
+
+#kc-header-wrapper {
+  width: 100%;
+  text-align: center;
+  color: var(--bl-primary-container);
+  font-size: 28px;
+  font-weight: 800;
+  margin-bottom: 24px;
+}
+
+#kc-header-wrapper::before {
+  font-family: 'Material Symbols Outlined';
+  content: "restaurant";
+  font-size: 30px;
+  font-variation-settings: 'FILL' 1;
+  vertical-align: middle;
+  margin-right: 10px;
+}
+
+#kc-header-wrapper .bl-subtitle {
+  display: block;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--bl-on-surface-variant);
+  margin-top: 6px;
+}
+
+.login-pf-page label,
+#kc-content-wrapper {
+  color: var(--bl-on-surface);
+}
+
+.login-pf-page input[type="text"],
+.login-pf-page input[type="password"] {
+  border: 1px solid var(--bl-outline-variant);
+  border-radius: 0.5rem;
+  background: var(--bl-surface-container-lowest);
+  color: var(--bl-on-surface);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.login-pf-page input[type="text"]:focus,
+.login-pf-page input[type="password"]:focus {
+  border-color: var(--bl-primary-container);
+  box-shadow: 0 0 0 2px var(--bl-primary-container);
+}
+
+.login-pf-page .btn-primary {
+  background: var(--bl-primary-container);
+  border-color: var(--bl-primary-container);
+  color: var(--bl-on-primary);
+  border-radius: 9999px;
+  font-weight: 600;
+  width: 100%;
+}
+
+.login-pf-page .btn-primary:hover {
+  background: var(--bl-primary);
+  border-color: var(--bl-primary);
+}
+
+.alert-error, .kc-feedback-text {
+  color: var(--bl-error);
+}
