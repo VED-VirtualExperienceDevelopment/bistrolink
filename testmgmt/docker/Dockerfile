@@ -7,13 +7,16 @@
 #     fue removido en v12.0 y de todos modos no habría alcanzado, porque
 #     el enforcement vive en nginx, no en Django.
 #     Ver: https://kiwitcms.readthedocs.io/en/latest/installing_docker.html#enable-plain-text-http-access
+#
+# NOTA: el paso de copiar local_settings.py vive en un .py aparte
+# (apply_local_settings.py) en vez de python inline en este RUN, porque
+# un inline multilínea entre comillas es frágil ante cualquier formatter
+# que reindente el Dockerfile al guardar (VS Code, Prettier, etc.) — un
+# archivo .py normal no tiene ese problema.
 FROM kiwitcms/kiwi:latest
 
 COPY local_settings.py /tmp/local_settings.py
 COPY nginx.conf /Kiwi/etc/nginx.conf
+COPY apply_local_settings.py /tmp/apply_local_settings.py
 
-RUN python3 -c "\
-    import shutil, os, tcms.settings; \
-    dest = os.path.join(os.path.dirname(tcms.settings.__file__), 'local_settings.py'); \
-    shutil.copy('/tmp/local_settings.py', dest); \
-    print('local_settings.py copiado a:', dest)"
+RUN python3 /tmp/apply_local_settings.py
