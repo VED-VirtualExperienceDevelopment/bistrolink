@@ -1,7 +1,9 @@
 import 'dotenv/config';
 import { NestFactory } from '@nestjs/core';
-import { AppModule } from './app.module';
+import type { NextFunction, Request, Response } from 'express';
+import helmet from 'helmet';
 import { Logger } from 'nestjs-pino';
+import { AppModule } from './app.module';
 import { checkRequiredEnvVars } from './startup-env-check';
 
 async function bootstrap() {
@@ -12,6 +14,25 @@ async function bootstrap() {
 
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
   app.useLogger(app.get(Logger));
+
+  // SEGURIDAD (subtask BL-30): headers de seguridad HTTP estándar.
+  // helmet() agrega de una: HSTS (Strict-Transport-Security),
+  // X-Frame-Options, X-Content-Type-Options, Referrer-Policy y CSP básica.
+  app.use(helmet());
+
+  // SEGURIDAD (subtask BL-30): redirección automática HTTP → HTTPS.
+  // Railway termina TLS en su proxy y reenvía a la app por HTTP interno,
+  // por eso confiamos en x-forwarded-proto. Si el header no está (health
+  // checks directos al contenedor, entorno local), NO se redirige — así no
+  // rompemos health checks ni el desarrollo local.
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    const proto = req.header('x-forwarded-proto');
+    if (proto && proto !== 'https') {
+      return res.redirect(301, `https://${req.header('host')}${req.originalUrl}`);
+    }
+    next();
+  });
+
   app.enableCors();
   const port = process.env.PORT || 3001;
   await app.listen(port);
