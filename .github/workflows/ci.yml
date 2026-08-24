@@ -134,6 +134,7 @@ jobs:
       - name: Upload results to Kiwi TCMS
         if: always()
         continue-on-error: true
+        timeout-minutes: 5
         env:
           TCMS_PRODUCT: "BistroLink"
           TCMS_PRODUCT_VERSION: ${{ github.ref_name }}
