@@ -379,9 +379,16 @@ jobs:
             testmgmt/docker
 
       - name: Trivy — escaneo (testmgmt)
+        # scanners: vuln (sin "secret") — la imagen base de Kiwi TCMS trae
+        # de fábrica un certificado self-signed de ejemplo en
+        # /Kiwi/ssl/localhost.key (documentado oficialmente, no algo que
+        # nuestro Dockerfile de 3 líneas pueda filtrar). El scanner de
+        # secrets siempre lo va a marcar como HIGH sin que sea un secret
+        # real — así que acá solo nos importa el escaneo de vulnerabilidades.
         uses: aquasecurity/trivy-action@0.35.0
         with:
           image-ref: testmgmt-scan:${{ env.TAG }}
+          scanners: vuln
           severity: CRITICAL,HIGH
           exit-code: "1"
           trivyignores: .trivyignore
