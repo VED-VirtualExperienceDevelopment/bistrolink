@@ -1,0 +1,17 @@
+{
+  "ci": {
+    "collect": {
+      "url": ["https://bistrolink-web-staging.up.railway.app/m/11111111-1111-1111-1111-111111111111/33333333-3333-3333-3333-333333333333"],
+      "numberOfRuns": 3
+    },
+    "assert": {
+      "assertions": {
+        "categories:performance": ["error", { "minScore": 0.8 }]
+      }
+    },
+    "upload": {
+      "target": "filesystem",
+      "outputDir": "./lighthouse-results"
+    }
+  }
+}

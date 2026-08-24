@@ -497,6 +497,22 @@ jobs:
           curl -f https://bistrolink-web-staging.up.railway.app
           curl -f https://bistrolink-auth-staging.up.railway.app/realms/bistrolink/.well-known/openid-configuration
 
+  # ── JOB 9B: LIGHTHOUSE (Performance mobile) — staging ────────────────────────
+  lighthouse:
+    name: 🔦 Lighthouse Performance (mobile) — staging
+    needs: deploy-staging
+    if: github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+
+      - name: Lighthouse CI — menú digital (HU-001)
+        run: npx @lhci/cli@0.14.x autorun
+
   # ── JOB 10: TESTS E2E (Playwright) ───────────────────────────────────────
   # playwright:
   #   name: 🎭 Tests E2E (Playwright)
