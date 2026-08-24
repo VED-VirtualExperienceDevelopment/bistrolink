@@ -42,3 +42,9 @@ CVE-2026-55833
 CVE-2026-56745
 CVE-2026-56819
 CVE-2026-54291
+# testmgmt (Kiwi TCMS) — CVEs de dependencias empaquetadas dentro de la
+# imagen oficial kiwitcms/kiwi, no de código propio. No podemos actualizar
+# msgpack/setuptools nosotros: viven en el venv que arma la imagen upstream.
+# Pendiente: revisar cuando kiwitcms/kiwi publique una imagen más nueva.
+GHSA-6v7p-g79w-8964
+CVE-2025-47273
