@@ -48,6 +48,10 @@ export class MenuService {
    * No requiere mesaId porque es para pedidos desde fuera del local.
    */
   async getMenuByRestaurante(tenantId: string, restauranteId: string) {
+    // SEGURIDAD: runInTenantContext establece app.tenant_id como variable de sesión de PostgreSQL.
+    // Todas las queries dentro de este callback están aisladas a este tenant.
+    // RLS en la base de datos actúa como segunda línea de defensa (defensa en profundidad).
+    // Si restauranteId pertenece a otro tenant, RLS lo filtra y findUnique devuelve null.
     return this.tenantPrisma.runInTenantContext(tenantId, async (tx) => {
       const restaurante = await tx.restaurante.findUnique({
         where: { id: restauranteId },
