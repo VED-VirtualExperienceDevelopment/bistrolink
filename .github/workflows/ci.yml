@@ -109,12 +109,45 @@ jobs:
           KEYCLOAK_CLIENT_ID: "bistrolink-backend-test"
           KEYCLOAK_CLIENT_SECRET: "dummy-secret-for-ci"
 
-      - name: Upload results to Testiny
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: apps/backend/coverage/
+          retention-days: 30
+
+      - name: Upload coverage to Codecov
         if: always()
         continue-on-error: true
+        uses: codecov/codecov-action@v4
+        with:
+          files: apps/backend/coverage/lcov.info
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+      # Reemplaza el upload a Testiny (plan gratuito no incluye integración
+      # de automatización) por el plugin oficial de Kiwi TCMS, que lee el
+      # mismo junit.xml y crea/actualiza TestPlan, TestRun y TestExecution
+      # vía XML-RPC. Usuario de servicio dedicado (github-actions, grupo
+      # Tester, sin privilegios de admin) — ver Secrets KIWI_TCMS_*.
+      - name: Upload results to Kiwi TCMS
+        if: always()
+        continue-on-error: true
+        timeout-minutes: 5
         env:
-          TESTINY_API_KEY: ${{ secrets.TESTINY_API_KEY }}
-        run: npx -y @testiny/cli automation --project "BLVED" --source "backend-unit-tests" --junit apps/backend/coverage/junit.xml
+          TCMS_PRODUCT: "BistroLink"
+          TCMS_PRODUCT_VERSION: ${{ github.ref_name }}
+          TCMS_BUILD: ${{ github.sha }}
+        run: |
+          pip install kiwitcms-junit.xml-plugin --break-system-packages
+          cat <<EOF > ~/.tcms.conf
+          [tcms]
+          url = ${{ secrets.KIWI_TCMS_URL }}/xml-rpc/
+          username = ${{ secrets.KIWI_TCMS_USERNAME }}
+          password = ${{ secrets.KIWI_TCMS_PASSWORD }}
+          EOF
+          tcms-junit.xml-plugin apps/backend/coverage/junit.xml
 
   # NOTA: este job corre solo los tests UNITARIOS (npm run test:cov), no el
   # test:e2e de aislamiento multi-tenant (tenant-isolation.e2e-spec.ts) — ese
