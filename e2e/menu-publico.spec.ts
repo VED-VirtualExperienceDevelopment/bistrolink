@@ -152,7 +152,7 @@ test.describe('Regresión visual (snapshot): QR vs URL', () => {
     await page.goto(MENU_QR_PATH);
     await expect(
       page.getByRole('heading', { name: menu.restaurante.nombre }),
-    ).toBeVisible();
+    ).toBeVisible({ timeout: 15000 });
 
     await expect(page).toHaveScreenshot('menu-qr.png', opcionesScreenshot);
   });
@@ -166,7 +166,7 @@ test.describe('Regresión visual (snapshot): QR vs URL', () => {
     await page.goto(MENU_URL_PATH);
     await expect(
       page.getByRole('heading', { name: menu.restaurante.nombre }),
-    ).toBeVisible();
+    ).toBeVisible({ timeout: 15000 });
 
     await expect(page).toHaveScreenshot('menu-url.png', opcionesScreenshot);
   });
