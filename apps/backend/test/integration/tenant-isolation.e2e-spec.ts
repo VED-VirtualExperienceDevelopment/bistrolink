@@ -74,13 +74,13 @@ describe('Aislamiento multi-tenant (Keycloak + RLS) - e2e', () => {
   });
 
   // ── Caso base: sin token, siempre debe rechazar (no requiere fixtures extra) ──
-  it('[TC-I-001] Aislamiento multi-tenant rechaza un request sin token (401)', async () => {
+  it('[TC-I-001] Aislamiento: rechaza request sin token (401)', async () => {
     await request(app.getHttpServer()).get('/test/mi-tenant').expect(401);
   });
 
   // ── Caso base: ADMIN válido puede leer los datos de su propio tenant ──
   itConAdmin(
-    '[TC-I-002] Aislamiento multi-tenant un ADMIN autenticado puede leer los datos de su propio tenant (200)',
+    '[TC-I-002] Aislamiento: ADMIN autenticado lee datos de su propio tenant (200)',
     async () => {
       const token = await getToken(ADMIN_USER as string, ADMIN_PASS as string);
       const res = await request(app.getHttpServer())
@@ -93,7 +93,7 @@ describe('Aislamiento multi-tenant (Keycloak + RLS) - e2e', () => {
 
   // ── Requiere un usuario de prueba con rol COCINA (ver Setup requerido) ──
   itConCocina(
-    '[TC-I-003] Aislamiento multi-tenant un rol COCINA recibe 403 en un endpoint solo-admin',
+    '[TC-I-003] Aislamiento: rol COCINA recibe 403 en endpoint solo-admin',
     async () => {
       const token = await getToken(
         COCINA_USER as string,
@@ -108,7 +108,7 @@ describe('Aislamiento multi-tenant (Keycloak + RLS) - e2e', () => {
 
   // ── Requiere un usuario de prueba SIN el atributo tenant_id (ver Setup) ──
   itSinTenant(
-    '[TC-I-004]·Aislamiento·multi-tenant·un·usuario·sin·tenant_id·es·rechazado·(401)',
+    '[TC-I-004] Aislamiento: usuario sin tenant_id es rechazado (401)',
     async () => {
       const token = await getToken(
         NO_TENANT_USER as string,
@@ -123,7 +123,7 @@ describe('Aislamiento multi-tenant (Keycloak + RLS) - e2e', () => {
 
   // ── Requiere un segundo tenant + usuario (ver Setup requerido) ──
   itConTenantB(
-    '[TC-I-005] Aislamiento multi-tenant el tenant B no ve datos del tenant A (aislamiento cruzado)',
+    '[TC-I-005] Aislamiento: tenant B no ve datos del tenant A (cruzado)',
     async () => {
       const tokenA = await getToken(ADMIN_USER as string, ADMIN_PASS as string);
       const resA = await request(app.getHttpServer())

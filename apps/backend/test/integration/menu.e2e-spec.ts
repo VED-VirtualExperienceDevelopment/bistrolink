@@ -84,7 +84,7 @@ describe('Menú (HU-001) - aislamiento multi-tenant vía RLS - integración', ()
     await prisma.$disconnect();
   });
 
-  it('devuelve el menú cuando tenantId y mesaId pertenecen al mismo tenant', async () => {
+  it('[TC-I-010] Menú: devuelve el menú cuando tenantId y mesaId son del mismo tenant', async () => {
     const res = await request(app.getHttpServer())
       .get(`/menu/${TENANT_A}/${MESA_A}`)
       .expect(200);
@@ -92,7 +92,7 @@ describe('Menú (HU-001) - aislamiento multi-tenant vía RLS - integración', ()
     expect(res.body.restaurante.nombre).toBe('Restaurante Test A');
   });
 
-  it('devuelve 404 si la mesa existe pero pertenece a OTRO tenant', async () => {
+  it('[TC-I-011] Menú: devuelve 404 si la mesa pertenece a otro tenant', async () => {
     // Caso crítico: MESA_B es una mesa real, no un UUID inventado. El
     // endpoint de HU-001 es público a propósito (sin JWT) — RLS es la
     // única barrera de aislamiento acá. Si este test alguna vez pasara
@@ -102,13 +102,13 @@ describe('Menú (HU-001) - aislamiento multi-tenant vía RLS - integración', ()
       .expect(404);
   });
 
-  it('devuelve 404 para una mesa que no existe en absoluto', async () => {
+  it('[TC-I-012] Menú: devuelve 404 para una mesa inexistente', async () => {
     await request(app.getHttpServer())
       .get(`/menu/${TENANT_A}/00000000-0000-0000-0000-000000000000`)
       .expect(404);
   });
 
-  it('devuelve 400 si tenantId o mesaId no son UUIDs válidos', async () => {
+  it('[TC-I-013] Menú: devuelve 400 si los IDs no son UUIDs válidos', async () => {
     await request(app.getHttpServer())
       .get('/menu/no-es-un-uuid/tampoco-esto')
       .expect(400);
