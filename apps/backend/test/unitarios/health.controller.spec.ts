@@ -1,4 +1,5 @@
 import { Test } from '@nestjs/testing';
+import { ServiceUnavailableException } from '@nestjs/common';
 import {
   HealthController,
   parsePostgresVersion,
@@ -41,6 +42,40 @@ describe('HealthController', () => {
   describe('check', () => {
     it('devuelve status ok', () => {
       expect(controller.check()).toEqual({ status: 'ok' });
+    });
+  });
+
+  describe('ready', () => {
+    it('devuelve status ok y postgres:available cuando SELECT 1 responde', async () => {
+      mockQueryRawUnsafe.mockResolvedValueOnce([{ '?column?': 1 }]);
+
+      const result = await controller.ready();
+
+      expect(result).toEqual({ status: 'ok', postgres: 'available' });
+      expect(mockQueryRawUnsafe).toHaveBeenCalledWith('SELECT 1');
+    });
+
+    it('lanza ServiceUnavailableException con el body esperado si la DB no responde', async () => {
+      mockQueryRawUnsafe.mockRejectedValueOnce(new Error('connection refused'));
+
+      await expect(controller.ready()).rejects.toBeInstanceOf(
+        ServiceUnavailableException,
+      );
+    });
+
+    it('el body del 503 contiene status:error y postgres:unavailable', async () => {
+      mockQueryRawUnsafe.mockRejectedValueOnce(new Error('timeout'));
+
+      try {
+        await controller.ready();
+        throw new Error('controller.ready() debería haber lanzado');
+      } catch (err) {
+        expect(err).toBeInstanceOf(ServiceUnavailableException);
+        expect((err as ServiceUnavailableException).getResponse()).toEqual({
+          status: 'error',
+          postgres: 'unavailable',
+        });
+      }
     });
   });
 
