@@ -1,4 +1,4 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -89,6 +89,24 @@ export class HealthController {
   @Get()
   check() {
     return { status: 'ok' };
+  }
+
+  // Endpoint pensado para chequeos automatizados (pipeline, monitor externo,
+  // etc.): a diferencia de /version, acá un fallo de conexión a Postgres SÍ
+  // se traduce en un 503 real, para que un simple "curl -f" (o cualquier
+  // health check de plataforma que solo mire el status code) lo detecte sin
+  // tener que parsear el body.
+  @Get('ready')
+  async ready() {
+    try {
+      await getDiagnosticClient().$queryRawUnsafe('SELECT 1');
+      return { status: 'ok', postgres: 'available' };
+    } catch {
+      throw new ServiceUnavailableException({
+        status: 'error',
+        postgres: 'unavailable',
+      });
+    }
   }
 
   @Get('version')
