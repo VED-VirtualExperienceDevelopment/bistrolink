@@ -37,7 +37,7 @@ function getDiagnosticClient(): PrismaClient {
 // detalle de SO/compilador. Si el formato no matchea (versión de Postgres
 // que cambie el string de alguna forma inesperada), se devuelve el string
 // completo tal cual en vez de fallar, para no perder la información.
-function parsePostgresVersion(raw: string): string {
+export function parsePostgresVersion(raw: string): string {
   const match = raw.match(/^PostgreSQL\s+\S+/);
   return match ? match[0] : raw;
 }
@@ -53,7 +53,7 @@ type LastMigration =
 // con el nombre original). Esto solo arma un "label" legible aparte, para
 // mostrar en el endpoint — mismo criterio de legibilidad que usamos para
 // TCMS_BUILD/GIT_SHA/NEXT_PUBLIC_APP_VERSION, pero sin tocar el dato real.
-function formatMigrationLabel(name: string): string {
+export function formatMigrationLabel(name: string): string {
   const match = name.match(/^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})_(.+)$/);
   if (!match) return name;
   const [, year, month, day, hour, minute, , description] = match;
@@ -70,7 +70,7 @@ function formatMigrationLabel(name: string): string {
 // la migración más reciente que existe en el código desplegado.
 const MIGRATIONS_DIR = join(process.cwd(), 'prisma', 'migrations');
 
-function getLatestMigrationOnDisk(): string | null {
+export function getLatestMigrationOnDisk(): string | null {
   try {
     const names = readdirSync(MIGRATIONS_DIR, { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
