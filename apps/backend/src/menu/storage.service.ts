@@ -23,7 +23,7 @@ export class StorageService {
   async getSignedImageUrl(key: string): Promise<string | null> {
     try {
       const command = new GetObjectCommand({
-        Bucket: process.env.S3_BUCKET_IMAGES,
+        Bucket: process.env.AWS_S3_BUCKET_IMAGES,
         Key: key,
       });
       return await getSignedUrl(this.getClient(), command, {
