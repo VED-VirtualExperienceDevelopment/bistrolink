@@ -1,10 +1,11 @@
 import 'dotenv/config';
+import helmet from 'helmet';
 import { NestFactory } from '@nestjs/core';
 import type { NextFunction, Request, Response } from 'express';
-import helmet from 'helmet';
 import { Logger } from 'nestjs-pino';
 import { AppModule } from './app.module';
 import { checkRequiredEnvVars } from './startup-env-check';
+import { ValidationPipe } from '@nestjs/common';
 
 async function bootstrap() {
   // Falla rápido y con un mensaje claro si falta una variable de entorno
@@ -28,12 +29,22 @@ async function bootstrap() {
   app.use((req: Request, res: Response, next: NextFunction) => {
     const proto = req.header('x-forwarded-proto');
     if (proto && proto !== 'https') {
-      return res.redirect(301, `https://${req.header('host')}${req.originalUrl}`);
+      return res.redirect(
+        301,
+        `https://${req.header('host')}${req.originalUrl}`,
+      );
     }
     next();
   });
 
   app.enableCors();
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true, // necesario para que @ValidateNested (arrays anidados, ej. ítems del pedido) valide bien objetos JSON planos
+    }),
+  );
   const port = process.env.PORT || 3001;
   await app.listen(port);
   app
