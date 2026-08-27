@@ -23,6 +23,13 @@ test.describe('HU-003: Carrito y confirmación de pedido', () => {
     ).toBeVisible({ timeout: 10000 });
 
     await expect(page.getByText(/Tu pedido \(/i)).not.toBeVisible();
+
+    await expect(
+      page.getByText('¡Pedido enviado! Cocina ya lo recibió.'),
+    ).toBeVisible({ timeout: 10000 });
+
+    // Verificación explícita del criterio de aceptación: estado 'Recibido'.
+    await expect(page.getByText('Estado: RECIBIDO')).toBeVisible();
   });
 
   test('agregar dos unidades del mismo ítem suma la cantidad, no duplica la fila', async ({
