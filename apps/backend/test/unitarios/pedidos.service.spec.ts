@@ -1,4 +1,5 @@
 import { Decimal } from '@prisma/client/runtime/library';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import {
   PedidosService,
   ESTADO_INICIAL_PEDIDO,
@@ -123,5 +124,112 @@ describe('PedidosService.crear - idempotencia', () => {
     expect(primeraLlamada.id).toBe(segundaLlamada.id);
     expect(mockTx.pedido.create).toHaveBeenCalledTimes(1);
     expect(mockKdsGateway.emitirNuevoPedido).toHaveBeenCalledTimes(1);
+  });
+});
+describe('PedidosService.crear — validaciones y mesa virtual', () => {
+  let mockTx: any;
+  let mockTenantPrisma: any;
+  let mockKdsGateway: any;
+  let service: PedidosService;
+
+  beforeEach(() => {
+    mockTx = {
+      pedido: { findUnique: jest.fn(), create: jest.fn() },
+      mesa: { findUnique: jest.fn(), upsert: jest.fn() },
+      itemCarta: { findMany: jest.fn() },
+    };
+    mockTenantPrisma = {
+      runInTenantContext: jest.fn(
+        (_tenantId: string, fn: (tx: unknown) => unknown) => fn(mockTx),
+      ),
+    };
+    mockKdsGateway = { emitirNuevoPedido: jest.fn() };
+    service = new PedidosService(mockTenantPrisma, mockKdsGateway);
+
+    mockTx.pedido.findUnique.mockResolvedValue(null);
+  });
+
+  it('rechaza con 404 si la mesa no existe', async () => {
+    mockTx.mesa.findUnique.mockResolvedValue(null);
+
+    await expect(service.crear(TENANT_ID, dtoBase())).rejects.toThrow(
+      NotFoundException,
+    );
+    expect(mockTx.pedido.create).not.toHaveBeenCalled();
+  });
+
+  it('rechaza con 400 si algún ítem del pedido no existe en la carta', async () => {
+    mockTx.mesa.findUnique.mockResolvedValue({
+      id: '33333333-3333-3333-3333-333333333333',
+    });
+    mockTx.itemCarta.findMany.mockResolvedValue([]);
+
+    await expect(service.crear(TENANT_ID, dtoBase())).rejects.toThrow(
+      BadRequestException,
+    );
+    expect(mockTx.pedido.create).not.toHaveBeenCalled();
+  });
+
+  it('rechaza con 400 si el ítem existe pero no está disponible', async () => {
+    mockTx.mesa.findUnique.mockResolvedValue({
+      id: '33333333-3333-3333-3333-333333333333',
+    });
+    mockTx.itemCarta.findMany.mockResolvedValue([
+      {
+        id: '55555555-5555-5555-5555-555555555555',
+        nombre: 'Milanesa a la napolitana',
+        precio: new Decimal('590'),
+        disponible: false,
+      },
+    ]);
+
+    await expect(service.crear(TENANT_ID, dtoBase())).rejects.toThrow(
+      '"Milanesa a la napolitana" no está disponible',
+    );
+    expect(mockTx.pedido.create).not.toHaveBeenCalled();
+  });
+
+  it('sin mesaId (flujo "desde fuera del local"), resuelve/crea la mesa virtual, no una real', async () => {
+    const dtoSinMesa = dtoBase({ mesaId: undefined });
+    mockTx.mesa.upsert.mockResolvedValue({
+      id: 'mesa-virtual-id',
+      numero: 0,
+      esVirtual: true,
+    });
+    mockTx.itemCarta.findMany.mockResolvedValue([
+      {
+        id: '55555555-5555-5555-5555-555555555555',
+        nombre: 'Milanesa a la napolitana',
+        precio: new Decimal('590'),
+        disponible: true,
+      },
+    ]);
+    mockTx.pedido.create.mockResolvedValue({
+      id: 'pedido-web',
+      canal: 'WEB',
+      lineas: [],
+    });
+
+    await service.crear(TENANT_ID, dtoSinMesa);
+
+    expect(mockTx.mesa.findUnique).not.toHaveBeenCalled();
+    expect(mockTx.mesa.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          restauranteId_numero: {
+            restauranteId: dtoSinMesa.restauranteId,
+            numero: 0,
+          },
+        },
+      }),
+    );
+    expect(mockTx.pedido.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          canal: 'WEB',
+          mesaId: 'mesa-virtual-id',
+        }),
+      }),
+    );
   });
 });
