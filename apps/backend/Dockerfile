@@ -22,7 +22,7 @@ RUN npm run build --workspace=apps/backend
 FROM node:22-alpine AS production
 WORKDIR /app
 ENV NODE_ENV=production
-
+RUN apk update && apk upgrade --no-cache libcrypto3 libssl3 && rm -rf /var/cache/apk/*
 # SHA del commit horneado en build time (pasado por el CI vía --build-arg).
 # Se expone como env var en runtime para que /version pueda devolverlo sin
 # depender de variables que Railway ya no inyecta al pasar a "Docker Image"

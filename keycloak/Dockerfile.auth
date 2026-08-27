@@ -68,7 +68,7 @@ RUN TEST_ADMIN_USERNAME="$TEST_ADMIN_USERNAME" \
     < /tmp/realm-export.json > /tmp/realm-export.resuelto.json
 
 # ── STAGE 2: imagen final de Keycloak, sin tocar su gestor de paquetes ──────
-FROM quay.io/keycloak/keycloak:26.7.0
+FROM quay.io/keycloak/keycloak:26.7.2
 
 # Copiamos el JSON YA con los valores reales (no el original con placeholders)
 # a la carpeta de importación estándar. Al arrancar con --import-realm,
