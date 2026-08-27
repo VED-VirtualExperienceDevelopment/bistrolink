@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
@@ -42,14 +43,29 @@ export class AuthComensalService {
     return password;
   }
 
-  async emitirToken(tenantId: string, mesaId: string): Promise<TokenComensal> {
-    const mesa = await this.tenantPrisma.runInTenantContext(tenantId, (tx) =>
-      tx.mesa.findUnique({ where: { id: mesaId } }),
+  async emitirToken(
+    tenantId: string,
+    mesaId?: string,
+    restauranteId?: string,
+  ): Promise<TokenComensal> {
+    if (!mesaId && !restauranteId) {
+      throw new BadRequestException('Se requiere mesaId o restauranteId');
+    }
+
+    const existe = await this.tenantPrisma.runInTenantContext(tenantId, (tx) =>
+      mesaId
+        ? tx.mesa.findUnique({ where: { id: mesaId }, select: { id: true } })
+        : tx.restaurante.findUnique({
+            where: { id: restauranteId },
+            select: { id: true },
+          }),
     );
 
-    if (!mesa) {
+    if (!existe) {
       throw new NotFoundException(
-        'Mesa no encontrada para este establecimiento',
+        mesaId
+          ? 'Mesa no encontrada para este establecimiento'
+          : 'Restaurante no encontrado',
       );
     }
 

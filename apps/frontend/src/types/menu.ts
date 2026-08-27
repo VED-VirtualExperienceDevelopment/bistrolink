@@ -34,3 +34,10 @@ export interface ItemCarrito {
   cantidad: number;
   imagenUrl?: string;
 }
+
+// HU-003: forma de la respuesta de POST /pedidos
+export interface PedidoConfirmado {
+  id: string;
+  estado: string;
+  createdAt: string;
+}

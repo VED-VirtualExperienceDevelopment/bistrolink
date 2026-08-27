@@ -9,6 +9,10 @@ export class AuthComensalController {
   @Post()
   @HttpCode(200)
   emitirToken(@Body() dto: EmitirTokenComensalDto) {
-    return this.authComensalService.emitirToken(dto.tenantId, dto.mesaId);
+    return this.authComensalService.emitirToken(
+      dto.tenantId,
+      dto.mesaId,
+      dto.restauranteId,
+    );
   }
 }
