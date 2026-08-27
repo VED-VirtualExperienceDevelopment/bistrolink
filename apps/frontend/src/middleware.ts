@@ -8,10 +8,15 @@ import type { NextRequest } from 'next/server';
  * x-forwarded-proto indicando el protocolo original del cliente. Si el
  * cliente pidió http://, respondemos 301 permanente a https://.
  *
- * Si el header no está (health checks directos, entorno local), no se
- * redirige — así no rompemos el pipeline ni el desarrollo local.
+ * Solo aplica en producción: `next dev` fija x-forwarded-proto: http en
+ * toda petición (incluso local, sin proxy real), así que sin este guard
+ * el redirect entra en bucle contra un dev server que nunca sirve TLS.
  */
 export function middleware(request: NextRequest) {
+  if (process.env.NODE_ENV !== 'production') {
+    return NextResponse.next();
+  }
+
   const proto = request.headers.get('x-forwarded-proto');
 
   if (proto && proto !== 'https') {
