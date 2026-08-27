@@ -1,0 +1,28 @@
+# Configuración de Codecov — decide qué archivos entran en el cálculo de
+# cobertura y cuáles quedan afuera a propósito.
+#
+# Por qué: controllers, módulos y DTOs son wiring/decoradores puros, sin
+# lógica propia — los prueba el E2E de Playwright y los tests de
+# integración, no tiene sentido escribirles unitarios solo para "inflar"
+# el número. El bootstrap (main.ts, app.module.ts) tampoco se testea
+# unitariamente en un proyecto Nest normal.
+#
+
+coverage:
+  status:
+    project:
+      default:
+        target: 80%
+        threshold: 2%
+    patch:
+      default:
+        target: 80%
+
+ignore:
+  - "apps/backend/src/main.ts"
+  - "apps/backend/src/app.module.ts"
+  - "apps/backend/src/**/*.module.ts"
+  - "apps/backend/src/**/*.controller.ts"
+  - "apps/backend/src/**/dto/**"
+  - "apps/backend/test/**"
+  - "apps/frontend/**"
