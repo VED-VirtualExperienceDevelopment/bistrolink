@@ -1,28 +1,42 @@
-# Configuración de Codecov — decide qué archivos entran en el cálculo de
-# cobertura y cuáles quedan afuera a propósito.
-#
-# Por qué: controllers, módulos y DTOs son wiring/decoradores puros, sin
-# lógica propia — los prueba el E2E de Playwright y los tests de
-# integración, no tiene sentido escribirles unitarios solo para "inflar"
-# el número. El bootstrap (main.ts, app.module.ts) tampoco se testea
-# unitariamente en un proyecto Nest normal.
-#
+codecov:
+  require_ci_to_pass: true
+  notify:
+    wait_for_ci: true
 
 coverage:
   status:
     project:
       default:
-        target: 80%
-        threshold: 2%
+        target: auto
+        threshold: 1%
+        informational: false
     patch:
       default:
         target: 80%
+        threshold: 0%
+        informational: false
+
+flags:
+  backend:
+    paths:
+      - apps/backend/
+    carryforward: false
+
+comment:
+  layout: "reach,diff,flags,tree"
+  behavior: default
+  require_changes: false
 
 ignore:
   - "apps/backend/src/main.ts"
   - "apps/backend/src/app.module.ts"
   - "apps/backend/src/**/*.module.ts"
   - "apps/backend/src/**/*.controller.ts"
+  - "!apps/backend/src/health.controller.ts"
   - "apps/backend/src/**/dto/**"
   - "apps/backend/test/**"
+  - "apps/backend/**/*.spec.ts"
+  - "apps/backend/**/*.e2e-spec.ts"
+  - "apps/backend/prisma/migrations/**"
+  - "apps/backend/dist/**"
   - "apps/frontend/**"
