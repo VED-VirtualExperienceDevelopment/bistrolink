@@ -8,15 +8,18 @@ import type { NextRequest } from 'next/server';
  * x-forwarded-proto indicando el protocolo original del cliente. Si el
  * cliente pidió http://, respondemos 301 permanente a https://.
  *
- * Solo aplica en producción: `next dev` fija x-forwarded-proto: http en
- * toda petición (incluso local, sin proxy real), así que sin este guard
- * el redirect entra en bucle contra un dev server que nunca sirve TLS.
+ * En local (localhost/127.0.0.1) NO se redirige para no romper Playwright
+ * ni el desarrollo local, donde no hay proxy de Railway.
  */
 export function middleware(request: NextRequest) {
-  if (process.env.NODE_ENV !== 'production') {
+  const { hostname } = request.nextUrl;
+
+  // En desarrollo local, no redirigir
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
     return NextResponse.next();
   }
 
+  // En producción/staging, respetar x-forwarded-proto del proxy
   const proto = request.headers.get('x-forwarded-proto');
 
   if (proto && proto !== 'https') {
