@@ -31,6 +31,7 @@ RUN npm run build
 FROM node:22-alpine AS production
 WORKDIR /app
 ENV NODE_ENV=production
+RUN apk update && apk upgrade --no-cache libcrypto3 libssl3 && rm -rf /var/cache/apk/*
 RUN addgroup -S bistrolink && adduser -S bistrolink -G bistrolink
 
 # Con outputFileTracingRoot apuntando a la raíz del monorepo, "standalone"

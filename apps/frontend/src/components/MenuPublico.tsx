@@ -5,8 +5,10 @@ import type {
   CategoriaCarta,
   ItemCarrito,
   ItemCarta,
+  PedidoConfirmado,
   RestaurantePublico,
 } from '@/types/menu';
+import { apiFetch, ApiError } from '@/lib/api-client';
 
 interface MenuPublicoProps {
   readonly restaurante: RestaurantePublico;
@@ -15,35 +17,30 @@ interface MenuPublicoProps {
   readonly restauranteId: string;
 }
 
-/**
- * HU-002: Componente cliente para mostrar el menú público
- * y permitir agregar items al carrito para pedidos desde fuera del local.
- */
 export default function MenuPublico({
   restaurante,
   categorias,
   tenantId,
   restauranteId,
 }: MenuPublicoProps) {
-  // Estado del carrito (array de items con cantidad)
   const [carrito, setCarrito] = useState<ItemCarrito[]>([]);
+  const [estadoPedido, setEstadoPedido] = useState<
+    'idle' | 'enviando' | 'confirmado' | 'error'
+  >('idle');
+  const [pedidoConfirmado, setPedidoConfirmado] =
+    useState<PedidoConfirmado | null>(null);
+  const [errorPedido, setErrorPedido] = useState<string | null>(null);
 
-  /**
-   * Agrega un item al carrito.
-   * Si ya existe, incrementa la cantidad; si no, lo agrega con cantidad 1.
-   */
   const agregarAlCarrito = (item: ItemCarta) => {
     setCarrito((prevCarrito) => {
       const itemExistente = prevCarrito.some((i) => i.itemCartaId === item.id);
 
       if (itemExistente) {
-        // Si ya está en el carrito, incrementar cantidad
         return prevCarrito.map((i) =>
           i.itemCartaId === item.id ? { ...i, cantidad: i.cantidad + 1 } : i,
         );
       }
 
-      // Si no está, agregarlo con cantidad 1
       return [
         ...prevCarrito,
         {
@@ -57,28 +54,76 @@ export default function MenuPublico({
     });
   };
 
-  /** Calcula el total del carrito */
   const totalCarrito = carrito.reduce(
     (total, item) => total + item.precio * item.cantidad,
     0,
   );
 
-  /** Calcula la cantidad total de items en el carrito */
   const cantidadTotalItems = carrito.reduce(
     (total, item) => total + item.cantidad,
     0,
   );
 
-  /** Formatea un número como precio (es-UY) */
   const formatearPrecio = (valor: number) =>
     valor.toLocaleString('es-UY', {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     });
 
+  const realizarPedido = async () => {
+    setEstadoPedido('enviando');
+    setErrorPedido(null);
+
+    try {
+      const authRes = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/auth/comensal`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tenantId, restauranteId }),
+        },
+      );
+
+      if (!authRes.ok) {
+        throw new ApiError(
+          authRes.status,
+          'No pudimos identificarte para hacer el pedido. Probá de nuevo.',
+        );
+      }
+
+      const { accessToken } = await authRes.json();
+
+      const pedido = await apiFetch<PedidoConfirmado>(
+        '/pedidos',
+        accessToken,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            restauranteId,
+            idempotencyKey: crypto.randomUUID(),
+            items: carrito.map((item) => ({
+              itemCartaId: item.itemCartaId,
+              cantidad: item.cantidad,
+            })),
+          }),
+        },
+      );
+
+      setPedidoConfirmado(pedido);
+      setEstadoPedido('confirmado');
+      setCarrito([]);
+    } catch (err) {
+      setErrorPedido(
+        err instanceof ApiError
+          ? err.message
+          : 'No pudimos enviar tu pedido. Probá de nuevo.',
+      );
+      setEstadoPedido('error');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header del restaurante - sticky en la parte superior */}
       <header className="bg-white shadow-sm sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
           <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">
@@ -98,10 +143,26 @@ export default function MenuPublico({
         </div>
       </header>
 
-      {/* Contenido principal del menú */}
+      {estadoPedido === 'confirmado' && pedidoConfirmado && (
+        <div className="max-w-7xl mx-auto px-4 pt-6 sm:px-6 lg:px-8">
+          <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-start gap-3">
+            <span className="text-2xl" role="img" aria-label="Confirmado">
+              ✅
+            </span>
+            <div>
+              <p className="font-semibold text-green-900">
+                ¡Pedido enviado! Cocina ya lo recibió.
+              </p>
+              <p className="text-sm text-green-700 mt-1">
+                Estado: {pedidoConfirmado.estado}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <main className="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
         {categorias.length === 0 ? (
-          // Estado vacío: restaurante sin menú
           <div className="text-center py-16 bg-white rounded-lg shadow">
             <div className="text-6xl mb-4">🍽️</div>
             <h2 className="text-xl font-semibold text-gray-900 mb-2">
@@ -112,7 +173,6 @@ export default function MenuPublico({
             </p>
           </div>
         ) : (
-          // Renderizar cada categoría del menú
           <div className="space-y-8">
             {categorias.map((categoria) => (
               <section
@@ -129,7 +189,6 @@ export default function MenuPublico({
                       key={item.id}
                       className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow flex flex-col"
                     >
-                      {/* onError para que no carguen imagenes rotas y se vea el broken image icon */}
                       {item.imagenUrl && (
                         <img
                           src={item.imagenUrl}
@@ -173,7 +232,6 @@ export default function MenuPublico({
         )}
       </main>
 
-      {/* Carrito flotante - solo visible si hay items */}
       {carrito.length > 0 && (
         <div className="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-4 sm:w-96 bg-white rounded-lg shadow-xl border border-gray-200 p-4 z-20">
           <div className="flex items-center justify-between mb-3">
@@ -186,6 +244,7 @@ export default function MenuPublico({
               onClick={() => setCarrito([])}
               className="text-sm text-red-600 hover:text-red-700 font-medium"
               aria-label="Vaciar carrito"
+              disabled={estadoPedido === 'enviando'}
             >
               Vaciar
             </button>
@@ -207,6 +266,12 @@ export default function MenuPublico({
             ))}
           </div>
 
+          {errorPedido && (
+            <p className="text-sm text-red-600 mb-2" role="alert">
+              {errorPedido}
+            </p>
+          )}
+
           <div className="border-t pt-3">
             <div className="flex items-center justify-between mb-3">
               <span className="font-bold text-gray-900">Total:</span>
@@ -217,15 +282,11 @@ export default function MenuPublico({
 
             <button
               type="button"
-              onClick={() => {
-                // Pendiente: integrar con endpoint de pedidos (HU-003).
-                alert(
-                  `Pedido listo para enviar:\n\nTenant: ${tenantId}\nRestaurante: ${restauranteId}\nItems: ${cantidadTotalItems}\nTotal: $${totalCarrito.toFixed(2)}`,
-                );
-              }}
-              className="w-full px-4 py-3 bg-green-600 text-white font-semibold rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-colors"
+              onClick={realizarPedido}
+              disabled={estadoPedido === 'enviando'}
+              className="w-full px-4 py-3 bg-green-600 text-white font-semibold rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              Realizar pedido
+              {estadoPedido === 'enviando' ? 'Enviando...' : 'Realizar pedido'}
             </button>
           </div>
         </div>

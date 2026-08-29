@@ -154,3 +154,7 @@ apps/backend/src/**/*.js.map
 # Lighthouse
 .lighthouseci/
 lighthouse-results/
+
+.claude/
+
+k6/bin/

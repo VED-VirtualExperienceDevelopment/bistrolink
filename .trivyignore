@@ -42,3 +42,15 @@ CVE-2026-55833
 CVE-2026-56745
 CVE-2026-56819
 CVE-2026-54291
+# testmgmt (Kiwi TCMS) — CVEs de dependencias empaquetadas dentro de la
+# imagen oficial kiwitcms/kiwi, no de código propio. No podemos actualizar
+# msgpack/setuptools nosotros: viven en el venv que arma la imagen upstream.
+# Pendiente: revisar cuando kiwitcms/kiwi publique una imagen más nueva.
+GHSA-6v7p-g79w-8964
+CVE-2025-47273
+# CVE-2025-59250 — mssql-jdbc HIGH, bundleado por defecto en la imagen oficial
+# de Keycloak (quay.io/keycloak/keycloak:26.7.2). No usamos SQL Server como
+# base de datos (usamos Postgres), así que este driver nunca se carga ni se
+# ejecuta en runtime. Revisar cuando Keycloak libere un rebuild que actualice
+# el driver, o si en algún momento se agrega soporte a SQL Server.
+CVE-2025-59250

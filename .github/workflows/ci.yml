@@ -45,6 +45,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       apps: ${{ steps.filter.outputs.apps }}
+      testmgmt: ${{ steps.filter.outputs.testmgmt }}
     steps:
       - uses: actions/checkout@v7
 
@@ -55,6 +56,27 @@ jobs:
             apps:
               - 'apps/**'
               - 'packages/**'
+            testmgmt:
+              - 'testmgmt/docker/**'
+
+  # ── JOB 0B: VERSION LABEL (compartido) ─────────────────────────────────────
+  # Calcula UNA sola vez el label legible (fecha del commit + SHA corto) que
+  # después reutilizan el job "jest" (TCMS_BUILD) y el job "build" (versión
+  # mostrada en la app de API/Web). Evita triplicar la misma lógica de "git
+  # log" en tres jobs distintos. NO reemplaza env.TAG (github.sha crudo),
+  # que sigue siendo el tag inmutable de las imágenes en GHCR usado por
+  # deploy-staging — este label es solo para lectura humana.
+  version:
+    name: 🏷️ Version label
+    runs-on: ubuntu-latest
+    outputs:
+      label: ${{ steps.build_label.outputs.value }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set build label
+        id: build_label
+        run: echo "value=$(git log -1 --date=format:'%Y-%m-%d_%H-%M' --format='%cd')-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
 
   # ── JOB 1: LINT ───────────────────────────────────────────────────────────
   lint:
@@ -77,6 +99,7 @@ jobs:
   # ── JOB 2: TESTS UNITARIOS (Jest) ─────────────────────────────────────────
   jest:
     name: 🧪 Tests unitarios (Jest)
+    needs: [version]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -106,12 +129,51 @@ jobs:
           KEYCLOAK_CLIENT_ID: "bistrolink-backend-test"
           KEYCLOAK_CLIENT_SECRET: "dummy-secret-for-ci"
 
-      - name: Upload results to Testiny
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: apps/backend/coverage/
+          retention-days: 30
+
+      - name: Upload coverage to Codecov
         if: always()
         continue-on-error: true
+        uses: codecov/codecov-action@v4
+        with:
+          files: apps/backend/coverage/lcov.info
+          flags: backend
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+      # Reemplaza el upload a Testiny (plan gratuito no incluye integración
+      # de automatización) por el plugin oficial de Kiwi TCMS, que lee el
+      # mismo junit.xml y crea/actualiza TestPlan, TestRun y TestExecution
+      # vía XML-RPC. Usuario de servicio dedicado (github-actions, grupo
+      # Tester, sin privilegios de admin) — ver Secrets KIWI_TCMS_*.
+      #
+      # TCMS_PRODUCT_VERSION: usa la rama BASE del PR (github.base_ref) en
+      # vez de github.ref_name, para que todas las feature/fix branches
+      # reporten al mismo TestPlan (develop o main) en lugar de crear un
+      # TestPlan nuevo y efímero por cada rama.
+      - name: Upload results to Kiwi TCMS
+        if: always()
+        continue-on-error: true
+        timeout-minutes: 5
         env:
-          TESTINY_API_KEY: ${{ secrets.TESTINY_API_KEY }}
-        run: npx -y @testiny/cli automation --project "BLVED" --source "backend-unit-tests" --junit apps/backend/coverage/junit.xml
+          TCMS_PRODUCT: "BistroLink"
+          TCMS_PRODUCT_VERSION: ${{ github.event_name == 'pull_request' && github.base_ref || github.ref_name }}
+          TCMS_BUILD: ${{ needs.version.outputs.label }}
+        run: |
+          pip install kiwitcms-junit.xml-plugin --break-system-packages
+          cat <<EOF > ~/.tcms.conf
+          [tcms]
+          url = ${{ secrets.KIWI_TCMS_URL }}/xml-rpc/
+          username = ${{ secrets.KIWI_TCMS_USERNAME }}
+          password = ${{ secrets.KIWI_TCMS_PASSWORD }}
+          EOF
+          tcms-junit.xml-plugin apps/backend/coverage/junit.xml
 
   # NOTA: este job corre solo los tests UNITARIOS (npm run test:cov), no el
   # test:e2e de aislamiento multi-tenant (tenant-isolation.e2e-spec.ts) — ese
@@ -245,7 +307,7 @@ jobs:
     name: 🐳 Build + Escaneo (${{ matrix.name }})
     runs-on: ubuntu-latest
     # pact sigue comentado — agregarlo a needs cuando esté listo.
-    needs: [lint, jest]
+    needs: [lint, jest, version]
     # Los 9 secrets de Auth NO pueden ir dentro de strategy.matrix — GitHub
     # Actions resuelve las entradas del matrix ANTES de que el contexto
     # "secrets" esté disponible para el job, así que cualquier ${{ secrets.* }}
@@ -269,7 +331,7 @@ jobs:
           - name: API
             image: ghcr.io/ved-virtualexperiencedevelopment/bistrolink-api
             dockerfile: apps/backend/Dockerfile
-            extra_args: --build-arg GIT_SHA=${{ github.sha }}
+            extra_args: --build-arg GIT_SHA=${{ needs.version.outputs.label }}
           - name: Web
             image: ghcr.io/ved-virtualexperiencedevelopment/bistrolink-web
             dockerfile: apps/frontend/Dockerfile
@@ -279,7 +341,7 @@ jobs:
               --build-arg NEXT_PUBLIC_KEYCLOAK_URL=https://bistrolink-auth-staging.up.railway.app
               --build-arg NEXT_PUBLIC_KEYCLOAK_REALM=bistrolink
               --build-arg NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=bistrolink-frontend
-              --build-arg NEXT_PUBLIC_APP_VERSION=${{ github.sha }}
+              --build-arg NEXT_PUBLIC_APP_VERSION=${{ needs.version.outputs.label }}
           - name: Auth
             image: ghcr.io/ved-virtualexperiencedevelopment/bistrolink-auth
             dockerfile: keycloak/Dockerfile.auth
@@ -344,6 +406,52 @@ jobs:
             docker tag ${{ matrix.image }}:${{ env.TAG }} ${{ matrix.image }}:${VERSION}
             docker push ${{ matrix.image }}:${VERSION}
           fi
+
+  # ── JOB 8B: ESCANEO SEGURIDAD — TESTMGMT (Kiwi TCMS custom image) ──────────
+  # Kiwi TCMS (test management) se deploya directo en Railway vía "Connect
+  # Repo" — Railway buildea su propia copia y no consume nada de GHCR, así
+  # que este job NO publica la imagen a ningún lado. Solo la buildea de
+  # forma efímera para que Trivy la escanee (queda expuesta públicamente
+  # para que los tutores la consulten, así que igual amerita el chequeo).
+  # Corre solo si algo bajo testmgmt/docker/ cambió, para no gastar minutos
+  # de CI en cada push que no la toca.
+  scan-testmgmt:
+    name: 🐳 Escaneo seguridad (testmgmt / Kiwi TCMS)
+    runs-on: ubuntu-latest
+    needs: [changes]
+    if: needs.changes.outputs.testmgmt == 'true' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Cache DB de vulnerabilidades Trivy
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/trivy
+          key: trivy-db-${{ github.run_id }}
+          restore-keys: trivy-db-
+
+      - name: Construir imagen (efímera, sin push)
+        run: |
+          docker build \
+            -t testmgmt-scan:${{ env.TAG }} \
+            -f testmgmt/docker/Dockerfile \
+            testmgmt/docker
+
+      - name: Trivy — escaneo (testmgmt)
+        # scanners: vuln (sin "secret") — la imagen base de Kiwi TCMS trae
+        # de fábrica un certificado self-signed de ejemplo en
+        # /Kiwi/ssl/localhost.key (documentado oficialmente, no algo que
+        # nuestro Dockerfile de 3 líneas pueda filtrar). El scanner de
+        # secrets siempre lo va a marcar como HIGH sin que sea un secret
+        # real — así que acá solo nos importa el escaneo de vulnerabilidades.
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          image-ref: testmgmt-scan:${{ env.TAG }}
+          scanners: vuln
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          trivyignores: .trivyignore
+          cache-dir: ~/.cache/trivy
 
   # ── JOB 9: DEPLOY STAGING ─────────────────────────────────────────────────
   deploy-staging:
