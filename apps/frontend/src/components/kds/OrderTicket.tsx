@@ -2,6 +2,8 @@ import type { Pedido } from '@/types/pedido';
 
 interface OrderTicketProps {
   pedido: Pedido;
+  puedeOperarTransiciones: boolean;
+  onTransicion: (pedidoId: string, nuevoEstado: Pedido['estado']) => void;
 }
 
 // Umbral simple para el color de urgencia según minutos desde la recepción.
@@ -18,7 +20,7 @@ function formatHora(iso: string) {
   return new Date(iso).toLocaleTimeString('es-UY', { hour: '2-digit', minute: '2-digit' });
 }
 
-export function OrderTicket({ pedido }: OrderTicketProps) {
+export function OrderTicket({ pedido, puedeOperarTransiciones, onTransicion }: OrderTicketProps) {
   const urgencia = getUrgencyColor(pedido.createdAt);
 
   return (
@@ -37,7 +39,7 @@ export function OrderTicket({ pedido }: OrderTicketProps) {
         </div>
       </div>
 
-      {/* Observación general del pedido (HU-021) */}
+      {/* Observación general del pedido (HU-021, cuando exista) */}
       {pedido.observacionGeneral && (
         <div className="shrink-0 border-b border-outline-variant bg-error-container px-3 py-2 text-body-sm text-on-error-container">
           ⚠ {pedido.observacionGeneral}
@@ -60,6 +62,33 @@ export function OrderTicket({ pedido }: OrderTicketProps) {
           </div>
         ))}
       </div>
+
+      {/* Transiciones de estado (RD.06: Cocina es de solo lectura — estos
+          botones no se renderizan si el rol autenticado es solo Cocina.
+          El backend igual rechaza el evento si el rol no corresponde;
+          esto es defensa en profundidad de la UI, no la única validación). */}
+      {puedeOperarTransiciones && (
+        <div className="shrink-0 border-t border-outline-variant p-3">
+          {pedido.estado === 'RECIBIDO' && (
+            <button
+              type="button"
+              onClick={() => onTransicion(pedido.id, 'EN_PREPARACION')}
+              className="w-full rounded-lg bg-tertiary-container py-2.5 text-label-lg font-semibold text-on-tertiary-container transition-colors hover:opacity-90"
+            >
+              Marcar en preparación
+            </button>
+          )}
+          {pedido.estado === 'EN_PREPARACION' && (
+            <button
+              type="button"
+              onClick={() => onTransicion(pedido.id, 'LISTO_PARA_ENTREGAR')}
+              className="w-full rounded-lg bg-primary py-2.5 text-label-lg font-semibold text-on-primary transition-colors hover:opacity-90"
+            >
+              Listo para entregar
+            </button>
+          )}
+        </div>
+      )}
     </article>
   );
 }
