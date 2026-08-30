@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import { useKeycloakAuth } from '@/components/providers/KeycloakProvider';
-import { apiFetch, ApiError } from '@/lib/api-client';
 import { OrderTicket } from './OrderTicket';
 import type { Pedido } from '@/types/pedido';
 
@@ -34,24 +33,11 @@ export function KdsBoard() {
   // única validación.
   const puedeOperarTransiciones = Boolean(hasRole('MOZO') || hasRole('ADMIN'));
 
-  // Carga inicial vía REST — se mantiene como estado de arranque mientras
-  // el socket todavía no entregó su primer 'pedidos:snapshot'. Si el WS
-  // conecta rápido, este fetch queda redundante pero inofensivo (el
-  // snapshot del socket pisa el estado igual).
-  useEffect(() => {
-    if (!token) return;
-    setLoading(true);
-    setLoadError(null);
-    apiFetch<Pedido[]>('/pedidos/activos', token)
-      .then(setPedidos)
-      .catch((err) =>
-        setLoadError(err instanceof ApiError ? err.message : 'No se pudieron cargar los pedidos'),
-      )
-      .finally(() => setLoading(false));
-  }, [token]);
-
-  // Conexión WebSocket real (HU-004). Reemplaza el placeholder anterior
-  // que solo cargaba una vez por REST sin actualizarse en tiempo real.
+  // Conexión WebSocket (HU-004). No hay fetch REST inicial: el propio
+  // servidor manda 'pedidos:snapshot' apenas la conexión se autentica, y
+  // de nuevo tras cada reconexión — eso ya cubre tanto la carga inicial
+  // como la recuperación ante un corte, sin necesitar un endpoint REST
+  // aparte (que además no existe: /pedidos/activos no está implementado).
   useEffect(() => {
     if (!token) return;
 
@@ -66,22 +52,15 @@ export function KdsBoard() {
     socket.on('connect', () => setConectado(true));
     socket.on('disconnect', () => setConectado(false));
 
-    // Snapshot completo: al conectar por primera vez, y tras cada
-    // reconexión el servidor lo reenvía para no perder pedidos pendientes
-    // durante el corte (ver DoD de HU-004).
     socket.on('pedidos:snapshot', (snapshot: Pedido[]) => {
       setPedidos(snapshot);
       setLoading(false);
     });
 
-    // Pedido nuevo confirmado (HU-003). Se agrega solo si todavía no está
-    // en la lista, para tolerar un posible reenvío duplicado del servidor.
     socket.on('pedido:nuevo', (pedido: Pedido) => {
       setPedidos((prev) => (prev.some((p) => p.id === pedido.id) ? prev : [...prev, pedido]));
     });
 
-    // Transición de estado (propia o de otra pantalla de cocina/mozo) —
-    // se refleja en tiempo real sin necesidad de refrescar.
     socket.on('pedido:actualizado', (payload: PedidoActualizadoPayload) => {
       setPedidos((prev) =>
         prev.map((p) => (p.id === payload.id ? { ...p, estado: payload.estado } : p)),
@@ -90,6 +69,7 @@ export function KdsBoard() {
 
     socket.on('error', (err: { message: string }) => {
       setLoadError(err.message);
+      setLoading(false);
     });
 
     return () => {

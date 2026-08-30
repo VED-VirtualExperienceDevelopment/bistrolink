@@ -6,6 +6,17 @@ interface OrderTicketProps {
   onTransicion: (pedidoId: string, nuevoEstado: Pedido['estado']) => void;
 }
 
+// Etiqueta legible para mostrar en el badge — separada del valor real del
+// tipo (que es el enum PedidoEstado de Prisma). Cambiar esto no afecta
+// ninguna comparación de estado, solo el texto que ve el usuario.
+const ESTADO_LABEL: Record<Pedido['estado'], string> = {
+  RECIBIDO: 'Recibido',
+  EN_PREPARACION: 'En preparación',
+  LISTO_PARA_ENTREGAR: 'Listo para entregar',
+  ENTREGADO: 'Entregado',
+  CANCELADO: 'Cancelado',
+};
+
 // Umbral simple para el color de urgencia según minutos desde la recepción.
 // Ajustar estos valores junto con el equipo si el tiempo de preparación
 // promedio del establecimiento difiere.
@@ -22,6 +33,7 @@ function formatHora(iso: string) {
 
 export function OrderTicket({ pedido, puedeOperarTransiciones, onTransicion }: OrderTicketProps) {
   const urgencia = getUrgencyColor(pedido.createdAt);
+  const lineas = pedido.lineas ?? [];
 
   return (
     <article className="flex h-full w-[300px] shrink-0 flex-col overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest shadow-sm">
@@ -34,7 +46,7 @@ export function OrderTicket({ pedido, puedeOperarTransiciones, onTransicion }: O
         <div className="text-right">
           <div className="text-headline-md font-bold">{formatHora(pedido.createdAt)}</div>
           <div className="mt-1 rounded bg-white/20 px-2 py-0.5 text-label-md text-white">
-            {pedido.estado}
+            {ESTADO_LABEL[pedido.estado]}
           </div>
         </div>
       </div>
@@ -48,7 +60,7 @@ export function OrderTicket({ pedido, puedeOperarTransiciones, onTransicion }: O
 
       {/* Ítems */}
       <div className="flex-1 space-y-3 overflow-y-auto p-4">
-        {pedido.lineas.map((linea) => (
+        {lineas.map((linea) => (
           <div key={linea.id} className="border-b border-surface-variant pb-3 last:border-0">
             <div className="flex items-center gap-2 text-body-lg font-semibold">
               <span className="font-bold text-primary">{linea.cantidad}x</span>

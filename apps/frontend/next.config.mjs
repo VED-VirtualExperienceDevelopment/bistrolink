@@ -16,22 +16,34 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
  * fonts.gstatic.com (Material Symbols) — sin esto, la CSP bloquea la hoja
  * de estilos de Google Fonts (visto en consola de staging).
  *
- * frame-src / connect-src solo admiten esquema https: en producción (Keycloak
- * y la API corren detrás de TLS en Railway). En local ambos corren por HTTP
- * plano (Keycloak en :8080, API en :3001), así que sin esta excepción de dev
- * el navegador bloquea el iframe de silent-check-sso de Keycloak — init()
- * nunca recibe el mensaje del iframe y timeoutea, dejando al usuario en un
- * loop infinito de redirects entre /login y /admin/*.
+ * devFrameSrc / devConnectSrc (HU-004 y silent-check-sso de Keycloak): en
+ * local, Keycloak (:8080) y la API (:3001) corren por HTTP plano, sin TLS.
+ * "frame-src https:" no cubre "http://localhost:8080", así que sin esta
+ * excepción el iframe de silent-check-sso queda bloqueado y el login entra
+ * en loop infinito de redirects. Lo mismo para el WebSocket del KDS:
+ * "connect-src wss:" no cubre el esquema "ws:" sin cifrar que usa el
+ * navegador contra un host HTTP plano en local.
  */
 const isProdBuild = process.env.NODE_ENV === "production";
 const devFrameSrc = isProdBuild ? "" : " http://localhost:8080";
-const devConnectSrc = isProdBuild ? "" : " http://localhost:8080 http://localhost:3001";
+const devConnectSrc = isProdBuild
+  ? ""
+  : " http://localhost:8080 http://localhost:3001 ws://localhost:3001";
 
 const baseSecurityHeaders = [
-  {
-    key: "Strict-Transport-Security",
-    value: "max-age=31536000; includeSubDomains",
-  },
+  // SEGURIDAD (subtask BL-30): HSTS solo en producción. En dev, el navegador
+  // recuerda esta política y fuerza HTTPS en las siguientes visitas a
+  // localhost, pero `next dev` solo sirve HTTP plano -> ERR_CONNECTION_REFUSED
+  // (o ERR_SSL_PROTOCOL_ERROR) hasta borrar la política manualmente en
+  // chrome://net-internals/#hsts. Por eso se omite fuera de producción.
+  ...(isProdBuild
+    ? [
+        {
+          key: "Strict-Transport-Security",
+          value: "max-age=31536000; includeSubDomains",
+        },
+      ]
+    : []),
   {
     key: "X-Content-Type-Options",
     value: "nosniff",

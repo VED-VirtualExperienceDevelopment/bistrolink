@@ -23,6 +23,17 @@ import { PedidosTransicionService } from './pedidos-transicion.service';
 // Gateway al scope REQUEST, algo que los WebSocket Gateways no soportan
 // (no hay un "request HTTP" detras de cada conexion). WsAuthService no
 // tiene esa dependencia, asi que se inyecta normal.
+//
+// IMPORTANTE - por que onTransicion/onSync NO usan client.data para el
+// usuario/tenant: handleConnection es async (verify del JWT + query a
+// Postgres para el snapshot inicial). Si el cliente emite un evento muy
+// rapido despues de conectar, o justo durante una reconexion, el evento
+// puede llegar ANTES de que ese await termine y client.data se termine de
+// poblar - una condicion de carrera real, confirmada en pruebas manuales.
+// La solucion no es "esperar mas": es no depender de ese estado cacheado
+// en absoluto. Cada evento que necesita saber quien es el usuario
+// re-verifica el JWT directo desde el handshake (rapido: usa la cache de
+// JWKS, no vuelve a golpear Keycloak), eliminando la carrera de raiz.
 @Injectable()
 @WebSocketGateway({
   cors: { origin: '*' },
@@ -36,6 +47,13 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly moduleRef: ModuleRef,
   ) {}
 
+  private obtenerToken(client: Socket): string | undefined {
+    return (
+      (client.handshake.auth?.token as string | undefined) ??
+      client.handshake.headers.authorization?.replace('Bearer ', '')
+    );
+  }
+
   private async resolverPedidosTransicion(): Promise<PedidosTransicionService> {
     const contextId = ContextIdFactory.create();
     return this.moduleRef.resolve(PedidosTransicionService, contextId, {
@@ -45,16 +63,10 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   /** Punto 3: autenticacion del WebSocket (JWT de Keycloak en el handshake) */
   async handleConnection(client: Socket) {
-    const token =
-      (client.handshake.auth?.token as string | undefined) ??
-      client.handshake.headers.authorization?.replace('Bearer ', '');
+    const token = this.obtenerToken(client);
 
     try {
       const user = await this.wsAuth.verify(token);
-
-      client.data.tenantId = user.tenantId;
-      client.data.roles = user.roles;
-      client.data.keycloakId = user.sub;
 
       // Punto 1 + 4: sala por tenant, aislamiento multi-tenant (RD.07). El
       // nombre de la sala nunca lo elige el cliente - se deriva solo del
@@ -98,13 +110,18 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
     @MessageBody() body: { pedidoId: string; nuevoEstado: PedidoEstado },
   ) {
-    const { tenantId, roles, keycloakId } = client.data as {
-      tenantId: string;
-      roles: string[];
-      keycloakId: string;
-    };
+    let user;
+    try {
+      user = await this.wsAuth.verify(this.obtenerToken(client));
+    } catch {
+      client.emit('error', {
+        message: 'Sesion invalida o expirada - reconecta.',
+      });
+      client.disconnect(true);
+      return;
+    }
 
-    if (!roles.includes('MOZO') && !roles.includes('ADMIN')) {
+    if (!user.roles.includes('MOZO') && !user.roles.includes('ADMIN')) {
       client.emit('error', {
         message:
           'El rol Cocina es de solo lectura (RD.06). La transicion debe operarla Mozo o Administrador.',
@@ -115,15 +132,15 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     try {
       const pedidosTransicion = await this.resolverPedidosTransicion();
       const actualizado = await pedidosTransicion.transicionar({
-        tenantId,
-        keycloakId,
+        tenantId: user.tenantId,
+        keycloakId: user.sub,
         pedidoId: body.pedidoId,
         nuevoEstado: body.nuevoEstado,
       });
 
       // Misma sala para KDS y vista del comensal (ver comentario de arriba).
       this.server
-        .to(this.salaTenant(tenantId))
+        .to(this.salaTenant(user.tenantId))
         .emit('pedido:actualizado', actualizado);
     } catch (err) {
       client.emit('error', { message: (err as Error).message });
@@ -133,9 +150,19 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   /** Resincronizacion explicita post-reconexion (DoD: "sin perdida") */
   @SubscribeMessage('pedidos:sync')
   async onSync(@ConnectedSocket() client: Socket) {
-    const { tenantId } = client.data as { tenantId: string };
+    let user;
+    try {
+      user = await this.wsAuth.verify(this.obtenerToken(client));
+    } catch {
+      client.emit('error', {
+        message: 'Sesion invalida o expirada - reconecta.',
+      });
+      client.disconnect(true);
+      return;
+    }
+
     const pedidosTransicion = await this.resolverPedidosTransicion();
-    const pendientes = await pedidosTransicion.listarPendientes(tenantId);
+    const pendientes = await pedidosTransicion.listarPendientes(user.tenantId);
     client.emit('pedidos:snapshot', pendientes);
   }
 

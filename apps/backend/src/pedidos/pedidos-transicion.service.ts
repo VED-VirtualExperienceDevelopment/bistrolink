@@ -16,7 +16,7 @@ const TRANSICIONES_KDS: Partial<Record<PedidoEstado, PedidoEstado[]>> = {
 };
 
 export interface PedidoActualizado {
-  pedidoId: string;
+  id: string;
   estado: PedidoEstado;
   actualizadoEn: string;
 }
@@ -87,14 +87,18 @@ export class PedidosTransicionService {
       });
 
       return {
-        pedidoId: actualizado.id,
+        id: actualizado.id,
         estado: actualizado.estado,
         actualizadoEn: actualizado.updatedAt.toISOString(),
       };
     });
   }
 
-  /** Snapshot para `pedidos:sync` — al conectar y tras una reconexión. */
+  /** Snapshot para `pedidos:sync` — al conectar y tras una reconexión.
+   * Shape alineado 1:1 con el tipo `Pedido` del frontend (mesaNumero,
+   * createdAt, lineas[].nombreSnapshot) para que KdsBoard/OrderTicket
+   * puedan renderizar esto igual que la respuesta REST, sin un adaptador
+   * intermedio entre ambos canales. */
   async listarPendientes(tenantId: string) {
     return this.tenantPrisma.runInTenantContext(tenantId, async (tx) => {
       const pedidos = await tx.pedido.findMany({
@@ -108,12 +112,16 @@ export class PedidosTransicionService {
       });
 
       return pedidos.map((p) => ({
-        pedidoId: p.id,
-        mesa: p.mesa.numero,
+        id: p.id,
+        mesaNumero: p.mesa.numero,
         estado: p.estado,
-        recibidoEn: p.createdAt.toISOString(),
-        items: p.lineas.map((l) => ({
-          nombre: l.nombreSnapshot,
+        createdAt: p.createdAt.toISOString(),
+        // observacionGeneral/observacion (HU-021) no existen todavía en el
+        // schema de Pedido/LineaPedido — se agregan cuando esa HU se
+        // implemente, sin romper este shape.
+        lineas: p.lineas.map((l) => ({
+          id: l.id,
+          nombreSnapshot: l.nombreSnapshot,
           cantidad: l.cantidad,
         })),
       }));
