@@ -82,6 +82,33 @@ export function KdsBoard() {
     socketRef.current?.emit('pedido:transicion', { pedidoId, nuevoEstado });
   }
 
+  // Agrupa por mesa SOLO para la disposición visual — cada pedido conserva
+  // su propio timer/estado/botón (ver discusión de diseño: fusionar el
+  // estado de dos pedidos de una misma mesa en una sola tarjeta pierde
+  // información real, ej. cuál llegó primero o cuál ya está listo).
+  // El orden de los clusters es por el pedido más antiguo de cada mesa,
+  // así la mesa que más está esperando sigue apareciendo primero.
+  const gruposPorMesa = (() => {
+    const mapa = new Map<number, Pedido[]>();
+    for (const pedido of pedidos) {
+      const grupo = mapa.get(pedido.mesaNumero) ?? [];
+      grupo.push(pedido);
+      mapa.set(pedido.mesaNumero, grupo);
+    }
+    return [...mapa.entries()]
+      .map(([mesaNumero, pedidosDeLaMesa]) => ({
+        mesaNumero,
+        pedidos: [...pedidosDeLaMesa].sort(
+          (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+        ),
+      }))
+      .sort(
+        (a, b) =>
+          new Date(a.pedidos[0].createdAt).getTime() -
+          new Date(b.pedidos[0].createdAt).getTime(),
+      );
+  })();
+
   if (loading) {
     return (
       <div className="flex flex-1 items-center justify-center">
@@ -117,13 +144,24 @@ export function KdsBoard() {
         </div>
       )}
       <div className="flex h-full gap-gutter overflow-x-auto overflow-y-hidden pb-4">
-        {pedidos.map((pedido) => (
-          <OrderTicket
-            key={pedido.id}
-            pedido={pedido}
-            puedeOperarTransiciones={puedeOperarTransiciones}
-            onTransicion={emitirTransicion}
-          />
+        {gruposPorMesa.map(({ mesaNumero, pedidos: pedidosDeLaMesa }) => (
+          <div key={mesaNumero} className="flex h-full shrink-0 flex-col gap-1.5">
+            {pedidosDeLaMesa.length > 1 && (
+              <div className="shrink-0 rounded-md bg-surface-container-low px-2 py-1 text-label-sm font-semibold text-on-surface-variant">
+                Mesa {mesaNumero} · {pedidosDeLaMesa.length} pedidos
+              </div>
+            )}
+            <div className="flex h-full gap-gutter">
+              {pedidosDeLaMesa.map((pedido) => (
+                <OrderTicket
+                  key={pedido.id}
+                  pedido={pedido}
+                  puedeOperarTransiciones={puedeOperarTransiciones}
+                  onTransicion={emitirTransicion}
+                />
+              ))}
+            </div>
+          </div>
         ))}
       </div>
     </div>
