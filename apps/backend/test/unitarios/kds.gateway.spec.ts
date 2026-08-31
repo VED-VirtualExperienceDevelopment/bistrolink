@@ -1,52 +1,181 @@
+import { PedidoEstado } from '@prisma/client';
 import { KdsGateway } from '../../src/pedidos/kds.gateway';
+import { WsAuthError } from '../../src/pedidos/ws-auth.service';
 
 const TENANT_ID = '11111111-1111-1111-1111-111111111111';
 const TENANT_ID_AJENO = 'aaaaaaaa-0000-0000-0000-000000000001';
 
+function mockClient(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'socket-123',
+    handshake: { auth: { token: 'token-valido' }, headers: {} },
+    join: jest.fn(),
+    emit: jest.fn(),
+    disconnect: jest.fn(),
+    ...overrides,
+  };
+}
+
 describe('KdsGateway', () => {
   let gateway: KdsGateway;
   let mockServer: { to: jest.Mock; emit: jest.Mock };
+  let mockWsAuth: { verify: jest.Mock };
+  let mockPedidosTransicion: {
+    listarPendientes: jest.Mock;
+    transicionar: jest.Mock;
+  };
+  let mockModuleRef: { resolve: jest.Mock };
 
   beforeEach(() => {
-    gateway = new KdsGateway();
+    mockPedidosTransicion = {
+      listarPendientes: jest.fn().mockResolvedValue([]),
+      transicionar: jest.fn(),
+    };
+    mockModuleRef = {
+      resolve: jest.fn().mockResolvedValue(mockPedidosTransicion),
+    };
+    mockWsAuth = { verify: jest.fn() };
+
+    // Ya no toma cero argumentos: el gateway resuelve WsAuthService por
+    // constructor normal, y PedidosTransicionService via ModuleRef (ver
+    // comentario en kds.gateway.ts sobre el scope REQUEST de
+    // TenantPrismaService).
+    gateway = new KdsGateway(mockWsAuth as any, mockModuleRef as any);
 
     mockServer = { to: jest.fn(), emit: jest.fn() };
     mockServer.to.mockReturnValue({ emit: mockServer.emit });
     gateway.server = mockServer as any;
   });
 
-  it('handleConnection y handleDisconnect no explotan (solo loguean)', () => {
-    const mockClient = { id: 'socket-123' } as any;
+  describe('handleConnection', () => {
+    it('con JWT valido: une al cliente a la sala de su tenant y le manda el snapshot inicial', async () => {
+      mockWsAuth.verify.mockResolvedValue({
+        sub: 'usuario-1',
+        tenantId: TENANT_ID,
+        roles: ['MOZO'],
+      });
+      const client = mockClient();
 
-    expect(() => gateway.handleConnection(mockClient)).not.toThrow();
-    expect(() => gateway.handleDisconnect(mockClient)).not.toThrow();
+      await gateway.handleConnection(client as any);
+
+      expect(client.join).toHaveBeenCalledWith(`tenant:${TENANT_ID}`);
+      expect(mockPedidosTransicion.listarPendientes).toHaveBeenCalledWith(
+        TENANT_ID,
+      );
+      expect(client.emit).toHaveBeenCalledWith('pedidos:snapshot', []);
+    });
+
+    it('sin token o token invalido: rechaza y desconecta, sin unir a ninguna sala', async () => {
+      mockWsAuth.verify.mockRejectedValue(
+        new WsAuthError('Token no provisto en el handshake'),
+      );
+      const client = mockClient({ handshake: { auth: {}, headers: {} } });
+
+      await gateway.handleConnection(client as any);
+
+      expect(client.join).not.toHaveBeenCalled();
+      expect(client.emit).toHaveBeenCalledWith('error', {
+        message: 'Token no provisto en el handshake',
+      });
+      expect(client.disconnect).toHaveBeenCalledWith(true);
+    });
   });
 
-  it('handleJoinTenant une al cliente a la sala scopeada de SU tenant', () => {
-    const mockClient = { join: jest.fn() } as any;
-
-    gateway.handleJoinTenant(mockClient, TENANT_ID);
-
-    expect(mockClient.join).toHaveBeenCalledWith(`tenant:${TENANT_ID}`);
+  it('handleDisconnect no explota (solo loguea)', () => {
+    const client = mockClient();
+    expect(() => gateway.handleDisconnect(client as any)).not.toThrow();
   });
 
-  it('emitirNuevoPedido emite solo a la sala del tenant correspondiente', () => {
-    const pedido = { id: 'pedido-1', tenantId: TENANT_ID };
+  describe('onTransicion', () => {
+    it('rol COCINA es rechazado antes de tocar la DB (RD.06 - solo lectura)', async () => {
+      mockWsAuth.verify.mockResolvedValue({
+        sub: 'usuario-1',
+        tenantId: TENANT_ID,
+        roles: ['COCINA'],
+      });
+      const client = mockClient();
 
-    gateway.emitirNuevoPedido(TENANT_ID, pedido);
+      await gateway.onTransicion(client as any, {
+        pedidoId: 'pedido-1',
+        nuevoEstado: PedidoEstado.EN_PREPARACION,
+      });
 
-    expect(mockServer.to).toHaveBeenCalledWith(`tenant:${TENANT_ID}`);
-    expect(mockServer.emit).toHaveBeenCalledWith('pedido:nuevo', pedido);
+      expect(mockPedidosTransicion.transicionar).not.toHaveBeenCalled();
+      expect(client.emit).toHaveBeenCalledWith(
+        'error',
+        expect.objectContaining({
+          message: expect.stringContaining('de solo lectura'),
+        }),
+      );
+    });
+
+    it('rol MOZO ejecuta la transicion y emite pedido:actualizado a toda la sala del tenant', async () => {
+      mockWsAuth.verify.mockResolvedValue({
+        sub: 'usuario-1',
+        tenantId: TENANT_ID,
+        roles: ['MOZO'],
+      });
+      const actualizado = {
+        id: 'pedido-1',
+        estado: PedidoEstado.EN_PREPARACION,
+        actualizadoEn: '2026-08-30T12:00:00.000Z',
+      };
+      mockPedidosTransicion.transicionar.mockResolvedValue(actualizado);
+      const client = mockClient();
+
+      await gateway.onTransicion(client as any, {
+        pedidoId: 'pedido-1',
+        nuevoEstado: PedidoEstado.EN_PREPARACION,
+      });
+
+      expect(mockPedidosTransicion.transicionar).toHaveBeenCalledWith({
+        tenantId: TENANT_ID,
+        keycloakId: 'usuario-1',
+        pedidoId: 'pedido-1',
+        nuevoEstado: PedidoEstado.EN_PREPARACION,
+      });
+      expect(mockServer.to).toHaveBeenCalledWith(`tenant:${TENANT_ID}`);
+      expect(mockServer.emit).toHaveBeenCalledWith(
+        'pedido:actualizado',
+        actualizado,
+      );
+    });
+
+    it('JWT invalido al momento del evento: desconecta en vez de crashear (condicion de carrera resuelta re-verificando por evento)', async () => {
+      mockWsAuth.verify.mockRejectedValue(
+        new WsAuthError('Token invalido o expirado'),
+      );
+      const client = mockClient();
+
+      await gateway.onTransicion(client as any, {
+        pedidoId: 'pedido-1',
+        nuevoEstado: PedidoEstado.EN_PREPARACION,
+      });
+
+      expect(mockPedidosTransicion.transicionar).not.toHaveBeenCalled();
+      expect(client.disconnect).toHaveBeenCalledWith(true);
+    });
   });
 
-  it('dos tenants distintos arman nombres de sala distintos — nunca se pisan', () => {
-    gateway.emitirNuevoPedido(TENANT_ID, { id: 'pedido-a' });
-    gateway.emitirNuevoPedido(TENANT_ID_AJENO, { id: 'pedido-b' });
+  describe('emitirNuevoPedido', () => {
+    it('emite solo a la sala del tenant correspondiente', () => {
+      const pedido = { id: 'pedido-1', tenantId: TENANT_ID };
 
-    expect(mockServer.to).toHaveBeenNthCalledWith(1, `tenant:${TENANT_ID}`);
-    expect(mockServer.to).toHaveBeenNthCalledWith(
-      2,
-      `tenant:${TENANT_ID_AJENO}`,
-    );
+      gateway.emitirNuevoPedido(TENANT_ID, pedido);
+
+      expect(mockServer.to).toHaveBeenCalledWith(`tenant:${TENANT_ID}`);
+      expect(mockServer.emit).toHaveBeenCalledWith('pedido:nuevo', pedido);
+    });
+
+    it('dos tenants distintos arman nombres de sala distintos - nunca se pisan', () => {
+      gateway.emitirNuevoPedido(TENANT_ID, { id: 'pedido-a' });
+      gateway.emitirNuevoPedido(TENANT_ID_AJENO, { id: 'pedido-b' });
+
+      expect(mockServer.to).toHaveBeenNthCalledWith(1, `tenant:${TENANT_ID}`);
+      expect(mockServer.to).toHaveBeenNthCalledWith(
+        2,
+        `tenant:${TENANT_ID_AJENO}`,
+      );
+    });
   });
 });

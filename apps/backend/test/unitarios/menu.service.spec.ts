@@ -101,7 +101,9 @@ describe('MenuService - getMenuByRestaurante (HU-002)', () => {
         const filtroDisponible = params.include.items.where.disponible;
         return categorias.map((cat) => ({
           ...cat,
-          items: cat.items.filter((item: any) => item.disponible === filtroDisponible),
+          items: cat.items.filter(
+            (item: any) => item.disponible === filtroDisponible,
+          ),
         }));
       }
       return categorias;
@@ -117,8 +119,14 @@ describe('MenuService - getMenuByRestaurante (HU-002)', () => {
       // Arrange
       const tenantId = randomUUID();
       const restaurante = buildRestaurante({ tenantId });
-      const item1 = buildItem({ nombre: 'Milanesa', precio: new Decimal('590.00') });
-      const item2 = buildItem({ nombre: 'Pizza', precio: new Decimal('450.00') });
+      const item1 = buildItem({
+        nombre: 'Milanesa',
+        precio: new Decimal('590.00'),
+      });
+      const item2 = buildItem({
+        nombre: 'Pizza',
+        precio: new Decimal('450.00'),
+      });
       const categoria = buildCategoria({
         nombre: 'Platos principales',
         items: [item1, item2],
@@ -126,10 +134,15 @@ describe('MenuService - getMenuByRestaurante (HU-002)', () => {
 
       mockTx.restaurante.findUnique.mockResolvedValue(restaurante);
       mockCategoriaCartaFindMany([categoria]);
-      mockStorage.getSignedImageUrl.mockResolvedValue('https://s3.example.com/imagen.jpg');
+      mockStorage.getSignedImageUrl.mockResolvedValue(
+        'https://s3.example.com/imagen.jpg',
+      );
 
       // Act
-      const resultado = await service.getMenuByRestaurante(tenantId, restaurante.id);
+      const resultado = await service.getMenuByRestaurante(
+        tenantId,
+        restaurante.id,
+      );
 
       // Assert: verificamos COMPORTAMIENTO, no implementación
       expect(resultado).toEqual({
@@ -165,8 +178,14 @@ describe('MenuService - getMenuByRestaurante (HU-002)', () => {
       // Arrange
       const tenantId = randomUUID();
       const restaurante = buildRestaurante({ tenantId });
-      const itemDisponible = buildItem({ nombre: 'Disponible', disponible: true });
-      const itemNoDisponible = buildItem({ nombre: 'No disponible', disponible: false });
+      const itemDisponible = buildItem({
+        nombre: 'Disponible',
+        disponible: true,
+      });
+      const itemNoDisponible = buildItem({
+        nombre: 'No disponible',
+        disponible: false,
+      });
       const categoria = buildCategoria({
         items: [itemDisponible, itemNoDisponible],
       });
@@ -175,13 +194,18 @@ describe('MenuService - getMenuByRestaurante (HU-002)', () => {
       mockCategoriaCartaFindMany([categoria]);
 
       // Act
-      const resultado = await service.getMenuByRestaurante(tenantId, restaurante.id);
+      const resultado = await service.getMenuByRestaurante(
+        tenantId,
+        restaurante.id,
+      );
 
       // Assert: COMPORTAMIENTO - solo items disponibles deben aparecer
       const itemsDevueltos = resultado.categorias[0].items;
       expect(itemsDevueltos).toHaveLength(1);
       expect(itemsDevueltos[0].nombre).toBe('Disponible');
-      expect(itemsDevueltos.find((i) => i.nombre === 'No disponible')).toBeUndefined();
+      expect(
+        itemsDevueltos.find((i) => i.nombre === 'No disponible'),
+      ).toBeUndefined();
     });
 
     it('debe manejar múltiples categorías ordenadas correctamente', async () => {
@@ -196,7 +220,10 @@ describe('MenuService - getMenuByRestaurante (HU-002)', () => {
       mockCategoriaCartaFindMany([cat1, cat2, cat3]);
 
       // Act
-      const resultado = await service.getMenuByRestaurante(tenantId, restaurante.id);
+      const resultado = await service.getMenuByRestaurante(
+        tenantId,
+        restaurante.id,
+      );
 
       // Assert: COMPORTAMIENTO - las categorías deben estar en el orden correcto
       expect(resultado.categorias).toHaveLength(3);
@@ -223,10 +250,15 @@ describe('MenuService - getMenuByRestaurante (HU-002)', () => {
 
       mockTx.restaurante.findUnique.mockResolvedValue(restaurante);
       mockCategoriaCartaFindMany([categoria]);
-      mockStorage.getSignedImageUrl.mockResolvedValue('https://s3.example.com/signed');
+      mockStorage.getSignedImageUrl.mockResolvedValue(
+        'https://s3.example.com/signed',
+      );
 
       // Act
-      const resultado = await service.getMenuByRestaurante(tenantId, restaurante.id);
+      const resultado = await service.getMenuByRestaurante(
+        tenantId,
+        restaurante.id,
+      );
 
       // Assert: COMPORTAMIENTO - solo items con imagenKey deben tener URL firmada
       const items = resultado.categorias[0].items;
@@ -236,7 +268,9 @@ describe('MenuService - getMenuByRestaurante (HU-002)', () => {
       expect(itemConImg?.imagenUrl).toBe('https://s3.example.com/signed');
       expect(itemSinImg?.imagenUrl).toBeNull();
       expect(mockStorage.getSignedImageUrl).toHaveBeenCalledTimes(1);
-      expect(mockStorage.getSignedImageUrl).toHaveBeenCalledWith('path/to/image.jpg');
+      expect(mockStorage.getSignedImageUrl).toHaveBeenCalledWith(
+        'path/to/image.jpg',
+      );
     });
 
     it('debe devolver menú vacío cuando el restaurante no tiene categorías', async () => {
@@ -248,7 +282,10 @@ describe('MenuService - getMenuByRestaurante (HU-002)', () => {
       mockCategoriaCartaFindMany([]);
 
       // Act
-      const resultado = await service.getMenuByRestaurante(tenantId, restaurante.id);
+      const resultado = await service.getMenuByRestaurante(
+        tenantId,
+        restaurante.id,
+      );
 
       // Assert: COMPORTAMIENTO - debe devolver estructura válida pero vacía
       expect(resultado.restaurante.id).toBe(restaurante.id);
@@ -281,7 +318,10 @@ describe('MenuService - getMenuByRestaurante (HU-002)', () => {
       mockCategoriaCartaFindMany([]);
 
       // Act
-      const resultado = await service.getMenuByRestaurante(tenantId, restaurante.id);
+      const resultado = await service.getMenuByRestaurante(
+        tenantId,
+        restaurante.id,
+      );
 
       // Assert: PROPIEDAD - el ID del restaurante SIEMPRE debe estar presente
       expect(resultado.restaurante.id).toBe(restaurante.id);
@@ -304,11 +344,16 @@ describe('MenuService - getMenuByRestaurante (HU-002)', () => {
       mockCategoriaCartaFindMany([categoria]);
 
       // Act
-      const resultado = await service.getMenuByRestaurante(tenantId, restaurante.id);
+      const resultado = await service.getMenuByRestaurante(
+        tenantId,
+        restaurante.id,
+      );
 
       // Assert: PROPIEDAD INVARIANTE - NINGÚN item debe tener disponible=false
       const todosLosItems = resultado.categorias.flatMap((cat) => cat.items);
-      const itemsNoDisponibles = todosLosItems.filter((item) => !item.disponible);
+      const itemsNoDisponibles = todosLosItems.filter(
+        (item) => !item.disponible,
+      );
       expect(itemsNoDisponibles).toHaveLength(0);
     });
 
@@ -323,7 +368,10 @@ describe('MenuService - getMenuByRestaurante (HU-002)', () => {
       mockCategoriaCartaFindMany([categoria]);
 
       // Act
-      const resultado = await service.getMenuByRestaurante(tenantId, restaurante.id);
+      const resultado = await service.getMenuByRestaurante(
+        tenantId,
+        restaurante.id,
+      );
 
       // Assert: PROPIEDAD - el precio debe mantenerse como Decimal
       const itemDevuelto = resultado.categorias[0].items[0];
