@@ -171,6 +171,29 @@ describe('KdsGateway', () => {
       expect(mockPedidosTransicion.transicionar).not.toHaveBeenCalled();
       expect(client.disconnect).toHaveBeenCalledWith(true);
     });
+
+    it('si transicionar() falla (ej. transicion invalida o pedido inexistente), reenvia el mensaje de error al cliente sin romper el gateway', async () => {
+      mockWsAuth.verify.mockResolvedValue({
+        sub: 'usuario-1',
+        tenantId: TENANT_ID,
+        roles: ['MOZO'],
+      });
+      mockPedidosTransicion.transicionar.mockRejectedValue(
+        new Error('Transición inválida: LISTO_PARA_ENTREGAR → EN_PREPARACION'),
+      );
+      const client = mockClient();
+
+      await gateway.onTransicion(client as any, {
+        pedidoId: 'pedido-1',
+        nuevoEstado: PedidoEstado.EN_PREPARACION,
+      });
+
+      expect(client.emit).toHaveBeenCalledWith('error', {
+        message: 'Transición inválida: LISTO_PARA_ENTREGAR → EN_PREPARACION',
+      });
+      // Sin broadcast a la sala si la transicion nunca se aplico.
+      expect(mockServer.to).not.toHaveBeenCalled();
+    });
   });
 
   describe('onSync', () => {
