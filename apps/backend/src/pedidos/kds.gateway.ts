@@ -39,6 +39,16 @@ import { PedidosTransicionService } from './pedidos-transicion.service';
   cors: { origin: '*' },
 })
 export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
+  // Roles que pueden CONECTARSE al canal del KDS (ver el snapshot completo
+  // del tenant). Distinto del chequeo de 'MOZO'/'ADMIN' en onTransicion,
+  // que es mas estricto todavia (COCINA puede conectar y leer, pero no
+  // transicionar - RD.06). COMENSAL queda afuera a proposito: este canal
+  // expone el snapshot de TODAS las mesas del tenant, y HU-006 (que le
+  // daria a Comensal un scope acotado a su propio pedido) todavia no esta
+  // implementada - dejar a Comensal conectarse hoy seria darle acceso de
+  // lectura a pedidos de otras mesas sin ningun control de scope.
+  private static readonly ROLES_CONEXION_KDS = ['ADMIN', 'MOZO', 'COCINA'];
+
   @WebSocketServer()
   server: Server;
 
@@ -67,6 +77,18 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     try {
       const user = await this.wsAuth.verify(token);
+
+      if (!KdsGateway.ROLES_CONEXION_KDS.some((r) => user.roles.includes(r))) {
+        Logger.warn(
+          `Conexion WS rechazada: rol no autorizado para el KDS (${user.roles.join(',')})`,
+          KdsGateway.name,
+        );
+        client.emit('error', {
+          message: 'Rol no autorizado para acceder al KDS.',
+        });
+        client.disconnect(true);
+        return;
+      }
 
       // Punto 1 + 4: sala por tenant, aislamiento multi-tenant (RD.07). El
       // nombre de la sala nunca lo elige el cliente - se deriva solo del

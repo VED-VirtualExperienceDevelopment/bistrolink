@@ -27,6 +27,15 @@ const ITEM_ID = '55555555-5555-5555-5555-555555555555';
 const TENANT_B_USER = process.env.TEST_TENANT_B_USERNAME;
 const TENANT_B_PASS = process.env.TEST_TENANT_B_PASSWORD;
 
+// El socket que OBSERVA pedido:nuevo tiene que ser un token de MOZO/ADMIN/
+// COCINA: desde el fix de seguridad de HU-004 (checklist "Comensal -> 403"),
+// solo esos roles pueden conectarse al canal del KDS. El comensal sigue
+// creando el pedido por REST igual que siempre - lo que cambio es quien
+// puede quedarse escuchando el feed completo de la cocina, y el comensal
+// nunca deberia poder hacerlo.
+const MOZO_USER = process.env.TEST_MOZO_USERNAME;
+const MOZO_PASS = process.env.TEST_MOZO_PASSWORD;
+
 async function getToken(username: string, password: string): Promise<string> {
   const res = await fetch(
     `${KEYCLOAK_URL}/realms/${REALM}/protocol/openid-connect/token`,
@@ -67,6 +76,7 @@ describe('WebSocket KDS (HU-003 + HU-004) - emision de pedido:nuevo', () => {
   let tokenComensalDemo: string;
 
   const itConTenantB = TENANT_B_USER && TENANT_B_PASS ? it : it.skip;
+  const itConMozo = MOZO_USER && MOZO_PASS ? it : it.skip;
 
   beforeAll(async () => {
     const moduleRef: TestingModule = await Test.createTestingModule({
@@ -91,72 +101,84 @@ describe('WebSocket KDS (HU-003 + HU-004) - emision de pedido:nuevo', () => {
     await app.close();
   }, 30000);
 
-  it('Pedido: emite pedido nuevo al KDS en menos de 500ms tras confirmar', async () => {
-    // Warm-up: la primera query real de esta instancia de la app carga con
-    // el costo de conexión a Postgres/inicialización de Prisma, que no es
-    // representativo del rendimiento real del sistema ya en marcha — mismo
-    // criterio que aplicamos al test de Lighthouse en HU-001. Se descarta
-    // el resultado, solo importa que la app ya esté "tibia" para la medición
-    // real de abajo.
-    await request(app.getHttpServer())
-      .post('/pedidos')
-      .set('Authorization', `Bearer ${tokenComensalDemo}`)
-      .send({
-        restauranteId: RESTAURANTE_ID,
-        mesaId: MESA_ID,
-        idempotencyKey: `warmup-${Date.now()}`,
-        items: [{ itemCartaId: ITEM_ID, cantidad: 1 }],
-      })
-      .expect(201);
-
-    await new Promise<void>((resolve, reject) => {
-      const socket = conectar(baseUrl, tokenComensalDemo);
-      let inicio: number;
-
-      socket.on('error', (e: { message: string }) =>
-        reject(new Error(`Conexion WS rechazada: ${e.message}`)),
+  itConMozo(
+    '[TC-I-KDS-006] emite pedido:nuevo al KDS en menos de 500ms tras confirmar',
+    async () => {
+      const tokenMozo = await getToken(
+        MOZO_USER as string,
+        MOZO_PASS as string,
       );
 
-      // El snapshot inicial confirma que la conexion ya quedo autenticada
-      // y unida a la sala del tenant — recien ahi tiene sentido esperar
-      // el pedido:nuevo, igual que hace un cliente real.
-      socket.on('pedidos:snapshot', () => {
-        socket.on('pedido:nuevo', (pedido: { id: string }) => {
-          try {
-            const duracionMs = Date.now() - inicio;
-            expect(duracionMs).toBeLessThan(500);
-            expect(pedido.id).toBeDefined();
-            socket.disconnect();
-            resolve();
-          } catch (err) {
-            socket.disconnect();
-            reject(err);
-          }
-        });
+      // Warm-up: la primera query real de esta instancia de la app carga con
+      // el costo de conexión a Postgres/inicialización de Prisma, que no es
+      // representativo del rendimiento real del sistema ya en marcha — mismo
+      // criterio que aplicamos al test de Lighthouse en HU-001. Se descarta
+      // el resultado, solo importa que la app ya esté "tibia" para la medición
+      // real de abajo.
+      await request(app.getHttpServer())
+        .post('/pedidos')
+        .set('Authorization', `Bearer ${tokenComensalDemo}`)
+        .send({
+          restauranteId: RESTAURANTE_ID,
+          mesaId: MESA_ID,
+          idempotencyKey: `warmup-${Date.now()}`,
+          items: [{ itemCartaId: ITEM_ID, cantidad: 1 }],
+        })
+        .expect(201);
 
-        setTimeout(async () => {
-          try {
-            inicio = Date.now();
-            await request(app.getHttpServer())
-              .post('/pedidos')
-              .set('Authorization', `Bearer ${tokenComensalDemo}`)
-              .send({
-                restauranteId: RESTAURANTE_ID,
-                mesaId: MESA_ID,
-                idempotencyKey: `ws-test-${Date.now()}`,
-                items: [{ itemCartaId: ITEM_ID, cantidad: 1 }],
-              })
-              .expect(201);
-          } catch (err) {
-            reject(err);
-          }
-        }, 100);
+      await new Promise<void>((resolve, reject) => {
+        // El socket que OBSERVA pedido:nuevo es de MOZO (personal de
+        // cocina/sala) - el comensal crea el pedido por REST arriba, pero
+        // nunca deberia poder quedarse escuchando el feed completo del KDS.
+        const socket = conectar(baseUrl, tokenMozo);
+        let inicio: number;
+
+        socket.on('error', (e: { message: string }) =>
+          reject(new Error(`Conexion WS rechazada: ${e.message}`)),
+        );
+
+        // El snapshot inicial confirma que la conexion ya quedo autenticada
+        // y unida a la sala del tenant — recien ahi tiene sentido esperar
+        // el pedido:nuevo, igual que hace un cliente real.
+        socket.on('pedidos:snapshot', () => {
+          socket.on('pedido:nuevo', (pedido: { id: string }) => {
+            try {
+              const duracionMs = Date.now() - inicio;
+              expect(duracionMs).toBeLessThan(500);
+              expect(pedido.id).toBeDefined();
+              socket.disconnect();
+              resolve();
+            } catch (err) {
+              socket.disconnect();
+              reject(err);
+            }
+          });
+
+          setTimeout(async () => {
+            try {
+              inicio = Date.now();
+              await request(app.getHttpServer())
+                .post('/pedidos')
+                .set('Authorization', `Bearer ${tokenComensalDemo}`)
+                .send({
+                  restauranteId: RESTAURANTE_ID,
+                  mesaId: MESA_ID,
+                  idempotencyKey: `ws-test-${Date.now()}`,
+                  items: [{ itemCartaId: ITEM_ID, cantidad: 1 }],
+                })
+                .expect(201);
+            } catch (err) {
+              reject(err);
+            }
+          }, 100);
+        });
       });
-    });
-  }, 15000);
+    },
+    15000,
+  );
 
   itConTenantB(
-    'Pedido: NO emite el pedido a un cliente conectado con un token de OTRO tenant real (aislamiento)',
+    '[TC-I-KDS-007] NO emite el pedido a un cliente conectado con un token de OTRO tenant real (aislamiento)',
     (done) => {
       getToken(TENANT_B_USER as string, TENANT_B_PASS as string)
         .then((tokenTenantB) => {

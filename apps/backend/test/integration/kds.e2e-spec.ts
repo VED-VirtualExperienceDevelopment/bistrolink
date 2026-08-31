@@ -277,4 +277,20 @@ describe('Canal WebSocket del KDS (HU-004) - e2e', () => {
       }
     },
   );
+
+  it('[TC-I-KDS-006] [Checklist seguridad] KDS: token real de COMENSAL es rechazado al conectar (no es rol de operacion del KDS)', async () => {
+    const tokenComensal = await getComensalToken();
+    const socket = conectar(tokenComensal);
+    try {
+      const errorPayload = await esperarEvento<{ message: string }>(
+        socket,
+        'error',
+      );
+      expect(errorPayload.message).toBe(
+        'Rol no autorizado para acceder al KDS.',
+      );
+    } finally {
+      socket.disconnect();
+    }
+  });
 });

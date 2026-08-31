@@ -95,6 +95,27 @@ describe('KdsGateway', () => {
       });
       expect(client.disconnect).toHaveBeenCalledWith(true);
     });
+
+    it('[Checklist seguridad] rol COMENSAL (token valido, pero no es rol de operacion del KDS) es rechazado con 403 equivalente', async () => {
+      // El canal del KDS expone el snapshot completo del tenant (todas las
+      // mesas). Un token valido pero de otro contexto no debe poder verlo
+      // - ver comentario de ROLES_CONEXION_KDS en el gateway.
+      mockWsAuth.verify.mockResolvedValue({
+        sub: 'comensal-1',
+        tenantId: TENANT_ID,
+        roles: ['COMENSAL'],
+      });
+      const client = mockClient();
+
+      await gateway.handleConnection(client as any);
+
+      expect(client.join).not.toHaveBeenCalled();
+      expect(mockPedidosTransicion.listarPendientes).not.toHaveBeenCalled();
+      expect(client.emit).toHaveBeenCalledWith('error', {
+        message: 'Rol no autorizado para acceder al KDS.',
+      });
+      expect(client.disconnect).toHaveBeenCalledWith(true);
+    });
   });
 
   it('handleDisconnect no explota (solo loguea)', () => {
