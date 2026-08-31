@@ -79,6 +79,22 @@ describe('KdsGateway', () => {
       });
       expect(client.disconnect).toHaveBeenCalledWith(true);
     });
+
+    it('ante un error inesperado (no WsAuthError) durante la verificacion, cae al mensaje generico "No autorizado"', async () => {
+      // Cubre la rama fallback: no todo lo que puede fallar en verify() es
+      // necesariamente un WsAuthError (ej. un error de red al pedir la
+      // clave publica que no se haya envuelto correctamente). El cliente
+      // no deberia ver el detalle interno de ese error.
+      mockWsAuth.verify.mockRejectedValue(new Error('fallo de red inesperado'));
+      const client = mockClient();
+
+      await gateway.handleConnection(client as any);
+
+      expect(client.emit).toHaveBeenCalledWith('error', {
+        message: 'No autorizado',
+      });
+      expect(client.disconnect).toHaveBeenCalledWith(true);
+    });
   });
 
   it('handleDisconnect no explota (solo loguea)', () => {
@@ -153,6 +169,41 @@ describe('KdsGateway', () => {
       });
 
       expect(mockPedidosTransicion.transicionar).not.toHaveBeenCalled();
+      expect(client.disconnect).toHaveBeenCalledWith(true);
+    });
+  });
+
+  describe('onSync', () => {
+    it('con JWT valido: re-envia el snapshot de pedidos pendientes (DoD: reconexion sin perdida)', async () => {
+      mockWsAuth.verify.mockResolvedValue({
+        sub: 'usuario-1',
+        tenantId: TENANT_ID,
+        roles: ['MOZO'],
+      });
+      const pendientes = [{ id: 'pedido-1', estado: PedidoEstado.RECIBIDO }];
+      mockPedidosTransicion.listarPendientes.mockResolvedValue(pendientes);
+      const client = mockClient();
+
+      await gateway.onSync(client as any);
+
+      expect(mockPedidosTransicion.listarPendientes).toHaveBeenCalledWith(
+        TENANT_ID,
+      );
+      expect(client.emit).toHaveBeenCalledWith('pedidos:snapshot', pendientes);
+    });
+
+    it('con JWT invalido o vencido: desconecta en vez de reenviar el snapshot', async () => {
+      mockWsAuth.verify.mockRejectedValue(
+        new WsAuthError('Token invalido o expirado'),
+      );
+      const client = mockClient();
+
+      await gateway.onSync(client as any);
+
+      expect(mockPedidosTransicion.listarPendientes).not.toHaveBeenCalled();
+      expect(client.emit).toHaveBeenCalledWith('error', {
+        message: 'Sesion invalida o expirada - reconecta.',
+      });
       expect(client.disconnect).toHaveBeenCalledWith(true);
     });
   });
