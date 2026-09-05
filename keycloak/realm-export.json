@@ -87,7 +87,7 @@
   "clientScopes": [
     {
       "name": "tenant",
-      "description": "Incluye tambien el mapper de 'sub' (Subject/ID del usuario). Motivo: al importar el realm via --import-realm, Keycloak NO recrea el client scope interno 'basic' (que trae 'sub' por defecto) salvo que este definido explicitamente aca - mismo problema de fondo ya documentado para el scope 'roles' mas abajo. Sin esto, los tokens emitidos quedan sin claim 'sub', rompiendo cualquier flujo que dependa de identificar al usuario (ej. WebSocket del KDS, HU-004).",
+      "description": "Claims de tenant_id y sub para JWT multi-tenant. Detalle: keycloak/README.md#client-scope-tenant",
       "protocol": "openid-connect",
       "attributes": {
         "include.in.token.scope": "true",
@@ -121,7 +121,7 @@
     },
     {
       "name": "roles",
-      "description": "Scope OpenID Connect que agrega los roles del usuario al token. Keycloak no lo crea automáticamente al importar un realm vía --import-realm (solo cuando el realm se crea desde la consola de admin), así que hay que definirlo a mano acá.",
+      "description": "Roles del usuario en el token; Keycloak no lo crea al usar --import-realm. Detalle: keycloak/README.md#client-scope-roles",
       "protocol": "openid-connect",
       "attributes": {
         "include.in.token.scope": "false",
