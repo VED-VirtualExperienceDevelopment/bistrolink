@@ -85,7 +85,10 @@ export class PedidosService {
               }),
             },
           },
-          include: { lineas: true },
+          // mesa: true agregado para HU-004 - el payload que emitirNuevoPedido
+          // manda al KDS necesita mesaNumero (no solo mesaId) para que el
+          // frontend (OrderTicket) pueda renderizar "Mesa {numero}".
+          include: { lineas: true, mesa: true },
         });
 
         return { pedido: nuevoPedido, esNuevo: true };
