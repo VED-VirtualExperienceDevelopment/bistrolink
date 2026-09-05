@@ -267,11 +267,36 @@
       "realmRoles": ["MOZO"]
     },
     {
+      "id": "aeb7e03f-8364-58a1-b31d-9aaed44a32cf",
+      "username": "comensal-11111111-1111-1111-1111-111111111111",
+      "email": "comensal-demo@bistrolink.dev.com",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Comensal",
+      "lastName": "Demo",
+      "attributes": {
+        "tenant_id": ["11111111-1111-1111-1111-111111111111"]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${KEYCLOAK_COMENSAL_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["COMENSAL"]
+    },
+    {
       "username": "service-account-bistrolink-backend",
       "enabled": true,
       "serviceAccountClientId": "bistrolink-backend",
       "clientRoles": {
-        "realm-management": ["manage-users", "view-users", "query-users"]
+        "realm-management": [
+          "manage-users",
+          "view-users",
+          "query-users",
+          "view-realm"
+        ]
       }
     }
   ],

@@ -3,7 +3,7 @@
 Notas de diseño de `realm-export.json` que no entran en el campo `description`
 de Keycloak (columna `CLIENT_SCOPE.DESCRIPTION`, `VARCHAR(255)` — un texto
 más largo rompe el `--import-realm` con `Value too long for column`, ver
-BL-044). Las descripciones dentro del JSON quedan cortas a propósito y
+BL-161). Las descripciones dentro del JSON quedan cortas a propósito y
 apuntan acá.
 
 ## Client Scope: `tenant`
@@ -24,6 +24,29 @@ Scope OpenID Connect que agrega los roles del usuario al token.
 **Motivo:** Keycloak no lo crea automáticamente al importar un realm vía
 `--import-realm` (solo cuando el realm se crea desde la consola de admin),
 así que hay que definirlo a mano acá.
+
+## Service account de `bistrolink-backend`: permisos declarados en el JSON
+
+El usuario `service-account-bistrolink-backend` tiene sus `clientRoles` de
+`realm-management` (`manage-users`, `view-users`, `query-users`,
+`view-realm`) declarados directamente en la sección `users` de este archivo
+— **no** dependen de correr `setup-service-account.sh` a mano después de
+importar el realm.
+
+**Historial:** originalmente solo estaban declarados los primeros 3 roles
+acá, y `view-realm` se agregaba con `setup-service-account.sh` como paso
+manual post-import. Eso causó un bug real (ver BL-162): al resetear el
+volumen de Keycloak en staging, el service account quedó sin `view-realm`
+porque el script solo se había corrido en local, y `assignRealmRole()`
+(que necesita `GET /admin/realms/{realm}/roles/{roleName}`) empezó a fallar
+con 403 — mientras que `createUser()` seguía funcionando porque
+`manage-users` sí estaba declarado en el JSON. `setup-service-account.sh`
+queda en el repo como fallback manual/de emergencia, pero ya no debería ser
+necesario correrlo en un ambiente nuevo.
+
+Si en el futuro el service account necesita un permiso nuevo: agregalo acá,
+en `clientRoles.realm-management`, no como un paso manual aparte — el
+patrón manual es exactamente lo que causó este bug.
 
 ## Regla general para nuevos clientScopes
 
