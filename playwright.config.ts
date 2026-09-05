@@ -20,5 +20,25 @@ export default defineConfig({
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
     },
+    // HU-002 (subtask Testing): el criterio del ticket pide verificar el
+    // acceso por URL directa en Chrome y Safari mobile; se suma Safari de
+    // escritorio para cubrir también el caso desktop (si bien en el mercado de UY no es lo mas frecuente, es un navegador que va ganando terreno dado el acceso a macOS). 
+    // testMatch acota estos
+    // proyectos al spec nuevo para no alterar la corrida desktop de HU-001.
+    {
+      name: 'mobile-chrome',
+      use: { ...devices['Pixel 5'] },
+      testMatch: /menu-publico\.spec\.ts/,
+    },
+    {
+      name: 'mobile-safari',
+      use: { ...devices['iPhone 12'] },
+      testMatch: /menu-publico\.spec\.ts/,
+    },
+    {
+      name: 'desktop-safari',
+      use: { ...devices['Desktop Safari'] },
+      testMatch: /menu-publico\.spec\.ts/,
+    },
   ],
 });
