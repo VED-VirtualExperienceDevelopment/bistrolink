@@ -3,7 +3,18 @@ name: Actualizar Dashboard de Bugs (GitHub Issues)
 on:
   workflow_dispatch: {} # botón manual "Run workflow" en la pestaña Actions
   schedule:
-    - cron: "0 13 * * 1" # todos los lunes 13:00 UTC (ajustar si querés)
+    # Mismas fechas de cierre de sprint que el dashboard de avance (ver nota
+    # de fechas pendientes de actualizar en update-dashboard.yml).
+    - cron: "0 18 14 8 *" # Cierre Sprint 1 - 14/08
+    - cron: "0 18 28 8 *" # Cierre Sprint 2 - 28/08
+    - cron: "0 18 11 9 *" # Cierre Sprint 3 - 11/09
+    - cron: "0 18 25 9 *" # Cierre Sprint 4 - 25/09
+    - cron: "0 18 9 10 *" # Cierre Sprint 5 - 09/10
+    - cron: "0 18 23 10 *" # Cierre Sprint 6 - 23/10
+    - cron: "0 18 6 11 *" # Cierre Sprint 7 - 06/11
+    - cron: "0 18 20 11 *" # Cierre Sprint 8 - 20/11
+    - cron: "0 18 4 12 *" # Cierre Sprint 9 - 04/12
+    - cron: "0 18 10 12 *" # Entrega final - 10/12
   issues:
     types: [opened, closed, reopened, labeled, unlabeled]
 
