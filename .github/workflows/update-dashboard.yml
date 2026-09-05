@@ -1,0 +1,37 @@
+name: Actualizar Dashboard EDT desde Linear
+
+on:
+  workflow_dispatch: {} # botón manual "Run workflow" en la pestaña Actions
+  schedule:
+    - cron: "0 13 * * 5" # todos los viernes 13:00 UTC (ajustar al día de cierre de sprint)
+
+jobs:
+  update-dashboard:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.DASHBOARD_PUSH_TOKEN }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Actualizar dashboard desde Linear
+        env:
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+          LINEAR_TEAM_KEY: ${{ vars.LINEAR_TEAM_KEY }}
+        run: node scripts/update-dashboard-from-linear.mjs
+
+      - name: Commit y push si hubo cambios
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/dashboard-avance-edt.md
+          git diff --quiet --cached || git commit -m "chore: actualizar dashboard EDT desde Linear [skip ci]"
+          git push

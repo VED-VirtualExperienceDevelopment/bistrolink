@@ -1,0 +1,39 @@
+name: Actualizar Dashboard de Bugs (GitHub Issues)
+
+on:
+  workflow_dispatch: {} # botón manual "Run workflow" en la pestaña Actions
+  schedule:
+    - cron: "0 13 * * 1" # todos los lunes 13:00 UTC (ajustar si querés)
+  issues:
+    types: [opened, closed, reopened, labeled, unlabeled]
+
+jobs:
+  update-bugs-dashboard:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.DASHBOARD_PUSH_TOKEN }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Actualizar dashboard de bugs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/update-github-bugs-dashboard.mjs
+
+      - name: Commit y push si hubo cambios
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/dashboard-bugs-github.md
+          git diff --quiet --cached || git commit -m "chore: actualizar dashboard de bugs [skip ci]"
+          git push
