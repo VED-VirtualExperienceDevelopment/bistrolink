@@ -20,6 +20,18 @@ const CATEGORIA_ID = '44444444-4444-4444-4444-444444444444';
 const ITEM_CON_IMAGEN_ID = '55555555-5555-5555-5555-555555555555';
 const ITEM_SIN_IMAGEN_ID = '66666666-6666-6666-6666-666666666666';
 
+// Mozo del tenant Demo: fixture de HU-004 (test/integration/kds.e2e-spec.ts).
+// Vive en el tenant Demo (no en el tenant Ejemplo, donde están admin-test/
+// cocina-test) porque es el único tenant con mesa/restaurante/ítem de carta
+// ya cargados más abajo — necesarios para crear un pedido real en esos tests.
+//
+// El id de Keycloak tiene que coincidir EXACTO con el "id" del usuario
+// mozo-test en realm-export.json — mismo mecanismo que ADMIN_EJEMPLO_KEYCLOAK_ID
+// más abajo. Este UUID es el que ya existe hoy en el Keycloak local (creado
+// a mano durante el desarrollo de HU-004, antes de que este seed lo tuviera
+// declarado formalmente).
+const MOZO_DEMO_KEYCLOAK_ID = 'f552ec55-a5b5-44c3-a400-72ffc746c9b6';
+
 // Tenants "Ejemplo" y "B": no nacieron del seed original, sino que se crearon
 // a mano en Prisma Studio durante el desarrollo de HU-013 y ya quedaron
 // hardcodeados como fixtures en usuarios.service.spec.ts y en los e2e
@@ -132,6 +144,23 @@ async function main() {
     },
   });
 
+  // Mozo del tenant Demo (ver comentario de MOZO_DEMO_KEYCLOAK_ID arriba).
+  // Igual que con admin-test: where:{ keycloakId } porque es el dato
+  // estable que no cambia si en algún momento se recrea la fila de Postgres.
+  await prisma.usuario.upsert({
+    where: { keycloakId: MOZO_DEMO_KEYCLOAK_ID },
+    update: {},
+    create: {
+      tenantId: TENANT_ID,
+      restauranteId: RESTAURANTE_ID,
+      keycloakId: MOZO_DEMO_KEYCLOAK_ID,
+      username: 'mozo-test',
+      email: 'mozo-test@bistrolink.dev.com',
+      rol: 'MOZO',
+      activo: true,
+    },
+  });
+
   // ── Tenant Ejemplo: fixture de HU-013 (gestión de usuarios/roles) ────────
   // No tiene mesa/categoría/ítems propios porque no se usa para probar
   // HU-001 (menú), sino la gestión de usuarios — si en el futuro hace falta
@@ -224,3 +253,4 @@ main()
     process.exit(1);
   })
   .finally(() => prisma.$disconnect());
+  

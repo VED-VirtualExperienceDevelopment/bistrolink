@@ -87,6 +87,7 @@
   "clientScopes": [
     {
       "name": "tenant",
+      "description": "Claims de tenant_id y sub para JWT multi-tenant. Detalle: keycloak/README.md#client-scope-tenant",
       "protocol": "openid-connect",
       "attributes": {
         "include.in.token.scope": "true",
@@ -106,12 +107,21 @@
             "claim.name": "tenant_id",
             "jsonType.label": "String"
           }
+        },
+        {
+          "name": "sub",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-sub-mapper",
+          "consentRequired": false,
+          "config": {
+            "access.token.claim": "true"
+          }
         }
       ]
     },
     {
       "name": "roles",
-      "description": "Scope OpenID Connect que agrega los roles del usuario al token. Keycloak no lo crea automáticamente al importar un realm vía --import-realm (solo cuando el realm se crea desde la consola de admin), así que hay que definirlo a mano acá.",
+      "description": "Roles del usuario en el token; Keycloak no lo crea al usar --import-realm. Detalle: keycloak/README.md#client-scope-roles",
       "protocol": "openid-connect",
       "attributes": {
         "include.in.token.scope": "false",
@@ -237,11 +247,56 @@
       "realmRoles": ["ADMIN"]
     },
     {
+      "id": "f552ec55-a5b5-44c3-a400-72ffc746c9b6",
+      "username": "${TEST_MOZO_USERNAME}",
+      "email": "mozo-test@bistrolink.dev.com",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Mozo",
+      "lastName": "Test",
+      "attributes": {
+        "tenant_id": ["11111111-1111-1111-1111-111111111111"]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${TEST_MOZO_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["MOZO"]
+    },
+    {
+      "id": "aeb7e03f-8364-58a1-b31d-9aaed44a32cf",
+      "username": "comensal-11111111-1111-1111-1111-111111111111",
+      "email": "comensal-demo@bistrolink.dev.com",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Comensal",
+      "lastName": "Demo",
+      "attributes": {
+        "tenant_id": ["11111111-1111-1111-1111-111111111111"]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${KEYCLOAK_COMENSAL_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["COMENSAL"]
+    },
+    {
       "username": "service-account-bistrolink-backend",
       "enabled": true,
       "serviceAccountClientId": "bistrolink-backend",
       "clientRoles": {
-        "realm-management": ["manage-users", "view-users", "query-users"]
+        "realm-management": [
+          "manage-users",
+          "view-users",
+          "query-users",
+          "view-realm"
+        ]
       }
     }
   ],
@@ -262,4 +317,3 @@
     ]
   }
 }
-
