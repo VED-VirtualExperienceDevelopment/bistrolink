@@ -212,6 +212,19 @@ describe('KeycloakAdminService', () => {
       ).rejects.toThrow(/view-realm/);
     });
 
+    it('[TC-U-010b] lanza InternalServerErrorException genérico (con status/body) si el GET del rol falla por un motivo distinto a 403/404', async () => {
+      mockTokenRequest();
+      fetchMock.mockResolvedValueOnce({
+        status: 503,
+        ok: false,
+        text: async () => 'Service Unavailable',
+      });
+
+      await expect(
+        service.assignRealmRole('keycloak-id-123', 'MOZO'),
+      ).rejects.toThrow(/503/);
+    });
+
     it('[TC-U-011] resuelve sin lanzar cuando el rol existe y la asignación es exitosa', async () => {
       mockTokenRequest(); // token para el GET /roles/:roleName
       fetchMock.mockResolvedValueOnce({
@@ -251,6 +264,85 @@ describe('KeycloakAdminService', () => {
       // que necesitamos para encontrar al usuario y auditar/diagnosticar.
       const todosLosLogs = loggerErrorSpy.mock.calls.flat().join(' ');
       expect(todosLosLogs).toContain('keycloak-id-para-auditar');
+    });
+  });
+
+  describe('createUser - caso sin header Location', () => {
+    it('[TC-U-014] lanza InternalServerErrorException y loguea el error si Keycloak responde 201 sin header Location', async () => {
+      mockTokenRequest();
+      fetchMock.mockResolvedValueOnce({
+        status: 201,
+        ok: true,
+        headers: {
+          get: () => null, // sin Location
+        },
+      });
+
+      await expect(
+        service.createUser({
+          username: 'usuario-sin-location',
+          tenantId: 'tenant-1',
+          temporaryPassword: 'temp123',
+        }),
+      ).rejects.toThrow('Keycloak no devolvió el ID del usuario creado');
+
+      expect(loggerErrorSpy).toHaveBeenCalled();
+    });
+  });
+
+  describe('setEnabled', () => {
+    it('[TC-U-015] resuelve sin lanzar cuando Keycloak confirma el cambio de estado (200)', async () => {
+      mockTokenRequest();
+      fetchMock.mockResolvedValueOnce({ ok: true });
+
+      await expect(
+        service.setEnabled('keycloak-id-123', false),
+      ).resolves.toBeUndefined();
+    });
+
+    it('[TC-U-016] lanza InternalServerErrorException con status/body y loguea el keycloakId si Keycloak rechaza el cambio de estado', async () => {
+      mockTokenRequest();
+      fetchMock.mockResolvedValueOnce({
+        status: 404,
+        ok: false,
+        text: async () => 'User not found',
+      });
+
+      await expect(
+        service.setEnabled('keycloak-id-para-auditar', false),
+      ).rejects.toThrow(/404/);
+
+      const todosLosLogs = loggerErrorSpy.mock.calls.flat().join(' ');
+      expect(todosLosLogs).toContain('keycloak-id-para-auditar');
+    });
+  });
+
+  describe('deleteUser', () => {
+    it('[TC-U-017] resuelve sin lanzar cuando Keycloak confirma la eliminación (204)', async () => {
+      mockTokenRequest();
+      fetchMock.mockResolvedValueOnce({ ok: true });
+
+      await expect(
+        service.deleteUser('keycloak-id-123'),
+      ).resolves.toBeUndefined();
+    });
+
+    it('[TC-U-018] [S] lanza InternalServerErrorException y loguea el keycloakId si falla la eliminación (limpieza de compensación fallida)', async () => {
+      mockTokenRequest();
+      fetchMock.mockResolvedValueOnce({
+        status: 500,
+        ok: false,
+        text: async () => 'Internal error',
+      });
+
+      await expect(service.deleteUser('keycloak-id-huerfano')).rejects.toThrow(
+        /500/,
+      );
+
+      // Este es justo el caso que usuarios.service.ts necesita poder
+      // encontrar en Loki para la limpieza manual del usuario huérfano.
+      const todosLosLogs = loggerErrorSpy.mock.calls.flat().join(' ');
+      expect(todosLosLogs).toContain('keycloak-id-huerfano');
     });
   });
 });
