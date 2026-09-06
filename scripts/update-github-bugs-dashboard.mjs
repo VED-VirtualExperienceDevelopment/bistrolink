@@ -25,7 +25,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
-const DASHBOARD_PATH = path.join(ROOT, "dashboard-bugs-github.md");
+const DASHBOARD_PATH = path.join(ROOT, "docs", "dashboard-bugs-github.md");
 const CONFIG_PATH = path.join(__dirname, "github-bugs-config.json");
 
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
