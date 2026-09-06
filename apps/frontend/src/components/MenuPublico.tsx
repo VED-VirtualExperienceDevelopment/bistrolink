@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { Inter, Public_Sans } from 'next/font/google';
 import type {
   CategoriaCarta,
   ItemCarrito,
@@ -9,6 +10,9 @@ import type {
   RestaurantePublico,
 } from '@/types/menu';
 import { apiFetch, ApiError } from '@/lib/api-client';
+
+const inter = Inter({ subsets: ['latin'], weight: ['600', '700', '800'] });
+const publicSans = Public_Sans({ subsets: ['latin'], weight: ['500', '600'] });
 
 interface MenuPublicoProps {
   readonly restaurante: RestaurantePublico;
@@ -24,9 +28,7 @@ export default function MenuPublico({
   restauranteId,
 }: MenuPublicoProps) {
   const [carrito, setCarrito] = useState<ItemCarrito[]>([]);
-  const [estadoPedido, setEstadoPedido] = useState<
-    'idle' | 'enviando' | 'confirmado' | 'error'
-  >('idle');
+  const [estadoPedido, setEstadoPedido] = useState<'idle' | 'enviando' | 'confirmado' | 'error'>('idle');
   const [pedidoConfirmado, setPedidoConfirmado] =
     useState<PedidoConfirmado | null>(null);
   const [errorPedido, setErrorPedido] = useState<string | null>(null);
@@ -123,20 +125,20 @@ export default function MenuPublico({
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white shadow-sm sticky top-0 z-10">
+    <div className="min-h-screen bg-culinary-background">
+      <header className="bg-culinary-primary shadow-sm sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
-          <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">
+          <h1 className={`${inter.className} text-2xl font-bold text-white sm:text-3xl`}>
             {restaurante.nombre}
           </h1>
-          <p className="text-sm text-gray-600 mt-1 sm:text-base">
+          <p className={`${publicSans.className} text-sm text-white/80 mt-1 sm:text-base`}>
             {restaurante.direccion}
           </p>
-          <div className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-full">
+          <div className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 bg-white/15 border border-white/25 rounded-full">
             <span className="text-sm" role="img" aria-label="Tienda">
               🛍️
             </span>
-            <span className="text-sm font-medium text-blue-800">
+            <span className={`${publicSans.className} text-sm font-medium text-white`}>
               Pedido desde fuera del local
             </span>
           </div>
@@ -145,15 +147,15 @@ export default function MenuPublico({
 
       {estadoPedido === 'confirmado' && pedidoConfirmado && (
         <div className="max-w-7xl mx-auto px-4 pt-6 sm:px-6 lg:px-8">
-          <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-start gap-3">
+          <div className="bg-green-50 border border-green-200 rounded-[1rem] p-4 flex items-start gap-3">
             <span className="text-2xl" role="img" aria-label="Confirmado">
               ✅
             </span>
             <div>
-              <p className="font-semibold text-green-900">
+              <p className={`${inter.className} font-semibold text-green-900`}>
                 ¡Pedido enviado! Cocina ya lo recibió.
               </p>
-              <p className="text-sm text-green-700 mt-1">
+              <p className={`${publicSans.className} text-sm text-green-700 mt-1`}>
                 Estado: {pedidoConfirmado.estado}
               </p>
             </div>
@@ -163,12 +165,12 @@ export default function MenuPublico({
 
       <main className="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
         {categorias.length === 0 ? (
-          <div className="text-center py-16 bg-white rounded-lg shadow">
+          <div className="text-center py-16 bg-white rounded-[1rem] border border-culinary-neutral/10">
             <div className="text-6xl mb-4">🍽️</div>
-            <h2 className="text-xl font-semibold text-gray-900 mb-2">
+            <h2 className={`${inter.className} text-xl font-semibold text-culinary-on-surface mb-2`}>
               Menú no disponible
             </h2>
-            <p className="text-gray-500">
+            <p className={`${publicSans.className} text-culinary-neutral`}>
               Este restaurante aún no tiene su menú publicado.
             </p>
           </div>
@@ -177,9 +179,11 @@ export default function MenuPublico({
             {categorias.map((categoria) => (
               <section
                 key={categoria.id}
-                className="bg-white rounded-lg shadow p-6"
+                className="bg-white rounded-[1rem] border border-culinary-neutral/10 p-6"
               >
-                <h2 className="text-xl font-bold text-gray-900 mb-4 pb-2 border-b">
+                <h2
+                  className={`${inter.className} text-xl font-bold text-culinary-on-surface mb-4 pb-2 border-b border-culinary-neutral/10`}
+                >
                   {categoria.nombre}
                 </h2>
 
@@ -187,37 +191,37 @@ export default function MenuPublico({
                   {categoria.items.map((item) => (
                     <article
                       key={item.id}
-                      className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow flex flex-col"
+                      className="border border-culinary-neutral/15 rounded-[1rem] p-4 hover:border-culinary-primary/40 transition-colors flex flex-col"
                     >
                       {item.imagenUrl && (
                         <img
                           src={item.imagenUrl}
                           alt={item.nombre}
-                          className="w-full h-48 object-cover rounded-md mb-3"
+                          className="w-full h-48 object-cover rounded-[0.5rem] mb-3"
                           onError={(e) => {
                             e.currentTarget.style.display = 'none';
                           }}
                         />
                       )}
 
-                      <h3 className="font-semibold text-gray-900 mb-1">
+                      <h3 className={`${inter.className} font-semibold text-culinary-on-surface mb-1`}>
                         {item.nombre}
                       </h3>
 
                       {item.descripcion && (
-                        <p className="text-sm text-gray-600 mb-2 line-clamp-2">
+                        <p className={`${publicSans.className} text-sm text-culinary-neutral mb-2 line-clamp-2`}>
                           {item.descripcion}
                         </p>
                       )}
 
                       <div className="flex items-center justify-between mt-auto pt-3">
-                        <span className="text-lg font-bold text-gray-900">
+                        <span className={`${inter.className} text-lg font-bold text-culinary-primary`}>
                           ${formatearPrecio(Number(item.precio))}
                         </span>
                         <button
                           type="button"
                           onClick={() => agregarAlCarrito(item)}
-                          className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+                          className={`${publicSans.className} px-4 py-2 bg-culinary-primary text-white text-sm font-medium rounded-[0.5rem] hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-culinary-primary focus:ring-offset-2 transition-opacity`}
                           aria-label={`Agregar ${item.nombre} al carrito`}
                         >
                           Agregar
@@ -233,16 +237,16 @@ export default function MenuPublico({
       </main>
 
       {carrito.length > 0 && (
-        <div className="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-4 sm:w-96 bg-white rounded-lg shadow-xl border border-gray-200 p-4 z-20">
+        <div className="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-4 sm:w-96 bg-white rounded-[1rem] shadow-[0px_4px_20px_rgba(121,118,125,0.12)] border border-culinary-neutral/10 p-4 z-20">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="font-semibold text-gray-900">
+            <h3 className={`${inter.className} font-semibold text-culinary-on-surface`}>
               🛒 Tu pedido ({cantidadTotalItems}{' '}
               {cantidadTotalItems === 1 ? 'item' : 'items'})
             </h3>
             <button
               type="button"
               onClick={() => setCarrito([])}
-              className="text-sm text-red-600 hover:text-red-700 font-medium"
+              className={`${publicSans.className} text-sm text-error hover:opacity-80 font-medium`}
               aria-label="Vaciar carrito"
               disabled={estadoPedido === 'enviando'}
             >
@@ -254,12 +258,12 @@ export default function MenuPublico({
             {carrito.map((item) => (
               <div
                 key={item.itemCartaId}
-                className="flex items-center justify-between text-sm"
+                className={`${publicSans.className} flex items-center justify-between text-sm`}
               >
-                <span className="font-medium text-gray-900">
+                <span className="font-medium text-culinary-on-surface">
                   {item.cantidad}x {item.nombre}
                 </span>
-                <span className="text-gray-500">
+                <span className="text-culinary-neutral">
                   ${formatearPrecio(item.precio * item.cantidad)}
                 </span>
               </div>
@@ -267,15 +271,17 @@ export default function MenuPublico({
           </div>
 
           {errorPedido && (
-            <p className="text-sm text-red-600 mb-2" role="alert">
+            <p className={`${publicSans.className} text-sm text-error mb-2`} role="alert">
               {errorPedido}
             </p>
           )}
 
-          <div className="border-t pt-3">
+          <div className="border-t border-culinary-neutral/10 pt-3">
             <div className="flex items-center justify-between mb-3">
-              <span className="font-bold text-gray-900">Total:</span>
-              <span className="text-xl font-bold text-gray-900">
+              <span className={`${inter.className} font-bold text-culinary-on-surface`}>
+                Total:
+              </span>
+              <span className={`${inter.className} text-xl font-bold text-culinary-primary`}>
                 ${formatearPrecio(totalCarrito)}
               </span>
             </div>
@@ -284,7 +290,7 @@ export default function MenuPublico({
               type="button"
               onClick={realizarPedido}
               disabled={estadoPedido === 'enviando'}
-              className="w-full px-4 py-3 bg-green-600 text-white font-semibold rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+              className={`${publicSans.className} w-full px-4 py-3 bg-culinary-primary text-white font-semibold rounded-[0.5rem] hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-culinary-primary focus:ring-offset-2 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed`}
             >
               {estadoPedido === 'enviando' ? 'Enviando...' : 'Realizar pedido'}
             </button>
