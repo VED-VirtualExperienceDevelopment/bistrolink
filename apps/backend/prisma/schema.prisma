@@ -173,16 +173,17 @@ model ItemCarta {
 // ── 4.6 Pedido ────────────────────────────────────────────────────────────────
 
 model Pedido {
-  id             String       @id @default(uuid()) @db.Uuid
-  tenantId       String       @map("tenant_id") @db.Uuid
-  restauranteId  String       @map("restaurante_id") @db.Uuid
-  mesaId         String       @map("mesa_id") @db.Uuid
-  usuarioId      String?      @map("usuario_id") @db.Uuid
-  idempotencyKey String       @unique @map("idempotency_key") @db.VarChar(64)
-  estado         PedidoEstado
-  canal          PedidoCanal
-  createdAt      DateTime     @default(now()) @map("created_at")
-  updatedAt      DateTime     @updatedAt @map("updated_at")
+  id                 String       @id @default(uuid()) @db.Uuid
+  tenantId           String       @map("tenant_id") @db.Uuid
+  restauranteId      String       @map("restaurante_id") @db.Uuid
+  mesaId             String       @map("mesa_id") @db.Uuid
+  usuarioId          String?      @map("usuario_id") @db.Uuid
+  idempotencyKey     String       @unique @map("idempotency_key") @db.VarChar(64)
+  estado             PedidoEstado
+  canal              PedidoCanal
+  observacionGeneral String?      @map("observacion_general") @db.VarChar(500) // <-- NUEVO
+  createdAt          DateTime     @default(now()) @map("created_at")
+  updatedAt          DateTime     @updatedAt @map("updated_at")
 
   restaurante      Restaurante             @relation(fields: [restauranteId], references: [id])
   mesa             Mesa                    @relation(fields: [mesaId], references: [id])
@@ -207,6 +208,7 @@ model LineaPedido {
   precioUnitarioSnapshot Decimal  @map("precio_unitario_snapshot") @db.Decimal(10, 2)
   cantidad               Int
   subtotal               Decimal  @db.Decimal(10, 2)
+  observacion            String?  @map("observacion") @db.VarChar(300) // <-- NUEVO
   createdAt              DateTime @default(now()) @map("created_at")
   updatedAt              DateTime @updatedAt @map("updated_at")
 
