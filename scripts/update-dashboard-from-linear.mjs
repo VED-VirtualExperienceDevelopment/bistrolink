@@ -24,7 +24,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
-const DASHBOARD_PATH = path.join(ROOT, "dashboard-avance-edt.md");
+const DASHBOARD_PATH = path.join(ROOT, "docs", "dashboard-avance-edt.md");
 const CONFIG_PATH = path.join(__dirname, "sprint-config.json");
 
 const LINEAR_API_KEY = process.env.LINEAR_API_KEY;
