@@ -60,6 +60,21 @@ export default {
         'tertiary-fixed': '#ffdf93',
         'on-secondary': '#ffffff',
         'on-primary-fixed-variant': '#4f378a',
+        brand: {
+          50: '#f5f3ff',
+          100: '#ede9fe',
+          600: '#7c3aed',
+          700: '#6d28d9',
+        },
+        culinary: {
+          primary: '#8069BF',
+          'primary-container': '#F1ECF4',
+          secondary: '#7C7296',
+          tertiary: '#C9A74D',
+          neutral: '#79767D',
+          background: '#FDF7FF',
+          'on-surface': '#1C1B20',
+        },
       },
       borderRadius: {
         DEFAULT: '0.25rem',
