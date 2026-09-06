@@ -7,6 +7,7 @@ import {
   IsString,
   Length,
   Matches,
+  MaxLength,
   Min,
   ValidateNested,
 } from 'class-validator';
@@ -21,6 +22,13 @@ export class CrearPedidoItemDto {
   @IsInt()
   @Min(1)
   cantidad: number;
+
+  @IsOptional()
+  @IsString({ message: 'La observación del ítem debe ser texto' })
+  @MaxLength(300, {
+    message: 'La nota del ítem no puede exceder 300 caracteres',
+  })
+  observacion?: string;
 }
 
 export class CrearPedidoDto {
@@ -40,4 +48,11 @@ export class CrearPedidoDto {
   @ValidateNested({ each: true })
   @Type(() => CrearPedidoItemDto)
   items: CrearPedidoItemDto[];
+
+  @IsOptional()
+  @IsString({ message: 'La observación general debe ser texto' })
+  @MaxLength(500, {
+    message: 'La nota general del pedido no puede exceder 500 caracteres',
+  })
+  observacionGeneral?: string;
 }

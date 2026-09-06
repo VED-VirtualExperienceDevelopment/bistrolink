@@ -71,6 +71,7 @@ export class PedidosService {
             idempotencyKey: dto.idempotencyKey,
             estado: ESTADO_INICIAL_PEDIDO,
             canal: dto.mesaId ? 'QR' : 'WEB',
+            observacionGeneral: dto.observacionGeneral, // <-- NUEVO
             lineas: {
               create: dto.items.map((linea) => {
                 const item = itemsPorId.get(linea.itemCartaId)!;
@@ -81,14 +82,12 @@ export class PedidosService {
                   precioUnitarioSnapshot: item.precio,
                   cantidad: linea.cantidad,
                   subtotal: item.precio.mul(linea.cantidad),
+                  observacion: linea.observacion, // <-- NUEVO
                 };
               }),
             },
           },
-          // mesa: true agregado para HU-004 - el payload que emitirNuevoPedido
-          // manda al KDS necesita mesaNumero (no solo mesaId) para que el
-          // frontend (OrderTicket) pueda renderizar "Mesa {numero}".
-          include: { lineas: true, mesa: true },
+          include: { lineas: true },
         });
 
         return { pedido: nuevoPedido, esNuevo: true };
