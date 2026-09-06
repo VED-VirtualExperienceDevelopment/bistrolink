@@ -24,6 +24,7 @@ jobs:
     permissions:
       contents: write
       issues: read
+      pull-requests: write
 
     steps:
       - name: Checkout
@@ -41,10 +42,16 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/update-github-bugs-dashboard.mjs
 
-      - name: Commit y push si hubo cambios
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add docs/dashboard-bugs-github.md
-          git diff --quiet --cached || git commit -m "chore: actualizar dashboard de bugs [skip ci]"
-          git push
+      - name: Crear PR si hubo cambios
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.DASHBOARD_PUSH_TOKEN }}
+          commit-message: "chore: actualizar dashboard de bugs"
+          branch: bot/dashboard-bugs-github
+          delete-branch: true
+          base: develop
+          title: "chore: actualizar dashboard de bugs"
+          body: |
+            Actualización automática del dashboard de bugs generada desde
+            GitHub Issues por el workflow `Actualizar Dashboard de Bugs (GitHub Issues)`.
+          add-paths: docs/dashboard-bugs-github.md
