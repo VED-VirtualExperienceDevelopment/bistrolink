@@ -13,11 +13,15 @@
 |---|---|
 | Período del proyecto | 03/08/2026 – 10/12/2026 |
 | Sprints planificados | 9 Sprints (2 semanas c/u) + ciclo de cierre |
-| Historias de Usuario totales (actual) | ✏️ *(se completa en la primera corrida)* |
-| Story Points totales (actual) | ✏️ *(se completa en la primera corrida)* |
-| **Sprint actual** | ✏️ *(se completa en la primera corrida)* |
-| **Story Points completados a la fecha** | ✏️ *(se completa en la primera corrida)* |
-| **% Avance global** | ✏️ *(se completa en la primera corrida)* |
+| Historias de Usuario totales (actual) | 135 |
+| Story Points totales (actual) | 200 pts |
+| **Sprint actual** | **9** |
+| **Story Points completados a la fecha** | **39** |
+| **% Avance global** | **20%** |
+
+> Última actualización automática: `06/09/2026` — generado desde Linear por GitHub Action.
+
+> ℹ️ El alcance actual (135 HU / 200 pts) difiere de la línea base de planning (26 HU / 202 pts) — se agregaron o quitaron historias después del kickoff.
 <!-- AUTO:resumen-ejecutivo:end -->
 
 ### Avance por Capa
@@ -25,10 +29,10 @@
 <!-- AUTO:avance-por-capa:start -->
 | Capa | Sprints | HU totales | Story Points | HU completadas | % Avance |
 |---|---|---|---|---|---|
-| 🟩 Núcleo | 1–5 | ✏️ | ✏️ | ✏️ | ✏️ |
-| 🟦 Integración | 6–8 | ✏️ | ✏️ | ✏️ | ✏️ |
-| 🟪 Valor Agregado (cond.) | 9 | ✏️ | ✏️ | ✏️ | ✏️ |
-| **Total** | **1–9** | ✏️ | ✏️ | ✏️ | ✏️ |
+| 🟩 Núcleo | 1–5 | 78 | 79 | 46 | 59% |
+| 🟦 Integración | 6–8 | 40 | 77 | 0 | 0% |
+| 🟪 Valor Agregado (cond.) | 9–9 | 16 | 44 | 0 | 0% |
+| **Total** | **1–9** | **134** | **200** | **46** | **34%** |
 <!-- AUTO:avance-por-capa:end -->
 
 ---
@@ -119,7 +123,6 @@ pie title Story Points por Prioridad (202 pts totales)
 ### Story Points planificados vs. completados por Sprint
 
 <!-- AUTO:sp-por-sprint-chart:start -->
-```mermaid
 %%{init: {'theme':'base', 'themeVariables': {
   'xyChart': {
     'backgroundColor': '#1a202c',
@@ -140,6 +143,5 @@ xychart-beta
     x-axis [Sprint1, Sprint2, Sprint3, Sprint4, Sprint5, Sprint6, Sprint7, Sprint8, "Sprint9(cond)"]
     y-axis "Story Points" 0 --> 50
     bar "Planificado" [18, 24, 5, 16, 13, 37, 37, 8, 44]
-    bar "Completado" [0, 0, 0, 0, 0, 0, 0, 0, 0]
-```
+    bar "Completado" [5, 13, 21, 0, 0, 0, 0, 0, 0]
 <!-- AUTO:sp-por-sprint-chart:end -->
