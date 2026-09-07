@@ -27,8 +27,6 @@ export default function ItemNotaModal({
   const [note, setNote] = useState(currentNote);
   const dialogRef = useRef<HTMLDialogElement>(null);
 
-  // El elemento <dialog> nativo maneja la tecla Escape automáticamente.
-  // Solo necesitamos controlar su apertura/cierre y el estado del texto.
   useEffect(() => {
     if (isOpen) {
       setNote(currentNote);
@@ -49,7 +47,6 @@ export default function ItemNotaModal({
     }
   };
 
-  // Detectar clic en el backdrop (fuera del contenido del modal)
   const handleDialogClick = (e: React.MouseEvent<HTMLDialogElement>) => {
     if (e.target === dialogRef.current) {
       onClose();
@@ -71,11 +68,16 @@ export default function ItemNotaModal({
   if (!isOpen) return null;
 
   return (
-    // FIX SONARQUBE: Usamos el elemento nativo <dialog>. 
-    // Tailwind 'open:flex' lo muestra cuando tiene el atributo 'open', y 'hidden' lo oculta por defecto.
+    // FIX SONARQUBE: Agregamos onKeyDown explícito para satisfacer la regla 
+    // de "click handlers must have at least one keyboard listener"
     <dialog
       ref={dialogRef}
       onClick={handleDialogClick}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') {
+          onClose();
+        }
+      }}
       className="fixed inset-0 z-50 m-0 p-0 w-full h-full bg-black/40 backdrop-blur-sm open:flex hidden items-end sm:items-center justify-center"
     >
       <div className="bg-white w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl p-6 shadow-2xl">
