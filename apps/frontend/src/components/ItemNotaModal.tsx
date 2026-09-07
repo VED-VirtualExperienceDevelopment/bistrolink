@@ -6,7 +6,6 @@ import { Inter, Public_Sans } from 'next/font/google';
 const inter = Inter({ subsets: ['latin'], weight: ['600', '700'] });
 const publicSans = Public_Sans({ subsets: ['latin'], weight: ['500', '600'] });
 
-// FIX 1: Marcar props como read-only para SonarQube
 interface ItemNotaModalProps {
   readonly isOpen: boolean;
   readonly onClose: () => void;
@@ -26,14 +25,13 @@ export default function ItemNotaModal({
   onSave,
 }: ItemNotaModalProps) {
   const [note, setNote] = useState(currentNote);
-  const dialogRef = useRef<HTMLDialogElement>(null);
+  const modalRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (isOpen) {
       setNote(currentNote);
-      dialogRef.current?.showModal();
-    } else {
-      dialogRef.current?.close();
+      // Enfocar el modal al abrir para accesibilidad de teclado
+      modalRef.current?.focus();
     }
   }, [isOpen, currentNote]);
 
@@ -48,14 +46,12 @@ export default function ItemNotaModal({
     }
   };
 
-  // El elemento <dialog> nativo maneja el cierre al hacer clic en el backdrop
-  const handleDialogClick = (e: React.MouseEvent<HTMLDialogElement>) => {
+  const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (e.target === e.currentTarget) {
       onClose();
     }
   };
 
-  // FIX 2: Extraer ternarios anidados en funciones independientes
   const getCounterColor = () => {
     if (isOverLimit) return 'text-[#BA1A1A]';
     if (isNearLimit) return 'text-[#755b00]';
@@ -70,14 +66,29 @@ export default function ItemNotaModal({
 
   if (!isOpen) return null;
 
-  // FIX 3: Usar <dialog> nativo en lugar de div con role="dialog"
+  // FIX SONARQUBE: 
+  // 1. role="dialog" lo convierte en un elemento interactivo.
+  // 2. tabIndex={-1} permite que reciba eventos de teclado sin estar en el orden de tabulación normal.
+  // 3. onKeyDown satisface la regla "debe tener al menos un listener de teclado".
   return (
-    <dialog
-      ref={dialogRef}
-      onClick={handleDialogClick}
-      className="open:flex fixed inset-0 z-50 items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm m-0 p-0 w-full h-full hidden"
+    <div
+      ref={modalRef}
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm outline-none"
+      onClick={handleBackdropClick}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') {
+          onClose();
+        }
+      }}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="item-note-title"
+      tabIndex={-1}
     >
-      <div className="bg-white w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl p-6 shadow-2xl">
+      <div 
+        className="bg-white w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl p-6 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex items-center justify-between mb-4">
           <h3
             id="item-note-title"
@@ -141,6 +152,6 @@ export default function ItemNotaModal({
           </button>
         </div>
       </div>
-    </dialog>
+    </div>
   );
 }
