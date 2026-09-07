@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { Inter, Public_Sans } from 'next/font/google';
 import type {
   CategoriaCarta,
@@ -10,6 +10,8 @@ import type {
   RestaurantePublico,
 } from '@/types/menu';
 import { apiFetch, ApiError } from '@/lib/api-client';
+// RESUELTO: Mantenemos ambos imports
+import ItemNotaModal from './ItemNotaModal';
 import { SeguimientoPedido } from './SeguimientoPedido';
 
 const inter = Inter({ subsets: ['latin'], weight: ['600', '700', '800'] });
@@ -22,6 +24,10 @@ interface MenuPublicoProps {
   readonly restauranteId: string;
 }
 
+const MAX_CHARS_GENERAL = 500;
+const MAX_CHARS_ITEM = 300;
+const WARNING_THRESHOLD = 0.9;
+
 export default function MenuPublico({
   restaurante,
   categorias,
@@ -29,11 +35,31 @@ export default function MenuPublico({
   restauranteId,
 }: MenuPublicoProps) {
   const [carrito, setCarrito] = useState<ItemCarrito[]>([]);
+  const [observacionGeneral, setObservacionGeneral] = useState('');
+  const [itemNotaAbierto, setItemNotaAbierto] = useState<ItemCarrito | null>(null);
+  const [notaTemporal, setNotaTemporal] = useState('');
+  
   const [estadoPedido, setEstadoPedido] = useState<'idle' | 'enviando' | 'confirmado' | 'error'>('idle');
-  const [pedidoConfirmado, setPedidoConfirmado] =
-    useState<PedidoConfirmado | null>(null);
+  // RESUELTO: Mantenemos ambos estados
+  const [pedidoConfirmado, setPedidoConfirmado] = useState<PedidoConfirmado | null>(null);
   const [tokenComensal, setTokenComensal] = useState<string | null>(null);
   const [errorPedido, setErrorPedido] = useState<string | null>(null);
+
+  const generalCharCount = observacionGeneral.length;
+  const isGeneralOverLimit = generalCharCount > MAX_CHARS_GENERAL;
+  const isGeneralNearLimit = generalCharCount >= MAX_CHARS_GENERAL * WARNING_THRESHOLD && !isGeneralOverLimit;
+
+  const getGeneralBorderClasses = () => {
+    if (isGeneralOverLimit) return 'border-2 border-[#BA1A1A] bg-[#FFDAD6] focus:border-[#BA1A1A] focus:ring-2 focus:ring-[#BA1A1A]/20';
+    if (isGeneralNearLimit) return 'border-2 border-[#755b00] bg-[#F1ECF4] focus:border-[#755b00] focus:ring-2 focus:ring-[#755b00]/20';
+    return 'border-2 border-[#cac4d2] bg-[#F1ECF4] focus:border-[#644da1] focus:ring-2 focus:ring-[#644da1]/20';
+  };
+
+  const getGeneralCounterColor = () => {
+    if (isGeneralOverLimit) return 'text-[#BA1A1A]';
+    if (isGeneralNearLimit) return 'text-[#755b00]';
+    return 'text-[#494551]';
+  };
 
   const agregarAlCarrito = (item: ItemCarta) => {
     setCarrito((prevCarrito) => {
@@ -53,19 +79,45 @@ export default function MenuPublico({
           precio: Number(item.precio),
           cantidad: 1,
           imagenUrl: item.imagenUrl,
+          observacion: '',
         },
       ];
     });
   };
 
-  const totalCarrito = carrito.reduce(
-    (total, item) => total + item.precio * item.cantidad,
-    0,
+  const actualizarNotaItem = useCallback((itemCartaId: string, nota: string) => {
+    setCarrito((prevCarrito) => {
+      const itemExistente = prevCarrito.find((i) => i.itemCartaId === itemCartaId);
+      if (itemExistente?.observacion === nota) {
+        return prevCarrito;
+      }
+
+      return prevCarrito.map((item) =>
+        item.itemCartaId === itemCartaId ? { ...item, observacion: nota || undefined } : item
+      );
+    });
+  }, []);
+
+  const handleAbrirNotaItem = (item: ItemCarrito) => {
+    setItemNotaAbierto(item);
+    setNotaTemporal(item.observacion || '');
+  };
+
+  const handleGuardarNotaItem = (nota: string) => {
+    if (itemNotaAbierto) {
+      actualizarNotaItem(itemNotaAbierto.itemCartaId, nota);
+      setItemNotaAbierto(null);
+    }
+  };
+
+  const totalCarrito = useMemo(
+    () => carrito.reduce((total, item) => total + item.precio * item.cantidad, 0),
+    [carrito]
   );
 
-  const cantidadTotalItems = carrito.reduce(
-    (total, item) => total + item.cantidad,
-    0,
+  const cantidadTotalItems = useMemo(
+    () => carrito.reduce((total, item) => total + item.cantidad, 0),
+    [carrito]
   );
 
   const formatearPrecio = (valor: number) =>
@@ -75,6 +127,19 @@ export default function MenuPublico({
     });
 
   const realizarPedido = async () => {
+    if (isGeneralOverLimit) {
+      setErrorPedido('La nota general no puede exceder 500 caracteres');
+      return;
+    }
+
+    const tieneNotasInvalidas = carrito.some(
+      (item) => (item.observacion || '').length > MAX_CHARS_ITEM
+    );
+    if (tieneNotasInvalidas) {
+      setErrorPedido('Las notas de los ítems no pueden exceder 300 caracteres');
+      return;
+    }
+
     setEstadoPedido('enviando');
     setErrorPedido(null);
 
@@ -85,44 +150,37 @@ export default function MenuPublico({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ tenantId, restauranteId }),
-        },
+        }
       );
 
       if (!authRes.ok) {
-        throw new ApiError(
-          authRes.status,
-          'No pudimos identificarte para hacer el pedido. Probá de nuevo.',
-        );
+        throw new ApiError(authRes.status, 'No pudimos identificarte para hacer el pedido. Probá de nuevo.');
       }
 
       const { accessToken } = await authRes.json();
 
-      const pedido = await apiFetch<PedidoConfirmado>(
-        '/pedidos',
-        accessToken,
-        {
-          method: 'POST',
-          body: JSON.stringify({
-            restauranteId,
-            idempotencyKey: crypto.randomUUID(),
-            items: carrito.map((item) => ({
-              itemCartaId: item.itemCartaId,
-              cantidad: item.cantidad,
-            })),
-          }),
-        },
-      );
+      const pedido = await apiFetch<PedidoConfirmado>('/pedidos', accessToken, {
+        method: 'POST',
+        body: JSON.stringify({
+          restauranteId,
+          idempotencyKey: crypto.randomUUID(),
+          observacionGeneral: observacionGeneral.trim() || undefined,
+          items: carrito.map((item) => ({
+            itemCartaId: item.itemCartaId,
+            cantidad: item.cantidad,
+            observacion: item.observacion?.trim() || undefined,
+          })),
+        }),
+      });
 
+      // RESUELTO: Mantenemos ambas actualizaciones de estado
       setPedidoConfirmado(pedido);
       setTokenComensal(accessToken);
       setEstadoPedido('confirmado');
       setCarrito([]);
+      setObservacionGeneral('');
     } catch (err) {
-      setErrorPedido(
-        err instanceof ApiError
-          ? err.message
-          : 'No pudimos enviar tu pedido. Probá de nuevo.',
-      );
+      setErrorPedido(err instanceof ApiError ? err.message : 'No pudimos enviar tu pedido. Probá de nuevo.');
       setEstadoPedido('error');
     }
   };
@@ -138,9 +196,7 @@ export default function MenuPublico({
             {restaurante.direccion}
           </p>
           <div className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 bg-white/15 border border-white/25 rounded-full">
-            <span className="text-sm" role="img" aria-label="Tienda">
-              🛍️
-            </span>
+            <span className="text-sm" role="img" aria-label="Tienda">🛍️</span>
             <span className={`${publicSans.className} text-sm font-medium text-white`}>
               Pedido desde fuera del local
             </span>
@@ -148,6 +204,7 @@ export default function MenuPublico({
         </div>
       </header>
 
+      {/* RESUELTO: Usamos la estructura de develop que incluye el SeguimientoPedido */}
       {estadoPedido === 'confirmado' && pedidoConfirmado && tokenComensal && (
         <div className="max-w-7xl mx-auto px-4 pt-6 sm:px-6 lg:px-8">
           <div className="bg-white border border-culinary-neutral/10 rounded-[1rem] p-4">
@@ -186,9 +243,7 @@ export default function MenuPublico({
                 key={categoria.id}
                 className="bg-white rounded-[1rem] border border-culinary-neutral/10 p-6"
               >
-                <h2
-                  className={`${inter.className} text-xl font-bold text-culinary-on-surface mb-4 pb-2 border-b border-culinary-neutral/10`}
-                >
+                <h2 className={`${inter.className} text-xl font-bold text-culinary-on-surface mb-4 pb-2 border-b border-culinary-neutral/10`}>
                   {categoria.nombre}
                 </h2>
 
@@ -245,8 +300,7 @@ export default function MenuPublico({
         <div className="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-4 sm:w-96 bg-white rounded-[1rem] shadow-[0px_4px_20px_rgba(121,118,125,0.12)] border border-culinary-neutral/10 p-4 z-20">
           <div className="flex items-center justify-between mb-3">
             <h3 className={`${inter.className} font-semibold text-culinary-on-surface`}>
-              🛒 Tu pedido ({cantidadTotalItems}{' '}
-              {cantidadTotalItems === 1 ? 'item' : 'items'})
+              🛒 Tu pedido ({cantidadTotalItems} {cantidadTotalItems === 1 ? 'item' : 'items'})
             </h3>
             <button
               type="button"
@@ -265,14 +319,62 @@ export default function MenuPublico({
                 key={item.itemCartaId}
                 className={`${publicSans.className} flex items-center justify-between text-sm`}
               >
-                <span className="font-medium text-culinary-on-surface">
-                  {item.cantidad}x {item.nombre}
-                </span>
-                <span className="text-culinary-neutral">
-                  ${formatearPrecio(item.precio * item.cantidad)}
-                </span>
+                <div className="flex-1">
+                  <span className="font-medium text-culinary-on-surface">
+                    {item.cantidad}x {item.nombre}
+                  </span>
+                  {item.observacion && (
+                    <div className="text-xs text-culinary-primary mt-1 flex items-center gap-1">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+                        <path d="m15 5 4 4" />
+                      </svg>
+                      <span className="truncate">{item.observacion}</span>
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-culinary-neutral">
+                    ${formatearPrecio(item.precio * item.cantidad)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleAbrirNotaItem(item)}
+                    className="text-culinary-primary hover:opacity-80 transition-opacity"
+                    aria-label={`Editar nota de ${item.nombre}`}
+                    title="Editar nota"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+                      <path d="m15 5 4 4" />
+                    </svg>
+                  </button>
+                </div>
               </div>
             ))}
+          </div>
+
+          <div className="border-t border-culinary-neutral/10 pt-3 mb-3">
+            <label
+              htmlFor="observacion-general"
+              className={`${publicSans.className} text-sm font-semibold text-culinary-on-surface mb-2 block`}
+            >
+              Instrucciones generales (alergias, preferencias de la mesa)
+            </label>
+            <textarea
+              id="observacion-general"
+              value={observacionGeneral}
+              onChange={(e) => setObservacionGeneral(e.target.value)}
+              placeholder="Ej: Ningún plato debe llevar maní. Mesa 4."
+              className={`w-full p-3 rounded-lg ${publicSans.className} text-sm resize-none outline-none transition-all duration-200 text-[#1C1B20] placeholder:text-[#7a7582] ${getGeneralBorderClasses()}`}
+              maxLength={MAX_CHARS_GENERAL + 20}
+              rows={3}
+            />
+            <div className="flex justify-end mt-1">
+              <span className={`${publicSans.className} text-xs font-semibold ${getGeneralCounterColor()}`}>
+                {generalCharCount}/{MAX_CHARS_GENERAL}
+              </span>
+            </div>
           </div>
 
           {errorPedido && (
@@ -283,9 +385,7 @@ export default function MenuPublico({
 
           <div className="border-t border-culinary-neutral/10 pt-3">
             <div className="flex items-center justify-between mb-3">
-              <span className={`${inter.className} font-bold text-culinary-on-surface`}>
-                Total:
-              </span>
+              <span className={`${inter.className} font-bold text-culinary-on-surface`}>Total:</span>
               <span className={`${inter.className} text-xl font-bold text-culinary-primary`}>
                 ${formatearPrecio(totalCarrito)}
               </span>
@@ -294,7 +394,7 @@ export default function MenuPublico({
             <button
               type="button"
               onClick={realizarPedido}
-              disabled={estadoPedido === 'enviando'}
+              disabled={estadoPedido === 'enviando' || isGeneralOverLimit}
               className={`${publicSans.className} w-full px-4 py-3 bg-culinary-primary text-white font-semibold rounded-[0.5rem] hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-culinary-primary focus:ring-offset-2 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed`}
             >
               {estadoPedido === 'enviando' ? 'Enviando...' : 'Realizar pedido'}
@@ -302,6 +402,14 @@ export default function MenuPublico({
           </div>
         </div>
       )}
+
+      <ItemNotaModal
+        isOpen={!!itemNotaAbierto}
+        onClose={() => setItemNotaAbierto(null)}
+        itemName={itemNotaAbierto?.nombre || ''}
+        currentNote={notaTemporal}
+        onSave={handleGuardarNotaItem}
+      />
     </div>
   );
 }
