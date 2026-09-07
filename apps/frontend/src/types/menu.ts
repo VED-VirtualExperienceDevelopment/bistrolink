@@ -1,4 +1,5 @@
 // HU-002 / HU-003 / BL-155: Tipos compartidos del menú público y carrito
+import type { EstadoPedido } from './pedido';
 
 export interface ItemCarta {
   id: string;
@@ -39,6 +40,6 @@ export interface ItemCarrito {
 // HU-003: forma de la respuesta de POST /pedidos
 export interface PedidoConfirmado {
   id: string;
-  estado: string;
+  estado: EstadoPedido; // Mantenemos el tipo fuerte que agregó develop
   createdAt: string;
 }

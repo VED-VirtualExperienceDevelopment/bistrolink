@@ -10,7 +10,9 @@ import type {
   RestaurantePublico,
 } from '@/types/menu';
 import { apiFetch, ApiError } from '@/lib/api-client';
+// RESUELTO: Mantenemos ambos imports
 import ItemNotaModal from './ItemNotaModal';
+import { SeguimientoPedido } from './SeguimientoPedido';
 
 const inter = Inter({ subsets: ['latin'], weight: ['600', '700', '800'] });
 const publicSans = Public_Sans({ subsets: ['latin'], weight: ['500', '600'] });
@@ -38,14 +40,15 @@ export default function MenuPublico({
   const [notaTemporal, setNotaTemporal] = useState('');
   
   const [estadoPedido, setEstadoPedido] = useState<'idle' | 'enviando' | 'confirmado' | 'error'>('idle');
+  // RESUELTO: Mantenemos ambos estados
   const [pedidoConfirmado, setPedidoConfirmado] = useState<PedidoConfirmado | null>(null);
+  const [tokenComensal, setTokenComensal] = useState<string | null>(null);
   const [errorPedido, setErrorPedido] = useState<string | null>(null);
 
   const generalCharCount = observacionGeneral.length;
   const isGeneralOverLimit = generalCharCount > MAX_CHARS_GENERAL;
   const isGeneralNearLimit = generalCharCount >= MAX_CHARS_GENERAL * WARNING_THRESHOLD && !isGeneralOverLimit;
 
-  // FIX: Extraer ternarios anidados en funciones independientes
   const getGeneralBorderClasses = () => {
     if (isGeneralOverLimit) return 'border-2 border-[#BA1A1A] bg-[#FFDAD6] focus:border-[#BA1A1A] focus:ring-2 focus:ring-[#BA1A1A]/20';
     if (isGeneralNearLimit) return 'border-2 border-[#755b00] bg-[#F1ECF4] focus:border-[#755b00] focus:ring-2 focus:ring-[#755b00]/20';
@@ -170,7 +173,9 @@ export default function MenuPublico({
         }),
       });
 
+      // RESUELTO: Mantenemos ambas actualizaciones de estado
       setPedidoConfirmado(pedido);
+      setTokenComensal(accessToken);
       setEstadoPedido('confirmado');
       setCarrito([]);
       setObservacionGeneral('');
@@ -199,18 +204,23 @@ export default function MenuPublico({
         </div>
       </header>
 
-      {estadoPedido === 'confirmado' && pedidoConfirmado && (
+      {/* RESUELTO: Usamos la estructura de develop que incluye el SeguimientoPedido */}
+      {estadoPedido === 'confirmado' && pedidoConfirmado && tokenComensal && (
         <div className="max-w-7xl mx-auto px-4 pt-6 sm:px-6 lg:px-8">
-          <div className="bg-green-50 border border-green-200 rounded-[1rem] p-4 flex items-start gap-3">
-            <span className="text-2xl" role="img" aria-label="Confirmado">✅</span>
-            <div>
-              <p className={`${inter.className} font-semibold text-green-900`}>
+          <div className="bg-white border border-culinary-neutral/10 rounded-[1rem] p-4">
+            <div className="flex items-start gap-3">
+              <span className="text-2xl" role="img" aria-label="Confirmado">
+                ✅
+              </span>
+              <p className={`${inter.className} font-semibold text-culinary-on-surface`}>
                 ¡Pedido enviado! Cocina ya lo recibió.
               </p>
-              <p className={`${publicSans.className} text-sm text-green-700 mt-1`}>
-                Estado: {pedidoConfirmado.estado}
-              </p>
             </div>
+            <SeguimientoPedido
+              pedidoId={pedidoConfirmado.id}
+              token={tokenComensal}
+              estadoInicial={pedidoConfirmado.estado}
+            />
           </div>
         </div>
       )}

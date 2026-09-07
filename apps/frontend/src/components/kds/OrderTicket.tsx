@@ -9,7 +9,7 @@ interface OrderTicketProps {
 // Etiqueta legible para mostrar en el badge — separada del valor real del
 // tipo (que es el enum PedidoEstado de Prisma). Cambiar esto no afecta
 // ninguna comparación de estado, solo el texto que ve el usuario.
-const ESTADO_LABEL: Record<Pedido['estado'], string> = {
+export const ESTADO_LABEL: Record<Pedido['estado'], string> = {
   RECIBIDO: 'Recibido',
   EN_PREPARACION: 'En preparación',
   LISTO_PARA_ENTREGAR: 'Listo para entregar',
