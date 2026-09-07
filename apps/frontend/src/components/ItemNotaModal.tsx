@@ -25,13 +25,16 @@ export default function ItemNotaModal({
   onSave,
 }: ItemNotaModalProps) {
   const [note, setNote] = useState(currentNote);
-  const modalRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDialogElement>(null);
 
+  // El elemento <dialog> nativo maneja la tecla Escape automáticamente.
+  // Solo necesitamos controlar su apertura/cierre y el estado del texto.
   useEffect(() => {
     if (isOpen) {
       setNote(currentNote);
-      // Enfocar el modal al abrir para accesibilidad de teclado
-      modalRef.current?.focus();
+      dialogRef.current?.showModal();
+    } else {
+      dialogRef.current?.close();
     }
   }, [isOpen, currentNote]);
 
@@ -46,8 +49,9 @@ export default function ItemNotaModal({
     }
   };
 
-  const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.target === e.currentTarget) {
+  // Detectar clic en el backdrop (fuera del contenido del modal)
+  const handleDialogClick = (e: React.MouseEvent<HTMLDialogElement>) => {
+    if (e.target === dialogRef.current) {
       onClose();
     }
   };
@@ -66,29 +70,15 @@ export default function ItemNotaModal({
 
   if (!isOpen) return null;
 
-  // FIX SONARQUBE: 
-  // 1. role="dialog" lo convierte en un elemento interactivo.
-  // 2. tabIndex={-1} permite que reciba eventos de teclado sin estar en el orden de tabulación normal.
-  // 3. onKeyDown satisface la regla "debe tener al menos un listener de teclado".
   return (
-    <div
-      ref={modalRef}
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm outline-none"
-      onClick={handleBackdropClick}
-      onKeyDown={(e) => {
-        if (e.key === 'Escape') {
-          onClose();
-        }
-      }}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="item-note-title"
-      tabIndex={-1}
+    // FIX SONARQUBE: Usamos el elemento nativo <dialog>. 
+    // Tailwind 'open:flex' lo muestra cuando tiene el atributo 'open', y 'hidden' lo oculta por defecto.
+    <dialog
+      ref={dialogRef}
+      onClick={handleDialogClick}
+      className="fixed inset-0 z-50 m-0 p-0 w-full h-full bg-black/40 backdrop-blur-sm open:flex hidden items-end sm:items-center justify-center"
     >
-      <div 
-        className="bg-white w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl p-6 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div className="bg-white w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl p-6 shadow-2xl">
         <div className="flex items-center justify-between mb-4">
           <h3
             id="item-note-title"
@@ -152,6 +142,6 @@ export default function ItemNotaModal({
           </button>
         </div>
       </div>
-    </div>
+    </dialog>
   );
 }
