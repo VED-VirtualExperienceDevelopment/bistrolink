@@ -245,6 +245,26 @@ describe('KdsGateway', () => {
       expect(client.emit).toHaveBeenCalledWith('pedidos:snapshot', pendientes);
     });
 
+    it('[HU-006 seguridad] rol COMENSAL con JWT valido: rechazado, NUNCA recibe el snapshot completo del tenant', async () => {
+      mockWsAuth.verify.mockResolvedValue({
+        sub: 'comensal-1',
+        tenantId: TENANT_ID,
+        roles: ['COMENSAL'],
+      });
+      const client = mockClient();
+
+      await gateway.onSync(client as any);
+
+      expect(mockPedidosTransicion.listarPendientes).not.toHaveBeenCalled();
+      expect(client.emit).not.toHaveBeenCalledWith(
+        'pedidos:snapshot',
+        expect.anything(),
+      );
+      expect(client.emit).toHaveBeenCalledWith('error', {
+        message: 'Rol no autorizado para acceder al snapshot del KDS.',
+      });
+    });
+
     it('con JWT invalido o vencido: desconecta en vez de reenviar el snapshot', async () => {
       mockWsAuth.verify.mockRejectedValue(
         new WsAuthError('Token invalido o expirado'),
