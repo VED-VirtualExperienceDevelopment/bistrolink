@@ -327,6 +327,27 @@ describe('KdsGateway', () => {
       });
     });
 
+    it('[HU-006] pedidoId con formato invalido (no UUID): Prisma tira excepcion, se atrapa y se responde igual que "no encontrado"', async () => {
+      mockWsAuth.verify.mockResolvedValue({
+        sub: 'comensal-1',
+        tenantId: TENANT_ID,
+        roles: ['COMENSAL'],
+      });
+      mockPedidosTransicion.obtenerResumen.mockRejectedValue(
+        new Error('Invalid `prisma.pedido.findUnique()` invocation'),
+      );
+      const client = mockClient();
+
+      await gateway.onSeguirPedido(client as any, {
+        pedidoId: 'no-es-un-uuid',
+      });
+
+      expect(client.join).not.toHaveBeenCalled();
+      expect(client.emit).toHaveBeenCalledWith('error', {
+        message: 'Pedido no encontrado',
+      });
+    });
+
     it('JWT invalido o vencido: desconecta en vez de intentar unir a ninguna sala', async () => {
       mockWsAuth.verify.mockRejectedValue(
         new WsAuthError('Token invalido o expirado'),
