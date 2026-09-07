@@ -23,6 +23,7 @@ describe('KdsGateway', () => {
   let mockPedidosTransicion: {
     listarPendientes: jest.Mock;
     transicionar: jest.Mock;
+    obtenerResumen: jest.Mock;
   };
   let mockModuleRef: { resolve: jest.Mock };
 
@@ -30,16 +31,13 @@ describe('KdsGateway', () => {
     mockPedidosTransicion = {
       listarPendientes: jest.fn().mockResolvedValue([]),
       transicionar: jest.fn(),
+      obtenerResumen: jest.fn(),
     };
     mockModuleRef = {
       resolve: jest.fn().mockResolvedValue(mockPedidosTransicion),
     };
     mockWsAuth = { verify: jest.fn() };
 
-    // Ya no toma cero argumentos: el gateway resuelve WsAuthService por
-    // constructor normal, y PedidosTransicionService via ModuleRef (ver
-    // comentario en kds.gateway.ts sobre el scope REQUEST de
-    // TenantPrismaService).
     gateway = new KdsGateway(mockWsAuth as any, mockModuleRef as any);
 
     mockServer = { to: jest.fn(), emit: jest.fn() };
@@ -81,10 +79,6 @@ describe('KdsGateway', () => {
     });
 
     it('ante un error inesperado (no WsAuthError) durante la verificacion, cae al mensaje generico "No autorizado"', async () => {
-      // Cubre la rama fallback: no todo lo que puede fallar en verify() es
-      // necesariamente un WsAuthError (ej. un error de red al pedir la
-      // clave publica que no se haya envuelto correctamente). El cliente
-      // no deberia ver el detalle interno de ese error.
       mockWsAuth.verify.mockRejectedValue(new Error('fallo de red inesperado'));
       const client = mockClient();
 
@@ -96,10 +90,7 @@ describe('KdsGateway', () => {
       expect(client.disconnect).toHaveBeenCalledWith(true);
     });
 
-    it('[Checklist seguridad] rol COMENSAL (token valido, pero no es rol de operacion del KDS) es rechazado con 403 equivalente', async () => {
-      // El canal del KDS expone el snapshot completo del tenant (todas las
-      // mesas). Un token valido pero de otro contexto no debe poder verlo
-      // - ver comentario de ROLES_CONEXION_KDS en el gateway.
+    it('[HU-006] rol COMENSAL: se conecta, pero NO se une a la sala del tenant ni recibe el snapshot completo', async () => {
       mockWsAuth.verify.mockResolvedValue({
         sub: 'comensal-1',
         tenantId: TENANT_ID,
@@ -111,8 +102,26 @@ describe('KdsGateway', () => {
 
       expect(client.join).not.toHaveBeenCalled();
       expect(mockPedidosTransicion.listarPendientes).not.toHaveBeenCalled();
+      expect(client.emit).not.toHaveBeenCalledWith(
+        'pedidos:snapshot',
+        expect.anything(),
+      );
+      expect(client.disconnect).not.toHaveBeenCalled();
+    });
+
+    it('rol sin ningun permiso (ni staff KDS ni COMENSAL) es rechazado', async () => {
+      mockWsAuth.verify.mockResolvedValue({
+        sub: 'usuario-1',
+        tenantId: TENANT_ID,
+        roles: ['ROL_INVENTADO'],
+      });
+      const client = mockClient();
+
+      await gateway.handleConnection(client as any);
+
+      expect(client.join).not.toHaveBeenCalled();
       expect(client.emit).toHaveBeenCalledWith('error', {
-        message: 'Rol no autorizado para acceder al KDS.',
+        message: 'Rol no autorizado para este canal.',
       });
       expect(client.disconnect).toHaveBeenCalledWith(true);
     });
@@ -172,6 +181,7 @@ describe('KdsGateway', () => {
         nuevoEstado: PedidoEstado.EN_PREPARACION,
       });
       expect(mockServer.to).toHaveBeenCalledWith(`tenant:${TENANT_ID}`);
+      expect(mockServer.to).toHaveBeenCalledWith(`pedido:pedido-1`);
       expect(mockServer.emit).toHaveBeenCalledWith(
         'pedido:actualizado',
         actualizado,
@@ -212,7 +222,6 @@ describe('KdsGateway', () => {
       expect(client.emit).toHaveBeenCalledWith('error', {
         message: 'Transición inválida: LISTO_PARA_ENTREGAR → EN_PREPARACION',
       });
-      // Sin broadcast a la sala si la transicion nunca se aplico.
       expect(mockServer.to).not.toHaveBeenCalled();
     });
   });
@@ -248,6 +257,66 @@ describe('KdsGateway', () => {
       expect(client.emit).toHaveBeenCalledWith('error', {
         message: 'Sesion invalida o expirada - reconecta.',
       });
+      expect(client.disconnect).toHaveBeenCalledWith(true);
+    });
+  });
+
+  describe('onSeguirPedido', () => {
+    const PEDIDO_ID = 'pedido-1';
+
+    it('[HU-006] con el pedido encontrado: une al cliente a SU sala puntual y le manda el estado actual', async () => {
+      mockWsAuth.verify.mockResolvedValue({
+        sub: 'comensal-1',
+        tenantId: TENANT_ID,
+        roles: ['COMENSAL'],
+      });
+      const resumen = {
+        id: PEDIDO_ID,
+        estado: PedidoEstado.RECIBIDO,
+        actualizadoEn: '2026-08-30T12:00:00.000Z',
+      };
+      mockPedidosTransicion.obtenerResumen.mockResolvedValue(resumen);
+      const client = mockClient();
+
+      await gateway.onSeguirPedido(client as any, { pedidoId: PEDIDO_ID });
+
+      expect(mockPedidosTransicion.obtenerResumen).toHaveBeenCalledWith(
+        TENANT_ID,
+        PEDIDO_ID,
+      );
+      expect(client.join).toHaveBeenCalledWith(`pedido:${PEDIDO_ID}`);
+      expect(client.emit).toHaveBeenCalledWith('pedido:actualizado', resumen);
+    });
+
+    it('[HU-006 seguridad] pedido inexistente o de OTRO tenant: no lo encuentra (RLS), no une a ninguna sala', async () => {
+      mockWsAuth.verify.mockResolvedValue({
+        sub: 'comensal-1',
+        tenantId: TENANT_ID,
+        roles: ['COMENSAL'],
+      });
+      mockPedidosTransicion.obtenerResumen.mockResolvedValue(null);
+      const client = mockClient();
+
+      await gateway.onSeguirPedido(client as any, {
+        pedidoId: 'pedido-de-otro-tenant',
+      });
+
+      expect(client.join).not.toHaveBeenCalled();
+      expect(client.emit).toHaveBeenCalledWith('error', {
+        message: 'Pedido no encontrado',
+      });
+    });
+
+    it('JWT invalido o vencido: desconecta en vez de intentar unir a ninguna sala', async () => {
+      mockWsAuth.verify.mockRejectedValue(
+        new WsAuthError('Token invalido o expirado'),
+      );
+      const client = mockClient();
+
+      await gateway.onSeguirPedido(client as any, { pedidoId: PEDIDO_ID });
+
+      expect(mockPedidosTransicion.obtenerResumen).not.toHaveBeenCalled();
+      expect(client.join).not.toHaveBeenCalled();
       expect(client.disconnect).toHaveBeenCalledWith(true);
     });
   });

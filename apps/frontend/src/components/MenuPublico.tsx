@@ -10,6 +10,7 @@ import type {
   RestaurantePublico,
 } from '@/types/menu';
 import { apiFetch, ApiError } from '@/lib/api-client';
+import { SeguimientoPedido } from './SeguimientoPedido';
 
 const inter = Inter({ subsets: ['latin'], weight: ['600', '700', '800'] });
 const publicSans = Public_Sans({ subsets: ['latin'], weight: ['500', '600'] });
@@ -31,6 +32,7 @@ export default function MenuPublico({
   const [estadoPedido, setEstadoPedido] = useState<'idle' | 'enviando' | 'confirmado' | 'error'>('idle');
   const [pedidoConfirmado, setPedidoConfirmado] =
     useState<PedidoConfirmado | null>(null);
+  const [tokenComensal, setTokenComensal] = useState<string | null>(null);
   const [errorPedido, setErrorPedido] = useState<string | null>(null);
 
   const agregarAlCarrito = (item: ItemCarta) => {
@@ -112,6 +114,7 @@ export default function MenuPublico({
       );
 
       setPedidoConfirmado(pedido);
+      setTokenComensal(accessToken);
       setEstadoPedido('confirmado');
       setCarrito([]);
     } catch (err) {
@@ -145,20 +148,22 @@ export default function MenuPublico({
         </div>
       </header>
 
-      {estadoPedido === 'confirmado' && pedidoConfirmado && (
+      {estadoPedido === 'confirmado' && pedidoConfirmado && tokenComensal && (
         <div className="max-w-7xl mx-auto px-4 pt-6 sm:px-6 lg:px-8">
-          <div className="bg-green-50 border border-green-200 rounded-[1rem] p-4 flex items-start gap-3">
-            <span className="text-2xl" role="img" aria-label="Confirmado">
-              ✅
-            </span>
-            <div>
-              <p className={`${inter.className} font-semibold text-green-900`}>
+          <div className="bg-white border border-culinary-neutral/10 rounded-[1rem] p-4">
+            <div className="flex items-start gap-3">
+              <span className="text-2xl" role="img" aria-label="Confirmado">
+                ✅
+              </span>
+              <p className={`${inter.className} font-semibold text-culinary-on-surface`}>
                 ¡Pedido enviado! Cocina ya lo recibió.
               </p>
-              <p className={`${publicSans.className} text-sm text-green-700 mt-1`}>
-                Estado: {pedidoConfirmado.estado}
-              </p>
             </div>
+            <SeguimientoPedido
+              pedidoId={pedidoConfirmado.id}
+              token={tokenComensal}
+              estadoInicial={pedidoConfirmado.estado}
+            />
           </div>
         </div>
       )}

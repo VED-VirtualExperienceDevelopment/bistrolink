@@ -94,6 +94,27 @@ export class PedidosTransicionService {
     });
   }
 
+  /** Para HU-006: estado actual de un pedido puntual, al suscribirse (por
+   * primera vez o tras reconectar). Mismo aislamiento por tenant que el
+   * resto del servicio — si pedidoId pertenece a otro tenant, esto
+   * devuelve null, nunca los datos ajenos. */
+  async obtenerResumen(
+    tenantId: string,
+    pedidoId: string,
+  ): Promise<PedidoActualizado | null> {
+    return this.tenantPrisma.runInTenantContext(tenantId, async (tx) => {
+      const pedido = await tx.pedido.findUnique({ where: { id: pedidoId } });
+      if (!pedido) {
+        return null;
+      }
+      return {
+        id: pedido.id,
+        estado: pedido.estado,
+        actualizadoEn: pedido.updatedAt.toISOString(),
+      };
+    });
+  }
+
   /** Snapshot para `pedidos:sync` — al conectar y tras una reconexión.
    * Shape alineado 1:1 con el tipo `Pedido` del frontend (mesaNumero,
    * createdAt, lineas[].nombreSnapshot) para que KdsBoard/OrderTicket

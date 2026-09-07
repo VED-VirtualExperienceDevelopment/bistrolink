@@ -239,4 +239,36 @@ describe('PedidosTransicionService', () => {
       expect(resultado).toEqual([]);
     });
   });
+
+  describe('obtenerResumen', () => {
+    it('[TC-U-KDS-018] con el pedido encontrado, devuelve id/estado/actualizadoEn (HU-006: seguimiento del comensal)', async () => {
+      tx().pedido.findUnique.mockResolvedValue({
+        id: PEDIDO_ID,
+        estado: PedidoEstado.EN_PREPARACION,
+        updatedAt: new Date('2026-08-30T12:00:00Z'),
+      });
+
+      const resultado = await service.obtenerResumen(TENANT_ID, PEDIDO_ID);
+
+      expect(tx().pedido.findUnique).toHaveBeenCalledWith({
+        where: { id: PEDIDO_ID },
+      });
+      expect(resultado).toEqual({
+        id: PEDIDO_ID,
+        estado: PedidoEstado.EN_PREPARACION,
+        actualizadoEn: '2026-08-30T12:00:00.000Z',
+      });
+    });
+
+    it('[TC-U-KDS-019] devuelve null si el pedido no existe o es de OTRO tenant (RLS ya lo filtra, no distingue el motivo)', async () => {
+      tx().pedido.findUnique.mockResolvedValue(null);
+
+      const resultado = await service.obtenerResumen(
+        TENANT_ID,
+        'pedido-de-otro-tenant',
+      );
+
+      expect(resultado).toBeNull();
+    });
+  });
 });
