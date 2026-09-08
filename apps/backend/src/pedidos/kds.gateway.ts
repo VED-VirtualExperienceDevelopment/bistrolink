@@ -157,6 +157,17 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
 
+    // HU-006: mismo chequeo de rol que handleConnection. Sin esto, un
+    // COMENSAL con un token valido (el de su propio pedido) podria emitir
+    // este evento a mano y recibir el snapshot COMPLETO del tenant - todos
+    // los pedidos de todas las mesas, no solo el suyo.
+    if (!KdsGateway.ROLES_CONEXION_KDS.some((r) => user.roles.includes(r))) {
+      client.emit('error', {
+        message: 'Rol no autorizado para acceder al snapshot del KDS.',
+      });
+      return;
+    }
+
     const pedidosTransicion = await this.resolverPedidosTransicion();
     const pendientes = await pedidosTransicion.listarPendientes(user.tenantId);
     client.emit('pedidos:snapshot', pendientes);
@@ -179,10 +190,20 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
 
     const pedidosTransicion = await this.resolverPedidosTransicion();
-    const resumen = await pedidosTransicion.obtenerResumen(
-      user.tenantId,
-      body.pedidoId,
-    );
+
+    let resumen;
+    try {
+      resumen = await pedidosTransicion.obtenerResumen(
+        user.tenantId,
+        body.pedidoId,
+      );
+    } catch {
+      // Cubre tanto "no existe" como "formato invalido" (ej. no es un UUID)
+      // con el mismo mensaje generico - no hay que distinguirle al cliente
+      // CUAL de los dos motivos fue, es informacion que no le corresponde.
+      client.emit('error', { message: 'Pedido no encontrado' });
+      return;
+    }
 
     if (!resumen) {
       client.emit('error', { message: 'Pedido no encontrado' });

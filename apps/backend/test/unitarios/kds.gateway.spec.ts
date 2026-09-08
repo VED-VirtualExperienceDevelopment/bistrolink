@@ -245,6 +245,26 @@ describe('KdsGateway', () => {
       expect(client.emit).toHaveBeenCalledWith('pedidos:snapshot', pendientes);
     });
 
+    it('[HU-006 seguridad] rol COMENSAL con JWT valido: rechazado, NUNCA recibe el snapshot completo del tenant', async () => {
+      mockWsAuth.verify.mockResolvedValue({
+        sub: 'comensal-1',
+        tenantId: TENANT_ID,
+        roles: ['COMENSAL'],
+      });
+      const client = mockClient();
+
+      await gateway.onSync(client as any);
+
+      expect(mockPedidosTransicion.listarPendientes).not.toHaveBeenCalled();
+      expect(client.emit).not.toHaveBeenCalledWith(
+        'pedidos:snapshot',
+        expect.anything(),
+      );
+      expect(client.emit).toHaveBeenCalledWith('error', {
+        message: 'Rol no autorizado para acceder al snapshot del KDS.',
+      });
+    });
+
     it('con JWT invalido o vencido: desconecta en vez de reenviar el snapshot', async () => {
       mockWsAuth.verify.mockRejectedValue(
         new WsAuthError('Token invalido o expirado'),
@@ -299,6 +319,27 @@ describe('KdsGateway', () => {
 
       await gateway.onSeguirPedido(client as any, {
         pedidoId: 'pedido-de-otro-tenant',
+      });
+
+      expect(client.join).not.toHaveBeenCalled();
+      expect(client.emit).toHaveBeenCalledWith('error', {
+        message: 'Pedido no encontrado',
+      });
+    });
+
+    it('[HU-006] pedidoId con formato invalido (no UUID): Prisma tira excepcion, se atrapa y se responde igual que "no encontrado"', async () => {
+      mockWsAuth.verify.mockResolvedValue({
+        sub: 'comensal-1',
+        tenantId: TENANT_ID,
+        roles: ['COMENSAL'],
+      });
+      mockPedidosTransicion.obtenerResumen.mockRejectedValue(
+        new Error('Invalid `prisma.pedido.findUnique()` invocation'),
+      );
+      const client = mockClient();
+
+      await gateway.onSeguirPedido(client as any, {
+        pedidoId: 'no-es-un-uuid',
       });
 
       expect(client.join).not.toHaveBeenCalled();

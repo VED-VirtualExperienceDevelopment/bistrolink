@@ -69,6 +69,13 @@ async function main() {
       method: 'PUT',
       headers,
       body: JSON.stringify({
+        username,
+        email: `${username}@tecnico.bistrolink.local`,
+        firstName: 'Comensal',
+        lastName: 'Técnico',
+        enabled: true,
+        emailVerified: true,
+        requiredActions: [],
         attributes: { tenant_id: [tenantId] },
       }),
     });
