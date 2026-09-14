@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Type, Transform } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
@@ -28,6 +28,10 @@ export class CrearPedidoItemDto {
   @MaxLength(300, {
     message: 'La nota del ítem no puede exceder 300 caracteres',
   })
+  // ✅ REGEX CORREGIDA: Elimina la etiqueta completa, no solo los corchetes
+  @Transform(({ value }) => 
+    typeof value === 'string' ? value.replace(/<[^>]*>/g, '').trim() : value
+  )
   observacion?: string;
 }
 
@@ -46,7 +50,7 @@ export class CrearPedidoDto {
   @IsArray()
   @ArrayMinSize(1)
   @ValidateNested({ each: true })
-  @Type(() => CrearPedidoItemDto)
+  @Type(() => CrearPedidoItemDto) // ← CRUCIAL: Hace que @Transform funcione dentro del array
   items: CrearPedidoItemDto[];
 
   @IsOptional()
@@ -54,5 +58,9 @@ export class CrearPedidoDto {
   @MaxLength(500, {
     message: 'La nota general del pedido no puede exceder 500 caracteres',
   })
+  // ✅ REGEX CORREGIDA: Elimina la etiqueta completa, no solo los corchetes
+  @Transform(({ value }) => 
+    typeof value === 'string' ? value.replace(/<[^>]*>/g, '').trim() : value
+  )
   observacionGeneral?: string;
 }
