@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Type, Transform } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
@@ -15,6 +15,18 @@ import {
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+function stripHtmlTagsSafely(input: string): string {
+  let previous: string;
+  let current = input;
+
+  do {
+    previous = current;
+    current = current.replace(/<[^>]*>/g, '');
+  } while (current !== previous);
+
+  return current.trim();
+}
+
 export class CrearPedidoItemDto {
   @Matches(UUID_REGEX, { message: 'itemCartaId debe tener formato UUID' })
   itemCartaId: string;
@@ -28,6 +40,10 @@ export class CrearPedidoItemDto {
   @MaxLength(300, {
     message: 'La nota del ítem no puede exceder 300 caracteres',
   })
+  // ✅ Sanitización robusta: elimina etiquetas en iteraciones hasta estabilizar
+  @Transform(({ value }) =>
+    typeof value === 'string' ? stripHtmlTagsSafely(value) : value
+  )
   observacion?: string;
 }
 
@@ -46,7 +62,7 @@ export class CrearPedidoDto {
   @IsArray()
   @ArrayMinSize(1)
   @ValidateNested({ each: true })
-  @Type(() => CrearPedidoItemDto)
+  @Type(() => CrearPedidoItemDto) // ← CRUCIAL: Hace que @Transform funcione dentro del array
   items: CrearPedidoItemDto[];
 
   @IsOptional()
@@ -54,5 +70,9 @@ export class CrearPedidoDto {
   @MaxLength(500, {
     message: 'La nota general del pedido no puede exceder 500 caracteres',
   })
+  // ✅ Sanitización robusta: elimina etiquetas en iteraciones hasta estabilizar
+  @Transform(({ value }) =>
+    typeof value === 'string' ? stripHtmlTagsSafely(value) : value
+  )
   observacionGeneral?: string;
 }
