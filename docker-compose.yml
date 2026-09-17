@@ -37,6 +37,14 @@ services:
     env_file:
       - ./apps/backend/.env
     environment:
+      # Neutraliza el leak de DATABASE_URL/RUNTIME_DATABASE_URL del backend
+      # hacia este contenedor (env_file de arriba carga el .env completo,
+      # sin filtrar). No confirmado que esto por sí solo resuelva un
+      # crash-loop de JDBC visto una vez en un volumen recién importado
+      # (ver notas del hallazgo) — se trata como higiene de configuración,
+      # no como fix garantizado de ese incidente puntual.
+      DATABASE_URL: ""
+      RUNTIME_DATABASE_URL: ""
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: admin # solo desarrollo local
       KC_DB: dev-file
