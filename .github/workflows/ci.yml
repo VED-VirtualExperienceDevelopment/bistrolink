@@ -1,5 +1,4 @@
 name: CI/CD BistroLink
-
 on:
   push:
     branches: [develop, main]
@@ -350,7 +349,7 @@ jobs:
           - name: API
             image: ghcr.io/ved-virtualexperiencedevelopment/bistrolink-api
             dockerfile: apps/backend/Dockerfile
-            extra_args: --build-arg GIT_SHA=${{ needs.version.outputs.label }}
+            extra_args: --build-arg GIT_SHA=${{ env.TAG }}
           - name: Web
             image: ghcr.io/ved-virtualexperiencedevelopment/bistrolink-web
             dockerfile: apps/frontend/Dockerfile
@@ -360,7 +359,7 @@ jobs:
               --build-arg NEXT_PUBLIC_KEYCLOAK_URL=https://bistrolink-auth-staging.up.railway.app
               --build-arg NEXT_PUBLIC_KEYCLOAK_REALM=bistrolink
               --build-arg NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=bistrolink-frontend
-              --build-arg NEXT_PUBLIC_APP_VERSION=${{ needs.version.outputs.label }}
+              --build-arg NEXT_PUBLIC_APP_VERSION=${{ env.TAG }}
           - name: Auth
             image: ghcr.io/ved-virtualexperiencedevelopment/bistrolink-auth
             dockerfile: keycloak/Dockerfile.auth
