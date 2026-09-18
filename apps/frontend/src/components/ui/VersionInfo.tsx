@@ -3,21 +3,24 @@
 import { useState } from 'react';
 import { Dialog } from '@/components/ui/Dialog';
 
-// SHA corto (7 caracteres, igual a la convención de GitHub) para el badge.
-// El completo se muestra dentro del diálogo.
+// En staging, NEXT_PUBLIC_APP_VERSION es el SHA completo del commit (40
+// caracteres hex) — se trunca a 7 para el badge, igual a la convención de
+// GitHub. En producción, el build corre a partir de un tag semántico
+// (v1.4.2), y ese valor NO se trunca: mostrar "v1.4.2" recortado a 7
+// caracteres podría comerse dígitos (ej. "v1.14.23" -> "v1.14.2"). Se
+// distingue mirando si el valor matchea el formato de un SHA completo.
 const FRONTEND_VERSION = process.env.NEXT_PUBLIC_APP_VERSION ?? 'unknown';
+const isFullSha = /^[0-9a-f]{40}$/i.test(FRONTEND_VERSION);
 const FRONTEND_VERSION_SHORT =
-  FRONTEND_VERSION === 'unknown' ? 'unknown' : FRONTEND_VERSION.slice(0, 7);
-
-type LastMigration =
-  | { name: string; label: string; appliedAt: string }
-  | 'unavailable';
+  FRONTEND_VERSION === 'unknown'
+    ? 'unknown'
+    : isFullSha
+      ? FRONTEND_VERSION.slice(0, 7)
+      : FRONTEND_VERSION;
 
 interface BackendVersion {
   api: string;
   postgres: string;
-  lastMigration: LastMigration;
-  upToDate: boolean | 'unavailable';
 }
 
 export function VersionInfo() {
@@ -95,28 +98,6 @@ export function VersionInfo() {
                   PostgreSQL
                 </dt>
                 <dd className="font-mono break-words">{backend.postgres}</dd>
-              </div>
-              <div>
-                <dt className="text-label-sm text-on-surface-variant">
-                  Última migración
-                </dt>
-                <dd className="font-mono break-words">
-                  {backend.lastMigration === 'unavailable'
-                    ? 'no disponible'
-                    : backend.lastMigration.label}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-label-sm text-on-surface-variant">
-                  Esquema actualizado
-                </dt>
-                <dd className="font-mono">
-                  {backend.upToDate === 'unavailable'
-                    ? 'no disponible'
-                    : backend.upToDate
-                      ? 'sí'
-                      : 'no'}
-                </dd>
               </div>
             </>
           )}
