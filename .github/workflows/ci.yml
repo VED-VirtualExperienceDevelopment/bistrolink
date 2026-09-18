@@ -12,6 +12,25 @@ on:
         description: "Motivo del deploy manual"
         required: false
         default: "deploy manual"
+      # ── Rollback manual ──────────────────────────────────────────────────
+      # Completar estos dos para revertir un entorno a una imagen YA
+      # publicada en GHCR (sin reconstruir nada). Dejar ambos vacíos para un
+      # workflow_dispatch normal (no rollback).
+      rollback_environment:
+        description: "Rollback: entorno a revertir (vacío = no es un rollback)"
+        required: false
+        type: choice
+        options:
+          - ""
+          - staging
+          # - production  # PENDIENTE: descomentar cuando el equipo decida
+          # habilitar deploys reales a producción (ver deploy-prod, hoy
+          # comentado a propósito más abajo). Mientras tanto, "production"
+          # no es una opción seleccionable acá.
+      rollback_version:
+        description: "Rollback: tag de imagen a restaurar en GHCR (el SHA completo de 40 caracteres del commit al que querés volver en staging)"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -361,7 +380,6 @@ jobs:
           if [ "${{ matrix.name }}" = "Auth" ]; then
             docker build \
               -t ${{ matrix.image }}:${{ env.TAG }} \
-              -t ${{ matrix.image }}:latest \
               --build-arg TEST_ADMIN_USERNAME="$TEST_ADMIN_USERNAME" \
               --build-arg TEST_ADMIN_PASSWORD="$TEST_ADMIN_PASSWORD" \
               --build-arg TEST_COCINA_USERNAME="$TEST_COCINA_USERNAME" \
@@ -376,7 +394,6 @@ jobs:
           else
             docker build \
               -t ${{ matrix.image }}:${{ env.TAG }} \
-              -t ${{ matrix.image }}:latest \
               ${{ matrix.extra_args }} \
               -f ${{ matrix.dockerfile }} \
               .
@@ -400,7 +417,6 @@ jobs:
         run: |
           echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
           docker push ${{ matrix.image }}:${{ env.TAG }}
-          docker push ${{ matrix.image }}:latest
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
             VERSION=${GITHUB_REF#refs/tags/}
             docker tag ${{ matrix.image }}:${{ env.TAG }} ${{ matrix.image }}:${VERSION}
@@ -605,6 +621,139 @@ jobs:
           curl -f https://bistrolink-web-staging.up.railway.app
           curl -f https://bistrolink-auth-staging.up.railway.app/realms/bistrolink/.well-known/openid-configuration
 
+  # ── JOB 9A: ROLLBACK MANUAL (staging) ─────────────────────────────────────
+  # Revierte staging a una imagen YA publicada en GHCR (por SHA), sin
+  # reconstruir nada. Se dispara a mano completando "rollback_environment" y
+  # "rollback_version" en workflow_dispatch — con cualquiera de los dos
+  # vacío, este job no corre (ver "if").
+  #
+  # Política: este job NUNCA toca la base de datos (no corre
+  # "prisma migrate"). El equipo trabaja con el patrón expand/contract:
+  # todo cambio de schema se vuelve compatible con la versión anterior del
+  # código ANTES de eliminar lo viejo, así que revertir la imagen nunca
+  # debería requerir revertir el schema. Prisma tampoco tiene un comando de
+  # rollback nativo ("migrate down") — si alguna vez hace falta deshacer una
+  # migración puntual, se hace a mano con una migración nueva "hacia
+  # adelante" (prisma migrate diff --script), nunca de forma automática
+  # desde CI.
+  rollback:
+    name: ⏪ Rollback manual (staging)
+    if: github.event_name == 'workflow_dispatch' && inputs.rollback_environment == 'staging' && inputs.rollback_version != ''
+    environment: staging
+    runs-on: ubuntu-latest
+    env:
+      RAILWAY_GRAPHQL: https://backboard.railway.com/graphql/v2
+      ENVIRONMENT_ID: bfeb236f-2012-4a5e-a681-5c4728e6830a
+      API_SERVICE_ID: 45dc82be-fd53-4b80-ba9c-384bbbdba034
+      WEB_SERVICE_ID: 070e5864-c5af-47e3-89d4-89c3041bc98b
+      AUTH_SERVICE_ID: dd1b662a-4bcb-450c-a57e-fa0fe6fb5773
+      ROLLBACK_TAG: ${{ inputs.rollback_version }}
+    steps:
+      - name: Validar formato del tag (SHA de 40 caracteres)
+        run: |
+          if ! [[ "$ROLLBACK_TAG" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "rollback_version debe ser un SHA completo de 40 caracteres hexadecimales (el mismo valor que 'env.TAG' usó ese deploy). Recibido: '$ROLLBACK_TAG'"
+            exit 1
+          fi
+
+      - name: Verificar que las 3 imágenes existan en GHCR
+        run: |
+          set -euo pipefail
+          echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          for IMAGE in "${{ env.IMAGE_API }}" "${{ env.IMAGE_WEB }}" "${{ env.IMAGE_AUTH }}"; do
+            docker manifest inspect "${IMAGE}:${ROLLBACK_TAG}" > /dev/null \
+              || { echo "No existe ${IMAGE}:${ROLLBACK_TAG} en GHCR — no se puede revertir a un tag que nunca se publicó."; exit 1; }
+          done
+
+      - name: Revertir API al tag indicado
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          set -euo pipefail
+          IMAGE="${{ env.IMAGE_API }}:${ROLLBACK_TAG}"
+
+          RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg s "$API_SERVICE_ID" --arg e "$ENVIRONMENT_ID" --arg img "$IMAGE" '{
+              query: "mutation($serviceId: String!, $environmentId: String!, $input: ServiceInstanceUpdateInput!) { serviceInstanceUpdate(serviceId: $serviceId, environmentId: $environmentId, input: $input) }",
+              variables: { serviceId: $s, environmentId: $e, input: { source: { image: $img } } }
+            }')")
+          echo "$RESPONSE"
+          echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
+
+          RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg s "$API_SERVICE_ID" --arg e "$ENVIRONMENT_ID" '{
+              query: "mutation($serviceId: String!, $environmentId: String!) { serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId) }",
+              variables: { serviceId: $s, environmentId: $e }
+            }')")
+          echo "$RESPONSE"
+          echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
+
+      - name: Revertir Web al tag indicado
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          set -euo pipefail
+          IMAGE="${{ env.IMAGE_WEB }}:${ROLLBACK_TAG}"
+
+          RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg s "$WEB_SERVICE_ID" --arg e "$ENVIRONMENT_ID" --arg img "$IMAGE" '{
+              query: "mutation($serviceId: String!, $environmentId: String!, $input: ServiceInstanceUpdateInput!) { serviceInstanceUpdate(serviceId: $serviceId, environmentId: $environmentId, input: $input) }",
+              variables: { serviceId: $s, environmentId: $e, input: { source: { image: $img } } }
+            }')")
+          echo "$RESPONSE"
+          echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
+
+          RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg s "$WEB_SERVICE_ID" --arg e "$ENVIRONMENT_ID" '{
+              query: "mutation($serviceId: String!, $environmentId: String!) { serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId) }",
+              variables: { serviceId: $s, environmentId: $e }
+            }')")
+          echo "$RESPONSE"
+          echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
+
+      - name: Revertir Keycloak al tag indicado
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          set -euo pipefail
+          IMAGE="${{ env.IMAGE_AUTH }}:${ROLLBACK_TAG}"
+
+          RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg s "$AUTH_SERVICE_ID" --arg e "$ENVIRONMENT_ID" --arg img "$IMAGE" '{
+              query: "mutation($serviceId: String!, $environmentId: String!, $input: ServiceInstanceUpdateInput!) { serviceInstanceUpdate(serviceId: $serviceId, environmentId: $environmentId, input: $input) }",
+              variables: { serviceId: $s, environmentId: $e, input: { source: { image: $img } } }
+            }')")
+          echo "$RESPONSE"
+          echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
+
+          RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg s "$AUTH_SERVICE_ID" --arg e "$ENVIRONMENT_ID" '{
+              query: "mutation($serviceId: String!, $environmentId: String!) { serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId) }",
+              variables: { serviceId: $s, environmentId: $e }
+            }')")
+          echo "$RESPONSE"
+          echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
+
+      - name: Health check post-rollback
+        run: |
+          sleep 40
+          curl -f https://bistrolink-api-staging.up.railway.app/health
+          curl -f https://bistrolink-api-staging.up.railway.app/health/ready
+          curl -f https://bistrolink-web-staging.up.railway.app
+          curl -f https://bistrolink-auth-staging.up.railway.app/realms/bistrolink/.well-known/openid-configuration
+
   # ── JOB 9B: LIGHTHOUSE (Performance mobile) — staging ────────────────────────
   lighthouse:
     name: 🔦 Lighthouse Performance (mobile) — staging
@@ -644,24 +793,159 @@ jobs:
   #         BASE_URL: https://staging.bistrolink.app
 
   # ── JOB 11: DEPLOY PRODUCCIÓN (manual, solo en tag v*.*.*) ───────────────
+  # Disparador: push de un tag v*.*.* (ya declarado en "on:"). Un tag es una
+  # decisión explícita de release — a diferencia de deploy-staging, acá no
+  # hay gate por "changes" (paths-filter): tagear YA es la señal de intención
+  # de desplegar.
+  #
+  # "needs" NO puede apuntar a deploy-staging/lighthouse: esos jobs corren
+  # solo con github.ref == 'refs/heads/develop', y en el workflow run que
+  # dispara un push de tag esa condición es falsa, así que quedarían
+  # "skipped" y deploy-prod nunca correría. En su lugar se re-exige el mismo
+  # gate de seguridad + build que valida staging (gitleaks, codeql,
+  # sonarcloud, snyk, build), que sí se re-ejecuta en el push del tag.
+  # TODO (bloque 3 pendiente): sumar "playwright" a needs en cuanto ese job
+  # esté activo, para no promover a producción nada que no haya pasado E2E.
+  #
+  # Rollback: se despliega SIEMPRE por versión semántica (github.ref_name,
+  # ej. v1.4.2), nunca por SHA ni por "latest" — el job "build" ya publica
+  # ese tag inmutable en GHCR cuando el push es un tag (ver "Publicar imagen
+  # en GHCR"). Para revertir: volver a correr este mismo job apuntando
+  # RAILWAY_TOKEN + los mismos SERVICE_ID contra un tag anterior ya
+  # publicado (re-disparo manual vía "workflow_dispatch" sobre el commit del
+  # tag anterior, o re-tageo).
   # deploy-prod:
-  #   name: 🏁 Deploy producción (aprobación manual)
-  #   needs: playwright
-  #   if: startsWith(github.ref, 'refs/tags/v')
-  #   environment: production
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - name: Instalar Railway CLI
-  #       run: npm install -g @railway/cli
-  #     - name: Deploy API en producción
-  #       run: railway redeploy --service bistrolink-api --environment production --yes
-  #       env:
-  #         RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-  #     - name: Deploy Web en producción
-  #       run: railway redeploy --service bistrolink-web --environment production --yes
-  #       env:
-  #         RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-  #     - name: Health check producción
-  #       run: |
-  #         sleep 40
-  #         curl -f https://api.bistrolink.app/health
+  #   # DESACTIVADO A PROPÓSITO: todavía no queremos deployar a producción
+  #   # de forma automática. El job está completo y probado en config (ver
+  #   # notas arriba), solo comentado. Para reactivarlo: descomentar todo
+  #   # este bloque (job "deploy-prod" completo, hasta el final del archivo).
+  #     name: 🏁 Deploy producción (aprobación manual)
+  #     needs: [gitleaks, codeql, sonarcloud, snyk, build]
+  #     if: startsWith(github.ref, 'refs/tags/v')
+  #     # GitHub Environment "production": configurar en Settings → Environments
+  #     # → production → Required reviewers, con al menos un integrante distinto
+  #     # de quien crea el tag. Ese check queda registrado en la UI de GitHub
+  #     # (quién aprobó, cuándo) — es la evidencia auditable de "aprobación
+  #     # manual registrada" que pide el Anexo 4 (§1.2.3).
+  #     environment: production
+  #     runs-on: ubuntu-latest
+  #     env:
+  #       RAILWAY_GRAPHQL: https://backboard.railway.com/graphql/v2
+  #       ENVIRONMENT_ID: "b0b1fd5a-e3e7-409e-8847-f2700286a4a0"
+  #       API_SERVICE_ID: "45dc82be-fd53-4b80-ba9c-384bbbdba034"
+  #       WEB_SERVICE_ID: "070e5864-c5af-47e3-89d4-89c3041bc98b"
+  #       AUTH_SERVICE_ID: "dd1b662a-4bcb-450c-a57e-fa0fe6fb5773"
+  #     steps:
+  #       - uses: actions/checkout@v7
+  #
+  #       - uses: actions/setup-node@v7
+  #         with:
+  #           node-version: "20"
+  #           cache: npm
+  #
+  #       - name: Instalar dependencias (solo backend, para prisma migrate)
+  #         run: npm pkg delete scripts.prepare && npm ci --workspace=apps/backend
+  #
+  #       - name: Aplicar migraciones de Prisma en producción
+  #         working-directory: apps/backend
+  #         env:
+  #           # PENDIENTE: crear el secret PROD_DATABASE_URL (mismo patrón que
+  #           # STAGING_DATABASE_URL) apuntando a la base de producción.
+  #           DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+  #         run: |
+  #           for i in 1 2 3 4 5; do
+  #             npx prisma migrate deploy && exit 0
+  #             echo "Intento $i falló, esperando 10s..."
+  #             sleep 10
+  #           done
+  #           echo "Las migraciones fallaron tras 5 intentos"
+  #           exit 1
+  #
+  #       - name: Actualizar y deployar API (tag semántico)
+  #         env:
+  #           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+  #         run: |
+  #           set -euo pipefail
+  #           IMAGE="${{ env.IMAGE_API }}:${{ github.ref_name }}"
+  #
+  #           RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
+  #             -H "Authorization: Bearer $RAILWAY_TOKEN" \
+  #             -H "Content-Type: application/json" \
+  #             -d "$(jq -n --arg s "$API_SERVICE_ID" --arg e "$ENVIRONMENT_ID" --arg img "$IMAGE" '{
+  #               query: "mutation($serviceId: String!, $environmentId: String!, $input: ServiceInstanceUpdateInput!) { serviceInstanceUpdate(serviceId: $serviceId, environmentId: $environmentId, input: $input) }",
+  #               variables: { serviceId: $s, environmentId: $e, input: { source: { image: $img } } }
+  #             }')")
+  #           echo "$RESPONSE"
+  #           echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
+  #
+  #           RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
+  #             -H "Authorization: Bearer $RAILWAY_TOKEN" \
+  #             -H "Content-Type: application/json" \
+  #             -d "$(jq -n --arg s "$API_SERVICE_ID" --arg e "$ENVIRONMENT_ID" '{
+  #               query: "mutation($serviceId: String!, $environmentId: String!) { serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId) }",
+  #               variables: { serviceId: $s, environmentId: $e }
+  #             }')")
+  #           echo "$RESPONSE"
+  #           echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
+  #
+  #       - name: Actualizar y deployar Web (tag semántico)
+  #         env:
+  #           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+  #         run: |
+  #           set -euo pipefail
+  #           IMAGE="${{ env.IMAGE_WEB }}:${{ github.ref_name }}"
+  #
+  #           RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
+  #             -H "Authorization: Bearer $RAILWAY_TOKEN" \
+  #             -H "Content-Type: application/json" \
+  #             -d "$(jq -n --arg s "$WEB_SERVICE_ID" --arg e "$ENVIRONMENT_ID" --arg img "$IMAGE" '{
+  #               query: "mutation($serviceId: String!, $environmentId: String!, $input: ServiceInstanceUpdateInput!) { serviceInstanceUpdate(serviceId: $serviceId, environmentId: $environmentId, input: $input) }",
+  #               variables: { serviceId: $s, environmentId: $e, input: { source: { image: $img } } }
+  #             }')")
+  #           echo "$RESPONSE"
+  #           echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
+  #
+  #           RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
+  #             -H "Authorization: Bearer $RAILWAY_TOKEN" \
+  #             -H "Content-Type: application/json" \
+  #             -d "$(jq -n --arg s "$WEB_SERVICE_ID" --arg e "$ENVIRONMENT_ID" '{
+  #               query: "mutation($serviceId: String!, $environmentId: String!) { serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId) }",
+  #               variables: { serviceId: $s, environmentId: $e }
+  #             }')")
+  #           echo "$RESPONSE"
+  #           echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
+  #
+  #       - name: Actualizar y deployar Keycloak (tag semántico)
+  #         env:
+  #           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+  #         run: |
+  #           set -euo pipefail
+  #           IMAGE="${{ env.IMAGE_AUTH }}:${{ github.ref_name }}"
+  #
+  #           RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
+  #             -H "Authorization: Bearer $RAILWAY_TOKEN" \
+  #             -H "Content-Type: application/json" \
+  #             -d "$(jq -n --arg s "$AUTH_SERVICE_ID" --arg e "$ENVIRONMENT_ID" --arg img "$IMAGE" '{
+  #               query: "mutation($serviceId: String!, $environmentId: String!, $input: ServiceInstanceUpdateInput!) { serviceInstanceUpdate(serviceId: $serviceId, environmentId: $environmentId, input: $input) }",
+  #               variables: { serviceId: $s, environmentId: $e, input: { source: { image: $img } } }
+  #             }')")
+  #           echo "$RESPONSE"
+  #           echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
+  #
+  #           RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
+  #             -H "Authorization: Bearer $RAILWAY_TOKEN" \
+  #             -H "Content-Type: application/json" \
+  #             -d "$(jq -n --arg s "$AUTH_SERVICE_ID" --arg e "$ENVIRONMENT_ID" '{
+  #               query: "mutation($serviceId: String!, $environmentId: String!) { serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId) }",
+  #               variables: { serviceId: $s, environmentId: $e }
+  #             }')")
+  #           echo "$RESPONSE"
+  #           echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
+  #
+  #       - name: Health check producción
+  #         run: |
+  #           sleep 40
+  #           curl -f https://bistrolink-api-production.up.railway.app/health
+  #           curl -f https://bistrolink-api-production.up.railway.app/health/ready
+  #           curl -f https://bistrolink-web-production.up.railway.app
+  #           curl -f https://bistrolink-auth-production.up.railway.app/realms/bistrolink/.well-known/openid-configuration
