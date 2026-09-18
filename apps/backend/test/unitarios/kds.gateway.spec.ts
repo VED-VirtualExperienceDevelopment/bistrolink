@@ -383,4 +383,92 @@ describe('KdsGateway', () => {
       );
     });
   });
+
+  describe('emitirLlamado', () => {
+    it('emite el llamado a la sala del tenant con mesaId y mesaNumero', () => {
+      gateway.emitirLlamado(TENANT_ID, 'mesa-1', 5);
+
+      expect(mockServer.to).toHaveBeenCalledWith(`tenant:${TENANT_ID}`);
+      expect(mockServer.emit).toHaveBeenCalledWith(
+        'llamado:nuevo',
+        expect.objectContaining({ mesaId: 'mesa-1', mesaNumero: 5 }),
+      );
+    });
+  });
+
+  describe('onResolverLlamado', () => {
+    it('rol MOZO resuelve el llamado y lo propaga a toda la sala del tenant', async () => {
+      mockWsAuth.verify.mockResolvedValue({
+        sub: 'usuario-1',
+        tenantId: TENANT_ID,
+        roles: ['MOZO'],
+      });
+      const client = mockClient();
+
+      await gateway.onResolverLlamado(client as any, {
+        mesaId: 'mesa-1',
+        accion: 'aceptado',
+      });
+
+      expect(mockServer.to).toHaveBeenCalledWith(`tenant:${TENANT_ID}`);
+      expect(mockServer.emit).toHaveBeenCalledWith('llamado:resuelto', {
+        mesaId: 'mesa-1',
+      });
+    });
+
+    it('rol ADMIN tambien puede resolver el llamado', async () => {
+      mockWsAuth.verify.mockResolvedValue({
+        sub: 'usuario-1',
+        tenantId: TENANT_ID,
+        roles: ['ADMIN'],
+      });
+      const client = mockClient();
+
+      await gateway.onResolverLlamado(client as any, {
+        mesaId: 'mesa-1',
+        accion: 'desestimado',
+      });
+
+      expect(mockServer.emit).toHaveBeenCalledWith('llamado:resuelto', {
+        mesaId: 'mesa-1',
+      });
+    });
+
+    it('rol COCINA es rechazado, no propaga la resolucion (RD.06 - solo lectura)', async () => {
+      mockWsAuth.verify.mockResolvedValue({
+        sub: 'usuario-1',
+        tenantId: TENANT_ID,
+        roles: ['COCINA'],
+      });
+      const client = mockClient();
+
+      await gateway.onResolverLlamado(client as any, {
+        mesaId: 'mesa-1',
+        accion: 'aceptado',
+      });
+
+      expect(mockServer.to).not.toHaveBeenCalled();
+      expect(client.emit).toHaveBeenCalledWith('error', {
+        message: 'Solo Mozo o Administrador pueden resolver un llamado.',
+      });
+    });
+
+    it('JWT invalido: desconecta en vez de propagar la resolucion', async () => {
+      mockWsAuth.verify.mockRejectedValue(
+        new WsAuthError('Token invalido o expirado'),
+      );
+      const client = mockClient();
+
+      await gateway.onResolverLlamado(client as any, {
+        mesaId: 'mesa-1',
+        accion: 'aceptado',
+      });
+
+      expect(mockServer.to).not.toHaveBeenCalled();
+      expect(client.emit).toHaveBeenCalledWith('error', {
+        message: 'Sesion invalida o expirada - reconecta.',
+      });
+      expect(client.disconnect).toHaveBeenCalledWith(true);
+    });
+  });
 });

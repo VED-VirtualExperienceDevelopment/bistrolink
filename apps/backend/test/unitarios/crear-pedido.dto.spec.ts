@@ -63,7 +63,9 @@ describe('CrearPedidoDto - Validación de Observaciones (BL-41)', () => {
         observacionGeneral: 'b'.repeat(500),
       });
       const errors = await validate(dto);
-      const generalErrors = errors.find((e) => e.property === 'observacionGeneral');
+      const generalErrors = errors.find(
+        (e) => e.property === 'observacionGeneral',
+      );
 
       expect(generalErrors).toBeUndefined();
     });
@@ -74,7 +76,9 @@ describe('CrearPedidoDto - Validación de Observaciones (BL-41)', () => {
         observacionGeneral: 'b'.repeat(501),
       });
       const errors = await validate(dto);
-      const generalErrors = errors.find((e) => e.property === 'observacionGeneral');
+      const generalErrors = errors.find(
+        (e) => e.property === 'observacionGeneral',
+      );
 
       expect(generalErrors).toBeDefined();
       expect(generalErrors?.constraints?.maxLength).toBe(
@@ -101,7 +105,8 @@ describe('CrearPedidoDto - Validación de Observaciones (BL-41)', () => {
         items: [
           {
             ...baseDto.items[0],
-            observacion: '<script>alert("xss")</script>Texto normal<b>negrita</b>',
+            observacion:
+              '<script>alert("xss")</script>Texto normal<b>negrita</b>',
           },
         ],
       });
@@ -120,7 +125,9 @@ describe('CrearPedidoDto - Validación de Observaciones (BL-41)', () => {
       });
 
       const errors = await validate(dto);
-      expect(errors.filter((e) => e.property === 'observacionGeneral')).toHaveLength(0);
+      expect(
+        errors.filter((e) => e.property === 'observacionGeneral'),
+      ).toHaveLength(0);
 
       expect(dto.observacionGeneral).toBe('Alergia al maní');
     });

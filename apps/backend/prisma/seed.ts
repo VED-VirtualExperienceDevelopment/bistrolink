@@ -16,6 +16,7 @@ const prisma = new PrismaClient();
 const TENANT_ID = '11111111-1111-1111-1111-111111111111';
 const RESTAURANTE_ID = '22222222-2222-2222-2222-222222222222';
 const MESA_ID = '33333333-3333-3333-3333-333333333333';
+const MESA_ID_2 = '33333333-3333-3333-3333-333333333334'; // e2e/llamado-mozo.spec.ts: mesa dedicada al test de rate limiting, para no compartir cupo con la mesa 1
 const CATEGORIA_ID = '44444444-4444-4444-4444-444444444444';
 const ITEM_CON_IMAGEN_ID = '55555555-5555-5555-5555-555555555555';
 const ITEM_SIN_IMAGEN_ID = '66666666-6666-6666-6666-666666666666';
@@ -96,6 +97,18 @@ async function main() {
       tenantId: TENANT_ID,
       restauranteId: RESTAURANTE_ID,
       numero: 1,
+      estado: 'LIBRE',
+    },
+  });
+
+  await prisma.mesa.upsert({
+    where: { id: MESA_ID_2 },
+    update: {},
+    create: {
+      id: MESA_ID_2,
+      tenantId: TENANT_ID,
+      restauranteId: RESTAURANTE_ID,
+      numero: 2,
       estado: 'LIBRE',
     },
   });

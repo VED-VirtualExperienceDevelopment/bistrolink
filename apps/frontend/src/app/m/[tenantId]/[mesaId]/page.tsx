@@ -1,4 +1,5 @@
 import Image from 'next/image';
+import { LlamarMozoButton } from '@/components/LlamarMozoButton';
 
 type ItemMenu = {
   id: string;
@@ -121,6 +122,7 @@ export default async function MenuPage({
           </section>
         ))}
       </div>
+      <LlamarMozoButton tenantId={tenantId} mesaId={mesaId} />
     </main>
   );
 }

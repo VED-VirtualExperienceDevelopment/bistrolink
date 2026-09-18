@@ -26,7 +26,9 @@ describe('Pedidos Observaciones - Integración (BL-41)', () => {
         {
           provide: TenantPrismaService,
           useValue: {
-            runInTenantContext: jest.fn((tenantId: string, fn: (tx: any) => any) => fn(mockTx)),
+            runInTenantContext: jest.fn(
+              (tenantId: string, fn: (tx: any) => any) => fn(mockTx),
+            ),
           },
         },
         {
@@ -53,7 +55,9 @@ describe('Pedidos Observaciones - Integración (BL-41)', () => {
     jest.clearAllMocks();
     // Setup común: el pedido no existe, la mesa existe, el ítem está disponible
     mockTx.pedido.findUnique.mockResolvedValue(null);
-    mockTx.mesa.findUnique.mockResolvedValue({ id: '33333333-3333-3333-3333-333333333333' });
+    mockTx.mesa.findUnique.mockResolvedValue({
+      id: '33333333-3333-3333-3333-333333333333',
+    });
     mockTx.itemCarta.findMany.mockResolvedValue([
       {
         id: '55555555-5555-5555-5555-555555555555',

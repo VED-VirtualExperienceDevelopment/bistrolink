@@ -11,6 +11,7 @@ import { UsuariosModule } from './usuarios/usuarios.module';
 import { RestaurantesModule } from './restaurantes/restaurantes.module';
 import { AuthComensalModule } from './auth-comensal/auth-comensal.module';
 import { PedidosModule } from './pedidos/pedidos.module';
+import { MesasModule } from './mesas/mesas.module';
 
 const isProd = process.env.NODE_ENV === 'production';
 
@@ -86,6 +87,7 @@ const targets = [
     RestaurantesModule,
     AuthComensalModule,
     PedidosModule,
+    MesasModule,
   ],
   controllers: [AppController, HealthController, TestController],
   providers: [AppService],
