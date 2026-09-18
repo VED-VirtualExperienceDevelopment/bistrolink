@@ -18,9 +18,15 @@ const FRONTEND_VERSION_SHORT =
       ? FRONTEND_VERSION.slice(0, 7)
       : FRONTEND_VERSION;
 
+type LastMigration =
+  | { name: string; label: string; appliedAt: string }
+  | 'unavailable';
+
 interface BackendVersion {
   api: string;
   postgres: string;
+  lastMigration: LastMigration;
+  upToDate: boolean | 'unavailable';
 }
 
 export function VersionInfo() {
@@ -98,6 +104,28 @@ export function VersionInfo() {
                   PostgreSQL
                 </dt>
                 <dd className="font-mono break-words">{backend.postgres}</dd>
+              </div>
+              <div>
+                <dt className="text-label-sm text-on-surface-variant">
+                  Última migración
+                </dt>
+                <dd className="font-mono break-words">
+                  {backend.lastMigration === 'unavailable'
+                    ? 'no disponible'
+                    : backend.lastMigration.label}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-label-sm text-on-surface-variant">
+                  Esquema actualizado
+                </dt>
+                <dd className="font-mono">
+                  {backend.upToDate === 'unavailable'
+                    ? 'no disponible'
+                    : backend.upToDate
+                      ? 'sí'
+                      : 'no'}
+                </dd>
               </div>
             </>
           )}
