@@ -90,12 +90,29 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       label: ${{ steps.build_label.outputs.value }}
+      # Valor canónico para GIT_SHA / NEXT_PUBLIC_APP_VERSION: el SHA
+      # completo en pushes normales, o el tag semántico cuando el build lo
+      # dispara un push de tag v*.*.* — así producción hornea "v1.4.2" en
+      # vez del SHA, y staging sigue mostrando el SHA corto en el badge.
+      # Se calcula ACÁ (no inline en strategy.matrix del job "build") porque
+      # el contexto "env" no está disponible dentro de matrix — solo
+      # github/needs/vars/inputs lo están.
+      app_version: ${{ steps.app_version.outputs.value }}
     steps:
       - uses: actions/checkout@v7
 
       - name: Set build label
         id: build_label
         run: echo "value=$(git log -1 --date=format:'%Y-%m-%d_%H-%M' --format='%cd')-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Set app version (SHA o tag semántico)
+        id: app_version
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "value=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          fi
 
   # ── JOB 1: LINT ───────────────────────────────────────────────────────────
   lint:
@@ -350,7 +367,7 @@ jobs:
           - name: API
             image: ghcr.io/ved-virtualexperiencedevelopment/bistrolink-api
             dockerfile: apps/backend/Dockerfile
-            extra_args: --build-arg GIT_SHA=${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || env.TAG }}
+            extra_args: --build-arg GIT_SHA=${{ needs.version.outputs.app_version }}
           - name: Web
             image: ghcr.io/ved-virtualexperiencedevelopment/bistrolink-web
             dockerfile: apps/frontend/Dockerfile
@@ -360,7 +377,7 @@ jobs:
               --build-arg NEXT_PUBLIC_KEYCLOAK_URL=https://bistrolink-auth-staging.up.railway.app
               --build-arg NEXT_PUBLIC_KEYCLOAK_REALM=bistrolink
               --build-arg NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=bistrolink-frontend
-              --build-arg NEXT_PUBLIC_APP_VERSION=${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || env.TAG }}
+              --build-arg NEXT_PUBLIC_APP_VERSION=${{ needs.version.outputs.app_version }}
           - name: Auth
             image: ghcr.io/ved-virtualexperiencedevelopment/bistrolink-auth
             dockerfile: keycloak/Dockerfile.auth
