@@ -42,7 +42,7 @@ export class CrearPedidoItemDto {
   })
   // ✅ Sanitización robusta: elimina etiquetas en iteraciones hasta estabilizar
   @Transform(({ value }) =>
-    typeof value === 'string' ? stripHtmlTagsSafely(value) : value
+    typeof value === 'string' ? stripHtmlTagsSafely(value) : value,
   )
   observacion?: string;
 }
@@ -72,7 +72,7 @@ export class CrearPedidoDto {
   })
   // ✅ Sanitización robusta: elimina etiquetas en iteraciones hasta estabilizar
   @Transform(({ value }) =>
-    typeof value === 'string' ? stripHtmlTagsSafely(value) : value
+    typeof value === 'string' ? stripHtmlTagsSafely(value) : value,
   )
   observacionGeneral?: string;
 }

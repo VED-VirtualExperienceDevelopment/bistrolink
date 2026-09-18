@@ -6,9 +6,6 @@ import { useKeycloakAuth } from '@/components/providers/KeycloakProvider';
 import { OrderTicket } from './OrderTicket';
 import type { Pedido } from '@/types/pedido';
 
-// URL del backend para el canal WS del KDS. Reusa el mismo host que
-// NEXT_PUBLIC_API_URL (variable ya existente para el cliente REST en
-// lib/api-client) — ajustar el nombre si el proyecto usa otra convención.
 const WS_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
 type EstadoPedido = Pedido['estado'];
@@ -19,25 +16,23 @@ interface PedidoActualizadoPayload {
   actualizadoEn: string;
 }
 
+interface LlamadoMozo {
+  mesaId: string;
+  mesaNumero: number;
+  ts: number;
+}
+
 export function KdsBoard() {
   const { token, hasRole } = useKeycloakAuth();
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [conectado, setConectado] = useState(false);
+  const [llamados, setLlamados] = useState<LlamadoMozo[]>([]);
   const socketRef = useRef<Socket | null>(null);
 
-  // RD.06: Cocina es de solo lectura — solo Mozo/Administrador pueden
-  // operar transiciones. El backend rechaza igual el evento si el rol no
-  // corresponde; esto es defensa en profundidad del lado de la UI, no la
-  // única validación.
   const puedeOperarTransiciones = Boolean(hasRole('MOZO') || hasRole('ADMIN'));
 
-  // Conexión WebSocket (HU-004). No hay fetch REST inicial: el propio
-  // servidor manda 'pedidos:snapshot' apenas la conexión se autentica, y
-  // de nuevo tras cada reconexión — eso ya cubre tanto la carga inicial
-  // como la recuperación ante un corte, sin necesitar un endpoint REST
-  // aparte (que además no existe: /pedidos/activos no está implementado).
   useEffect(() => {
     if (!token) return;
 
@@ -67,6 +62,17 @@ export function KdsBoard() {
       );
     });
 
+    // HU-019/BL-68
+    socket.on('llamado:nuevo', (llamado: LlamadoMozo) => {
+      setLlamados((prev) =>
+        prev.some((l) => l.mesaId === llamado.mesaId) ? prev : [...prev, llamado],
+      );
+    });
+
+    socket.on('llamado:resuelto', ({ mesaId }: { mesaId: string }) => {
+      setLlamados((prev) => prev.filter((l) => l.mesaId !== mesaId));
+    });
+
     socket.on('error', (err: { message: string }) => {
       setLoadError(err.message);
       setLoading(false);
@@ -82,12 +88,10 @@ export function KdsBoard() {
     socketRef.current?.emit('pedido:transicion', { pedidoId, nuevoEstado });
   }
 
-  // Agrupa por mesa SOLO para la disposición visual — cada pedido conserva
-  // su propio timer/estado/botón (ver discusión de diseño: fusionar el
-  // estado de dos pedidos de una misma mesa en una sola tarjeta pierde
-  // información real, ej. cuál llegó primero o cuál ya está listo).
-  // El orden de los clusters es por el pedido más antiguo de cada mesa,
-  // así la mesa que más está esperando sigue apareciendo primero.
+  function resolverLlamado(mesaId: string, accion: 'aceptado' | 'desestimado') {
+    socketRef.current?.emit('llamado:resolver', { mesaId, accion });
+  }
+
   const gruposPorMesa = (() => {
     const mapa = new Map<number, Pedido[]>();
     for (const pedido of pedidos) {
@@ -109,24 +113,51 @@ export function KdsBoard() {
       );
   })();
 
+  const banner = llamados.length > 0 && (
+    <div className="flex shrink-0 flex-col gap-1.5">
+      {llamados.map((llamado) => (
+        <div
+          key={llamado.mesaId}
+          role="alert"
+          className="flex items-center justify-between rounded-lg bg-tertiary-container px-3 py-2 text-label-md text-on-tertiary-container"
+        >
+          <span>🔔 Mesa {llamado.mesaNumero} solicita atención</span>
+          {puedeOperarTransiciones && (
+            <div className="flex gap-2">
+              <button
+                onClick={() => resolverLlamado(llamado.mesaId, 'aceptado')}
+                className="rounded-md bg-primary px-2 py-1 text-white"
+              >
+                Aceptar
+              </button>
+              <button
+                onClick={() => resolverLlamado(llamado.mesaId, 'desestimado')}
+                className="rounded-md border border-outline px-2 py-1"
+              >
+                Desestimar
+              </button>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+
+  let contenido;
   if (loading) {
-    return (
+    contenido = (
       <div className="flex flex-1 items-center justify-center">
         <span className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
       </div>
     );
-  }
-
-  if (loadError) {
-    return (
+  } else if (loadError) {
+    contenido = (
       <div role="alert" className="rounded-xl bg-error-container px-4 py-3 text-body-md text-on-error-container">
         {loadError}
       </div>
     );
-  }
-
-  if (pedidos.length === 0) {
-    return (
+  } else if (pedidos.length === 0) {
+    contenido = (
       <div className="flex flex-1 flex-col items-center justify-center gap-2 text-body-md text-on-surface-variant">
         <span>No hay pedidos activos en este momento.</span>
         {!conectado && (
@@ -134,15 +165,8 @@ export function KdsBoard() {
         )}
       </div>
     );
-  }
-
-  return (
-    <div className="flex h-full flex-col gap-2">
-      {!conectado && (
-        <div role="status" className="shrink-0 rounded-lg bg-tertiary-container px-3 py-1.5 text-label-md text-on-tertiary-container">
-          Reconectando…
-        </div>
-      )}
+  } else {
+    contenido = (
       <div className="flex h-full gap-gutter overflow-x-auto overflow-y-hidden pb-4">
         {gruposPorMesa.map(({ mesaNumero, pedidos: pedidosDeLaMesa }) => (
           <div key={mesaNumero} className="flex h-full shrink-0 flex-col gap-1.5">
@@ -164,6 +188,18 @@ export function KdsBoard() {
           </div>
         ))}
       </div>
+    );
+  }
+
+  return (
+    <div className="flex h-full flex-col gap-2">
+      {banner}
+      {!conectado && !loading && (
+        <div role="status" className="shrink-0 rounded-lg bg-tertiary-container px-3 py-1.5 text-label-md text-on-tertiary-container">
+          Reconectando…
+        </div>
+      )}
+      {contenido}
     </div>
   );
 }

@@ -214,8 +214,47 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     client.emit('pedido:actualizado', resumen);
   }
 
+  @SubscribeMessage('llamado:resolver')
+  async onResolverLlamado(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: { mesaId: string; accion: 'aceptado' | 'desestimado' },
+  ) {
+    let user;
+    try {
+      user = await this.wsAuth.verify(this.obtenerToken(client));
+    } catch {
+      client.emit('error', {
+        message: 'Sesion invalida o expirada - reconecta.',
+      });
+      client.disconnect(true);
+      return;
+    }
+
+    if (!user.roles.includes('MOZO') && !user.roles.includes('ADMIN')) {
+      client.emit('error', {
+        message: 'Solo Mozo o Administrador pueden resolver un llamado.',
+      });
+      return;
+    }
+
+    Logger.log(
+      `Llamado ${body.accion}: mesa=${body.mesaId} tenant=${user.tenantId}`,
+      KdsGateway.name,
+    );
+
+    this.server
+      .to(this.salaTenant(user.tenantId))
+      .emit('llamado:resuelto', { mesaId: body.mesaId });
+  }
+
   emitirNuevoPedido(tenantId: string, pedido: unknown) {
     this.server.to(this.salaTenant(tenantId)).emit('pedido:nuevo', pedido);
+  }
+
+  emitirLlamado(tenantId: string, mesaId: string, mesaNumero: number) {
+    this.server
+      .to(this.salaTenant(tenantId))
+      .emit('llamado:nuevo', { mesaId, mesaNumero, ts: Date.now() });
   }
 
   private salaTenant(tenantId: string): string {

@@ -16,5 +16,6 @@ import { PedidosTransicionService } from './pedidos-transicion.service';
     WsAuthService,
     PedidosTransicionService,
   ],
+  exports: [KdsGateway],
 })
 export class PedidosModule {}
