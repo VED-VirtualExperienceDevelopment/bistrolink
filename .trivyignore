@@ -55,3 +55,8 @@ CVE-2025-59250
 # No es código propio del proyecto. https://github.com/keycloak/keycloak/issues/52549
 # Pendiente: revisar cuando Keycloak libere un patch release que actualice Netty.
 CVE-2026-75595
+# CVE-2026-8763 (CRITICAL) y CVE-2026-13506 (HIGH) — org.bouncycastle:bcprov-jdk18on
+# 1.84, bundleado por la imagen oficial de Keycloak (quay.io/keycloak/keycloak:26.7.2/26.7.3).
+# ...
+CVE-2026-8763
+CVE-2026-13506
