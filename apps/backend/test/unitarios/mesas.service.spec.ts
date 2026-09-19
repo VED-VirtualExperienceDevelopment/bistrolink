@@ -63,15 +63,19 @@ describe('MesasService.llamarMozo', () => {
 describe('MesasService.obtenerLayout', () => {
   let mockTenantPrisma: any;
   let mockKdsGateway: any;
+  let mockTx: any;
   let service: MesasService;
 
   beforeEach(() => {
-    mockTenantPrisma = { runInTenantContext: jest.fn() };
+    mockTx = { mesa: { findMany: jest.fn() } };
+    mockTenantPrisma = {
+      runInTenantContext: jest.fn((_tenantId: string, cb: any) => cb(mockTx)),
+    };
     mockKdsGateway = { emitirLlamado: jest.fn(), emitirEstadoMesa: jest.fn() };
     service = new MesasService(mockTenantPrisma, mockKdsGateway);
   });
 
-  it('devuelve las mesas del restaurante con su layout y estado, delegando el filtro a la query tenant-scoped', async () => {
+  it('devuelve las mesas del restaurante con su layout y estado, excluyendo la mesa virtual', async () => {
     const mesas = [
       {
         id: MESA_ID,
@@ -80,13 +84,19 @@ describe('MesasService.obtenerLayout', () => {
         layout: LAYOUT_EJEMPLO,
       },
     ];
-    mockTenantPrisma.runInTenantContext.mockResolvedValue(mesas);
+    mockTx.mesa.findMany.mockResolvedValue(mesas);
 
     const resultado = await service.obtenerLayout(TENANT_ID, RESTAURANTE_ID);
 
-    expect(mockTenantPrisma.runInTenantContext).toHaveBeenCalledWith(
-      TENANT_ID,
-      expect.any(Function),
+    expect(mockTx.mesa.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          tenantId: TENANT_ID,
+          restauranteId: RESTAURANTE_ID,
+          esVirtual: false,
+        },
+        orderBy: { numero: 'asc' },
+      }),
     );
     expect(resultado).toEqual(mesas);
   });
@@ -202,6 +212,17 @@ describe('MesasService.guardarLayout', () => {
         { numero: 9, ...LAYOUT_EJEMPLO },
       ]),
     ).rejects.toThrow(ConflictException);
+  });
+
+  it('repropaga cualquier error que no sea P2002 sin envolverlo en ConflictException', async () => {
+    const errorInesperado = new Error('la base de datos no responde');
+    mockTx.mesa.create.mockRejectedValue(errorInesperado);
+
+    await expect(
+      service.guardarLayout(TENANT_ID, RESTAURANTE_ID, [
+        { numero: 9, ...LAYOUT_EJEMPLO },
+      ]),
+    ).rejects.toThrow(errorInesperado);
   });
 });
 
