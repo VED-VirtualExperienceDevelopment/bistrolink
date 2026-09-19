@@ -39,6 +39,9 @@ if (!LINEAR_API_KEY || !LINEAR_TEAM_KEY) {
 // 1. Traer todos los issues del equipo desde Linear (paginado)
 // ---------------------------------------------------------------------------
 
+// FIX: se agregan startsAt/endsAt del ciclo. Sin estas fechas no hay forma
+// de saber si un ciclo con issues cargados ya empezó o es un ciclo futuro
+// (ver computeSprintActual más abajo).
 const QUERY = `
   query Issues($teamKey: String!, $after: String) {
     issues(
@@ -51,7 +54,7 @@ const QUERY = `
         title
         estimate
         state { name type }
-        cycle { number }
+        cycle { number startsAt endsAt }
       }
       pageInfo { hasNextPage endCursor }
     }
@@ -94,6 +97,8 @@ async function fetchAllIssues() {
         estimate: n.estimate ?? 0,
         stateType: n.state?.type ?? "unknown", // backlog | unstarted | started | completed
         cycleNumber: n.cycle?.number ?? null,
+        cycleStartsAt: n.cycle?.startsAt ?? null,
+        cycleEndsAt: n.cycle?.endsAt ?? null,
       });
     }
 
@@ -117,6 +122,42 @@ function pct(part, total) {
   return `${Math.round((part / total) * 100)}%`;
 }
 
+// FIX: antes se usaba Math.max(...cycleNumbers de TODOS los issues), lo que
+// devuelve el ciclo más alto que tenga aunque sea un issue cargado, sin
+// importar si ese ciclo ya empezó. Como en Linear se planifican ciclos
+// futuros con historias ya asignadas (ej. Sprint 9 con HU de la capa
+// "Valor Agregado" precargadas desde el kickoff), eso hacía que el
+// dashboard mostrara "Sprint actual: 9" con el proyecto recién en el
+// Sprint 4 según el calendario real.
+//
+// Ahora el sprint actual se determina por fecha: se arma el rango
+// [startsAt, endsAt] de cada ciclo a partir de los issues que lo traen, y
+// se busca cuál contiene la fecha de hoy. Si ningún ciclo está activo hoy
+// (fin de semana entre sprints, o el ciclo activo todavía no tiene issues
+// cargados en Linear), se cae al último ciclo que ya arrancó.
+function computeSprintActual(issues, hoy = new Date()) {
+  const ciclos = new Map();
+  for (const i of issues) {
+    if (i.cycleNumber != null && i.cycleStartsAt && i.cycleEndsAt) {
+      ciclos.set(i.cycleNumber, {
+        start: new Date(i.cycleStartsAt),
+        end: new Date(i.cycleEndsAt),
+      });
+    }
+  }
+
+  for (const [numero, { start, end }] of ciclos) {
+    if (hoy >= start && hoy <= end) return numero;
+  }
+
+  const yaEmpezados = [...ciclos.entries()].filter(([, r]) => hoy >= r.start);
+  if (yaEmpezados.length) {
+    return Math.max(...yaEmpezados.map(([numero]) => numero));
+  }
+
+  return "—";
+}
+
 function computeResumen(issues, config) {
   // Totales dinámicos: reflejan el alcance ACTUAL en Linear, incluyendo
   // historias agregadas después del kickoff (no solo las 26/202 de planning).
@@ -124,8 +165,7 @@ function computeResumen(issues, config) {
   const totalStoryPoints = issues.reduce((a, i) => a + i.estimate, 0);
   const spCompletados = issues.filter(isCompleted).reduce((a, i) => a + i.estimate, 0);
 
-  const sprintsConIssues = issues.map((i) => i.cycleNumber).filter(Boolean);
-  const sprintActual = sprintsConIssues.length ? Math.max(...sprintsConIssues) : "—";
+  const sprintActual = computeSprintActual(issues);
 
   const baseline = config.baselineOriginal ?? {};
   const scopeCambio =
@@ -222,7 +262,21 @@ function renderSpPorSprintChart(planificado, completado) {
   const labels = planificado.map((_, i) =>
     i === planificado.length - 1 ? `"Sprint${i + 1}(cond)"` : `Sprint${i + 1}`
   );
-  return `%%{init: {'theme':'base', 'themeVariables': {
+  // FIX: se agrega 'background' a nivel de themeVariables (no solo dentro de
+  // 'xyChart'). Sin esto, el fondo oscuro solo cubre el recuadro interno del
+  // gráfico; el resto del lienzo SVG queda transparente y, en el modo claro
+  // de GitHub, el texto de colores claros (blanco/gris) queda casi invisible
+  // sobre esa zona blanca. Con 'background' fijado, todo el SVG es opaco y el
+  // gráfico se ve igual en modo día y modo noche.
+  // FIX: el fence ```mermaid va ADENTRO de lo que devuelve esta función (y por
+  // lo tanto adentro de los marcadores AUTO en el .md), nunca afuera de ellos.
+  // Si el fence quedara afuera y los comentarios <!-- AUTO:...--> adentro,
+  // esos comentarios pasarían a ser texto literal del bloque de código (los
+  // code fences no interpretan HTML) y mermaid fallaría al parsear el
+  // diagrama, mostrando texto crudo en vez del gráfico.
+  return `\`\`\`mermaid
+%%{init: {'theme':'base', 'themeVariables': {
+  'background': '#1a202c',
   'xyChart': {
     'backgroundColor': '#1a202c',
     'titleColor': '#ffffff',
@@ -242,7 +296,8 @@ xychart-beta
     x-axis [${labels.join(", ")}]
     y-axis "Story Points" 0 --> 50
     bar "Planificado" [${planificado.join(", ")}]
-    bar "Completado" [${completado.join(", ")}]`;
+    bar "Completado" [${completado.join(", ")}]
+\`\`\``;
 }
 
 // ---------------------------------------------------------------------------

@@ -1,7 +1,12 @@
 name: Actualizar Dashboard EDT desde Linear
 
 on:
-  workflow_dispatch: {} # botón manual "Run workflow" en la pestaña Actions
+  workflow_dispatch: # botón manual "Run workflow" en la pestaña Actions
+    inputs:
+      enviar_email:
+        description: "Mandar también el email de estado en este run manual (para probarlo). Dejar sin marcar en un run normal de prueba del dashboard."
+        type: boolean
+        default: false
   schedule:
     # Basado en las fechas de cierre de sprint del plan ORIGINAL (Anexo 7).
     - cron: "0 18 14 8 *" # Cierre Sprint 1 - 14/08
@@ -21,6 +26,9 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+      # Necesario para que send-status-email.mjs pueda leer los bugs vía la
+      # Search API de GitHub (mismo alcance que ya usa el workflow de bugs).
+      issues: read
 
     steps:
       - name: Checkout
@@ -52,3 +60,47 @@ jobs:
             Actualización automática del dashboard de avance EDT generada
             desde Linear por el workflow `Actualizar Dashboard EDT desde Linear`.
           add-paths: docs/dashboard-avance-edt.md
+
+      # -----------------------------------------------------------------
+      # Email combinado: avance general (Linear) + resumen breve de
+      # calidad (bugs de GitHub Issues). Va colgado de ESTE workflow (no
+      # del de bugs) porque el de bugs también dispara por cada
+      # apertura/cierre/label de issue individual, y el email no debe
+      # mandarse en cada uno de esos eventos.
+      #
+      # El envío se limita a las fechas de cierre de sprint (los cron de
+      # arriba, uno por cada "Cierre Sprint N"): un run manual con
+      # workflow_dispatch NO manda email por defecto, porque no
+      # corresponde al fin de una iteración.
+      #
+      # Para poder probarlo sin esperar a la fecha real, workflow_dispatch
+      # tiene el input "enviar_email" (checkbox, apagado por defecto): al
+      # tildarlo en un run manual desde la pestaña Actions, el email SÍ se
+      # manda igual que en un cierre de sprint real.
+      #
+      # send-status-email.mjs vuelve a calcular ambos resúmenes en el
+      # momento (no lee los .md ya commiteados), así que el email refleja
+      # el estado real aunque el PR recién creado arriba todavía no esté
+      # mergeado.
+      # -----------------------------------------------------------------
+      - name: Generar email de estado (avance + calidad)
+        id: status-email
+        if: github.event_name == 'schedule' || github.event.inputs.enviar_email == 'true'
+        env:
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+          LINEAR_TEAM_KEY: ${{ secrets.LINEAR_TEAM_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/send-status-email.mjs
+
+      - name: Enviar email de estado
+        if: github.event_name == 'schedule' || github.event.inputs.enviar_email == 'true'
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: ${{ steps.status-email.outputs.subject }}
+          to: ${{ steps.status-email.outputs.to }}
+          from: ${{ steps.status-email.outputs.from }}
+          html_body: file://${{ steps.status-email.outputs.body_path }}
