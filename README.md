@@ -47,6 +47,6 @@ Pipeline en GitHub Actions (`.github/workflows/ci.yml`), disparado en push/PR a 
 | Testing (Kiwi TCMS) | https://testmgmt-staging.up.railway.app |
 
 ---
-
+*test*
 [![CI/CD BistroLink](https://github.com/VED-VirtualExperienceDevelopment/bistrolink/actions/workflows/ci.yml/badge.svg)](https://github.com/VED-VirtualExperienceDevelopment/bistrolink/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/VED-VirtualExperienceDevelopment/bistrolink/branch/develop/graph/badge.svg)](https://codecov.io/gh/VED-VirtualExperienceDevelopment/bistrolink/branch/develop)
