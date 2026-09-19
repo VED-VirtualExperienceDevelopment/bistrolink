@@ -186,7 +186,19 @@ function renderTendenciaChart(bins) {
   const cerrados = bins.map((b) => b.cerrados).join(", ");
   const maxY = Math.max(1, ...bins.map((b) => Math.max(b.abiertos, b.cerrados))) + 1;
 
-  return `%%{init: {'theme':'base', 'themeVariables': {
+  // FIX: el fence ```mermaid va ADENTRO de lo que devuelve esta función (y por
+  // lo tanto adentro de los marcadores AUTO en el .md), nunca afuera de ellos.
+  // Si el fence quedara afuera y los comentarios <!-- AUTO:...--> adentro,
+  // esos comentarios pasarían a ser texto literal del bloque de código (los
+  // code fences no interpretan HTML) y mermaid fallaría al parsear el
+  // diagrama, mostrando texto crudo en vez del gráfico.
+  //
+  // 'background' a nivel raíz de themeVariables (no solo dentro de "xyChart"):
+  // sin esto, el lienzo SVG completo queda con el fondo claro por defecto de
+  // GitHub y el texto claro configurado arriba se vuelve ilegible en modo día.
+  return `\`\`\`mermaid
+%%{init: {'theme':'base', 'themeVariables': {
+  'background': '#1a202c',
   'xyChart': {
     'backgroundColor': '#1a202c',
     'titleColor': '#ffffff',
@@ -206,7 +218,8 @@ xychart-beta
     x-axis [${labels}]
     y-axis "Cantidad de bugs" 0 --> ${maxY}
     bar "Abiertos" [${abiertos}]
-    bar "Cerrados" [${cerrados}]`;
+    bar "Cerrados" [${cerrados}]
+\`\`\``;
 }
 
 function renderTendenciaTablaFallback(bins) {
