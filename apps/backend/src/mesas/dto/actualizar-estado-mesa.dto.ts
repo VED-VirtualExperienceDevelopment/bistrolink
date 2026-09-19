@@ -1,7 +1,7 @@
 import { IsIn } from 'class-validator';
 import { MesaEstado } from '@prisma/client';
 
-const ESTADOS_MESA_VALIDOS = Object.values(MesaEstado);
+const ESTADOS_MESA_VALIDOS: string[] = Object.values(MesaEstado);
 
 /**
  * PROVISORIO (HU-016 → HU-017): este DTO respalda el endpoint mock

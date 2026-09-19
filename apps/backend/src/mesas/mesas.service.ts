@@ -84,9 +84,8 @@ export class MesasService {
           });
 
           if (
-            !existente ||
-            existente.tenantId !== tenantId ||
-            existente.restauranteId !== restauranteId
+            existente?.tenantId !== tenantId ||
+            existente?.restauranteId !== restauranteId
           ) {
             throw new NotFoundException(
               `Mesa ${id} no encontrada para este establecimiento`,
