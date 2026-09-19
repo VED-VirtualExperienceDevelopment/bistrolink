@@ -28,6 +28,11 @@ enum UsuarioRol {
 enum MesaEstado {
   LIBRE
   OCUPADA
+  // HU-016/HU-017: agregado de forma aditiva (expand/contract) — el disparo
+  // real de esta transición (al iniciarse el cobro de un pedido) lo
+  // implementa HU-017; hasta entonces queda expuesta y es seteable vía el
+  // endpoint mock de MesasController.
+  EN_PROCESO_DE_PAGO
 }
 
 enum PedidoEstado {
@@ -122,6 +127,15 @@ model Mesa {
   numero        Int
   estado        MesaEstado
   esVirtual     Boolean    @default(false) @map("es_virtual")
+  // HU-016: posición (x, y), forma, dimensiones (ancho, alto) y rotación de
+  // la mesa en el editor visual del mapa. Nullable: las mesas creadas antes
+  // de esta historia (o la mesa virtual de HU-003, que nunca se dibuja en el
+  // mapa) no tienen layout hasta que alguien la ubica en el editor. El
+  // "número identificador" del checklist es el campo `numero` de arriba —
+  // no se duplica dentro del JSON para no arriesgar que ambos queden
+  // desincronizados; el endpoint de layout siempre devuelve `numero` como
+  // campo hermano.
+  layout        Json?
   createdAt     DateTime   @default(now()) @map("created_at")
   updatedAt     DateTime   @updatedAt @map("updated_at")
 

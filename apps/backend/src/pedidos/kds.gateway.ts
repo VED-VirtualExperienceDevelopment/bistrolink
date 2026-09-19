@@ -10,7 +10,7 @@ import {
   MessageBody,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { PedidoEstado } from '@prisma/client';
+import { MesaEstado, PedidoEstado } from '@prisma/client';
 import { WsAuthService, WsAuthError } from './ws-auth.service';
 import { PedidosTransicionService } from './pedidos-transicion.service';
 
@@ -255,6 +255,19 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.server
       .to(this.salaTenant(tenantId))
       .emit('llamado:nuevo', { mesaId, mesaNumero, ts: Date.now() });
+  }
+
+  // HU-016/HU-017: punto de entrada único para propagar un cambio de estado
+  // de mesa (LIBRE/OCUPADA/EN_PROCESO_DE_PAGO) a todo el staff conectado del
+  // tenant, para que el mapa visual (HU-016 frontend) se actualice en vivo
+  // sin poll. Lo llama MesasService.actualizarEstado() — hoy disparado solo
+  // por el endpoint mock PATCH /mesas/:id/estado; cuando HU-017 exista, va a
+  // llamar a ese mismo método de servicio desde el flujo de pedidos/pagos,
+  // sin tocar nada de este gateway.
+  emitirEstadoMesa(tenantId: string, mesaId: string, estado: MesaEstado) {
+    this.server
+      .to(this.salaTenant(tenantId))
+      .emit('mesa:estado_actualizado', { mesaId, estado, ts: Date.now() });
   }
 
   private salaTenant(tenantId: string): string {

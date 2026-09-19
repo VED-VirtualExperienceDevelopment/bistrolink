@@ -1,4 +1,4 @@
-import { PedidoEstado } from '@prisma/client';
+import { MesaEstado, PedidoEstado } from '@prisma/client';
 import { KdsGateway } from '../../src/pedidos/kds.gateway';
 import { WsAuthError } from '../../src/pedidos/ws-auth.service';
 
@@ -392,6 +392,21 @@ describe('KdsGateway', () => {
       expect(mockServer.emit).toHaveBeenCalledWith(
         'llamado:nuevo',
         expect.objectContaining({ mesaId: 'mesa-1', mesaNumero: 5 }),
+      );
+    });
+  });
+
+  describe('emitirEstadoMesa', () => {
+    it('emite el cambio de estado de mesa a la sala del tenant', () => {
+      gateway.emitirEstadoMesa(TENANT_ID, 'mesa-1', MesaEstado.OCUPADA);
+
+      expect(mockServer.to).toHaveBeenCalledWith(`tenant:${TENANT_ID}`);
+      expect(mockServer.emit).toHaveBeenCalledWith(
+        'mesa:estado_actualizado',
+        expect.objectContaining({
+          mesaId: 'mesa-1',
+          estado: MesaEstado.OCUPADA,
+        }),
       );
     });
   });
