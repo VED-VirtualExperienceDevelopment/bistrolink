@@ -1,0 +1,98 @@
+name: Retención de imágenes GHCR
+
+# 100% manual — sin cron. Se dispara desde Actions → "Run workflow".
+#
+# Política:
+#   - Tags semánticos (v*.*.*) -> se conservan SIEMPRE. Son releases
+#     reales, el costo de guardarlas es mínimo comparado con poder
+#     auditar o revertir a cualquiera de ellas.
+#   - Versiones sin ningún tag (untagged) -> NO se tocan. Pueden ser
+#     manifests referenciados por un manifest list multi-arquitectura;
+#     borrarlas a ciegas por antigüedad es el error más común al
+#     automatizar esto. Quedan para revisión manual si hace falta.
+#   - El resto (imágenes por SHA, publicadas en cada push a develop) ->
+#     se conservan las últimas $KEEP_LAST por fecha, se borra todo lo
+#     más viejo que eso.
+#
+# Por qué "gh api" directo y no una Action de terceros: queda 100%
+# legible y versionado acá, sin depender de un esquema de inputs de un
+# tercero que puede cambiar entre versiones.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (no borra nada, solo lista qué borraría)"
+        required: false
+        type: choice
+        options:
+          - "true"
+          - "false"
+        default: "true"
+      keep_last:
+        description: "Cuántas imágenes por SHA conservar como mínimo"
+        required: false
+        default: "10"
+
+permissions:
+  packages: write
+
+jobs:
+  cleanup-ghcr:
+    name: 🧹 Retención de imágenes GHCR
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        package: [bistrolink-api, bistrolink-web, bistrolink-auth]
+    steps:
+      - name: Limpiar versiones viejas por SHA (${{ matrix.package }})
+        env:
+          # PENDIENTE: GITHUB_TOKEN puede no alcanzar para borrar versiones
+          # de un package a nivel organización (suele requerir permisos de
+          # owner/admin del package). Si este job falla con 403/404 al
+          # intentar borrar, crear un PAT (classic) con scopes
+          # read:packages + delete:packages, cargarlo como secret
+          # GHCR_CLEANUP_TOKEN, y reemplazar la línea de abajo por:
+          #   GH_TOKEN: ${{ secrets.GHCR_CLEANUP_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          KEEP_LAST: ${{ inputs.keep_last }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          echo "Paquete: ${{ matrix.package }} — DRY_RUN=$DRY_RUN — conservando las últimas $KEEP_LAST imágenes por SHA"
+
+          gh api --paginate \
+            "/orgs/ved-virtualexperiencedevelopment/packages/container/${{ matrix.package }}/versions?per_page=100" \
+            > all_versions.json
+
+          # Candidatas a borrado: tienen tags, ninguno matchea v*.*.*
+          # (semver), ordenadas de más nueva a más vieja, saltando las
+          # primeras $KEEP_LAST.
+          jq -r --argjson keep "$KEEP_LAST" '
+            [ .[]
+              | select((.metadata.container.tags // []) | length > 0)
+              | select((.metadata.container.tags // []) | any(test("^v[0-9]+\\.[0-9]+\\.[0-9]+$")) | not)
+            ]
+            | sort_by(.created_at) | reverse
+            | .[$keep:]
+            | .[] | "\(.id) \(.created_at) \(.metadata.container.tags | join(","))"
+          ' all_versions.json > to_delete.txt
+
+          if [ ! -s to_delete.txt ]; then
+            echo "Nada para borrar — menos de $KEEP_LAST versiones candidatas."
+            exit 0
+          fi
+
+          echo "A borrar ($(wc -l < to_delete.txt) versiones):"
+          cat to_delete.txt
+
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "DRY_RUN=true — no se borra nada realmente."
+            exit 0
+          fi
+
+          while read -r id created_at tags; do
+            echo "Borrando versión $id (tags: $tags, creada: $created_at)"
+            gh api --method DELETE \
+              "/orgs/ved-virtualexperiencedevelopment/packages/container/${{ matrix.package }}/versions/$id"
+          done < to_delete.txt
