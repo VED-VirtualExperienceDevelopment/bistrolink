@@ -54,7 +54,7 @@ export function LlamarMozoButton({ tenantId, mesaId }: LlamarMozoButtonProps) {
   }
 
   return (
-    <div className="fixed bottom-4 right-4 z-20 flex flex-col items-end gap-1">
+    <div className="fixed bottom-16 right-4 z-20 flex flex-col items-end gap-1">
       <button
         onClick={llamar}
         disabled={estado === 'enviando' || estado === 'enviado'}
