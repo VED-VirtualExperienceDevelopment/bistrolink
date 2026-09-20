@@ -5,7 +5,9 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useKeycloakAuth } from '@/components/providers/KeycloakProvider';
 
 const NAV_ITEMS = [
-  { href: '/admin/usuarios', label: 'Usuarios', icon: 'group' },
+  // `roles: undefined` = visible para cualquier staff (ADMIN o MOZO).
+  { href: '/admin/usuarios', label: 'Usuarios', icon: 'group', roles: ['ADMIN'] },
+  { href: '/admin/mesas', label: 'Mapa de mesas', icon: 'table_restaurant' },
   // Próximos módulos (HU-001, HU-003, etc.) se suman acá a medida que
   // existan pantallas reales — evitamos linkear secciones que no existen.
 ];
@@ -15,16 +17,26 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const router = useRouter();
   const pathname = usePathname();
 
+  // BL-160: este layout envuelve la totalidad de /admin/* (usuarios, mesas, y lo que se
+  // sume después). Antes de BL-160 era ADMIN-only porque la única pantalla
+  // era gestión de usuarios. Con /admin/mesas sumamos un caso legítimo de
+  // acceso de Colaborador (Mozo) — solo lectura del mapa, ver
+  // MapaMesasEditor.tsx — así que el guard de acá pasa a ser "cualquier
+  // staff" (ADMIN o MOZO) y las pantallas que deben seguir siendo
+  // admin-exclusivas (como /admin/usuarios) agregan su PROPIO guard más
+  // estricto — mismo patrón que ya usa MapaMesasEditor con `puedeEditar`.
+  const esStaff = hasRole('ADMIN') || hasRole('MOZO');
+
   useEffect(() => {
     if (initializing) return;
     if (!authenticated) {
       router.replace(`/login?redirect=${encodeURIComponent(pathname)}`);
       return;
     }
-    if (!hasRole('ADMIN')) {
+    if (!esStaff) {
       router.replace('/');
     }
-  }, [initializing, authenticated, hasRole, router, pathname]);
+  }, [initializing, authenticated, esStaff, router, pathname]);
 
   if (initializing) {
     return (
@@ -34,7 +46,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     );
   }
 
-  if (!authenticated || !hasRole('ADMIN')) {
+  if (!authenticated || !esStaff) {
     return null;
   }
 
@@ -47,7 +59,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </div>
 
         <nav className="mt-4 flex-1 overflow-y-auto">
-          {NAV_ITEMS.map((item) => {
+          {NAV_ITEMS.filter(
+            (item) => !item.roles || item.roles.some((rol) => hasRole(rol)),
+          ).map((item) => {
             const active = pathname.startsWith(item.href);
             return (
               <a

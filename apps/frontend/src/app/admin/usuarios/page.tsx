@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useKeycloakAuth } from '@/components/providers/KeycloakProvider';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { UsuariosTable } from '@/components/admin/usuarios/UsuariosTable';
@@ -10,7 +11,20 @@ import { DesactivarUsuarioDialog } from '@/components/admin/usuarios/DesactivarU
 import type { Usuario } from '@/types/usuario';
 
 export default function UsuariosPage() {
-  const { token } = useKeycloakAuth();
+  const { token, hasRole } = useKeycloakAuth();
+  const router = useRouter();
+
+  // BL-160: el layout de /admin/* ahora deja entrar a cualquier staff
+  // (ADMIN o MOZO) porque /admin/mesas es de lectura para Mozo. Gestión de
+  // usuarios en cambio debe seguir siendo admin-exclusiva, así que esta
+  // pantalla agrega su PROPIO guard en vez de depender del layout — mismo
+  // criterio que ya usa MapaMesasEditor con `puedeEditar` para las acciones
+  // de edición.
+  useEffect(() => {
+    if (!hasRole('ADMIN')) {
+      router.replace('/admin/mesas');
+    }
+  }, [hasRole, router]);
 
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [loading, setLoading] = useState(true);
@@ -43,16 +57,22 @@ export default function UsuariosPage() {
   }, [token]);
 
   useEffect(() => {
-    cargarUsuarios();
-  }, [cargarUsuarios]);
+    if (hasRole('ADMIN')) cargarUsuarios();
+  }, [cargarUsuarios, hasRole]);
 
   useEffect(() => {
     // TODO: reemplazar por GET /restaurantes cuando exista el endpoint.
-    if (!token) return;
+    if (!token || !hasRole('ADMIN')) return;
     apiFetch<{ id: string }[]>('/restaurantes', token)
       .then((rs) => setRestauranteId(rs[0]?.id ?? null))
       .catch(() => setRestauranteId(null));
-  }, [token]);
+  }, [token, hasRole]);
+
+  // Evita el flash de contenido admin-only mientras el useEffect de arriba
+  // redirige a un Mozo que haya llegado por URL directa.
+  if (!hasRole('ADMIN')) {
+    return null;
+  }
 
   return (
     <div className="mx-auto max-w-container space-y-6 p-6">
