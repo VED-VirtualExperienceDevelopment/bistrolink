@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense, useEffect } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useKeycloakAuth } from '@/components/providers/KeycloakProvider';
 import { getKeycloak } from '@/lib/keycloak';
@@ -15,8 +16,16 @@ const DEFAULT_REDIRECT = '/';
 /**
  * No es un formulario de credenciales propio — Keycloak es quien las
  * recolecta (Authorization Code + PKCE), como exige RD.07/RF.10. Esta
- * pantalla solo confirma la marca antes de redirigir, y sirve de destino
- * si algo falla en el redirect automático.
+ * pantalla confirma la marca y requiere un click explícito antes de ir a
+ * Keycloak.
+ *
+ * BL-180: antes disparaba login() automáticamente al montar, sin que hubiera
+ * tiempo real de cancelar (el redirect a Keycloak es casi instantáneo, así
+ * que un link "Cancelar" en esa pantalla nunca llegaba a verse ni a poder
+ * clickearse — confirmado probándolo). Ahora el click en "Ingresar" es lo
+ * único que dispara login(): sin carrera contra ningún redirect automático,
+ * "Cancelar" siempre está disponible, y el botón "atrás" del navegador desde
+ * Keycloak vuelve a esta misma pantalla quieta en vez de re-loguear solo.
  *
  * IMPORTANTE: sin especificar redirectUri, keycloak-js usa por default la
  * URL actual (o sea, esta misma página /login) como destino post-login —
@@ -32,29 +41,47 @@ function LoginRedirect() {
   const redirectTarget = searchParams.get('redirect') || DEFAULT_REDIRECT;
 
   useEffect(() => {
-    if (initializing) return;
+    if (initializing || !authenticated) return;
 
-    if (authenticated) {
-      // Sesión ya activa (detectada por check-sso, o recién autenticada) —
-      // avanzar a destino en vez de quedarse mostrando el spinner.
-      router.replace(redirectTarget);
-      return;
-    }
+    // Sesión ya activa (detectada por check-sso, o recién autenticada) —
+    // avanzar a destino en vez de quedarse mostrando el botón de ingresar.
+    router.replace(redirectTarget);
+  }, [initializing, authenticated, redirectTarget, router]);
 
+  const handleIngresar = () => {
     getKeycloak().login({
       redirectUri: `${window.location.origin}${redirectTarget}`,
     });
-  }, [initializing, authenticated, redirectTarget, router]);
+  };
+
+  if (initializing || authenticated) {
+    return (
+      <main className="flex h-screen items-center justify-center bg-background px-4">
+        <span className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+      </main>
+    );
+  }
 
   return (
     <main className="flex h-screen items-center justify-center bg-background px-4">
       <div className="w-full max-w-sm rounded-xl border border-outline-variant bg-surface-container-lowest p-8 text-center shadow-sm">
         <div className="text-headline-md font-bold leading-tight text-primary">Bistro Link</div>
         <p className="mb-6 text-label-md text-on-surface-variant">Portal de Administración</p>
-        <div className="flex items-center justify-center gap-2 text-body-md text-on-surface-variant">
-          <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-          Redirigiendo a inicio de sesión…
-        </div>
+
+        <button
+          type="button"
+          onClick={handleIngresar}
+          className="w-full rounded-lg bg-primary px-4 py-2.5 text-body-md font-medium text-on-primary hover:opacity-90"
+        >
+          Ingresar
+        </button>
+
+        <Link
+          href="/"
+          className="mt-4 inline-block text-label-md text-on-surface-variant underline underline-offset-2 hover:text-primary"
+        >
+          Cancelar
+        </Link>
       </div>
     </main>
   );

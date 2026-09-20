@@ -3,16 +3,19 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useKeycloakAuth } from '@/components/providers/KeycloakProvider';
+import { LandingInstitucional } from '@/components/landing/LandingInstitucional';
 import { esRolDeStaff, resolverDestinoLanding } from './landing.utils';
 
-// "/" nunca se muestra en sí misma: es solo un router que decide a dónde
-// mandar a cada usuario. Es un panel interno de staff, no necesita landing
-// pública/marketing — los comensales entran por QR a /m/[tenantId], nunca
-// pasan por acá.
-//
-// Prioridad de rol cuando el usuario tiene más de uno (ej. un ADMIN que
-// también tiene MOZO): ADMIN > MOZO > COCINA. Cada uno va a su pantalla
-// operativa principal ya existente.
+// "/" tiene dos caras (BL-179 / BL-180):
+// - Sin sesión: landing INSTITUCIONAL de BistroLink (más abajo). No es de
+//   ningún tenant puntual — el comensal siempre entra por QR/link propio a
+//   /m/[tenantId] (HU-001/HU-002), que ya muestra el menú real. Esta
+//   pantalla es para cualquier otra visita a la raíz (alguien tipeando la
+//   URL, un buscador, etc.) y no depende de backend: contenido estático.
+// - Con sesión: sigue siendo el router de destino por rol para staff.
+//   Prioridad cuando el usuario tiene más de un rol (ej. un ADMIN que
+//   también tiene MOZO): ADMIN > MOZO > COCINA. Cada uno va a su pantalla
+//   operativa principal ya existente.
 export default function Home() {
   const { initializing, authenticated, hasRole } = useKeycloakAuth();
   const router = useRouter();
@@ -20,10 +23,12 @@ export default function Home() {
   useEffect(() => {
     if (initializing) return;
 
-    if (!authenticated) {
-      router.replace('/login');
-      return;
-    }
+    // Sin sesión: no hay redirect (BL-180) — se muestra la landing
+    // institucional más abajo. El acceso de staff a /login sigue existiendo
+    // igual que antes (link directo en la landing, o el ?redirect= que ya
+    // arman admin/layout.tsx y kds/layout.tsx cuando rebotan a alguien sin
+    // sesión).
+    if (!authenticated) return;
 
     // Prioridad de rol y destino final: ver resolverDestinoLanding
     // (landing.utils.ts) — separada en función pura y con test unitario
@@ -40,12 +45,16 @@ export default function Home() {
     // /login (login con check-sso ya autenticado te manda de vuelta acá).
   }, [initializing, authenticated, hasRole, router]);
 
-  if (initializing || !authenticated) {
+  if (initializing) {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
         <span className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
       </div>
     );
+  }
+
+  if (!authenticated) {
+    return <LandingInstitucional />;
   }
 
   const tieneRolDeStaff = esRolDeStaff(hasRole);
