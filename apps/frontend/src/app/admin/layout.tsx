@@ -59,7 +59,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </div>
 
         <nav className="mt-4 flex-1 overflow-y-auto">
-          {NAV_ITEMS.filter((item) => !item.roles || item.roles.some(hasRole)).map((item) => {
+          {NAV_ITEMS.filter(
+  (item) => !item.roles || item.roles.some((rol) => hasRole(rol)),).map((item) => {
             const active = pathname.startsWith(item.href);
             return (
               <a
