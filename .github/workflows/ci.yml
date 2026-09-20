@@ -31,6 +31,22 @@ on:
         description: "Rollback: tag de imagen a restaurar en GHCR (el SHA completo de 40 caracteres del commit al que querés volver en staging)"
         required: false
         default: ""
+      # ── Modo rápido: solo tests unitarios ────────────────────────────────
+      # Atajo TEMPORAL para iterar rápido mientras se termina de armar/probar
+      # el reporte a Kiwi TCMS del frontend (job "jest" más abajo), sin
+      # esperar el pipeline completo (build + scans + deploy, ~15-20 min).
+      # Tildado en un workflow_dispatch, ese run corre SOLO
+      # changes+version+lint+jest y saltea build/gitleaks/codeql/sonarcloud/
+      # snyk/scan-testmgmt/deploy-staging/lighthouse. No afecta push ni
+      # pull_request, ni un workflow_dispatch donde quede sin marcar (el
+      # pipeline completo sigue siendo el comportamiento por defecto).
+      # TODO: sacar este input una vez que la integración a Kiwi del
+      # frontend quede estable y no haga falta iterar tan seguido.
+      solo_tests_unitarios:
+        description: "Modo rápido (temporal): correr solo lint+jest, saltar build/scans/deploy"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -165,15 +181,15 @@ jobs:
           KEYCLOAK_CLIENT_ID: "bistrolink-backend-test"
           KEYCLOAK_CLIENT_SECRET: "dummy-secret-for-ci"
 
-      - name: Upload coverage artifact
+      - name: Upload coverage artifact (backend)
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-report
+          name: coverage-report-backend
           path: apps/backend/coverage/
-          retention-days: 30
+          retention-days: 14
 
-      - name: Upload coverage to Codecov
+      - name: Upload coverage to Codecov (backend)
         if: always()
         continue-on-error: true
         uses: codecov/codecov-action@v4
@@ -183,24 +199,57 @@ jobs:
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
 
-      # Reemplaza el upload a Testiny (plan gratuito no incluye integración
-      # de automatización) por el plugin oficial de Kiwi TCMS, que lee el
-      # mismo junit.xml y crea/actualiza TestPlan, TestRun y TestExecution
-      # vía XML-RPC. Usuario de servicio dedicado (github-actions, grupo
-      # Tester, sin privilegios de admin) — ver Secrets KIWI_TCMS_*.
+      # BL-160: primeros tests de Jest del frontend (antes solo tenía
+      # Playwright en /e2e). Sin cobertura mínima todavía a propósito — recién
+      # arranca, tapar la mayor parte de src/ es trabajo aparte, y un gate acá
+      # rompería CI por código que ni este PR tocó.
+      - name: Tests Jest (frontend)
+        run: npm run test:cov --workspace=frontend
+        env:
+          CI: true
+
+      - name: Upload coverage artifact (frontend)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report-frontend
+          path: apps/frontend/coverage/
+          retention-days: 14
+
+      - name: Upload coverage to Codecov (frontend)
+        if: always()
+        continue-on-error: true
+        uses: codecov/codecov-action@v4
+        with:
+          files: apps/frontend/coverage/lcov.info
+          flags: frontend
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+      # Plugin oficial de Kiwi TCMS, que lee el
+      # junit.xml de cada suite y crea/actualiza TestPlan, TestRun y
+      # TestExecution vía XML-RPC. Usuario de servicio dedicado
+      # (github-actions, grupo Tester, sin privilegios de admin) — ver
+      # Secrets KIWI_TCMS_*.
       #
       # TCMS_PRODUCT_VERSION: usa la rama BASE del PR (github.base_ref) en
       # vez de github.ref_name, para que todas las feature/fix branches
-      # reporten al mismo TestPlan (develop o main) en lugar de crear un
-      # TestPlan nuevo y efímero por cada rama.
-      - name: Upload results to Kiwi TCMS
+      # reporten al mismo TestPlan (develop o main) en lugar de crear uno
+      # nuevo y efímero por cada rama.
+      #
+      # TCMS_BUILD lleva sufijo "-backend"/"-frontend" para que cada suite
+      # quede en su propio TestRun, identificado y separado del otro.
+      # jest-junit ya nombra cada test case con el archivo + los describe()
+      # como classname y el título del test como name, así que un fallo se
+      # rastrea directo a su suite y caso en Kiwi.
+      - name: Upload results to Kiwi TCMS (backend)
         if: always()
         continue-on-error: true
         timeout-minutes: 5
         env:
           TCMS_PRODUCT: "BistroLink"
           TCMS_PRODUCT_VERSION: ${{ github.event_name == 'pull_request' && github.base_ref || github.ref_name }}
-          TCMS_BUILD: ${{ needs.version.outputs.label }}
+          TCMS_BUILD: ${{ needs.version.outputs.label }}-backend
         run: |
           pip install kiwitcms-junit.xml-plugin --break-system-packages
           cat <<EOF > ~/.tcms.conf
@@ -211,6 +260,24 @@ jobs:
           EOF
           tcms-junit.xml-plugin apps/backend/coverage/junit.xml
 
+      - name: Upload results to Kiwi TCMS (frontend)
+        if: always()
+        continue-on-error: true
+        timeout-minutes: 5
+        env:
+          TCMS_PRODUCT: "BistroLink"
+          TCMS_PRODUCT_VERSION: ${{ github.event_name == 'pull_request' && github.base_ref || github.ref_name }}
+          TCMS_BUILD: ${{ needs.version.outputs.label }}-frontend
+        run: |
+          pip install kiwitcms-junit.xml-plugin --break-system-packages
+          cat <<EOF > ~/.tcms.conf
+          [tcms]
+          url = ${{ secrets.KIWI_TCMS_URL }}/xml-rpc/
+          username = ${{ secrets.KIWI_TCMS_USERNAME }}
+          password = ${{ secrets.KIWI_TCMS_PASSWORD }}
+          EOF
+          tcms-junit.xml-plugin apps/frontend/coverage/junit.xml
+
   # NOTA: este job corre solo los tests UNITARIOS (npm run test:cov), no el
   # test:e2e de aislamiento multi-tenant (tenant-isolation.e2e-spec.ts) — ese
   # necesita Keycloak + Postgres reales con el realm importado y 3 fixtures
@@ -219,6 +286,8 @@ jobs:
   # pendiente como paquete aparte (correspondería a EDT 1.8.6, corrido en CI).
 
   # ── JOB 3: TESTS DE CONTRATO (PactJS) ────────────────────────────────────
+  # NOTA: corresponde incorporarlo en etapa de integracion con
+  # plataformas de pago y comprobante electronico (sprint 6 en adelante)
   # pact:
   #   name: 🤝 Tests de contrato (PactJS)
   #   runs-on: ubuntu-latest
@@ -240,6 +309,9 @@ jobs:
   gitleaks:
     name: 🔐 Secretos (Gitleaks)
     runs-on: ubuntu-latest
+    # Se saltea en un workflow_dispatch con "solo_tests_unitarios" tildado
+    # (modo rápido temporal — ver comentario en el input, arriba en "on:").
+    if: github.event_name != 'workflow_dispatch' || inputs.solo_tests_unitarios != true
     steps:
       - uses: actions/checkout@v7
         with:
@@ -278,6 +350,9 @@ jobs:
   codeql:
     name: 🛡️ SAST (CodeQL)
     runs-on: ubuntu-latest
+    # Se saltea en un workflow_dispatch con "solo_tests_unitarios" tildado
+    # (modo rápido temporal — ver comentario en el input, arriba en "on:").
+    if: github.event_name != 'workflow_dispatch' || inputs.solo_tests_unitarios != true
     steps:
       - uses: actions/checkout@v7
         with:
@@ -298,6 +373,9 @@ jobs:
   sonarcloud:
     name: 📊 SAST (SonarCloud)
     runs-on: ubuntu-latest
+    # Se saltea en un workflow_dispatch con "solo_tests_unitarios" tildado
+    # (modo rápido temporal — ver comentario en el input, arriba en "on:").
+    if: github.event_name != 'workflow_dispatch' || inputs.solo_tests_unitarios != true
     steps:
       - uses: actions/checkout@v7
         with:
@@ -313,6 +391,9 @@ jobs:
   snyk:
     name: 📦 Dependencias (Snyk)
     runs-on: ubuntu-latest
+    # Se saltea en un workflow_dispatch con "solo_tests_unitarios" tildado
+    # (modo rápido temporal — ver comentario en el input, arriba en "on:").
+    if: github.event_name != 'workflow_dispatch' || inputs.solo_tests_unitarios != true
     steps:
       - uses: actions/checkout@v7
 
@@ -344,6 +425,9 @@ jobs:
     runs-on: ubuntu-latest
     # pact sigue comentado — agregarlo a needs cuando esté listo.
     needs: [lint, jest, version]
+    # Se saltea en un workflow_dispatch con "solo_tests_unitarios" tildado
+    # (modo rápido temporal — ver comentario en el input, arriba en "on:").
+    if: github.event_name != 'workflow_dispatch' || inputs.solo_tests_unitarios != true
     # Los 9 secrets de Auth NO pueden ir dentro de strategy.matrix — GitHub
     # Actions resuelve las entradas del matrix ANTES de que el contexto
     # "secrets" esté disponible para el job, así que cualquier ${{ secrets.* }}
@@ -452,7 +536,14 @@ jobs:
     name: 🐳 Escaneo seguridad (testmgmt / Kiwi TCMS)
     runs-on: ubuntu-latest
     needs: [changes]
-    if: needs.changes.outputs.testmgmt == 'true' || github.event_name == 'workflow_dispatch'
+    # El OR con "workflow_dispatch" existía para poder forzar este escaneo a
+    # mano; se le agrega la exclusión de "solo_tests_unitarios" para que el
+    # modo rápido temporal (ver comentario en el input, arriba en "on:") siga
+    # saltándoselo también, en vez de dispararlo igual por venir de un
+    # workflow_dispatch.
+    if: |
+      !(github.event_name == 'workflow_dispatch' && inputs.solo_tests_unitarios == true) &&
+      (needs.changes.outputs.testmgmt == 'true' || github.event_name == 'workflow_dispatch')
     steps:
       - uses: actions/checkout@v7
 
@@ -490,8 +581,13 @@ jobs:
   deploy-staging:
     name: 🚀 Deploy staging (Railway)
     needs: [gitleaks, codeql, sonarcloud, snyk, build, changes]
+    # La exclusión de "solo_tests_unitarios" es más que nada documentación:
+    # con gitleaks/codeql/sonarcloud/snyk/build ya salteados arriba, este job
+    # ya queda "skipped" solo (sus "needs" no llegan a success()). Se deja
+    # explícita igual para que la condición se entienda leyendo solo este job.
     if: |
       github.ref == 'refs/heads/develop' &&
+      !(github.event_name == 'workflow_dispatch' && inputs.solo_tests_unitarios == true) &&
       (
         github.event_name == 'workflow_dispatch' ||
         needs.changes.outputs.apps == 'true'
