@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import { useKeycloakAuth } from '@/components/providers/KeycloakProvider';
 
@@ -8,6 +9,14 @@ const NAV_ITEMS = [
   // `roles: undefined` = visible para cualquier staff (ADMIN o MOZO).
   { href: '/admin/usuarios', label: 'Usuarios', icon: 'group', roles: ['ADMIN'] },
   { href: '/admin/mesas', label: 'Mapa de mesas', icon: 'table_restaurant' },
+  // Apunta a /admin/kds (embebido, con sidebar), no a /kds standalone.
+  // /kds sigue existiendo intacto como pantalla completa dedicada a COCINA
+  // (que no es "esStaff" acá, no entra a /admin/* en absoluto) y para
+  // cualquiera que prefiera abrirla directo — /admin/kds reusa el mismo
+  // componente <KdsBoard /> con el mismo nivel de interacción, solo que
+  // embebido dentro de este layout para que ADMIN/MOZO no tengan que salir
+  // de /admin para verlo.
+  { href: '/admin/kds', label: 'KDS', icon: 'skillet' },
   // Próximos módulos (HU-001, HU-003, etc.) se suman acá a medida que
   // existan pantallas reales — evitamos linkear secciones que no existen.
 ];
@@ -64,7 +73,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           ).map((item) => {
             const active = pathname.startsWith(item.href);
             return (
-              <a
+              // Link (no <a>): navegación client-side de Next.js. Con <a>
+              // plano cada click disparaba una recarga completa del
+              // navegador — remontaba TODO el árbol de React, incluido el
+              // KeycloakProvider del layout raíz y este mismo sidebar, que
+              // por eso "parpadeaba"/tardaba en cada cambio de pestaña. Con
+              // Link, este layout (sidebar incluido) queda montado fijo y
+              // Next.js solo intercambia el contenido de <main> — no hay
+              // ninguna razón de sesión/auth para forzar el reload completo,
+              // KeycloakProvider vive en layout.tsx (raíz), no acá.
+              <Link
                 key={item.href}
                 href={item.href}
                 className={`flex items-center gap-3 px-4 py-3 transition-colors duration-200 ${
@@ -75,7 +93,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               >
                 <span className="material-symbols-outlined">{item.icon}</span>
                 <span className="text-label-md">{item.label}</span>
-              </a>
+              </Link>
             );
           })}
         </nav>
