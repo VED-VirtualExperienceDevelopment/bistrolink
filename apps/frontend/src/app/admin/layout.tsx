@@ -17,7 +17,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const router = useRouter();
   const pathname = usePathname();
 
-  // BL-160: este layout envuelve TODO /admin/* (usuarios, mesas, y lo que se
+  // BL-160: este layout envuelve la totalidad de /admin/* (usuarios, mesas, y lo que se
   // sume después). Antes de BL-160 era ADMIN-only porque la única pantalla
   // era gestión de usuarios. Con /admin/mesas sumamos un caso legítimo de
   // acceso de Colaborador (Mozo) — solo lectura del mapa, ver
@@ -60,7 +60,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
         <nav className="mt-4 flex-1 overflow-y-auto">
           {NAV_ITEMS.filter(
-  (item) => !item.roles || item.roles.some((rol) => hasRole(rol)),).map((item) => {
+            (item) => !item.roles || item.roles.some((rol) => hasRole(rol)),
+          ).map((item) => {
             const active = pathname.startsWith(item.href);
             return (
               <a

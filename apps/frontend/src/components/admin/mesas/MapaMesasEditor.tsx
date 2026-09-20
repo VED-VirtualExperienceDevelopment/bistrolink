@@ -44,7 +44,7 @@ interface Props {
  * edición del número, ni los botones de agregar/eliminar/guardar. La
  * lectura en sí (GET /mesas/layout) ya la permite el backend a ambos roles.
  */
-export function MapaMesasEditor({ restauranteId }: Props) {
+export function MapaMesasEditor({ restauranteId }: Readonly<Props>) {
   const { token, hasRole } = useKeycloakAuth();
   const puedeEditar = hasRole('ADMIN');
 
@@ -65,6 +65,7 @@ export function MapaMesasEditor({ restauranteId }: Props) {
   const transformerRef = useRef<Konva.Transformer>(null);
   const shapeRefs = useRef(new Map<string, Konva.Group>());
   const socketRef = useRef<Socket | null>(null);
+  const inputNumeroRef = useRef<HTMLInputElement>(null);
   const [anchoStage, setAnchoStage] = useState(800);
 
   // --- Carga inicial: GET /mesas/layout -------------------------------------
@@ -157,6 +158,18 @@ export function MapaMesasEditor({ restauranteId }: Props) {
     const id = setTimeout(() => setGuardadoOk(false), 3000);
     return () => clearTimeout(id);
   }, [guardadoOk]);
+
+  // Foco automático del input de número al editar (Sonar: el atributo JSX
+  // `autoFocus` está desaconsejado por accesibilidad -- roba el foco sin que
+  // el usuario lo pida, y puede desorientar a quien navega con lector de
+  // pantalla. Enfocarlo a mano en un efecto, atado a la apertura del editor,
+  // logra el mismo comportamiento (foco inmediato al hacer doble clic en una
+  // mesa) sin el lint warning.
+  useEffect(() => {
+    if (editandoNumero) {
+      inputNumeroRef.current?.focus();
+    }
+  }, [editandoNumero]);
 
   const nodoEditandoNumero = editandoNumero
     ? shapeRefs.current.get(editandoNumero.clientId)
@@ -253,9 +266,9 @@ export function MapaMesasEditor({ restauranteId }: Props) {
   return (
     <div className="space-y-4">
       {!puedeEditar && (
-        <div role="status" className="rounded-lg bg-surface-container-low px-4 py-2 text-label-md text-on-surface-variant">
+        <output className="block rounded-lg bg-surface-container-low px-4 py-2 text-label-md text-on-surface-variant">
           Estás viendo el mapa en modo solo lectura. Solo un Administrador puede editarlo.
-        </div>
+        </output>
       )}
 
       {puedeEditar && (
@@ -267,7 +280,7 @@ export function MapaMesasEditor({ restauranteId }: Props) {
               className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-body-md font-medium text-on-primary hover:opacity-90"
             >
               <span className="material-symbols-outlined text-[20px]">add</span>
-              Agregar mesa
+              <span>Agregar mesa</span>
             </button>
             <button
               type="button"
@@ -276,7 +289,7 @@ export function MapaMesasEditor({ restauranteId }: Props) {
               className="flex items-center gap-2 rounded-lg border border-outline-variant px-4 py-2 text-body-md text-on-surface-variant hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-50"
             >
               <span className="material-symbols-outlined text-[20px]">delete</span>
-              Eliminar mesa
+              <span>Eliminar mesa</span>
             </button>
             <p className="text-label-sm text-on-surface-variant">
               Doble clic en una mesa para editar su número.
@@ -369,9 +382,9 @@ export function MapaMesasEditor({ restauranteId }: Props) {
 
         {editandoNumero && posicionInputNumero && (
           <input
+            ref={inputNumeroRef}
             type="number"
             min={1}
-            autoFocus
             value={editandoNumero.valor}
             onChange={(e) => setEditandoNumero({ ...editandoNumero, valor: e.target.value })}
             onBlur={confirmarEdicionNumero}
