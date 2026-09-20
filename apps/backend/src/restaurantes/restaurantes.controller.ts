@@ -5,15 +5,17 @@ import { AuthenticatedUser } from '../auth/keycloak-jwt.strategy';
 import { RestaurantesService } from './restaurantes.service';
 
 /**
- * Hoy solo lo consume la pantalla de gestión de usuarios (HU-013 frontend)
- * para resolver el restauranteId requerido por CreateUsuarioDto — de ahí
- * que quede restringido a ADMIN, igual que /usuarios. Si en el futuro otra
- * pantalla no-admin necesita listar restaurantes, revisar si corresponde
- * relajar este guard en vez de reusar el mismo endpoint.
+ * Originalmente ADMIN-only (solo lo consumía la gestión de usuarios, HU-013,
+ * para resolver el restauranteId de CreateUsuarioDto). BL-160 sumó un
+ * segundo consumidor no-admin: /admin/mesas necesita resolver el mismo
+ * restauranteId para un Mozo en modo solo lectura, así que — tal como
+ * anticipaba este mismo comentario — se relaja a ADMIN|MOZO en vez de
+ * duplicar el endpoint. Sigue sin ser accesible a comensales ni a otros
+ * tenants (AuthGuard('jwt') + tenantId del request).
  */
 @Controller('restaurantes')
 @UseGuards(AuthGuard('jwt'), RolesGuard)
-@Roles('ADMIN')
+@Roles('ADMIN', 'MOZO')
 export class RestaurantesController {
   constructor(private readonly restaurantesService: RestaurantesService) {}
 

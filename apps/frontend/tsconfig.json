@@ -26,7 +26,23 @@
         "./src/*"
       ]
     },
-    "target": "ES2017"
+    "target": "ES2017",
+    // Sin esto, TypeScript debería tomar automáticamente cualquier paquete
+    // bajo node_modules/@types (comportamiento por defecto sin "types"), y
+    // en la CLI (npx tsc --noEmit) efectivamente los toma bien. Pero el
+    // servidor de TypeScript de VSCode, en este monorepo con @types
+    // hoisteados a la raíz (node_modules/@types en vez de
+    // apps/frontend/node_modules/@types), no los está resolviendo igual y
+    // marca `describe`/`expect` como inexistentes pese a que jest.config.js
+    // y @types/jest están bien instalados. Declararlos acá a mano evita
+    // depender de esa detección automática. No afecta la resolución de
+    // tipos de paquetes que sí se importan explícitamente (react, etc.) --
+    // eso sigue la resolución de módulos normal, independiente de este
+    // campo.
+    "types": [
+      "node",
+      "jest"
+    ]
   },
   "include": [
     "next-env.d.ts",

@@ -75,6 +75,18 @@ const nextConfig = {
       },
     ],
   },
+  // BL-160: konva trae una rama de código para Node (lib/index-node.js) que
+  // hace `require('canvas')` para poder dibujar sin navegador. No la usamos
+  // -- el editor corre siempre en el cliente, vía next/dynamic con
+  // `ssr: false` -- pero Webpack igual intenta RESOLVER ese require al
+  // armar el bundle (aunque nunca se ejecute), y como "canvas" no está
+  // instalado (es una dependencia nativa pesada, innecesaria acá), el build
+  // rompe con "Module not found: Can't resolve 'canvas'". Marcarlo como
+  // external le dice a Webpack que no intente empaquetarlo/resolverlo.
+  webpack: (config) => {
+    config.externals = [...(config.externals ?? []), { canvas: "commonjs canvas" }];
+    return config;
+  },
   async headers() {
     return [
       {

@@ -7,12 +7,19 @@
   --foreground: #171717;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+/*
+  BistroLink usa un tema claro fijo (tokens M3 de tailwind.config.ts, sin
+  variante .dark implementada). Este archivo venía con el boilerplate por
+  defecto de create-next-app, que redefine --background/--foreground a
+  valores oscuros según el prefers-color-scheme del SO/navegador — con eso
+  activo, cualquier sección sin una clase Tailwind explícita (como el
+  <body> o el wrapper de contenido de /admin/mesas) hereda un fondo casi
+  negro apenas el sistema está en modo oscuro, aunque el meta
+  "color-scheme" del layout raíz ya le pida al navegador un tema claro
+  (ese meta solo controla los controles nativos del navegador, no frena
+  esta media query). Se elimina el bloque para que el fondo quede siempre
+  blanco, consistente con el resto del diseño.
+*/
 
 body {
   color: var(--foreground);
