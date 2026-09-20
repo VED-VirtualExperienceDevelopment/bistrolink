@@ -145,11 +145,16 @@ vite.config.ts.timestamp-*
 apps/backend/src/**/*.js
 apps/backend/src/**/*.js.map
 
-# Playwright — reportes y resultados de corridas E2E, no son código
-/test-results/
-/playwright-report/
-/blob-report/
-/playwright/.cache/
+# Playwright — reportes y resultados de corridas E2E, no son código.
+# Sin "/" inicial: así cubre CUALQUIER nivel (raíz o dentro de un workspace),
+# no solo la raíz del repo. BL-181: "/test-results/" (anclado a la raíz)
+# dejó pasar apps/backend/test-results/.last-run.json, que terminó
+# commiteado por error — apps/backend usa Jest, pero alguien corrió
+# `npx playwright test` parado ahí y ese archivo de estado se coló.
+**/test-results/
+**/playwright-report/
+**/blob-report/
+playwright/.cache/
 
 # Lighthouse
 .lighthouseci/
