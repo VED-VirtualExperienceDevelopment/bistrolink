@@ -5,7 +5,12 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useKeycloakAuth } from '@/components/providers/KeycloakProvider';
 import { getKeycloak } from '@/lib/keycloak';
 
-const DEFAULT_REDIRECT = '/admin/usuarios';
+// Antes hardcodeaba '/admin/usuarios' (ADMIN-only) — un MOZO/COCINA que
+// logueaba sin ?redirect= (ej. entrando directo a la URL del sitio) caía
+// ahí, ese layout lo rebotaba por no tener el rol, y terminaba en el
+// placeholder de Next.js. Ahora apunta a '/', que decide el destino según
+// el rol del usuario (ver page.tsx) en vez de asumir ADMIN.
+const DEFAULT_REDIRECT = '/';
 
 /**
  * No es un formulario de credenciales propio — Keycloak es quien las
