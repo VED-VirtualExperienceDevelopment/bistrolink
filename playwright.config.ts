@@ -7,6 +7,12 @@ import { defineConfig, devices } from '@playwright/test';
 // el frontend corriendo a mano (con datos del seed) antes de correr esto,
 // como venimos haciendo manualmente en esta sesión.
 export default defineConfig({
+  // BL-181: los specs viven en subcarpetas por dominio (e2e/comensal/,
+  // e2e/kds/) más e2e/support/ (fixtures e IDs de seed compartidos, sin
+  // tests propios). testDir sigue siendo './e2e' sin cambios: Playwright ya
+  // busca specs recursivamente, y los testMatch de abajo no están anclados
+  // al path, así que "menu-publico.spec.ts" sigue matcheando
+  // "e2e/comensal/menu-publico.spec.ts" sin tocar nada más.
   testDir: './e2e',
   fullyParallel: true,
   retries: process.env.CI ? 2 : 0,

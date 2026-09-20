@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import type { APIRequestContext } from '@playwright/test';
+import { MENU_URL_PATH, MESA_ID, MESA_PATH, RESTAURANTE_ID, TENANT_ID } from '../support/ids';
 
 // E2E de HU-002.
 //
@@ -9,16 +10,11 @@ import type { APIRequestContext } from '@playwright/test';
 // API declara. Cuando la DB se poble con más restaurantes/items, estos tests
 // siguen funcionando sin cambios.
 //
-// Los únicos IDs fijos son los del "fixture" (tenant/restaurante/mesa) que el
-// seed garantiza que existen — mismo contrato que e2e/menu.spec.ts (HU-001).
-// Por el aislamiento multi-tenant (RLS), datos reales de OTROS tenants no
-// afectan estas corridas.
-const TENANT_ID = '11111111-1111-1111-1111-111111111111';
-const RESTAURANTE_ID = '22222222-2222-2222-2222-222222222222';
-const MESA_ID = '33333333-3333-3333-3333-333333333333';
-
-const MENU_URL_PATH = `/m/${TENANT_ID}/restaurante/${RESTAURANTE_ID}`;
-const MENU_QR_PATH = `/m/${TENANT_ID}/${MESA_ID}`;
+// Los IDs de fixture (tenant/restaurante/mesa) vienen de e2e/support/ids.ts
+// (BL-181) — mismo contrato que e2e/comensal/menu.spec.ts (HU-001). Por el
+// aislamiento multi-tenant (RLS), datos reales de OTROS tenants no afectan
+// estas corridas.
+const MENU_QR_PATH = MESA_PATH;
 
 // Backend como fuente de verdad. En CI apunta a la API de staging.
 const API_URL = process.env.API_URL ?? 'http://localhost:3001';
@@ -120,7 +116,7 @@ test.describe('HU-002: menú vía URL directa (verificado en mobile)', () => {
   });
 
   test('error controlado para un restaurante inexistente', async ({ page }) => {
-    // UUID cero: mismo patrón determinista que e2e/menu.spec.ts.
+    // UUID cero: mismo patrón determinista que e2e/comensal/menu.spec.ts.
     await page.goto(
       `/m/${TENANT_ID}/restaurante/00000000-0000-0000-0000-000000000000`,
     );
@@ -136,6 +132,11 @@ test.describe('HU-002: menú vía URL directa (verificado en mobile)', () => {
 // del fixture. Cuando la DB se poble y el menú del fixture cambie A PROPÓSITO,
 // se regeneran los baselines con --update-snapshots y se commitea el nuevo
 // estado. Lo que detectan es la regresión visual NO intencional.
+//
+// BL-181: los baselines SIEMPRE se regeneran vía el contenedor Docker oficial
+// de Playwright (ver npm run test:e2e:update-snapshots) — nunca a mano en la
+// laptop de cada dev, porque el nombre de archivo incluye la plataforma
+// (chromium-darwin vs chromium-linux) y CI corre en Linux.
 // ─────────────────────────────────────────────────────────────────────────────
 test.describe('Regresión visual (snapshot): QR vs URL', () => {
   const opcionesScreenshot = {

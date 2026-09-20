@@ -20,7 +20,8 @@
     "prepare": "husky",
     "staging:down": "bash -i scripts/staging-down.sh",
     "staging:up": "bash -i scripts/staging-up.sh",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:e2e:update-snapshots": "bash scripts/e2e-update-snapshots.sh"
   },
   "devDependencies": {
     "@commitlint/cli": "19.5.0",
