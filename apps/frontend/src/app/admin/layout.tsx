@@ -75,7 +75,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             return (
               // Link (no <a>): navegación client-side de Next.js. Con <a>
               // plano cada click disparaba una recarga completa del
-              // navegador — remontaba TODO el árbol de React, incluido el
+              // navegador — remontaba el árbol de React, incluido el
               // KeycloakProvider del layout raíz y este mismo sidebar, que
               // por eso "parpadeaba"/tardaba en cada cambio de pestaña. Con
               // Link, este layout (sidebar incluido) queda montado fijo y
