@@ -13,12 +13,24 @@ import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 const TRANSICIONES_KDS: Partial<Record<PedidoEstado, PedidoEstado[]>> = {
   RECIBIDO: [PedidoEstado.EN_PREPARACION],
   EN_PREPARACION: [PedidoEstado.LISTO_PARA_ENTREGAR],
+  LISTO_PARA_ENTREGAR: [PedidoEstado.ENTREGADO], // HU-018/BL-64
 };
+
+interface LineaNotificacion {
+  id: string;
+  nombreSnapshot: string;
+  cantidad: number;
+}
 
 export interface PedidoActualizado {
   id: string;
   estado: PedidoEstado;
   actualizadoEn: string;
+  mesaNumero: number;
+  // BL-66: select explícito, nunca `include` a lo bruto — LineaPedido
+  // tiene precioUnitarioSnapshot/subtotal (dato de pago) que esta
+  // notificación no debe exponer.
+  lineas: LineaNotificacion[];
 }
 
 @Injectable()
@@ -74,6 +86,15 @@ export class PedidosTransicionService {
       const actualizado = await tx.pedido.update({
         where: { id: pedidoId },
         data: { estado: nuevoEstado },
+        select: {
+          id: true,
+          estado: true,
+          updatedAt: true,
+          mesa: { select: { numero: true } },
+          lineas: {
+            select: { id: true, nombreSnapshot: true, cantidad: true },
+          },
+        },
       });
 
       await tx.pedidoEstadoHistorial.create({
@@ -90,6 +111,8 @@ export class PedidosTransicionService {
         id: actualizado.id,
         estado: actualizado.estado,
         actualizadoEn: actualizado.updatedAt.toISOString(),
+        mesaNumero: actualizado.mesa.numero,
+        lineas: actualizado.lineas,
       };
     });
   }
@@ -103,7 +126,18 @@ export class PedidosTransicionService {
     pedidoId: string,
   ): Promise<PedidoActualizado | null> {
     return this.tenantPrisma.runInTenantContext(tenantId, async (tx) => {
-      const pedido = await tx.pedido.findUnique({ where: { id: pedidoId } });
+      const pedido = await tx.pedido.findUnique({
+        where: { id: pedidoId },
+        select: {
+          id: true,
+          estado: true,
+          updatedAt: true,
+          mesa: { select: { numero: true } },
+          lineas: {
+            select: { id: true, nombreSnapshot: true, cantidad: true },
+          },
+        },
+      });
       if (!pedido) {
         return null;
       }
@@ -111,6 +145,8 @@ export class PedidosTransicionService {
         id: pedido.id,
         estado: pedido.estado,
         actualizadoEn: pedido.updatedAt.toISOString(),
+        mesaNumero: pedido.mesa.numero,
+        lineas: pedido.lineas,
       };
     });
   }
@@ -125,7 +161,14 @@ export class PedidosTransicionService {
       const pedidos = await tx.pedido.findMany({
         where: {
           estado: {
-            in: [PedidoEstado.RECIBIDO, PedidoEstado.EN_PREPARACION],
+            // HU-018/BL-65: si no se incluye LISTO_PARA_ENTREGAR acá, un
+            // mozo que se reconecta pierde para siempre la notificación
+            // de un pedido que quedó esperando confirmación de entrega.
+            in: [
+              PedidoEstado.RECIBIDO,
+              PedidoEstado.EN_PREPARACION,
+              PedidoEstado.LISTO_PARA_ENTREGAR,
+            ],
           },
         },
         include: { mesa: true, lineas: true },
