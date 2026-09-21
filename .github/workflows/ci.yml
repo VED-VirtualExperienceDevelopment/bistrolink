@@ -923,13 +923,26 @@ jobs:
       - name: Instalar dependencias
         run: npm ci
 
+      # mobile-safari y desktop-safari (playwright.config.ts) corren en el
+      # motor webkit, no chromium — sin este binario, browserType.launch()
+      # falla con "Executable doesn't exist at .../webkit-*/pw_run.sh" en
+      # los 4 proyectos que lo usan (mobile-chrome no lo necesita: usa
+      # chromium con emulación de Pixel 5).
       - name: Instalar navegadores Playwright
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium webkit
 
       - name: Tests E2E Playwright en staging
         run: npx playwright test
         env:
-          BASE_URL: https://staging.bistrolink.app
+          # staging.bistrolink.app no tiene registro DNS propio
+          # (ERR_NAME_NOT_RESOLVED en CI) — se usa la misma URL de Railway
+          # que ya healthchequea "deploy-staging" más arriba.
+          BASE_URL: https://bistrolink-web-staging.up.railway.app
+          # e2e/comensal/menu-publico.spec.ts (línea 21) cae a
+          # http://localhost:3001 si esto no está seteado, y este job no
+          # levanta ninguna API local → ECONNREFUSED. Misma URL de Railway
+          # que ya usa el build-arg NEXT_PUBLIC_API_URL del job "build".
+          API_URL: https://bistrolink-api-staging.up.railway.app
 
       # Sube playwright-report/ (junit.xml + html) como build artifact de
       # CI, nunca al repo — mismo patrón que coverage-report-backend/
@@ -969,6 +982,14 @@ jobs:
           username = ${{ secrets.KIWI_TCMS_USERNAME }}
           password = ${{ secrets.KIWI_TCMS_PASSWORD }}
           EOF
+          # kiwitcms-junit.xml-plugin 15.0 (tcms_junit_plugin/__init__.py,
+          # parse_timestamp) solo acepta "%Y-%m-%dT%H:%M:%S.%f",
+          # "%Y-%m-%dT%H:%M:%S" o "%Y-%m-%d %H:%M:%S" — el reporter junit de
+          # Playwright escribe con sufijo "Z" (2026-09-21T14:12:30.222Z), que
+          # no matchea ninguno y hace explotar el plugin con
+          # "ValueError: Unknown timestamp format". Se saca solo la "Z"; los
+          # milisegundos quedan (los cubre %f).
+          sed -i -E 's/timestamp="([0-9T:.-]+)Z"/timestamp="\1"/g' playwright-report/junit.xml
           tcms-junit.xml-plugin playwright-report/junit.xml
 
   # ── JOB 11: DEPLOY PRODUCCIÓN (manual, solo en tag v*.*.*) ───────────────
