@@ -36,7 +36,10 @@ export function OrderTicket({ pedido, puedeOperarTransiciones, onTransicion }: O
   const lineas = pedido.lineas ?? [];
 
   return (
-    <article className="flex h-full w-[300px] shrink-0 flex-col overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest shadow-sm">
+    <article
+      data-pedido-id={pedido.id}
+      className="flex h-full w-[300px] shrink-0 flex-col overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest shadow-sm"
+    >
       {/* Header del ticket */}
       <div className={`${urgencia.bg} flex shrink-0 items-start justify-between p-3 text-on-primary`}>
         <div>
@@ -97,6 +100,15 @@ export function OrderTicket({ pedido, puedeOperarTransiciones, onTransicion }: O
               className="w-full rounded-lg bg-primary py-2.5 text-label-lg font-semibold text-on-primary transition-colors hover:opacity-90"
             >
               Listo para entregar
+            </button>
+          )}
+          {pedido.estado === 'LISTO_PARA_ENTREGAR' && (
+            <button
+              type="button"
+              onClick={() => onTransicion(pedido.id, 'ENTREGADO')}
+              className="w-full rounded-lg bg-secondary py-2.5 text-label-lg font-semibold text-on-secondary transition-colors hover:opacity-90"
+            >
+              Marcar como entregado
             </button>
           )}
         </div>

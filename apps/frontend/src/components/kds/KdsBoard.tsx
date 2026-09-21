@@ -14,6 +14,7 @@ interface PedidoActualizadoPayload {
   id: string;
   estado: EstadoPedido;
   actualizadoEn: string;
+  mesaNumero?: number;
 }
 
 interface LlamadoMozo {
@@ -57,9 +58,17 @@ export function KdsBoard() {
     });
 
     socket.on('pedido:actualizado', (payload: PedidoActualizadoPayload) => {
-      setPedidos((prev) =>
-        prev.map((p) => (p.id === payload.id ? { ...p, estado: payload.estado } : p)),
-      );
+      setPedidos((prev) => {
+        // HU-018/BL-64: una vez entregado, el pedido sale del tablero
+        // activo — mismo criterio que listarPendientes() ya aplica del
+        // lado del backend para el snapshot de reconexión.
+        if (payload.estado === 'ENTREGADO') {
+          return prev.filter((p) => p.id !== payload.id);
+        }
+        return prev.map((p) =>
+          p.id === payload.id ? { ...p, estado: payload.estado } : p,
+        );
+      });
     });
 
     // HU-019/BL-68
@@ -143,6 +152,33 @@ export function KdsBoard() {
     </div>
   );
 
+  const pedidosListos = pedidos.filter((p) => p.estado === 'LISTO_PARA_ENTREGAR');
+
+  const bannerListos = pedidosListos.length > 0 && (
+    <div className="flex shrink-0 flex-col gap-1.5">
+      {pedidosListos.map((pedido) => (
+        <div
+          key={pedido.id}
+          data-pedido-id={pedido.id}
+          role="alert"
+          className="flex items-center justify-between rounded-lg bg-secondary-container px-3 py-2 text-label-md text-on-secondary-container"
+        >
+          <span>
+            🍽️ Mesa {pedido.mesaNumero}: pedido listo para entregar
+          </span>
+          {puedeOperarTransiciones && (
+            <button
+              onClick={() => emitirTransicion(pedido.id, 'ENTREGADO')}
+              className="rounded-md bg-secondary px-2 py-1 text-on-secondary"
+            >
+              Confirmar entrega
+            </button>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+
   let contenido;
   if (loading) {
     contenido = (
@@ -194,6 +230,7 @@ export function KdsBoard() {
   return (
     <div className="flex h-full flex-col gap-2">
       {banner}
+      {bannerListos}
       {!conectado && !loading && (
         <div role="status" className="shrink-0 rounded-lg bg-tertiary-container px-3 py-1.5 text-label-md text-on-tertiary-container">
           Reconectando…
