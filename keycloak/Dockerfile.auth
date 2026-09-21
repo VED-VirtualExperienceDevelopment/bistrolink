@@ -7,11 +7,11 @@
 # mount de una máquina local, así que el archivo tiene que copiarse DENTRO de
 # la imagen en build time para que --import-realm tenga algo que importar.
 #
-# 24.0.5 -> 26.5.7 (BL-137): la 24.0.5 acumuló 67 CVEs sin parche disponible
+# 24.0.5 -> 26.7.2 (BL-137): la 24.0.5 acumuló 67 CVEs sin parche disponible
 # en esa serie (varios específicos de Keycloak: CVE-2026-7504, 7507, 7571,
 # 4634, 4636, 9795), varios con fix confirmado recién en 26.x. Verificado
 # localmente que el realm-export.json importa sin errores bloqueantes y que
-# el login end-to-end (token + rutas protegidas) funciona igual en 26.5.7.
+# el login end-to-end (token + rutas protegidas) funciona igual en 26.7.2.
 #
 # Único cambio de comportamiento notado: los clientScopes estándar (profile,
 # email, web-origins) ya no se crean automáticamente al importar un realm en
@@ -20,6 +20,31 @@
 # Pendiente como mejora: definir esos clientScopes explícitamente en
 # realm-export.json si en algún momento se necesita mostrar email/nombre real
 # del usuario en la UI.
+#
+# BL-185: el client secret de "bistrolink-backend" YA NO se hornea en la
+# imagen ni se declara en realm-export.json. Primer intento (guardarlo como
+# "${vault.keycloak_client_secret}" y resolverlo vía Vault SPI) NO
+# funcionaba: Keycloak solo soporta expresiones ${vault.x} para 3 campos
+# específicos (password SMTP, bind credential LDAP, y el client secret de un
+# Identity Provider EXTERNO) — no para el secret de un client propio del
+# realm. Confirmado contra la doc oficial: https://www.keycloak.org/server/vault
+#
+# Solución real: realm-export.json no declara "secret" para bistrolink-backend
+# (Keycloak genera uno random al importar). keycloak/set-client-secret.sh
+# arranca Keycloak, espera a que esté listo, y pisa ese secret random con el
+# valor real (env var KEYCLOAK_CLIENT_SECRET_RUNTIME, configurada en Railway)
+# vía la Admin REST API (kcadm.sh) — el valor real nunca queda escrito en
+# ninguna capa de la imagen.
+#
+# BL-140 (bug encontrado en revisión): la lista de variables para envsubst
+# estaba incompleta — faltaban TEST_MOZO_USERNAME, TEST_MOZO_PASSWORD y
+# KEYCLOAK_COMENSAL_PASSWORD, pese a que realm-export.json las usa. Como
+# envsubst con lista explícita de variables deja sin tocar cualquier otro
+# "${...}" que no esté en esa lista, esos tres placeholders quedaban
+# literalmente escritos como "${TEST_MOZO_PASSWORD}" etc. en el JSON
+# importado, en vez del valor real — usuarios MOZO y COMENSAL de test con
+# credenciales rotas. Corregido abajo agregando los 3 ARGs faltantes a la
+# lista.
 
 # ── STAGE 1: sustituir los placeholders ${VAR} del realm-export.json ────────
 # El mecanismo standalone de Keycloak (--import-realm) NO interpola variables
@@ -39,7 +64,9 @@ ARG TEST_NO_TENANT_USERNAME
 ARG TEST_NO_TENANT_PASSWORD
 ARG TEST_TENANT_B_USERNAME
 ARG TEST_TENANT_B_PASSWORD
-ARG KEYCLOAK_CLIENT_SECRET
+ARG TEST_MOZO_USERNAME
+ARG TEST_MOZO_PASSWORD
+ARG KEYCLOAK_COMENSAL_PASSWORD
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends gettext-base && \
@@ -63,8 +90,10 @@ RUN TEST_ADMIN_USERNAME="$TEST_ADMIN_USERNAME" \
     TEST_NO_TENANT_PASSWORD="$TEST_NO_TENANT_PASSWORD" \
     TEST_TENANT_B_USERNAME="$TEST_TENANT_B_USERNAME" \
     TEST_TENANT_B_PASSWORD="$TEST_TENANT_B_PASSWORD" \
-    KEYCLOAK_CLIENT_SECRET="$KEYCLOAK_CLIENT_SECRET" \
-    envsubst '$TEST_ADMIN_USERNAME $TEST_ADMIN_PASSWORD $TEST_COCINA_USERNAME $TEST_COCINA_PASSWORD $TEST_NO_TENANT_USERNAME $TEST_NO_TENANT_PASSWORD $TEST_TENANT_B_USERNAME $TEST_TENANT_B_PASSWORD $KEYCLOAK_CLIENT_SECRET' \
+    TEST_MOZO_USERNAME="$TEST_MOZO_USERNAME" \
+    TEST_MOZO_PASSWORD="$TEST_MOZO_PASSWORD" \
+    KEYCLOAK_COMENSAL_PASSWORD="$KEYCLOAK_COMENSAL_PASSWORD" \
+    envsubst '$TEST_ADMIN_USERNAME $TEST_ADMIN_PASSWORD $TEST_COCINA_USERNAME $TEST_COCINA_PASSWORD $TEST_NO_TENANT_USERNAME $TEST_NO_TENANT_PASSWORD $TEST_TENANT_B_USERNAME $TEST_TENANT_B_PASSWORD $TEST_MOZO_USERNAME $TEST_MOZO_PASSWORD $KEYCLOAK_COMENSAL_PASSWORD' \
     < /tmp/realm-export.json > /tmp/realm-export.resuelto.json
 
 # ── STAGE 2: imagen final de Keycloak, sin tocar su gestor de paquetes ──────
@@ -72,8 +101,11 @@ FROM quay.io/keycloak/keycloak:26.7.2
 
 # Copiamos el JSON YA con los valores reales (no el original con placeholders)
 # a la carpeta de importación estándar. Al arrancar con --import-realm,
-# Keycloak busca acá y lo carga automáticamente.
+# Keycloak busca acá y lo carga automáticamente. Ya no tiene campo "secret"
+# para bistrolink-backend — lo genera random el import, y
+# set-client-secret.sh lo pisa después con el valor real (BL-185).
 COPY --from=realm-templater /tmp/realm-export.resuelto.json /opt/keycloak/data/import/realm-export.json
+
 # Tema custom de login (paleta/tipografía de BistroLink) — en local se monta
 # vía bind mount en docker-compose.yml (./keycloak/themes/bistrolink), pero
 # igual que con realm-export.json, Railway no puede montar nada del disco
@@ -81,6 +113,18 @@ COPY --from=realm-templater /tmp/realm-export.resuelto.json /opt/keycloak/data/i
 # primero en local (bind mount) antes de este COPY para no depender de un
 # build completo en cada iteración de CSS.
 COPY keycloak/themes/bistrolink /opt/keycloak/themes/bistrolink
-# El comando de arranque real lo define el "Custom Start Command" de Railway,
-# no hace falta CMD acá — pero se deja un default por si se corre suelta.
-CMD ["start-dev", "--http-port=8080", "--import-realm"]
+
+# BL-185: entrypoint propio que arranca Keycloak, espera a que esté listo, y
+# setea el client secret real de bistrolink-backend vía Admin REST API
+# (kcadm.sh) usando KEYCLOAK_CLIENT_SECRET_RUNTIME (env var de Railway) —
+# nunca horneado en la imagen. Ver keycloak/set-client-secret.sh para el
+# detalle completo del mecanismo.
+COPY keycloak/set-client-secret.sh /opt/keycloak/bin/set-client-secret.sh
+RUN chmod +x /opt/keycloak/bin/set-client-secret.sh
+
+ENTRYPOINT ["/bin/bash", "/opt/keycloak/bin/set-client-secret.sh"]
+
+# El comando real (flags de start) lo puede seguir pisando el "Custom Start
+# Command" de Railway si hace falta, pero queda seteado acá como default:
+# "start" (no "start-dev") para modo producción.
+CMD ["start", "--http-port=8080", "--import-realm"]

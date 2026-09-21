@@ -22,18 +22,35 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
-  
+
 
   # ── Keycloak ────────────────────────────────────────────────────────────
   bistrolink-auth:
-    image: quay.io/keycloak/keycloak:26.7.0
+    # 26.7.0 -> 26.7.2: alineado con la versión que usa keycloak/Dockerfile.auth
+    # (imagen de Railway), para no tener dos versiones de Keycloak distintas
+    # corriendo entre local y Railway.
+    image: quay.io/keycloak/keycloak:26.7.2
     container_name: bistrolink-auth
     restart: unless-stopped
-    command: ["start-dev","--import-realm"]
-    # Carga TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD y KEYCLOAK_CLIENT_SECRET
-    # directo del .env del backend — así el realm se importa igual para
-    # cualquiera del equipo con solo correr 'docker compose up -d', sin
-    # tener que setear variables de sesión ni pasar --env-file a mano.
+    # BL-185: entrypoint propio (bind-mounted, ver volumes abajo) que arranca
+    # Keycloak, espera a que esté listo, y pisa el client secret random que
+    # generó el import con el valor real de KEYCLOAK_CLIENT_SECRET (ya
+    # cargado vía env_file) — vía Admin REST API (kcadm.sh), nunca escrito en
+    # el realm-export.json. Ver keycloak/set-client-secret.sh para el detalle
+    # completo (incluye por qué el enfoque anterior con Vault SPI no
+    # funcionaba para este campo).
+    #
+    # Se invoca como "/bin/bash <script>" (no exec directo del archivo) para
+    # no depender del bit de ejecución del bind mount, que en Windows/NTFS
+    # puede no viajar igual que en Linux.
+    entrypoint: ["/bin/bash", "/opt/keycloak/bin/set-client-secret.sh"]
+    command: ["start-dev", "--import-realm"]
+    # Carga TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD, KEYCLOAK_CLIENT_SECRET,
+    # TEST_MOZO_USERNAME/PASSWORD y KEYCLOAK_COMENSAL_PASSWORD directo del
+    # .env del backend — así el realm se importa igual para cualquiera del
+    # equipo con solo correr 'docker compose up -d', sin tener que setear
+    # variables de sesión ni pasar --env-file a mano. Confirmá que estas 6
+    # variables existen en apps/backend/.env (ver keycloak/README.md).
     env_file:
       - ./apps/backend/.env
     environment:
@@ -57,7 +74,8 @@ services:
     volumes:
       - bistrolink-auth-data:/opt/keycloak/data
       - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
-      - ./keycloak/themes/bistrolink:/opt/keycloak/themes/bistrolink:r
+      - ./keycloak/themes/bistrolink:/opt/keycloak/themes/bistrolink:ro
+      - ./keycloak/set-client-secret.sh:/opt/keycloak/bin/set-client-secret.sh:ro
     healthcheck:
       test:
         - CMD-SHELL
@@ -67,7 +85,7 @@ services:
       timeout: 10s
       retries: 5
       start_period: 60s
- 
+
 
   # ── Portainer ───────────────────────────────────────────────────────────
   bistrolink-portainer:
@@ -100,3 +118,4 @@ volumes:
   bistrolink-auth-data:
   bistrolink-portainer-data:
   bistrolink-evo-data:
+  
