@@ -47,6 +47,16 @@ on:
         required: false
         type: boolean
         default: false
+      # ── E2E manual (Playwright) ──────────────────────────────────────────
+      # Permite disparar el job "playwright" (JOB 10) a mano vía
+      # workflow_dispatch, sin esperar a un push a develop. Sigue
+      # requiriendo que "deploy-staging" corra antes (needs: deploy-staging),
+      # así que un run manual solo tiene sentido apuntando a la rama develop.
+      playwright_report_kiwi:
+        description: "E2E manual: reportar los resultados a Kiwi TCMS (tildado = sí)"
+        required: false
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -884,26 +894,82 @@ jobs:
         run: npx @lhci/cli@0.14.x autorun
 
   # ── JOB 10: TESTS E2E (Playwright) ───────────────────────────────────────
-  # playwright:
-  #   name: 🎭 Tests E2E (Playwright)
-  #   needs: deploy-staging
-  #   if: github.ref == 'refs/heads/develop'
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v7
+  # Corre después de deploy-staging (push a develop) o a mano vía
+  # workflow_dispatch — en ambos casos contra el ambiente de staging ya
+  # desplegado por ese job (needs: deploy-staging). El toggle
+  # "playwright_report_kiwi" (default: true) permite correrlo manualmente
+  # sin mandar el resultado a Kiwi TCMS, útil para iterar rápido sobre el
+  # propio job de E2E sin ensuciar el TestPlan. Fuera de un
+  # workflow_dispatch (push normal a develop) siempre reporta.
+  #
+  # Depende de BL-181 (estructura de e2e/ reorganizada + baselines Linux)
+  # para poder pasar en CI — hasta que ese trabajo esté mergeado, este job
+  # puede fallar o quedar inestable en corridas reales.
+  playwright:
+    name: 🎭 Tests E2E (Playwright)
+    needs: [deploy-staging, version]
+    if: |
+      !(github.event_name == 'workflow_dispatch' && inputs.solo_tests_unitarios == true) &&
+      (github.ref == 'refs/heads/develop' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
 
-  #     - uses: actions/setup-node@v7
-  #       with:
-  #         node-version: "20"
-  #         cache: npm
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+          cache: npm
 
-  #     - name: Instalar dependencias
-  #       run: npm ci
+      - name: Instalar dependencias
+        run: npm ci
 
-  #     - name: Tests E2E Playwright en staging
-  #       run: npx playwright test --reporter=github
-  #       env:
-  #         BASE_URL: https://staging.bistrolink.app
+      - name: Instalar navegadores Playwright
+        run: npx playwright install --with-deps chromium
+
+      - name: Tests E2E Playwright en staging
+        run: npx playwright test
+        env:
+          BASE_URL: https://staging.bistrolink.app
+
+      # Sube playwright-report/ (junit.xml + html) como build artifact de
+      # CI, nunca al repo — mismo patrón que coverage-report-backend/
+      # -frontend en el job "jest". "if: always()" para tener el reporte
+      # también cuando algún test falla.
+      - name: Upload Playwright report (artifact)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14
+
+      # Mismo plugin y patrón que el job "jest" (ver ahí los comentarios de
+      # TCMS_PRODUCT_VERSION). TCMS_BUILD lleva sufijo "-e2e" para que quede
+      # en su propio TestRun, separado de -backend/-frontend. Cada caso se
+      # identifica por describe()/test() de Playwright, que ya incluye los
+      # IDs de HU/BL en el título.
+      #
+      # Se saltea el reporte solo si es un workflow_dispatch manual con
+      # "playwright_report_kiwi" destildado — en push a develop (o un
+      # workflow_dispatch con el toggle en su default "true") reporta
+      # siempre, corran o no todos los tests ("if: always()").
+      - name: Upload results to Kiwi TCMS (e2e)
+        if: always() && (github.event_name != 'workflow_dispatch' || inputs.playwright_report_kiwi == true)
+        continue-on-error: true
+        timeout-minutes: 5
+        env:
+          TCMS_PRODUCT: "BistroLink"
+          TCMS_PRODUCT_VERSION: ${{ github.event_name == 'pull_request' && github.base_ref || github.ref_name }}
+          TCMS_BUILD: ${{ needs.version.outputs.label }}-e2e
+        run: |
+          pip install kiwitcms-junit.xml-plugin --break-system-packages
+          cat <<EOF > ~/.tcms.conf
+          [tcms]
+          url = ${{ secrets.KIWI_TCMS_URL }}/xml-rpc/
+          username = ${{ secrets.KIWI_TCMS_USERNAME }}
+          password = ${{ secrets.KIWI_TCMS_PASSWORD }}
+          EOF
+          tcms-junit.xml-plugin playwright-report/junit.xml
 
   # ── JOB 11: DEPLOY PRODUCCIÓN (manual, solo en tag v*.*.*) ───────────────
   # Disparador: push de un tag v*.*.* (ya declarado en "on:"). Un tag es una
@@ -917,8 +983,14 @@ jobs:
   # "skipped" y deploy-prod nunca correría. En su lugar se re-exige el mismo
   # gate de seguridad + build que valida staging (gitleaks, codeql,
   # sonarcloud, snyk, build), que sí se re-ejecuta en el push del tag.
-  # TODO (bloque 3 pendiente): sumar "playwright" a needs en cuanto ese job
-  # esté activo, para no promover a producción nada que no haya pasado E2E.
+  #
+  # "playwright" SÍ puede ir en needs a pesar de correr solo contra develop:
+  # un tag v*.*.* normalmente sale de un commit de develop que ya pasó por
+  # deploy-staging + playwright en su propio push, así que ese job ya tiene
+  # un resultado (success) asociado al mismo commit cuando se tagea. TODO
+  # resuelto: se agrega "playwright" a needs para no promover a producción
+  # nada que no haya pasado E2E. Pendiente de BL-181 (estructura/baselines)
+  # antes de que este job pueda depender de un playwright confiable en CI.
   #
   # Rollback: se despliega SIEMPRE por versión semántica (github.ref_name,
   # ej. v1.4.2), nunca por SHA ni por "latest" — el job "build" ya publica
@@ -933,7 +1005,7 @@ jobs:
   #   # notas arriba), solo comentado. Para reactivarlo: descomentar todo
   #   # este bloque (job "deploy-prod" completo, hasta el final del archivo).
   #     name: 🏁 Deploy producción (aprobación manual)
-  #     needs: [gitleaks, codeql, sonarcloud, snyk, build]
+  #     needs: [gitleaks, codeql, sonarcloud, snyk, build, playwright]
   #     if: startsWith(github.ref, 'refs/tags/v')
   #     # GitHub Environment "production": configurar en Settings → Environments
   #     # → production → Required reviewers, con al menos un integrante distinto
