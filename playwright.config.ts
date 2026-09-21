@@ -16,7 +16,19 @@ export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
   retries: process.env.CI ? 2 : 0,
-  reporter: process.env.CI ? 'github' : 'list',
+  // BL-182: reporter pasa de string a array. 'github' no hace nada fuera de
+  // GitHub Actions (chequea la env var internamente), así que queda
+  // seguro dejarlo siempre activo en vez de condicionarlo a process.env.CI
+  // como antes. 'junit' es el que consume el job "playwright" de ci.yml
+  // (paso "Upload results to Kiwi TCMS (e2e)", que lee
+  // playwright-report/junit.xml) y el artifact que sube a CI incluye
+  // también el 'html' para inspección manual del run.
+  reporter: [
+    ['list'],
+    ['github'],
+    ['junit', { outputFile: 'playwright-report/junit.xml' }],
+    ['html', { outputFolder: 'playwright-report/html', open: 'never' }],
+  ],
   use: {
     baseURL: process.env.BASE_URL ?? 'http://localhost:3000',
     trace: 'on-first-retry',
