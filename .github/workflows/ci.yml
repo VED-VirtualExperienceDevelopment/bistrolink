@@ -893,25 +893,28 @@ jobs:
       - name: Lighthouse CI — menú digital (HU-001)
         run: npx @lhci/cli@0.14.x autorun
 
-  # ── JOB 10: TESTS E2E (Playwright) ───────────────────────────────────────
+  # ── JOB 10: TESTS E2E (Playwright) — matrix por browser ───────────────────
   # Corre después de deploy-staging (push a develop) o a mano vía
   # workflow_dispatch — en ambos casos contra el ambiente de staging ya
-  # desplegado por ese job (needs: deploy-staging). El toggle
-  # "playwright_report_kiwi" (default: true) permite correrlo manualmente
-  # sin mandar el resultado a Kiwi TCMS, útil para iterar rápido sobre el
-  # propio job de E2E sin ensuciar el TestPlan. Fuera de un
-  # workflow_dispatch (push normal a develop) siempre reporta.
+  # desplegado por ese job (needs: deploy-staging). Cada proyecto
+  # (chromium/mobile-chrome/mobile-safari/desktop-safari) corre en su propio
+  # runner en paralelo, en vez de los 4 secuenciales sobre un mismo runner.
+  # "fail-fast: false" para que un browser roto no cancele los otros tres.
   #
   # Depende de BL-181 (estructura de e2e/ reorganizada + baselines Linux)
   # para poder pasar en CI — hasta que ese trabajo esté mergeado, este job
   # puede fallar o quedar inestable en corridas reales.
   playwright:
-    name: 🎭 Tests E2E (Playwright)
+    name: 🎭 Tests E2E (Playwright, ${{ matrix.project }})
     needs: [deploy-staging, version]
     if: |
       !(github.event_name == 'workflow_dispatch' && inputs.solo_tests_unitarios == true) &&
       (github.ref == 'refs/heads/develop' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [chromium, mobile-chrome, mobile-safari, desktop-safari]
     steps:
       - uses: actions/checkout@v7
 
@@ -925,14 +928,19 @@ jobs:
 
       # mobile-safari y desktop-safari (playwright.config.ts) corren en el
       # motor webkit, no chromium — sin este binario, browserType.launch()
-      # falla con "Executable doesn't exist at .../webkit-*/pw_run.sh" en
-      # los 4 proyectos que lo usan (mobile-chrome no lo necesita: usa
-      # chromium con emulación de Pixel 5).
+      # falla con "Executable doesn't exist at .../webkit-*/pw_run.sh"
+      # (mobile-chrome no necesita webkit: usa chromium con emulación de
+      # Pixel 5). Se instala solo el motor que cada proyecto usa.
       - name: Instalar navegadores Playwright
-        run: npx playwright install --with-deps chromium webkit
+        run: |
+          if [[ "${{ matrix.project }}" == *safari* ]]; then
+            npx playwright install --with-deps webkit
+          else
+            npx playwright install --with-deps chromium
+          fi
 
-      - name: Tests E2E Playwright en staging
-        run: npx playwright test
+      - name: Tests E2E Playwright en staging (${{ matrix.project }})
+        run: npx playwright test --project=${{ matrix.project }}
         env:
           # staging.bistrolink.app no tiene registro DNS propio
           # (ERR_NAME_NOT_RESOLVED en CI) — se usa la misma URL de Railway
@@ -944,16 +952,65 @@ jobs:
           # que ya usa el build-arg NEXT_PUBLIC_API_URL del job "build".
           API_URL: https://bistrolink-api-staging.up.railway.app
 
-      # Sube playwright-report/ (junit.xml + html) como build artifact de
-      # CI, nunca al repo — mismo patrón que coverage-report-backend/
-      # -frontend en el job "jest". "if: always()" para tener el reporte
-      # también cuando algún test falla.
-      - name: Upload Playwright report (artifact)
+      # Un artifact por proyecto (nombre único) para que el job
+      # "playwright-report" pueda bajarlos todos con un patrón y mergearlos.
+      - name: Upload Playwright report (artifact, ${{ matrix.project }})
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-${{ matrix.project }}
+          path: playwright-report/
+          retention-days: 14
+
+  # ── JOB 10B: MERGE + REPORTE A KIWI (Playwright) ──────────────────────────
+  # Junta los 4 junit.xml (uno por proyecto, generados por el matrix de
+  # arriba) en uno solo, para que el TestRun de Kiwi quede único ("-e2e"),
+  # igual que antes de paralelizar por browser. "if: always()" porque
+  # interesa reportar aunque algún proyecto haya fallado (matrix con
+  # fail-fast: false).
+  playwright-report:
+    name: 📋 Merge + reporte E2E a Kiwi TCMS
+    needs: [playwright, version]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar los 4 reportes
+        uses: actions/download-artifact@v4
+        with:
+          pattern: playwright-report-*
+          path: reports
+          merge-multiple: false
+
+      - name: Crear playwright-report/ antes del merge
+        run: mkdir -p playwright-report
+
+      # Cada carpeta bajo reports/ es un artifact (playwright-report-chromium,
+      # etc.), cada uno con su propio junit.xml. Se combinan los <testsuite>
+      # de los 4 bajo una única raíz <testsuites>, con la stdlib (sin
+      # dependencias nuevas) — alcanza para lo que necesita Kiwi.
+      - name: Mergear los junit.xml en uno solo
+        run: |
+          python3 - <<'PY'
+          import glob
+          import xml.etree.ElementTree as ET
+
+          merged = ET.Element("testsuites")
+          for path in sorted(glob.glob("reports/*/junit.xml")):
+              tree = ET.parse(path)
+              root = tree.getroot()
+              suites = [root] if root.tag == "testsuite" else list(root)
+              for suite in suites:
+                  merged.append(suite)
+
+          ET.ElementTree(merged).write("playwright-report/junit.xml", encoding="utf-8", xml_declaration=True)
+          PY
+
+      - name: Upload Playwright report combinado (artifact)
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
-          path: playwright-report/
+          path: playwright-report/junit.xml
           retention-days: 14
 
       # Mismo plugin y patrón que el job "jest" (ver ahí los comentarios de
@@ -1005,13 +1062,16 @@ jobs:
   # gate de seguridad + build que valida staging (gitleaks, codeql,
   # sonarcloud, snyk, build), que sí se re-ejecuta en el push del tag.
   #
-  # "playwright" SÍ puede ir en needs a pesar de correr solo contra develop:
-  # un tag v*.*.* normalmente sale de un commit de develop que ya pasó por
-  # deploy-staging + playwright en su propio push, así que ese job ya tiene
-  # un resultado (success) asociado al mismo commit cuando se tagea. TODO
-  # resuelto: se agrega "playwright" a needs para no promover a producción
-  # nada que no haya pasado E2E. Pendiente de BL-181 (estructura/baselines)
-  # antes de que este job pueda depender de un playwright confiable en CI.
+  # "playwright-report" SÍ puede ir en needs a pesar de correr solo contra
+  # develop: un tag v*.*.* normalmente sale de un commit de develop que ya
+  # pasó por deploy-staging + playwright(-report) en su propio push, así
+  # que ese job ya tiene un resultado (success) asociado al mismo commit
+  # cuando se tagea. Se apunta a "playwright-report" (el job que mergea los
+  # 4 reportes del matrix y reporta a Kiwi) en vez de "playwright" (el
+  # matrix en sí) para no depender de una sola de las 4 entradas. TODO
+  # resuelto: se agrega a needs para no promover a producción nada que no
+  # haya pasado E2E. Pendiente de BL-181 (estructura/baselines) antes de
+  # que este job pueda depender de un playwright confiable en CI.
   #
   # Rollback: se despliega SIEMPRE por versión semántica (github.ref_name,
   # ej. v1.4.2), nunca por SHA ni por "latest" — el job "build" ya publica
@@ -1026,7 +1086,7 @@ jobs:
   #   # notas arriba), solo comentado. Para reactivarlo: descomentar todo
   #   # este bloque (job "deploy-prod" completo, hasta el final del archivo).
   #     name: 🏁 Deploy producción (aprobación manual)
-  #     needs: [gitleaks, codeql, sonarcloud, snyk, build, playwright]
+  #     needs: [gitleaks, codeql, sonarcloud, snyk, build, playwright-report]
   #     if: startsWith(github.ref, 'refs/tags/v')
   #     # GitHub Environment "production": configurar en Settings → Environments
   #     # → production → Required reviewers, con al menos un integrante distinto
@@ -1155,3 +1215,4 @@ jobs:
   #           curl -f https://bistrolink-api-production.up.railway.app/health/ready
   #           curl -f https://bistrolink-web-production.up.railway.app
   #           curl -f https://bistrolink-auth-production.up.railway.app/realms/bistrolink/.well-known/openid-configuration
+  
