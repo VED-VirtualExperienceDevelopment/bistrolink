@@ -191,8 +191,16 @@ jobs:
           KEYCLOAK_CLIENT_ID: "bistrolink-backend-test"
           KEYCLOAK_CLIENT_SECRET: "dummy-secret-for-ci"
 
+      # continue-on-error: sin esto, un 403 transitorio de GitHub acá
+      # (conocido, ver "Failed to FinalizeArtifact" en issues de
+      # actions/upload-artifact) deja el job marcado en falla, y el step
+      # "Tests Jest (frontend)" de abajo -sin "if:" propio, o sea
+      # "if: success()" implícito- se SALTEA por completo en vez de correr.
+      # No es negociable perder la corrida real de tests por un artifact
+      # que no se pudo subir.
       - name: Upload coverage artifact (backend)
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report-backend
@@ -220,6 +228,7 @@ jobs:
 
       - name: Upload coverage artifact (frontend)
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report-frontend
@@ -954,8 +963,13 @@ jobs:
 
       # Un artifact por proyecto (nombre único) para que el job
       # "playwright-report" pueda bajarlos todos con un patrón y mergearlos.
+      # continue-on-error: un 403 transitorio acá (mismo issue conocido de
+      # actions/upload-artifact, ver el job "jest" para el detalle) no debe
+      # marcar este matrix-run en falla — el job "playwright-report" igual
+      # puede mergear con los artifacts que sí llegaron a subir.
       - name: Upload Playwright report (artifact, ${{ matrix.project }})
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report-${{ matrix.project }}
@@ -1215,4 +1229,3 @@ jobs:
   #           curl -f https://bistrolink-api-production.up.railway.app/health/ready
   #           curl -f https://bistrolink-web-production.up.railway.app
   #           curl -f https://bistrolink-auth-production.up.railway.app/realms/bistrolink/.well-known/openid-configuration
-  
