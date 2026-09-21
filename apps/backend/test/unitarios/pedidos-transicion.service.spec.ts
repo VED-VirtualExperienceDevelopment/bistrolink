@@ -57,6 +57,14 @@ describe('PedidosTransicionService', () => {
         id: PEDIDO_ID,
         estado: PedidoEstado.EN_PREPARACION,
         updatedAt: new Date('2026-08-30T12:00:00Z'),
+        mesa: { numero: 4 },
+        lineas: [
+          {
+            id: 'linea-1',
+            nombreSnapshot: 'Milanesa a la napolitana',
+            cantidad: 2,
+          },
+        ],
       });
 
       const resultado = await service.transicionar({
@@ -72,6 +80,15 @@ describe('PedidosTransicionService', () => {
       expect(tx().pedido.update).toHaveBeenCalledWith({
         where: { id: PEDIDO_ID },
         data: { estado: PedidoEstado.EN_PREPARACION },
+        select: {
+          id: true,
+          estado: true,
+          updatedAt: true,
+          mesa: { select: { numero: true } },
+          lineas: {
+            select: { id: true, nombreSnapshot: true, cantidad: true },
+          },
+        },
       });
       expect(tx().pedidoEstadoHistorial.create).toHaveBeenCalledWith({
         data: {
@@ -86,6 +103,14 @@ describe('PedidosTransicionService', () => {
         id: PEDIDO_ID,
         estado: PedidoEstado.EN_PREPARACION,
         actualizadoEn: '2026-08-30T12:00:00.000Z',
+        mesaNumero: 4,
+        lineas: [
+          {
+            id: 'linea-1',
+            nombreSnapshot: 'Milanesa a la napolitana',
+            cantidad: 2,
+          },
+        ],
       });
     });
 
@@ -99,6 +124,8 @@ describe('PedidosTransicionService', () => {
         id: PEDIDO_ID,
         estado: PedidoEstado.LISTO_PARA_ENTREGAR,
         updatedAt: new Date('2026-08-30T12:05:00Z'),
+        mesa: { numero: 4 },
+        lineas: [],
       });
 
       const resultado = await service.transicionar({
@@ -208,7 +235,13 @@ describe('PedidosTransicionService', () => {
 
       expect(tx().pedido.findMany).toHaveBeenCalledWith({
         where: {
-          estado: { in: [PedidoEstado.RECIBIDO, PedidoEstado.EN_PREPARACION] },
+          estado: {
+            in: [
+              PedidoEstado.RECIBIDO,
+              PedidoEstado.EN_PREPARACION,
+              PedidoEstado.LISTO_PARA_ENTREGAR,
+            ],
+          },
         },
         include: { mesa: true, lineas: true },
         orderBy: { createdAt: 'asc' },
@@ -246,17 +279,42 @@ describe('PedidosTransicionService', () => {
         id: PEDIDO_ID,
         estado: PedidoEstado.EN_PREPARACION,
         updatedAt: new Date('2026-08-30T12:00:00Z'),
+        mesa: { numero: 4 },
+        lineas: [
+          {
+            id: 'linea-1',
+            nombreSnapshot: 'Milanesa a la napolitana',
+            cantidad: 2,
+          },
+        ],
       });
 
       const resultado = await service.obtenerResumen(TENANT_ID, PEDIDO_ID);
 
       expect(tx().pedido.findUnique).toHaveBeenCalledWith({
         where: { id: PEDIDO_ID },
+        select: {
+          id: true,
+          estado: true,
+          updatedAt: true,
+          mesa: { select: { numero: true } },
+          lineas: {
+            select: { id: true, nombreSnapshot: true, cantidad: true },
+          },
+        },
       });
       expect(resultado).toEqual({
         id: PEDIDO_ID,
         estado: PedidoEstado.EN_PREPARACION,
         actualizadoEn: '2026-08-30T12:00:00.000Z',
+        mesaNumero: 4,
+        lineas: [
+          {
+            id: 'linea-1',
+            nombreSnapshot: 'Milanesa a la napolitana',
+            cantidad: 2,
+          },
+        ],
       });
     });
 
