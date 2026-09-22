@@ -119,8 +119,14 @@ COPY keycloak/themes/bistrolink /opt/keycloak/themes/bistrolink
 # (kcadm.sh) usando KEYCLOAK_CLIENT_SECRET_RUNTIME (env var de Railway) —
 # nunca horneado en la imagen. Ver keycloak/set-client-secret.sh para el
 # detalle completo del mecanismo.
-COPY keycloak/set-client-secret.sh /opt/keycloak/bin/set-client-secret.sh
-RUN chmod +x /opt/keycloak/bin/set-client-secret.sh
+#
+# Se usa "COPY --chmod=0755" en vez de un "RUN chmod +x" separado: la imagen
+# base de Keycloak ya cambió a un usuario no-root en este punto, y ese
+# usuario no es dueño del archivo recien copiado, asi que un "RUN chmod"
+# posterior falla con "Operation not permitted". Con --chmod, el permiso se
+# setea en el mismo paso de copia (a nivel de capa), sin depender de que el
+# usuario activo tenga derecho a modificar el archivo despues.
+COPY --chmod=0755 keycloak/set-client-secret.sh /opt/keycloak/bin/set-client-secret.sh
 
 ENTRYPOINT ["/bin/bash", "/opt/keycloak/bin/set-client-secret.sh"]
 
