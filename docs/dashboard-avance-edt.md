@@ -13,15 +13,15 @@
 |---|---|
 | Período del proyecto | 03/08/2026 – 10/12/2026 |
 | Sprints planificados | 9 Sprints (2 semanas c/u) + ciclo de cierre |
-| Historias de Usuario totales (actual) | 142 |
-| Story Points totales (actual) | 202 pts |
+| Historias de Usuario totales (actual) | 157 |
+| Story Points totales (actual) | 225 pts |
 | **Sprint actual** | **4** |
-| **Story Points completados a la fecha** | **52** |
-| **% Avance global** | **26%** |
+| **Story Points completados a la fecha** | **70** |
+| **% Avance global** | **31%** |
 
-> Última actualización automática: `19/09/2026` — generado desde Linear por GitHub Action.
+> Última actualización automática: `25/09/2026` — generado desde Linear por GitHub Action.
 
-> ℹ️ El alcance actual (142 HU / 202 pts) difiere de la línea base de planning (26 HU / 202 pts) — se agregaron o quitaron historias después del kickoff.
+> ℹ️ El alcance actual (157 HU / 225 pts) difiere de la línea base de planning (26 HU / 202 pts) — se agregaron o quitaron historias después del kickoff.
 <!-- AUTO:resumen-ejecutivo:end -->
 
 ### Avance por Capa
@@ -29,10 +29,10 @@
 <!-- AUTO:avance-por-capa:start -->
 | Capa | Sprints | HU totales | Story Points | HU completadas | % Avance |
 |---|---|---|---|---|---|
-| 🟩 Núcleo | 1–5 | 85 | 81 | 65 | 76% |
+| 🟩 Núcleo | 1–5 | 97 | 104 | 75 | 77% |
 | 🟦 Integración | 6–8 | 40 | 77 | 0 | 0% |
 | 🟪 Valor Agregado (cond.) | 9–9 | 16 | 44 | 0 | 0% |
-| **Total** | **1–9** | **141** | **202** | **65** | **46%** |
+| **Total** | **1–9** | **153** | **225** | **75** | **49%** |
 <!-- AUTO:avance-por-capa:end -->
 
 ---
@@ -145,6 +145,6 @@ xychart-beta
     x-axis [Sprint1, Sprint2, Sprint3, Sprint4, Sprint5, Sprint6, Sprint7, Sprint8, "Sprint9(cond)"]
     y-axis "Story Points" 0 --> 50
     bar "Planificado" [18, 24, 5, 16, 13, 37, 37, 8, 44]
-    bar "Completado" [5, 13, 29, 2, 3, 0, 0, 0, 0]
+    bar "Completado" [5, 13, 29, 15, 8, 0, 0, 0, 0]
 ```
 <!-- AUTO:sp-por-sprint-chart:end -->
