@@ -462,7 +462,9 @@ jobs:
       TEST_NO_TENANT_PASSWORD: ${{ secrets.TEST_NO_TENANT_PASSWORD }}
       TEST_TENANT_B_USERNAME: ${{ secrets.TEST_TENANT_B_USERNAME }}
       TEST_TENANT_B_PASSWORD: ${{ secrets.TEST_TENANT_B_PASSWORD }}
-      KEYCLOAK_CLIENT_SECRET: ${{ secrets.KEYCLOAK_CLIENT_SECRET }}
+      TEST_MOZO_USERNAME: ${{ secrets.TEST_MOZO_USERNAME }}
+      TEST_MOZO_PASSWORD: ${{ secrets.TEST_MOZO_PASSWORD }}
+      KEYCLOAK_COMENSAL_PASSWORD: ${{ secrets.KEYCLOAK_COMENSAL_PASSWORD }}
     strategy:
       fail-fast: false
       matrix:
@@ -508,7 +510,9 @@ jobs:
               --build-arg TEST_NO_TENANT_PASSWORD="$TEST_NO_TENANT_PASSWORD" \
               --build-arg TEST_TENANT_B_USERNAME="$TEST_TENANT_B_USERNAME" \
               --build-arg TEST_TENANT_B_PASSWORD="$TEST_TENANT_B_PASSWORD" \
-              --build-arg KEYCLOAK_CLIENT_SECRET="$KEYCLOAK_CLIENT_SECRET" \
+              --build-arg TEST_MOZO_USERNAME="$TEST_MOZO_USERNAME" \
+              --build-arg TEST_MOZO_PASSWORD="$TEST_MOZO_PASSWORD" \
+              --build-arg KEYCLOAK_COMENSAL_PASSWORD="$KEYCLOAK_COMENSAL_PASSWORD" \
               -f ${{ matrix.dockerfile }} \
               .
           else
