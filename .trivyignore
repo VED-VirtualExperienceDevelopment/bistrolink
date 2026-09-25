@@ -71,6 +71,24 @@ CVE-2026-54291
 CVE-2026-86145
 CVE-2026-89161
 
+# CVE-2026-84939 (CRITICAL) — org.freemarker:freemarker 2.3.32, bundleado por
+
+# la imagen oficial de Keycloak (quay.io/keycloak/keycloak:26.7.2). Fix
+
+# existe en freemarker 2.3.35, pero Keycloak todavía no lo empaquetó: el
+
+# issue que lo trackea (keycloak/keycloak#52888) lo asocia a los milestones
+
+# 26.4.17 / 26.6.8 / 26.7.5 / 26.8.0, ninguno publicado todavía (la última
+
+# release real es 26.7.4, del 09/2026, que confirmadamente NO lo incluye).
+
+# Pendiente (BL-137): revisar cuando salga 26.7.5 o 26.8.0 y actualizar
+
+# la imagen base en Dockerfile.auth, sacando esta excepción.
+
+CVE-2026-84939
+
 # testmgmt (Kiwi TCMS) — CVEs de dependencias empaquetadas dentro de la
 
 # imagen oficial kiwitcms/kiwi, no de código propio. No podemos actualizar
