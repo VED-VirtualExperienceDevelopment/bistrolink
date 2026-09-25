@@ -7,18 +7,16 @@
 ## 📊 Resumen
 
 <!-- AUTO:resumen-bugs:start -->
-
-| Métrica                       | Valor    |
-| ----------------------------- | -------- |
-| Total de bugs registrados     | 8        |
-| **Abiertos**                  | **0**    |
-| **Cerrados**                  | **8**    |
-| % Resueltos                   | 100%     |
+| Métrica | Valor |
+|---|---|
+| Total de bugs registrados | 8 |
+| **Abiertos** | **0** |
+| **Cerrados** | **8** |
+| % Resueltos | 100% |
 | Tiempo promedio de resolución | 0.2 días |
-| Tiempo mediana de resolución  | 0.1 días |
+| Tiempo mediana de resolución | 0.1 días |
 
-> Última actualización automática: `19/09/2026` — generado desde GitHub Issues por GitHub Action.
-
+> Última actualización automática: `25/09/2026` — generado desde GitHub Issues por GitHub Action.
 <!-- AUTO:resumen-bugs:end -->
 
 ---
@@ -26,7 +24,6 @@
 ## 📈 Tendencia semanal (abiertos vs. cerrados)
 
 <!-- AUTO:tendencia-bugs-chart:start -->
-
 ```mermaid
 %%{init: {'theme':'base', 'themeVariables': {
   'background': '#1a202c',
@@ -46,27 +43,24 @@
 }}}%%
 xychart-beta
     title "Bugs abiertos vs. cerrados por semana"
-    x-axis ["27/7", "3/8", "10/8", "17/8", "24/8", "31/8", "7/9", "14/9"]
+    x-axis ["3/8", "10/8", "17/8", "24/8", "31/8", "7/9", "14/9", "21/9"]
     y-axis "Cantidad de bugs" 0 --> 5
-    bar "Abiertos" [0, 0, 0, 0, 0, 4, 1, 3]
-    bar "Cerrados" [0, 0, 0, 0, 0, 4, 1, 3]
+    bar "Abiertos" [0, 0, 0, 0, 4, 1, 3, 0]
+    bar "Cerrados" [0, 0, 0, 0, 4, 1, 3, 0]
 ```
-
 <!-- AUTO:tendencia-bugs-chart:end -->
 
 > Si tu versión de GitHub no renderiza `xychart-beta`, usa la tabla equivalente:
 
 <!-- AUTO:tendencia-bugs-tabla:start -->
-
 | Semana (inicio) | Abiertos | Cerrados |
-| --------------- | :------: | :------: |
-| 27/7            |    0     |    0     |
-| 3/8             |    0     |    0     |
-| 10/8            |    0     |    0     |
-| 17/8            |    0     |    0     |
-| 24/8            |    0     |    0     |
-| 31/8            |    4     |    4     |
-| 7/9             |    1     |    1     |
-| 14/9            |    3     |    3     |
-
+|---|:---:|:---:|
+| 3/8 | 0 | 0 |
+| 10/8 | 0 | 0 |
+| 17/8 | 0 | 0 |
+| 24/8 | 0 | 0 |
+| 31/8 | 4 | 4 |
+| 7/9 | 1 | 1 |
+| 14/9 | 3 | 3 |
+| 21/9 | 0 | 0 |
 <!-- AUTO:tendencia-bugs-tabla:end -->
