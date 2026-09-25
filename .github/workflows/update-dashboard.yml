@@ -90,6 +90,7 @@ jobs:
           LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
           LINEAR_TEAM_KEY: ${{ secrets.LINEAR_TEAM_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DASHBOARD_EMAIL_RECIPIENTS: ${{ secrets.DASHBOARD_EMAIL_RECIPIENTS }}
         run: node scripts/send-status-email.mjs
 
       - name: Enviar email de estado
