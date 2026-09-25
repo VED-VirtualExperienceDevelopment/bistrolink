@@ -73,7 +73,6 @@
       "directAccessGrantsEnabled": true,
       "serviceAccountsEnabled": true,
       "authorizationServicesEnabled": false,
-      "secret": "${KEYCLOAK_CLIENT_SECRET}",
       "defaultClientScopes": [
         "profile",
         "email",
