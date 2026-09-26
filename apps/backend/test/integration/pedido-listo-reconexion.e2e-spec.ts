@@ -84,7 +84,7 @@ describe('WebSocket KDS (HU-018/BL-65) - reconexion no pierde notificaciones', (
   }, 30000);
 
   itConMozo(
-    '[TC-I-KDS-019] un pedido LISTO_PARA_ENTREGAR sigue apareciendo en el snapshot tras reconectar',
+    '[TC-I-021] KDS: pedido LISTO_PARA_ENTREGAR sigue apareciendo en el snapshot tras reconectar',
     async () => {
       const pedidoRes = await request(app.getHttpServer())
         .post('/pedidos')

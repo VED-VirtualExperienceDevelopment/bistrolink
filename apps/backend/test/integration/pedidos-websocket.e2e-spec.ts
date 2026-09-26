@@ -102,7 +102,7 @@ describe('WebSocket KDS (HU-003 + HU-004) - emision de pedido:nuevo', () => {
   }, 30000);
 
   itConMozo(
-    '[TC-I-KDS-006] emite pedido:nuevo al KDS en menos de 500ms tras confirmar',
+    '[TC-I-024] KDS: emite pedido nuevo al KDS en menos de 500ms tras confirmar',
     async () => {
       const tokenMozo = await getToken(
         MOZO_USER as string,
@@ -178,7 +178,7 @@ describe('WebSocket KDS (HU-003 + HU-004) - emision de pedido:nuevo', () => {
   );
 
   itConTenantB(
-    '[TC-I-KDS-007] NO emite el pedido a un cliente conectado con un token de OTRO tenant real (aislamiento)',
+    '[TC-I-025] KDS: NO emite el pedido a un cliente conectado con token de OTRO tenant (aislamiento)',
     (done) => {
       getToken(TENANT_B_USER as string, TENANT_B_PASS as string)
         .then((tokenTenantB) => {

@@ -76,7 +76,7 @@ describe('WebSocket KDS (HU-018) - pedido listo para entregar', () => {
   }, 30000);
 
   itConMozo(
-    '[TC-I-KDS-018] emite pedido:actualizado(LISTO_PARA_ENTREGAR) en menos de 500ms',
+    '[TC-I-020] KDS: emite pedido:actualizado(LISTO_PARA_ENTREGAR) en menos de 500ms',
     async () => {
       const pedidoRes = await request(app.getHttpServer())
         .post('/pedidos')

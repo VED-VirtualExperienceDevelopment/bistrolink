@@ -68,7 +68,7 @@ describe('Pedidos Observaciones - Integración (BL-41)', () => {
     ]);
   });
 
-  it('debe crear un pedido con observaciones de ítem y general, y enviar el payload correcto al KDS', async () => {
+  it('[TC-I-022] Pedidos: crea un pedido con observaciones de ítem y general, envía payload correcto al KDS', async () => {
     const tenantId = '11111111-1111-1111-1111-111111111111';
     const dto: CrearPedidoDto = {
       restauranteId: '22222222-2222-2222-2222-222222222222',
@@ -114,7 +114,7 @@ describe('Pedidos Observaciones - Integración (BL-41)', () => {
     );
   });
 
-  it('debe crear un pedido sin observaciones sin romper el payload del KDS (campos undefined manejados)', async () => {
+  it('[TC-I-023] Pedidos: crea un pedido sin observaciones sin romper el payload del KDS (undefined manejados)', async () => {
     const tenantId = '11111111-1111-1111-1111-111111111111';
     const dto: CrearPedidoDto = {
       restauranteId: '22222222-2222-2222-2222-222222222222',

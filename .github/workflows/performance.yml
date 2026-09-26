@@ -1,0 +1,211 @@
+# ============================================================================
+# .github/workflows/performance.yml
+#
+# Workflow aparte del ci.yml principal — job manual de Performance
+# (k6 + Lighthouse) con reporte a Kiwi TCMS.
+#
+# Por qué separado: no se dispara nunca en push ni pull_request, así que no
+# tiene sentido que viva dentro de ci.yml (que sí corre en cada push/PR) ni
+# que dependa de sus jobs. Al ser standalone, duplica localmente el cálculo
+# del "version label" (mismo criterio que el job "version" de ci.yml) en vez
+# de depender de un job de otro workflow.
+#
+# Requisitos:
+#   - Los secrets KIWI_TCMS_URL / KIWI_TCMS_USERNAME / KIWI_TCMS_PASSWORD ya
+#     existen en el repo (los usa ci.yml) — no hace falta crear nada nuevo.
+#   - Asume que staging ya está desplegado (no lo deploya ni lo redeploya):
+#     corre k6 contra bistrolink-api-staging y Lighthouse contra
+#     bistrolink-web-staging, igual que hace ci.yml.
+#
+# Cómo correrlo: pestaña Actions → "Performance (k6 + Lighthouse)" →
+# "Run workflow".
+# ============================================================================
+
+name: Performance (k6 + Lighthouse)
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "Motivo de esta corrida manual"
+        required: false
+        default: "corrida manual de performance"
+
+permissions:
+  contents: read
+
+jobs:
+  # ── VERSION LABEL ───────────────────────────────────────────────────────
+  # Mismo criterio que el job "version" de ci.yml (fecha del commit + SHA
+  # corto), duplicado acá porque este workflow no puede depender de un job
+  # de otro workflow. Solo se usa para armar un TCMS_BUILD legible.
+  version:
+    name: 🏷️ Version label
+    runs-on: ubuntu-latest
+    outputs:
+      label: ${{ steps.build_label.outputs.value }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set build label
+        id: build_label
+        run: echo "value=$(git log -1 --date=format:'%Y-%m-%d_%H-%M' --format='%cd')-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+  # ── PERFORMANCE (k6 + Lighthouse) → Kiwi TCMS ───────────────────────────
+  # k6 y Lighthouse no generan JUnit XML nativo (a diferencia de Jest/
+  # Playwright), así que cada corrida se traduce a mano a un junit.xml
+  # mínimo (un <testcase> por umbral/assert) antes de subir a Kiwi con el
+  # mismo plugin y patrón que usan los jobs "jest" y "playwright-report" de
+  # ci.yml.
+  #
+  # Los nombres de <testcase> son EXACTAMENTE el Summary de cada TC-P-XXX en
+  # Kiwi (TC-1527/1528/1529) — mismo criterio que usa el título de
+  # test()/describe() en Jest/Playwright para que el plugin matchee el caso
+  # correcto en vez de crear uno nuevo cada corrida.
+  #
+  # NOTA: la forma exacta del JSON de "k6 run --summary-export" y del
+  # manifest.json de lhci se documenta abajo tal como las publican k6 y
+  # @lhci/cli hoy — conviene revisar a mano el primer run real antes de
+  # confiar ciegamente en lo que queda reportado en Kiwi.
+  performance:
+    name: ⚡ Performance (k6 + Lighthouse) → Kiwi TCMS
+    needs: [version]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+
+      # ── k6 ──────────────────────────────────────────────────────────────
+      - name: Instalar k6
+        uses: grafana/setup-k6-action@v1
+
+      - name: k6 — TC-P-001 (load-test.js)
+        continue-on-error: true
+        env:
+          BASE_URL: https://bistrolink-api-staging.up.railway.app
+        run: k6 run --summary-export=k6-load-test-summary.json k6/load-test.js
+
+      - name: k6 — TC-P-002 (pedidos-carga.js)
+        continue-on-error: true
+        env:
+          BASE_URL: https://bistrolink-api-staging.up.railway.app
+        run: k6 run --summary-export=k6-pedidos-carga-summary.json k6/pedidos-carga.js
+
+      # ── Lighthouse ──────────────────────────────────────────────────────
+      - name: Lighthouse CI — TC-P-003 (vista de mesa, HU-001)
+        continue-on-error: true
+        run: npx @lhci/cli@0.14.x autorun
+
+      # ── Traducción a JUnit XML ────────────────────────────────────────────
+      # Un threshold/assert que dio false = <failure> en ese <testcase> (no
+      # hace fallar el job: lo que interesa es reportar a Kiwi el resultado
+      # real, pase o no pase).
+      - name: Traducir resultados a JUnit XML
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json, glob
+          import xml.etree.ElementTree as ET
+
+          testsuites = ET.Element("testsuites")
+          suite = ET.SubElement(testsuites, "testsuite", name="performance")
+
+          def add_case(name, classname, passed, detail=""):
+              case = ET.SubElement(suite, "testcase", name=name, classname=classname, time="0")
+              if not passed:
+                  failure = ET.SubElement(case, "failure", message="umbral no cumplido")
+                  failure.text = detail
+
+          # TC-P-001 — thresholds de http_req_duration (p95) y http_req_failed
+          try:
+              with open("k6-load-test-summary.json") as f:
+                  data = json.load(f)
+              metrics = data.get("metrics", {})
+              thresholds = {}
+              thresholds.update(metrics.get("http_req_duration", {}).get("thresholds", {}))
+              thresholds.update(metrics.get("http_req_failed", {}).get("thresholds", {}))
+              passed = bool(thresholds) and all(thresholds.values())
+              add_case(
+                  "[TC-P-001] HU-001: performance de /api/menu bajo carga (70 sesiones simultáneas, p95 menor a 1.5s)",
+                  "k6.load-test", passed, str(thresholds),
+              )
+          except FileNotFoundError:
+              add_case(
+                  "[TC-P-001] HU-001: performance de /api/menu bajo carga (70 sesiones simultáneas, p95 menor a 1.5s)",
+                  "k6.load-test", False, "no se generó k6-load-test-summary.json (k6 run no llegó a terminar)",
+              )
+
+          # TC-P-002 — threshold de http_req_failed (rate==0)
+          try:
+              with open("k6-pedidos-carga-summary.json") as f:
+                  data = json.load(f)
+              thresholds = data.get("metrics", {}).get("http_req_failed", {}).get("thresholds", {})
+              passed = bool(thresholds) and all(thresholds.values())
+              add_case(
+                  "[TC-P-002] HU-003: 20 comensales confirman pedido en simultáneo sin errores 5xx",
+                  "k6.pedidos-carga", passed, str(thresholds),
+              )
+          except FileNotFoundError:
+              add_case(
+                  "[TC-P-002] HU-003: 20 comensales confirman pedido en simultáneo sin errores 5xx",
+                  "k6.pedidos-carga", False, "no se generó k6-pedidos-carga-summary.json (k6 run no llegó a terminar)",
+              )
+
+          # TC-P-003 — score de Lighthouse (categories:performance >= 0.8),
+          # leído del manifest.json que deja lhci en el outputDir configurado
+          # en lighthouserc.json (o en ./.lighthouseci/ si upload.target no
+          # fuera "filesystem").
+          manifests = glob.glob("lighthouse-results/manifest.json") or glob.glob(".lighthouseci/manifest.json")
+          passed = False
+          detail = "no se encontró manifest.json de lhci"
+          if manifests:
+              with open(manifests[0]) as f:
+                  manifest = json.load(f)
+              rep = next((r for r in manifest if r.get("isRepresentativeRun")), manifest[-1] if manifest else None)
+              if rep:
+                  score = rep.get("summary", {}).get("performance")
+                  passed = score is not None and score >= 0.8
+                  detail = f"score={score}"
+          add_case(
+              "[TC-P-003] HU-001: performance Lighthouse de la vista de mesa (score ≥ 0.8)",
+              "lighthouse", passed, detail,
+          )
+
+          ET.ElementTree(testsuites).write("performance-junit.xml", encoding="utf-8", xml_declaration=True)
+          PY
+
+      - name: Upload resultados de performance (artifact)
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-results
+          path: |
+            performance-junit.xml
+            k6-*-summary.json
+            lighthouse-results/
+          retention-days: 14
+
+      # Mismo plugin y patrón que "jest"/"playwright-report" en ci.yml.
+      # TCMS_BUILD lleva sufijo "-performance" para que quede en su propio
+      # TestRun, separado de -backend/-frontend/-e2e.
+      - name: Upload results to Kiwi TCMS (performance)
+        if: always()
+        continue-on-error: true
+        timeout-minutes: 5
+        env:
+          TCMS_PRODUCT: "BistroLink"
+          TCMS_PRODUCT_VERSION: ${{ github.ref_name }}
+          TCMS_BUILD: ${{ needs.version.outputs.label }}-performance
+        run: |
+          pip install kiwitcms-junit.xml-plugin --break-system-packages
+          cat <<EOF > ~/.tcms.conf
+          [tcms]
+          url = ${{ secrets.KIWI_TCMS_URL }}/xml-rpc/
+          username = ${{ secrets.KIWI_TCMS_USERNAME }}
+          password = ${{ secrets.KIWI_TCMS_PASSWORD }}
+          EOF
+          tcms-junit.xml-plugin performance-junit.xml
