@@ -42,7 +42,7 @@ function itemsDe(menu: MenuResponse): ItemMenu[] {
 }
 
 test.describe('HU-002: menú vía URL directa (verificado en mobile)', () => {
-  test('renderiza el restaurante que declara la API, sin login', async ({
+  test(' [TC-E-006] HU-002: renderiza el restaurante que declara la API, sin login', async ({
     page,
     request,
   }) => {
@@ -60,7 +60,7 @@ test.describe('HU-002: menú vía URL directa (verificado en mobile)', () => {
     await expect(page.getByText('Pedido desde fuera del local')).toBeVisible();
   });
 
-  test('muestra exactamente los items disponibles y oculta los agotados', async ({
+  test('[TC-E-007] HU-002: muestra exactamente los items disponibles y oculta los agotados', async ({
     page,
     request,
   }) => {
@@ -93,7 +93,7 @@ test.describe('HU-002: menú vía URL directa (verificado en mobile)', () => {
     }
   });
 
-  test('permite agregar al carrito el primer item disponible que exista', async ({
+  test('[TC-E-008] HU-002: permite agregar al carrito el primer item disponible que exista', async ({
     page,
     request,
   }) => {
@@ -116,7 +116,7 @@ test.describe('HU-002: menú vía URL directa (verificado en mobile)', () => {
     ).toBeVisible();
   });
 
-  test('error controlado para un restaurante inexistente', async ({ page }) => {
+  test('[TC-E-009] HU-002: error controlado para un restaurante inexistente', async ({ page }) => {
     // UUID cero: mismo patrón determinista que e2e/comensal/menu.spec.ts.
     await page.goto(
       `/m/${TENANT_ID}/restaurante/00000000-0000-0000-0000-000000000000`,

@@ -1,5 +1,5 @@
-// k6/pedidos-carga.js — HU-003: 20 comensales simultáneos confirmando
-// pedido, sin timeouts ni 5xx.
+// k6/pedidos-carga.js — [TC-P-002] HU-003: 20 comensales simultáneos
+// confirmando pedido, sin timeouts ni 5xx.
 import http from "k6/http";
 import { check } from "k6";
 
@@ -12,6 +12,7 @@ const ITEM_ID = "55555555-5555-5555-5555-555555555555";
 export const options = {
   vus: 20,
   iterations: 20,
+  tags: { testid: "TC-P-002" }, 
   thresholds: {
     http_req_failed: ["rate==0"],
   },

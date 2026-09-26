@@ -1,7 +1,7 @@
 import { test, expect } from './support/auth';
 import { MENU_URL_PATH } from './support/ids';
 
-test('BL-65 E2E: cocina->mozo->comensal, pedido llega a Entregado', async ({ kdsPageMozo, page }) => {
+test('[TC-E-016] HU-018: cocina mozo comensal, pedido llega a Entregado', async ({ kdsPageMozo, page }) => {
   const kdsPage = kdsPageMozo;
   const comensalPage = page;
 

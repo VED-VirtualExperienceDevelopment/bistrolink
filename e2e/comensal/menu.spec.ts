@@ -8,7 +8,7 @@ import { ITEM_DISPONIBLE, ITEM_NO_DISPONIBLE, MESA_PATH, TENANT_ID } from '../su
 const MENU_PATH = MESA_PATH;
 
 test.describe('HU-001: Menú digital vía QR', () => {
-  test('carga el menú en menos de 3s y muestra los ítems del seed', async ({ page }) => {
+  test('[TC-E-001] HU-001: carga el menú en menos de 3s y muestra los ítems del seed', async ({ page }) => {
     // Warm-up: la primera visita en `next dev` compila la ruta on-demand,
     // lo cual no es representativo de producción ni de lo que mide el
     // criterio de aceptación. Cargamos una vez sin medir, así el timing real
@@ -29,7 +29,7 @@ test.describe('HU-001: Menú digital vía QR', () => {
     expect(duracionMs).toBeLessThan(3000);
   });
 
-  test('muestra nombre, descripción y precio de cada ítem', async ({ page }) => {
+  test('[TC-E-002] HU-001: muestra nombre, descripción y precio de cada ítem', async ({ page }) => {
     await page.goto(MENU_PATH);
 
     await expect(page.getByText(ITEM_DISPONIBLE)).toBeVisible();
@@ -37,7 +37,7 @@ test.describe('HU-001: Menú digital vía QR', () => {
     await expect(page.getByText('$ 590')).toBeVisible();
   });
 
-  test('bloquea visualmente un ítem no disponible sin ocultarlo', async ({ page }) => {
+  test('[TC-E-003] HU-001: bloquea visualmente un ítem no disponible sin ocultarlo', async ({ page }) => {
     await page.goto(MENU_PATH);
 
     const itemNoDisponible = page.locator('article', { hasText: ITEM_NO_DISPONIBLE });
@@ -48,7 +48,7 @@ test.describe('HU-001: Menú digital vía QR', () => {
     await expect(itemNoDisponible).toHaveAttribute('aria-disabled', 'true');
   });
 
-  test('devuelve una página de error controlada para una mesa inexistente', async ({ page }) => {
+  test('[TC-E-004] HU-001: devuelve una página de error controlada para una mesa inexistente', async ({ page }) => {
     const mesaInexistente = '00000000-0000-0000-0000-000000000000';
     await page.goto(`/m/${TENANT_ID}/${mesaInexistente}`);
 
@@ -57,7 +57,7 @@ test.describe('HU-001: Menú digital vía QR', () => {
     ).toBeVisible();
   });
 
-  test('no tiene errores críticos de accesibilidad (axe-core)', async ({ page }) => {
+  test('[TC-E-005] HU-001: no tiene errores críticos de accesibilidad (axe-core)', async ({ page }) => {
     await page.goto(MENU_PATH);
 
     const resultados = await new AxeBuilder({ page })

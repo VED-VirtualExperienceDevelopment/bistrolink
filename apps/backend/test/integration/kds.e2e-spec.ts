@@ -156,7 +156,7 @@ describe('Canal WebSocket del KDS (HU-004) - e2e', () => {
     });
   }
 
-  it('[TC-I-KDS-001] KDS: rechaza la conexion WS sin token', async () => {
+  it('[TC-I-014] KDS: rechaza la conexión WS sin token', async () => {
     const socket = conectar(undefined);
     try {
       const errorPayload = await esperarEvento<{ message: string }>(
@@ -170,7 +170,7 @@ describe('Canal WebSocket del KDS (HU-004) - e2e', () => {
   });
 
   itConMozo(
-    '[TC-I-KDS-002] KDS: conecta con JWT valido (MOZO) y recibe el snapshot inicial',
+    '[TC-I-015] KDS: conecta con JWT válido (MOZO) y recibe el snapshot inicial',
     async () => {
       const token = await getToken(MOZO_USER as string, MOZO_PASS as string);
       const socket = conectar(token);
@@ -187,7 +187,7 @@ describe('Canal WebSocket del KDS (HU-004) - e2e', () => {
   );
 
   itConCocina(
-    '[TC-I-KDS-003] KDS: rol COCINA no puede operar transiciones de estado (RD.06 - solo lectura)',
+    '[TC-I-016] KDS: rol COCINA no puede operar transiciones de estado (RD.06 - solo lectura)',
     async () => {
       const token = await getToken(
         COCINA_USER as string,
@@ -214,7 +214,7 @@ describe('Canal WebSocket del KDS (HU-004) - e2e', () => {
   );
 
   itConMozo(
-    '[TC-I-KDS-004] KDS: MOZO marca un pedido "En preparacion" y el cambio se refleja por WS en <1s (DoD)',
+    '[TC-I-017] KDS: MOZO marca "En preparación" y el cambio se refleja por WS en <1s (DoD)',
     async () => {
       const pedidoId = await crearPedidoDePrueba(baseUrl);
       const token = await getToken(MOZO_USER as string, MOZO_PASS as string);
@@ -245,7 +245,7 @@ describe('Canal WebSocket del KDS (HU-004) - e2e', () => {
   );
 
   itConMozo(
-    '[TC-I-KDS-005] KDS: reconexion (pedidos:sync) no pierde pedidos pendientes tras un corte',
+    '[TC-I-018] KDS: reconexión (pedidos:sync) no pierde pedidos pendientes tras un corte',
     async () => {
       const pedidoId = await crearPedidoDePrueba(baseUrl);
       const token = await getToken(MOZO_USER as string, MOZO_PASS as string);
@@ -278,7 +278,7 @@ describe('Canal WebSocket del KDS (HU-004) - e2e', () => {
     },
   );
 
-  it('[TC-I-KDS-006] [HU-006] token real de COMENSAL: SE conecta (para poder seguir su propio pedido), pero pedidos:sync lo rechaza', async () => {
+  it('[TC-I-019] KDS: token real de COMENSAL se conecta, pero pedidos:sync lo rechaza', async () => {
     const tokenComensal = await getComensalToken();
     const socket = conectar(tokenComensal);
     try {

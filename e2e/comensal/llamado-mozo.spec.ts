@@ -2,7 +2,7 @@ import { test, expect } from '../support/auth';
 import { MESA_PATH, MESA_PATH_RATE_LIMIT } from '../support/ids';
 
 test.describe('BL-69: Llamado al mozo desde la mesa (integración)', () => {
-  test('el mozo recibe el evento en menos de 1s al presionar el botón', async ({
+  test('[TC-E-012] HU-019: el mozo recibe el evento en menos de 1s al presionar el botón', async ({
     context,
     kdsPageMozo,
   }) => {
@@ -23,7 +23,7 @@ test.describe('BL-69: Llamado al mozo desde la mesa (integración)', () => {
     await expect(mesaPage.getByText(/Avisamos al mozo/i)).toBeVisible();
   });
 
-  test('no permite más de 1 llamado por minuto (429)', async ({ page }) => {
+  test('[TC-E-013] HU-019: no permite más de 1 llamado por minuto (429)', async ({ page }) => {
     await page.goto(MESA_PATH_RATE_LIMIT);
     await page.getByRole('button', { name: /Llamar al mozo/i }).click();
     await expect(page.getByText(/Avisamos al mozo/i)).toBeVisible();

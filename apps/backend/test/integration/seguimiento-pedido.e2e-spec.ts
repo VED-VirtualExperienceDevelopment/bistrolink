@@ -124,7 +124,7 @@ describe('Seguimiento del comensal (HU-006) - e2e', () => {
     return (await res.json()).id as string;
   }
 
-  it('[HU-006] pedido:seguir devuelve el estado actual de inmediato al suscribirse', async () => {
+  it('[TC-I-026] Seguimiento pedido: devuelve el estado actual de inmediato al suscribirse', async () => {
     const pedidoId = await crearPedido();
     const socket = conectar(tokenComensal);
     try {
@@ -140,7 +140,7 @@ describe('Seguimiento del comensal (HU-006) - e2e', () => {
     }
   });
 
-  it('[HU-006 seguridad] pedido:seguir con un pedidoId inventado: error, no une a ninguna sala', async () => {
+  it('[TC-I-027] Seguimiento pedido:seguir con un pedidoId inventado — error, no une a ninguna sala', async () => {
     const socket = conectar(tokenComensal);
     try {
       socket.emit('pedido:seguir', { pedidoId: 'no-existe' });
@@ -155,7 +155,7 @@ describe('Seguimiento del comensal (HU-006) - e2e', () => {
   });
 
   itConMozo(
-    '[HU-006] DoD: Mozo marca "En preparacion" -> el comensal que sigue ESE pedido lo recibe en menos de 1s',
+    '[TC-I-028] Seguimiento (DoD): Mozo marca "En preparación" → el comensal que sigue ESE pedido lo recibe en <1s',
     async () => {
       const pedidoId = await crearPedido();
 

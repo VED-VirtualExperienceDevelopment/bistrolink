@@ -2,7 +2,7 @@ import { test, expect } from '../support/auth';
 import { ITEM_DISPONIBLE, MENU_URL_PATH } from '../support/ids';
 
 test.describe('BL-154/BL-155: Observaciones visibles en KDS (E2E)', () => {
-  test('observación general de alergia a nivel de pedido es visible en el KDS', async ({
+  test('[TC-E-014] HU-021: observación general de alergia a nivel de pedido es visible en el KDS', async ({
     context,
     kdsPageAdmin,
   }) => {
@@ -49,7 +49,7 @@ test.describe('BL-154/BL-155: Observaciones visibles en KDS (E2E)', () => {
     await expect(kdsPageAdmin.locator('.bg-error-container', { hasText: observacionGeneral })).toBeVisible();
   });
 
-  test('observación de ítem específico ("sin sal") es visible junto al ítem correcto en el KDS', async ({
+  test('[TC-E-015] HU-021: observación de ítem específico (sin sal) es visible junto al ítem correcto en el KDS', async ({
     context,
     kdsPageAdmin,
   }) => {
