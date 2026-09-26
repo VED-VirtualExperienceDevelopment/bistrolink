@@ -59,9 +59,14 @@ jobs:
   # ci.yml.
   #
   # Los nombres de <testcase> son EXACTAMENTE el Summary de cada TC-P-XXX en
-  # Kiwi (TC-1527/1528/1529) — mismo criterio que usa el título de
-  # test()/describe() en Jest/Playwright para que el plugin matchee el caso
-  # correcto en vez de crear uno nuevo cada corrida.
+  # Kiwi (TC-1527/1528/1529) — sin "classname" adicional: el plugin arma el
+  # Summary para buscar/crear el Test Case como "classname.name" cuando hay
+  # classname, así que mandarlo rompía el matching contra los casos ya
+  # cargados y creaba duplicados nuevos en cada corrida.
+  #
+  # TCMS_PLAN_ID fija el Test Run dentro del Test Plan ya creado a mano
+  # (TP-7: Performance-k6-Lighthouse) en vez de dejar que el plugin arme su
+  # plan automático "[junit.xml] Plan for BistroLink (develop)".
   #
   # NOTA: la forma exacta del JSON de "k6 run --summary-export" y del
   # manifest.json de lhci se documenta abajo tal como las publican k6 y
@@ -114,7 +119,7 @@ jobs:
           suite = ET.SubElement(testsuites, "testsuite", name="performance")
 
           def add_case(name, classname, passed, detail=""):
-              case = ET.SubElement(suite, "testcase", name=name, classname=classname, time="0")
+              case = ET.SubElement(suite, "testcase", name=name, time="0")
               if not passed:
                   failure = ET.SubElement(case, "failure", message="umbral no cumplido")
                   failure.text = detail
@@ -191,7 +196,8 @@ jobs:
 
       # Mismo plugin y patrón que "jest"/"playwright-report" en ci.yml.
       # TCMS_BUILD lleva sufijo "-performance" para que quede en su propio
-      # TestRun, separado de -backend/-frontend/-e2e.
+      # TestRun, separado de -backend/-frontend/-e2e. TCMS_PLAN_ID fija el
+      # Test Plan (TP-7) para no crear uno automático nuevo en cada corrida.
       - name: Upload results to Kiwi TCMS (performance)
         if: always()
         continue-on-error: true
@@ -200,6 +206,7 @@ jobs:
           TCMS_PRODUCT: "BistroLink"
           TCMS_PRODUCT_VERSION: ${{ github.ref_name }}
           TCMS_BUILD: ${{ needs.version.outputs.label }}-performance
+          TCMS_PLAN_ID: "7"
         run: |
           pip install kiwitcms-junit.xml-plugin --break-system-packages
           cat <<EOF > ~/.tcms.conf
