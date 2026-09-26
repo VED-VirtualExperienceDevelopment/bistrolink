@@ -20,13 +20,18 @@
 // Requiere Node 18+ (usa fetch nativo).
 //
 // Variables de entorno requeridas:
-//   LINEAR_API_KEY, LINEAR_TEAM_KEY -> igual que update-dashboard-from-linear.mjs
-//   GITHUB_TOKEN                    -> igual que update-github-bugs-dashboard.mjs
-//   GITHUB_REPOSITORY               -> "owner/repo", GitHub Actions la define sola
+//   LINEAR_API_KEY, LINEAR_TEAM_KEY   -> igual que update-dashboard-from-linear.mjs
+//   GITHUB_TOKEN                      -> igual que update-github-bugs-dashboard.mjs
+//   GITHUB_REPOSITORY                 -> "owner/repo", GitHub Actions la define sola
+//   DASHBOARD_EMAIL_RECIPIENTS        -> emails separados por coma, ej: "a@x.com,b@y.com"
+//                                        (BUG-0XX: antes vivía en email-config.json,
+//                                        commiteado en claro en un repo público — ahora
+//                                        se inyecta como GitHub Secret)
 //
 // Uso local:
 //   LINEAR_API_KEY=xxx LINEAR_TEAM_KEY=BIST GITHUB_TOKEN=yyy \
-//   GITHUB_REPOSITORY=owner/repo node scripts/send-status-email.mjs
+//   GITHUB_REPOSITORY=owner/repo DASHBOARD_EMAIL_RECIPIENTS=a@x.com,b@y.com \
+//   node scripts/send-status-email.mjs
 
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -45,6 +50,7 @@ const EMAIL_BODY_PATH = path.join(ROOT, "email-status.html");
 const LINEAR_API_KEY = process.env.LINEAR_API_KEY;
 const LINEAR_TEAM_KEY = process.env.LINEAR_TEAM_KEY;
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
+const DASHBOARD_EMAIL_RECIPIENTS = process.env.DASHBOARD_EMAIL_RECIPIENTS;
 
 if (!LINEAR_API_KEY || !LINEAR_TEAM_KEY) {
   console.error("Faltan LINEAR_API_KEY y/o LINEAR_TEAM_KEY en el entorno.");
@@ -52,6 +58,10 @@ if (!LINEAR_API_KEY || !LINEAR_TEAM_KEY) {
 }
 if (!GITHUB_TOKEN) {
   console.error("Falta GITHUB_TOKEN en el entorno.");
+  process.exit(1);
+}
+if (!DASHBOARD_EMAIL_RECIPIENTS) {
+  console.error("Falta DASHBOARD_EMAIL_RECIPIENTS en el entorno.");
   process.exit(1);
 }
 
@@ -415,6 +425,7 @@ async function main() {
   const fechaHoy = new Date().toISOString().slice(0, 10).split("-").reverse().join("/");
 
   const emailConfig = JSON.parse(await fs.readFile(EMAIL_CONFIG_PATH, "utf-8"));
+  const destinatarios = DASHBOARD_EMAIL_RECIPIENTS.split(",").map((e) => e.trim()).filter(Boolean);
   const html = renderEmailBody(progreso, calidad, fechaHoy);
   await fs.writeFile(EMAIL_BODY_PATH, html, "utf-8");
 
@@ -424,7 +435,7 @@ async function main() {
     // Formato "key<<EOF\nvalor\nEOF" para el asunto: puede traer paréntesis,
     // %, etc. que romperían un simple "key=valor" de una sola línea.
     const lines = [
-      `to=${emailConfig.destinatarios.join(",")}`,
+      `to=${destinatarios.join(",")}`,
       `from=${emailConfig.remitente}`,
       `subject<<EMAIL_SUBJECT_EOF`,
       asunto,
@@ -433,7 +444,7 @@ async function main() {
     ].join("\n");
     await fs.appendFile(process.env.GITHUB_OUTPUT, lines + "\n");
   } else {
-    console.log(`(local) Email generado en email-status.html — destinatarios: ${emailConfig.destinatarios.join(", ")}`);
+    console.log(`(local) Email generado en email-status.html — destinatarios: ${destinatarios.join(", ")}`);
   }
 
   console.log("✅ Resumen de email generado (avance + calidad).");
