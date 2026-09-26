@@ -203,7 +203,7 @@ jobs:
         continue-on-error: true
         timeout-minutes: 5
         env:
-          TCMS_PRODUCT: "BistroLink"
+          TCMS_PRODUCT: "Bistrolink"
           TCMS_PRODUCT_VERSION: ${{ github.ref_name }}
           TCMS_BUILD: ${{ needs.version.outputs.label }}-performance
           TCMS_PLAN_ID: "7"
