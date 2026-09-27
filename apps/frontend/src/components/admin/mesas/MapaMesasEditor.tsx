@@ -9,10 +9,14 @@ import { apiFetch, ApiError } from '@/lib/api-client';
 import { MesaShape } from './MesaShape';
 import {
   aGuardarLayoutItems,
+  aplicarEstadoMesa,
+  DIMENSION_MINIMA_MESA,
   mesasConLayoutAEdicion,
   normalizarRotacion,
   nuevaMesaEnEdicion,
   numerosDuplicados,
+  parsearNumeroMesa,
+  puedeEditarMapa,
   siguienteNumeroDisponible,
   type MesaEnEdicion,
 } from './mapa-mesas.utils';
@@ -46,7 +50,7 @@ interface Props {
  */
 export function MapaMesasEditor({ restauranteId }: Readonly<Props>) {
   const { token, hasRole } = useKeycloakAuth();
-  const puedeEditar = hasRole('ADMIN');
+  const puedeEditar = puedeEditarMapa(hasRole);
 
   const [mesas, setMesas] = useState<MesaEnEdicion[]>([]);
   const [loading, setLoading] = useState(true);
@@ -125,9 +129,7 @@ export function MapaMesasEditor({ restauranteId }: Readonly<Props>) {
     socketRef.current = socket;
 
     socket.on('mesa:estado_actualizado', (payload: MesaEstadoActualizadoPayload) => {
-      setMesas((prev) =>
-        prev.map((m) => (m.id === payload.mesaId ? { ...m, estado: payload.estado } : m)),
-      );
+      setMesas((prev) => aplicarEstadoMesa(prev, payload));
     });
 
     return () => {
@@ -213,8 +215,8 @@ export function MapaMesasEditor({ restauranteId }: Readonly<Props>) {
 
   function confirmarEdicionNumero() {
     if (!editandoNumero) return;
-    const nuevoNumero = Number.parseInt(editandoNumero.valor, 10);
-    if (Number.isFinite(nuevoNumero) && nuevoNumero > 0) {
+    const nuevoNumero = parsearNumeroMesa(editandoNumero.valor);
+    if (nuevoNumero !== null) {
       actualizarMesa(editandoNumero.clientId, { numero: nuevoNumero });
     }
     setEditandoNumero(null);
@@ -373,7 +375,9 @@ export function MapaMesasEditor({ restauranteId }: Readonly<Props>) {
                     : undefined
                 }
                 boundBoxFunc={(oldBox, newBox) =>
-                  newBox.width < 20 || newBox.height < 20 ? oldBox : newBox
+                  newBox.width < DIMENSION_MINIMA_MESA || newBox.height < DIMENSION_MINIMA_MESA
+                    ? oldBox
+                    : newBox
                 }
               />
             )}

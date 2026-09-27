@@ -4,7 +4,7 @@ import { forwardRef } from 'react';
 import { Circle, Group, Rect, Text } from 'react-konva';
 import type Konva from 'konva';
 import type { EstadoMesa, FormaMesa } from '@/types/mesa';
-import { COLOR_POR_ESTADO } from './mapa-mesas.utils';
+import { COLOR_POR_ESTADO, dimensionesTrasTransformar } from './mapa-mesas.utils';
 
 const COLOR_SELECCION = '#8069BF'; // primary de tailwind.config.ts, para consistencia visual con el resto del admin
 const COLOR_BORDE = '#494551'; // on-surface-variant
@@ -76,8 +76,7 @@ export const MesaShape = forwardRef<Konva.Group, MesaShapeProps>(function MesaSh
     onTransformar({
       x: node.x(),
       y: node.y(),
-      ancho: Math.max(20, ancho * scaleX),
-      alto: Math.max(20, alto * scaleY),
+      ...dimensionesTrasTransformar(ancho, alto, scaleX, scaleY),
       rotacion: node.rotation(),
     });
   };
