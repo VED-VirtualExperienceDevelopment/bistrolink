@@ -233,4 +233,4 @@ jobs:
           username = ${{ secrets.KIWI_TCMS_USERNAME }}
           password = ${{ secrets.KIWI_TCMS_PASSWORD }}
           EOF
-          tcms-junit.xml-plugin --summary-template '${name}' performance-junit.xml
+          tcms-junit.xml-plugin --verbose --summary-template '${name}' performance-junit.xml
