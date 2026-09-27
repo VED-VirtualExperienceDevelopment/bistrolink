@@ -10,6 +10,18 @@
 # para poder revisar antes de confirmar. Para borrar de verdad, correr de
 # nuevo con el input "dry_run" en false.
 #
+# Autenticación: usa Auth.login() + cookie de sesión (no Basic Auth embebido
+# en la URL). Esta instancia de Kiwi devuelve Fault -32098 "Authentication
+# failed" ante llamadas como TestPlan.filter si se autentica solo con
+# user:pass@host en la URL — necesita la sesión que deja Auth.login().
+#
+# Resiliencia: cada llamada RPC pasa por retry_rpc(), que reintenta con
+# backoff ante fallas de RED/infra transitorias (ProtocolError -p.ej. 502/503/
+# 504 Bad Gateway/Service Unavailable de Railway-, o errores de socket/OS).
+# Un xmlrpc.client.Fault (rechazo real del servidor: auth, permisos, dato
+# inválido) NO se reintenta — reintentar eso no cambia el resultado y solo
+# demora el fallo.
+#
 # Cómo correrlo: pestaña Actions → "Cleanup Test Runs (Kiwi TCMS)" →
 # "Run workflow" → elegir keep_last / dry_run.
 # ============================================================================
@@ -47,30 +59,85 @@ jobs:
         run: |
           python3 - <<'PY'
           import os
+          import time
+          import socket
+          import http.client
+          import http.cookiejar
           import xmlrpc.client
-          from urllib.parse import urlparse, quote
+          from urllib.parse import urlparse
+
+          # ── Auth por sesión (Auth.login + cookie), NO Basic Auth embebido ──
+          # El plugin de junit (performance.yml) autentica via ~/.tcms.conf,
+          # que internamente hace un login RPC explícito y reusa la cookie de
+          # sesión resultante en cada llamada siguiente. Acá replicamos eso a
+          # mano: embeber user:pass en la URL (Basic Auth) hacía que
+          # TestPlan.filter devolviera Fault -32098 "Authentication failed",
+          # aunque las credenciales fueran correctas — esta instancia de Kiwi
+          # espera la sesión de Auth.login, no un header Basic por llamada.
+          class CookieTransport(xmlrpc.client.Transport):
+              def __init__(self, *args, **kwargs):
+                  super().__init__(*args, **kwargs)
+                  self.cookiejar = http.cookiejar.CookieJar()
+                  self._cookies = []
+
+              def send_headers(self, connection, headers):
+                  if self._cookies:
+                      connection.putheader("Cookie", "; ".join(self._cookies))
+                  super().send_headers(connection, headers)
+
+              def parse_response(self, response):
+                  for header in response.msg.get_all("Set-Cookie", []):
+                      cookie = header.split(";", 1)[0]
+                      if cookie not in self._cookies:
+                          self._cookies.append(cookie)
+                  return super().parse_response(response)
 
           url = os.environ["KIWI_URL"]
-          username = quote(os.environ["KIWI_USERNAME"], safe="")
-          password = quote(os.environ["KIWI_PASSWORD"], safe="")
+          username = os.environ["KIWI_USERNAME"]
+          password = os.environ["KIWI_PASSWORD"]
           keep_last = int(os.environ.get("KEEP_LAST", "10"))
           dry_run = os.environ.get("DRY_RUN", "true").lower() == "true"
 
+          # ── Retry con backoff para fallas transitorias de red/infra ────────
+          # xmlrpc.client.Fault = el servidor respondió y rechazó la llamada
+          # (auth, permisos, dato inválido) → no se reintenta, es un error real.
+          # ProtocolError/OSError/socket.error = no llegó a responder bien
+          # (502/503/504, conexión cortada, timeout) → sí se reintenta.
+          RETRYABLE = (xmlrpc.client.ProtocolError, ConnectionError, TimeoutError,
+                       socket.error, http.client.HTTPException)
+
+          def retry_rpc(label, fn, attempts=3, base_delay=2):
+              for attempt in range(1, attempts + 1):
+                  try:
+                      return fn()
+                  except xmlrpc.client.Fault:
+                      raise  # rechazo real del servidor: no reintentar
+                  except RETRYABLE as exc:
+                      if attempt == attempts:
+                          print(f"  [{label}] falló tras {attempts} intentos: {exc}")
+                          raise
+                      delay = base_delay * (2 ** (attempt - 1))
+                      print(f"  [{label}] intento {attempt}/{attempts} falló ({exc}); "
+                            f"reintentando en {delay}s...")
+                      time.sleep(delay)
+
           parsed = urlparse(url)
-          auth_netloc = f"{username}:{password}@{parsed.netloc}"
-          rpc_url = parsed._replace(netloc=auth_netloc, path="/xml-rpc/").geturl()
-          server = xmlrpc.client.ServerProxy(rpc_url, allow_none=True)
+          rpc_url = parsed._replace(path="/xml-rpc/").geturl()
+          transport = CookieTransport(use_datetime=False)
+          server = xmlrpc.client.ServerProxy(rpc_url, allow_none=True, transport=transport)
+
+          retry_rpc("Auth.login", lambda: server.Auth.login(username, password))
 
           print(f"Modo: {'DRY RUN (no se borra nada)' if dry_run else 'BORRADO REAL'}")
           print(f"Conservando los últimos {keep_last} runs por Test Plan.\n")
 
-          plans = server.TestPlan.filter({"is_active": True})
+          plans = retry_rpc("TestPlan.filter", lambda: server.TestPlan.filter({"is_active": True}))
           total_removed = 0
 
           for plan in sorted(plans, key=lambda p: p["id"]):
               plan_id = plan["id"]
               plan_name = plan["name"]
-              runs = server.TestRun.filter({"plan": plan_id})
+              runs = retry_rpc("TestRun.filter", lambda: server.TestRun.filter({"plan": plan_id}))
 
               def sort_key(r):
                   return (r.get("start_date") or "", r["id"])
@@ -86,7 +153,7 @@ jobs:
                   prefix = "  [DRY RUN] borraría" if dry_run else "  borrando"
                   print(f"{prefix} TR-{r['id']}: {r['summary']}")
                   if not dry_run:
-                      server.TestRun.remove({"id": r["id"]})
+                      retry_rpc("TestRun.remove", lambda r=r: server.TestRun.remove({"id": r["id"]}))
                       total_removed += 1
 
               print()
