@@ -1,0 +1,424 @@
+import 'dotenv/config';
+import { Test, TestingModule } from '@nestjs/testing';
+import { INestApplication, ValidationPipe } from '@nestjs/common';
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+import request = require('supertest');
+import { MesaEstado, Prisma, PrismaClient } from '@prisma/client';
+import { AppModule } from '../../src/app.module';
+
+// ── Config de Keycloak (mismo esquema que usuarios.e2e-spec.ts) ─────────────
+const KEYCLOAK_URL = process.env.KEYCLOAK_URL ?? 'http://localhost:8080';
+const REALM = process.env.KEYCLOAK_REALM ?? 'bistrolink';
+const CLIENT_ID = process.env.KEYCLOAK_CLIENT_ID ?? 'bistrolink-backend';
+const CLIENT_SECRET = process.env.KEYCLOAK_CLIENT_SECRET ?? '';
+
+// Admin del tenant Ejemplo (seed: admin-test).
+const ADMIN_USER = process.env.TEST_ADMIN_USERNAME ?? 'admin-test';
+const ADMIN_PASS = process.env.TEST_ADMIN_PASSWORD;
+
+// Mozo del tenant Demo (seed: mozo-test). Mismo fixture que kds.e2e-spec.ts —
+// si allá las variables se llaman distinto, alinear estos dos nombres.
+const MOZO_USER = process.env.TEST_MOZO_USERNAME ?? 'mozo-test';
+const MOZO_PASS = process.env.TEST_MOZO_PASSWORD;
+
+// ── Fixtures del seed (prisma/seed.ts) ──────────────────────────────────────
+const TENANT_EJEMPLO_ID = '554915d0-f7ed-4053-b841-56479df29fd9';
+const RESTAURANTE_EJEMPLO_ID = '87152395-a721-4651-99b8-f21075d1d8ae';
+
+// Tenant Demo: donde vive mozo-test. Ojo: sus IDs (1111…, 2222…, 3333…) no
+// son UUID RFC 4122 válidos (el 4to grupo no empieza con 8, 9, a ni b), así
+// que un @IsUUID() estricto los rechaza con 400 — ver TC-I-032.
+const TENANT_DEMO_ID = '11111111-1111-1111-1111-111111111111';
+const RESTAURANTE_DEMO_ID = '22222222-2222-2222-2222-222222222222';
+const MESA_DEMO_ID = '33333333-3333-3333-3333-333333333333';
+
+// Tenant B: el "otro tenant" para los casos de aislamiento (TC-I-031/033).
+// Sus IDs sí son UUID v4 válidos, así que el rechazo que se mida es por
+// aislamiento y no por formato del id.
+const TENANT_B_ID = 'b02579f2-2bb0-496b-abf2-33c494c93122';
+const RESTAURANTE_B_ID = 'a46faef3-7412-45ae-af80-3829cd27b990';
+
+// Rango de números de mesa reservado para esta suite: todo lo que se cree
+// con estos números se borra en afterAll (regla de CRUD real de la guía de
+// casos de prueba). No colisiona con las mesas 1 y 2 del seed.
+const NUMERO_BASE = 900;
+const NUMEROS_TEST = Array.from({ length: 20 }, (_, i) => NUMERO_BASE + i);
+
+const LAYOUT_VALIDO = {
+  x: 120.5,
+  y: 80,
+  forma: 'RECTANGULO',
+  ancho: 160,
+  alto: 80,
+  rotacion: 90,
+};
+
+async function getToken(username: string, password: string): Promise<string> {
+  const res = await fetch(
+    `${KEYCLOAK_URL}/realms/${REALM}/protocol/openid-connect/token`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'password',
+        client_id: CLIENT_ID,
+        client_secret: CLIENT_SECRET,
+        username,
+        password,
+      }),
+    },
+  );
+  if (!res.ok) {
+    throw new Error(
+      `No se pudo obtener token para ${username}: ${res.status} ${await res.text()}`,
+    );
+  }
+  const data = await res.json();
+  return data.access_token as string;
+}
+
+describe('Mapa de mesas (HU-016) - e2e', () => {
+  let app: INestApplication;
+  let prisma: PrismaClient;
+
+  const itConAdmin = ADMIN_PASS ? it : it.skip;
+  const itConMozo = MOZO_PASS ? it : it.skip;
+
+  // Mesa del tenant B creada por la suite (el seed no le carga mesas).
+  const NUMERO_MESA_AJENA = NUMERO_BASE + 19;
+  let mesaAjenaId: string;
+
+  // Restaurantes que toca la suite. Toda consulta y todo borrado del test
+  // filtra explícitamente por estos ids + el rango de números reservado:
+  // no se confía en RLS para acotar, porque la conexión directa del test
+  // puede no aplicarlo (en la primera corrida vio mesas de otro tenant).
+  const RESTAURANTES_SUITE = [
+    RESTAURANTE_EJEMPLO_ID,
+    RESTAURANTE_B_ID,
+    RESTAURANTE_DEMO_ID,
+  ];
+  const FILTRO_MESAS_TEST = {
+    numero: { in: NUMEROS_TEST },
+    restauranteId: { in: RESTAURANTES_SUITE },
+  };
+
+  // Estado original de la mesa del seed que tocan TC-I-030/032, para
+  // restaurarla en afterAll si algún caso (o una regresión) la modificara.
+  let mesaDemoOriginal: {
+    layout: Prisma.JsonValue;
+    estado: MesaEstado;
+  } | null = null;
+
+  // Fija app.tenant_id dentro de la transacción, igual que TenantPrismaService,
+  // para que las escrituras pasen el WITH CHECK de RLS si está activo.
+  async function enTenant<T>(
+    tenantId: string,
+    fn: (tx: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
+    return prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`;
+      return fn(tx);
+    });
+  }
+
+  async function buscarMesas(
+    tenantId: string,
+    restauranteId: string,
+    numero: number | { in: number[] },
+  ) {
+    return enTenant(tenantId, (tx) =>
+      tx.mesa.findMany({ where: { tenantId, restauranteId, numero } }),
+    );
+  }
+
+  beforeAll(async () => {
+    const moduleRef: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
+    app = moduleRef.createNestApplication();
+    // main.ts registra el ValidationPipe global con estas opciones, pero
+    // createNestApplication() no ejecuta main.ts. Sin esto, este test no
+    // estaría probando la validación que corre en producción (TC-I-029).
+    // Mantener sincronizado con main.ts.
+    app.useGlobalPipes(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true,
+        transform: true,
+      }),
+    );
+    await app.init();
+    prisma = new PrismaClient();
+    // Por si una corrida anterior se cortó antes de su afterAll.
+    await limpiarMesasDeTest();
+
+    mesaDemoOriginal = await enTenant(TENANT_DEMO_ID, (tx) =>
+      tx.mesa.findUnique({
+        where: { id: MESA_DEMO_ID },
+        select: { layout: true, estado: true },
+      }),
+    );
+
+    const mesaAjena = await enTenant(TENANT_B_ID, (tx) =>
+      tx.mesa.create({
+        data: {
+          tenantId: TENANT_B_ID,
+          restauranteId: RESTAURANTE_B_ID,
+          numero: NUMERO_MESA_AJENA,
+          estado: 'LIBRE',
+          layout: {
+            x: 10,
+            y: 10,
+            forma: 'CIRCULO',
+            ancho: 80,
+            alto: 80,
+            rotacion: 0,
+          },
+        },
+      }),
+    );
+    mesaAjenaId = mesaAjena.id;
+  });
+
+  // Borra lo creado con los números reservados en los restaurantes de la
+  // suite, desde el contexto de cada tenant (incluida una mesa que TC-I-033
+  // pudiera haber creado con tenant Ejemplo colgada del restaurante B).
+  // Devuelve cuántas mesas de test quedaron sin borrar.
+  async function limpiarMesasDeTest(): Promise<number> {
+    const tenants = [TENANT_EJEMPLO_ID, TENANT_B_ID, TENANT_DEMO_ID];
+    for (const tenantId of tenants) {
+      await enTenant(tenantId, (tx) =>
+        tx.mesa.deleteMany({ where: { tenantId, ...FILTRO_MESAS_TEST } }),
+      ).catch(() => {
+        // Best-effort: se verifica abajo con el conteo final.
+      });
+    }
+    let restantes = 0;
+    for (const tenantId of tenants) {
+      restantes += await enTenant(tenantId, (tx) =>
+        tx.mesa.count({ where: { tenantId, ...FILTRO_MESAS_TEST } }),
+      );
+    }
+    return restantes;
+  }
+
+  afterAll(async () => {
+    try {
+      // Restaura la mesa del seed si algo la hubiera modificado.
+      if (mesaDemoOriginal) {
+        await enTenant(TENANT_DEMO_ID, (tx) =>
+          tx.mesa.update({
+            where: { id: MESA_DEMO_ID },
+            data: {
+              layout:
+                mesaDemoOriginal!.layout === null
+                  ? Prisma.DbNull
+                  : (mesaDemoOriginal!.layout as Prisma.InputJsonValue),
+              estado: mesaDemoOriginal!.estado,
+            },
+          }),
+        );
+      }
+      const restantes = await limpiarMesasDeTest();
+      // Si el cleanup no pudo borrar todo, la suite lo reporta en vez de
+      // dejar basura en la base en silencio.
+      expect(restantes).toBe(0);
+    } finally {
+      await prisma.$disconnect();
+      await app.close();
+    }
+  });
+
+  itConAdmin(
+    '[TC-I-029] HU-016: rechaza un layout con código ejecutable embebido en el JSON',
+    async () => {
+      const token = await getToken(ADMIN_USER, ADMIN_PASS as string);
+      const guardar = (mesas: unknown[]) =>
+        request(app.getHttpServer())
+          .post('/mesas/layout')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ restauranteId: RESTAURANTE_EJEMPLO_ID, mesas });
+
+      // Control positivo: el mismo request con un layout limpio se acepta.
+      // Así un 400 más abajo solo puede deberse al contenido inyectado.
+      await guardar([{ numero: NUMERO_BASE, ...LAYOUT_VALIDO }]).expect(201);
+
+      const payloadsMaliciosos = [
+        // Propiedad extra con un handler JS.
+        [
+          {
+            numero: NUMERO_BASE + 1,
+            ...LAYOUT_VALIDO,
+            onClick: 'alert(document.cookie)',
+          },
+        ],
+        // Código en un campo numérico.
+        [
+          {
+            numero: NUMERO_BASE + 2,
+            ...LAYOUT_VALIDO,
+            x: 'function(){ fetch("//evil") }',
+          },
+        ],
+        // Script en el campo de catálogo.
+        [
+          {
+            numero: NUMERO_BASE + 3,
+            ...LAYOUT_VALIDO,
+            forma: '<script>alert(1)</script>',
+          },
+        ],
+      ];
+
+      for (const mesas of payloadsMaliciosos) {
+        await guardar(mesas).expect(400);
+      }
+
+      // Ninguno de los rechazados llegó a la base; solo existe el control.
+      const creadas = await buscarMesas(
+        TENANT_EJEMPLO_ID,
+        RESTAURANTE_EJEMPLO_ID,
+        { in: NUMEROS_TEST },
+      );
+      expect(creadas.map((m) => m.numero)).toEqual([NUMERO_BASE]);
+      expect(creadas[0].layout).toStrictEqual(LAYOUT_VALIDO);
+    },
+  );
+
+  itConMozo(
+    '[TC-I-030] HU-016: Colaborador recibe 403 al intentar modificar el layout vía API',
+    async () => {
+      const token = await getToken(MOZO_USER, MOZO_PASS as string);
+      const antes = await enTenant(TENANT_DEMO_ID, (tx) =>
+        tx.mesa.findUnique({ where: { id: MESA_DEMO_ID } }),
+      );
+
+      await request(app.getHttpServer())
+        .post('/mesas/layout')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          restauranteId: RESTAURANTE_DEMO_ID,
+          mesas: [{ id: MESA_DEMO_ID, numero: 1, ...LAYOUT_VALIDO }],
+        })
+        .expect(403);
+
+      await request(app.getHttpServer())
+        .put(`/mesas/${MESA_DEMO_ID}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send(LAYOUT_VALIDO)
+        .expect(403);
+
+      await request(app.getHttpServer())
+        .patch(`/mesas/${MESA_DEMO_ID}/estado`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ estado: 'OCUPADA' })
+        .expect(403);
+
+      // Nada cambió en la mesa: ni layout ni estado.
+      const despues = await enTenant(TENANT_DEMO_ID, (tx) =>
+        tx.mesa.findUnique({ where: { id: MESA_DEMO_ID } }),
+      );
+      expect(despues?.layout).toStrictEqual(antes?.layout);
+      expect(despues?.estado).toBe(antes?.estado);
+    },
+  );
+
+  itConAdmin(
+    '[TC-I-031] HU-016: un tenant no puede leer ni modificar el layout de otro tenant',
+    async () => {
+      // admin-test es ADMIN del tenant Ejemplo: tiene el rol correcto, así que
+      // cualquier rechazo acá es por aislamiento, no por permisos.
+      const token = await getToken(ADMIN_USER, ADMIN_PASS as string);
+      const leerMesaAjena = () =>
+        enTenant(TENANT_B_ID, (tx) =>
+          tx.mesa.findUnique({ where: { id: mesaAjenaId } }),
+        );
+      const antes = await leerMesaAjena();
+
+      // Lectura: el restaurante B existe y tiene una mesa, pero no es de este tenant.
+      const lectura = await request(app.getHttpServer())
+        .get('/mesas/layout')
+        .query({ restauranteId: RESTAURANTE_B_ID })
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(lectura.body).toEqual([]);
+
+      // Escritura masiva sobre la mesa del tenant B.
+      await request(app.getHttpServer())
+        .post('/mesas/layout')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          restauranteId: RESTAURANTE_B_ID,
+          mesas: [
+            { id: mesaAjenaId, numero: NUMERO_MESA_AJENA, ...LAYOUT_VALIDO },
+          ],
+        })
+        .expect(404);
+
+      // Escritura puntual (PUT /mesas/:id): esta ruta depende solo de RLS.
+      await request(app.getHttpServer())
+        .put(`/mesas/${mesaAjenaId}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send(LAYOUT_VALIDO)
+        .expect(404);
+
+      const despues = await leerMesaAjena();
+      expect(despues?.layout).toStrictEqual(antes?.layout);
+    },
+  );
+
+  itConMozo(
+    '[TC-I-032] HU-016: Colaborador puede visualizar el layout de su restaurante (200)',
+    async () => {
+      const token = await getToken(MOZO_USER, MOZO_PASS as string);
+
+      const res = await request(app.getHttpServer())
+        .get('/mesas/layout')
+        .query({ restauranteId: RESTAURANTE_DEMO_ID })
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      const ids = res.body.map((m: { id: string }) => m.id);
+      expect(ids).toContain(MESA_DEMO_ID);
+      for (const mesa of res.body) {
+        expect(Object.keys(mesa).sort()).toEqual([
+          'estado',
+          'id',
+          'layout',
+          'numero',
+        ]);
+      }
+    },
+  );
+
+  itConAdmin(
+    '[TC-I-033] HU-016: no permite crear mesas en un restaurante de otro tenant',
+    async () => {
+      const token = await getToken(ADMIN_USER, ADMIN_PASS as string);
+
+      const res = await request(app.getHttpServer())
+        .post('/mesas/layout')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          restauranteId: RESTAURANTE_B_ID,
+          mesas: [{ numero: NUMERO_BASE + 10, ...LAYOUT_VALIDO }],
+        });
+
+      expect([403, 404]).toContain(res.status);
+
+      // Ni con el tenant propio ni con el ajeno debe existir la mesa nueva
+      // colgada del restaurante B (la mesa ajena de la suite es otro número).
+      const conTenantEjemplo = await buscarMesas(
+        TENANT_EJEMPLO_ID,
+        RESTAURANTE_B_ID,
+        NUMERO_BASE + 10,
+      );
+      const conTenantB = await buscarMesas(
+        TENANT_B_ID,
+        RESTAURANTE_B_ID,
+        NUMERO_BASE + 10,
+      );
+      expect([...conTenantEjemplo, ...conTenantB]).toEqual([]);
+    },
+  );
+});
