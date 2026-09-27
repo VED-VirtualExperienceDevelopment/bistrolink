@@ -68,6 +68,22 @@ export class MesasService {
     mesas: MesaLayoutItemDto[],
   ) {
     return this.tenantPrisma.runInTenantContext(tenantId, async (tx) => {
+      // El restaurante tiene que ser de este tenant. Sin este chequeo, una
+      // mesa nueva (sin id) se crearía con el tenantId propio colgada del
+      // restaurante de OTRO tenant: RLS no lo frena (el tenant_id de la fila
+      // es el correcto) y la FK de Postgres no aplica RLS. Detectado por
+      // TC-I-033. Se compara tenantId de forma explícita, además de RLS.
+      const restaurante = await tx.restaurante.findUnique({
+        where: { id: restauranteId },
+        select: { tenantId: true },
+      });
+
+      if (restaurante?.tenantId !== tenantId) {
+        throw new NotFoundException(
+          'Restaurante no encontrado para este establecimiento',
+        );
+      }
+
       const resultado = [];
 
       for (const item of mesas) {

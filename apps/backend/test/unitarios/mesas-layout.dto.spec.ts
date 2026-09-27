@@ -206,6 +206,21 @@ describe('GuardarLayoutDto (HU-016)', () => {
     expect(propiedadesConError(errores)).toEqual(['mesas']);
   });
 
+  it('acepta restauranteId e id de mesa del seed Demo (formato UUID no RFC 4122)', async () => {
+    expect(
+      await validar(GuardarLayoutDto, {
+        restauranteId: '22222222-2222-2222-2222-222222222222',
+        mesas: [
+          {
+            id: '33333333-3333-3333-3333-333333333333',
+            numero: 1,
+            ...LAYOUT_VALIDO,
+          },
+        ],
+      }),
+    ).toHaveLength(0);
+  });
+
   it('rechaza un restauranteId que no es UUID', async () => {
     const errores = await validar(GuardarLayoutDto, {
       restauranteId: 'restaurante-1',
@@ -241,6 +256,14 @@ describe('ListarLayoutQueryDto (HU-016)', () => {
   it('acepta un restauranteId UUID', async () => {
     expect(
       await validar(ListarLayoutQueryDto, { restauranteId: RESTAURANTE_ID }),
+    ).toHaveLength(0);
+  });
+
+  it('acepta un id con formato UUID aunque no sea RFC 4122 (ids del seed Demo)', async () => {
+    expect(
+      await validar(ListarLayoutQueryDto, {
+        restauranteId: '22222222-2222-2222-2222-222222222222',
+      }),
     ).toHaveLength(0);
   });
 

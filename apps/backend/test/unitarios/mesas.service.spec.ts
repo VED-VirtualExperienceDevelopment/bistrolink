@@ -110,6 +110,9 @@ describe('MesasService.guardarLayout', () => {
 
   beforeEach(() => {
     mockTx = {
+      restaurante: {
+        findUnique: jest.fn().mockResolvedValue({ tenantId: TENANT_ID }),
+      },
       mesa: {
         findUnique: jest.fn(),
         update: jest.fn(),

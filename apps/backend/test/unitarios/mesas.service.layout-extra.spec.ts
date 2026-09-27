@@ -22,6 +22,9 @@ function crearErrorP2002() {
 
 function armarServicio() {
   const mockTx = {
+    restaurante: {
+      findUnique: jest.fn().mockResolvedValue({ tenantId: TENANT_ID }),
+    },
     mesa: {
       findUnique: jest.fn(),
       findMany: jest.fn(),
@@ -43,7 +46,7 @@ function armarServicio() {
   return { service, mockTx };
 }
 
-describe('[TC-U-001] HU-016: serializa y deserializa el JSON del layout sin pérdida de datos', () => {
+describe('HU-016: serializa y deserializa el JSON del layout sin pérdida de datos', () => {
   // Valores elegidos para detectar pérdidas típicas al pasar por JSON/JSONB:
   // decimales, negativos (mesa arrastrada fuera del origen), extremos de
   // rotación y las tres formas del catálogo.
@@ -127,6 +130,44 @@ describe('[TC-U-001] HU-016: serializa y deserializa el JSON del layout sin pér
       'x',
       'y',
     ]);
+  });
+});
+
+describe('MesasService.guardarLayout — restaurante del tenant (HU-016, TC-I-033)', () => {
+  const LAYOUT = {
+    x: 10,
+    y: 20,
+    forma: 'CIRCULO' as const,
+    ancho: 80,
+    alto: 80,
+    rotacion: 0,
+  };
+
+  it('rechaza con 404 y no crea nada si el restaurante es de otro tenant', async () => {
+    const { service, mockTx } = armarServicio();
+    mockTx.restaurante.findUnique.mockResolvedValue({
+      tenantId: 'otro-tenant',
+    });
+
+    await expect(
+      service.guardarLayout(TENANT_ID, RESTAURANTE_ID_AJENO, [
+        { numero: 1, ...LAYOUT },
+      ]),
+    ).rejects.toThrow(NotFoundException);
+    expect(mockTx.mesa.create).not.toHaveBeenCalled();
+    expect(mockTx.mesa.update).not.toHaveBeenCalled();
+  });
+
+  it('rechaza con 404 si el restaurante no existe (o RLS lo oculta)', async () => {
+    const { service, mockTx } = armarServicio();
+    mockTx.restaurante.findUnique.mockResolvedValue(null);
+
+    await expect(
+      service.guardarLayout(TENANT_ID, RESTAURANTE_ID_AJENO, [
+        { numero: 1, ...LAYOUT },
+      ]),
+    ).rejects.toThrow(NotFoundException);
+    expect(mockTx.mesa.create).not.toHaveBeenCalled();
   });
 });
 

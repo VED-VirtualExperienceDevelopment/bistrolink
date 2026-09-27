@@ -20,7 +20,7 @@ import { MesaLayoutDto } from './mesa-layout.dto';
  */
 export class MesaLayoutItemDto extends MesaLayoutDto {
   @IsOptional()
-  @IsUUID()
+  @IsUUID('loose') // ver ListarLayoutQueryDto
   id?: string;
 
   @IsInt()
@@ -32,7 +32,7 @@ export class MesaLayoutItemDto extends MesaLayoutDto {
 }
 
 export class GuardarLayoutDto {
-  @IsUUID()
+  @IsUUID('loose') // ver ListarLayoutQueryDto
   restauranteId: string;
 
   @IsArray()
