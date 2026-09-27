@@ -16,10 +16,14 @@
 # user:pass@host en la URL — necesita la sesión que deja Auth.login().
 #
 # La URL siempre se normaliza a https:// antes de armar el endpoint RPC.
-# xmlrpc.client.Transport NO sigue redirects (a diferencia del cliente
-# requests-based que usa tcms-api/el plugin de junit en performance.yml):
-# si KIWI_TCMS_URL trae http://, Railway devuelve 301 a https:// y el
-# cliente XML-RPC crudo se rompe ahí en vez de seguirlo.
+# OJO: ServerProxy solo elige Transport (HTTP) vs SafeTransport (HTTPS) según
+# el esquema de la URL cuando NO se le pasa un transport= explícito. Como acá
+# necesitamos un transport custom (CookieTransport, para la cookie de sesión
+# de Auth.login), tiene que heredar de SafeTransport a mano — si hereda de
+# Transport a secas, abre una conexión HTTP plana sin importar que la URL
+# diga https://, y Railway responde con 301 a HTTPS una y otra vez (no es un
+# problema de credenciales: el request nunca llega autenticado ni sin
+# autenticar, se cae en la conexión antes de eso).
 #
 # Resiliencia: cada llamada RPC pasa por retry_rpc(), que reintenta con
 # backoff ante fallas de RED/infra transitorias (ProtocolError -p.ej. 502/503/
@@ -80,7 +84,7 @@ jobs:
           # TestPlan.filter devolviera Fault -32098 "Authentication failed",
           # aunque las credenciales fueran correctas — esta instancia de Kiwi
           # espera la sesión de Auth.login, no un header Basic por llamada.
-          class CookieTransport(xmlrpc.client.Transport):
+          class CookieTransport(xmlrpc.client.SafeTransport):
               def __init__(self, *args, **kwargs):
                   super().__init__(*args, **kwargs)
                   self.cookiejar = http.cookiejar.CookieJar()
