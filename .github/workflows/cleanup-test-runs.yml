@@ -15,6 +15,12 @@
 # failed" ante llamadas como TestPlan.filter si se autentica solo con
 # user:pass@host en la URL — necesita la sesión que deja Auth.login().
 #
+# La URL siempre se normaliza a https:// antes de armar el endpoint RPC.
+# xmlrpc.client.Transport NO sigue redirects (a diferencia del cliente
+# requests-based que usa tcms-api/el plugin de junit en performance.yml):
+# si KIWI_TCMS_URL trae http://, Railway devuelve 301 a https:// y el
+# cliente XML-RPC crudo se rompe ahí en vez de seguirlo.
+#
 # Resiliencia: cada llamada RPC pasa por retry_rpc(), que reintenta con
 # backoff ante fallas de RED/infra transitorias (ProtocolError -p.ej. 502/503/
 # 504 Bad Gateway/Service Unavailable de Railway-, o errores de socket/OS).
@@ -101,10 +107,11 @@ jobs:
           # ── Retry con backoff para fallas transitorias de red/infra ────────
           # xmlrpc.client.Fault = el servidor respondió y rechazó la llamada
           # (auth, permisos, dato inválido) → no se reintenta, es un error real.
-          # ProtocolError/OSError/socket.error = no llegó a responder bien
-          # (502/503/504, conexión cortada, timeout) → sí se reintenta.
-          RETRYABLE = (xmlrpc.client.ProtocolError, ConnectionError, TimeoutError,
-                       socket.error, http.client.HTTPException)
+          # ProtocolError con 5xx (502/503/504) u OSError/socket.error = no
+          # llegó a responder bien → sí se reintenta. ProtocolError con 3xx
+          # (redirect, p.ej. 301 http→https) tampoco se reintenta: es una
+          # respuesta estable, no algo que un backoff vaya a resolver.
+          RETRYABLE = (ConnectionError, TimeoutError, socket.error, http.client.HTTPException)
 
           def retry_rpc(label, fn, attempts=3, base_delay=2):
               for attempt in range(1, attempts + 1):
@@ -112,6 +119,17 @@ jobs:
                       return fn()
                   except xmlrpc.client.Fault:
                       raise  # rechazo real del servidor: no reintentar
+                  except xmlrpc.client.ProtocolError as exc:
+                      if exc.errcode < 500:
+                          print(f"  [{label}] error {exc.errcode} (no transitorio, no se reintenta): {exc}")
+                          raise
+                      if attempt == attempts:
+                          print(f"  [{label}] falló tras {attempts} intentos: {exc}")
+                          raise
+                      delay = base_delay * (2 ** (attempt - 1))
+                      print(f"  [{label}] intento {attempt}/{attempts} falló ({exc}); "
+                            f"reintentando en {delay}s...")
+                      time.sleep(delay)
                   except RETRYABLE as exc:
                       if attempt == attempts:
                           print(f"  [{label}] falló tras {attempts} intentos: {exc}")
@@ -122,6 +140,8 @@ jobs:
                       time.sleep(delay)
 
           parsed = urlparse(url)
+          if parsed.scheme != "https":
+              parsed = parsed._replace(scheme="https")
           rpc_url = parsed._replace(path="/xml-rpc/").geturl()
           transport = CookieTransport(use_datetime=False)
           server = xmlrpc.client.ServerProxy(rpc_url, allow_none=True, transport=transport)
