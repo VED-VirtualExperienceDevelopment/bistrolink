@@ -1,0 +1,98 @@
+# ============================================================================
+# .github/workflows/cleanup-test-runs.yml
+#
+# Workflow manual para limpiar Test Runs viejos en Kiwi TCMS: para cada Test
+# Plan activo, conserva los últimos N runs (por start_date, o por ID si no
+# tienen start_date) y borra el resto vía TestRun.remove (API RPC:
+# https://kiwitcms.readthedocs.io/en/latest/modules/tcms.rpc.api.testrun.html).
+#
+# Por defecto corre en modo dry-run (no borra nada, solo lista qué borraría)
+# para poder revisar antes de confirmar. Para borrar de verdad, correr de
+# nuevo con el input "dry_run" en false.
+#
+# Cómo correrlo: pestaña Actions → "Cleanup Test Runs (Kiwi TCMS)" →
+# "Run workflow" → elegir keep_last / dry_run.
+# ============================================================================
+
+name: Cleanup Test Runs (Kiwi TCMS)
+
+on:
+  workflow_dispatch:
+    inputs:
+      keep_last:
+        description: "Cantidad de runs más recientes a conservar por Test Plan"
+        required: false
+        default: "10"
+      dry_run:
+        description: "true = solo mostrar qué se borraría, sin borrar nada"
+        type: boolean
+        required: false
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  cleanup:
+    name: 🧹 Cleanup Test Runs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Borrar Test Runs viejos (o listar en dry-run)
+        env:
+          KIWI_URL: ${{ secrets.KIWI_TCMS_URL }}
+          KIWI_USERNAME: ${{ secrets.KIWI_TCMS_USERNAME }}
+          KIWI_PASSWORD: ${{ secrets.KIWI_TCMS_PASSWORD }}
+          KEEP_LAST: ${{ github.event.inputs.keep_last }}
+          DRY_RUN: ${{ github.event.inputs.dry_run }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import xmlrpc.client
+          from urllib.parse import urlparse, quote
+
+          url = os.environ["KIWI_URL"]
+          username = quote(os.environ["KIWI_USERNAME"], safe="")
+          password = quote(os.environ["KIWI_PASSWORD"], safe="")
+          keep_last = int(os.environ.get("KEEP_LAST", "10"))
+          dry_run = os.environ.get("DRY_RUN", "true").lower() == "true"
+
+          parsed = urlparse(url)
+          auth_netloc = f"{username}:{password}@{parsed.netloc}"
+          rpc_url = parsed._replace(netloc=auth_netloc, path="/xml-rpc/").geturl()
+          server = xmlrpc.client.ServerProxy(rpc_url, allow_none=True)
+
+          print(f"Modo: {'DRY RUN (no se borra nada)' if dry_run else 'BORRADO REAL'}")
+          print(f"Conservando los últimos {keep_last} runs por Test Plan.\n")
+
+          plans = server.TestPlan.filter({"is_active": True})
+          total_removed = 0
+
+          for plan in sorted(plans, key=lambda p: p["id"]):
+              plan_id = plan["id"]
+              plan_name = plan["name"]
+              runs = server.TestRun.filter({"plan": plan_id})
+
+              def sort_key(r):
+                  return (r.get("start_date") or "", r["id"])
+
+              runs_sorted = sorted(runs, key=sort_key, reverse=True)
+              keep = runs_sorted[:keep_last]
+              to_remove = runs_sorted[keep_last:]
+
+              print(f"TP-{plan_id} ({plan_name}): {len(runs_sorted)} runs totales — "
+                    f"conservando {len(keep)}, borrando {len(to_remove)}")
+
+              for r in to_remove:
+                  prefix = "  [DRY RUN] borraría" if dry_run else "  borrando"
+                  print(f"{prefix} TR-{r['id']}: {r['summary']}")
+                  if not dry_run:
+                      server.TestRun.remove({"id": r["id"]})
+                      total_removed += 1
+
+              print()
+
+          if dry_run:
+              print("Nada fue borrado (dry_run=true). Volvé a correr con dry_run=false para aplicar.")
+          else:
+              print(f"Listo. Se borraron {total_removed} Test Run(s) en total.")
+          PY
