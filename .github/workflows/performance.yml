@@ -59,14 +59,17 @@ jobs:
   # ci.yml.
   #
   # Los nombres de <testcase> son EXACTAMENTE el Summary de cada TC-P-XXX en
-  # Kiwi (TC-1527/1528/1529). El atributo "classname" se manda como string
-  # VACÍO ("") a propósito, no se omite: si se omite, el plugin al parsear
-  # el XML interpreta el classname ausente como el valor None de Python y
-  # arma el texto de búsqueda como "None.<name>" (literal), que nunca
-  # matchea el Summary real y crea un Test Case duplicado en cada corrida
-  # (nos pasó dos veces: primero con "classname.name", después con
-  # "None.name"). Con classname="" el plugin arma el texto de búsqueda como
-  # "<name>" solo, sin prefijo, que sí matchea los casos ya cargados.
+  # Kiwi (TC-1527/1528/1529). El plugin arma el Summary para buscar/crear el
+  # Test Case con un template FIJO e incondicional: "${classname}.${name}"
+  # (ver DEFAULT_TEMPLATE en tcms_junit_plugin/__init__.py) — no hay ningún
+  # chequeo de "si hay classname, agregalo": el punto separador siempre se
+  # inserta, pase lo que pase en "classname" (con valor, vacío u omitido).
+  # Nos costó 3 corridas duplicadas encontrar esto: "classname.name",
+  # "None.name" (classname omitido) y ".name" (classname="") — ninguna
+  # matcheaba el Summary real. El fix real es el flag
+  # "--summary-template '${name}'" al invocar el plugin (ver el step de
+  # abajo), que ignora "classname" por completo y usa el "name" tal cual,
+  # que sí matchea los casos ya cargados a mano.
   #
   # TCMS_PLAN_ID fija el Test Run dentro del Test Plan ya creado a mano
   # (TP-7: Performance-k6-Lighthouse) en vez de dejar que el plugin arme su
@@ -202,6 +205,17 @@ jobs:
       # TCMS_BUILD lleva sufijo "-performance" para que quede en su propio
       # TestRun, separado de -backend/-frontend/-e2e. TCMS_PLAN_ID fija el
       # Test Plan (TP-7) para no crear uno automático nuevo en cada corrida.
+      #
+      # --summary-template '${name}': el plugin arma el Summary con un
+      # template FIJO e incondicional, "${classname}.${name}" (ver
+      # tcms_junit_plugin/__init__.py, DEFAULT_TEMPLATE) — sin ningún chequeo
+      # de "si hay classname". Probamos con classname="k6.load-test"
+      # ("k6.load-test.<name>"), sin el atributo ("None.<name>") y con
+      # classname="" (".<name>", el punto solo) — ninguno matcheaba el
+      # Summary real de TC-1527/1528/1529 y cada corrida creaba un Test Case
+      # nuevo. Pasando este flag el Summary usado para buscar/crear es
+      # exactamente "${name}", igual al texto ya cargado a mano, sin prefijo
+      # ni punto de ningún tipo.
       - name: Upload results to Kiwi TCMS (performance)
         if: always()
         continue-on-error: true
@@ -219,4 +233,4 @@ jobs:
           username = ${{ secrets.KIWI_TCMS_USERNAME }}
           password = ${{ secrets.KIWI_TCMS_PASSWORD }}
           EOF
-          tcms-junit.xml-plugin performance-junit.xml
+          tcms-junit.xml-plugin --summary-template '${name}' performance-junit.xml
