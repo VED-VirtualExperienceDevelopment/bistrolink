@@ -9,14 +9,14 @@
 <!-- AUTO:resumen-bugs:start -->
 | Métrica | Valor |
 |---|---|
-| Total de bugs registrados | 9 |
-| **Abiertos** | **0** |
+| Total de bugs registrados | 12 |
+| **Abiertos** | **3** |
 | **Cerrados** | **9** |
-| % Resueltos | 100% |
+| % Resueltos | 75% |
 | Tiempo promedio de resolución | 0.2 días |
 | Tiempo mediana de resolución | 0.1 días |
 
-> Última actualización automática: `26/09/2026` — generado desde GitHub Issues por GitHub Action.
+> Última actualización automática: `27/09/2026` — generado desde GitHub Issues por GitHub Action.
 <!-- AUTO:resumen-bugs:end -->
 
 ---
@@ -45,7 +45,7 @@ xychart-beta
     title "Bugs abiertos vs. cerrados por semana"
     x-axis ["3/8", "10/8", "17/8", "24/8", "31/8", "7/9", "14/9", "21/9"]
     y-axis "Cantidad de bugs" 0 --> 5
-    bar "Abiertos" [0, 0, 0, 0, 4, 1, 3, 1]
+    bar "Abiertos" [0, 0, 0, 0, 4, 1, 3, 4]
     bar "Cerrados" [0, 0, 0, 0, 4, 1, 3, 1]
 ```
 <!-- AUTO:tendencia-bugs-chart:end -->
@@ -62,5 +62,5 @@ xychart-beta
 | 31/8 | 4 | 4 |
 | 7/9 | 1 | 1 |
 | 14/9 | 3 | 3 |
-| 21/9 | 1 | 1 |
+| 21/9 | 4 | 1 |
 <!-- AUTO:tendencia-bugs-tabla:end -->
