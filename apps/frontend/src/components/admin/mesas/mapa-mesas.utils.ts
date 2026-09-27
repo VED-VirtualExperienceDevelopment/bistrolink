@@ -9,6 +9,7 @@ import type {
   FormaMesa,
   GuardarLayoutItem,
   MesaConLayout,
+  MesaEstadoActualizadoPayload,
 } from '@/types/mesa';
 
 /** Estado local de una mesa mientras se edita en el canvas. */
@@ -40,6 +41,13 @@ const LAYOUT_POR_DEFECTO = {
   alto: 80,
   rotacion: 0,
 };
+
+/**
+ * Tamaño mínimo (px) de ancho/alto de una mesa al redimensionarla. Lo usan
+ * el Transformer (boundBoxFunc) y MesaShape al consumir la escala; queda por
+ * encima del @Min(1) de MesaLayoutDto en el backend.
+ */
+export const DIMENSION_MINIMA_MESA = 20;
 
 const ESPACIADO_GRID_DEFECTO = 120;
 const OFFSET_GRID_DEFECTO = 80;
@@ -134,4 +142,52 @@ export function aGuardarLayoutItems(mesas: MesaEnEdicion[]): GuardarLayoutItem[]
     alto,
     rotacion,
   }));
+}
+/**
+ * Regla de permisos del editor (checklist BL-160): solo el Administrador
+ * edita; el Colaborador (MOZO) ve el mapa en modo solo lectura. Extraída del
+ * componente para poder testearla sin montar el canvas, igual que
+ * resolverDestinoLanding en landing.utils.ts.
+ */
+export function puedeEditarMapa(hasRole: (rol: 'ADMIN') => boolean): boolean {
+  return hasRole('ADMIN');
+}
+
+/**
+ * Valida el número tipeado en el input de edición (doble clic sobre una
+ * mesa). Devuelve null si no es un entero mayor a 0 — el 0 está reservado a
+ * la mesa virtual de HU-003 y el backend lo rechaza (@Min(1)).
+ */
+export function parsearNumeroMesa(valor: string): number | null {
+  const numero = Number.parseInt(valor, 10);
+  return Number.isFinite(numero) && numero > 0 ? numero : null;
+}
+
+/**
+ * Konva expresa un resize como escala (scaleX/scaleY), no como cambio de
+ * width/height. Esta función la traduce a las dimensiones nuevas que se
+ * guardan en el layout, sin bajar del mínimo.
+ */
+export function dimensionesTrasTransformar(
+  ancho: number,
+  alto: number,
+  scaleX: number,
+  scaleY: number,
+): { ancho: number; alto: number } {
+  return {
+    ancho: Math.max(DIMENSION_MINIMA_MESA, ancho * scaleX),
+    alto: Math.max(DIMENSION_MINIMA_MESA, alto * scaleY),
+  };
+}
+
+/**
+ * Aplica al estado del editor un evento WS 'mesa:estado_actualizado'. Solo
+ * cambia el estado de la mesa con ese id; las mesas nuevas (sin id todavía)
+ * y el resto del layout no se tocan.
+ */
+export function aplicarEstadoMesa(
+  mesas: MesaEnEdicion[],
+  payload: Pick<MesaEstadoActualizadoPayload, 'mesaId' | 'estado'>,
+): MesaEnEdicion[] {
+  return mesas.map((m) => (m.id === payload.mesaId ? { ...m, estado: payload.estado } : m));
 }
