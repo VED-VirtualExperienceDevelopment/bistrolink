@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  HttpException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -8,6 +9,8 @@ import { Prisma } from '@prisma/client';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { CrearPagoDto } from './dto/crear-pago.dto';
 import { PagoGatewayFactory } from './gateways/pago-gateway.factory';
+import { ResultadoCobro } from './gateways/pago-gateway.interface';
+import { PagoTemporalmenteNoDisponibleException } from './gateways/pago-temporalmente-no-disponible.exception';
 
 @Injectable()
 export class PagosService {
@@ -17,84 +20,159 @@ export class PagosService {
   ) {}
 
   async crear(tenantId: string, dto: CrearPagoDto) {
-    return this.tenantPrisma.runInTenantContext(tenantId, async (tx) => {
-      // Idempotencia (BL-90/BL-77): mismo idempotencyKey dos veces -> se
-      // devuelve el pago ya existente, nunca se cobra dos veces.
-      const existente = await tx.pago.findUnique({
-        where: { idempotencyKey: dto.idempotencyKey },
-      });
-      if (existente) {
-        return existente;
-      }
+    // Fase 1: validar, calcular el monto en el backend (BL-90) y reservar
+    // el pago como PENDIENTE. Transacción corta, sin red de por medio.
+    const reserva = await this.reservar(tenantId, dto);
+    if ('existente' in reserva) {
+      return reserva.existente; // idempotencia: misma clave, mismo pago
+    }
+    const { pago, mesaId } = reserva;
 
-      const pedido = await tx.pedido.findUnique({
-        where: { id: dto.pedidoId },
-        include: { lineas: true, mesa: true },
-      });
-      if (!pedido) {
-        throw new NotFoundException('Pedido no encontrado');
-      }
-
-      const yaHayPagoAprobado = await tx.pago.findFirst({
-        where: { pedidoId: pedido.id, estado: 'APROBADO' },
-      });
-      if (yaHayPagoAprobado) {
-        throw new ConflictException('Este pedido ya fue pagado');
-      }
-
-      // BL-90: el monto SIEMPRE se calcula acá, nunca se confía en lo que
-      // mande el cliente (el DTO ni siquiera tiene un campo `monto`).
-      const monto = pedido.lineas.reduce(
-        (acumulado, linea) => acumulado.plus(linea.subtotal),
-        new Prisma.Decimal(0),
-      );
-      if (monto.lessThanOrEqualTo(0)) {
-        throw new BadRequestException('El pedido no tiene monto a cobrar');
-      }
-
-      // HU-017 (schema): acá es donde se dispara la transición real de la
-      // mesa a EN_PROCESO_DE_PAGO.
-      await tx.mesa.update({
-        where: { id: pedido.mesaId },
-        data: { estado: 'EN_PROCESO_DE_PAGO' },
-      });
-
-      const gateway = this.gatewayFactory.obtener(dto.medioPago);
-      const resultado = await gateway.cobrar({
-        monto,
+    // Fase 2: cobrar FUERA de la transacción (la pasarela puede tardar).
+    const gateway = this.gatewayFactory.obtener(dto.medioPago);
+    let resultado: ResultadoCobro;
+    try {
+      resultado = await gateway.cobrar({
+        monto: pago.monto,
         idempotencyKey: dto.idempotencyKey,
-        pedidoId: pedido.id,
+        pedidoId: dto.pedidoId,
         tenantId,
         datosPasarela: dto.datosPasarela,
       });
+    } catch (error) {
+      // Modo degradado (BL-77): no sabemos si la pasarela llegó a cobrar.
+      // El pago queda PENDIENTE y la mesa EN_PROCESO_DE_PAGO, para
+      // reconciliar después. Ya está guardado (la Fase 1 se confirmó).
+      if (error instanceof PagoTemporalmenteNoDisponibleException) {
+        throw error;
+      }
+      // La pasarela respondió con un error: no hubo cobro.
+      if (error instanceof HttpException) {
+        await this.cerrarRechazado(tenantId, pago.id, mesaId);
+      }
+      throw error;
+    }
 
-      const pago = await tx.pago.create({
-        data: {
-          tenantId,
-          pedidoId: pedido.id,
-          idempotencyKey: dto.idempotencyKey,
-          monto,
-          medioPago: dto.medioPago,
-          estado: resultado.pendiente
-            ? 'PENDIENTE'
-            : resultado.aprobado
-              ? 'APROBADO'
-              : 'RECHAZADO',
-          pasarelaReferencia: resultado.pasarelaReferencia,
-        },
+    // Fase 3: guardar el resultado.
+    const estado = resultado.pendiente
+      ? 'PENDIENTE'
+      : resultado.aprobado
+        ? 'APROBADO'
+        : 'RECHAZADO';
+
+    return this.tenantPrisma.runInTenantContext(tenantId, async (tx) => {
+      const actualizado = await tx.pago.update({
+        where: { id: pago.id },
+        data: { estado, pasarelaReferencia: resultado.pasarelaReferencia },
       });
-
-      // Pago simple (HU-007): un único pago cubre el total -> mesa libre.
-      // HU-008 va a reemplazar este chequeo por una suma de pagos parciales.
-      // Pendiente: el cobro está en vuelo, la mesa sigue EN_PROCESO_DE_PAGO.
       if (!resultado.pendiente) {
+        // Pago simple (HU-007): un único pago cubre el total. HU-008 lo
+        // reemplaza por la suma de pagos parciales.
         await tx.mesa.update({
-          where: { id: pedido.mesaId },
+          where: { id: mesaId },
           data: { estado: resultado.aprobado ? 'LIBRE' : 'OCUPADA' },
         });
       }
+      return actualizado;
+    });
+  }
 
-      return pago;
+  private async reservar(tenantId: string, dto: CrearPagoDto) {
+    try {
+      return await this.tenantPrisma.runInTenantContext(
+        tenantId,
+        async (tx) => {
+          const existente = await tx.pago.findUnique({
+            where: { idempotencyKey: dto.idempotencyKey },
+          });
+          if (existente) {
+            return { existente };
+          }
+
+          const pedido = await tx.pedido.findUnique({
+            where: { id: dto.pedidoId },
+            include: { lineas: true },
+          });
+          if (!pedido) {
+            throw new NotFoundException('Pedido no encontrado');
+          }
+
+          const otro = await tx.pago.findFirst({
+            where: {
+              pedidoId: pedido.id,
+              estado: { in: ['APROBADO', 'PENDIENTE'] },
+            },
+          });
+          if (otro?.estado === 'APROBADO') {
+            throw new ConflictException('Este pedido ya fue pagado');
+          }
+          if (otro) {
+            throw new ConflictException(
+              'Ya hay un pago en curso para este pedido',
+            );
+          }
+
+          const monto = pedido.lineas.reduce(
+            (acumulado, linea) => acumulado.plus(linea.subtotal),
+            new Prisma.Decimal(0),
+          );
+          if (monto.lessThanOrEqualTo(0)) {
+            throw new BadRequestException('El pedido no tiene monto a cobrar');
+          }
+
+          await tx.mesa.update({
+            where: { id: pedido.mesaId },
+            data: { estado: 'EN_PROCESO_DE_PAGO' },
+          });
+          const pago = await tx.pago.create({
+            data: {
+              tenantId,
+              pedidoId: pedido.id,
+              idempotencyKey: dto.idempotencyKey,
+              monto,
+              medioPago: dto.medioPago,
+              estado: 'PENDIENTE',
+            },
+          });
+          return { pago, mesaId: pedido.mesaId };
+        },
+      );
+    } catch (error) {
+      // Dos requests simultáneos con la misma clave: el segundo choca con
+      // la clave única y devuelve el pago del primero, sin cobrar dos veces.
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        const existente = await this.tenantPrisma.runInTenantContext(
+          tenantId,
+          (tx) =>
+            tx.pago.findUnique({
+              where: { idempotencyKey: dto.idempotencyKey },
+            }),
+        );
+        if (existente) {
+          return { existente };
+        }
+      }
+      throw error;
+    }
+  }
+
+  private async cerrarRechazado(
+    tenantId: string,
+    pagoId: string,
+    mesaId: string,
+  ) {
+    await this.tenantPrisma.runInTenantContext(tenantId, async (tx) => {
+      await tx.pago.update({
+        where: { id: pagoId },
+        data: { estado: 'RECHAZADO' },
+      });
+      await tx.mesa.update({
+        where: { id: mesaId },
+        data: { estado: 'OCUPADA' },
+      });
     });
   }
 }
