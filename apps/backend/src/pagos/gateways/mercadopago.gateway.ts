@@ -39,7 +39,7 @@ const DETALLES_RECHAZO = new Set(['insufficient_amount', 'rejected_by_issuer']);
 
 // UUID determinístico a partir de (tenant, clave del cliente): el mismo
 // intento reintentado usa la misma X-Idempotency-Key en Mercado Pago.
-function idempotencyKeyMp(tenantId: string, clave: string): string {
+export function idempotencyKeyMp(tenantId: string, clave: string): string {
   const hex = createHash('sha256').update(`${tenantId}:${clave}`).digest('hex');
   const variante = ((parseInt(hex[16], 16) & 0x3) | 0x8).toString(16);
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-${variante}${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
