@@ -11,6 +11,7 @@ import { CrearPagoDto } from './dto/crear-pago.dto';
 import { PagoGatewayFactory } from './gateways/pago-gateway.factory';
 import { ResultadoCobro } from './gateways/pago-gateway.interface';
 import { PagoTemporalmenteNoDisponibleException } from './gateways/pago-temporalmente-no-disponible.exception';
+import { PagoRechazadoException } from './gateways/pago-rechazado.exception';
 
 @Injectable()
 export class PagosService {
@@ -60,21 +61,30 @@ export class PagosService {
         ? 'APROBADO'
         : 'RECHAZADO';
 
-    return this.tenantPrisma.runInTenantContext(tenantId, async (tx) => {
-      const actualizado = await tx.pago.update({
-        where: { id: pago.id },
-        data: { estado, pasarelaReferencia: resultado.pasarelaReferencia },
-      });
-      if (!resultado.pendiente) {
-        // Pago simple (HU-007): un único pago cubre el total. HU-008 lo
-        // reemplaza por la suma de pagos parciales.
-        await tx.mesa.update({
-          where: { id: mesaId },
-          data: { estado: resultado.aprobado ? 'LIBRE' : 'OCUPADA' },
+    const pagoFinal = await this.tenantPrisma.runInTenantContext(
+      tenantId,
+      async (tx) => {
+        const actualizado = await tx.pago.update({
+          where: { id: pago.id },
+          data: { estado, pasarelaReferencia: resultado.pasarelaReferencia },
         });
-      }
-      return actualizado;
-    });
+        if (!resultado.pendiente) {
+          // Pago simple (HU-007): un único pago cubre el total. HU-008 lo
+          // reemplaza por la suma de pagos parciales.
+          await tx.mesa.update({
+            where: { id: mesaId },
+            data: { estado: resultado.aprobado ? 'LIBRE' : 'OCUPADA' },
+          });
+        }
+        return actualizado;
+      },
+    );
+
+    // BL-77: ya guardado como RECHAZADO; recién ahora se le avisa al comensal.
+    if (estado === 'RECHAZADO') {
+      throw new PagoRechazadoException(resultado.motivoRechazo);
+    }
+    return pagoFinal;
   }
 
   private async reservar(tenantId: string, dto: CrearPagoDto) {

@@ -26,7 +26,16 @@ interface OrdenMp {
   id?: string;
   status?: string;
   status_detail?: string;
+  // En un 402 (transacción fallida), Orders devuelve la order dentro de `data`.
+  data?: {
+    id?: string;
+    transactions?: { payments?: { status_detail?: string }[] };
+  };
 }
+
+// Rechazos reales del emisor de la tarjeta (HTTP 402 + status_detail).
+// Verificado contra el sandbox; se amplía a medida que aparecen casos.
+const DETALLES_RECHAZO = new Set(['insufficient_amount', 'rejected_by_issuer']);
 
 // UUID determinístico a partir de (tenant, clave del cliente): el mismo
 // intento reintentado usa la misma X-Idempotency-Key en Mercado Pago.
@@ -108,6 +117,30 @@ export class MercadoPagoGateway implements PagoGateway {
     const cuerpo = (await respuesta.json().catch(() => ({}))) as OrdenMp;
 
     if (!respuesta.ok) {
+      const detalleFallo =
+        cuerpo.data?.transactions?.payments?.[0]?.status_detail;
+
+      // Token de tarjeta vencido, usado o inválido: no es un rechazo del
+      // emisor sino un dato inválido del cliente. No hubo cobro.
+      if (respuesta.status === 402 && detalleFallo === 'invalid_card_token') {
+        throw new BadRequestException(
+          'Los datos de la tarjeta no son válidos o ya se usaron. Ingresalos de nuevo.',
+        );
+      }
+
+      // Rechazo real de la tarjeta: es un resultado, no un error técnico.
+      if (
+        respuesta.status === 402 &&
+        detalleFallo &&
+        DETALLES_RECHAZO.has(detalleFallo)
+      ) {
+        return {
+          aprobado: false,
+          pasarelaReferencia: cuerpo.data?.id ?? '',
+          motivoRechazo: detalleFallo,
+        };
+      }
+
       // El cuerpo del error de MP no incluye credenciales (el Authorization
       // solo viaja en el request), así que es seguro dejarlo en el log.
       Logger.error(
