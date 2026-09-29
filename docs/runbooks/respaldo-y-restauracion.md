@@ -107,7 +107,7 @@ Un servicio cron de Railway se ejecuta en el horario programado, no al desplegar
 Qué hace, sin tocar ninguna base real:
 
 1. Baja el último dump de cada base, o el de la fecha elegida, y verifica el SHA-256.
-2. Los restaura en un PostgreSQL 17 efímero dentro del runner de GitHub.
+2. Los restaura en un PostgreSQL 18 efímero dentro del runner de GitHub.
 3. **`bistrolink-db`:** controla que haya migraciones de Prisma aplicadas y lista las filas por tabla.
 4. **`keycloak-db`:** lista los realms con su cantidad de usuarios, exige que exista `bistrolink`, y arranca **Keycloak 26.7.2** (misma versión que `bistrolink-auth`) sobre la base restaurada hasta que publica la configuración OIDC del realm.
 5. Informa el **RPO** (antigüedad del respaldo) y el **RTO** (tiempo total de descarga, restauración y verificación) en el resumen de la corrida y como artifact `informe-restauracion-…` (se conserva 90 días).
