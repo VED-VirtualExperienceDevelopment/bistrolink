@@ -1,0 +1,93 @@
+# Chequeo diario de frescura de los respaldos (HU-029 / BL-183)
+#
+# El respaldo lo hace el servicio cron "db-backup" dentro de Railway (red
+# privada, las bases no se exponen). Este workflow NO se conecta a ninguna
+# base: solo mira en S3 que exista un respaldo reciente de cada base y falla si
+# no lo hay. Una corrida fallida de este workflow ES la alerta: GitHub notifica
+# la falla por mail y queda en la pestaña Actions como evidencia.
+#
+# Credenciales: usuario IAM bistrolink-backup-ci (List/Get/Put sobre los buckets
+# de respaldo, sin borrado). Secrets: AWS_BACKUP_ACCESS_KEY_ID,
+# AWS_BACKUP_SECRET_ACCESS_KEY, AWS_REGION.
+name: Respaldo — chequeo de frescura
+
+on:
+  schedule:
+    # 11:30 UTC = 08:30 Uruguay. El respaldo corre a las 06:00 UTC (03:00 UY),
+    # así hay margen de sobra para que termine.
+    - cron: "30 11 * * *"
+  workflow_dispatch:
+    inputs:
+      entorno:
+        description: "Entorno a verificar"
+        type: choice
+        options: [staging, prod]
+        default: staging
+
+permissions:
+  contents: read
+
+jobs:
+  frescura:
+    name: Último respaldo < ${{ vars.BACKUP_MAX_AGE_HOURS || 26 }} h (${{ matrix.entorno }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Producción se agrega a la matriz cuando exista el servicio de respaldo
+        # en el entorno production de Railway (BL-220). En un workflow_dispatch
+        # se verifica solo el entorno elegido.
+        entorno: ${{ github.event_name == 'workflow_dispatch' && fromJSON(format('["{0}"]', inputs.entorno)) || fromJSON('["staging"]') }}
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_BACKUP_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_BACKUP_SECRET_ACCESS_KEY }}
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      BUCKET: bistrolink-backups-${{ matrix.entorno }}
+      MAX_AGE_HOURS: ${{ vars.BACKUP_MAX_AGE_HOURS || 26 }}
+      MIN_BYTES: "1024"
+    steps:
+      - name: Verificar el último respaldo de cada base
+        shell: bash
+        run: |
+          set -euo pipefail
+          ahora=$(date -u +%s)
+          estado=0
+          {
+            echo "## Respaldos en \`$BUCKET\`"
+            echo
+            echo "| Base | Último respaldo | Antigüedad (h) | Tamaño (MB) | Resultado |"
+            echo "|---|---|---:|---:|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          for base in bistrolink-db keycloak-db; do
+            # Último .dump bajo daily/<base>/ (hay como máximo ~35 por base).
+            linea=$(aws s3api list-objects-v2 --bucket "$BUCKET" --prefix "daily/$base/" \
+              --query "sort_by(Contents[?ends_with(Key, '.dump')], &LastModified)[-1].[Key, LastModified, Size]" \
+              --output text 2>/dev/null || true)
+
+            if [ -z "$linea" ] || [ "$linea" = "None" ]; then
+              echo "| $base | — | — | — | ❌ No hay respaldos |" >> "$GITHUB_STEP_SUMMARY"
+              echo "::error::$base: no se encontró ningún respaldo en s3://$BUCKET/daily/$base/"
+              estado=1
+              continue
+            fi
+
+            read -r key fecha bytes <<< "$linea"
+            edad_h=$(( (ahora - $(date -u -d "$fecha" +%s)) / 3600 ))
+            mb=$(awk "BEGIN { printf \"%.2f\", $bytes / 1048576 }")
+
+            if [ "$edad_h" -gt "$MAX_AGE_HOURS" ]; then
+              resultado="❌ Vencido (> $MAX_AGE_HOURS h)"
+              echo "::error::$base: el último respaldo tiene $edad_h h ($key)"
+              estado=1
+            elif [ "$bytes" -lt "$MIN_BYTES" ]; then
+              resultado="❌ Demasiado chico"
+              echo "::error::$base: el último respaldo pesa $bytes bytes ($key)"
+              estado=1
+            else
+              resultado="✅ OK"
+            fi
+            echo "| $base | \`$key\` | $edad_h | $mb | $resultado |" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+          exit "$estado"
