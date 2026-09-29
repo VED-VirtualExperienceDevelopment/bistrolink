@@ -6,12 +6,15 @@ import { PagosService } from './pagos.service';
 import { FakePagoGateway } from './gateways/fake.gateway';
 import { MercadoPagoGateway } from './gateways/mercadopago.gateway';
 import { PagoGatewayFactory } from './gateways/pago-gateway.factory';
+import { PagosWebhookController } from './webhooks/pagos-webhook.controller';
+import { PagosWebhookService } from './webhooks/pagos-webhook.service';
 
 @Module({
   imports: [PrismaModule, AuthModule],
-  controllers: [PagosController],
+  controllers: [PagosController, PagosWebhookController],
   providers: [
     PagosService,
+    PagosWebhookService,
     FakePagoGateway,
     MercadoPagoGateway,
     PagoGatewayFactory,

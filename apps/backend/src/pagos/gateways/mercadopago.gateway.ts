@@ -5,6 +5,7 @@ import {
   Injectable,
   Logger,
 } from '@nestjs/common';
+import { armarReferenciaExterna } from '../webhooks/referencia-externa';
 import {
   PagoGateway,
   ResultadoCobro,
@@ -22,10 +23,20 @@ interface DatosMercadoPago {
   installments?: number;
 }
 
+export interface OrdenConsultada {
+  id: string;
+  status: string;
+  statusDetail?: string;
+  totalAmount?: string;
+  externalReference?: string;
+}
+
 interface OrdenMp {
   id?: string;
   status?: string;
   status_detail?: string;
+  total_amount?: string;
+  external_reference?: string;
   // En un 402 (transacción fallida), Orders devuelve la order dentro de `data`.
   data?: {
     id?: string;
@@ -95,7 +106,10 @@ export class MercadoPagoGateway implements PagoGateway {
         type: 'online',
         processing_mode: 'automatic',
         total_amount: monto,
-        external_reference: `pedido-${solicitud.pedidoId}`,
+        external_reference: armarReferenciaExterna(
+          solicitud.tenantId,
+          solicitud.pedidoId,
+        ),
         payer: { email: payerEmail },
         transactions: {
           payments: [
@@ -166,6 +180,43 @@ export class MercadoPagoGateway implements PagoGateway {
       pendiente,
       pasarelaReferencia: String(cuerpo.id),
       motivoRechazo: aprobado || pendiente ? undefined : detalle,
+    };
+  }
+
+  // BL-78: "notificar y luego consultar". El webhook solo avisa que algo
+  // cambió; el estado real se lee de Mercado Pago con nuestro token, sin
+  // fiarse del cuerpo de la notificación. null = la order no existe.
+  async consultarOrden(orderId: string): Promise<OrdenConsultada | null> {
+    const respuesta = await fetch(
+      `${MP_ORDERS_URL}/${encodeURIComponent(orderId)}`,
+      {
+        headers: { Authorization: `Bearer ${this.accessToken}` },
+        signal: AbortSignal.timeout(10_000),
+      },
+    );
+
+    if (respuesta.status === 404) {
+      return null;
+    }
+
+    const cuerpo = (await respuesta.json().catch(() => ({}))) as OrdenMp;
+    if (!respuesta.ok) {
+      Logger.error(
+        `Mercado Pago no pudo consultar la order ${orderId} (HTTP ${respuesta.status}): ${JSON.stringify(cuerpo)}`,
+        undefined,
+        MercadoPagoGateway.name,
+      );
+      throw new BadGatewayException(
+        'No se pudo consultar la order en Mercado Pago',
+      );
+    }
+
+    return {
+      id: cuerpo.id ?? orderId,
+      status: cuerpo.status ?? '',
+      statusDetail: cuerpo.status_detail,
+      totalAmount: cuerpo.total_amount,
+      externalReference: cuerpo.external_reference,
     };
   }
 }

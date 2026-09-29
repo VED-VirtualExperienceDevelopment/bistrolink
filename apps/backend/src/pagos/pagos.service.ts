@@ -10,8 +10,8 @@ import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { CrearPagoDto } from './dto/crear-pago.dto';
 import { PagoGatewayFactory } from './gateways/pago-gateway.factory';
 import { ResultadoCobro } from './gateways/pago-gateway.interface';
-import { PagoTemporalmenteNoDisponibleException } from './gateways/pago-temporalmente-no-disponible.exception';
 import { PagoRechazadoException } from './gateways/pago-rechazado.exception';
+import { PagoTemporalmenteNoDisponibleException } from './gateways/pago-temporalmente-no-disponible.exception';
 
 @Injectable()
 export class PagosService {
@@ -64,24 +64,27 @@ export class PagosService {
     const pagoFinal = await this.tenantPrisma.runInTenantContext(
       tenantId,
       async (tx) => {
-        const actualizado = await tx.pago.update({
-          where: { id: pago.id },
+        // Solo si el pago sigue PENDIENTE: el webhook de Mercado Pago puede
+        // haberlo resuelto antes de que llegue la respuesta de esta llamada,
+        // y una respuesta más vieja no debe pisar el estado real.
+        const { count } = await tx.pago.updateMany({
+          where: { id: pago.id, estado: 'PENDIENTE' },
           data: { estado, pasarelaReferencia: resultado.pasarelaReferencia },
         });
-        if (!resultado.pendiente) {
+        if (count > 0 && !resultado.pendiente) {
           // Pago simple (HU-007): un único pago cubre el total. HU-008 lo
           // reemplaza por la suma de pagos parciales.
-          await tx.mesa.update({
-            where: { id: mesaId },
+          await tx.mesa.updateMany({
+            where: { id: mesaId, estado: 'EN_PROCESO_DE_PAGO' },
             data: { estado: resultado.aprobado ? 'LIBRE' : 'OCUPADA' },
           });
         }
-        return actualizado;
+        return tx.pago.findUniqueOrThrow({ where: { id: pago.id } });
       },
     );
 
     // BL-77: ya guardado como RECHAZADO; recién ahora se le avisa al comensal.
-    if (estado === 'RECHAZADO') {
+    if (pagoFinal.estado === 'RECHAZADO') {
       throw new PagoRechazadoException(resultado.motivoRechazo);
     }
     return pagoFinal;
@@ -175,14 +178,16 @@ export class PagosService {
     mesaId: string,
   ) {
     await this.tenantPrisma.runInTenantContext(tenantId, async (tx) => {
-      await tx.pago.update({
-        where: { id: pagoId },
+      const { count } = await tx.pago.updateMany({
+        where: { id: pagoId, estado: 'PENDIENTE' },
         data: { estado: 'RECHAZADO' },
       });
-      await tx.mesa.update({
-        where: { id: mesaId },
-        data: { estado: 'OCUPADA' },
-      });
+      if (count > 0) {
+        await tx.mesa.updateMany({
+          where: { id: mesaId, estado: 'EN_PROCESO_DE_PAGO' },
+          data: { estado: 'OCUPADA' },
+        });
+      }
     });
   }
 }

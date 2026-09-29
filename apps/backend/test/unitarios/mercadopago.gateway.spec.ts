@@ -9,6 +9,10 @@ import {
   MercadoPagoGateway,
 } from '../../src/pagos/gateways/mercadopago.gateway';
 import { SolicitudCobro } from '../../src/pagos/gateways/pago-gateway.interface';
+import {
+  armarReferenciaExterna,
+  leerReferenciaExterna,
+} from '../../src/pagos/webhooks/referencia-externa';
 
 const TENANT_ID = '11111111-1111-1111-1111-111111111111';
 const PEDIDO_ID = '3cdf1dad-31d6-43c9-9739-11485e0e23f8';
@@ -210,7 +214,7 @@ describe('MercadoPagoGateway', () => {
         type: 'online',
         processing_mode: 'automatic',
         total_amount: '590.00',
-        external_reference: `pedido-${PEDIDO_ID}`,
+        external_reference: armarReferenciaExterna(TENANT_ID, PEDIDO_ID),
         payer: { email: 'comensal@example.com' },
         transactions: {
           payments: [
@@ -271,6 +275,92 @@ describe('MercadoPagoGateway', () => {
 
       const cuerpo = JSON.parse(fetchMock.mock.calls[0][1].body);
       expect(cuerpo.payer.email).toBe('test@testuser.com');
+    });
+
+    it('BL-78: el external_reference lleva el tenant y el pedido, para que el webhook sepa de quién es el pago', async () => {
+      fetchMock.mockResolvedValue(
+        respuestaMp(201, {
+          id: 'ORD1',
+          status: 'processed',
+          status_detail: 'accredited',
+        }),
+      );
+
+      await new MercadoPagoGateway().cobrar(solicitud());
+
+      const cuerpo = JSON.parse(fetchMock.mock.calls[0][1].body);
+      expect(leerReferenciaExterna(cuerpo.external_reference)).toEqual({
+        tenantId: TENANT_ID,
+        pedidoId: PEDIDO_ID,
+      });
+      expect(cuerpo.external_reference.length).toBeLessThanOrEqual(64);
+    });
+  });
+
+  describe('consultarOrden (BL-78: notificar y luego consultar)', () => {
+    it('lee el estado real de la order con nuestro token', async () => {
+      fetchMock.mockResolvedValue(
+        respuestaMp(200, {
+          id: 'ORD1',
+          status: 'processed',
+          status_detail: 'accredited',
+          total_amount: '590.00',
+          external_reference: 'ref-1',
+        }),
+      );
+
+      const orden = await new MercadoPagoGateway().consultarOrden('ORD1');
+
+      expect(orden).toEqual({
+        id: 'ORD1',
+        status: 'processed',
+        statusDetail: 'accredited',
+        totalAmount: '590.00',
+        externalReference: 'ref-1',
+      });
+      const [url, opciones] = fetchMock.mock.calls[0];
+      expect(url).toBe('https://api.mercadopago.com/v1/orders/ORD1');
+      expect(opciones.method).toBeUndefined(); // GET
+      expect(opciones.headers.Authorization).toBe(
+        'Bearer APP_USR-111-092101-clave-999',
+      );
+    });
+
+    it('escapa el id de la order en la URL (no se puede inyectar una ruta)', async () => {
+      fetchMock.mockResolvedValue(
+        respuestaMp(200, { id: 'x', status: 'processed' }),
+      );
+
+      await new MercadoPagoGateway().consultarOrden('../users/me');
+
+      expect(fetchMock.mock.calls[0][0]).toBe(
+        'https://api.mercadopago.com/v1/orders/..%2Fusers%2Fme',
+      );
+    });
+
+    it('la order no existe (404) => null', async () => {
+      fetchMock.mockResolvedValue(respuestaMp(404, { message: 'not found' }));
+
+      await expect(
+        new MercadoPagoGateway().consultarOrden('ORD-FANTASMA'),
+      ).resolves.toBeNull();
+    });
+
+    it('Mercado Pago falla (5xx) => 502, para que el webhook se reintente', async () => {
+      fetchMock.mockResolvedValue(respuestaMp(503, { message: 'unavailable' }));
+
+      await expect(
+        new MercadoPagoGateway().consultarOrden('ORD1'),
+      ).rejects.toThrow(BadGatewayException);
+      expect(Logger.error).toHaveBeenCalled();
+    });
+
+    it('una respuesta incompleta no explota: usa el id consultado y estado vacío', async () => {
+      fetchMock.mockResolvedValue(respuestaMp(200, {}));
+
+      await expect(
+        new MercadoPagoGateway().consultarOrden('ORD9'),
+      ).resolves.toMatchObject({ id: 'ORD9', status: '' });
     });
   });
 
