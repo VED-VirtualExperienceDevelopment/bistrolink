@@ -49,6 +49,14 @@ CVE-2026-55833
 CVE-2026-56745
 CVE-2026-56819
 CVE-2026-54291
+# CVE-2026-68497 (HIGH) — com.fasterxml.jackson.core:jackson-databind 2.21.5,
+# bundleado por la imagen oficial de Keycloak (quay.io/keycloak/keycloak:26.7.2),
+# también dentro de keycloak-admin-cli-26.7.2.jar. DoS por consumo de CPU al
+# parsear números sin límite. Fix en jackson 2.21.6, pero Keycloak todavía no lo
+# empaquetó: issue keycloak/keycloak#53278 abierto el 29/09/2026, en "triage",
+# afecta también a 26.7.4. No es código propio ni una dependencia que gestionemos.
+# Pendiente (BL-137): revisar cuando Keycloak publique un patch que actualice jackson.
+CVE-2026-68497
 
 # pcre2 / pcre2-syntax — CVEs del paquete PCRE2 del SO base RHEL 9.8 de la
 
