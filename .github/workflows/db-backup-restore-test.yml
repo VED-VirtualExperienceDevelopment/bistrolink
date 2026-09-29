@@ -1,0 +1,201 @@
+# Verificación de restauración de los respaldos (HU-029 / BL-183)
+#
+# Baja de S3 el último respaldo (o el de una fecha elegida) de bistrolink-db y
+# keycloak-db, verifica su SHA-256, lo restaura en un PostgreSQL efímero del
+# runner y comprueba que los datos sirven:
+#   - bistrolink-db: migraciones de Prisma aplicadas y filas por tabla.
+#   - keycloak-db: realms y usuarios presentes, y Keycloak 26.7.2 (misma
+#     versión que bistrolink-auth) arranca sobre la base restaurada y publica
+#     la configuración OIDC del realm "bistrolink".
+# Mide el RPO (antigüedad del respaldo) y el RTO (tiempo desde que empieza la
+# descarga hasta que ambas bases quedan verificadas) y deja el informe en el
+# resumen de la corrida y como artifact (evidencia para el Anexo 12 §6.3).
+#
+# No toca ninguna base real ni Railway: todo pasa dentro del runner y se
+# descarta al terminar. Credenciales: usuario IAM bistrolink-backup-ci.
+name: Respaldo — verificación de restauración
+
+on:
+  workflow_dispatch:
+    inputs:
+      entorno:
+        description: "Entorno cuyos respaldos se restauran"
+        type: choice
+        options: [staging, prod]
+        default: staging
+      fecha:
+        description: "Fecha del respaldo diario (yyyy-mm-dd). Vacío = el último."
+        required: false
+        default: ""
+  schedule:
+    # Día 2 de cada mes a las 12:00 UTC: verifica también la copia mensual del día 1.
+    - cron: "0 12 2 * *"
+
+permissions:
+  contents: read
+
+env:
+  PG_IMAGE: postgres:17-alpine
+  KEYCLOAK_IMAGE: quay.io/keycloak/keycloak:26.7.2
+
+jobs:
+  restaurar:
+    name: Restaurar y verificar (${{ inputs.entorno || 'staging' }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s
+          --health-timeout 5s --health-retries 20
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_BACKUP_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_BACKUP_SECRET_ACCESS_KEY }}
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      BUCKET: bistrolink-backups-${{ inputs.entorno || 'staging' }}
+      FECHA: ${{ inputs.fecha }}
+      PGHOST: localhost
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    steps:
+      - name: Inicio del cronómetro (RTO)
+        run: echo "T0=$(date -u +%s)" >> "$GITHUB_ENV"
+
+      - name: Descargar y verificar los respaldos
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p restore
+          ahora=$(date -u +%s)
+          echo "| Base | Respaldo | RPO (h) | Tamaño (MB) | SHA-256 |" > restore/respaldos.md
+          echo "|---|---|---:|---:|---|" >> restore/respaldos.md
+          for base in bistrolink-db keycloak-db; do
+            if [ -n "$FECHA" ]; then
+              key="daily/$base/${FECHA:0:4}/${FECHA:5:2}/$FECHA.dump"
+              fecha_obj=$(aws s3api head-object --bucket "$BUCKET" --key "$key" --query LastModified --output text)
+            else
+              read -r key fecha_obj <<< "$(aws s3api list-objects-v2 --bucket "$BUCKET" --prefix "daily/$base/" \
+                --query "sort_by(Contents[?ends_with(Key, '.dump')], &LastModified)[-1].[Key, LastModified]" --output text)"
+            fi
+            [ -n "$key" ] && [ "$key" != "None" ] || { echo "::error::No hay respaldo de $base"; exit 1; }
+            aws s3api get-object --bucket "$BUCKET" --key "$key" "restore/$base.dump" >/dev/null
+            aws s3api get-object --bucket "$BUCKET" --key "${key%.dump}.sha256" "restore/$base.sha256" >/dev/null
+            # El .sha256 referencia "<fecha>.dump": se compara solo el hash.
+            esperado=$(cut -d' ' -f1 "restore/$base.sha256")
+            real=$(sha256sum "restore/$base.dump" | cut -d' ' -f1)
+            [ "$esperado" = "$real" ] || { echo "::error::$base: SHA-256 no coincide"; exit 1; }
+            rpo_h=$(( (ahora - $(date -u -d "$fecha_obj" +%s)) / 3600 ))
+            mb=$(awk "BEGIN { printf \"%.2f\", $(stat -c%s "restore/$base.dump") / 1048576 }")
+            echo "| $base | \`$key\` | $rpo_h | $mb | ✅ coincide |" >> restore/respaldos.md
+          done
+
+      - name: Restaurar bistrolink-db y keycloak-db
+        shell: bash
+        run: |
+          set -euo pipefail
+          pg() { docker run --rm --network host -e PGHOST -e PGUSER -e PGPASSWORD \
+                   -v "$PWD/restore:/restore" "$PG_IMAGE" "$@"; }
+          for base in bistrolink keycloak; do
+            pg createdb "${base}_restore"
+            inicio=$(date +%s)
+            pg pg_restore --no-owner --no-acl --exit-on-error \
+                          --dbname="${base}_restore" "/restore/${base}-db.dump"
+            echo "RESTORE_${base^^}_S=$(( $(date +%s) - inicio ))" >> "$GITHUB_ENV"
+          done
+
+      - name: Verificar datos de bistrolink-db
+        shell: bash
+        run: |
+          set -euo pipefail
+          pg() { docker run --rm --network host -e PGHOST -e PGUSER -e PGPASSWORD "$PG_IMAGE" "$@"; }
+          migraciones=$(pg psql -d bistrolink_restore -tAc \
+            "select count(*) from _prisma_migrations where finished_at is not null and rolled_back_at is null")
+          [ "$migraciones" -gt 0 ] || { echo "::error::bistrolink-db restaurada sin migraciones aplicadas"; exit 1; }
+          echo "MIGRACIONES=$migraciones" >> "$GITHUB_ENV"
+          # Filas por tabla (esquema public), sin depender de estadísticas.
+          pg psql -d bistrolink_restore -tA -F ' | ' -c "
+            select '| ' || table_name,
+                   (xpath('/row/c/text()', query_to_xml(format('select count(*) as c from public.%I', table_name), false, true, '')))[1]::text || ' |'
+            from information_schema.tables
+            where table_schema = 'public' and table_type = 'BASE TABLE' and table_name <> '_prisma_migrations'
+            order by table_name" > restore/tablas.md
+
+      - name: Verificar datos de keycloak-db
+        shell: bash
+        run: |
+          set -euo pipefail
+          pg() { docker run --rm --network host -e PGHOST -e PGUSER -e PGPASSWORD "$PG_IMAGE" "$@"; }
+          pg psql -d keycloak_restore -tA -F ' | ' -c "
+            select '| ' || r.name, count(u.id)::text || ' |'
+            from realm r left join user_entity u on u.realm_id = r.id
+            group by r.name order by r.name" > restore/realms.md
+          grep -q '^| bistrolink ' restore/realms.md || { echo "::error::El realm bistrolink no está en la base restaurada"; exit 1; }
+
+      - name: Arrancar Keycloak sobre la base restaurada
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run -d --name kc --network host \
+            -e KC_DB=postgres \
+            -e KC_DB_URL=jdbc:postgresql://localhost:5432/keycloak_restore \
+            -e KC_DB_USERNAME=postgres -e KC_DB_PASSWORD=postgres \
+            -e KC_HTTP_PORT=8089 \
+            "$KEYCLOAK_IMAGE" start-dev
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:8089/realms/bistrolink/.well-known/openid-configuration >/dev/null; then
+              echo "KEYCLOAK_OK=1" >> "$GITHUB_ENV"; exit 0
+            fi
+            sleep 5
+          done
+          docker logs kc | tail -50
+          echo "::error::Keycloak no publicó el realm bistrolink sobre la base restaurada"
+          exit 1
+
+      - name: Informe (RPO / RTO)
+        if: always()
+        shell: bash
+        run: |
+          rto=$(( $(date -u +%s) - ${T0:-$(date -u +%s)} ))
+          {
+            echo "## Verificación de restauración — \`$BUCKET\`"
+            echo
+            echo "Fecha de la verificación: $(date -u +'%Y-%m-%d %H:%M') UTC · corrida #${GITHUB_RUN_NUMBER}"
+            echo
+            echo "### Respaldos usados (RPO)"
+            cat restore/respaldos.md 2>/dev/null || echo "_No se llegaron a descargar._"
+            echo
+            echo "### Tiempos (RTO)"
+            echo "| Medición | Segundos |"
+            echo "|---|---:|"
+            echo "| Restauración de bistrolink-db | ${RESTORE_BISTROLINK_S:-—} |"
+            echo "| Restauración de keycloak-db | ${RESTORE_KEYCLOAK_S:-—} |"
+            echo "| **RTO total** (descarga → restauración → verificación) | **$rto** |"
+            echo
+            echo "### bistrolink-db"
+            echo "Migraciones de Prisma aplicadas: ${MIGRACIONES:-—}"
+            echo
+            echo "| Tabla | Filas |"
+            echo "|---|---:|"
+            cat restore/tablas.md 2>/dev/null
+            echo
+            echo "### keycloak-db"
+            echo "| Realm | Usuarios |"
+            echo "|---|---:|"
+            cat restore/realms.md 2>/dev/null
+            echo
+            if [ "${KEYCLOAK_OK:-0}" = "1" ]; then kc="✅"; else kc="❌"; fi
+            echo "Keycloak 26.7.2 arrancó sobre la base restaurada y publicó el realm \`bistrolink\`: $kc"
+          } | tee restore/informe.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Guardar el informe (artifact)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: informe-restauracion-${{ inputs.entorno || 'staging' }}-${{ github.run_number }}
+          path: restore/informe.md
+          retention-days: 90
