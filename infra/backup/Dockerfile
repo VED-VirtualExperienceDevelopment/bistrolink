@@ -10,9 +10,9 @@
 # Railway marca la ejecución como fallida si el script sale con código ≠ 0.
 #
 # Versión del cliente de PostgreSQL: pg_dump solo puede respaldar servidores de
-# su misma versión mayor o anteriores. Se usa 17 para cubrir servidores 16 y 17.
+# su misma versión mayor o anteriores. Se usa 18 para cubrir servidores hata las 18 (staging core 18.6).
 # Si Railway actualiza las bases a una versión mayor, subir PG_MAJOR.
-ARG PG_MAJOR=17
+ARG PG_MAJOR=18
 FROM postgres:${PG_MAJOR}-alpine
 
 # aws-cli: subida a S3 y verificación del objeto. coreutils: sha256sum/stat GNU.

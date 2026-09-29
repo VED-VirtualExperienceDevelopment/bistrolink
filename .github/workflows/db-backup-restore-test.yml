@@ -35,7 +35,7 @@ permissions:
   contents: read
 
 env:
-  PG_IMAGE: postgres:17-alpine
+  PG_IMAGE: postgres:18-alpine
   KEYCLOAK_IMAGE: quay.io/keycloak/keycloak:26.7.2
 
 jobs:
@@ -45,7 +45,7 @@ jobs:
     timeout-minutes: 30
     services:
       postgres:
-        image: postgres:17-alpine
+        image: postgres:18-alpine
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
