@@ -9,7 +9,7 @@
 # Credenciales: usuario IAM bistrolink-backup-ci (List/Get/Put sobre los buckets
 # de respaldo, sin borrado). Secrets: AWS_BACKUP_ACCESS_KEY_ID,
 # AWS_BACKUP_SECRET_ACCESS_KEY, AWS_REGION.
-name: Respaldo — chequeo de frescura
+name: Respaldo — verificar respaldo del día
 
 on:
   schedule:
