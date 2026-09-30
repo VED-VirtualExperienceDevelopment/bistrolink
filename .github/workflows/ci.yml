@@ -63,6 +63,14 @@ permissions:
   security-events: write
   packages: write
 
+# BL-251: en un PR, un push nuevo cancela la corrida anterior del mismo PR
+# (solo importa el último commit). En develop, main y tags nunca se cancela:
+# esas corridas publican imágenes y despliegan, y cortarlas a la mitad puede
+# dejar un deploy incompleto.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   IMAGE_API: ghcr.io/ved-virtualexperiencedevelopment/bistrolink-api
   IMAGE_WEB: ghcr.io/ved-virtualexperiencedevelopment/bistrolink-web
@@ -91,6 +99,7 @@ jobs:
     outputs:
       apps: ${{ steps.filter.outputs.apps }}
       testmgmt: ${{ steps.filter.outputs.testmgmt }}
+      code: ${{ steps.code.outputs.code }}
     steps:
       - uses: actions/checkout@v7
 
@@ -103,6 +112,21 @@ jobs:
               - 'packages/**'
             testmgmt:
               - 'testmgmt/docker/**'
+
+      # BL-251: "code" es true si el cambio toca algo que NO sea
+      # documentación. Va en un paso aparte porque necesita
+      # predicate-quantifier "every" (el archivo tiene que cumplir TODOS los
+      # patrones: no ser .md Y no estar en docs/), y eso cambiaría el sentido
+      # de los filtros de arriba, que son "alguno de".
+      - uses: dorny/paths-filter@v3
+        id: code
+        with:
+          predicate-quantifier: every
+          filters: |
+            code:
+              - '**'
+              - '!**/*.md'
+              - '!docs/**'
 
   # ── JOB 0B: VERSION LABEL (compartido) ─────────────────────────────────────
   # Calcula UNA sola vez el label legible (fecha del commit + SHA corto) que
@@ -147,13 +171,15 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # BL-251: npm ci + caché, igual que el job "jest". npm install no usa
+      # la caché y además puede reescribir el lock dentro de CI.
       - uses: actions/setup-node@v7
         with:
           node-version: "20"
-          # cache: npm
+          cache: npm
 
       - name: Instalar dependencias
-        run: npm install
+        run: npm ci
 
       - name: Lint
         run: npm run lint
@@ -410,19 +436,26 @@ jobs:
   snyk:
     name: 📦 Dependencias (Snyk)
     runs-on: ubuntu-latest
+    needs: [changes]
     # Se saltea en un workflow_dispatch con "solo_tests_unitarios" tildado
     # (modo rápido temporal — ver comentario en el input, arriba en "on:").
-    if: github.event_name != 'workflow_dispatch' || inputs.solo_tests_unitarios != true
+    # BL-251: en un PR que solo toca documentación tampoco corre (no es un
+    # check obligatorio, así que no bloquea el merge). En push a develop,
+    # main y tags corre siempre.
+    if: |
+      (github.event_name != 'workflow_dispatch' || inputs.solo_tests_unitarios != true) &&
+      (github.event_name != 'pull_request' || needs.changes.outputs.code == 'true')
     steps:
       - uses: actions/checkout@v7
 
+      # BL-251: npm ci + caché (ver job "lint").
       - uses: actions/setup-node@v7
         with:
           node-version: "20"
-          # cache: npm
+          cache: npm
 
       - name: Instalar dependencias
-        run: npm install
+        run: npm ci
 
       - name: Auditoría Snyk
         uses: snyk/actions/node@0.4.0
@@ -443,10 +476,20 @@ jobs:
     name: 🐳 Build + Escaneo (${{ matrix.name }})
     runs-on: ubuntu-latest
     # pact sigue comentado — agregarlo a needs cuando esté listo.
-    needs: [lint, jest, version]
+    needs: [lint, jest, version, changes]
     # Se saltea en un workflow_dispatch con "solo_tests_unitarios" tildado
     # (modo rápido temporal — ver comentario en el input, arriba en "on:").
-    if: github.event_name != 'workflow_dispatch' || inputs.solo_tests_unitarios != true
+    # BL-251: en un PR que solo toca documentación (*.md, docs/) se saltean
+    # los tres builds: no hay imagen que cambie. Un job salteado por "if"
+    # cuenta como aprobado para los checks obligatorios, así que el PR se
+    # puede mergear. En push a develop, main y tags corre siempre (de ahí
+    # salen las imágenes que se publican y despliegan). Jest, CodeQL y
+    # SonarCloud NO se saltean: sus checks externos (codecov/patch, CodeQL de
+    # Advanced Security, SonarCloud Code Analysis) solo aparecen si el job
+    # sube resultados, y si faltan quedan "pendientes" y bloquean el merge.
+    if: |
+      (github.event_name != 'workflow_dispatch' || inputs.solo_tests_unitarios != true) &&
+      (github.event_name != 'pull_request' || needs.changes.outputs.code == 'true')
     # Los 9 secrets de Auth NO pueden ir dentro de strategy.matrix — GitHub
     # Actions resuelve las entradas del matrix ANTES de que el contexto
     # "secrets" esté disponible para el job, así que cualquier ${{ secrets.* }}
@@ -490,11 +533,19 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # BL-251: clave por fecha (UTC) en vez de run_id. Con run_id cada
+      # corrida guardaba una copia nueva de la base (~cientos de MB) y se
+      # llenaba el límite de caché del repo; con la fecha queda una por día,
+      # que es lo que tarda Trivy en publicar una base nueva.
+      - name: Fecha para la caché de Trivy
+        id: trivy_date
+        run: echo "date=$(date -u +%F)" >> "$GITHUB_OUTPUT"
+
       - name: Cache DB de vulnerabilidades Trivy
         uses: actions/cache@v4
         with:
           path: ~/.cache/trivy
-          key: trivy-db-${{ github.run_id }}
+          key: trivy-db-${{ steps.trivy_date.outputs.date }}
           restore-keys: trivy-db-
 
       - name: Construir imagen (${{ matrix.name }})
@@ -570,11 +621,19 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # BL-251: clave por fecha (UTC) en vez de run_id. Con run_id cada
+      # corrida guardaba una copia nueva de la base (~cientos de MB) y se
+      # llenaba el límite de caché del repo; con la fecha queda una por día,
+      # que es lo que tarda Trivy en publicar una base nueva.
+      - name: Fecha para la caché de Trivy
+        id: trivy_date
+        run: echo "date=$(date -u +%F)" >> "$GITHUB_OUTPUT"
+
       - name: Cache DB de vulnerabilidades Trivy
         uses: actions/cache@v4
         with:
           path: ~/.cache/trivy
-          key: trivy-db-${{ github.run_id }}
+          key: trivy-db-${{ steps.trivy_date.outputs.date }}
           restore-keys: trivy-db-
 
       - name: Construir imagen (efímera, sin push)
@@ -917,6 +976,15 @@ jobs:
   # Depende de BL-181 (estructura de e2e/ reorganizada + baselines Linux)
   # para poder pasar en CI — hasta que ese trabajo esté mergeado, este job
   # puede fallar o quedar inestable en corridas reales.
+  #
+  # BL-250 — E2E informativo en develop, bloqueante en release:
+  # la suite corre sobre staging DESPUÉS del deploy y condiciona la
+  # promoción a producción, no el merge a develop (Anexo 4 §1.8.3). Por eso,
+  # fuera de un tag v*.*.* o de main, un fallo deja este job en rojo (se ve
+  # en la corrida, en el resumen y en Kiwi) pero NO hace fallar el workflow.
+  # En tag v*.*.* o main la expresión da false y un fallo sí bloquea.
+  # Todo fallo E2E en develop se registra y se triagea como defecto antes
+  # del siguiente release.
   playwright:
     name: 🎭 Tests E2E (Playwright, ${{ matrix.project }})
     needs: [deploy-staging, version]
@@ -924,6 +992,7 @@ jobs:
       !(github.event_name == 'workflow_dispatch' && inputs.solo_tests_unitarios == true) &&
       (github.ref == 'refs/heads/develop' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
+    continue-on-error: ${{ !startsWith(github.ref, 'refs/tags/v') && github.ref != 'refs/heads/main' }}
     strategy:
       fail-fast: false
       matrix:
@@ -965,6 +1034,19 @@ jobs:
           # que ya usa el build-arg NEXT_PUBLIC_API_URL del job "build".
           API_URL: https://bistrolink-api-staging.up.railway.app
 
+      # BL-250: aviso visible en el resumen de la corrida cuando E2E falla
+      # (el workflow sigue en verde en develop, así que el aviso es lo que
+      # evita que el fallo pase desapercibido).
+      - name: Aviso de E2E con fallos (${{ matrix.project }})
+        if: failure()
+        run: |
+          {
+            echo "### ⚠️ E2E con fallos — ${{ matrix.project }}"
+            echo ""
+            echo "La suite Playwright falló en **${{ matrix.project }}**. En develop es **informativa**: no hace fallar el pipeline (BL-250)."
+            echo "Ver el artifact \`playwright-report-${{ matrix.project }}\` y el Test Run \`-e2e\` en Kiwi TCMS, y registrar el defecto antes del próximo release."
+          } >> "$GITHUB_STEP_SUMMARY"
+
       # Un artifact por proyecto (nombre único) para que el job
       # "playwright-report" pueda bajarlos todos con un patrón y mergearlos.
       # continue-on-error: un 403 transitorio acá (mismo issue conocido de
@@ -985,11 +1067,12 @@ jobs:
   # arriba) en uno solo, para que el TestRun de Kiwi quede único ("-e2e"),
   # igual que antes de paralelizar por browser. "if: always()" porque
   # interesa reportar aunque algún proyecto haya fallado (matrix con
-  # fail-fast: false).
+  # fail-fast: false). "!cancelled()" en vez de "always()": reporta igual
+  # si hubo fallos, pero no corre si alguien canceló la corrida (BL-250).
   playwright-report:
     name: 📋 Merge + reporte E2E a Kiwi TCMS
     needs: [playwright, version]
-    if: always()
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
       - name: Descargar los 4 reportes
