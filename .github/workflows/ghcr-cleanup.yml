@@ -1,11 +1,20 @@
 name: Retención de imágenes GHCR
 
-# 100% manual — sin cron. Se dispara desde Actions → "Run workflow".
+# Cuándo corre:
+#   - Manual: Actions → "Run workflow" (por defecto en dry-run).
+#   - Semanal: domingos 07:17 UTC (04:17 en Uruguay), lejos del respaldo
+#     de las 06:00 UTC y de los pushes del equipo. Minuto 17 para no caer
+#     en la hora en punto, cuando GitHub demora o saltea crons.
+#     El cron solo corre desde la rama por defecto (hoy develop). La
+#     corrida semanal borra de verdad (sin dry-run). BL-241.
 #
 # Política:
-#   - Tags semánticos (v*.*.*) -> se conservan SIEMPRE. Son releases
-#     reales, el costo de guardarlas es mínimo comparado con poder
-#     auditar o revertir a cualquiera de ellas.
+#   - Tags semánticos (v*.*.*, incluidos pre-releases como v0.5.0-rc.1)
+#     -> se conservan SIEMPRE. Son releases reales o candidatos a release
+#     (el ensayo de rollback usa un -rc), y el costo de guardarlas es
+#     mínimo comparado con poder auditar o revertir a cualquiera de ellas.
+#     Mismo formato que dispara ci.yml (on.push.tags: v*.*.*) y que usa
+#     deploy-prod (imagen:<tag del release>). BL-241.
 #   - Versiones sin ningún tag (untagged) -> NO se tocan. Pueden ser
 #     manifests referenciados por un manifest list multi-arquitectura;
 #     borrarlas a ciegas por antigüedad es el error más común al
@@ -19,6 +28,8 @@ name: Retención de imágenes GHCR
 # tercero que puede cambiar entre versiones.
 
 on:
+  schedule:
+    - cron: "17 7 * * 0"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -47,31 +58,37 @@ jobs:
     steps:
       - name: Limpiar versiones viejas por SHA (${{ matrix.package }})
         env:
-          # PENDIENTE: GITHUB_TOKEN puede no alcanzar para borrar versiones
-          # de un package a nivel organización (suele requerir permisos de
-          # owner/admin del package). Si este job falla con 403/404 al
-          # intentar borrar, crear un PAT (classic) con scopes
-          # read:packages + delete:packages, cargarlo como secret
-          # GHCR_CLEANUP_TOKEN, y reemplazar la línea de abajo por:
-          #   GH_TOKEN: ${{ secrets.GHCR_CLEANUP_TOKEN }}
+          # El token del workflow alcanza para borrar versiones de estos
+          # packages (verificado con corridas manuales reales).
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          KEEP_LAST: ${{ inputs.keep_last }}
-          DRY_RUN: ${{ inputs.dry_run }}
+          # En el cron no hay inputs: se usan los valores por defecto.
+          KEEP_LAST: ${{ inputs.keep_last || '10' }}
+          # Manual: lo que se elija en el input (por defecto dry-run).
+          # Semanal: borra de verdad.
+          DRY_RUN: ${{ github.event_name == 'schedule' && 'false' || inputs.dry_run }}
         run: |
           set -euo pipefail
-          echo "Paquete: ${{ matrix.package }} — DRY_RUN=$DRY_RUN — conservando las últimas $KEEP_LAST imágenes por SHA"
+          echo "Paquete: ${{ matrix.package }} — evento: ${{ github.event_name }} — DRY_RUN=$DRY_RUN — conservando las últimas $KEEP_LAST imágenes por SHA"
 
+          # --paginate devuelve un array JSON por página pegados uno detrás
+          # del otro ([...][...]). jq -s 'add' los une en un solo array: sin
+          # esto, con más de 100 versiones el orden y el recorte de
+          # $KEEP_LAST se aplicarían página por página (BL-241).
           gh api --paginate \
             "/orgs/ved-virtualexperiencedevelopment/packages/container/${{ matrix.package }}/versions?per_page=100" \
-            > all_versions.json
+            | jq -s 'add // []' > all_versions.json
+
+          echo "Versiones totales: $(jq 'length' all_versions.json)"
+          echo "Conservadas por tag semántico:"
+          jq -r '.[] | select((.metadata.container.tags // []) | any(test("^v[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?$"))) | "  \(.metadata.container.tags | join(","))"' all_versions.json
 
           # Candidatas a borrado: tienen tags, ninguno matchea v*.*.*
-          # (semver), ordenadas de más nueva a más vieja, saltando las
-          # primeras $KEEP_LAST.
+          # (semver, con pre-release opcional), ordenadas de más nueva a más
+          # vieja, saltando las primeras $KEEP_LAST.
           jq -r --argjson keep "$KEEP_LAST" '
             [ .[]
               | select((.metadata.container.tags // []) | length > 0)
-              | select((.metadata.container.tags // []) | any(test("^v[0-9]+\\.[0-9]+\\.[0-9]+$")) | not)
+              | select((.metadata.container.tags // []) | any(test("^v[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?$")) | not)
             ]
             | sort_by(.created_at) | reverse
             | .[$keep:]
