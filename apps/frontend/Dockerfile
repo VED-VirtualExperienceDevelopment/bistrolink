@@ -55,6 +55,13 @@ RUN rm -rf /usr/local/lib/node_modules/npm \
   /usr/local/bin/npx \
   /usr/local/bin/corepack
 
+# BL-194: Next.js escribe en runtime en .next/cache (imágenes optimizadas por
+# next/image y caché de fetch). El resto de .next, server.js, static y public
+# siguen siendo de root y de solo lectura para el proceso (mínimo privilegio):
+# solo el directorio de caché queda con dueño bistrolink.
+RUN mkdir -p apps/frontend/.next/cache \
+  && chown -R bistrolink:bistrolink apps/frontend/.next/cache
+
 USER bistrolink
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
