@@ -12,6 +12,7 @@ import {
   anchoNecesarioLienzo,
   aplicarEstadoMesa,
   cambiarForma,
+  idsAEliminar,
   DIMENSION_MAXIMA_MESA,
   DIMENSION_MINIMA_MESA,
   limitarCentro,
@@ -21,6 +22,8 @@ import {
   numerosDuplicados,
   parsearNumeroMesa,
   puedeEditarMapa,
+  puedeEliminarMesa,
+  quitarMesa,
   reubicarFueraDelLienzo,
   semiExtension,
   siguienteNumeroDisponible,
@@ -78,6 +81,10 @@ export function MapaMesasEditor({ restauranteId }: Readonly<Props>) {
   const [guardadoOk, setGuardadoOk] = useState(false);
 
   const [seleccionada, setSeleccionada] = useState<string | null>(null);
+  // BL-58: mesas ya guardadas que el administrador quitó del mapa y que se
+  // borran en el próximo guardado. Se guarda la mesa completa (no solo el
+  // id) para poder devolverla al mapa si el guardado falla.
+  const [eliminadas, setEliminadas] = useState<MesaEnEdicion[]>([]);
   const [editandoNumero, setEditandoNumero] = useState<{
     clientId: string;
     valor: string;
@@ -274,9 +281,15 @@ export function MapaMesasEditor({ restauranteId }: Readonly<Props>) {
 
   function handleEliminarSeleccionada() {
     if (!seleccionada) return;
-    setMesas((prev) => prev.filter((m) => m.clientId !== seleccionada));
+    const resultado = quitarMesa(mesas, eliminadas, seleccionada);
+    setMesas(resultado.mesas);
+    setEliminadas(resultado.eliminadas);
     setSeleccionada(null);
   }
+
+  const puedeEliminarSeleccionada =
+    !!mesaSeleccionada && puedeEliminarMesa(mesaSeleccionada);
+  const hayCambiosParaGuardar = mesas.length > 0 || eliminadas.length > 0;
 
   function handleClickStage(
     e: Konva.KonvaEventObject<MouseEvent | TouchEvent>,
@@ -300,7 +313,7 @@ export function MapaMesasEditor({ restauranteId }: Readonly<Props>) {
 
   // --- Guardado: POST /mesas/layout ---------------------------------------------
   async function handleGuardar() {
-    if (!token || duplicados.length > 0) return;
+    if (!token || duplicados.length > 0 || !hayCambiosParaGuardar) return;
     setGuardando(true);
     setGuardadoError(null);
     setGuardadoOk(false);
@@ -308,20 +321,35 @@ export function MapaMesasEditor({ restauranteId }: Readonly<Props>) {
       const payload: GuardarLayoutPayload = {
         restauranteId,
         mesas: aGuardarLayoutItems(mesas),
+        ...(eliminadas.length > 0
+          ? { eliminar: idsAEliminar(eliminadas) }
+          : {}),
       };
       await apiFetch("/mesas/layout", token, {
         method: "POST",
         body: JSON.stringify(payload),
       });
       setGuardadoOk(true);
+      setEliminadas([]);
       // Trae los id reales que Prisma asignó a las mesas nuevas — sin esto,
       // un segundo guardado las volvería a crear en vez de actualizarlas
       // (guardarLayout crea cuando el item no trae `id`).
       await cargarLayout();
     } catch (err) {
-      setGuardadoError(
-        err instanceof ApiError ? err.message : "No se pudo guardar el mapa",
-      );
+      const mensaje =
+        err instanceof ApiError ? err.message : "No se pudo guardar el mapa";
+      // El guardado es una sola transacción: si falló, no se borró ninguna
+      // mesa. Se devuelven al mapa para que lo que se ve coincida con la base
+      // (el resto de los cambios sigue en pantalla, sin guardar).
+      if (eliminadas.length > 0) {
+        setMesas((prev) => [...prev, ...eliminadas]);
+        setEliminadas([]);
+        setGuardadoError(
+          `${mensaje} Las mesas eliminadas se volvieron a agregar al mapa.`,
+        );
+      } else {
+        setGuardadoError(mensaje);
+      }
     } finally {
       setGuardando(false);
     }
@@ -378,7 +406,12 @@ export function MapaMesasEditor({ restauranteId }: Readonly<Props>) {
             <button
               type="button"
               onClick={handleEliminarSeleccionada}
-              disabled={!seleccionada}
+              disabled={!puedeEliminarSeleccionada}
+              title={
+                mesaSeleccionada && !puedeEliminarSeleccionada
+                  ? "Solo se pueden eliminar mesas libres"
+                  : undefined
+              }
               className="flex items-center gap-2 rounded-lg border border-outline-variant px-4 py-2 text-body-md text-on-surface-variant hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-50"
             >
               <span className="material-symbols-outlined text-[20px]">
@@ -430,7 +463,9 @@ export function MapaMesasEditor({ restauranteId }: Readonly<Props>) {
             <button
               type="button"
               onClick={handleGuardar}
-              disabled={guardando || duplicados.length > 0}
+              disabled={
+                guardando || duplicados.length > 0 || !hayCambiosParaGuardar
+              }
               className="rounded-lg bg-primary px-4 py-2 text-body-md font-medium text-on-primary hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {guardando ? "Guardando…" : "Guardar mapa"}

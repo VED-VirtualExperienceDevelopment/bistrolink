@@ -288,6 +288,68 @@ describe('GuardarLayoutDto (HU-016)', () => {
     });
   });
 
+  describe('eliminar — mesas quitadas del mapa (BL-58)', () => {
+    it('acepta un guardado con solo eliminaciones (sin mesas)', async () => {
+      expect(
+        await validar(GuardarLayoutDto, {
+          restauranteId: RESTAURANTE_ID,
+          mesas: [],
+          eliminar: [MESA_ID],
+        }),
+      ).toHaveLength(0);
+    });
+
+    it('acepta mesas y eliminaciones en el mismo guardado', async () => {
+      expect(
+        await validar(GuardarLayoutDto, {
+          restauranteId: RESTAURANTE_ID,
+          mesas: [{ numero: 1, ...LAYOUT_VALIDO }],
+          eliminar: [MESA_ID],
+        }),
+      ).toHaveLength(0);
+    });
+
+    it('rechaza un guardado sin mesas ni eliminaciones', async () => {
+      const errores = await validar(GuardarLayoutDto, {
+        restauranteId: RESTAURANTE_ID,
+        mesas: [],
+        eliminar: [],
+      });
+      expect(propiedadesConError(errores)).toEqual(['mesas']);
+    });
+
+    it('rechaza un id que no es UUID', async () => {
+      const errores = await validar(GuardarLayoutDto, {
+        restauranteId: RESTAURANTE_ID,
+        mesas: [],
+        eliminar: ['mesa-1'],
+      });
+      expect(propiedadesConError(errores)).toEqual(['eliminar']);
+    });
+
+    it('rechaza ids repetidos', async () => {
+      const errores = await validar(GuardarLayoutDto, {
+        restauranteId: RESTAURANTE_ID,
+        mesas: [],
+        eliminar: [MESA_ID, MESA_ID],
+      });
+      expect(propiedadesConError(errores)).toEqual(['eliminar']);
+    });
+
+    it('rechaza más de 200 ids', async () => {
+      const ids = Array.from(
+        { length: 201 },
+        (_, i) => `33333333-3333-4333-8333-${String(i).padStart(12, '0')}`,
+      );
+      const errores = await validar(GuardarLayoutDto, {
+        restauranteId: RESTAURANTE_ID,
+        mesas: [],
+        eliminar: ids,
+      });
+      expect(propiedadesConError(errores)).toEqual(['eliminar']);
+    });
+  });
+
   it('acepta restauranteId e id de mesa del seed Demo (formato UUID no RFC 4122)', async () => {
     expect(
       await validar(GuardarLayoutDto, {

@@ -201,6 +201,40 @@ export function aGuardarLayoutItems(
   }));
 }
 /**
+ * BL-58: solo una mesa LIBRE se puede quitar del mapa (una ocupada o en
+ * proceso de pago tiene comensales). Si además tiene pedidos registrados,
+ * el backend rechaza el guardado con 409: eso el editor no lo sabe.
+ */
+export function puedeEliminarMesa(
+  mesa: Pick<MesaEnEdicion, "estado">,
+): boolean {
+  return mesa.estado === "LIBRE";
+}
+
+/**
+ * Quita una mesa del estado del editor. Si ya estaba guardada (tiene id),
+ * la agrega a `eliminadas` para mandarla en el próximo guardado; si era
+ * nueva, simplemente desaparece. Una mesa que no está libre no se toca.
+ */
+export function quitarMesa(
+  mesas: MesaEnEdicion[],
+  eliminadas: MesaEnEdicion[],
+  clientId: string,
+): { mesas: MesaEnEdicion[]; eliminadas: MesaEnEdicion[] } {
+  const mesa = mesas.find((m) => m.clientId === clientId);
+  if (!mesa || !puedeEliminarMesa(mesa)) return { mesas, eliminadas };
+  return {
+    mesas: mesas.filter((m) => m.clientId !== clientId),
+    eliminadas: mesa.id ? [...eliminadas, mesa] : eliminadas,
+  };
+}
+
+/** Ids a mandar en `eliminar` de POST /mesas/layout. */
+export function idsAEliminar(eliminadas: MesaEnEdicion[]): string[] {
+  return eliminadas.flatMap((m) => (m.id ? [m.id] : []));
+}
+
+/**
  * Regla de permisos del editor (checklist BL-160): solo el Administrador
  * edita; el Colaborador (MOZO) ve el mapa en modo solo lectura. Extraída del
  * componente para poder testearla sin montar el canvas, igual que
