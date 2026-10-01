@@ -5,7 +5,8 @@ import { passportJwtSecret } from 'jwks-rsa';
 
 export interface AuthenticatedUser {
   sub: string; // ID de usuario en Keycloak (mapea a Usuario.keycloak_id)
-  tenantId: string; // claim custom "tenant_id" (ver protocolMapper del realm)
+  tenantId: string; // claim custom "tenant_id"
+  restauranteId?: string; // <-- AGREGADO: claim custom "restaurante_id"
   roles: string[]; // realm_access.roles: ADMIN | MOZO | COCINA | COMENSAL
 }
 
@@ -49,6 +50,7 @@ export class KeycloakJwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     return {
       sub: payload.sub,
       tenantId,
+      restauranteId: payload.restaurante_id, // <-- AGREGADO: extraemos el restaurante del token
       roles: payload.realm_access?.roles ?? [],
     };
   }
