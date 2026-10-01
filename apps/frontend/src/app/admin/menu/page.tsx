@@ -26,6 +26,22 @@ interface Categoria {
   readonly items: readonly Item[];
 }
 
+// ============================================================================
+// HELPERS: Extraídos para reducir el anidamiento a < 5 niveles (SonarQube)
+// ============================================================================
+
+const updateItemAvailability = (items: readonly Item[], itemId: string, disponible: boolean): Item[] => {
+  return items.map((item) => (item.id === itemId ? { ...item, disponible } : item));
+};
+
+const updateCategoriaActivo = (categorias: readonly Categoria[], categoriaId: string, activo: boolean): Categoria[] => {
+  return categorias.map((cat) => (cat.id === categoriaId ? { ...cat, activo } : cat));
+};
+
+// ============================================================================
+// COMPONENTE ITEM ROW (Ya extraído previamente para reducir anidamiento)
+// ============================================================================
+
 interface ItemRowProps {
   readonly item: Item;
   readonly catId: string;
@@ -55,20 +71,14 @@ function ItemRow({ item, catId, catName, onEdit, onToggle }: ItemRowProps) {
             </div>
           )}
         </div>
-
         <div className="flex-1 min-w-0">
           <h3 className={`font-medium ${!item.disponible ? 'text-[#79767D] line-through' : 'text-[#7C7296]'}`}>
             {item.nombre}
           </h3>
-          {item.descripcion && (
-            <p className="text-sm text-[#79767D] truncate">{item.descripcion}</p>
-          )}
-          <p className="text-sm font-semibold text-[#C9A74D] mt-1">
-            ${Number(item.precio).toFixed(2)}
-          </p>
+          {item.descripcion && <p className="text-sm text-[#79767D] truncate">{item.descripcion}</p>}
+          <p className="text-sm font-semibold text-[#C9A74D] mt-1">${Number(item.precio).toFixed(2)}</p>
         </div>
       </div>
-
       <div className="flex items-center gap-6">
         <Badge variant={item.disponible ? 'success' : 'danger'}>
           {item.disponible ? 'Disponible' : 'Agotado'}
@@ -94,6 +104,10 @@ function ItemRow({ item, catId, catName, onEdit, onToggle }: ItemRowProps) {
   );
 }
 
+// ============================================================================
+// COMPONENTE PRINCIPAL
+// ============================================================================
+
 export default function AdminMenuPage() {
   const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [loading, setLoading] = useState(true);
@@ -107,44 +121,11 @@ export default function AdminMenuPage() {
   const [nuevaCategoriaOrden, setNuevaCategoriaOrden] = useState('0');
   const [creandoCategoria, setCreandoCategoria] = useState(false);
 
-  useEffect(() => {
-    cargarDatos();
-
-    const keycloak = getKeycloak();
-    const tenantId = keycloak.tokenParsed?.tenant_id || '';
-    const socket = getMenuSocket(tenantId, keycloak.token);
-
-    socket.on('menu:item:updated', (data: { itemId: string; disponible: boolean }) => {
-      setCategorias((prev) =>
-        prev.map((cat) => ({
-          ...cat,
-          items: cat.items.map((item) =>
-            item.id === data.itemId ? { ...item, disponible: data.disponible } : item,
-          ),
-        })),
-      );
-      setLastUpdate(`⚡ Ítem actualizado en tiempo real — ${new Date().toLocaleTimeString('es-AR')}`);
-    });
-
-    socket.on('menu:categoria:updated', (data: { categoriaId: string; activo: boolean }) => {
-      setCategorias((prev) =>
-        prev.map((cat) => (cat.id === data.categoriaId ? { ...cat, activo: data.activo } : cat)),
-      );
-      setLastUpdate(`⚡ Categoría actualizada en tiempo real — ${new Date().toLocaleTimeString('es-AR')}`);
-    });
-
-    return () => {
-      socket.off('menu:item:updated');
-      socket.off('menu:categoria:updated');
-    };
-  }, []);
-
   const cargarDatos = async () => {
     setLoading(true);
     try {
       const keycloak = getKeycloak();
       const restauranteId = keycloak.tokenParsed?.restaurante_id || '';
-
       const data = await apiFetch<Categoria[]>(`/admin/menu/categoria?restauranteId=${restauranteId}`, keycloak.token);
       setCategorias(data || []);
     } catch (error: unknown) {
@@ -154,6 +135,35 @@ export default function AdminMenuPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    cargarDatos();
+
+    const keycloak = getKeycloak();
+    const tenantId = keycloak.tokenParsed?.tenant_id || '';
+    const socket = getMenuSocket(tenantId, keycloak.token);
+
+    // FIX: Callbacks estrictamente síncronos para evitar advertencias de promesas no manejadas
+    socket.on('menu:item:updated', (data: { itemId: string; disponible: boolean }) => {
+      setCategorias((prev) =>
+        prev.map((cat) => ({
+          ...cat,
+          items: updateItemAvailability(cat.items, data.itemId, data.disponible),
+        }))
+      );
+      setLastUpdate(`⚡ Ítem actualizado en tiempo real — ${new Date().toLocaleTimeString('es-AR')}`);
+    });
+
+    socket.on('menu:categoria:updated', (data: { categoriaId: string; activo: boolean }) => {
+      setCategorias((prev) => updateCategoriaActivo(prev, data.categoriaId, data.activo));
+      setLastUpdate(`⚡ Categoría actualizada en tiempo real — ${new Date().toLocaleTimeString('es-AR')}`);
+    });
+
+    return () => {
+      socket.off('menu:item:updated');
+      socket.off('menu:categoria:updated');
+    };
+  }, []);
 
   const crearCategoria = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -182,11 +192,12 @@ export default function AdminMenuPage() {
   };
 
   const toggleItem = async (itemId: string, current: boolean) => {
+    // Actualización optimista usando el helper
     setCategorias((prev) =>
       prev.map((cat) => ({
         ...cat,
-        items: cat.items.map((item) => (item.id === itemId ? { ...item, disponible: !current } : item)),
-      })),
+        items: updateItemAvailability(cat.items, itemId, !current),
+      }))
     );
 
     try {
@@ -196,11 +207,12 @@ export default function AdminMenuPage() {
         body: JSON.stringify({ disponible: !current }),
       });
     } catch (error: unknown) {
+      // Revertir en caso de error
       setCategorias((prev) =>
         prev.map((cat) => ({
           ...cat,
-          items: cat.items.map((item) => (item.id === itemId ? { ...item, disponible: current } : item)),
-        })),
+          items: updateItemAvailability(cat.items, itemId, current),
+        }))
       );
       const message = error instanceof Error ? error.message : 'Error al actualizar el ítem';
       alert(message);
@@ -208,9 +220,7 @@ export default function AdminMenuPage() {
   };
 
   const toggleCategoria = async (categoriaId: string, current: boolean) => {
-    setCategorias((prev) =>
-      prev.map((cat) => (cat.id === categoriaId ? { ...cat, activo: !current } : cat)),
-    );
+    setCategorias((prev) => updateCategoriaActivo(prev, categoriaId, !current));
 
     try {
       const keycloak = getKeycloak();
@@ -219,9 +229,7 @@ export default function AdminMenuPage() {
         body: JSON.stringify({ activo: !current }),
       });
     } catch (error: unknown) {
-      setCategorias((prev) =>
-        prev.map((cat) => (cat.id === categoriaId ? { ...cat, activo: current } : cat)),
-      );
+      setCategorias((prev) => updateCategoriaActivo(prev, categoriaId, current));
       const message = error instanceof Error ? error.message : 'Error al actualizar la categoría';
       alert(message);
     }
@@ -329,7 +337,14 @@ export default function AdminMenuPage() {
                 <p className="px-6 py-8 text-center text-[#79767D] text-sm">No hay ítems en esta categoría.</p>
               ) : (
                 cat.items.map((item) => (
-                  <ItemRow key={item.id} item={item} catId={cat.id} catName={cat.nombre} onEdit={openEditModal} onToggle={toggleItem} />
+                  <ItemRow
+                    key={item.id}
+                    item={item}
+                    catId={cat.id}
+                    catName={cat.nombre}
+                    onEdit={openEditModal}
+                    onToggle={toggleItem}
+                  />
                 ))
               )}
             </div>
