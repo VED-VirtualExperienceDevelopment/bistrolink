@@ -1,13 +1,18 @@
 'use client';
 
 interface SwitchProps {
-  checked: boolean;
-  onChange: (checked: boolean) => void;
-  label: string;
-  disabled?: boolean;
+  readonly checked: boolean;
+  readonly onChange: (checked: boolean) => void;
+  readonly label: string;
+  readonly disabled?: boolean;
 }
 
-export default function Switch({ checked, onChange, label, disabled }: SwitchProps) {
+export default function Switch({
+  checked,
+  onChange,
+  label,
+  disabled,
+}: SwitchProps) {
   return (
     <button
       type="button"

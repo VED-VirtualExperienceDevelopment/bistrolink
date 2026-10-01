@@ -1,23 +1,16 @@
 import { io, Socket } from 'socket.io-client';
 
-const SOCKET_URL = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:3001';
+const SOCKET_URL =
+  process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') ||
+  'http://localhost:3001';
 
 let socketInstance: Socket | null = null;
 
-/**
- * Obtiene o crea la instancia del WebSocket para el menú.
- * Se conecta al namespace '/menu' y pasa el token de Keycloak para autenticación.
- * 
- * @param tenantId - El ID del tenant para unirse a la sala correcta
- * @param token - El token JWT de Keycloak
- */
 export function getMenuSocket(tenantId: string, token?: string): Socket {
-  // Si ya existe una conexión y es la misma, la reutilizamos
-  if (socketInstance && socketInstance.connected) {
+  if (socketInstance?.connected) {
     return socketInstance;
   }
 
-  // Si hay una instancia desconectada, la limpiamos
   if (socketInstance) {
     socketInstance.disconnect();
   }
@@ -46,9 +39,6 @@ export function getMenuSocket(tenantId: string, token?: string): Socket {
   return socketInstance;
 }
 
-/**
- * Cierra la conexión del WebSocket y limpia la instancia.
- */
 export function disconnectMenuSocket() {
   if (socketInstance) {
     socketInstance.disconnect();

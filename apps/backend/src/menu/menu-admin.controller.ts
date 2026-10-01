@@ -26,8 +26,6 @@ export class MenuAdminController {
     private readonly storageService: StorageService,
   ) {}
 
-  // ── STORAGE ─────────────────────────────────────────────────────────────────
-
   @Post('presigned-url')
   async getPresignedUrl(@Req() req: any, @Body() dto: PresignedUrlDto) {
     return this.storageService.getPresignedPostUrl(
@@ -37,20 +35,25 @@ export class MenuAdminController {
     );
   }
 
-  // ── CATEGORÍAS ──────────────────────────────────────────────────────────────
-
   @Get('categoria')
   async findAllCategorias(@Req() req: any) {
     const restauranteId = req.query.restauranteId as string;
-    const keycloakId = req.user.sub; // El ID único del usuario en Keycloak
-    return this.menuAdminService.findAllCategorias(req.user.tenantId, restauranteId, keycloakId);
+    const keycloakId = req.user.sub;
+    return this.menuAdminService.findAllCategorias(
+      req.user.tenantId,
+      restauranteId,
+      keycloakId,
+    );
   }
 
   @Post('categoria')
-  async createCategoria(@Req() req: any, @Body() body: { nombre: string; orden?: number }) {
+  async createCategoria(
+    @Req() req: any,
+    @Body() body: { nombre: string; orden?: number },
+  ) {
     const restauranteId = req.user.restauranteId;
     const keycloakId = req.user.sub;
-    
+
     return this.menuAdminService.createCategoria(
       req.user.tenantId,
       restauranteId,
@@ -68,12 +71,18 @@ export class MenuAdminController {
     return this.menuAdminService.updateCategoria(req.user.tenantId, id, dto);
   }
 
-  // ── ÍTEMS ───────────────────────────────────────────────────────────────────
-
   @Post('item')
   async createItem(
     @Req() req: any,
-    @Body() body: { categoriaId: string; nombre: string; precio: string; descripcion?: string; disponible?: boolean; imagenKey?: string }
+    @Body()
+    body: {
+      categoriaId: string;
+      nombre: string;
+      precio: string;
+      descripcion?: string;
+      disponible?: boolean;
+      imagenKey?: string;
+    },
   ) {
     return this.menuAdminService.createItem(req.user.tenantId, body);
   }

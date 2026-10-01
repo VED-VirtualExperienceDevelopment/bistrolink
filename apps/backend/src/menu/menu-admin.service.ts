@@ -13,32 +13,42 @@ export class MenuAdminService {
     private readonly menuGateway: MenuGateway,
   ) {}
 
-  // Helper para resolver el restauranteId si no viene en el token
-  private async resolveRestauranteId(tenantId: string, restauranteId: string | undefined, keycloakId: string): Promise<string> {
+  private async resolveRestauranteId(
+    tenantId: string,
+    restauranteId: string | undefined,
+    keycloakId: string,
+  ): Promise<string> {
     if (restauranteId) return restauranteId;
 
-    // Usamos runInTenantContext para obtener 'tx' (el cliente de Prisma)
     const result = await this.prisma.runInTenantContext(tenantId, async (tx) => {
-      return tx.usuario.findFirst({
+      return await tx.usuario.findFirst({
         where: { keycloakId },
         select: { restauranteId: true },
       });
     });
 
     if (!result?.restauranteId) {
-      throw new UnauthorizedException('No se pudo determinar el restaurante del usuario. Verifica tu configuración de Keycloak o la tabla Usuario.');
+      throw new UnauthorizedException(
+        'No se pudo determinar el restaurante del usuario. Verifica tu configuración de Keycloak o la tabla Usuario.',
+      );
     }
 
     return result.restauranteId;
   }
 
-  // ── CATEGORÍAS ──────────────────────────────────────────────────────────────
-
-  async findAllCategorias(tenantId: string, restauranteId: string | undefined, keycloakId: string) {
-    const finalRestauranteId = await this.resolveRestauranteId(tenantId, restauranteId, keycloakId);
+  async findAllCategorias(
+    tenantId: string,
+    restauranteId: string | undefined,
+    keycloakId: string,
+  ) {
+    const finalRestauranteId = await this.resolveRestauranteId(
+      tenantId,
+      restauranteId,
+      keycloakId,
+    );
 
     return this.prisma.runInTenantContext(tenantId, async (tx) => {
-      return tx.categoriaCarta.findMany({
+      return await tx.categoriaCarta.findMany({
         where: { restauranteId: finalRestauranteId },
         include: {
           items: { orderBy: { nombre: 'asc' } },
@@ -48,8 +58,17 @@ export class MenuAdminService {
     });
   }
 
-  async createCategoria(tenantId: string, restauranteId: string | undefined, keycloakId: string, data: { nombre: string; orden?: number }) {
-    const finalRestauranteId = await this.resolveRestauranteId(tenantId, restauranteId, keycloakId);
+  async createCategoria(
+    tenantId: string,
+    restauranteId: string | undefined,
+    keycloakId: string,
+    data: { nombre: string; orden?: number },
+  ) {
+    const finalRestauranteId = await this.resolveRestauranteId(
+      tenantId,
+      restauranteId,
+      keycloakId,
+    );
 
     return this.prisma.runInTenantContext(tenantId, async (tx) => {
       const nuevaCategoria = await tx.categoriaCarta.create({
@@ -60,20 +79,26 @@ export class MenuAdminService {
           orden: data.orden ?? 0,
         },
       });
-      
+
       this.logger.log(`Categoría creada: ${nuevaCategoria.id}`);
       return nuevaCategoria;
     });
   }
 
-  async updateCategoria(tenantId: string, categoriaId: string, dto: UpdateCategoriaDto) {
+  async updateCategoria(
+    tenantId: string,
+    categoriaId: string,
+    dto: UpdateCategoriaDto,
+  ) {
     return this.prisma.runInTenantContext(tenantId, async (tx) => {
       const existing = await tx.categoriaCarta.findFirst({
         where: { id: categoriaId, tenantId },
       });
 
       if (!existing) {
-        throw new NotFoundException('Categoría no encontrada o no pertenece a este tenant');
+        throw new NotFoundException(
+          'Categoría no encontrada o no pertenece a este tenant',
+        );
       }
 
       const updated = await tx.categoriaCarta.update({
@@ -93,23 +118,26 @@ export class MenuAdminService {
     });
   }
 
-  // ── ÍTEMS ───────────────────────────────────────────────────────────────────
-
-  async createItem(tenantId: string, data: { 
-    categoriaId: string; 
-    nombre: string; 
-    precio: string; 
-    descripcion?: string; 
-    disponible?: boolean; 
-    imagenKey?: string; 
-  }) {
+  async createItem(
+    tenantId: string,
+    data: {
+      categoriaId: string;
+      nombre: string;
+      precio: string;
+      descripcion?: string;
+      disponible?: boolean;
+      imagenKey?: string;
+    },
+  ) {
     return this.prisma.runInTenantContext(tenantId, async (tx) => {
       const categoria = await tx.categoriaCarta.findFirst({
         where: { id: data.categoriaId, tenantId },
       });
 
       if (!categoria) {
-        throw new NotFoundException('La categoría especificada no existe o no pertenece a este tenant');
+        throw new NotFoundException(
+          'La categoría especificada no existe o no pertenece a este tenant',
+        );
       }
 
       const nuevoItem = await tx.itemCarta.create({
@@ -132,7 +160,9 @@ export class MenuAdminService {
       });
 
       if (!existing) {
-        throw new NotFoundException('Ítem no encontrado o no pertenece a este tenant');
+        throw new NotFoundException(
+          'Ítem no encontrado o no pertenece a este tenant',
+        );
       }
 
       if (dto.categoriaId && dto.categoriaId !== existing.categoriaId) {
@@ -140,7 +170,9 @@ export class MenuAdminService {
           where: { id: dto.categoriaId, tenantId },
         });
         if (!nuevaCategoria) {
-          throw new NotFoundException('La nueva categoría no existe o no pertenece a este tenant');
+          throw new NotFoundException(
+            'La nueva categoría no existe o no pertenece a este tenant',
+          );
         }
       }
 

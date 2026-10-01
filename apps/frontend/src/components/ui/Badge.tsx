@@ -1,9 +1,12 @@
 interface BadgeProps {
-  children: React.ReactNode;
-  variant?: 'success' | 'danger' | 'warning' | 'neutral';
+  readonly children: React.ReactNode;
+  readonly variant?: 'success' | 'danger' | 'warning' | 'neutral';
 }
 
-export default function Badge({ children, variant = 'neutral' }: BadgeProps) {
+export default function Badge({
+  children,
+  variant = 'neutral',
+}: BadgeProps) {
   const variants = {
     success: 'bg-green-100 text-green-700',
     danger: 'bg-red-100 text-red-700',
@@ -12,7 +15,9 @@ export default function Badge({ children, variant = 'neutral' }: BadgeProps) {
   };
 
   return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${variants[variant]}`}>
+    <span
+      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${variants[variant]}`}
+    >
       {children}
     </span>
   );
