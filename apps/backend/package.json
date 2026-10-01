@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.637.0",
+    "@aws-sdk/s3-presigned-post": "^3.1141.0",
     "@aws-sdk/s3-request-presigner": "^3.637.0",
     "@nestjs/common": "^10.0.0",
     "@nestjs/config": "^3.3.0",
@@ -31,7 +32,7 @@
     "@nestjs/passport": "^10.0.3",
     "@nestjs/platform-express": "^10.0.0",
     "@nestjs/platform-socket.io": "^10.3.10",
-    "@nestjs/throttler": "^6.7.0",
+    "@nestjs/throttler": "^6.7.1",
     "@nestjs/websockets": "^10.3.10",
     "@prisma/client": "^6.19.3",
     "@sentry/nestjs": "^8.30.0",
@@ -55,7 +56,8 @@
     "qrcode": "^1.5.4",
     "reflect-metadata": "^0.2.0",
     "rxjs": "^7.8.1",
-    "socket.io": "4.8.1",
+    "socket.io": "4.7.5",
+    "uuid": "^9.0.1",
     "zod": "^3.23.8"
   },
   "devDependencies": {
@@ -72,6 +74,7 @@
     "@types/pino": "^7.0.4",
     "@types/qrcode": "^1.5.5",
     "@types/supertest": "^6.0.0",
+    "@types/uuid": "^10.0.0",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",
     "bs-logger": "^0.2.6",

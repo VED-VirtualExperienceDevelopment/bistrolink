@@ -1,5 +1,4 @@
 'use client';
-
 import { useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
@@ -17,6 +16,8 @@ const NAV_ITEMS = [
   // embebido dentro de este layout para que ADMIN/MOZO no tengan que salir
   // de /admin para verlo.
   { href: '/admin/kds', label: 'KDS', icon: 'skillet' },
+  // Gestión de Carta - Administración del menú (categorías, ítems, disponibilidad)
+  { href: '/admin/menu', label: 'Gestión de Carta', icon: 'restaurant_menu' },
   // Próximos módulos (HU-001, HU-003, etc.) se suman acá a medida que
   // existan pantallas reales — evitamos linkear secciones que no existen.
 ];
@@ -63,8 +64,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     <div className="flex h-screen overflow-hidden">
       <aside className="hidden md:flex w-64 h-screen flex-col shrink-0 border-r border-outline-variant bg-surface-container-lowest">
         <div className="p-6">
-          <div className="text-headline-md font-bold leading-tight text-primary">Bistro Link</div>
-          <div className="text-label-md text-on-surface-variant">Portal de Administración</div>
+          <div className="text-headline-md font-bold leading-tight text-primary">
+            Bistro Link
+          </div>
+          <div className="text-label-md text-on-surface-variant">
+            Portal de Administración
+          </div>
         </div>
 
         <nav className="mt-4 flex-1 overflow-y-auto">
@@ -112,7 +117,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <header className="flex h-16 w-full shrink-0 items-center justify-between border-b border-outline-variant bg-surface px-6 shadow-sm">
-          <div className="md:hidden text-headline-sm font-bold text-primary">Bistro Link</div>
+          <div className="md:hidden text-headline-sm font-bold text-primary">
+            Bistro Link
+          </div>
           <div />
           <div className="flex items-center gap-4">
             <span className="material-symbols-outlined rounded-full p-2 text-on-surface-variant transition-colors hover:bg-surface-container-low">
@@ -120,7 +127,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             </span>
           </div>
         </header>
-
         <div className="flex-1 overflow-y-auto">{children}</div>
       </main>
     </div>

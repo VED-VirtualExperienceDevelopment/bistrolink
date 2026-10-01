@@ -155,6 +155,7 @@ model CategoriaCarta {
   restauranteId String   @map("restaurante_id") @db.Uuid
   nombre        String
   orden         Int      @default(0)
+  activo        Boolean  @default(true) // <-- ÚNICA LÍNEA AGREGADA: Permite deshabilitar categorías completas
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
