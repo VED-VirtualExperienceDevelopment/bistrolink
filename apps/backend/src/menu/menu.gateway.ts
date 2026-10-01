@@ -19,6 +19,7 @@ import { Logger } from '@nestjs/common';
 export class MenuGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
+
   private readonly logger = new Logger(MenuGateway.name);
 
   handleConnection(client: Socket) {
@@ -35,12 +36,30 @@ export class MenuGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   // Emite evento cuando un ítem cambia su disponibilidad
-  emitItemUpdated(tenantId: string, payload: { itemId: string; disponible: boolean }) {
+  emitItemUpdated(
+    tenantId: string,
+    payload: { itemId: string; disponible: boolean },
+  ) {
     this.server.to(`tenant_${tenantId}`).emit('menu:item:updated', payload);
   }
 
   // Emite evento cuando una categoría cambia su estado activo
-  emitCategoriaUpdated(tenantId: string, payload: { categoriaId: string; activo: boolean }) {
-    this.server.to(`tenant_${tenantId}`).emit('menu:categoria:updated', payload);
+  emitCategoriaUpdated(
+    tenantId: string,
+    payload: { categoriaId: string; activo: boolean },
+  ) {
+    this.server
+      .to(`tenant_${tenantId}`)
+      .emit('menu:categoria:updated', payload);
+  }
+
+  // Emite evento cuando un ítem se actualiza (nombre, precio, etc.)
+  emitItemDataUpdated(
+    tenantId: string,
+    payload: { itemId: string; data: Record<string, unknown> },
+  ) {
+    this.server
+      .to(`tenant_${tenantId}`)
+      .emit('menu:item:data:updated', payload);
   }
 }

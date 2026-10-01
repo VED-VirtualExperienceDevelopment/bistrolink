@@ -27,9 +27,8 @@ interface Categoria {
 }
 
 // ============================================================================
-// HELPERS: Extraídos para reducir el anidamiento a < 5 niveles (SonarQube)
+// HELPERS
 // ============================================================================
-
 const updateItemAvailability = (items: readonly Item[], itemId: string, disponible: boolean): Item[] => {
   return items.map((item) => (item.id === itemId ? { ...item, disponible } : item));
 };
@@ -39,18 +38,18 @@ const updateCategoriaActivo = (categorias: readonly Categoria[], categoriaId: st
 };
 
 // ============================================================================
-// COMPONENTE ITEM ROW (Ya extraído previamente para reducir anidamiento)
+// COMPONENTE ITEM ROW
 // ============================================================================
-
 interface ItemRowProps {
   readonly item: Item;
   readonly catId: string;
   readonly catName: string;
   readonly onEdit: (catId: string, catName: string, item: Item) => void;
   readonly onToggle: (itemId: string, current: boolean) => void;
+  readonly onDelete: (itemId: string, itemName: string) => void;
 }
 
-function ItemRow({ item, catId, catName, onEdit, onToggle }: ItemRowProps) {
+function ItemRow({ item, catId, catName, onEdit, onToggle, onDelete }: ItemRowProps) {
   return (
     <div className="px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors group">
       <div className="flex items-center gap-4 flex-1">
@@ -99,6 +98,17 @@ function ItemRow({ item, catId, catName, onEdit, onToggle }: ItemRowProps) {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
           </svg>
         </button>
+        <button
+          type="button"
+          onClick={() => onDelete(item.id, item.nombre)}
+          className="opacity-0 group-hover:opacity-100 transition-opacity text-[#79767D] hover:text-red-600"
+          title="Eliminar ítem"
+          aria-label={`Eliminar ${item.nombre}`}
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+        </button>
       </div>
     </div>
   );
@@ -107,7 +117,6 @@ function ItemRow({ item, catId, catName, onEdit, onToggle }: ItemRowProps) {
 // ============================================================================
 // COMPONENTE PRINCIPAL
 // ============================================================================
-
 export default function AdminMenuPage() {
   const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [loading, setLoading] = useState(true);
@@ -116,7 +125,6 @@ export default function AdminMenuPage() {
   const [categoriaModalOpen, setCategoriaModalOpen] = useState(false);
   const [selectedCategoria, setSelectedCategoria] = useState<{ readonly id: string; readonly nombre: string } | null>(null);
   const [itemToEdit, setItemToEdit] = useState<Item | null>(null);
-
   const [nuevaCategoriaNombre, setNuevaCategoriaNombre] = useState('');
   const [nuevaCategoriaOrden, setNuevaCategoriaOrden] = useState('0');
   const [creandoCategoria, setCreandoCategoria] = useState(false);
@@ -138,12 +146,10 @@ export default function AdminMenuPage() {
 
   useEffect(() => {
     void cargarDatos();
-
     const keycloak = getKeycloak();
     const tenantId = keycloak.tokenParsed?.tenant_id || '';
     const socket = getMenuSocket(tenantId, keycloak.token);
 
-    // FIX: Callbacks estrictamente síncronos para evitar advertencias de promesas no manejadas
     socket.on('menu:item:updated', (data: { itemId: string; disponible: boolean }) => {
       setCategorias((prev) =>
         prev.map((cat) => ({
@@ -168,7 +174,6 @@ export default function AdminMenuPage() {
   const crearCategoria = async (e: React.FormEvent) => {
     e.preventDefault();
     setCreandoCategoria(true);
-
     try {
       const keycloak = getKeycloak();
       await apiFetch('/admin/menu/categoria', keycloak.token, {
@@ -178,7 +183,6 @@ export default function AdminMenuPage() {
           orden: Number.parseInt(nuevaCategoriaOrden, 10) || 0,
         }),
       });
-
       setCategoriaModalOpen(false);
       setNuevaCategoriaNombre('');
       setNuevaCategoriaOrden('0');
@@ -192,14 +196,12 @@ export default function AdminMenuPage() {
   };
 
   const toggleItem = async (itemId: string, current: boolean) => {
-    // Actualización optimista usando el helper
     setCategorias((prev) =>
       prev.map((cat) => ({
         ...cat,
         items: updateItemAvailability(cat.items, itemId, !current),
       }))
     );
-
     try {
       const keycloak = getKeycloak();
       await apiFetch(`/admin/menu/item/${itemId}`, keycloak.token, {
@@ -207,7 +209,6 @@ export default function AdminMenuPage() {
         body: JSON.stringify({ disponible: !current }),
       });
     } catch (error: unknown) {
-      // Revertir en caso de error
       setCategorias((prev) =>
         prev.map((cat) => ({
           ...cat,
@@ -219,9 +220,55 @@ export default function AdminMenuPage() {
     }
   };
 
+  const deleteItem = async (itemId: string, itemName: string) => {
+    if (!confirm(`¿Estás seguro de que deseas eliminar "${itemName}"? Esta acción lo ocultará del menú público.`)) {
+      return;
+    }
+
+    setCategorias((prev) =>
+      prev.map((cat) => ({
+        ...cat,
+        items: cat.items.filter((item) => item.id !== itemId),
+      }))
+    );
+
+    try {
+      const keycloak = getKeycloak();
+      await apiFetch(`/admin/menu/item/${itemId}`, keycloak.token, {
+        method: 'DELETE',
+      });
+      setLastUpdate(`🗑️ Ítem eliminado — ${new Date().toLocaleTimeString('es-AR')}`);
+    } catch (error: unknown) {
+      await cargarDatos();
+      const message = error instanceof Error ? error.message : 'Error al eliminar el ítem';
+      alert(message);
+    }
+  };
+
+  const deleteCategoria = async (categoriaId: string, categoriaNombre: string) => {
+    if (!confirm(`¿Estás seguro de que deseas eliminar la categoría "${categoriaNombre}"? Los ítems asociados quedarán ocultos.`)) {
+      return;
+    }
+
+    // Actualización optimista
+    setCategorias((prev) => updateCategoriaActivo(prev, categoriaId, false));
+
+    try {
+      const keycloak = getKeycloak();
+      await apiFetch(`/admin/menu/categoria/${categoriaId}`, keycloak.token, {
+        method: 'DELETE',
+      });
+      setLastUpdate(`🗑️ Categoría eliminada — ${new Date().toLocaleTimeString('es-AR')}`);
+    } catch (error: unknown) {
+      // Revertir en caso de error
+      setCategorias((prev) => updateCategoriaActivo(prev, categoriaId, true));
+      const message = error instanceof Error ? error.message : 'Error al eliminar la categoría';
+      alert(message);
+    }
+  };
+
   const toggleCategoria = async (categoriaId: string, current: boolean) => {
     setCategorias((prev) => updateCategoriaActivo(prev, categoriaId, !current));
-
     try {
       const keycloak = getKeycloak();
       await apiFetch(`/admin/menu/categoria/${categoriaId}`, keycloak.token, {
@@ -329,9 +376,21 @@ export default function AdminMenuPage() {
               <div className="flex items-center gap-3">
                 <span className="text-sm text-[#79767D]">Visible</span>
                 <Switch checked={cat.activo} onChange={() => toggleCategoria(cat.id, cat.activo)} label={`Habilitar categoría ${cat.nombre}`} />
+                
+                {/* NUEVO BOTÓN DE ELIMINAR CATEGORÍA */}
+                <button
+                  type="button"
+                  onClick={() => deleteCategoria(cat.id, cat.nombre)}
+                  className="text-[#79767D] hover:text-red-600 transition-colors p-1"
+                  title="Eliminar categoría"
+                  aria-label={`Eliminar categoría ${cat.nombre}`}
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
               </div>
             </div>
-
             <div className="divide-y divide-gray-100">
               {cat.items.length === 0 ? (
                 <p className="px-6 py-8 text-center text-[#79767D] text-sm">No hay ítems en esta categoría.</p>
@@ -344,11 +403,11 @@ export default function AdminMenuPage() {
                     catName={cat.nombre}
                     onEdit={openEditModal}
                     onToggle={toggleItem}
+                    onDelete={deleteItem}
                   />
                 ))
               )}
             </div>
-
             <div className="px-6 py-3 bg-[#7C7296]/5 border-t flex justify-between items-center">
               <button
                 type="button"
@@ -392,7 +451,6 @@ export default function AdminMenuPage() {
                 </svg>
               </button>
             </div>
-
             <form onSubmit={crearCategoria} className="p-6 space-y-4">
               <div>
                 <label htmlFor="cat-nombre" className="block text-sm font-medium text-[#7C7296] mb-2">
@@ -408,7 +466,6 @@ export default function AdminMenuPage() {
                   placeholder="Ej: Entradas, Platos principales, Postres"
                 />
               </div>
-
               <div>
                 <label htmlFor="cat-orden" className="block text-sm font-medium text-[#7C7296] mb-2">
                   Orden (opcional)
@@ -424,7 +481,6 @@ export default function AdminMenuPage() {
                 />
                 <p className="text-xs text-[#79767D] mt-1">Las categorías se ordenan de menor a mayor. Deja 0 para que aparezca primero.</p>
               </div>
-
               <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
                 <button
                   type="button"
