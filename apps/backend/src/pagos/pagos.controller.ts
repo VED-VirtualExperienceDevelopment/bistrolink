@@ -4,7 +4,6 @@ import { RolesGuard, Roles } from '../auth/roles.guard';
 import { AuthenticatedUser } from '../auth/keycloak-jwt.strategy';
 import { PagosService } from './pagos.service';
 import { CrearPagoDto } from './dto/crear-pago.dto';
-
 @Controller('pedidos/:pedidoId/pagos')
 @UseGuards(AuthGuard('jwt'), RolesGuard)
 @Roles('COMENSAL')

@@ -1,15 +1,16 @@
 import { BadRequestException } from '@nestjs/common';
-import { FakePagoGateway } from '../../src/pagos/gateways/fake.gateway';
 import { MercadoPagoGateway } from '../../src/pagos/gateways/mercadopago.gateway';
+import { PlexoGateway } from '../../src/pagos/gateways/plexo.gateway';
 import { PagoGatewayFactory } from '../../src/pagos/gateways/pago-gateway.factory';
 
 describe('PagoGatewayFactory', () => {
   let fabrica: PagoGatewayFactory;
   const mercadoPago = { cobrar: jest.fn() } as unknown as MercadoPagoGateway;
-  const fake = { cobrar: jest.fn() } as unknown as FakePagoGateway;
+  const plexo = { cobrar: jest.fn() } as unknown as PlexoGateway;
 
   beforeEach(() => {
-    fabrica = new PagoGatewayFactory(mercadoPago, fake);
+    jest.clearAllMocks();
+    fabrica = new PagoGatewayFactory(mercadoPago, plexo);
   });
 
   it('devuelve la MISMA instancia en cada request: el circuit breaker comparte estado', () => {
@@ -21,7 +22,7 @@ describe('PagoGatewayFactory', () => {
     expect(fabrica.obtener('MERCADOPAGO')).not.toBe(fabrica.obtener('PLEXO'));
   });
 
-  it('delega el cobro en el gateway correspondiente', async () => {
+  it('delega el cobro en Mercado Pago', async () => {
     (mercadoPago.cobrar as jest.Mock).mockResolvedValue({
       aprobado: true,
       pasarelaReferencia: 'ORD1',
@@ -30,7 +31,24 @@ describe('PagoGatewayFactory', () => {
     await fabrica.obtener('MERCADOPAGO').cobrar({} as any);
 
     expect(mercadoPago.cobrar).toHaveBeenCalled();
-    expect(fake.cobrar).not.toHaveBeenCalled();
+    expect(plexo.cobrar).not.toHaveBeenCalled();
+  });
+
+  it('delega el cobro en Plexo', async () => {
+    (plexo.cobrar as jest.Mock).mockResolvedValue({
+      aprobado: false,
+      pendiente: true,
+      pasarelaReferencia: 'ses-1',
+      accionRequerida: {
+        tipo: 'iframe',
+        url: 'https://checkout.testing.plexo.com.uy/e/ses-1',
+      },
+    });
+
+    await fabrica.obtener('PLEXO').cobrar({} as any);
+
+    expect(plexo.cobrar).toHaveBeenCalled();
+    expect(mercadoPago.cobrar).not.toHaveBeenCalled();
   });
 
   it('un medio de pago desconocido => 400', () => {

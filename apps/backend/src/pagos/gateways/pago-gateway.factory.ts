@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PagoGateway } from './pago-gateway.interface';
 import { MercadoPagoGateway } from './mercadopago.gateway';
-import { FakePagoGateway } from './fake.gateway';
+import { PlexoGateway } from './plexo.gateway';
 import { ResilientPagoGateway } from './resilient-pago-gateway.decorator';
 
 @Injectable()
@@ -11,14 +11,10 @@ export class PagoGatewayFactory {
 
   constructor(
     mercadoPagoGateway: MercadoPagoGateway,
-    fakeGateway: FakePagoGateway,
+    plexoGateway: PlexoGateway,
   ) {
-    // Una sola instancia resiliente por pasarela: el estado del circuit
-    // breaker (cuántos fallos seguidos hubo) tiene que compartirse entre
-    // requests, si no el circuito nunca se abre.
     this.mercadoPago = new ResilientPagoGateway(mercadoPagoGateway);
-    // TODO: reemplazar por PlexoGateway real cuando lleguen las credenciales.
-    this.plexo = new ResilientPagoGateway(fakeGateway);
+    this.plexo = new ResilientPagoGateway(plexoGateway);
   }
 
   obtener(medioPago: string): PagoGateway {

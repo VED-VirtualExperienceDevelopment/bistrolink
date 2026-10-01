@@ -21,6 +21,10 @@ export class PagosService {
   ) {}
 
   async crear(tenantId: string, dto: CrearPagoDto) {
+    // Primero se elige la pasarela: si el medio de pago no está disponible,
+    // se falla ACÁ, antes de reservar el pago o tocar la mesa.
+    const gateway = this.gatewayFactory.obtener(dto.medioPago);
+
     // Fase 1: validar, calcular el monto en el backend (BL-90) y reservar
     // el pago como PENDIENTE. Transacción corta, sin red de por medio.
     const reserva = await this.reservar(tenantId, dto);
@@ -30,7 +34,6 @@ export class PagosService {
     const { pago, mesaId } = reserva;
 
     // Fase 2: cobrar FUERA de la transacción (la pasarela puede tardar).
-    const gateway = this.gatewayFactory.obtener(dto.medioPago);
     let resultado: ResultadoCobro;
     try {
       resultado = await gateway.cobrar({
@@ -86,6 +89,12 @@ export class PagosService {
     // BL-77: ya guardado como RECHAZADO; recién ahora se le avisa al comensal.
     if (pagoFinal.estado === 'RECHAZADO') {
       throw new PagoRechazadoException(resultado.motivoRechazo);
+    }
+
+    // Checkout embebido (Plexo): esto nunca se persiste — es una URL de un
+    // solo uso que el frontend necesita YA, no un dato del Pago en sí.
+    if (resultado.accionRequerida) {
+      return { ...pagoFinal, accionRequerida: resultado.accionRequerida };
     }
     return pagoFinal;
   }

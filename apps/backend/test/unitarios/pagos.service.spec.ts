@@ -3,6 +3,7 @@ import {
   BadRequestException,
   ConflictException,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { CrearPagoDto } from '../../src/pagos/dto/crear-pago.dto';
@@ -160,6 +161,24 @@ describe('PagosService.crear', () => {
       await service.crear(TENANT_ID, DTO);
 
       expect(cobroDentro).toBe(false);
+    });
+  });
+
+  describe('medio de pago no disponible (ej. Plexo sin integración real)', () => {
+    it('falla ANTES de reservar: no crea ningún pago ni toca la mesa', async () => {
+      gatewayFactory.obtener.mockImplementation(() => {
+        throw new ServiceUnavailableException(
+          'Plexo todavía no está disponible',
+        );
+      });
+
+      await expect(
+        service.crear(TENANT_ID, { ...DTO, medioPago: 'PLEXO' }),
+      ).rejects.toThrow(ServiceUnavailableException);
+
+      expect(tenantPrisma.runInTenantContext).not.toHaveBeenCalled();
+      expect(tx.pago.create).not.toHaveBeenCalled();
+      expect(tx.mesa.update).not.toHaveBeenCalled();
     });
   });
 
@@ -399,6 +418,46 @@ describe('PagosService.crear', () => {
       await service.crear(TENANT_ID, DTO).catch(() => undefined);
 
       expect(ordenDeEventos).toEqual(['transaccion-confirmada', 'cobro']);
+    });
+  });
+
+  describe('checkout embebido (Plexo): el pago queda PENDIENTE y se devuelve la acción al frontend', () => {
+    it('la respuesta incluye accionRequerida, pero NUNCA se persiste en el Pago', async () => {
+      gateway.cobrar.mockResolvedValue({
+        aprobado: false,
+        pendiente: true,
+        pasarelaReferencia: 'ses-1',
+        accionRequerida: {
+          tipo: 'iframe',
+          url: 'https://checkout.testing.plexo.com.uy/e/ses-1',
+        },
+      });
+
+      const pago = await service.crear(TENANT_ID, {
+        ...DTO,
+        medioPago: 'PLEXO',
+      });
+
+      expect(pago).toMatchObject({
+        estado: 'PENDIENTE',
+        pasarelaReferencia: 'ses-1',
+        accionRequerida: {
+          tipo: 'iframe',
+          url: 'https://checkout.testing.plexo.com.uy/e/ses-1',
+        },
+      });
+      // Lo único que se guarda en la base es lo que ya guardábamos para
+      // cualquier PENDIENTE — accionRequerida no es una columna del Pago.
+      expect(tx.pago.updateMany).toHaveBeenCalledWith({
+        where: { id: PAGO_ID, estado: 'PENDIENTE' },
+        data: { estado: 'PENDIENTE', pasarelaReferencia: 'ses-1' },
+      });
+    });
+
+    it('un pago aprobado en la misma llamada (ej. Mercado Pago) nunca trae accionRequerida', async () => {
+      const pago = await service.crear(TENANT_ID, DTO); // gateway mockeado aprueba directo
+
+      expect(pago).not.toHaveProperty('accionRequerida');
     });
   });
 
