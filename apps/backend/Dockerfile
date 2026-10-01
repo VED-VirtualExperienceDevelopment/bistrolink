@@ -33,7 +33,7 @@ ENV APP_VERSION=$GIT_SHA
 COPY package*.json ./
 COPY apps/backend/package*.json ./apps/backend/
 RUN npm pkg delete scripts.prepare && \
-  npm ci --workspace=apps/backend --omit=dev --ignore-scripts && \
+  npm ci --workspace=apps/backend --omit=dev --omit=optional --ignore-scripts && \
   npm cache clean --force && \
   rm -rf node_modules/.cache \
   node_modules/lodash \
