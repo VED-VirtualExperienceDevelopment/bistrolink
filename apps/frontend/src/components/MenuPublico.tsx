@@ -13,7 +13,7 @@ import { apiFetch, ApiError } from '@/lib/api-client';
 // RESUELTO: Mantenemos ambos imports
 import ItemNotaModal from './ItemNotaModal';
 import { SeguimientoPedido } from './SeguimientoPedido';
-
+import ItemImagen from './menu/ItemImagen';
 const inter = Inter({ subsets: ['latin'], weight: ['600', '700', '800'] });
 const publicSans = Public_Sans({ subsets: ['latin'], weight: ['500', '600'] });
 
@@ -254,16 +254,12 @@ export default function MenuPublico({
                       className="border border-culinary-neutral/15 rounded-[1rem] p-4 hover:border-culinary-primary/40 transition-colors flex flex-col"
                     >
                       {item.imagenUrl && (
-                        <img
-                          src={item.imagenUrl}
-                          alt={item.nombre}
-                          className="w-full h-48 object-cover rounded-[0.5rem] mb-3"
-                          onError={(e) => {
-                            e.currentTarget.style.display = 'none';
-                          }}
-                        />
+                        <ItemImagen
+                        url={item.imagenUrl}
+                        alt={item.nombre}
+                        className="w-full h-48 object-cover rounded-[0.5rem] mb-3"
+                      />
                       )}
-
                       <h3 className={`${inter.className} font-semibold text-culinary-on-surface mb-1`}>
                         {item.nombre}
                       </h3>

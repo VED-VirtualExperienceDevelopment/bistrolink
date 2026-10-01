@@ -1,9 +1,15 @@
-import { Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { MenuGateway } from './menu.gateway';
 import { CreateItemDto } from './dto/create-item.dto';
 import { UpdateItemDto } from './dto/update-item.dto';
 import { UpdateCategoriaDto } from './dto/update-categoria.dto';
+import { StorageService } from './storage.service';
 
 @Injectable()
 export class MenuAdminService {
@@ -12,6 +18,7 @@ export class MenuAdminService {
   constructor(
     private readonly prisma: TenantPrismaService,
     private readonly menuGateway: MenuGateway,
+    private readonly storage: StorageService,
   ) {}
 
   private async resolveRestauranteId(
@@ -20,14 +27,17 @@ export class MenuAdminService {
     keycloakId: string,
   ): Promise<string> {
     if (restauranteId) return restauranteId;
-    
-    const result = await this.prisma.runInTenantContext(tenantId, async (tx) => {
-      return await tx.usuario.findFirst({
-        where: { keycloakId },
-        select: { restauranteId: true },
-      });
-    });
-    
+
+    const result = await this.prisma.runInTenantContext(
+      tenantId,
+      async (tx) => {
+        return await tx.usuario.findFirst({
+          where: { keycloakId },
+          select: { restauranteId: true },
+        });
+      },
+    );
+
     if (!result?.restauranteId) {
       throw new UnauthorizedException(
         'No se pudo determinar el restaurante del usuario. Verifica tu configuración de Keycloak o la tabla Usuario.',
@@ -46,16 +56,37 @@ export class MenuAdminService {
       restauranteId,
       keycloakId,
     );
-    
-    return this.prisma.runInTenantContext(tenantId, async (tx) => {
-      return await tx.categoriaCarta.findMany({
-        where: { restauranteId: finalRestauranteId },
-        include: {
-          items: { orderBy: { nombre: 'asc' } },
-        },
-        orderBy: { orden: 'asc' },
-      });
-    });
+
+    const categorias = await this.prisma.runInTenantContext(
+      tenantId,
+      async (tx) => {
+        return await tx.categoriaCarta.findMany({
+          where: { restauranteId: finalRestauranteId },
+          include: {
+            items: { orderBy: { nombre: 'asc' } },
+          },
+          orderBy: { orden: 'asc' },
+        });
+      },
+    );
+
+    // Las imágenes se sirven con URL firmada (bucket privado, TTL de HU-001),
+    // igual que en el menú público. Se firma fuera de la transacción para no
+    // mantenerla abierta. Si la firma falla, getSignedImageUrl devuelve null
+    // y el frontend muestra el placeholder.
+    return Promise.all(
+      categorias.map(async (cat) => ({
+        ...cat,
+        items: await Promise.all(
+          cat.items.map(async (item) => ({
+            ...item,
+            imagenUrl: item.imagenKey
+              ? await this.storage.getSignedImageUrl(item.imagenKey)
+              : null,
+          })),
+        ),
+      })),
+    );
   }
 
   async createCategoria(
@@ -69,7 +100,7 @@ export class MenuAdminService {
       restauranteId,
       keycloakId,
     );
-    
+
     return this.prisma.runInTenantContext(tenantId, async (tx) => {
       const nuevaCategoria = await tx.categoriaCarta.create({
         data: {

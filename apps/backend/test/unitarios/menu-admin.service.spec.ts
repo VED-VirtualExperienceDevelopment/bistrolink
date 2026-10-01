@@ -3,9 +3,12 @@ import { NotFoundException } from '@nestjs/common';
 import { MenuAdminService } from '../../src/menu/menu-admin.service';
 import { TenantPrismaService } from '../../src/prisma/tenant-prisma.service';
 import { MenuGateway } from '../../src/menu/menu.gateway';
+import { StorageService } from '../../src/menu/storage.service';
 import { CreateItemDto } from '../../src/menu/dto/create-item.dto';
 import { UpdateItemDto } from '../../src/menu/dto/update-item.dto';
 import { UpdateCategoriaDto } from '../../src/menu/dto/update-categoria.dto';
+
+const URL_FIRMADA = 'https://bucket.example/img.jpg?X-Amz-Signature=abc';
 
 describe('MenuAdminService', () => {
   let service: MenuAdminService;
@@ -39,6 +42,10 @@ describe('MenuAdminService', () => {
     emitItemDataUpdated: jest.fn(),
   };
 
+  const mockStorage = {
+    getSignedImageUrl: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -51,15 +58,19 @@ describe('MenuAdminService', () => {
           provide: MenuGateway,
           useValue: mockMenuGateway,
         },
+        {
+          provide: StorageService,
+          useValue: mockStorage,
+        },
       ],
     }).compile();
 
     service = module.get<MenuAdminService>(MenuAdminService);
 
-    module.get<TenantPrismaService>(TenantPrismaService);
-    module.get<MenuGateway>(MenuGateway);
-
     jest.clearAllMocks();
+    // clearAllMocks no resetea implementaciones: se fija acá en cada test
+    // para que un mockResolvedValue(null) de un test no se filtre al siguiente.
+    mockStorage.getSignedImageUrl.mockResolvedValue(URL_FIRMADA);
   });
 
   describe('createItem', () => {
@@ -271,10 +282,10 @@ describe('MenuAdminService', () => {
         where: { id: itemId },
         data: { disponible: false },
       });
-      expect(mockMenuGateway.emitItemUpdated).toHaveBeenCalledWith(
-        tenantId,
-        { itemId, disponible: false },
-      );
+      expect(mockMenuGateway.emitItemUpdated).toHaveBeenCalledWith(tenantId, {
+        itemId,
+        disponible: false,
+      });
     });
 
     it('debe lanzar NotFoundException si el ítem no existe', async () => {
@@ -316,7 +327,19 @@ describe('MenuAdminService', () => {
         keycloakId,
       );
 
-      expect(result).toEqual(mockCategorias);
+      // BL-257: cada ítem trae imagenUrl (null si no tiene imagenKey).
+      expect(result).toEqual([
+        {
+          id: 'cat-1',
+          nombre: 'Pizzas',
+          items: [{ id: 'item-1', nombre: 'Pizza 1', imagenUrl: null }],
+        },
+        {
+          id: 'cat-2',
+          nombre: 'Bebidas',
+          items: [{ id: 'item-2', nombre: 'Coca Cola', imagenUrl: null }],
+        },
+      ]);
 
       expect(mockTx.categoriaCarta.findMany).toHaveBeenCalledWith({
         where: { restauranteId },
@@ -327,6 +350,64 @@ describe('MenuAdminService', () => {
         },
         orderBy: { orden: 'asc' },
       });
+    });
+
+    it('devuelve imagenUrl firmada solo para los ítems con imagenKey (BL-257)', async () => {
+      mockTx.categoriaCarta.findMany.mockResolvedValue([
+        {
+          id: 'cat-1',
+          nombre: 'Postres',
+          items: [
+            {
+              id: 'item-1',
+              nombre: 'Helado',
+              imagenKey: 'tenant-1/menu/helado.jpg',
+            },
+            { id: 'item-2', nombre: 'Flan', imagenKey: null },
+          ],
+        },
+      ]);
+
+      const result = await service.findAllCategorias(
+        tenantId,
+        restauranteId,
+        keycloakId,
+      );
+
+      expect(mockStorage.getSignedImageUrl).toHaveBeenCalledTimes(1);
+      expect(mockStorage.getSignedImageUrl).toHaveBeenCalledWith(
+        'tenant-1/menu/helado.jpg',
+      );
+      expect(result[0].items[0].imagenUrl).toBe(URL_FIRMADA);
+      expect(result[0].items[1].imagenUrl).toBeNull();
+      // El resto de los campos del ítem se conserva.
+      expect(result[0].items[0].imagenKey).toBe('tenant-1/menu/helado.jpg');
+    });
+
+    it('devuelve imagenUrl null si la firma falla (BL-257)', async () => {
+      // getSignedImageUrl ya captura el error de S3 y devuelve null.
+      mockStorage.getSignedImageUrl.mockResolvedValue(null);
+      mockTx.categoriaCarta.findMany.mockResolvedValue([
+        {
+          id: 'cat-1',
+          nombre: 'Postres',
+          items: [
+            {
+              id: 'item-1',
+              nombre: 'Helado',
+              imagenKey: 'tenant-1/menu/helado.jpg',
+            },
+          ],
+        },
+      ]);
+
+      const result = await service.findAllCategorias(
+        tenantId,
+        restauranteId,
+        keycloakId,
+      );
+
+      expect(result[0].items[0].imagenUrl).toBeNull();
     });
   });
 
@@ -474,12 +555,12 @@ describe('MenuAdminService', () => {
     it('debe lanzar NotFoundException si la categoría no existe', async () => {
       mockTx.categoriaCarta.findFirst.mockResolvedValue(null);
 
-      await expect(service.deleteCategoria(tenantId, categoriaId)).rejects.toThrow(
-        NotFoundException,
-      );
-      await expect(service.deleteCategoria(tenantId, categoriaId)).rejects.toThrow(
-        'Categoría no encontrada o no pertenece a este tenant',
-      );
+      await expect(
+        service.deleteCategoria(tenantId, categoriaId),
+      ).rejects.toThrow(NotFoundException);
+      await expect(
+        service.deleteCategoria(tenantId, categoriaId),
+      ).rejects.toThrow('Categoría no encontrada o no pertenece a este tenant');
     });
   });
 });

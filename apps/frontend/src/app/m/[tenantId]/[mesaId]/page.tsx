@@ -1,4 +1,4 @@
-import Image from 'next/image';
+import ItemImagen from '@/components/menu/ItemImagen';
 import { LlamarMozoButton } from '@/components/LlamarMozoButton';
 
 type ItemMenu = {
@@ -87,16 +87,12 @@ export default async function MenuPage({
                   }`}
                   aria-disabled={!item.disponible}
                 >
-                  {item.imagenUrl && (
-                    <Image
-                      src={item.imagenUrl}
-                      alt={item.nombre}
-                      width={72}
-                      height={72}
-                      className="h-18 w-18 shrink-0 rounded-lg object-cover"
-                    />
-                  )}
-
+                  <ItemImagen
+                    url={item.imagenUrl}
+                    alt={item.nombre}
+                    className="h-18 w-18 shrink-0 rounded-lg object-cover"
+                  />
+                
                   <div className="flex flex-1 flex-col justify-between">
                     <div>
                       <p className="font-medium text-foreground">{item.nombre}</p>

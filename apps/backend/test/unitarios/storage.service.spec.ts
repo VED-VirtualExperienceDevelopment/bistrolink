@@ -125,6 +125,31 @@ describe('StorageService', () => {
         expect.objectContaining({ Expires: 300 }),
       );
     });
+
+    // BL-257: si Content-Type está en Conditions pero no en Fields, el
+    // formulario no lo envía y S3 rechaza la subida con 403 (Policy Condition failed).
+    it.each(['image/jpeg', 'image/png', 'image/webp'])(
+      'should include Content-Type %s both in Conditions and in Fields',
+      async (contentType) => {
+        process.env.S3_BUCKET_IMAGES = 'test-bucket';
+        (createPresignedPost as jest.Mock).mockResolvedValue({
+          url: 'https://example.com',
+          fields: {},
+        });
+
+        await service.getPresignedPostUrl('image', contentType, 'tenant-1');
+
+        expect(createPresignedPost).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.objectContaining({
+            Conditions: expect.arrayContaining([
+              ['eq', '$Content-Type', contentType],
+            ]),
+            Fields: { 'Content-Type': contentType },
+          }),
+        );
+      },
+    );
   });
 
   describe('getClient', () => {
