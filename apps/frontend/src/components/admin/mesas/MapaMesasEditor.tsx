@@ -1,33 +1,51 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Layer, Stage, Transformer } from 'react-konva';
-import type Konva from 'konva';
-import { io, type Socket } from 'socket.io-client';
-import { useKeycloakAuth } from '@/components/providers/KeycloakProvider';
-import { apiFetch, ApiError } from '@/lib/api-client';
-import { MesaShape } from './MesaShape';
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Layer, Stage, Transformer } from "react-konva";
+import type Konva from "konva";
+import { io, type Socket } from "socket.io-client";
+import { useKeycloakAuth } from "@/components/providers/KeycloakProvider";
+import { apiFetch, ApiError } from "@/lib/api-client";
+import { MesaShape } from "./MesaShape";
 import {
   aGuardarLayoutItems,
+  anchoNecesarioLienzo,
   aplicarEstadoMesa,
+  cambiarForma,
+  idsAEliminar,
+  DIMENSION_MAXIMA_MESA,
   DIMENSION_MINIMA_MESA,
+  limitarCentro,
   mesasConLayoutAEdicion,
   normalizarRotacion,
   nuevaMesaEnEdicion,
   numerosDuplicados,
   parsearNumeroMesa,
   puedeEditarMapa,
+  puedeEliminarMesa,
+  quitarMesa,
+  reubicarFueraDelLienzo,
+  semiExtension,
   siguienteNumeroDisponible,
+  type Lienzo,
   type MesaEnEdicion,
-} from './mapa-mesas.utils';
+} from "./mapa-mesas.utils";
 import type {
+  FormaMesa,
   GuardarLayoutPayload,
   MesaConLayout,
   MesaEstadoActualizadoPayload,
-} from '@/types/mesa';
+} from "@/types/mesa";
 
-const WS_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+const WS_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 const ALTURA_STAGE = 600;
+
+const OPCIONES_FORMA: { forma: FormaMesa; etiqueta: string; icono: string }[] =
+  [
+    { forma: "CIRCULO", etiqueta: "Círculo", icono: "circle" },
+    { forma: "CUADRADO", etiqueta: "Cuadrado", icono: "square" },
+    { forma: "RECTANGULO", etiqueta: "Rectángulo", icono: "rectangle" },
+  ];
 
 interface Props {
   restauranteId: string;
@@ -55,15 +73,22 @@ export function MapaMesasEditor({ restauranteId }: Readonly<Props>) {
   const [mesas, setMesas] = useState<MesaEnEdicion[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Mesas que se trajeron al área visible al cargar (estaban fuera del lienzo).
+  const [reubicadas, setReubicadas] = useState(0);
 
   const [guardando, setGuardando] = useState(false);
   const [guardadoError, setGuardadoError] = useState<string | null>(null);
   const [guardadoOk, setGuardadoOk] = useState(false);
 
   const [seleccionada, setSeleccionada] = useState<string | null>(null);
-  const [editandoNumero, setEditandoNumero] = useState<{ clientId: string; valor: string } | null>(
-    null,
-  );
+  // BL-58: mesas ya guardadas que el administrador quitó del mapa y que se
+  // borran en el próximo guardado. Se guarda la mesa completa (no solo el
+  // id) para poder devolverla al mapa si el guardado falla.
+  const [eliminadas, setEliminadas] = useState<MesaEnEdicion[]>([]);
+  const [editandoNumero, setEditandoNumero] = useState<{
+    clientId: string;
+    valor: string;
+  } | null>(null);
 
   const contenedorRef = useRef<HTMLDivElement>(null);
   const transformerRef = useRef<Konva.Transformer>(null);
@@ -82,9 +107,18 @@ export function MapaMesasEditor({ restauranteId }: Readonly<Props>) {
         `/mesas/layout?restauranteId=${restauranteId}`,
         token,
       );
-      setMesas(mesasConLayoutAEdicion(data));
+      const cargadas = reubicarFueraDelLienzo(
+        mesasConLayoutAEdicion(data),
+        ALTURA_STAGE,
+      );
+      setMesas(cargadas.mesas);
+      setReubicadas(cargadas.reubicadas);
     } catch (err) {
-      setLoadError(err instanceof ApiError ? err.message : 'No se pudo cargar el mapa de mesas');
+      setLoadError(
+        err instanceof ApiError
+          ? err.message
+          : "No se pudo cargar el mapa de mesas",
+      );
     } finally {
       setLoading(false);
     }
@@ -99,6 +133,10 @@ export function MapaMesasEditor({ restauranteId }: Readonly<Props>) {
   // por CSS como un <div>. Se mide el contenedor con ResizeObserver en vez
   // de fijar un ancho a mano, para que el mapa aproveche todo el panel de
   // admin en cualquier tamaño de pantalla.
+  //
+  // Depende de `loading`: mientras carga se renderiza el spinner y el
+  // contenedor todavía no existe, así que con [] el efecto corría una sola
+  // vez con contenedorRef en null y el canvas quedaba fijo en 800 px.
   useEffect(() => {
     const contenedor = contenedorRef.current;
     if (!contenedor) return;
@@ -108,7 +146,18 @@ export function MapaMesasEditor({ restauranteId }: Readonly<Props>) {
     });
     observer.observe(contenedor);
     return () => observer.disconnect();
-  }, []);
+  }, [loading]);
+
+  // El lienzo es al menos tan ancho como el contenedor, y se ensancha si
+  // alguna mesa quedó más a la derecha (salón guardado en una pantalla más
+  // ancha): en ese caso aparece scroll horizontal en vez de esconderla.
+  const lienzo: Lienzo = useMemo(
+    () => ({
+      ancho: Math.max(anchoStage, anchoNecesarioLienzo(mesas)),
+      alto: ALTURA_STAGE,
+    }),
+    [anchoStage, mesas],
+  );
 
   // --- WebSocket: estado de ocupación en vivo ---------------------------------
   // Se suscribe al evento real que ya emite KdsGateway.emitirEstadoMesa
@@ -128,9 +177,12 @@ export function MapaMesasEditor({ restauranteId }: Readonly<Props>) {
     });
     socketRef.current = socket;
 
-    socket.on('mesa:estado_actualizado', (payload: MesaEstadoActualizadoPayload) => {
-      setMesas((prev) => aplicarEstadoMesa(prev, payload));
-    });
+    socket.on(
+      "mesa:estado_actualizado",
+      (payload: MesaEstadoActualizadoPayload) => {
+        setMesas((prev) => aplicarEstadoMesa(prev, payload));
+      },
+    );
 
     return () => {
       socket.disconnect();
@@ -150,9 +202,12 @@ export function MapaMesasEditor({ restauranteId }: Readonly<Props>) {
     const nodo = shapeRefs.current.get(seleccionada);
     if (nodo) {
       tr.nodes([nodo]);
+      // Al cambiar la forma (o el tamaño) de la mesa seleccionada, el
+      // recuadro del Transformer tiene que recalcularse sobre la figura nueva.
+      tr.forceUpdate();
       tr.getLayer()?.batchDraw();
     }
-  }, [seleccionada, puedeEditar, mesas.length]);
+  }, [seleccionada, puedeEditar, mesas]);
 
   // El mensaje de "Guardado" no debe quedar pegado para siempre.
   useEffect(() => {
@@ -178,33 +233,67 @@ export function MapaMesasEditor({ restauranteId }: Readonly<Props>) {
     : undefined;
   const posicionInputNumero = nodoEditandoNumero?.getAbsolutePosition();
 
-  // El círculo solo debe poder resizearse manteniendo la proporción (si no,
-  // arrastrar una esquina lo convierte en óvalo) — el rectángulo sí permite
-  // ancho y alto independientes, como cualquier resize normal.
-  const formaSeleccionada = mesas.find((m) => m.clientId === seleccionada)?.forma;
-  const esCirculoSeleccionado = formaSeleccionada === 'CIRCULO';
+  // El círculo y el cuadrado solo deben poder resizearse manteniendo la
+  // proporción (si no, arrastrar una esquina convierte el círculo en óvalo y
+  // el cuadrado en rectángulo) — el rectángulo sí permite ancho y alto
+  // independientes, como cualquier resize normal.
+  const mesaSeleccionada = mesas.find((m) => m.clientId === seleccionada);
+  const formaSeleccionada = mesaSeleccionada?.forma;
+  const mantieneProporcion =
+    formaSeleccionada === "CIRCULO" || formaSeleccionada === "CUADRADO";
 
   const duplicados = useMemo(() => numerosDuplicados(mesas), [mesas]);
 
   // --- Handlers de edición -----------------------------------------------------
   function actualizarMesa(clientId: string, cambios: Partial<MesaEnEdicion>) {
-    setMesas((prev) => prev.map((m) => (m.clientId === clientId ? { ...m, ...cambios } : m)));
+    setMesas((prev) =>
+      prev.map((m) => (m.clientId === clientId ? { ...m, ...cambios } : m)),
+    );
   }
 
   function handleAgregarMesa() {
     const clientId = `nueva-${crypto.randomUUID()}`;
     const numero = siguienteNumeroDisponible(mesas);
-    setMesas((prev) => [...prev, nuevaMesaEnEdicion(clientId, numero, prev.length)]);
+    setMesas((prev) => {
+      // A partir de la sexta fila, la grilla por defecto cae debajo del
+      // lienzo: se acota para que la mesa nueva siempre aparezca a la vista.
+      const nueva = nuevaMesaEnEdicion(clientId, numero, prev.length);
+      return [
+        ...prev,
+        { ...nueva, ...limitarCentro(nueva, semiExtension(nueva), lienzo) },
+      ];
+    });
     setSeleccionada(clientId);
+  }
+
+  function handleCambiarForma(forma: FormaMesa) {
+    if (!mesaSeleccionada) return;
+    const cambios = cambiarForma(mesaSeleccionada, forma);
+    // Un rectángulo es más ancho que el círculo o cuadrado de origen: si la
+    // mesa estaba pegada al borde, se reacomoda para que entre entera.
+    const posicion = limitarCentro(
+      mesaSeleccionada,
+      semiExtension({ ...mesaSeleccionada, ...cambios }),
+      lienzo,
+    );
+    actualizarMesa(mesaSeleccionada.clientId, { ...cambios, ...posicion });
   }
 
   function handleEliminarSeleccionada() {
     if (!seleccionada) return;
-    setMesas((prev) => prev.filter((m) => m.clientId !== seleccionada));
+    const resultado = quitarMesa(mesas, eliminadas, seleccionada);
+    setMesas(resultado.mesas);
+    setEliminadas(resultado.eliminadas);
     setSeleccionada(null);
   }
 
-  function handleClickStage(e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) {
+  const puedeEliminarSeleccionada =
+    !!mesaSeleccionada && puedeEliminarMesa(mesaSeleccionada);
+  const hayCambiosParaGuardar = mesas.length > 0 || eliminadas.length > 0;
+
+  function handleClickStage(
+    e: Konva.KonvaEventObject<MouseEvent | TouchEvent>,
+  ) {
     // Clic en el fondo del Stage (no en una mesa) deselecciona — mismo
     // criterio de "target === currentTarget" que ya usa Dialog.tsx para
     // distinguir clic en el fondo de clic en un hijo.
@@ -224,7 +313,7 @@ export function MapaMesasEditor({ restauranteId }: Readonly<Props>) {
 
   // --- Guardado: POST /mesas/layout ---------------------------------------------
   async function handleGuardar() {
-    if (!token || duplicados.length > 0) return;
+    if (!token || duplicados.length > 0 || !hayCambiosParaGuardar) return;
     setGuardando(true);
     setGuardadoError(null);
     setGuardadoOk(false);
@@ -232,18 +321,35 @@ export function MapaMesasEditor({ restauranteId }: Readonly<Props>) {
       const payload: GuardarLayoutPayload = {
         restauranteId,
         mesas: aGuardarLayoutItems(mesas),
+        ...(eliminadas.length > 0
+          ? { eliminar: idsAEliminar(eliminadas) }
+          : {}),
       };
-      await apiFetch('/mesas/layout', token, {
-        method: 'POST',
+      await apiFetch("/mesas/layout", token, {
+        method: "POST",
         body: JSON.stringify(payload),
       });
       setGuardadoOk(true);
+      setEliminadas([]);
       // Trae los id reales que Prisma asignó a las mesas nuevas — sin esto,
       // un segundo guardado las volvería a crear en vez de actualizarlas
       // (guardarLayout crea cuando el item no trae `id`).
       await cargarLayout();
     } catch (err) {
-      setGuardadoError(err instanceof ApiError ? err.message : 'No se pudo guardar el mapa');
+      const mensaje =
+        err instanceof ApiError ? err.message : "No se pudo guardar el mapa";
+      // El guardado es una sola transacción: si falló, no se borró ninguna
+      // mesa. Se devuelven al mapa para que lo que se ve coincida con la base
+      // (el resto de los cambios sigue en pantalla, sin guardar).
+      if (eliminadas.length > 0) {
+        setMesas((prev) => [...prev, ...eliminadas]);
+        setEliminadas([]);
+        setGuardadoError(
+          `${mensaje} Las mesas eliminadas se volvieron a agregar al mapa.`,
+        );
+      } else {
+        setGuardadoError(mensaje);
+      }
     } finally {
       setGuardando(false);
     }
@@ -259,7 +365,10 @@ export function MapaMesasEditor({ restauranteId }: Readonly<Props>) {
 
   if (loadError) {
     return (
-      <div role="alert" className="rounded-xl bg-error-container px-4 py-3 text-body-md text-on-error-container">
+      <div
+        role="alert"
+        className="rounded-xl bg-error-container px-4 py-3 text-body-md text-on-error-container"
+      >
         {loadError}
       </div>
     );
@@ -269,7 +378,17 @@ export function MapaMesasEditor({ restauranteId }: Readonly<Props>) {
     <div className="space-y-4">
       {!puedeEditar && (
         <output className="block rounded-lg bg-surface-container-low px-4 py-2 text-label-md text-on-surface-variant">
-          Estás viendo el mapa en modo solo lectura. Solo un Administrador puede editarlo.
+          Estás viendo el mapa en modo solo lectura. Solo un Administrador puede
+          editarlo.
+        </output>
+      )}
+
+      {puedeEditar && reubicadas > 0 && (
+        <output className="block rounded-lg bg-surface-container-low px-4 py-2 text-label-md text-on-surface-variant">
+          {reubicadas === 1
+            ? "Se reubicó 1 mesa que estaba fuera del área visible."
+            : `Se reubicaron ${reubicadas} mesas que estaban fuera del área visible.`}{" "}
+          Guardá el mapa para conservar la nueva posición.
         </output>
       )}
 
@@ -287,21 +406,50 @@ export function MapaMesasEditor({ restauranteId }: Readonly<Props>) {
             <button
               type="button"
               onClick={handleEliminarSeleccionada}
-              disabled={!seleccionada}
+              disabled={!puedeEliminarSeleccionada}
+              title={
+                mesaSeleccionada && !puedeEliminarSeleccionada
+                  ? "Solo se pueden eliminar mesas libres"
+                  : undefined
+              }
               className="flex items-center gap-2 rounded-lg border border-outline-variant px-4 py-2 text-body-md text-on-surface-variant hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <span className="material-symbols-outlined text-[20px]">delete</span>
+              <span className="material-symbols-outlined text-[20px]">
+                delete
+              </span>
               <span>Eliminar mesa</span>
             </button>
+            <fieldset
+              disabled={!mesaSeleccionada}
+              className="flex items-center gap-1 rounded-lg border border-outline-variant p-1 disabled:opacity-50"
+            >
+              <legend className="sr-only">Forma de la mesa seleccionada</legend>
+              {OPCIONES_FORMA.map(({ forma, etiqueta, icono }) => (
+                <button
+                  key={forma}
+                  type="button"
+                  onClick={() => handleCambiarForma(forma)}
+                  aria-pressed={formaSeleccionada === forma}
+                  title={etiqueta}
+                  className="flex items-center gap-1 rounded-md px-3 py-1.5 text-body-sm text-on-surface-variant hover:bg-surface-container-low disabled:cursor-not-allowed aria-pressed:bg-primary aria-pressed:text-on-primary"
+                >
+                  <span className="material-symbols-outlined text-[18px]">
+                    {icono}
+                  </span>
+                  <span>{etiqueta}</span>
+                </button>
+              ))}
+            </fieldset>
             <p className="text-label-sm text-on-surface-variant">
-              Doble clic en una mesa para editar su número.
+              Seleccioná una mesa para cambiar su forma. Doble clic para editar
+              su número.
             </p>
           </div>
 
           <div className="flex items-center gap-3">
             {duplicados.length > 0 && (
               <p role="alert" className="text-label-md text-error">
-                Números repetidos: {duplicados.join(', ')}
+                Números repetidos: {duplicados.join(", ")}
               </p>
             )}
             {guardadoError && (
@@ -309,14 +457,18 @@ export function MapaMesasEditor({ restauranteId }: Readonly<Props>) {
                 {guardadoError}
               </p>
             )}
-            {guardadoOk && <p className="text-label-md text-primary">Guardado ✓</p>}
+            {guardadoOk && (
+              <p className="text-label-md text-primary">Guardado ✓</p>
+            )}
             <button
               type="button"
               onClick={handleGuardar}
-              disabled={guardando || duplicados.length > 0}
+              disabled={
+                guardando || duplicados.length > 0 || !hayCambiosParaGuardar
+              }
               className="rounded-lg bg-primary px-4 py-2 text-body-md font-medium text-on-primary hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {guardando ? 'Guardando…' : 'Guardar mapa'}
+              {guardando ? "Guardando…" : "Guardar mapa"}
             </button>
           </div>
         </div>
@@ -324,11 +476,11 @@ export function MapaMesasEditor({ restauranteId }: Readonly<Props>) {
 
       <div
         ref={contenedorRef}
-        className="relative w-full overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest"
+        className="relative w-full overflow-x-auto overflow-y-hidden rounded-xl border border-outline-variant bg-surface-container-lowest"
       >
         <Stage
-          width={anchoStage}
-          height={ALTURA_STAGE}
+          width={lienzo.ancho}
+          height={lienzo.alto}
           onMouseDown={handleClickStage}
           onTouchStart={handleClickStage}
         >
@@ -350,17 +502,35 @@ export function MapaMesasEditor({ restauranteId }: Readonly<Props>) {
                 rotacion={mesa.rotacion}
                 seleccionada={mesa.clientId === seleccionada}
                 editable={puedeEditar}
+                lienzo={lienzo}
                 onSeleccionar={() => setSeleccionada(mesa.clientId)}
                 onArrastrar={(x, y) => actualizarMesa(mesa.clientId, { x, y })}
-                onTransformar={(cambios) =>
+                onTransformar={(cambios) => {
+                  // Agrandar o rotar una mesa junto al borde puede dejar una
+                  // parte afuera: se reacomoda el centro para que entre entera.
+                  const rotacion = normalizarRotacion(cambios.rotacion);
+                  const posicion = limitarCentro(
+                    cambios,
+                    semiExtension({
+                      forma: mesa.forma,
+                      ancho: cambios.ancho,
+                      alto: cambios.alto,
+                      rotacion,
+                    }),
+                    lienzo,
+                  );
                   actualizarMesa(mesa.clientId, {
                     ...cambios,
-                    rotacion: normalizarRotacion(cambios.rotacion),
-                  })
-                }
+                    ...posicion,
+                    rotacion,
+                  });
+                }}
                 onEditarNumero={() => {
                   setSeleccionada(mesa.clientId);
-                  setEditandoNumero({ clientId: mesa.clientId, valor: String(mesa.numero) });
+                  setEditandoNumero({
+                    clientId: mesa.clientId,
+                    valor: String(mesa.numero),
+                  });
                 }}
               />
             ))}
@@ -368,14 +538,19 @@ export function MapaMesasEditor({ restauranteId }: Readonly<Props>) {
               <Transformer
                 ref={transformerRef}
                 rotateEnabled
-                keepRatio={esCirculoSeleccionado}
+                keepRatio={mantieneProporcion}
                 enabledAnchors={
-                  esCirculoSeleccionado
-                    ? ['top-left', 'top-right', 'bottom-left', 'bottom-right']
+                  mantieneProporcion
+                    ? ["top-left", "top-right", "bottom-left", "bottom-right"]
                     : undefined
                 }
+                // Entre el mínimo del editor y el máximo que acepta el backend
+                // (BL-58), para que un resize nunca termine en un 400 al guardar.
                 boundBoxFunc={(oldBox, newBox) =>
-                  newBox.width < DIMENSION_MINIMA_MESA || newBox.height < DIMENSION_MINIMA_MESA
+                  newBox.width < DIMENSION_MINIMA_MESA ||
+                  newBox.height < DIMENSION_MINIMA_MESA ||
+                  newBox.width > DIMENSION_MAXIMA_MESA ||
+                  newBox.height > DIMENSION_MAXIMA_MESA
                     ? oldBox
                     : newBox
                 }
@@ -390,11 +565,13 @@ export function MapaMesasEditor({ restauranteId }: Readonly<Props>) {
             type="number"
             min={1}
             value={editandoNumero.valor}
-            onChange={(e) => setEditandoNumero({ ...editandoNumero, valor: e.target.value })}
+            onChange={(e) =>
+              setEditandoNumero({ ...editandoNumero, valor: e.target.value })
+            }
             onBlur={confirmarEdicionNumero}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') confirmarEdicionNumero();
-              if (e.key === 'Escape') setEditandoNumero(null);
+              if (e.key === "Enter") confirmarEdicionNumero();
+              if (e.key === "Escape") setEditandoNumero(null);
             }}
             className="absolute z-10 w-14 rounded border border-primary bg-surface px-1 py-0.5 text-center text-body-sm text-on-surface shadow-md outline-none"
             style={{

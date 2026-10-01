@@ -3,10 +3,18 @@
 // sola fuente de verdad de nombres entre stacks, igual que ya hace
 // types/pedido.ts con EstadoPedido.
 
-export const FORMAS_MESA_VALIDAS = ['CIRCULO', 'CUADRADO', 'RECTANGULO'] as const;
+export const FORMAS_MESA_VALIDAS = [
+  "CIRCULO",
+  "CUADRADO",
+  "RECTANGULO",
+] as const;
 export type FormaMesa = (typeof FORMAS_MESA_VALIDAS)[number];
 
-export const ESTADOS_MESA_VALIDOS = ['LIBRE', 'OCUPADA', 'EN_PROCESO_DE_PAGO'] as const;
+export const ESTADOS_MESA_VALIDOS = [
+  "LIBRE",
+  "OCUPADA",
+  "EN_PROCESO_DE_PAGO",
+] as const;
 export type EstadoMesa = (typeof ESTADOS_MESA_VALIDOS)[number];
 
 export interface MesaLayout {
@@ -39,6 +47,8 @@ export interface GuardarLayoutItem extends MesaLayout {
 export interface GuardarLayoutPayload {
   restauranteId: string;
   mesas: GuardarLayoutItem[];
+  /** BL-58: ids de mesas guardadas que se quitaron del mapa (solo libres y sin pedidos). */
+  eliminar?: string[];
 }
 
 /** Payload del evento WS 'mesa:estado_actualizado' — ver KdsGateway.emitirEstadoMesa. */

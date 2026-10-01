@@ -1,13 +1,19 @@
-'use client';
+"use client";
 
-import { forwardRef } from 'react';
-import { Circle, Group, Rect, Text } from 'react-konva';
-import type Konva from 'konva';
-import type { EstadoMesa, FormaMesa } from '@/types/mesa';
-import { COLOR_POR_ESTADO, dimensionesTrasTransformar } from './mapa-mesas.utils';
+import { forwardRef } from "react";
+import { Circle, Group, Rect, Text } from "react-konva";
+import type Konva from "konva";
+import type { EstadoMesa, FormaMesa } from "@/types/mesa";
+import {
+  COLOR_POR_ESTADO,
+  dimensionesTrasTransformar,
+  limitarCentro,
+  semiExtension,
+  type Lienzo,
+} from "./mapa-mesas.utils";
 
-const COLOR_SELECCION = '#8069BF'; // primary de tailwind.config.ts, para consistencia visual con el resto del admin
-const COLOR_BORDE = '#494551'; // on-surface-variant
+const COLOR_SELECCION = "#8069BF"; // primary de tailwind.config.ts, para consistencia visual con el resto del admin
+const COLOR_BORDE = "#494551"; // on-surface-variant
 
 export interface MesaShapeProps {
   numero: number;
@@ -20,9 +26,17 @@ export interface MesaShapeProps {
   rotacion: number;
   seleccionada: boolean;
   editable: boolean;
+  /** Área dibujable del editor: la mesa no se puede arrastrar fuera de ella. */
+  lienzo: Lienzo;
   onSeleccionar: () => void;
   onArrastrar: (x: number, y: number) => void;
-  onTransformar: (cambios: { x: number; y: number; ancho: number; alto: number; rotacion: number }) => void;
+  onTransformar: (cambios: {
+    x: number;
+    y: number;
+    ancho: number;
+    alto: number;
+    rotacion: number;
+  }) => void;
   onEditarNumero: () => void;
 }
 
@@ -39,88 +53,105 @@ export interface MesaShapeProps {
  * legible en pantalla aunque la mesa esté rotada — girar los dígitos junto
  * con una mesa rectangular no ayuda a nadie a leerlos.
  */
-export const MesaShape = forwardRef<Konva.Group, MesaShapeProps>(function MesaShape(
-  {
-    numero,
-    estado,
-    x,
-    y,
-    forma,
-    ancho,
-    alto,
-    rotacion,
-    seleccionada,
-    editable,
-    onSeleccionar,
-    onArrastrar,
-    onTransformar,
-    onEditarNumero,
-  },
-  ref,
-) {
-  const fill = COLOR_POR_ESTADO[estado];
-  const strokeWidth = seleccionada ? 3 : 1.5;
-  const stroke = seleccionada ? COLOR_SELECCION : COLOR_BORDE;
+export const MesaShape = forwardRef<Konva.Group, MesaShapeProps>(
+  function MesaShape(
+    {
+      numero,
+      estado,
+      x,
+      y,
+      forma,
+      ancho,
+      alto,
+      rotacion,
+      seleccionada,
+      editable,
+      lienzo,
+      onSeleccionar,
+      onArrastrar,
+      onTransformar,
+      onEditarNumero,
+    },
+    ref,
+  ) {
+    const fill = COLOR_POR_ESTADO[estado];
+    const strokeWidth = seleccionada ? 3 : 1.5;
+    const stroke = seleccionada ? COLOR_SELECCION : COLOR_BORDE;
 
-  const handleTransformEnd = (e: Konva.KonvaEventObject<Event>) => {
-    const node = e.target as Konva.Group;
-    const scaleX = node.scaleX();
-    const scaleY = node.scaleY();
-    // Konva expresa un resize como escala (scaleX/scaleY), no como cambio de
-    // width/height — si no la "consumimos" acá reseteándola a 1, el próximo
-    // resize se compone sobre una escala que ya no arranca en 1 y las
-    // dimensiones divergen de lo que se ve en pantalla.
-    node.scaleX(1);
-    node.scaleY(1);
+    const handleTransformEnd = (e: Konva.KonvaEventObject<Event>) => {
+      const node = e.target as Konva.Group;
+      const scaleX = node.scaleX();
+      const scaleY = node.scaleY();
+      // Konva expresa un resize como escala (scaleX/scaleY), no como cambio de
+      // width/height — si no la "consumimos" acá reseteándola a 1, el próximo
+      // resize se compone sobre una escala que ya no arranca en 1 y las
+      // dimensiones divergen de lo que se ve en pantalla.
+      node.scaleX(1);
+      node.scaleY(1);
 
-    onTransformar({
-      x: node.x(),
-      y: node.y(),
-      ...dimensionesTrasTransformar(ancho, alto, scaleX, scaleY),
-      rotacion: node.rotation(),
-    });
-  };
+      onTransformar({
+        x: node.x(),
+        y: node.y(),
+        ...dimensionesTrasTransformar(ancho, alto, scaleX, scaleY),
+        rotacion: node.rotation(),
+      });
+    };
 
-  return (
-    <Group
-      ref={ref}
-      x={x}
-      y={y}
-      rotation={rotacion}
-      draggable={editable}
-      onClick={onSeleccionar}
-      onTap={onSeleccionar}
-      onDragEnd={(e) => onArrastrar(e.target.x(), e.target.y())}
-      onDblClick={editable ? onEditarNumero : undefined}
-      onDblTap={editable ? onEditarNumero : undefined}
-      onTransformEnd={handleTransformEnd}
-    >
-      {forma === 'CIRCULO' ? (
-        <Circle radius={ancho / 2} fill={fill} stroke={stroke} strokeWidth={strokeWidth} />
-      ) : (
-        <Rect
-          width={ancho}
-          height={alto}
-          offsetX={ancho / 2}
-          offsetY={alto / 2}
-          cornerRadius={forma === 'RECTANGULO' ? 6 : 4}
-          fill={fill}
-          stroke={stroke}
-          strokeWidth={strokeWidth}
+    return (
+      <Group
+        ref={ref}
+        x={x}
+        y={y}
+        rotation={rotacion}
+        draggable={editable}
+        // Konva pasa la posición absoluta (relativa al Stage, que no tiene
+        // escala ni desplazamiento), así que coincide con x/y del layout.
+        dragBoundFunc={(pos) =>
+          limitarCentro(
+            pos,
+            semiExtension({ forma, ancho, alto, rotacion }),
+            lienzo,
+          )
+        }
+        onClick={onSeleccionar}
+        onTap={onSeleccionar}
+        onDragEnd={(e) => onArrastrar(e.target.x(), e.target.y())}
+        onDblClick={editable ? onEditarNumero : undefined}
+        onDblTap={editable ? onEditarNumero : undefined}
+        onTransformEnd={handleTransformEnd}
+      >
+        {forma === "CIRCULO" ? (
+          <Circle
+            radius={ancho / 2}
+            fill={fill}
+            stroke={stroke}
+            strokeWidth={strokeWidth}
+          />
+        ) : (
+          <Rect
+            width={ancho}
+            height={alto}
+            offsetX={ancho / 2}
+            offsetY={alto / 2}
+            cornerRadius={forma === "RECTANGULO" ? 6 : 4}
+            fill={fill}
+            stroke={stroke}
+            strokeWidth={strokeWidth}
+          />
+        )}
+        <Text
+          text={String(numero)}
+          rotation={-rotacion}
+          width={80}
+          align="center"
+          offsetX={40}
+          offsetY={8}
+          fontSize={16}
+          fontStyle="bold"
+          fill="#ffffff"
+          listening={false}
         />
-      )}
-      <Text
-        text={String(numero)}
-        rotation={-rotacion}
-        width={80}
-        align="center"
-        offsetX={40}
-        offsetY={8}
-        fontSize={16}
-        fontStyle="bold"
-        fill="#ffffff"
-        listening={false}
-      />
-    </Group>
-  );
-});
+      </Group>
+    );
+  },
+);

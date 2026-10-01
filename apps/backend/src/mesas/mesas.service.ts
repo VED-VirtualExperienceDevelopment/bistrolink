@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -8,6 +9,12 @@ import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { KdsGateway } from '../pedidos/kds.gateway';
 import { MesaLayoutDto } from './dto/mesa-layout.dto';
 import { MesaLayoutItemDto } from './dto/guardar-layout.dto';
+
+/** "mesa 3" o "mesas 3, 5", para los mensajes de error del editor. */
+function listarMesas(numeros: number[]): string {
+  const ordenados = [...numeros].sort((a, b) => a - b).join(', ');
+  return numeros.length === 1 ? `mesa ${ordenados}` : `mesas ${ordenados}`;
+}
 
 @Injectable()
 export class MesasService {
@@ -61,12 +68,25 @@ export class MesasService {
    * caso de uso natural es "arrastrar N mesas y guardar una vez". Corre
    * dentro de una única transacción tenant-scoped (runInTenantContext ya la
    * abre), así que un guardado parcial nunca deja el mapa a medio mover.
+   *
+   * BL-58: `eliminar` son ids de mesas que el administrador quitó del mapa.
+   * Se borran primero (así una mesa nueva puede reusar el número de una
+   * borrada) y solo si están LIBRES y sin pedidos. Si alguna no se puede
+   * borrar, se rechaza el guardado completo con 409 y no cambia nada.
    */
   async guardarLayout(
     tenantId: string,
     restauranteId: string,
     mesas: MesaLayoutItemDto[],
+    eliminar: string[] = [],
   ) {
+    const idsActualizados = new Set(mesas.flatMap((m) => (m.id ? [m.id] : [])));
+    if (eliminar.some((id) => idsActualizados.has(id))) {
+      throw new BadRequestException(
+        'Una mesa no puede actualizarse y eliminarse en el mismo guardado',
+      );
+    }
+
     return this.tenantPrisma.runInTenantContext(tenantId, async (tx) => {
       // El restaurante tiene que ser de este tenant. Sin este chequeo, una
       // mesa nueva (sin id) se crearía con el tenantId propio colgada del
@@ -82,6 +102,10 @@ export class MesasService {
         throw new NotFoundException(
           'Restaurante no encontrado para este establecimiento',
         );
+      }
+
+      if (eliminar.length > 0) {
+        await this.eliminarMesas(tx, tenantId, restauranteId, eliminar);
       }
 
       const resultado = [];
@@ -151,6 +175,85 @@ export class MesasService {
 
       return resultado;
     });
+  }
+
+  /**
+   * BL-58: borrado físico de mesas desde el editor del mapa. Una mesa con
+   * pedidos no se puede borrar (Pedido.mesaId es FK obligatoria y el
+   * historial de pedidos, pagos y comprobantes tiene que conservarse), y una
+   * mesa ocupada o en proceso de pago tampoco, aunque todavía no tenga
+   * pedidos. La mesa virtual de HU-003 nunca aparece en el mapa, así que se
+   * trata como no encontrada.
+   */
+  private async eliminarMesas(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    restauranteId: string,
+    ids: string[],
+  ) {
+    const encontradas = await tx.mesa.findMany({
+      where: { id: { in: ids } },
+      select: {
+        id: true,
+        numero: true,
+        estado: true,
+        esVirtual: true,
+        tenantId: true,
+        restauranteId: true,
+        _count: { select: { pedidos: true } },
+      },
+    });
+    const porId = new Map(encontradas.map((m) => [m.id, m]));
+
+    // Misma defensa en profundidad que en las actualizaciones: además de
+    // RLS, la mesa tiene que ser de este tenant y de este restaurante.
+    for (const id of ids) {
+      const mesa = porId.get(id);
+      if (
+        mesa?.tenantId !== tenantId ||
+        mesa?.restauranteId !== restauranteId ||
+        mesa?.esVirtual
+      ) {
+        throw new NotFoundException(
+          `Mesa ${id} no encontrada para este establecimiento`,
+        );
+      }
+    }
+
+    const noLibres = encontradas
+      .filter((m) => m.estado !== MesaEstado.LIBRE)
+      .map((m) => m.numero);
+    if (noLibres.length > 0) {
+      throw new ConflictException(
+        `No se pueden eliminar del mapa mesas que no están libres (${listarMesas(noLibres)}). Esperá a que queden libres.`,
+      );
+    }
+
+    const conPedidos = encontradas
+      .filter((m) => m._count.pedidos > 0)
+      .map((m) => m.numero);
+    if (conPedidos.length > 0) {
+      throw new ConflictException(
+        `No se pueden eliminar del mapa mesas con pedidos registrados (${listarMesas(conPedidos)}).`,
+      );
+    }
+
+    try {
+      await tx.mesa.deleteMany({
+        where: { id: { in: ids }, tenantId, restauranteId },
+      });
+    } catch (err) {
+      // Carrera: entró un pedido entre el chequeo y el borrado.
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2003'
+      ) {
+        throw new ConflictException(
+          'No se pueden eliminar del mapa mesas con pedidos registrados.',
+        );
+      }
+      throw err;
+    }
   }
 
   /**
