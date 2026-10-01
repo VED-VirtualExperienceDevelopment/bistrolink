@@ -44,7 +44,9 @@ describe('StorageService', () => {
 
     it('should return null when signing fails', async () => {
       process.env.S3_BUCKET_IMAGES = 'test-bucket';
-      (getSignedUrl as jest.Mock).mockRejectedValue(new Error('Signing failed'));
+      (getSignedUrl as jest.Mock).mockRejectedValue(
+        new Error('Signing failed'),
+      );
 
       const result = await service.getSignedImageUrl('test-key.jpg');
 
@@ -67,10 +69,17 @@ describe('StorageService', () => {
   describe('getPresignedPostUrl', () => {
     it('should return presigned POST URL with correct parameters', async () => {
       process.env.S3_BUCKET_IMAGES = 'test-bucket';
-      const mockPresignedData = { url: 'https://s3.amazonaws.com/bucket', fields: { key: 'test-key' } };
+      const mockPresignedData = {
+        url: 'https://s3.amazonaws.com/bucket',
+        fields: { key: 'test-key' },
+      };
       (createPresignedPost as jest.Mock).mockResolvedValue(mockPresignedData);
 
-      const result = await service.getPresignedPostUrl('image.jpg', 'image/jpeg', 'tenant-123');
+      const result = await service.getPresignedPostUrl(
+        'image.jpg',
+        'image/jpeg',
+        'tenant-123',
+      );
 
       expect(result).toHaveProperty('url');
       expect(result).toHaveProperty('fields');
@@ -81,7 +90,10 @@ describe('StorageService', () => {
 
     it('should set correct content length range condition', async () => {
       process.env.S3_BUCKET_IMAGES = 'test-bucket';
-      (createPresignedPost as jest.Mock).mockResolvedValue({ url: 'https://example.com', fields: {} });
+      (createPresignedPost as jest.Mock).mockResolvedValue({
+        url: 'https://example.com',
+        fields: {},
+      });
 
       await service.getPresignedPostUrl('image.jpg', 'image/jpeg', 'tenant-1');
 
@@ -89,7 +101,11 @@ describe('StorageService', () => {
         expect.anything(),
         expect.objectContaining({
           Conditions: expect.arrayContaining([
-            expect.arrayContaining(['content-length-range', 0, 5 * 1024 * 1024]),
+            expect.arrayContaining([
+              'content-length-range',
+              0,
+              5 * 1024 * 1024,
+            ]),
           ]),
         }),
       );
@@ -97,7 +113,10 @@ describe('StorageService', () => {
 
     it('should set correct expires time', async () => {
       process.env.S3_BUCKET_IMAGES = 'test-bucket';
-      (createPresignedPost as jest.Mock).mockResolvedValue({ url: 'https://example.com', fields: {} });
+      (createPresignedPost as jest.Mock).mockResolvedValue({
+        url: 'https://example.com',
+        fields: {},
+      });
 
       await service.getPresignedPostUrl('image.jpg', 'image/jpeg', 'tenant-1');
 

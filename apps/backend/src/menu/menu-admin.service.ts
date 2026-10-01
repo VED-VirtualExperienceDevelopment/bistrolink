@@ -1,6 +1,7 @@
-import { Injectable, NotFoundException, Logger, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { MenuGateway } from './menu.gateway';
+import { CreateItemDto } from './dto/create-item.dto';
 import { UpdateItemDto } from './dto/update-item.dto';
 import { UpdateCategoriaDto } from './dto/update-categoria.dto';
 
@@ -19,20 +20,19 @@ export class MenuAdminService {
     keycloakId: string,
   ): Promise<string> {
     if (restauranteId) return restauranteId;
-
+    
     const result = await this.prisma.runInTenantContext(tenantId, async (tx) => {
       return await tx.usuario.findFirst({
         where: { keycloakId },
         select: { restauranteId: true },
       });
     });
-
+    
     if (!result?.restauranteId) {
       throw new UnauthorizedException(
         'No se pudo determinar el restaurante del usuario. Verifica tu configuración de Keycloak o la tabla Usuario.',
       );
     }
-
     return result.restauranteId;
   }
 
@@ -46,7 +46,7 @@ export class MenuAdminService {
       restauranteId,
       keycloakId,
     );
-
+    
     return this.prisma.runInTenantContext(tenantId, async (tx) => {
       return await tx.categoriaCarta.findMany({
         where: { restauranteId: finalRestauranteId },
@@ -69,7 +69,7 @@ export class MenuAdminService {
       restauranteId,
       keycloakId,
     );
-
+    
     return this.prisma.runInTenantContext(tenantId, async (tx) => {
       const nuevaCategoria = await tx.categoriaCarta.create({
         data: {
@@ -79,7 +79,6 @@ export class MenuAdminService {
           orden: data.orden ?? 0,
         },
       });
-
       this.logger.log(`Categoría creada: ${nuevaCategoria.id}`);
       return nuevaCategoria;
     });
@@ -94,7 +93,6 @@ export class MenuAdminService {
       const existing = await tx.categoriaCarta.findFirst({
         where: { id: categoriaId, tenantId },
       });
-
       if (!existing) {
         throw new NotFoundException(
           'Categoría no encontrada o no pertenece a este tenant',
@@ -118,22 +116,39 @@ export class MenuAdminService {
     });
   }
 
-  async createItem(
-    tenantId: string,
-    data: {
-      categoriaId: string;
-      nombre: string;
-      precio: string;
-      descripcion?: string;
-      disponible?: boolean;
-      imagenKey?: string;
-    },
-  ) {
+  async deleteCategoria(tenantId: string, categoriaId: string) {
+    return this.prisma.runInTenantContext(tenantId, async (tx) => {
+      const existing = await tx.categoriaCarta.findFirst({
+        where: { id: categoriaId, tenantId },
+      });
+      if (!existing) {
+        throw new NotFoundException(
+          'Categoría no encontrada o no pertenece a este tenant',
+        );
+      }
+
+      // Soft Delete: Desactivamos la categoría en lugar de borrarla físicamente
+      const updated = await tx.categoriaCarta.update({
+        where: { id: categoriaId },
+        data: { activo: false },
+      });
+
+      // Emitir evento para que el frontend actualice la UI en tiempo real
+      this.menuGateway.emitCategoriaUpdated(tenantId, {
+        categoriaId,
+        activo: false,
+      });
+
+      this.logger.log(`Categoría eliminada (soft delete): ${categoriaId}`);
+      return updated;
+    });
+  }
+
+  async createItem(tenantId: string, data: CreateItemDto) {
     return this.prisma.runInTenantContext(tenantId, async (tx) => {
       const categoria = await tx.categoriaCarta.findFirst({
         where: { id: data.categoriaId, tenantId },
       });
-
       if (!categoria) {
         throw new NotFoundException(
           'La categoría especificada no existe o no pertenece a este tenant',
@@ -148,6 +163,11 @@ export class MenuAdminService {
         },
       });
 
+      this.menuGateway.emitItemDataUpdated(tenantId, {
+        itemId: nuevoItem.id,
+        data: nuevoItem as unknown as Record<string, unknown>,
+      });
+
       this.logger.log(`Ítem creado: ${nuevoItem.id}`);
       return nuevoItem;
     });
@@ -158,7 +178,6 @@ export class MenuAdminService {
       const existing = await tx.itemCarta.findFirst({
         where: { id: itemId, tenantId },
       });
-
       if (!existing) {
         throw new NotFoundException(
           'Ítem no encontrado o no pertenece a este tenant',
@@ -181,14 +200,40 @@ export class MenuAdminService {
         data: dto,
       });
 
-      if (dto.disponible !== undefined) {
-        this.menuGateway.emitItemUpdated(tenantId, {
-          itemId,
-          disponible: dto.disponible,
-        });
-      }
+      this.menuGateway.emitItemDataUpdated(tenantId, {
+        itemId,
+        data: updated as unknown as Record<string, unknown>,
+      });
 
       this.logger.log(`Ítem actualizado: ${itemId}`);
+      return updated;
+    });
+  }
+
+  async deleteItem(tenantId: string, itemId: string) {
+    return this.prisma.runInTenantContext(tenantId, async (tx) => {
+      const existing = await tx.itemCarta.findFirst({
+        where: { id: itemId, tenantId },
+      });
+      if (!existing) {
+        throw new NotFoundException(
+          'Ítem no encontrado o no pertenece a este tenant',
+        );
+      }
+
+      // Soft Delete: Marcamos como no disponible en lugar de borrar físicamente
+      const updated = await tx.itemCarta.update({
+        where: { id: itemId },
+        data: { disponible: false },
+      });
+
+      // Emitir evento para que el menú público lo quite inmediatamente
+      this.menuGateway.emitItemUpdated(tenantId, {
+        itemId,
+        disponible: false,
+      });
+
+      this.logger.log(`Ítem eliminado (soft delete): ${itemId}`);
       return updated;
     });
   }

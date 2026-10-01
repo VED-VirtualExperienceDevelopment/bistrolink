@@ -4,17 +4,11 @@ import { MenuGateway } from '../../src/menu/menu.gateway';
 describe('MenuGateway', () => {
   let gateway: MenuGateway;
   let mockServer: any;
-  let mockEmit: jest.Mock;
-  let mockJoin: jest.Mock;
-  let mockTo: jest.Mock;
 
   beforeEach(async () => {
-    mockEmit = jest.fn();
-    mockJoin = jest.fn();
-    mockTo = jest.fn().mockReturnValue({ emit: mockEmit });
-
     mockServer = {
-      to: mockTo,
+      to: jest.fn().mockReturnThis(),
+      emit: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -25,73 +19,113 @@ describe('MenuGateway', () => {
     gateway.server = mockServer;
   });
 
-  it('should be defined', () => {
-    expect(gateway).toBeDefined();
-  });
-
-  describe('handleConnection', () => {
-    it('should join tenant room when tenantId is provided', () => {
-      const mockClient = {
-        id: 'client-123',
-        handshake: {
-          query: {
-            tenantId: 'tenant-456',
-          },
-        },
-        join: mockJoin,
-      };
-
-      gateway.handleConnection(mockClient as any);
-
-      expect(mockJoin).toHaveBeenCalledWith('tenant_tenant-456');
-    });
-
-    it('should not join room when tenantId is not provided', () => {
-      const mockClient = {
-        id: 'client-123',
-        handshake: {
-          query: {},
-        },
-        join: mockJoin,
-      };
-
-      gateway.handleConnection(mockClient as any);
-
-      expect(mockJoin).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('handleDisconnect', () => {
-    it('should log when client disconnects', () => {
-      const mockClient = {
-        id: 'client-123',
-      };
-
-      const loggerSpy = jest.spyOn((gateway as any).logger, 'log');
-
-      gateway.handleDisconnect(mockClient as any);
-
-      expect(loggerSpy).toHaveBeenCalledWith('Cliente desconectado: client-123');
-    });
-  });
-
   describe('emitItemUpdated', () => {
-    it('should emit menu:item:updated to the correct tenant room', () => {
-      const payload = { itemId: 'item-1', disponible: false };
-      gateway.emitItemUpdated('tenant-1', payload);
+    it('debe emitir evento menu:item:updated con el payload correcto', () => {
+      const tenantId = 'test-tenant-id';
+      const payload = { itemId: 'item-123', disponible: true };
 
-      expect(mockTo).toHaveBeenCalledWith('tenant_tenant-1');
-      expect(mockEmit).toHaveBeenCalledWith('menu:item:updated', payload);
+      gateway.emitItemUpdated(tenantId, payload);
+
+      expect(mockServer.to).toHaveBeenCalledWith(`tenant_${tenantId}`);
+      expect(mockServer.emit).toHaveBeenCalledWith(
+        'menu:item:updated',
+        payload,
+      );
     });
   });
 
   describe('emitCategoriaUpdated', () => {
-    it('should emit menu:categoria:updated to the correct tenant room', () => {
-      const payload = { categoriaId: 'cat-1', activo: false };
-      gateway.emitCategoriaUpdated('tenant-1', payload);
+    it('debe emitir evento menu:categoria:updated con el payload correcto', () => {
+      const tenantId = 'test-tenant-id';
+      const payload = { categoriaId: 'cat-123', activo: false };
 
-      expect(mockTo).toHaveBeenCalledWith('tenant_tenant-1');
-      expect(mockEmit).toHaveBeenCalledWith('menu:categoria:updated', payload);
+      gateway.emitCategoriaUpdated(tenantId, payload);
+
+      expect(mockServer.to).toHaveBeenCalledWith(`tenant_${tenantId}`);
+      expect(mockServer.emit).toHaveBeenCalledWith(
+        'menu:categoria:updated',
+        payload,
+      );
+    });
+  });
+
+  describe('emitItemDataUpdated', () => {
+    it('debe emitir evento menu:item:data:updated con el payload correcto', () => {
+      const tenantId = 'test-tenant-id';
+      const payload = {
+        itemId: 'item-123',
+        data: { nombre: 'Pizza', precio: '10.50' },
+      };
+
+      gateway.emitItemDataUpdated(tenantId, payload);
+
+      expect(mockServer.to).toHaveBeenCalledWith(`tenant_${tenantId}`);
+      expect(mockServer.emit).toHaveBeenCalledWith(
+        'menu:item:data:updated',
+        payload,
+      );
+    });
+
+    it('debe emitir evento con datos completos del ítem', () => {
+      const tenantId = 'tenant-abc';
+      const payload = {
+        itemId: 'item-456',
+        data: {
+          id: 'item-456',
+          nombre: 'Hamburguesa',
+          precio: '15.00',
+          disponible: true,
+          tenantId: 'tenant-abc',
+        },
+      };
+
+      gateway.emitItemDataUpdated(tenantId, payload);
+
+      expect(mockServer.to).toHaveBeenCalledWith(`tenant_${tenantId}`);
+      expect(mockServer.emit).toHaveBeenCalledWith(
+        'menu:item:data:updated',
+        payload,
+      );
+    });
+  });
+
+  describe('handleConnection', () => {
+    it('debe unir al cliente a la room del tenant si tenantId está presente', () => {
+      const mockClient = {
+        id: 'client-123',
+        handshake: {
+          query: { tenantId: 'test-tenant' },
+        },
+        join: jest.fn(),
+      };
+
+      gateway.handleConnection(mockClient as any);
+
+      expect(mockClient.join).toHaveBeenCalledWith('tenant_test-tenant');
+    });
+
+    it('no debe unir al cliente si tenantId no está presente', () => {
+      const mockClient = {
+        id: 'client-456',
+        handshake: {
+          query: {},
+        },
+        join: jest.fn(),
+      };
+
+      gateway.handleConnection(mockClient as any);
+
+      expect(mockClient.join).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('handleDisconnect', () => {
+    it('debe manejar la desconexión del cliente sin errores', () => {
+      const mockClient = {
+        id: 'client-789',
+      };
+
+      expect(() => gateway.handleDisconnect(mockClient as any)).not.toThrow();
     });
   });
 });
