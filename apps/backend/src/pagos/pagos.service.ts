@@ -58,11 +58,14 @@ export class PagosService {
     }
 
     // Fase 3: guardar el resultado.
-    const estado = resultado.pendiente
-      ? 'PENDIENTE'
-      : resultado.aprobado
-        ? 'APROBADO'
-        : 'RECHAZADO';
+    let estado: 'PENDIENTE' | 'APROBADO' | 'RECHAZADO';
+    if (resultado.pendiente) {
+      estado = 'PENDIENTE';
+    } else if (resultado.aprobado) {
+      estado = 'APROBADO';
+    } else {
+      estado = 'RECHAZADO';
+    }
 
     const pagoFinal = await this.tenantPrisma.runInTenantContext(
       tenantId,

@@ -11,7 +11,7 @@ const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function uuidABase64Url(uuid: string): string {
-  return Buffer.from(uuid.replace(/-/g, ''), 'hex').toString('base64url');
+  return Buffer.from(uuid.replaceAll('-', ''), 'hex').toString('base64url');
 }
 
 function base64UrlAUuid(texto: string): string | null {
@@ -36,8 +36,7 @@ export function leerReferenciaExterna(
   referencia?: string,
 ): { tenantId: string; pedidoId: string } | null {
   if (
-    !referencia ||
-    referencia.length !== VERSION.length + LARGO_UUID_B64 * 2 ||
+    referencia?.length !== VERSION.length + LARGO_UUID_B64 * 2 ||
     !referencia.startsWith(VERSION)
   ) {
     return null;

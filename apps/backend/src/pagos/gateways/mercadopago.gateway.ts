@@ -13,7 +13,11 @@ import {
 } from './pago-gateway.interface';
 
 const MP_ORDERS_URL = 'https://api.mercadopago.com/v1/orders';
-const ESTADOS_PENDIENTES = ['created', 'processing', 'action_required'];
+const ESTADOS_PENDIENTES = new Set([
+  'created',
+  'processing',
+  'action_required',
+]);
 
 interface DatosMercadoPago {
   token: string;
@@ -52,7 +56,7 @@ const DETALLES_RECHAZO = new Set(['insufficient_amount', 'rejected_by_issuer']);
 // intento reintentado usa la misma X-Idempotency-Key en Mercado Pago.
 export function idempotencyKeyMp(tenantId: string, clave: string): string {
   const hex = createHash('sha256').update(`${tenantId}:${clave}`).digest('hex');
-  const variante = ((parseInt(hex[16], 16) & 0x3) | 0x8).toString(16);
+  const variante = ((Number.parseInt(hex[16], 16) & 0x3) | 0x8).toString(16);
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-${variante}${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
 }
 
@@ -168,7 +172,7 @@ export class MercadoPagoGateway implements PagoGateway {
     const estado = cuerpo.status ?? '';
     const detalle = cuerpo.status_detail;
     const aprobado = estado === 'processed' && detalle === 'accredited';
-    const pendiente = ESTADOS_PENDIENTES.includes(estado);
+    const pendiente = ESTADOS_PENDIENTES.has(estado);
 
     Logger.log(
       `Mercado Pago: order ${cuerpo.id} -> ${estado}/${detalle}`,

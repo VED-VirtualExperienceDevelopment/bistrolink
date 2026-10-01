@@ -10,7 +10,7 @@ import { leerReferenciaExterna } from './referencia-externa';
 // TODO(Plexo): este servicio y la verificación de firma son específicos de
 // Mercado Pago. Cuando lleguen las credenciales de Plexo y se conozca su
 // formato real de notificación, generalizar la interfaz PagoGateway con
-// verificarFirma()/consultarEstado() en vez de duplicar este servicio.git status
+// verificarFirma()/consultarEstado() en vez de duplicar este servicio.
 
 type EstadoPago = 'PENDIENTE' | 'APROBADO' | 'RECHAZADO' | 'REEMBOLSADO';
 
