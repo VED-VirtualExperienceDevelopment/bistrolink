@@ -10,7 +10,7 @@ import type {
   GuardarLayoutItem,
   MesaConLayout,
   MesaEstadoActualizadoPayload,
-} from '@/types/mesa';
+} from "@/types/mesa";
 
 /** Estado local de una mesa mientras se edita en el canvas. */
 export interface MesaEnEdicion {
@@ -30,13 +30,13 @@ export interface MesaEnEdicion {
 }
 
 export const COLOR_POR_ESTADO: Record<EstadoMesa, string> = {
-  LIBRE: '#4C9A5A',
-  OCUPADA: '#BA1A1A',
-  EN_PROCESO_DE_PAGO: '#C9A74D',
+  LIBRE: "#4C9A5A",
+  OCUPADA: "#BA1A1A",
+  EN_PROCESO_DE_PAGO: "#C9A74D",
 };
 
 const LAYOUT_POR_DEFECTO = {
-  forma: 'CIRCULO' as FormaMesa,
+  forma: "CIRCULO" as FormaMesa,
   ancho: 80,
   alto: 80,
   rotacion: 0,
@@ -60,13 +60,19 @@ const COLUMNAS_GRID_DEFECTO = 5;
  */
 export function posicionGridPorDefecto(indice: number) {
   return {
-    x: OFFSET_GRID_DEFECTO + (indice % COLUMNAS_GRID_DEFECTO) * ESPACIADO_GRID_DEFECTO,
-    y: OFFSET_GRID_DEFECTO + Math.floor(indice / COLUMNAS_GRID_DEFECTO) * ESPACIADO_GRID_DEFECTO,
+    x:
+      OFFSET_GRID_DEFECTO +
+      (indice % COLUMNAS_GRID_DEFECTO) * ESPACIADO_GRID_DEFECTO,
+    y:
+      OFFSET_GRID_DEFECTO +
+      Math.floor(indice / COLUMNAS_GRID_DEFECTO) * ESPACIADO_GRID_DEFECTO,
   };
 }
 
 /** Convierte la respuesta de GET /mesas/layout al estado editable del canvas. */
-export function mesasConLayoutAEdicion(mesas: MesaConLayout[]): MesaEnEdicion[] {
+export function mesasConLayoutAEdicion(
+  mesas: MesaConLayout[],
+): MesaEnEdicion[] {
   return mesas.map((mesa, indice) => {
     if (mesa.layout) {
       return {
@@ -89,11 +95,15 @@ export function mesasConLayoutAEdicion(mesas: MesaConLayout[]): MesaEnEdicion[] 
 }
 
 /** Layout por defecto para una mesa nueva creada desde el botón "Agregar mesa". */
-export function nuevaMesaEnEdicion(clientId: string, numero: number, indice: number): MesaEnEdicion {
+export function nuevaMesaEnEdicion(
+  clientId: string,
+  numero: number,
+  indice: number,
+): MesaEnEdicion {
   return {
     clientId,
     numero,
-    estado: 'LIBRE',
+    estado: "LIBRE",
     ...posicionGridPorDefecto(indice),
     ...LAYOUT_POR_DEFECTO,
   };
@@ -109,7 +119,9 @@ export function normalizarRotacion(grados: number): number {
 }
 
 /** El próximo número de mesa libre — sugerencia para "Agregar mesa", no una garantía contra colisiones. */
-export function siguienteNumeroDisponible(mesas: Pick<MesaEnEdicion, 'numero'>[]): number {
+export function siguienteNumeroDisponible(
+  mesas: Pick<MesaEnEdicion, "numero">[],
+): number {
   const usados = new Set(mesas.map((m) => m.numero));
   let candidato = 1;
   while (usados.has(candidato)) candidato += 1;
@@ -117,16 +129,22 @@ export function siguienteNumeroDisponible(mesas: Pick<MesaEnEdicion, 'numero'>[]
 }
 
 /** Números de mesa repetidos en el mapa actual — el backend los rechazaría con 409 (constraint único por restaurante). */
-export function numerosDuplicados(mesas: Pick<MesaEnEdicion, 'numero'>[]): number[] {
+export function numerosDuplicados(
+  mesas: Pick<MesaEnEdicion, "numero">[],
+): number[] {
   const vistos = new Map<number, number>();
   for (const { numero } of mesas) {
     vistos.set(numero, (vistos.get(numero) ?? 0) + 1);
   }
-  return [...vistos.entries()].filter(([, cantidad]) => cantidad > 1).map(([numero]) => numero);
+  return [...vistos.entries()]
+    .filter(([, cantidad]) => cantidad > 1)
+    .map(([numero]) => numero);
 }
 
 /** Arma el body de POST /mesas/layout a partir del estado editable del canvas. */
-export function aGuardarLayoutItems(mesas: MesaEnEdicion[]): GuardarLayoutItem[] {
+export function aGuardarLayoutItems(
+  mesas: MesaEnEdicion[],
+): GuardarLayoutItem[] {
   // clientId y estado son de uso exclusivo del editor (el backend no los
   // conoce): clientId identifica la mesa en el canvas antes de tener un id
   // real, y estado lo cambia HU-017, no este guardado de layout. Se arma el
@@ -149,8 +167,8 @@ export function aGuardarLayoutItems(mesas: MesaEnEdicion[]): GuardarLayoutItem[]
  * componente para poder testearla sin montar el canvas, igual que
  * resolverDestinoLanding en landing.utils.ts.
  */
-export function puedeEditarMapa(hasRole: (rol: 'ADMIN') => boolean): boolean {
-  return hasRole('ADMIN');
+export function puedeEditarMapa(hasRole: (rol: "ADMIN") => boolean): boolean {
+  return hasRole("ADMIN");
 }
 
 /**
@@ -180,6 +198,109 @@ export function dimensionesTrasTransformar(
   };
 }
 
+// --- Límites del lienzo -------------------------------------------------------
+// Sin estos límites, una mesa arrastrada fuera del borde quedaba guardada
+// con esas coordenadas pero invisible (el contenedor recorta lo que sale del
+// canvas) y no había forma de recuperarla desde el editor.
+
+/** Tamaño del área dibujable del editor, en px. */
+export interface Lienzo {
+  ancho: number;
+  alto: number;
+}
+
+/**
+ * Mitad del ancho y del alto que ocupa la mesa en pantalla, medidos desde su
+ * centro (x, y siempre son el centro, ver MesaShape). Para un rectángulo
+ * rotado se usa la caja envolvente alineada a los ejes, así la mesa entera
+ * queda dentro del lienzo en cualquier ángulo. El círculo usa ancho/2 como
+ * radio, igual que MesaShape.
+ */
+export function semiExtension({
+  forma,
+  ancho,
+  alto,
+  rotacion,
+}: Pick<MesaEnEdicion, "forma" | "ancho" | "alto" | "rotacion">): {
+  dx: number;
+  dy: number;
+} {
+  if (forma === "CIRCULO") {
+    return { dx: ancho / 2, dy: ancho / 2 };
+  }
+  const radianes = (rotacion * Math.PI) / 180;
+  const cos = Math.abs(Math.cos(radianes));
+  const sin = Math.abs(Math.sin(radianes));
+  return {
+    dx: (ancho * cos + alto * sin) / 2,
+    dy: (ancho * sin + alto * cos) / 2,
+  };
+}
+
+function acotar(valor: number, minimo: number, maximo: number): number {
+  // Mesa más grande que el lienzo: se centra en vez de oscilar entre bordes.
+  if (maximo < minimo) return (minimo + maximo) / 2;
+  return Math.min(Math.max(valor, minimo), maximo);
+}
+
+/**
+ * Ajusta el centro de una mesa para que quede entera dentro del lienzo. La
+ * usan el dragBoundFunc de MesaShape (al arrastrar) y el editor (después de
+ * redimensionar/rotar y al agregar una mesa).
+ */
+export function limitarCentro(
+  pos: { x: number; y: number },
+  extension: { dx: number; dy: number },
+  lienzo: Lienzo,
+): { x: number; y: number } {
+  return {
+    x: acotar(pos.x, extension.dx, lienzo.ancho - extension.dx),
+    y: acotar(pos.y, extension.dy, lienzo.alto - extension.dy),
+  };
+}
+
+/**
+ * Ancho mínimo que necesita el lienzo para mostrar todas las mesas. El editor
+ * usa el mayor entre este valor y el ancho del contenedor: si el panel es
+ * más angosto que el salón guardado, aparece scroll horizontal en vez de
+ * esconder (o mover) mesas.
+ */
+export function anchoNecesarioLienzo(mesas: MesaEnEdicion[]): number {
+  // Sin margen extra a propósito: el dragBoundFunc deja el borde derecho de
+  // la mesa justo en el borde del lienzo, y un margen haría crecer el lienzo
+  // un poco cada vez que se arrastra una mesa contra ese borde.
+  return mesas.reduce(
+    (maximo, mesa) => Math.max(maximo, mesa.x + semiExtension(mesa).dx),
+    0,
+  );
+}
+
+/**
+ * Al cargar el mapa, trae dentro del área visible las mesas que hayan
+ * quedado afuera (layouts guardados antes de existir estos límites, o
+ * mesas sin layout más allá de la quinta fila de la grilla por defecto).
+ * Solo corrige lo que el lienzo no puede mostrar: x negativa, y negativa o
+ * y mayor al alto. A la derecha no hay tope, porque el lienzo se ensancha
+ * (ver anchoNecesarioLienzo). Devuelve cuántas mesas se movieron, para
+ * avisarle al administrador que guarde.
+ */
+export function reubicarFueraDelLienzo(
+  mesas: MesaEnEdicion[],
+  altoLienzo: number,
+): { mesas: MesaEnEdicion[]; reubicadas: number } {
+  let reubicadas = 0;
+  const ajustadas = mesas.map((mesa) => {
+    const { x, y } = limitarCentro(mesa, semiExtension(mesa), {
+      ancho: Number.POSITIVE_INFINITY,
+      alto: altoLienzo,
+    });
+    if (x === mesa.x && y === mesa.y) return mesa;
+    reubicadas += 1;
+    return { ...mesa, x, y };
+  });
+  return { mesas: ajustadas, reubicadas };
+}
+
 /**
  * Aplica al estado del editor un evento WS 'mesa:estado_actualizado'. Solo
  * cambia el estado de la mesa con ese id; las mesas nuevas (sin id todavía)
@@ -187,7 +308,9 @@ export function dimensionesTrasTransformar(
  */
 export function aplicarEstadoMesa(
   mesas: MesaEnEdicion[],
-  payload: Pick<MesaEstadoActualizadoPayload, 'mesaId' | 'estado'>,
+  payload: Pick<MesaEstadoActualizadoPayload, "mesaId" | "estado">,
 ): MesaEnEdicion[] {
-  return mesas.map((m) => (m.id === payload.mesaId ? { ...m, estado: payload.estado } : m));
+  return mesas.map((m) =>
+    m.id === payload.mesaId ? { ...m, estado: payload.estado } : m,
+  );
 }

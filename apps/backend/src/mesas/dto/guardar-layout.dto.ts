@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   ArrayMinSize,
   IsArray,
   IsInt,
@@ -37,6 +38,9 @@ export class GuardarLayoutDto {
 
   @IsArray()
   @ArrayMinSize(1)
+  @ArrayMaxSize(200, {
+    message: 'no se pueden guardar más de 200 mesas por vez',
+  })
   @ValidateNested({ each: true })
   @Type(() => MesaLayoutItemDto)
   mesas: MesaLayoutItemDto[];
