@@ -62,6 +62,7 @@ export class StorageService {
         ['content-length-range', 0, 5 * 1024 * 1024], // Máx 5MB
         ['eq', '$Content-Type', contentType],
       ],
+      Fields: { 'Content-Type': contentType },
       Expires: 300, // 5 minutos para completar la subida
     });
 
