@@ -66,9 +66,13 @@ export class PlexoWebhookService {
     const candidatos = await tx.pago.findMany({
       where: { pedidoId, medioPago: 'PLEXO' },
     });
+    // Al cobrar se guarda el id de la SESIÓN de checkout; el callback trae el
+    // id del PAGO, que puede ser otro. Si no coincide por id, el pago es el
+    // PENDIENTE de este pedido (el tenant y el pedido ya vienen verificados
+    // en el referenceId y el monto se valida abajo).
     const pagoBd =
       candidatos.find((p) => p.pasarelaReferencia === pago.id) ??
-      candidatos.find((p) => p.estado === 'PENDIENTE' && !p.pasarelaReferencia);
+      candidatos.find((p) => p.estado === 'PENDIENTE');
 
     if (!pagoBd) {
       Logger.warn(

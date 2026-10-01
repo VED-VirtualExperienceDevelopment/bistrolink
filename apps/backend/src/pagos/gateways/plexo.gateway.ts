@@ -44,6 +44,14 @@ export class PlexoGateway implements PagoGateway {
       throw new Error('PLEXO_MERCHANT_ID no configurado');
     }
 
+    // Plexo llama al callback y redirige al comensal a estas URLs: tienen que
+    // ser públicas (no localhost) y estar definidas, o el pago nunca se resuelve.
+    const backendUrl = process.env.BACKEND_URL;
+    const frontendUrl = process.env.FRONTEND_URL;
+    if (!backendUrl || !frontendUrl) {
+      throw new Error('BACKEND_URL y FRONTEND_URL no configurados');
+    }
+
     const referenceId = armarReferenciaExterna(
       solicitud.tenantId,
       solicitud.pedidoId,
@@ -70,11 +78,11 @@ export class PlexoGateway implements PagoGateway {
         },
         settings: {
           callbacks: {
-            paymentCallbackUrl: `${process.env.BACKEND_URL}/webhooks/plexo`,
+            paymentCallbackUrl: `${backendUrl}/webhooks/plexo`,
           },
           redirects: {
-            defaultUrl: `${process.env.FRONTEND_URL}/pago-completado`,
-            cancelUrl: `${process.env.FRONTEND_URL}/pago-cancelado`,
+            defaultUrl: `${frontendUrl}/pago-completado`,
+            cancelUrl: `${frontendUrl}/pago-cancelado`,
           },
         },
       }),

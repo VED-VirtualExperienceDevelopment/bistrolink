@@ -175,6 +175,18 @@ describe('PlexoGateway', () => {
       );
       expect(fetchMock).not.toHaveBeenCalled();
     });
+
+    it.each(['BACKEND_URL', 'FRONTEND_URL'])(
+      'sin %s: falla antes de pegarle a Plexo (el callback quedaría en "undefined/...")',
+      async (variable) => {
+        delete process.env[variable];
+
+        await expect(new PlexoGateway().cobrar(solicitud())).rejects.toThrow(
+          'BACKEND_URL y FRONTEND_URL',
+        );
+        expect(fetchMock).not.toHaveBeenCalled();
+      },
+    );
   });
 
   describe('consultarPago (BL-78: notificar y luego consultar)', () => {
