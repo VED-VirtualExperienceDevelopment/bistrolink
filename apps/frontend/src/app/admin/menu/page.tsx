@@ -137,7 +137,7 @@ export default function AdminMenuPage() {
   };
 
   useEffect(() => {
-    cargarDatos();
+    void cargarDatos();
 
     const keycloak = getKeycloak();
     const tenantId = keycloak.tokenParsed?.tenant_id || '';

@@ -1,6 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { MenuGateway } from '../../src/menu/menu.gateway';
-import { Logger } from '@nestjs/common';
 
 describe('MenuGateway', () => {
   let gateway: MenuGateway;

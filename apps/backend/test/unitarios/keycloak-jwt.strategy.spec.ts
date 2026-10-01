@@ -1,12 +1,10 @@
-import { KeycloakJwtStrategy, AuthenticatedUser } from '../../src/auth/keycloak-jwt.strategy';
+import { KeycloakJwtStrategy } from '../../src/auth/keycloak-jwt.strategy';
 import { UnauthorizedException } from '@nestjs/common';
 import { passportJwtSecret } from 'jwks-rsa';
 
 jest.mock('jwks-rsa');
 
 describe('KeycloakJwtStrategy', () => {
-  let strategy: KeycloakJwtStrategy;
-
   beforeAll(() => {
     process.env.KEYCLOAK_URL = 'http://localhost:8080';
     process.env.KEYCLOAK_REALM = 'bistrolink';
