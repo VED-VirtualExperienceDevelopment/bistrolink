@@ -21,6 +21,10 @@ const ADMIN_PASS = process.env.TEST_ADMIN_PASSWORD;
 const MOZO_USER = process.env.TEST_MOZO_USERNAME ?? 'mozo-test';
 const MOZO_PASS = process.env.TEST_MOZO_PASSWORD;
 
+// Comensal del tenant Demo: usuario técnico del realm (realm-export.json),
+// el mismo que usa AuthComensalService (`comensal-${tenantId}`).
+const COMENSAL_PASS = process.env.KEYCLOAK_COMENSAL_PASSWORD;
+
 // ── Fixtures del seed (prisma/seed.ts) ──────────────────────────────────────
 const TENANT_EJEMPLO_ID = '554915d0-f7ed-4053-b841-56479df29fd9';
 const RESTAURANTE_EJEMPLO_ID = '87152395-a721-4651-99b8-f21075d1d8ae';
@@ -31,6 +35,7 @@ const RESTAURANTE_EJEMPLO_ID = '87152395-a721-4651-99b8-f21075d1d8ae';
 const TENANT_DEMO_ID = '11111111-1111-1111-1111-111111111111';
 const RESTAURANTE_DEMO_ID = '22222222-2222-2222-2222-222222222222';
 const MESA_DEMO_ID = '33333333-3333-3333-3333-333333333333';
+const COMENSAL_USER = `comensal-${TENANT_DEMO_ID}`;
 
 // Tenant B: el "otro tenant" para los casos de aislamiento (TC-I-031/033).
 // Sus IDs sí son UUID v4 válidos, así que el rechazo que se mida es por
@@ -83,6 +88,7 @@ describe('Mapa de mesas (HU-016) - e2e', () => {
 
   const itConAdmin = ADMIN_PASS ? it : it.skip;
   const itConMozo = MOZO_PASS ? it : it.skip;
+  const itConComensal = COMENSAL_PASS ? it : it.skip;
 
   // Mesa del tenant B creada por la suite (el seed no le carga mesas).
   const NUMERO_MESA_AJENA = NUMERO_BASE + 19;
@@ -419,6 +425,63 @@ describe('Mapa de mesas (HU-016) - e2e', () => {
         NUMERO_BASE + 10,
       );
       expect([...conTenantEjemplo, ...conTenantB]).toEqual([]);
+    },
+  );
+
+  // BL-58: el controller tiene @Roles('COMENSAL') a nivel de clase (para
+  // POST /mesas/:id/llamar) y @Roles('ADMIN') / @Roles('ADMIN', 'MOZO') en
+  // los métodos del mapa. Este caso protege que el rol del método REEMPLACE
+  // al de la clase (RolesGuard usa getAllAndOverride): si se sumaran, un
+  // comensal podría modificar el layout.
+  itConComensal(
+    '[TC-I-034] HU-016: un comensal no puede ver ni modificar el layout de mesas (403)',
+    async () => {
+      const token = await getToken(COMENSAL_USER, COMENSAL_PASS as string);
+      const antes = await enTenant(TENANT_DEMO_ID, (tx) =>
+        tx.mesa.findUnique({ where: { id: MESA_DEMO_ID } }),
+      );
+
+      // Control positivo: el token es válido y tiene el rol COMENSAL (la ruta
+      // de la clase lo acepta). Así un 403 más abajo solo puede deberse al
+      // @Roles del método, no a un token inválido o sin rol.
+      await request(app.getHttpServer())
+        .post(`/mesas/${MESA_DEMO_ID}/llamar`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .get('/mesas/layout')
+        .query({ restauranteId: RESTAURANTE_DEMO_ID })
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+
+      await request(app.getHttpServer())
+        .post('/mesas/layout')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          restauranteId: RESTAURANTE_DEMO_ID,
+          mesas: [{ id: MESA_DEMO_ID, numero: 1, ...LAYOUT_VALIDO }],
+        })
+        .expect(403);
+
+      await request(app.getHttpServer())
+        .put(`/mesas/${MESA_DEMO_ID}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send(LAYOUT_VALIDO)
+        .expect(403);
+
+      await request(app.getHttpServer())
+        .patch(`/mesas/${MESA_DEMO_ID}/estado`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ estado: 'OCUPADA' })
+        .expect(403);
+
+      // Nada cambió en la mesa: ni layout ni estado.
+      const despues = await enTenant(TENANT_DEMO_ID, (tx) =>
+        tx.mesa.findUnique({ where: { id: MESA_DEMO_ID } }),
+      );
+      expect(despues?.layout).toStrictEqual(antes?.layout);
+      expect(despues?.estado).toBe(antes?.estado);
     },
   );
 });

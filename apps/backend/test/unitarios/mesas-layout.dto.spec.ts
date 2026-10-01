@@ -1,7 +1,11 @@
 import 'reflect-metadata';
 import { plainToInstance } from 'class-transformer';
 import { validate, ValidationError } from 'class-validator';
-import { MesaLayoutDto } from '../../src/mesas/dto/mesa-layout.dto';
+import {
+  COORDENADA_MAXIMA_MESA,
+  DIMENSION_MAXIMA_MESA,
+  MesaLayoutDto,
+} from '../../src/mesas/dto/mesa-layout.dto';
 import {
   GuardarLayoutDto,
   MesaLayoutItemDto,
@@ -97,6 +101,56 @@ describe('MesaLayoutDto (HU-016)', () => {
       expect(propiedadesConError(errores)).toEqual([campo]);
     });
   });
+
+  // BL-58: topes para que no se persistan valores absurdos en el JSON.
+  describe.each(['ancho', 'alto'])(
+    '%s — valor límite máximo (DIMENSION_MAXIMA_MESA)',
+    (campo) => {
+      it('acepta el máximo', async () => {
+        expect(
+          await validar(MesaLayoutDto, {
+            ...LAYOUT_VALIDO,
+            [campo]: DIMENSION_MAXIMA_MESA,
+          }),
+        ).toHaveLength(0);
+      });
+
+      it('rechaza el máximo + 1', async () => {
+        const errores = await validar(MesaLayoutDto, {
+          ...LAYOUT_VALIDO,
+          [campo]: DIMENSION_MAXIMA_MESA + 1,
+        });
+        expect(propiedadesConError(errores)).toEqual([campo]);
+      });
+    },
+  );
+
+  describe.each(['x', 'y'])(
+    '%s — valores límite [-COORDENADA_MAXIMA_MESA, COORDENADA_MAXIMA_MESA]',
+    (campo) => {
+      // Negativos válidos: el editor no limitaba el arrastre, así que hay
+      // layouts guardados con mesas apenas fuera del borde del canvas.
+      it.each([-COORDENADA_MAXIMA_MESA, -15, COORDENADA_MAXIMA_MESA])(
+        'acepta %p',
+        async (valor) => {
+          expect(
+            await validar(MesaLayoutDto, { ...LAYOUT_VALIDO, [campo]: valor }),
+          ).toHaveLength(0);
+        },
+      );
+
+      it.each([-COORDENADA_MAXIMA_MESA - 1, COORDENADA_MAXIMA_MESA + 1])(
+        'rechaza %p',
+        async (valor) => {
+          const errores = await validar(MesaLayoutDto, {
+            ...LAYOUT_VALIDO,
+            [campo]: valor,
+          });
+          expect(propiedadesConError(errores)).toEqual([campo]);
+        },
+      );
+    },
+  );
 
   it.each(['x', 'y', 'ancho', 'alto', 'rotacion'])(
     'rechaza %s como string numérico (no hay coerción implícita)',
@@ -204,6 +258,34 @@ describe('GuardarLayoutDto (HU-016)', () => {
       mesas: [],
     });
     expect(propiedadesConError(errores)).toEqual(['mesas']);
+  });
+
+  describe('mesas — valor límite máximo 200 por guardado (BL-58)', () => {
+    const mesas = (cantidad: number) =>
+      Array.from({ length: cantidad }, (_, i) => ({
+        numero: i + 1,
+        ...LAYOUT_VALIDO,
+      }));
+
+    it('acepta 200 mesas', async () => {
+      expect(
+        await validar(GuardarLayoutDto, {
+          restauranteId: RESTAURANTE_ID,
+          mesas: mesas(200),
+        }),
+      ).toHaveLength(0);
+    });
+
+    it('rechaza 201 mesas con el mensaje del tope', async () => {
+      const errores = await validar(GuardarLayoutDto, {
+        restauranteId: RESTAURANTE_ID,
+        mesas: mesas(201),
+      });
+      expect(propiedadesConError(errores)).toEqual(['mesas']);
+      expect(Object.values(errores[0].constraints ?? {})).toContain(
+        'no se pueden guardar más de 200 mesas por vez',
+      );
+    });
   });
 
   it('acepta restauranteId e id de mesa del seed Demo (formato UUID no RFC 4122)', async () => {

@@ -1,5 +1,7 @@
 import {
   anchoNecesarioLienzo,
+  cambiarForma,
+  DIMENSION_MAXIMA_MESA,
   limitarCentro,
   reubicarFueraDelLienzo,
   semiExtension,
@@ -8,6 +10,7 @@ import {
 
 // Límites del lienzo del editor de mesas (BL-58): una mesa no puede quedar
 // fuera del área visible, ni al arrastrarla ni al cargar un layout viejo.
+// También cubre el cambio de forma (círculo, cuadrado, rectángulo).
 
 function mesa(cambios: Partial<MesaEnEdicion> = {}): MesaEnEdicion {
   return {
@@ -124,5 +127,55 @@ describe("reubicarFueraDelLienzo", () => {
     const resultado = reubicarFueraDelLienzo([lejos], 600);
     expect(resultado.reubicadas).toBe(0);
     expect(resultado.mesas[0]).toBe(lejos);
+  });
+});
+
+describe("cambiarForma", () => {
+  it("misma forma: no cambia las dimensiones", () => {
+    expect(cambiarForma(mesa({ ancho: 100, alto: 40 }), "RECTANGULO")).toEqual({
+      forma: "RECTANGULO",
+      ancho: 100,
+      alto: 40,
+    });
+  });
+
+  it("círculo → cuadrado: mismo lado", () => {
+    expect(
+      cambiarForma(mesa({ forma: "CIRCULO", ancho: 80, alto: 80 }), "CUADRADO"),
+    ).toEqual({
+      forma: "CUADRADO",
+      ancho: 80,
+      alto: 80,
+    });
+  });
+
+  it("cuadrado → rectángulo: se alarga a lo ancho (1,5 veces)", () => {
+    expect(
+      cambiarForma(
+        mesa({ forma: "CUADRADO", ancho: 80, alto: 80 }),
+        "RECTANGULO",
+      ),
+    ).toEqual({
+      forma: "RECTANGULO",
+      ancho: 120,
+      alto: 80,
+    });
+  });
+
+  it("rectángulo → círculo: usa el lado corto, para que la mesa no crezca", () => {
+    expect(cambiarForma(mesa({ ancho: 120, alto: 60 }), "CIRCULO")).toEqual({
+      forma: "CIRCULO",
+      ancho: 60,
+      alto: 60,
+    });
+  });
+
+  it("a rectángulo sin pasar el máximo del backend", () => {
+    expect(
+      cambiarForma(
+        mesa({ forma: "CUADRADO", ancho: 900, alto: 900 }),
+        "RECTANGULO",
+      ),
+    ).toEqual({ forma: "RECTANGULO", ancho: DIMENSION_MAXIMA_MESA, alto: 900 });
   });
 });

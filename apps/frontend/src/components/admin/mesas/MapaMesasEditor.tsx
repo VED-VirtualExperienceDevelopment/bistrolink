@@ -11,6 +11,8 @@ import {
   aGuardarLayoutItems,
   anchoNecesarioLienzo,
   aplicarEstadoMesa,
+  cambiarForma,
+  DIMENSION_MAXIMA_MESA,
   DIMENSION_MINIMA_MESA,
   limitarCentro,
   mesasConLayoutAEdicion,
@@ -26,6 +28,7 @@ import {
   type MesaEnEdicion,
 } from "./mapa-mesas.utils";
 import type {
+  FormaMesa,
   GuardarLayoutPayload,
   MesaConLayout,
   MesaEstadoActualizadoPayload,
@@ -33,6 +36,13 @@ import type {
 
 const WS_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 const ALTURA_STAGE = 600;
+
+const OPCIONES_FORMA: { forma: FormaMesa; etiqueta: string; icono: string }[] =
+  [
+    { forma: "CIRCULO", etiqueta: "Círculo", icono: "circle" },
+    { forma: "CUADRADO", etiqueta: "Cuadrado", icono: "square" },
+    { forma: "RECTANGULO", etiqueta: "Rectángulo", icono: "rectangle" },
+  ];
 
 interface Props {
   restauranteId: string;
@@ -185,9 +195,12 @@ export function MapaMesasEditor({ restauranteId }: Readonly<Props>) {
     const nodo = shapeRefs.current.get(seleccionada);
     if (nodo) {
       tr.nodes([nodo]);
+      // Al cambiar la forma (o el tamaño) de la mesa seleccionada, el
+      // recuadro del Transformer tiene que recalcularse sobre la figura nueva.
+      tr.forceUpdate();
       tr.getLayer()?.batchDraw();
     }
-  }, [seleccionada, puedeEditar, mesas.length]);
+  }, [seleccionada, puedeEditar, mesas]);
 
   // El mensaje de "Guardado" no debe quedar pegado para siempre.
   useEffect(() => {
@@ -213,13 +226,14 @@ export function MapaMesasEditor({ restauranteId }: Readonly<Props>) {
     : undefined;
   const posicionInputNumero = nodoEditandoNumero?.getAbsolutePosition();
 
-  // El círculo solo debe poder resizearse manteniendo la proporción (si no,
-  // arrastrar una esquina lo convierte en óvalo) — el rectángulo sí permite
-  // ancho y alto independientes, como cualquier resize normal.
-  const formaSeleccionada = mesas.find(
-    (m) => m.clientId === seleccionada,
-  )?.forma;
-  const esCirculoSeleccionado = formaSeleccionada === "CIRCULO";
+  // El círculo y el cuadrado solo deben poder resizearse manteniendo la
+  // proporción (si no, arrastrar una esquina convierte el círculo en óvalo y
+  // el cuadrado en rectángulo) — el rectángulo sí permite ancho y alto
+  // independientes, como cualquier resize normal.
+  const mesaSeleccionada = mesas.find((m) => m.clientId === seleccionada);
+  const formaSeleccionada = mesaSeleccionada?.forma;
+  const mantieneProporcion =
+    formaSeleccionada === "CIRCULO" || formaSeleccionada === "CUADRADO";
 
   const duplicados = useMemo(() => numerosDuplicados(mesas), [mesas]);
 
@@ -243,6 +257,19 @@ export function MapaMesasEditor({ restauranteId }: Readonly<Props>) {
       ];
     });
     setSeleccionada(clientId);
+  }
+
+  function handleCambiarForma(forma: FormaMesa) {
+    if (!mesaSeleccionada) return;
+    const cambios = cambiarForma(mesaSeleccionada, forma);
+    // Un rectángulo es más ancho que el círculo o cuadrado de origen: si la
+    // mesa estaba pegada al borde, se reacomoda para que entre entera.
+    const posicion = limitarCentro(
+      mesaSeleccionada,
+      semiExtension({ ...mesaSeleccionada, ...cambios }),
+      lienzo,
+    );
+    actualizarMesa(mesaSeleccionada.clientId, { ...cambios, ...posicion });
   }
 
   function handleEliminarSeleccionada() {
@@ -359,8 +386,30 @@ export function MapaMesasEditor({ restauranteId }: Readonly<Props>) {
               </span>
               <span>Eliminar mesa</span>
             </button>
+            <fieldset
+              disabled={!mesaSeleccionada}
+              className="flex items-center gap-1 rounded-lg border border-outline-variant p-1 disabled:opacity-50"
+            >
+              <legend className="sr-only">Forma de la mesa seleccionada</legend>
+              {OPCIONES_FORMA.map(({ forma, etiqueta, icono }) => (
+                <button
+                  key={forma}
+                  type="button"
+                  onClick={() => handleCambiarForma(forma)}
+                  aria-pressed={formaSeleccionada === forma}
+                  title={etiqueta}
+                  className="flex items-center gap-1 rounded-md px-3 py-1.5 text-body-sm text-on-surface-variant hover:bg-surface-container-low disabled:cursor-not-allowed aria-pressed:bg-primary aria-pressed:text-on-primary"
+                >
+                  <span className="material-symbols-outlined text-[18px]">
+                    {icono}
+                  </span>
+                  <span>{etiqueta}</span>
+                </button>
+              ))}
+            </fieldset>
             <p className="text-label-sm text-on-surface-variant">
-              Doble clic en una mesa para editar su número.
+              Seleccioná una mesa para cambiar su forma. Doble clic para editar
+              su número.
             </p>
           </div>
 
@@ -454,15 +503,19 @@ export function MapaMesasEditor({ restauranteId }: Readonly<Props>) {
               <Transformer
                 ref={transformerRef}
                 rotateEnabled
-                keepRatio={esCirculoSeleccionado}
+                keepRatio={mantieneProporcion}
                 enabledAnchors={
-                  esCirculoSeleccionado
+                  mantieneProporcion
                     ? ["top-left", "top-right", "bottom-left", "bottom-right"]
                     : undefined
                 }
+                // Entre el mínimo del editor y el máximo que acepta el backend
+                // (BL-58), para que un resize nunca termine en un 400 al guardar.
                 boundBoxFunc={(oldBox, newBox) =>
                   newBox.width < DIMENSION_MINIMA_MESA ||
-                  newBox.height < DIMENSION_MINIMA_MESA
+                  newBox.height < DIMENSION_MINIMA_MESA ||
+                  newBox.width > DIMENSION_MAXIMA_MESA ||
+                  newBox.height > DIMENSION_MAXIMA_MESA
                     ? oldBox
                     : newBox
                 }

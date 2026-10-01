@@ -49,6 +49,45 @@ const LAYOUT_POR_DEFECTO = {
  */
 export const DIMENSION_MINIMA_MESA = 20;
 
+/**
+ * Tamaño máximo (px) de ancho/alto de una mesa. Mismo valor que
+ * DIMENSION_MAXIMA_MESA de MesaLayoutDto en el backend (BL-58): si el editor
+ * dejara pasarlo, el guardado fallaría con 400.
+ */
+export const DIMENSION_MAXIMA_MESA = 1000;
+
+/** Al pasar a rectángulo, el lado largo mide esta proporción del corto. */
+const PROPORCION_RECTANGULO = 1.5;
+
+/**
+ * Dimensiones de una mesa al cambiarle la forma desde el editor:
+ * - círculo y cuadrado tienen ancho = alto (lado: el ancho del círculo o el
+ *   lado corto del rectángulo, para que la mesa no crezca de golpe);
+ * - un rectángulo se alarga a lo ancho para que el cambio se note, sin
+ *   pasar del máximo.
+ */
+export function cambiarForma(
+  mesa: Pick<MesaEnEdicion, "forma" | "ancho" | "alto">,
+  forma: FormaMesa,
+): Pick<MesaEnEdicion, "forma" | "ancho" | "alto"> {
+  if (forma === mesa.forma) {
+    return { forma, ancho: mesa.ancho, alto: mesa.alto };
+  }
+  const lado =
+    mesa.forma === "RECTANGULO" ? Math.min(mesa.ancho, mesa.alto) : mesa.ancho;
+  if (forma === "RECTANGULO") {
+    return {
+      forma,
+      ancho: Math.min(
+        Math.round(lado * PROPORCION_RECTANGULO),
+        DIMENSION_MAXIMA_MESA,
+      ),
+      alto: lado,
+    };
+  }
+  return { forma, ancho: lado, alto: lado };
+}
+
 const ESPACIADO_GRID_DEFECTO = 120;
 const OFFSET_GRID_DEFECTO = 80;
 const COLUMNAS_GRID_DEFECTO = 5;
