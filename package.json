@@ -7,7 +7,7 @@
     "apps/frontend"
   ],
   "scripts": {
-    "dev": "concurrently@8.2.2 \"npm run start:dev -w apps/backend\" \"npm run dev -w apps/frontend\"",
+    "dev": "concurrently \"npm run start:dev -w apps/backend\" \"npm run dev -w apps/frontend\"",
     "build": "npm run build --workspaces",
     "build:api": "npm run build --workspace=apps/backend",
     "build:web": "npm run build --workspace=apps/frontend",
@@ -52,6 +52,7 @@
       "glob": "10.5.0"
     },
     "react": "^19.3.0",
-    "react-dom": "^19.3.0"
+    "react-dom": "^19.3.0",
+    "basic-ftp": "6.2.1"
   }
 }
