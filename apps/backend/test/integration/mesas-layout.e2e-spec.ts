@@ -612,4 +612,153 @@ describe('Mapa de mesas (HU-016) - e2e', () => {
       ]);
     },
   );
+  // BL-58: a diferencia del caso de atomicidad de TC-I-036 (que falla en el
+  // chequeo previo, antes de escribir nada), acá el borrado SÍ se ejecuta y lo
+  // que falla después es el create. Si la mesa borrada sigue existiendo, es
+  // porque Postgres deshizo el DELETE: prueba que guardarLayout corre en una
+  // única transacción.
+  itConAdmin(
+    '[TC-I-037] HU-016: si falla la creación después de eliminar, el borrado se revierte',
+    async () => {
+      const token = await getToken(ADMIN_USER, ADMIN_PASS as string);
+
+      const { aBorrar } = await enTenant(TENANT_EJEMPLO_ID, async (tx) => {
+        const crearMesa = (numero: number) =>
+          tx.mesa.create({
+            data: {
+              tenantId: TENANT_EJEMPLO_ID,
+              restauranteId: RESTAURANTE_EJEMPLO_ID,
+              numero,
+              estado: 'LIBRE',
+              layout: LAYOUT_VALIDO,
+            },
+          });
+        const mesaABorrar = await crearMesa(NUMERO_BASE + 11);
+        // La 912 ya existe: crear otra 912 en el guardado dispara P2002.
+        await crearMesa(NUMERO_BASE + 12);
+        return { aBorrar: mesaABorrar };
+      });
+
+      const res = await request(app.getHttpServer())
+        .post('/mesas/layout')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          restauranteId: RESTAURANTE_EJEMPLO_ID,
+          mesas: [{ numero: NUMERO_BASE + 12, ...LAYOUT_VALIDO }],
+          eliminar: [aBorrar.id],
+        })
+        .expect(409);
+      expect(res.body.message).toContain('Ya existe una mesa con el número');
+
+      const sigue = await enTenant(TENANT_EJEMPLO_ID, (tx) =>
+        tx.mesa.findUnique({ where: { id: aBorrar.id } }),
+      );
+      expect(sigue).not.toBeNull();
+
+      const quedan = await buscarMesas(
+        TENANT_EJEMPLO_ID,
+        RESTAURANTE_EJEMPLO_ID,
+        NUMERO_BASE + 12,
+      );
+      expect(quedan).toHaveLength(1);
+    },
+  );
+
+  itConAdmin(
+    '[TC-I-038] HU-016: un tenant no puede eliminar mesas de otro tenant',
+    async () => {
+      const token = await getToken(ADMIN_USER, ADMIN_PASS as string);
+      const eliminar = (restauranteId: string) =>
+        request(app.getHttpServer())
+          .post('/mesas/layout')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ restauranteId, mesas: [], eliminar: [mesaAjenaId] });
+
+      // Con el restaurante propio: la mesa ajena no se encuentra (RLS + chequeo explícito).
+      await eliminar(RESTAURANTE_EJEMPLO_ID).expect(404);
+      // Con el restaurante del tenant B: lo frena el chequeo del restaurante.
+      await eliminar(RESTAURANTE_B_ID).expect(404);
+
+      const sigue = await enTenant(TENANT_B_ID, (tx) =>
+        tx.mesa.findUnique({ where: { id: mesaAjenaId } }),
+      );
+      expect(sigue).not.toBeNull();
+    },
+  );
+
+  // La mesa virtual de HU-003 no la crea el seed: el test crea una propia con
+  // un número del rango reservado, así limpiarMesasDeTest la borra al final.
+  itConAdmin(
+    '[TC-I-039] HU-016: la mesa virtual no se puede eliminar desde el mapa (404)',
+    async () => {
+      const token = await getToken(ADMIN_USER, ADMIN_PASS as string);
+      const mesaVirtual = await enTenant(TENANT_EJEMPLO_ID, (tx) =>
+        tx.mesa.create({
+          data: {
+            tenantId: TENANT_EJEMPLO_ID,
+            restauranteId: RESTAURANTE_EJEMPLO_ID,
+            numero: NUMERO_BASE + 14,
+            esVirtual: true,
+            estado: 'LIBRE',
+          },
+        }),
+      );
+
+      await request(app.getHttpServer())
+        .post('/mesas/layout')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          restauranteId: RESTAURANTE_EJEMPLO_ID,
+          mesas: [],
+          eliminar: [mesaVirtual.id],
+        })
+        .expect(404);
+
+      const sigue = await enTenant(TENANT_EJEMPLO_ID, (tx) =>
+        tx.mesa.findUnique({ where: { id: mesaVirtual.id } }),
+      );
+      expect(sigue).not.toBeNull();
+    },
+  );
+
+  itConAdmin(
+    '[TC-I-040] HU-016: rechaza con 400 una mesa que viene para actualizar y eliminar a la vez',
+    async () => {
+      const token = await getToken(ADMIN_USER, ADMIN_PASS as string);
+      const mesa = await enTenant(TENANT_EJEMPLO_ID, (tx) =>
+        tx.mesa.create({
+          data: {
+            tenantId: TENANT_EJEMPLO_ID,
+            restauranteId: RESTAURANTE_EJEMPLO_ID,
+            numero: NUMERO_BASE + 13,
+            estado: 'LIBRE',
+            layout: LAYOUT_VALIDO,
+          },
+        }),
+      );
+
+      await request(app.getHttpServer())
+        .post('/mesas/layout')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          restauranteId: RESTAURANTE_EJEMPLO_ID,
+          mesas: [
+            {
+              id: mesa.id,
+              numero: NUMERO_BASE + 13,
+              ...LAYOUT_VALIDO,
+              x: 200,
+            },
+          ],
+          eliminar: [mesa.id],
+        })
+        .expect(400);
+
+      // Ni se borró ni se movió.
+      const despues = await enTenant(TENANT_EJEMPLO_ID, (tx) =>
+        tx.mesa.findUnique({ where: { id: mesa.id } }),
+      );
+      expect(despues?.layout).toStrictEqual(LAYOUT_VALIDO);
+    },
+  );
 });
