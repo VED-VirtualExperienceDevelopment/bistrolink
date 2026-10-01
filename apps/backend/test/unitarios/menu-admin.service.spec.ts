@@ -80,7 +80,7 @@ describe('MenuAdminService', () => {
   });
 
   describe('updateCategoria', () => {
-    it('should update a categoria successfully', async () => {
+    it('should update a categoria successfully and emit event', async () => {
       const existing = { id: 'cat-1', nombre: 'Test', activo: true };
       const updated = { id: 'cat-1', nombre: 'Test', activo: false };
 
@@ -95,6 +95,20 @@ describe('MenuAdminService', () => {
       expect(gatewayMock.emitCategoriaUpdated).toHaveBeenCalledWith('tenant-1', { categoriaId: 'cat-1', activo: false });
     });
 
+    it('should not emit event when activo is not in dto', async () => {
+      const existing = { id: 'cat-1', nombre: 'Test', activo: true };
+      const updated = { id: 'cat-1', nombre: 'Updated', activo: true };
+
+      prismaMock.runInTenantContext.mockImplementation((_tenantId: string, callback: any) =>
+        callback({
+          categoriaCarta: { findFirst: jest.fn().mockResolvedValue(existing), update: jest.fn().mockResolvedValue(updated) },
+        }),
+      );
+
+      await service.updateCategoria('tenant-1', 'cat-1', { nombre: 'Updated' });
+      expect(gatewayMock.emitCategoriaUpdated).not.toHaveBeenCalled();
+    });
+
     it('should throw NotFoundException when categoria does not exist', async () => {
       prismaMock.runInTenantContext.mockImplementation((_tenantId: string, callback: any) =>
         callback({ categoriaCarta: { findFirst: jest.fn().mockResolvedValue(null) } }),
@@ -105,10 +119,11 @@ describe('MenuAdminService', () => {
   });
 
   describe('createItem', () => {
-    it('should create an item successfully', async () => {
-      const mockItem = { id: 'item-1', nombre: 'Test', precio: '10.00' };
+    it('should create an item successfully with default disponible true', async () => {
+      const mockItem = { id: 'item-1', nombre: 'Test', precio: '10.00', disponible: true };
       prismaMock.runInTenantContext.mockImplementation((_tenantId: string, callback: any) =>
         callback({
+          usuario: { findFirst: jest.fn().mockResolvedValue({ restauranteId: 'rest-123' }) },
           categoriaCarta: { findFirst: jest.fn().mockResolvedValue({ id: 'cat-1' }) },
           itemCarta: { create: jest.fn().mockResolvedValue(mockItem) },
         }),
@@ -116,11 +131,29 @@ describe('MenuAdminService', () => {
 
       const result = await service.createItem('tenant-1', { categoriaId: 'cat-1', nombre: 'Test', precio: '10.00' });
       expect(result.nombre).toBe('Test');
+      expect(result.disponible).toBe(true);
+    });
+
+    it('should create item with provided disponible value', async () => {
+      const mockItem = { id: 'item-1', nombre: 'Test', precio: '10.00', disponible: false };
+      prismaMock.runInTenantContext.mockImplementation((_tenantId: string, callback: any) =>
+        callback({
+          usuario: { findFirst: jest.fn().mockResolvedValue({ restauranteId: 'rest-123' }) },
+          categoriaCarta: { findFirst: jest.fn().mockResolvedValue({ id: 'cat-1' }) },
+          itemCarta: { create: jest.fn().mockResolvedValue(mockItem) },
+        }),
+      );
+
+      const result = await service.createItem('tenant-1', { categoriaId: 'cat-1', nombre: 'Test', precio: '10.00', disponible: false });
+      expect(result.disponible).toBe(false);
     });
 
     it('should throw NotFoundException when categoria does not exist', async () => {
       prismaMock.runInTenantContext.mockImplementation((_tenantId: string, callback: any) =>
-        callback({ categoriaCarta: { findFirst: jest.fn().mockResolvedValue(null) } }),
+        callback({
+          usuario: { findFirst: jest.fn().mockResolvedValue({ restauranteId: 'rest-123' }) },
+          categoriaCarta: { findFirst: jest.fn().mockResolvedValue(null) },
+        }),
       );
 
       await expect(service.createItem('tenant-1', { categoriaId: 'invalid', nombre: 'Test', precio: '10.00' })).rejects.toThrow(NotFoundException);
@@ -128,19 +161,63 @@ describe('MenuAdminService', () => {
   });
 
   describe('updateItem', () => {
-    it('should update an item successfully', async () => {
-      const existing = { id: 'item-1', nombre: 'Test', disponible: true };
-      const updated = { id: 'item-1', nombre: 'Test', disponible: false };
+    it('should update an item successfully and emit event', async () => {
+      const existing = { id: 'item-1', nombre: 'Test', disponible: true, categoriaId: 'cat-1' };
+      const updated = { id: 'item-1', nombre: 'Test', disponible: false, categoriaId: 'cat-1' };
 
       prismaMock.runInTenantContext.mockImplementation((_tenantId: string, callback: any) =>
         callback({
           itemCarta: { findFirst: jest.fn().mockResolvedValue(existing), update: jest.fn().mockResolvedValue(updated) },
+          categoriaCarta: { findFirst: jest.fn().mockResolvedValue({ id: 'cat-1' }) },
         }),
       );
 
       const result = await service.updateItem('tenant-1', 'item-1', { disponible: false });
       expect(result.disponible).toBe(false);
       expect(gatewayMock.emitItemUpdated).toHaveBeenCalledWith('tenant-1', { itemId: 'item-1', disponible: false });
+    });
+
+    it('should not emit event when disponible is not in dto', async () => {
+      const existing = { id: 'item-1', nombre: 'Test', disponible: true, categoriaId: 'cat-1' };
+      const updated = { id: 'item-1', nombre: 'Updated', disponible: true, categoriaId: 'cat-1' };
+
+      prismaMock.runInTenantContext.mockImplementation((_tenantId: string, callback: any) =>
+        callback({
+          itemCarta: { findFirst: jest.fn().mockResolvedValue(existing), update: jest.fn().mockResolvedValue(updated) },
+          categoriaCarta: { findFirst: jest.fn().mockResolvedValue({ id: 'cat-1' }) },
+        }),
+      );
+
+      await service.updateItem('tenant-1', 'item-1', { nombre: 'Updated' });
+      expect(gatewayMock.emitItemUpdated).not.toHaveBeenCalled();
+    });
+
+    it('should validate new categoria exists when changing categoria', async () => {
+      const existing = { id: 'item-1', nombre: 'Test', disponible: true, categoriaId: 'cat-1' };
+      const nuevaCategoria = { id: 'cat-2', nombre: 'New Category' };
+
+      prismaMock.runInTenantContext.mockImplementation((_tenantId: string, callback: any) =>
+        callback({
+          itemCarta: { findFirst: jest.fn().mockResolvedValue(existing), update: jest.fn().mockResolvedValue(existing) },
+          categoriaCarta: { findFirst: jest.fn().mockResolvedValue(nuevaCategoria) },
+        }),
+      );
+
+      await service.updateItem('tenant-1', 'item-1', { categoriaId: 'cat-2' });
+      expect(gatewayMock.emitItemUpdated).not.toHaveBeenCalled();
+    });
+
+    it('should throw NotFoundException when new categoria does not exist', async () => {
+      const existing = { id: 'item-1', nombre: 'Test', disponible: true, categoriaId: 'cat-1' };
+
+      prismaMock.runInTenantContext.mockImplementation((_tenantId: string, callback: any) =>
+        callback({
+          itemCarta: { findFirst: jest.fn().mockResolvedValue(existing) },
+          categoriaCarta: { findFirst: jest.fn().mockResolvedValue(null) },
+        }),
+      );
+
+      await expect(service.updateItem('tenant-1', 'item-1', { categoriaId: 'invalid-cat' })).rejects.toThrow(NotFoundException);
     });
 
     it('should throw NotFoundException when item does not exist', async () => {
