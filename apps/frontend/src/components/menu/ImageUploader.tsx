@@ -4,6 +4,12 @@ import { useState, useCallback } from 'react';
 import { apiFetch } from '@/lib/api-client';
 import { getKeycloak } from '@/lib/keycloak';
 import Image from 'next/image';
+import {
+  ErrorSubidaAlmacenamiento,
+  mensajeErrorSubida,
+  TIPOS_IMAGEN_PERMITIDOS,
+  validarImagen,
+} from './image-uploader.utils';
 
 interface ImageUploaderProps {
   readonly onUploadSuccess: (key: string, previewUrl: string) => void;
@@ -18,14 +24,14 @@ export default function ImageUploader({ onUploadSuccess, initialPreviewUrl }: Im
   const handleFileChange = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
+      // Se limpia el input para que elegir de nuevo el mismo archivo
+      // (por ejemplo, después de un error) vuelva a disparar onChange.
+      e.target.value = '';
       if (!file) return;
 
-      if (!file.type.startsWith('image/')) {
-        setError('Solo se permiten archivos de imagen.');
-        return;
-      }
-      if (file.size > 5 * 1024 * 1024) {
-        setError('La imagen no debe superar los 5MB.');
+      const errorValidacion = validarImagen(file);
+      if (errorValidacion) {
+        setError(errorValidacion);
         return;
       }
 
@@ -53,14 +59,13 @@ export default function ImageUploader({ onUploadSuccess, initialPreviewUrl }: Im
         const uploadRes = await fetch(url, { method: 'POST', body: formData });
 
         if (!uploadRes.ok) {
-          throw new Error('AWS_UPLOAD_FAILED');
+          throw new ErrorSubidaAlmacenamiento(uploadRes.status);
         }
 
         onUploadSuccess(key, objectUrl);
       } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : 'Error desconocido';
-        console.error('❌ Error en ImageUploader:', message);
-        setError('Aún necesita configuración de AWS - WIP');
+        console.error('Error al subir la imagen:', err);
+        setError(mensajeErrorSubida(err));
         setPreview(initialPreviewUrl || null);
       } finally {
         setUploading(false);
@@ -101,7 +106,7 @@ export default function ImageUploader({ onUploadSuccess, initialPreviewUrl }: Im
             <p className="text-xs text-[#79767D]/70">PNG, JPG o WEBP (Máx. 5MB)</p>
           </div>
         )}
-        <input id="image-upload" type="file" className="hidden" accept="image/*" onChange={handleFileChange} disabled={uploading} />
+        <input id="image-upload" type="file" className="hidden" accept={TIPOS_IMAGEN_PERMITIDOS.join(',')} onChange={handleFileChange} disabled={uploading} />
       </label>
 
       {error && (
