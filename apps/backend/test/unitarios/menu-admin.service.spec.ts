@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import { NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { MenuAdminService } from '../../src/menu/menu-admin.service';
 import { TenantPrismaService } from '../../src/prisma/tenant-prisma.service';
 import { MenuGateway } from '../../src/menu/menu.gateway';
@@ -408,6 +408,33 @@ describe('MenuAdminService', () => {
       );
 
       expect(result[0].items[0].imagenUrl).toBeNull();
+    });
+    it('resuelve el restaurante desde el usuario si no viene restauranteId', async () => {
+      mockTx.usuario.findFirst.mockResolvedValue({
+        restauranteId: 'rest-del-usuario',
+      });
+      mockTx.categoriaCarta.findMany.mockResolvedValue([]);
+
+      await service.findAllCategorias(tenantId, undefined, keycloakId);
+
+      expect(mockTx.usuario.findFirst).toHaveBeenCalledWith({
+        where: { keycloakId },
+        select: { restauranteId: true },
+      });
+      expect(mockTx.categoriaCarta.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { restauranteId: 'rest-del-usuario' },
+        }),
+      );
+    });
+
+    it('lanza UnauthorizedException si no puede resolver el restaurante', async () => {
+      mockTx.usuario.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.findAllCategorias(tenantId, undefined, keycloakId),
+      ).rejects.toThrow(UnauthorizedException);
+      expect(mockStorage.getSignedImageUrl).not.toHaveBeenCalled();
     });
   });
 
