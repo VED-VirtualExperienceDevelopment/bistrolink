@@ -469,9 +469,15 @@ jobs:
   # simultáneos) en vez de secuencialmente en uno solo. "needs: [build]" en
   # deploy-staging sigue funcionando igual — GitHub Actions espera a que las
   # 3 entradas del matrix terminen antes de considerar el job completo.
-  # La DB de vulnerabilidades de Trivy se cachea por separado en cada entrada
-  # del matrix (runners distintos = cache distinto), pero sigue evitando la
-  # descarga repetida en corridas sucesivas del mismo runner de GitHub.
+  # BL-260: la base de vulnerabilidades de Trivy (y la de Java, en Auth) la
+  # cachea la propia trivy-action (cache: true por defecto), con clave
+  # "cache-trivy-<fecha UTC>": una por día, que es lo que tarda Trivy en
+  # publicar una base nueva. Antes había un actions/cache propio con
+  # cache-dir "~/.cache/trivy": Trivy no expande "~", guardaba la base en
+  # una carpeta literal "~" del workspace, y ninguna de las dos cachés
+  # encontraba la ruta al final del job ("Path Validation Error"): cada
+  # build descargaba ~120 MB (y ~930 MB de la base de Java en Auth). No
+  # pasar cache-dir con "~"; la ruta por defecto de la acción es absoluta.
   build:
     name: 🐳 Build + Escaneo (${{ matrix.name }})
     runs-on: ubuntu-latest
@@ -533,21 +539,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # BL-251: clave por fecha (UTC) en vez de run_id. Con run_id cada
-      # corrida guardaba una copia nueva de la base (~cientos de MB) y se
-      # llenaba el límite de caché del repo; con la fecha queda una por día,
-      # que es lo que tarda Trivy en publicar una base nueva.
-      - name: Fecha para la caché de Trivy
-        id: trivy_date
-        run: echo "date=$(date -u +%F)" >> "$GITHUB_OUTPUT"
-
-      - name: Cache DB de vulnerabilidades Trivy
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/trivy
-          key: trivy-db-${{ steps.trivy_date.outputs.date }}
-          restore-keys: trivy-db-
-
       - name: Construir imagen (${{ matrix.name }})
         run: |
           if [ "${{ matrix.name }}" = "Auth" ]; then
@@ -585,7 +576,6 @@ jobs:
           severity: CRITICAL,HIGH
           exit-code: "1"
           trivyignores: .trivyignore
-          cache-dir: ~/.cache/trivy
 
       - name: Publicar imagen en GHCR (${{ matrix.name }})
         if: github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/tags/')
@@ -621,21 +611,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # BL-251: clave por fecha (UTC) en vez de run_id. Con run_id cada
-      # corrida guardaba una copia nueva de la base (~cientos de MB) y se
-      # llenaba el límite de caché del repo; con la fecha queda una por día,
-      # que es lo que tarda Trivy en publicar una base nueva.
-      - name: Fecha para la caché de Trivy
-        id: trivy_date
-        run: echo "date=$(date -u +%F)" >> "$GITHUB_OUTPUT"
-
-      - name: Cache DB de vulnerabilidades Trivy
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/trivy
-          key: trivy-db-${{ steps.trivy_date.outputs.date }}
-          restore-keys: trivy-db-
-
       - name: Construir imagen (efímera, sin push)
         run: |
           docker build \
@@ -657,7 +632,6 @@ jobs:
           severity: CRITICAL,HIGH
           exit-code: "1"
           trivyignores: .trivyignore
-          cache-dir: ~/.cache/trivy
 
   # ── JOB 9: DEPLOY STAGING ─────────────────────────────────────────────────
   deploy-staging:
