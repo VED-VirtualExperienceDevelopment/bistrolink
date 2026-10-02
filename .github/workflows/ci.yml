@@ -810,11 +810,26 @@ jobs:
 
       - name: Health check staging
         run: |
-          sleep 40
-          curl -f https://bistrolink-api-staging.up.railway.app/health
-          curl -f https://bistrolink-api-staging.up.railway.app/health/ready
-          curl -f https://bistrolink-web-staging.up.railway.app
-          curl -f https://bistrolink-auth-staging.up.railway.app/realms/bistrolink/.well-known/openid-configuration
+          # Reintenta cada endpoint hasta 30 veces cada 10 s (~5 min) en vez de
+          # un sleep fijo: Keycloak tarda bastante más de 40 s en arrancar después
+          # del redeploy y Railway le pasa tráfico antes de que esté listo (no
+          # tiene healthcheck configurado, ver BL-229), así que respondía 503 y el
+          # job fallaba aunque el deploy estuviera bien. Si se agotan los
+          # reintentos, muestra el body y el código HTTP de la última respuesta
+          # ("curl -f" solo no los muestra).
+          check() {
+            if curl -fsS -o /dev/null --retry 30 --retry-delay 10 --retry-all-errors --max-time 15 "$1"; then
+              echo "OK    $1"
+            else
+              echo "FALLÓ $1 — última respuesta:"
+              curl -sS --max-time 15 -w "\nHTTP %{http_code}\n" "$1" || true
+              return 1
+            fi
+          }
+          check https://bistrolink-api-staging.up.railway.app/health
+          check https://bistrolink-api-staging.up.railway.app/health/ready
+          check https://bistrolink-web-staging.up.railway.app
+          check https://bistrolink-auth-staging.up.railway.app/realms/bistrolink/.well-known/openid-configuration
 
   # ── JOB 9A: ROLLBACK MANUAL (staging) ─────────────────────────────────────
   # Revierte staging a una imagen YA publicada en GHCR (por SHA), sin
@@ -943,11 +958,19 @@ jobs:
 
       - name: Health check post-rollback
         run: |
-          sleep 40
-          curl -f https://bistrolink-api-staging.up.railway.app/health
-          curl -f https://bistrolink-api-staging.up.railway.app/health/ready
-          curl -f https://bistrolink-web-staging.up.railway.app
-          curl -f https://bistrolink-auth-staging.up.railway.app/realms/bistrolink/.well-known/openid-configuration
+          check() {
+            if curl -fsS -o /dev/null --retry 30 --retry-delay 10 --retry-all-errors --max-time 15 "$1"; then
+              echo "OK    $1"
+            else
+              echo "FALLÓ $1 — última respuesta:"
+              curl -sS --max-time 15 -w "\nHTTP %{http_code}\n" "$1" || true
+              return 1
+            fi
+          }
+          check https://bistrolink-api-staging.up.railway.app/health
+          check https://bistrolink-api-staging.up.railway.app/health/ready
+          check https://bistrolink-web-staging.up.railway.app
+          check https://bistrolink-auth-staging.up.railway.app/realms/bistrolink/.well-known/openid-configuration
 
   # ── JOB 9B: LIGHTHOUSE (Performance mobile) — staging ────────────────────────
   lighthouse:
@@ -1311,8 +1334,16 @@ jobs:
   #
   #       - name: Health check producción
   #         run: |
-  #           sleep 40
-  #           curl -f https://bistrolink-api-production.up.railway.app/health
-  #           curl -f https://bistrolink-api-production.up.railway.app/health/ready
-  #           curl -f https://bistrolink-web-production.up.railway.app
-  #           curl -f https://bistrolink-auth-production.up.railway.app/realms/bistrolink/.well-known/openid-configuration
+  #           check() {
+  #             if curl -fsS -o /dev/null --retry 30 --retry-delay 10 --retry-all-errors --max-time 15 "$1"; then
+  #               echo "OK    $1"
+  #             else
+  #               echo "FALLÓ $1 — última respuesta:"
+  #               curl -sS --max-time 15 -w "\nHTTP %{http_code}\n" "$1" || true
+  #               return 1
+  #             fi
+  #           }
+  #           check https://bistrolink-api-production.up.railway.app/health
+  #           check https://bistrolink-api-production.up.railway.app/health/ready
+  #           check https://bistrolink-web-production.up.railway.app
+  #           check https://bistrolink-auth-production.up.railway.app/realms/bistrolink/.well-known/openid-configuration
