@@ -469,9 +469,15 @@ jobs:
   # simultáneos) en vez de secuencialmente en uno solo. "needs: [build]" en
   # deploy-staging sigue funcionando igual — GitHub Actions espera a que las
   # 3 entradas del matrix terminen antes de considerar el job completo.
-  # La DB de vulnerabilidades de Trivy se cachea por separado en cada entrada
-  # del matrix (runners distintos = cache distinto), pero sigue evitando la
-  # descarga repetida en corridas sucesivas del mismo runner de GitHub.
+  # BL-260: la base de vulnerabilidades de Trivy (y la de Java, en Auth) la
+  # cachea la propia trivy-action (cache: true por defecto), con clave
+  # "cache-trivy-<fecha UTC>": una por día, que es lo que tarda Trivy en
+  # publicar una base nueva. Antes había un actions/cache propio con
+  # cache-dir "~/.cache/trivy": Trivy no expande "~", guardaba la base en
+  # una carpeta literal "~" del workspace, y ninguna de las dos cachés
+  # encontraba la ruta al final del job ("Path Validation Error"): cada
+  # build descargaba ~120 MB (y ~930 MB de la base de Java en Auth). No
+  # pasar cache-dir con "~"; la ruta por defecto de la acción es absoluta.
   build:
     name: 🐳 Build + Escaneo (${{ matrix.name }})
     runs-on: ubuntu-latest
@@ -533,21 +539,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # BL-251: clave por fecha (UTC) en vez de run_id. Con run_id cada
-      # corrida guardaba una copia nueva de la base (~cientos de MB) y se
-      # llenaba el límite de caché del repo; con la fecha queda una por día,
-      # que es lo que tarda Trivy en publicar una base nueva.
-      - name: Fecha para la caché de Trivy
-        id: trivy_date
-        run: echo "date=$(date -u +%F)" >> "$GITHUB_OUTPUT"
-
-      - name: Cache DB de vulnerabilidades Trivy
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/trivy
-          key: trivy-db-${{ steps.trivy_date.outputs.date }}
-          restore-keys: trivy-db-
-
       - name: Construir imagen (${{ matrix.name }})
         run: |
           if [ "${{ matrix.name }}" = "Auth" ]; then
@@ -585,7 +576,6 @@ jobs:
           severity: CRITICAL,HIGH
           exit-code: "1"
           trivyignores: .trivyignore
-          cache-dir: ~/.cache/trivy
 
       - name: Publicar imagen en GHCR (${{ matrix.name }})
         if: github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/tags/')
@@ -621,21 +611,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # BL-251: clave por fecha (UTC) en vez de run_id. Con run_id cada
-      # corrida guardaba una copia nueva de la base (~cientos de MB) y se
-      # llenaba el límite de caché del repo; con la fecha queda una por día,
-      # que es lo que tarda Trivy en publicar una base nueva.
-      - name: Fecha para la caché de Trivy
-        id: trivy_date
-        run: echo "date=$(date -u +%F)" >> "$GITHUB_OUTPUT"
-
-      - name: Cache DB de vulnerabilidades Trivy
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/trivy
-          key: trivy-db-${{ steps.trivy_date.outputs.date }}
-          restore-keys: trivy-db-
-
       - name: Construir imagen (efímera, sin push)
         run: |
           docker build \
@@ -657,7 +632,6 @@ jobs:
           severity: CRITICAL,HIGH
           exit-code: "1"
           trivyignores: .trivyignore
-          cache-dir: ~/.cache/trivy
 
   # ── JOB 9: DEPLOY STAGING ─────────────────────────────────────────────────
   deploy-staging:
@@ -810,11 +784,26 @@ jobs:
 
       - name: Health check staging
         run: |
-          sleep 40
-          curl -f https://bistrolink-api-staging.up.railway.app/health
-          curl -f https://bistrolink-api-staging.up.railway.app/health/ready
-          curl -f https://bistrolink-web-staging.up.railway.app
-          curl -f https://bistrolink-auth-staging.up.railway.app/realms/bistrolink/.well-known/openid-configuration
+          # Reintenta cada endpoint hasta 30 veces cada 10 s (~5 min) en vez de
+          # un sleep fijo: Keycloak tarda bastante más de 40 s en arrancar después
+          # del redeploy y Railway le pasa tráfico antes de que esté listo (no
+          # tiene healthcheck configurado, ver BL-229), así que respondía 503 y el
+          # job fallaba aunque el deploy estuviera bien. Si se agotan los
+          # reintentos, muestra el body y el código HTTP de la última respuesta
+          # ("curl -f" solo no los muestra).
+          check() {
+            if curl -fsS -o /dev/null --retry 30 --retry-delay 10 --retry-all-errors --max-time 15 "$1"; then
+              echo "OK    $1"
+            else
+              echo "FALLÓ $1 — última respuesta:"
+              curl -sS --max-time 15 -w "\nHTTP %{http_code}\n" "$1" || true
+              return 1
+            fi
+          }
+          check https://bistrolink-api-staging.up.railway.app/health
+          check https://bistrolink-api-staging.up.railway.app/health/ready
+          check https://bistrolink-web-staging.up.railway.app
+          check https://bistrolink-auth-staging.up.railway.app/realms/bistrolink/.well-known/openid-configuration
 
   # ── JOB 9A: ROLLBACK MANUAL (staging) ─────────────────────────────────────
   # Revierte staging a una imagen YA publicada en GHCR (por SHA), sin
@@ -943,11 +932,19 @@ jobs:
 
       - name: Health check post-rollback
         run: |
-          sleep 40
-          curl -f https://bistrolink-api-staging.up.railway.app/health
-          curl -f https://bistrolink-api-staging.up.railway.app/health/ready
-          curl -f https://bistrolink-web-staging.up.railway.app
-          curl -f https://bistrolink-auth-staging.up.railway.app/realms/bistrolink/.well-known/openid-configuration
+          check() {
+            if curl -fsS -o /dev/null --retry 30 --retry-delay 10 --retry-all-errors --max-time 15 "$1"; then
+              echo "OK    $1"
+            else
+              echo "FALLÓ $1 — última respuesta:"
+              curl -sS --max-time 15 -w "\nHTTP %{http_code}\n" "$1" || true
+              return 1
+            fi
+          }
+          check https://bistrolink-api-staging.up.railway.app/health
+          check https://bistrolink-api-staging.up.railway.app/health/ready
+          check https://bistrolink-web-staging.up.railway.app
+          check https://bistrolink-auth-staging.up.railway.app/realms/bistrolink/.well-known/openid-configuration
 
   # ── JOB 9B: LIGHTHOUSE (Performance mobile) — staging ────────────────────────
   lighthouse:
@@ -1311,8 +1308,16 @@ jobs:
   #
   #       - name: Health check producción
   #         run: |
-  #           sleep 40
-  #           curl -f https://bistrolink-api-production.up.railway.app/health
-  #           curl -f https://bistrolink-api-production.up.railway.app/health/ready
-  #           curl -f https://bistrolink-web-production.up.railway.app
-  #           curl -f https://bistrolink-auth-production.up.railway.app/realms/bistrolink/.well-known/openid-configuration
+  #           check() {
+  #             if curl -fsS -o /dev/null --retry 30 --retry-delay 10 --retry-all-errors --max-time 15 "$1"; then
+  #               echo "OK    $1"
+  #             else
+  #               echo "FALLÓ $1 — última respuesta:"
+  #               curl -sS --max-time 15 -w "\nHTTP %{http_code}\n" "$1" || true
+  #               return 1
+  #             fi
+  #           }
+  #           check https://bistrolink-api-production.up.railway.app/health
+  #           check https://bistrolink-api-production.up.railway.app/health/ready
+  #           check https://bistrolink-web-production.up.railway.app
+  #           check https://bistrolink-auth-production.up.railway.app/realms/bistrolink/.well-known/openid-configuration
