@@ -12,7 +12,8 @@ describe('KeycloakJwtStrategy', () => {
 
   beforeEach(() => {
     (passportJwtSecret as jest.Mock).mockReturnValue({
-      jwksUri: 'http://localhost:8080/realms/bistrolink/protocol/openid-connect/certs',
+      jwksUri:
+        'http://localhost:8080/realms/bistrolink/protocol/openid-connect/certs',
     });
   });
 

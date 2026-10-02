@@ -64,6 +64,7 @@ export class MesasController {
       req.user.tenantId,
       dto.restauranteId,
       dto.mesas,
+      dto.eliminar ?? [],
     );
   }
 

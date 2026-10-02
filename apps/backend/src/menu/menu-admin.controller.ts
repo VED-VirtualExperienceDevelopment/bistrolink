@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Patch,
+  Delete,
   Param,
   Body,
   UseGuards,
@@ -13,6 +14,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { RolesGuard, Roles } from '../auth/roles.guard';
 import { MenuAdminService } from './menu-admin.service';
 import { StorageService } from './storage.service';
+import { CreateItemDto } from './dto/create-item.dto';
 import { UpdateItemDto } from './dto/update-item.dto';
 import { UpdateCategoriaDto } from './dto/update-categoria.dto';
 import { PresignedUrlDto } from './dto/presigned-url.dto';
@@ -53,7 +55,6 @@ export class MenuAdminController {
   ) {
     const restauranteId = req.user.restauranteId;
     const keycloakId = req.user.sub;
-
     return this.menuAdminService.createCategoria(
       req.user.tenantId,
       restauranteId,
@@ -71,20 +72,14 @@ export class MenuAdminController {
     return this.menuAdminService.updateCategoria(req.user.tenantId, id, dto);
   }
 
+  @Delete('categoria/:id')
+  async deleteCategoria(@Req() req: any, @Param('id', ParseUUIDPipe) id: string) {
+    return this.menuAdminService.deleteCategoria(req.user.tenantId, id);
+  }
+
   @Post('item')
-  async createItem(
-    @Req() req: any,
-    @Body()
-    body: {
-      categoriaId: string;
-      nombre: string;
-      precio: string;
-      descripcion?: string;
-      disponible?: boolean;
-      imagenKey?: string;
-    },
-  ) {
-    return this.menuAdminService.createItem(req.user.tenantId, body);
+  async createItem(@Req() req: any, @Body() dto: CreateItemDto) {
+    return this.menuAdminService.createItem(req.user.tenantId, dto);
   }
 
   @Patch('item/:id')
@@ -94,5 +89,10 @@ export class MenuAdminController {
     @Body() dto: UpdateItemDto,
   ) {
     return this.menuAdminService.updateItem(req.user.tenantId, id, dto);
+  }
+
+  @Delete('item/:id')
+  async deleteItem(@Req() req: any, @Param('id', ParseUUIDPipe) id: string) {
+    return this.menuAdminService.deleteItem(req.user.tenantId, id);
   }
 }

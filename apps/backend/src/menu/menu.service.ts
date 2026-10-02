@@ -18,24 +18,27 @@ export class MenuService {
       });
 
       if (!mesa) {
-        throw new NotFoundException('Mesa no encontrada para este establecimiento');
+        throw new NotFoundException(
+          'Mesa no encontrada para este establecimiento',
+        );
       }
 
       const categorias = await tx.categoriaCarta.findMany({
-        where: { 
+        where: {
           restauranteId: mesa.restauranteId,
-          activo: true 
+          activo: true,
         },
         orderBy: { orden: 'asc' },
         include: {
-          items: { 
+          items: {
             where: { disponible: true },
             orderBy: { nombre: 'asc' },
           },
         },
       });
 
-      const categoriasConUrls = await this.categoriasConUrlsFirmadas(categorias);
+      const categoriasConUrls =
+        await this.categoriasConUrlsFirmadas(categorias);
 
       return {
         restaurante: { nombre: mesa.restaurante.nombre },
@@ -51,13 +54,15 @@ export class MenuService {
       });
 
       if (!restaurante) {
-        throw new NotFoundException('Restaurante no encontrado para este establecimiento');
+        throw new NotFoundException(
+          'Restaurante no encontrado para este establecimiento',
+        );
       }
 
       const categorias = await tx.categoriaCarta.findMany({
-        where: { 
+        where: {
           restauranteId,
-          activo: true 
+          activo: true,
         },
         orderBy: { orden: 'asc' },
         include: {
@@ -68,7 +73,8 @@ export class MenuService {
         },
       });
 
-      const categoriasConUrls = await this.categoriasConUrlsFirmadas(categorias);
+      const categoriasConUrls =
+        await this.categoriasConUrlsFirmadas(categorias);
 
       return {
         restaurante: {
