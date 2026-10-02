@@ -160,6 +160,29 @@ describe('PlexoWebhookService.procesarPago (BL-78)', () => {
       expect(tx.mesa.updateMany).not.toHaveBeenCalled();
     });
 
+    it('el id del pago difiere del id de sesión guardado: matchea el PENDIENTE del pedido y guarda el id del pago', async () => {
+      tx.pago.findMany.mockResolvedValue([
+        pagoGuardado({ pasarelaReferencia: 'id-de-la-sesion' }),
+      ]);
+
+      const resultado = await service.procesarPago(PAYMENT_ID);
+
+      expect(resultado).toBe('actualizado');
+      expect(tx.pago.update).toHaveBeenCalledWith({
+        where: { id: 'pago-1' },
+        data: { estado: 'APROBADO', pasarelaReferencia: PAYMENT_ID },
+      });
+    });
+
+    it('con id distinto, un pago ya resuelto no se toma como candidato', async () => {
+      tx.pago.findMany.mockResolvedValue([
+        pagoGuardado({ estado: 'RECHAZADO', pasarelaReferencia: 'otro-id' }),
+      ]);
+
+      expect(await service.procesarPago(PAYMENT_ID)).toBe('pago_no_encontrado');
+      expect(tx.pago.update).not.toHaveBeenCalled();
+    });
+
     it('el pago no existe en Plexo (notificación simulada/errónea) => se ignora', async () => {
       plexo.consultarPago.mockResolvedValue(null);
 
