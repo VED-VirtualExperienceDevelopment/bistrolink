@@ -49,11 +49,17 @@ RUN npm pkg delete scripts.prepare && \
   /usr/local/bin/npx \
   /usr/local/bin/corepack
 
-COPY --from=builder /app/apps/backend/dist ./dist
-COPY --from=builder /app/apps/backend/prisma ./prisma
+# El backend se ejecuta desde apps/backend (no desde /app): npm ci con
+# --workspace puede dejar dependencias del backend en apps/backend/node_modules
+# (cuando su versión choca con la que quedó hoisteada en la raíz). Desde
+# apps/backend/dist, Node las encuentra ahí y también en /app/node_modules;
+# desde /app/dist solo vería la raíz y fallaría con "Cannot find module".
+COPY --from=builder /app/apps/backend/dist ./apps/backend/dist
+COPY --from=builder /app/apps/backend/prisma ./apps/backend/prisma
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 
 RUN addgroup -S bistrolink && adduser -S bistrolink -G bistrolink
+WORKDIR /app/apps/backend
 USER bistrolink
 EXPOSE 3001
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
