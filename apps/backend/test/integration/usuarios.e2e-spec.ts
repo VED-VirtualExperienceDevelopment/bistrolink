@@ -181,3 +181,156 @@ describe('Gestión de usuarios (HU-013) - e2e', () => {
       .expect(401);
   });
 });
+
+// ── BL-265 (BL-262, hallazgo R16): aislamiento de PATCH y DELETE ───────────
+// Hasta acá solo la creación tenía test de aislamiento (TC-I-007). Estos dos
+// casos verifican que un ADMIN del tenant A no puede cambiar el rol ni
+// desactivar a un usuario del tenant B conociendo su id: el servicio busca
+// el usuario en Postgres bajo RLS (runInTenantContext con el tenant del
+// token), no lo encuentra y responde 404 sin tocar Keycloak.
+describe('Gestión de usuarios (HU-013) - aislamiento de PATCH y DELETE (BL-265)', () => {
+  const TENANT_B = 'b02579f2-2bb0-496b-abf2-33c494c93122';
+
+  let app: INestApplication;
+  let prisma: PrismaClient;
+  let keycloakIdB: string | undefined;
+  let usuarioIdB: string | undefined;
+
+  const itConAdmin = ADMIN_PASS ? it : it.skip;
+
+  // Lee la fila del usuario de B con el contexto de tenant B (RLS).
+  async function filaUsuarioB() {
+    return prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.tenant_id', ${TENANT_B}, true)`;
+      return tx.usuario.findUnique({ where: { id: usuarioIdB } });
+    });
+  }
+
+  // Estado del usuario de B en Keycloak: habilitado y roles de realm.
+  async function estadoKeycloakB() {
+    const headers = {
+      Authorization: `Bearer ${await getMasterAdminToken()}`,
+    };
+    const base = `${KEYCLOAK_URL}/admin/realms/${REALM}/users/${keycloakIdB}`;
+    const usuario = await (await fetch(base, { headers })).json();
+    const roles = await (
+      await fetch(`${base}/role-mappings/realm`, { headers })
+    ).json();
+    return {
+      enabled: usuario.enabled as boolean,
+      roles: (roles as { name: string }[]).map((r) => r.name),
+    };
+  }
+
+  beforeAll(async () => {
+    const moduleRef: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
+    app = moduleRef.createNestApplication();
+    await app.init();
+    prisma = new PrismaClient();
+
+    // Usuario MOZO del tenant B, creado como lo haría /usuarios: en Keycloak
+    // (con tenant_id = B y rol MOZO) y con su fila en `usuario`.
+    const adminToken = await getMasterAdminToken();
+    const headers = {
+      Authorization: `Bearer ${adminToken}`,
+      'Content-Type': 'application/json',
+    };
+    const username = `mozo-b-r16-${Date.now()}`;
+    const creado = await fetch(`${KEYCLOAK_URL}/admin/realms/${REALM}/users`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        username,
+        email: `${username}@bistrolink.dev.com`,
+        firstName: 'Mozo',
+        lastName: 'TenantB',
+        enabled: true,
+        attributes: { tenant_id: [TENANT_B] },
+      }),
+    });
+    if (creado.status !== 201) {
+      throw new Error(`No se pudo crear el usuario de B: ${creado.status}`);
+    }
+    keycloakIdB = (creado.headers.get('location') as string).split('/').pop();
+
+    const rolMozo = await (
+      await fetch(`${KEYCLOAK_URL}/admin/realms/${REALM}/roles/MOZO`, {
+        headers,
+      })
+    ).json();
+    await fetch(
+      `${KEYCLOAK_URL}/admin/realms/${REALM}/users/${keycloakIdB}/role-mappings/realm`,
+      { method: 'POST', headers, body: JSON.stringify([rolMozo]) },
+    );
+
+    const fila = await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.tenant_id', ${TENANT_B}, true)`;
+      return tx.usuario.create({
+        data: {
+          tenantId: TENANT_B,
+          restauranteId: RESTAURANTE_TENANT_B,
+          keycloakId: keycloakIdB as string,
+          username,
+          email: `${username}@bistrolink.dev.com`,
+          rol: 'MOZO',
+          activo: true,
+        },
+      });
+    });
+    usuarioIdB = fila.id;
+  });
+
+  afterAll(async () => {
+    if (keycloakIdB) {
+      await borrarUsuarioKeycloak(keycloakIdB).catch(() => undefined);
+      await prisma
+        .$transaction(async (tx) => {
+          await tx.$executeRaw`SELECT set_config('app.tenant_id', ${TENANT_B}, true)`;
+          await tx.usuario.deleteMany({ where: { keycloakId: keycloakIdB } });
+        })
+        .catch(() => undefined); // best-effort
+    }
+    await prisma.$disconnect();
+    await app.close();
+  });
+
+  itConAdmin(
+    '[TC-I-041] Usuarios: ADMIN no puede cambiar el rol de un usuario de otro tenant (404)',
+    async () => {
+      const token = await getToken(ADMIN_USER, ADMIN_PASS as string);
+
+      await request(app.getHttpServer())
+        .patch(`/usuarios/${usuarioIdB}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ rol: 'ADMIN' })
+        .expect(404);
+
+      // Sin cambios en Postgres ni en Keycloak.
+      const fila = await filaUsuarioB();
+      expect(fila?.rol).toBe('MOZO');
+      expect(fila?.activo).toBe(true);
+      const kc = await estadoKeycloakB();
+      expect(kc.roles).toContain('MOZO');
+      expect(kc.roles).not.toContain('ADMIN');
+    },
+  );
+
+  itConAdmin(
+    '[TC-I-042] Usuarios: ADMIN no puede desactivar a un usuario de otro tenant (404)',
+    async () => {
+      const token = await getToken(ADMIN_USER, ADMIN_PASS as string);
+
+      await request(app.getHttpServer())
+        .delete(`/usuarios/${usuarioIdB}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(404);
+
+      // Sigue activo en Postgres y habilitado en Keycloak.
+      const fila = await filaUsuarioB();
+      expect(fila?.activo).toBe(true);
+      expect((await estadoKeycloakB()).enabled).toBe(true);
+    },
+  );
+});
