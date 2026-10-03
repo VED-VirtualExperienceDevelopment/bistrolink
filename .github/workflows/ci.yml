@@ -1024,7 +1024,11 @@ jobs:
   playwright-report:
     name: 📋 Merge + reporte E2E a Kiwi TCMS
     needs: [playwright, version]
-    if: ${{ !cancelled() }}
+    # Corre solo si los E2E corrieron de verdad (push a develop con deploy a
+    # staging, o un workflow_dispatch sobre develop). Con "!cancelled()" solo,
+    # el job corría también en PRs, en main y en tags con playwright
+    # "skipped": mergeaba 0 reportes y podía abrir un Test Run vacío en Kiwi.
+    if: ${{ !cancelled() && needs.playwright.result != 'skipped' }}
     runs-on: ubuntu-latest
     steps:
       - name: Descargar los 4 reportes
