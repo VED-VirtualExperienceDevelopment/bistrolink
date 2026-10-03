@@ -272,73 +272,18 @@ jobs:
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
 
+      # Los resultados de los tests unitarios NO se suben a Kiwi TCMS
+      # (decisión del 27/09/2026, Anexo 11 §9.4; BL-269/BL-268): no se cargan
+      # como casos en Kiwi porque son demasiados y cambian con el código. Su
+      # evidencia es este job (check obligatorio), el junit.xml dentro del
+      # artifact coverage-report-<workspace> y la cobertura en Codecov.
+
   # NOTA: este job corre solo los tests UNITARIOS (npm run test:cov), no el
   # test:e2e de aislamiento multi-tenant (tenant-isolation.e2e-spec.ts) — ese
   # necesita Keycloak + Postgres reales con el realm importado y 3 fixtures
   # de usuario ya creados (Cocina, sin-tenant, tenant B), y todavía no tiene
   # su propio job de CI con service containers + script de seed. Queda
   # pendiente como paquete aparte (correspondería a EDT 1.8.6, corrido en CI).
-
-  # ── JOB 2b: REPORTE DE UNITARIOS A KIWI TCMS (BL-269 / BL-268) ──────────
-  # Separado del job de Jest para que el upload (~16 min para los 482 tests
-  # del backend: el plugin hace ~5 llamadas XML-RPC por test) no bloquee
-  # build ni deploy. Nadie depende de este job. Solo en push a develop/main
-  # (no en PRs) y con timeout de 25 min; si el upload falla o se corta, lo
-  # avisa en el resumen de la corrida en lugar de quedar en verde silencioso.
-  # Toma el junit.xml del artifact coverage-report-<workspace> que sube Jest.
-  #
-  # Plugin oficial de Kiwi TCMS, que lee el
-  # junit.xml de cada suite y crea/actualiza TestPlan, TestRun y
-  # TestExecution vía XML-RPC. Usuario de servicio dedicado
-  # (github-actions, grupo Tester, sin privilegios de admin) — ver
-  # Secrets KIWI_TCMS_*.
-  #
-  # TCMS_PRODUCT_VERSION: usa la rama BASE del PR (github.base_ref) en
-  # vez de github.ref_name, para que todas las feature/fix branches
-  # reporten al mismo TestPlan (develop o main) en lugar de crear uno
-  # nuevo y efímero por cada rama.
-  #
-  # TCMS_BUILD lleva sufijo "-backend"/"-frontend" para que cada suite
-  # quede en su propio TestRun, identificado y separado del otro.
-  # jest-junit ya nombra cada test case con el archivo + los describe()
-  # como classname y el título del test como name, así que un fallo se
-  # rastrea directo a su suite y caso en Kiwi.
-  kiwi-unitarios:
-    name: 📋 Reporte unitarios a Kiwi TCMS (${{ matrix.workspace }})
-    needs: [jest, version]
-    if: always() && needs.jest.result != 'skipped' && github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    timeout-minutes: 25
-    strategy:
-      fail-fast: false
-      matrix:
-        workspace: [backend, frontend]
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: coverage-report-${{ matrix.workspace }}
-          path: coverage
-
-      - name: Upload results to Kiwi TCMS (${{ matrix.workspace }})
-        env:
-          TCMS_PRODUCT: "BistroLink"
-          TCMS_PRODUCT_VERSION: ${{ github.event_name == 'pull_request' && github.base_ref || github.ref_name }}
-          TCMS_BUILD: ${{ needs.version.outputs.label }}-${{ matrix.workspace }}
-        run: |
-          pip install kiwitcms-junit.xml-plugin --break-system-packages
-          cat <<EOF > ~/.tcms.conf
-          [tcms]
-          url = ${{ secrets.KIWI_TCMS_URL }}/xml-rpc/
-          username = ${{ secrets.KIWI_TCMS_USERNAME }}
-          password = ${{ secrets.KIWI_TCMS_PASSWORD }}
-          EOF
-          if timeout 22m tcms-junit.xml-plugin coverage/junit.xml; then
-            echo "✅ Kiwi TCMS: resultados de ${{ matrix.workspace }} subidos" >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "⚠️ Kiwi TCMS: no se pudieron subir los resultados de ${{ matrix.workspace }} (código $?; 124 = timeout)" >> "$GITHUB_STEP_SUMMARY"
-            exit 1
-          fi
 
   # ── JOB 3: TESTS DE CONTRATO (PactJS) ────────────────────────────────────
   # NOTA: corresponde incorporarlo en etapa de integracion con
@@ -1079,7 +1024,11 @@ jobs:
   playwright-report:
     name: 📋 Merge + reporte E2E a Kiwi TCMS
     needs: [playwright, version]
-    if: ${{ !cancelled() }}
+    # Corre solo si los E2E corrieron de verdad (push a develop con deploy a
+    # staging, o un workflow_dispatch sobre develop). Con "!cancelled()" solo,
+    # el job corría también en PRs, en main y en tags con playwright
+    # "skipped": mergeaba 0 reportes y podía abrir un Test Run vacío en Kiwi.
+    if: ${{ !cancelled() && needs.playwright.result != 'skipped' }}
     runs-on: ubuntu-latest
     steps:
       - name: Descargar los 4 reportes
