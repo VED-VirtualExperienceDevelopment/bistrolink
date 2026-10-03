@@ -7,7 +7,7 @@ BL-161). Las descripciones dentro del JSON quedan cortas a propósito y
 apuntan acá.
 
 ## Client Scope: `tenant`
-
+git
 Incluye también el mapper de `sub` (Subject/ID del usuario).
 
 **Motivo:** al importar el realm vía `--import-realm`, Keycloak NO recrea el
@@ -57,3 +57,19 @@ Si necesitás agregar contexto largo sobre un `clientScope`, `client` o
 asumas que la columna de Keycloak tiene espacio de sobra — el límite real es
 255 caracteres y no hay validación en build time que lo avise; se descubre
 recién en runtime, al importar, y tira todo el contenedor en crash loop.
+
+## User profile: atributo `tenant_id` (BL-262, R1)
+
+`tenant_id` tiene `view` y `edit` **solo para `admin`** en el user profile
+declarativo. Antes estaba abierto también a `user`, y como los roles por
+defecto del realm (`default-roles-bistrolink`) incluyen
+`account/manage-account`, cualquier usuario creado por la Admin API (mozos y
+admins de `/usuarios`, el comensal técnico) podía cambiarse el tenant por la
+API de cuenta y su próximo token salía con el `tenant_id` nuevo.
+
+El backend no se ve afectado: lee y escribe el atributo con la cuenta de
+servicio de `bistrolink-backend`, que opera como admin, y el mapper
+`tenant-id-mapper` lo sigue agregando al token igual.
+
+Nunca volver a darle permiso `user` a este atributo: es la base del
+aislamiento multi-tenant (RD.07).
