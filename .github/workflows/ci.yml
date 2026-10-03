@@ -451,24 +451,6 @@ jobs:
     if: |
       (github.event_name != 'workflow_dispatch' || inputs.solo_tests_unitarios != true) &&
       (github.event_name != 'pull_request' || needs.changes.outputs.code == 'true')
-    # Los 9 secrets de Auth NO pueden ir dentro de strategy.matrix — GitHub
-    # Actions resuelve las entradas del matrix ANTES de que el contexto
-    # "secrets" esté disponible para el job, así que cualquier ${{ secrets.* }}
-    # ahí adentro falla con "Unrecognized named-value: 'secrets'". Por eso
-    # viven acá, a nivel de job, y el step de build los usa condicionalmente
-    # según matrix.name.
-    env:
-      TEST_ADMIN_USERNAME: ${{ secrets.TEST_ADMIN_USERNAME }}
-      TEST_ADMIN_PASSWORD: ${{ secrets.TEST_ADMIN_PASSWORD }}
-      TEST_COCINA_USERNAME: ${{ secrets.TEST_COCINA_USERNAME }}
-      TEST_COCINA_PASSWORD: ${{ secrets.TEST_COCINA_PASSWORD }}
-      TEST_NO_TENANT_USERNAME: ${{ secrets.TEST_NO_TENANT_USERNAME }}
-      TEST_NO_TENANT_PASSWORD: ${{ secrets.TEST_NO_TENANT_PASSWORD }}
-      TEST_TENANT_B_USERNAME: ${{ secrets.TEST_TENANT_B_USERNAME }}
-      TEST_TENANT_B_PASSWORD: ${{ secrets.TEST_TENANT_B_PASSWORD }}
-      TEST_MOZO_USERNAME: ${{ secrets.TEST_MOZO_USERNAME }}
-      TEST_MOZO_PASSWORD: ${{ secrets.TEST_MOZO_PASSWORD }}
-      KEYCLOAK_COMENSAL_PASSWORD: ${{ secrets.KEYCLOAK_COMENSAL_PASSWORD }}
     strategy:
       fail-fast: false
       matrix:
@@ -494,31 +476,17 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # BL-264: la imagen de Auth ya no recibe las contraseñas de los usuarios
+      # de prueba como build-args (quedaban dentro de una capa de la imagen).
+      # Los usuarios de prueba se cargan al arrancar el contenedor, solo con
+      # KC_LOAD_TEST_USERS=true (ver keycloak/load-test-users.sh).
       - name: Construir imagen (${{ matrix.name }})
         run: |
-          if [ "${{ matrix.name }}" = "Auth" ]; then
-            docker build \
-              -t ${{ matrix.image }}:${{ env.TAG }} \
-              --build-arg TEST_ADMIN_USERNAME="$TEST_ADMIN_USERNAME" \
-              --build-arg TEST_ADMIN_PASSWORD="$TEST_ADMIN_PASSWORD" \
-              --build-arg TEST_COCINA_USERNAME="$TEST_COCINA_USERNAME" \
-              --build-arg TEST_COCINA_PASSWORD="$TEST_COCINA_PASSWORD" \
-              --build-arg TEST_NO_TENANT_USERNAME="$TEST_NO_TENANT_USERNAME" \
-              --build-arg TEST_NO_TENANT_PASSWORD="$TEST_NO_TENANT_PASSWORD" \
-              --build-arg TEST_TENANT_B_USERNAME="$TEST_TENANT_B_USERNAME" \
-              --build-arg TEST_TENANT_B_PASSWORD="$TEST_TENANT_B_PASSWORD" \
-              --build-arg TEST_MOZO_USERNAME="$TEST_MOZO_USERNAME" \
-              --build-arg TEST_MOZO_PASSWORD="$TEST_MOZO_PASSWORD" \
-              --build-arg KEYCLOAK_COMENSAL_PASSWORD="$KEYCLOAK_COMENSAL_PASSWORD" \
-              -f ${{ matrix.dockerfile }} \
-              .
-          else
-            docker build \
-              -t ${{ matrix.image }}:${{ env.TAG }} \
-              ${{ matrix.extra_args }} \
-              -f ${{ matrix.dockerfile }} \
-              .
-          fi
+          docker build \
+            -t ${{ matrix.image }}:${{ env.TAG }} \
+            ${{ matrix.extra_args }} \
+            -f ${{ matrix.dockerfile }} \
+            .
 
       - name: Trivy — escaneo (${{ matrix.name }})
         # @master -> @0.35.0: fijar a una versión concreta. En marzo de 2026 se

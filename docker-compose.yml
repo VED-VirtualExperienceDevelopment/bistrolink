@@ -45,12 +45,12 @@ services:
     # puede no viajar igual que en Linux.
     entrypoint: ["/bin/bash", "/opt/keycloak/bin/set-client-secret.sh"]
     command: ["start-dev", "--import-realm"]
-    # Carga TEST_ADMIN_USERNAME, TEST_ADMIN_PASSWORD, KEYCLOAK_CLIENT_SECRET,
-    # TEST_MOZO_USERNAME/PASSWORD y KEYCLOAK_COMENSAL_PASSWORD directo del
-    # .env del backend — así el realm se importa igual para cualquiera del
-    # equipo con solo correr 'docker compose up -d', sin tener que setear
-    # variables de sesión ni pasar --env-file a mano. Confirmá que estas 6
-    # variables existen en apps/backend/.env (ver keycloak/README.md).
+    # Carga KEYCLOAK_CLIENT_SECRET y las variables de los usuarios de prueba
+    # (TEST_*_USERNAME/PASSWORD y KEYCLOAK_COMENSAL_PASSWORD) directo del
+    # .env del backend — así cualquiera del equipo levanta lo mismo con solo
+    # correr 'docker compose up -d'. BL-264: los usuarios de prueba ya no
+    # están en realm-export.json; los carga keycloak/load-test-users.sh al
+    # arrancar porque acá KC_LOAD_TEST_USERS=true (ver keycloak/README.md).
     env_file:
       - ./apps/backend/.env
     environment:
@@ -68,6 +68,7 @@ services:
       KC_HOSTNAME_STRICT: "false"
       KC_HTTP_ENABLED: "true"
       KC_HEALTH_ENABLED: "true"
+      KC_LOAD_TEST_USERS: "true" # BL-264: en local sí van los usuarios de prueba
     ports:
       - "8080:8080"
       - "9000:9000" # management interface — expone /health/ready desde Keycloak 26.x
@@ -76,6 +77,8 @@ services:
       - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
       - ./keycloak/themes/bistrolink:/opt/keycloak/themes/bistrolink:ro
       - ./keycloak/set-client-secret.sh:/opt/keycloak/bin/set-client-secret.sh:ro
+      - ./keycloak/load-test-users.sh:/opt/keycloak/bin/load-test-users.sh:ro
+      - ./keycloak/test-users.json:/opt/keycloak/data/test-users/test-users.json:ro
     healthcheck:
       test:
         - CMD-SHELL
