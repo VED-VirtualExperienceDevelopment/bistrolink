@@ -134,3 +134,21 @@ Variables: `TEST_ADMIN_USERNAME`, `TEST_ADMIN_PASSWORD`,
 - **Producción:** verificar que el servicio de Auth de producción **no** tenga
   `KC_LOAD_TEST_USERS` ni las variables `TEST_*` (checklist de BL-220 y
   BL-232).
+
+## Configuración de seguridad del realm (BL-266)
+
+Valores declarados en `realm-export.json` (realms nuevos, por ejemplo producción). En staging se aplican una sola vez por la Admin API (script del PR de BL-266), porque el import no actualiza un realm que ya existe; la quita de los roles de cuenta la hace el arranque del contenedor.
+
+| Control                                       | Valor                                                                  | Motivo                                                                                                                                                                                                    |
+| --------------------------------------------- | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Access token (realm)                          | 900 s (15 min)                                                         | Achica la ventana de un token robado. El frontend (`keycloak-js`) lo renueva solo 30 s antes de que venza; el KDS y el mapa de mesas recrean el socket con el token nuevo.                                |
+| Access token del cliente `bistrolink-backend` | 3600 s (atributo `access.token.lifespan`)                              | Lo usan el comensal (password grant) y la cuenta de servicio. El comensal no renueva su token durante el pedido (`SeguimientoPedido`), así que se mantiene la hora que tenía.                             |
+| SSO Session Idle / Max                        | 7200 s (2 h) / 43200 s (12 h)                                          | Acorde a un turno de restaurante.                                                                                                                                                                         |
+| Refresh token                                 | Rotación activa (`revokeRefreshToken: true`, reuso 0)                  | Ya estaba (HU-013).                                                                                                                                                                                       |
+| Política de contraseñas                       | `length(9) and notUsername(undefined) and passwordHistory(3)`          | Mínimo 9 caracteres, distinta del usuario, sin repetir las últimas 3. Solo se valida al fijar una contraseña: las de prueba (`TEST_*`, `KEYCLOAK_COMENSAL_PASSWORD`) tienen que tener 9 o más.            |
+| Eventos de usuario                            | Guardados 90 días (`eventsExpiration: 7776000`), todos los tipos       | Auditoría de logins y fallos (RF.19, HU-035). Se ven en la consola, _Events → User events_.                                                                                                               |
+| Eventos de administración                     | Guardados, **sin** representación (`adminEventsDetailsEnabled: false`) | Registra quién creó, cambió o borró qué; sin el cuerpo, para no guardar datos sensibles.                                                                                                                  |
+| Roles por defecto                             | Sin `account/manage-account` ni `account/view-profile`                 | El personal no usa la consola de cuenta de Keycloak. Los quita `set-client-secret.sh` en cada arranque (Keycloak los agrega al crear el realm y el JSON no puede sacarlos); así también aplica a staging. |
+| Detección de fuerza bruta                     | **Pendiente (BL-271)**                                                 | Activarla hoy permitiría bloquear al comensal técnico de un restaurante (su nombre se deduce del `tenantId`) y dejarlo sin pedidos por QR. Primero hay que hacer que ese nombre no se pueda adivinar.     |
+
+`load-test-users.sh`: si Keycloak rechaza la contraseña de un usuario de prueba por la política, el usuario recién creado se borra y el error queda en el log; el próximo arranque lo vuelve a intentar.
