@@ -83,6 +83,17 @@ else
     /opt/keycloak/bin/kcadm.sh update "clients/${CLIENT_UUID}" -r "$KC_REALM" -s "secret=${KEYCLOAK_CLIENT_SECRET_RUNTIME}"
     echo "[set-client-secret] Client secret actualizado correctamente."
   fi
+
+  # BL-264: usuarios de prueba, solo donde el entorno lo pide (local y
+  # staging con KC_LOAD_TEST_USERS=true; nunca en producción). Reusa la
+  # sesión de kcadm abierta arriba. Si falla, se avisa en el log pero
+  # Keycloak sigue arriba: sin usuarios de prueba la app funciona igual.
+  if [ "${KC_LOAD_TEST_USERS:-false}" = "true" ]; then
+    /bin/bash /opt/keycloak/bin/load-test-users.sh \
+      || echo "[set-client-secret] AVISO: no se pudieron cargar los usuarios de prueba (ver [load-test-users] arriba)." >&2
+  else
+    echo "[set-client-secret] KC_LOAD_TEST_USERS no está en true: no se cargan usuarios de prueba."
+  fi
 fi
 
 # 3. El proceso de Keycloak sigue siendo el que manda: si termina (o lo

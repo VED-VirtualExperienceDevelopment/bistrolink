@@ -7,7 +7,7 @@ BL-161). Las descripciones dentro del JSON quedan cortas a propósito y
 apuntan acá.
 
 ## Client Scope: `tenant`
-git
+
 Incluye también el mapper de `sub` (Subject/ID del usuario).
 
 **Motivo:** al importar el realm vía `--import-realm`, Keycloak NO recrea el
@@ -73,3 +73,64 @@ servicio de `bistrolink-backend`, que opera como admin, y el mapper
 
 Nunca volver a darle permiso `user` a este atributo: es la base del
 aislamiento multi-tenant (RD.07).
+
+## Usuarios de prueba: fuera de `realm-export.json` (BL-264, R2)
+
+`realm-export.json` tiene solo la **configuración** del realm (roles,
+clientes, scopes, mappers, user profile y la cuenta de servicio de
+`bistrolink-backend`). Los usuarios de prueba están en `test-users.json`, sin
+contraseñas, y los carga `load-test-users.sh` al arrancar el contenedor
+**solo si `KC_LOAD_TEST_USERS=true`**.
+
+**Motivo:** antes los usuarios de prueba venían en `realm-export.json` y
+`Dockerfile.auth` les escribía las contraseñas en el build (build-args
+`TEST_*`). Las contraseñas quedaban dentro de una capa de la imagen publicada
+en GHCR, y como staging y producción usan la misma imagen, producción nacía con
+usuarios de prueba y contraseñas conocidas.
+
+### Cómo funciona
+
+1. `set-client-secret.sh` arranca Keycloak, fija el client secret y, si
+   `KC_LOAD_TEST_USERS=true`, llama a `load-test-users.sh` con la misma sesión
+   de `kcadm` (admin del realm `master`).
+2. `load-test-users.sh` mira cuáles de los 6 usuarios faltan (por su ID fijo).
+   Si están todos, termina sin hacer nada y no necesita ninguna variable.
+3. Si falta alguno, reemplaza los `${TEST_*_USERNAME}` de `test-users.json`,
+   importa con la Admin API `partialImport` (`ifResourceExists: SKIP`: crea
+   los que faltan con su ID fijo y no toca los existentes) y le fija la
+   contraseña **solo a los recién creados**, desde las variables de entorno.
+4. Si falla, queda un aviso en el log y Keycloak sigue arriba.
+
+Los IDs fijos son los mismos que usan `apps/backend/prisma/seed.ts` y los
+tests de integración (`c832535d-…` admin, `f552ec55-…` mozo, etc.). Si se
+agrega un usuario de prueba: agregarlo en `test-users.json` con un ID fijo y en
+la lista `USUARIOS` de `load-test-users.sh` con la variable de su contraseña.
+
+### Por entorno
+
+| Entorno                              | `KC_LOAD_TEST_USERS`             | De dónde salen las variables                          |
+| ------------------------------------ | -------------------------------- | ----------------------------------------------------- |
+| Local (`docker compose`)             | `true` (en `docker-compose.yml`) | `apps/backend/.env`                                   |
+| Staging (Railway, `bistrolink-auth`) | `true`                           | Variables del servicio en Railway                     |
+| Producción (Railway)                 | **no se define**                 | — (no se carga ningún usuario de prueba)              |
+| CI                                   | —                                | El CI no levanta Keycloak; los E2E usan el de staging |
+
+Variables: `TEST_ADMIN_USERNAME`, `TEST_ADMIN_PASSWORD`,
+`TEST_COCINA_USERNAME`, `TEST_COCINA_PASSWORD`, `TEST_NO_TENANT_USERNAME`,
+`TEST_NO_TENANT_PASSWORD`, `TEST_TENANT_B_USERNAME`, `TEST_TENANT_B_PASSWORD`,
+`TEST_MOZO_USERNAME`, `TEST_MOZO_PASSWORD` y `KEYCLOAK_COMENSAL_PASSWORD`.
+
+### Cosas a tener en cuenta
+
+- **Un realm que ya existe no se toca.** `--import-realm` no actualiza un realm
+  existente; sacar los usuarios del JSON no los borra de staging ni de un
+  Keycloak local ya levantado.
+- **Rotar una contraseña de prueba:** cambiarla en la consola de Keycloak y en
+  la variable o secret correspondiente. El script no vuelve a fijar
+  contraseñas de usuarios existentes (para no chocar con la política de
+  contraseñas de BL-266 ni pisar cambios manuales).
+- **`test-users.json` no va en `data/import/`:** `--import-realm` lo trataría
+  como un realm completo. En la imagen vive en `/opt/keycloak/data/test-users/`.
+- **Producción:** verificar que el servicio de Auth de producción **no** tenga
+  `KC_LOAD_TEST_USERS` ni las variables `TEST_*` (checklist de BL-220 y
+  BL-232).
