@@ -110,6 +110,7 @@ jobs:
             apps:
               - 'apps/**'
               - 'packages/**'
+              - 'keycloak/**'
             testmgmt:
               - 'testmgmt/docker/**'
 
@@ -271,57 +272,11 @@ jobs:
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
 
-      # Plugin oficial de Kiwi TCMS, que lee el
-      # junit.xml de cada suite y crea/actualiza TestPlan, TestRun y
-      # TestExecution vía XML-RPC. Usuario de servicio dedicado
-      # (github-actions, grupo Tester, sin privilegios de admin) — ver
-      # Secrets KIWI_TCMS_*.
-      #
-      # TCMS_PRODUCT_VERSION: usa la rama BASE del PR (github.base_ref) en
-      # vez de github.ref_name, para que todas las feature/fix branches
-      # reporten al mismo TestPlan (develop o main) en lugar de crear uno
-      # nuevo y efímero por cada rama.
-      #
-      # TCMS_BUILD lleva sufijo "-backend"/"-frontend" para que cada suite
-      # quede en su propio TestRun, identificado y separado del otro.
-      # jest-junit ya nombra cada test case con el archivo + los describe()
-      # como classname y el título del test como name, así que un fallo se
-      # rastrea directo a su suite y caso en Kiwi.
-      - name: Upload results to Kiwi TCMS (backend)
-        if: always()
-        continue-on-error: true
-        timeout-minutes: 5
-        env:
-          TCMS_PRODUCT: "BistroLink"
-          TCMS_PRODUCT_VERSION: ${{ github.event_name == 'pull_request' && github.base_ref || github.ref_name }}
-          TCMS_BUILD: ${{ needs.version.outputs.label }}-backend
-        run: |
-          pip install kiwitcms-junit.xml-plugin --break-system-packages
-          cat <<EOF > ~/.tcms.conf
-          [tcms]
-          url = ${{ secrets.KIWI_TCMS_URL }}/xml-rpc/
-          username = ${{ secrets.KIWI_TCMS_USERNAME }}
-          password = ${{ secrets.KIWI_TCMS_PASSWORD }}
-          EOF
-          tcms-junit.xml-plugin apps/backend/coverage/junit.xml
-
-      - name: Upload results to Kiwi TCMS (frontend)
-        if: always()
-        continue-on-error: true
-        timeout-minutes: 5
-        env:
-          TCMS_PRODUCT: "BistroLink"
-          TCMS_PRODUCT_VERSION: ${{ github.event_name == 'pull_request' && github.base_ref || github.ref_name }}
-          TCMS_BUILD: ${{ needs.version.outputs.label }}-frontend
-        run: |
-          pip install kiwitcms-junit.xml-plugin --break-system-packages
-          cat <<EOF > ~/.tcms.conf
-          [tcms]
-          url = ${{ secrets.KIWI_TCMS_URL }}/xml-rpc/
-          username = ${{ secrets.KIWI_TCMS_USERNAME }}
-          password = ${{ secrets.KIWI_TCMS_PASSWORD }}
-          EOF
-          tcms-junit.xml-plugin apps/frontend/coverage/junit.xml
+      # Los resultados de los tests unitarios NO se suben a Kiwi TCMS
+      # (decisión del 27/09/2026, Anexo 11 §9.4; BL-269/BL-268): no se cargan
+      # como casos en Kiwi porque son demasiados y cambian con el código. Su
+      # evidencia es este job (check obligatorio), el junit.xml dentro del
+      # artifact coverage-report-<workspace> y la cobertura en Codecov.
 
   # NOTA: este job corre solo los tests UNITARIOS (npm run test:cov), no el
   # test:e2e de aislamiento multi-tenant (tenant-isolation.e2e-spec.ts) — ese
@@ -496,24 +451,6 @@ jobs:
     if: |
       (github.event_name != 'workflow_dispatch' || inputs.solo_tests_unitarios != true) &&
       (github.event_name != 'pull_request' || needs.changes.outputs.code == 'true')
-    # Los 9 secrets de Auth NO pueden ir dentro de strategy.matrix — GitHub
-    # Actions resuelve las entradas del matrix ANTES de que el contexto
-    # "secrets" esté disponible para el job, así que cualquier ${{ secrets.* }}
-    # ahí adentro falla con "Unrecognized named-value: 'secrets'". Por eso
-    # viven acá, a nivel de job, y el step de build los usa condicionalmente
-    # según matrix.name.
-    env:
-      TEST_ADMIN_USERNAME: ${{ secrets.TEST_ADMIN_USERNAME }}
-      TEST_ADMIN_PASSWORD: ${{ secrets.TEST_ADMIN_PASSWORD }}
-      TEST_COCINA_USERNAME: ${{ secrets.TEST_COCINA_USERNAME }}
-      TEST_COCINA_PASSWORD: ${{ secrets.TEST_COCINA_PASSWORD }}
-      TEST_NO_TENANT_USERNAME: ${{ secrets.TEST_NO_TENANT_USERNAME }}
-      TEST_NO_TENANT_PASSWORD: ${{ secrets.TEST_NO_TENANT_PASSWORD }}
-      TEST_TENANT_B_USERNAME: ${{ secrets.TEST_TENANT_B_USERNAME }}
-      TEST_TENANT_B_PASSWORD: ${{ secrets.TEST_TENANT_B_PASSWORD }}
-      TEST_MOZO_USERNAME: ${{ secrets.TEST_MOZO_USERNAME }}
-      TEST_MOZO_PASSWORD: ${{ secrets.TEST_MOZO_PASSWORD }}
-      KEYCLOAK_COMENSAL_PASSWORD: ${{ secrets.KEYCLOAK_COMENSAL_PASSWORD }}
     strategy:
       fail-fast: false
       matrix:
@@ -539,31 +476,17 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # BL-264: la imagen de Auth ya no recibe las contraseñas de los usuarios
+      # de prueba como build-args (quedaban dentro de una capa de la imagen).
+      # Los usuarios de prueba se cargan al arrancar el contenedor, solo con
+      # KC_LOAD_TEST_USERS=true (ver keycloak/load-test-users.sh).
       - name: Construir imagen (${{ matrix.name }})
         run: |
-          if [ "${{ matrix.name }}" = "Auth" ]; then
-            docker build \
-              -t ${{ matrix.image }}:${{ env.TAG }} \
-              --build-arg TEST_ADMIN_USERNAME="$TEST_ADMIN_USERNAME" \
-              --build-arg TEST_ADMIN_PASSWORD="$TEST_ADMIN_PASSWORD" \
-              --build-arg TEST_COCINA_USERNAME="$TEST_COCINA_USERNAME" \
-              --build-arg TEST_COCINA_PASSWORD="$TEST_COCINA_PASSWORD" \
-              --build-arg TEST_NO_TENANT_USERNAME="$TEST_NO_TENANT_USERNAME" \
-              --build-arg TEST_NO_TENANT_PASSWORD="$TEST_NO_TENANT_PASSWORD" \
-              --build-arg TEST_TENANT_B_USERNAME="$TEST_TENANT_B_USERNAME" \
-              --build-arg TEST_TENANT_B_PASSWORD="$TEST_TENANT_B_PASSWORD" \
-              --build-arg TEST_MOZO_USERNAME="$TEST_MOZO_USERNAME" \
-              --build-arg TEST_MOZO_PASSWORD="$TEST_MOZO_PASSWORD" \
-              --build-arg KEYCLOAK_COMENSAL_PASSWORD="$KEYCLOAK_COMENSAL_PASSWORD" \
-              -f ${{ matrix.dockerfile }} \
-              .
-          else
-            docker build \
-              -t ${{ matrix.image }}:${{ env.TAG }} \
-              ${{ matrix.extra_args }} \
-              -f ${{ matrix.dockerfile }} \
-              .
-          fi
+          docker build \
+            -t ${{ matrix.image }}:${{ env.TAG }} \
+            ${{ matrix.extra_args }} \
+            -f ${{ matrix.dockerfile }} \
+            .
 
       - name: Trivy — escaneo (${{ matrix.name }})
         # @master -> @0.35.0: fijar a una versión concreta. En marzo de 2026 se
@@ -1069,7 +992,11 @@ jobs:
   playwright-report:
     name: 📋 Merge + reporte E2E a Kiwi TCMS
     needs: [playwright, version]
-    if: ${{ !cancelled() }}
+    # Corre solo si los E2E corrieron de verdad (push a develop con deploy a
+    # staging, o un workflow_dispatch sobre develop). Con "!cancelled()" solo,
+    # el job corría también en PRs, en main y en tags con playwright
+    # "skipped": mergeaba 0 reportes y podía abrir un Test Run vacío en Kiwi.
+    if: ${{ !cancelled() && needs.playwright.result != 'skipped' }}
     runs-on: ubuntu-latest
     steps:
       - name: Descargar los 4 reportes

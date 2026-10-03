@@ -83,6 +83,30 @@ else
     /opt/keycloak/bin/kcadm.sh update "clients/${CLIENT_UUID}" -r "$KC_REALM" -s "secret=${KEYCLOAK_CLIENT_SECRET_RUNTIME}"
     echo "[set-client-secret] Client secret actualizado correctamente."
   fi
+
+  # BL-266: el personal no usa la consola de cuenta de Keycloak
+  # (/realms/bistrolink/account), así que se sacan sus roles
+  # (account/manage-account y account/view-profile) de los roles por defecto
+  # del realm. Va acá y no en realm-export.json porque Keycloak los agrega
+  # solo al crear el realm y el JSON no puede quitarlos; además así se aplica
+  # también a los realms que ya existen (staging). Es idempotente y afecta a
+  # todos los usuarios que heredan los roles por defecto.
+  /opt/keycloak/bin/kcadm.sh remove-roles -r "$KC_REALM" \
+      --rname "default-roles-${KC_REALM}" --cclientid account \
+      --rolename manage-account --rolename view-profile \
+    && echo "[set-client-secret] Roles de la consola de cuenta fuera de los roles por defecto." \
+    || echo "[set-client-secret] AVISO: no se pudieron quitar los roles de cuenta de los roles por defecto." >&2
+
+  # BL-264: usuarios de prueba, solo donde el entorno lo pide (local y
+  # staging con KC_LOAD_TEST_USERS=true; nunca en producción). Reusa la
+  # sesión de kcadm abierta arriba. Si falla, se avisa en el log pero
+  # Keycloak sigue arriba: sin usuarios de prueba la app funciona igual.
+  if [ "${KC_LOAD_TEST_USERS:-false}" = "true" ]; then
+    /bin/bash /opt/keycloak/bin/load-test-users.sh \
+      || echo "[set-client-secret] AVISO: no se pudieron cargar los usuarios de prueba (ver [load-test-users] arriba)." >&2
+  else
+    echo "[set-client-secret] KC_LOAD_TEST_USERS no está en true: no se cargan usuarios de prueba."
+  fi
 fi
 
 # 3. El proceso de Keycloak sigue siendo el que manda: si termina (o lo

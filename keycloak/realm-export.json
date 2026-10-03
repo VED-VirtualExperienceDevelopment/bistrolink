@@ -4,15 +4,21 @@
   "enabled": true,
   "displayName": "BistroLink",
   "displayNameHtml": "BistroLink<span class=\"bl-subtitle\">Portal de Administración</span>",
-  "accessTokenLifespan": 3600,
-  "ssoSessionIdleTimeout": 1800,
-  "ssoSessionMaxLifespan": 36000,
+  "accessTokenLifespan": 900,
+  "ssoSessionIdleTimeout": 7200,
+  "ssoSessionMaxLifespan": 43200,
   "revokeRefreshToken": true,
   "refreshTokenMaxReuse": 0,
   "sslRequired": "external",
   "registrationAllowed": false,
   "loginWithEmailAllowed": true,
   "duplicateEmailsAllowed": false,
+  "passwordPolicy": "length(9) and notUsername(undefined) and passwordHistory(3)",
+  "eventsEnabled": true,
+  "eventsExpiration": 7776000,
+  "eventsListeners": ["jboss-logging"],
+  "adminEventsEnabled": true,
+  "adminEventsDetailsEnabled": false,
   "roles": {
     "realm": [
       {
@@ -67,6 +73,9 @@
     {
       "clientId": "bistrolink-backend",
       "protocol": "openid-connect",
+      "attributes": {
+        "access.token.lifespan": "3600"
+      },
       "publicClient": false,
       "bearerOnly": false,
       "standardFlowEnabled": false,
@@ -169,123 +178,6 @@
   ],
   "users": [
     {
-      "id": "c832535d-6122-449d-8b21-2371d8b7d9d0",
-      "username": "${TEST_ADMIN_USERNAME}",
-      "email": "admin-test@bistrolink.dev.com",
-      "enabled": true,
-      "emailVerified": true,
-      "firstName": "Admin",
-      "lastName": "Test",
-      "attributes": {
-        "tenant_id": ["554915d0-f7ed-4053-b841-56479df29fd9"]
-      },
-      "credentials": [
-        {
-          "type": "password",
-          "value": "${TEST_ADMIN_PASSWORD}",
-          "temporary": false
-        }
-      ],
-      "realmRoles": ["ADMIN"]
-    },
-    {
-      "id": "d1a2b3c4-5566-4778-8899-aabbccddeeff",
-      "username": "${TEST_COCINA_USERNAME}",
-      "email": "cocina-test@bistrolink.dev.com",
-      "enabled": true,
-      "emailVerified": true,
-      "firstName": "Cocina",
-      "lastName": "Test",
-      "attributes": {
-        "tenant_id": ["554915d0-f7ed-4053-b841-56479df29fd9"]
-      },
-      "credentials": [
-        {
-          "type": "password",
-          "value": "${TEST_COCINA_PASSWORD}",
-          "temporary": false
-        }
-      ],
-      "realmRoles": ["COCINA"]
-    },
-    {
-      "id": "e2b3c4d5-6677-4889-99aa-bbccddeeff00",
-      "username": "${TEST_NO_TENANT_USERNAME}",
-      "email": "sin-tenant-test@bistrolink.dev.com",
-      "enabled": true,
-      "emailVerified": true,
-      "firstName": "SinTenant",
-      "lastName": "Test",
-      "credentials": [
-        {
-          "type": "password",
-          "value": "${TEST_NO_TENANT_PASSWORD}",
-          "temporary": false
-        }
-      ],
-      "realmRoles": ["MOZO"]
-    },
-    {
-      "id": "f3c4d5e6-7788-4990-aabb-ccddeeff0011",
-      "username": "${TEST_TENANT_B_USERNAME}",
-      "email": "admin-b-test@bistrolink.dev.com",
-      "enabled": true,
-      "emailVerified": true,
-      "firstName": "Admin",
-      "lastName": "TenantB",
-      "attributes": {
-        "tenant_id": ["b02579f2-2bb0-496b-abf2-33c494c93122"]
-      },
-      "credentials": [
-        {
-          "type": "password",
-          "value": "${TEST_TENANT_B_PASSWORD}",
-          "temporary": false
-        }
-      ],
-      "realmRoles": ["ADMIN"]
-    },
-    {
-      "id": "f552ec55-a5b5-44c3-a400-72ffc746c9b6",
-      "username": "${TEST_MOZO_USERNAME}",
-      "email": "mozo-test@bistrolink.dev.com",
-      "enabled": true,
-      "emailVerified": true,
-      "firstName": "Mozo",
-      "lastName": "Test",
-      "attributes": {
-        "tenant_id": ["11111111-1111-1111-1111-111111111111"]
-      },
-      "credentials": [
-        {
-          "type": "password",
-          "value": "${TEST_MOZO_PASSWORD}",
-          "temporary": false
-        }
-      ],
-      "realmRoles": ["MOZO"]
-    },
-    {
-      "id": "aeb7e03f-8364-58a1-b31d-9aaed44a32cf",
-      "username": "comensal-11111111-1111-1111-1111-111111111111",
-      "email": "comensal-demo@bistrolink.dev.com",
-      "enabled": true,
-      "emailVerified": true,
-      "firstName": "Comensal",
-      "lastName": "Demo",
-      "attributes": {
-        "tenant_id": ["11111111-1111-1111-1111-111111111111"]
-      },
-      "credentials": [
-        {
-          "type": "password",
-          "value": "${KEYCLOAK_COMENSAL_PASSWORD}",
-          "temporary": false
-        }
-      ],
-      "realmRoles": ["COMENSAL"]
-    },
-    {
       "username": "service-account-bistrolink-backend",
       "enabled": true,
       "serviceAccountClientId": "bistrolink-backend",
@@ -309,7 +201,7 @@
         "subComponents": {},
         "config": {
           "kc.user.profile.config": [
-            "{\"attributes\":[{\"name\":\"username\",\"displayName\":\"${username}\",\"validations\":{\"length\":{\"min\":3,\"max\":255},\"username-prohibited-characters\":{},\"up-username-not-idn-homograph\":{}},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false},{\"name\":\"email\",\"displayName\":\"${email}\",\"validations\":{\"email\":{},\"length\":{\"max\":255}},\"required\":{\"roles\":[\"user\"]},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false},{\"name\":\"firstName\",\"displayName\":\"${firstName}\",\"validations\":{\"length\":{\"max\":255},\"person-name-prohibited-characters\":{}},\"required\":{\"roles\":[\"user\"]},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false},{\"name\":\"lastName\",\"displayName\":\"${lastName}\",\"validations\":{\"length\":{\"max\":255},\"person-name-prohibited-characters\":{}},\"required\":{\"roles\":[\"user\"]},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false},{\"name\":\"tenant_id\",\"displayName\":\"${tenant_id}\",\"validations\":{},\"annotations\":{},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false}],\"groups\":[{\"name\":\"user-metadata\",\"displayHeader\":\"User metadata\",\"displayDescription\":\"Attributes, which refer to user metadata\"}]}"
+            "{\"attributes\":[{\"name\":\"username\",\"displayName\":\"${username}\",\"validations\":{\"length\":{\"min\":3,\"max\":255},\"username-prohibited-characters\":{},\"up-username-not-idn-homograph\":{}},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false},{\"name\":\"email\",\"displayName\":\"${email}\",\"validations\":{\"email\":{},\"length\":{\"max\":255}},\"required\":{\"roles\":[\"user\"]},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false},{\"name\":\"firstName\",\"displayName\":\"${firstName}\",\"validations\":{\"length\":{\"max\":255},\"person-name-prohibited-characters\":{}},\"required\":{\"roles\":[\"user\"]},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false},{\"name\":\"lastName\",\"displayName\":\"${lastName}\",\"validations\":{\"length\":{\"max\":255},\"person-name-prohibited-characters\":{}},\"required\":{\"roles\":[\"user\"]},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false},{\"name\":\"tenant_id\",\"displayName\":\"${tenant_id}\",\"validations\":{},\"annotations\":{},\"permissions\":{\"view\":[\"admin\"],\"edit\":[\"admin\"]},\"multivalued\":false}],\"groups\":[{\"name\":\"user-metadata\",\"displayHeader\":\"User metadata\",\"displayDescription\":\"Attributes, which refer to user metadata\"}]}"
           ]
         }
       }

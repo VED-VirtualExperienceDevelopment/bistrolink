@@ -36,75 +36,38 @@
 # vía la Admin REST API (kcadm.sh) — el valor real nunca queda escrito en
 # ninguna capa de la imagen.
 #
-# BL-140 (bug encontrado en revisión): la lista de variables para envsubst
-# estaba incompleta — faltaban TEST_MOZO_USERNAME, TEST_MOZO_PASSWORD y
-# KEYCLOAK_COMENSAL_PASSWORD, pese a que realm-export.json las usa. Como
-# envsubst con lista explícita de variables deja sin tocar cualquier otro
-# "${...}" que no esté en esa lista, esos tres placeholders quedaban
-# literalmente escritos como "${TEST_MOZO_PASSWORD}" etc. en el JSON
-# importado, en vez del valor real — usuarios MOZO y COMENSAL de test con
-# credenciales rotas. Corregido abajo agregando los 3 ARGs faltantes a la
-# lista.
+# BL-264 (BL-262 · R2): la imagen ya NO lleva usuarios de prueba ni sus
+# contraseñas. Antes realm-export.json traía los usuarios de test y un primer
+# stage con envsubst les escribía las contraseñas en el build (build-args
+# TEST_*): quedaban dentro de una capa de la imagen publicada en GHCR, y como
+# la misma imagen va a producción, producción nacía con esos usuarios.
+#
+# Ahora:
+#   - realm-export.json tiene solo la configuración del realm y se copia tal
+#     cual (sin stage de envsubst). Los "${...}" que quedan son de Keycloak
+#     (${client_id} del mapper de roles, ${username} etc. del user profile) y
+#     el import los deja intactos (verificado en 26.7.2 el 03/10/2026).
+#   - test-users.json (usuarios sin contraseña) y load-test-users.sh se copian
+#     a la imagen, pero solo se usan si el contenedor arranca con
+#     KC_LOAD_TEST_USERS=true (local y staging). En producción esa variable no
+#     existe y no se carga ningún usuario de prueba. Las contraseñas llegan por
+#     variables de entorno en tiempo de ejecución (Railway), nunca en el build.
+#
+# test-users.json NO va en data/import/: --import-realm intentaría importarlo
+# como un realm completo.
 
-# ── STAGE 1: sustituir los placeholders ${VAR} del realm-export.json ────────
-# El mecanismo standalone de Keycloak (--import-realm) NO interpola variables
-# de entorno sobre el JSON (a diferencia del Keycloak Operator o de
-# herramientas como keycloak-config-cli), así que hay que resolverlas antes
-# con envsubst — pero la imagen final de Keycloak es la variante "micro" de
-# Red Hat UBI, que a propósito NO trae ningún gestor de paquetes (ni
-# microdnf, ni nada) para minimizar superficie de ataque. Por eso este paso
-# corre en una imagen aparte que sí tiene herramientas, y solo el archivo
-# JSON ya resuelto se copia a la imagen final — sin instalar nada en Keycloak.
-FROM debian:bookworm-slim AS realm-templater
-ARG TEST_ADMIN_USERNAME
-ARG TEST_ADMIN_PASSWORD
-ARG TEST_COCINA_USERNAME
-ARG TEST_COCINA_PASSWORD
-ARG TEST_NO_TENANT_USERNAME
-ARG TEST_NO_TENANT_PASSWORD
-ARG TEST_TENANT_B_USERNAME
-ARG TEST_TENANT_B_PASSWORD
-ARG TEST_MOZO_USERNAME
-ARG TEST_MOZO_PASSWORD
-ARG KEYCLOAK_COMENSAL_PASSWORD
-
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends gettext-base && \
-    rm -rf /var/lib/apt/lists/*
-
-COPY keycloak/realm-export.json /tmp/realm-export.json
-
-# IMPORTANTE: se le pasa a envsubst la lista explícita de variables a
-# sustituir (primer argumento entre comillas), en vez de dejarlo actuar sobre
-# TODO lo que tenga forma de "${...}". Sin esto, envsubst también pisaba
-# "${client_id}" del protocolMapper "client roles" (clientScopes > roles) —
-# ese placeholder es propio de Keycloak, pensado para resolverse en runtime
-# por cliente al generar el JWT, no algo que nosotros debamos tocar en build
-# time. Al no existir una env var real llamada "client_id", quedaba
-# reemplazado por string vacío y rompía ese mapper (hallazgo BL-140).
-RUN TEST_ADMIN_USERNAME="$TEST_ADMIN_USERNAME" \
-    TEST_ADMIN_PASSWORD="$TEST_ADMIN_PASSWORD" \
-    TEST_COCINA_USERNAME="$TEST_COCINA_USERNAME" \
-    TEST_COCINA_PASSWORD="$TEST_COCINA_PASSWORD" \
-    TEST_NO_TENANT_USERNAME="$TEST_NO_TENANT_USERNAME" \
-    TEST_NO_TENANT_PASSWORD="$TEST_NO_TENANT_PASSWORD" \
-    TEST_TENANT_B_USERNAME="$TEST_TENANT_B_USERNAME" \
-    TEST_TENANT_B_PASSWORD="$TEST_TENANT_B_PASSWORD" \
-    TEST_MOZO_USERNAME="$TEST_MOZO_USERNAME" \
-    TEST_MOZO_PASSWORD="$TEST_MOZO_PASSWORD" \
-    KEYCLOAK_COMENSAL_PASSWORD="$KEYCLOAK_COMENSAL_PASSWORD" \
-    envsubst '$TEST_ADMIN_USERNAME $TEST_ADMIN_PASSWORD $TEST_COCINA_USERNAME $TEST_COCINA_PASSWORD $TEST_NO_TENANT_USERNAME $TEST_NO_TENANT_PASSWORD $TEST_TENANT_B_USERNAME $TEST_TENANT_B_PASSWORD $TEST_MOZO_USERNAME $TEST_MOZO_PASSWORD $KEYCLOAK_COMENSAL_PASSWORD' \
-    < /tmp/realm-export.json > /tmp/realm-export.resuelto.json
-
-# ── STAGE 2: imagen final de Keycloak, sin tocar su gestor de paquetes ──────
 FROM quay.io/keycloak/keycloak:26.7.2
 
-# Copiamos el JSON YA con los valores reales (no el original con placeholders)
-# a la carpeta de importación estándar. Al arrancar con --import-realm,
-# Keycloak busca acá y lo carga automáticamente. Ya no tiene campo "secret"
-# para bistrolink-backend — lo genera random el import, y
-# set-client-secret.sh lo pisa después con el valor real (BL-185).
-COPY --from=realm-templater /tmp/realm-export.resuelto.json /opt/keycloak/data/import/realm-export.json
+# realm-export.json a la carpeta de importación estándar. Al arrancar con
+# --import-realm, Keycloak busca acá y lo carga automáticamente (solo si el
+# realm no existe). No tiene campo "secret" para bistrolink-backend — lo
+# genera random el import, y set-client-secret.sh lo pisa después con el
+# valor real (BL-185).
+COPY keycloak/realm-export.json /opt/keycloak/data/import/realm-export.json
+
+# BL-264: usuarios de prueba (sin contraseñas). Solo se cargan con
+# KC_LOAD_TEST_USERS=true; ver keycloak/load-test-users.sh.
+COPY keycloak/test-users.json /opt/keycloak/data/test-users/test-users.json
 
 # Tema custom de login (paleta/tipografía de BistroLink) — en local se monta
 # vía bind mount en docker-compose.yml (./keycloak/themes/bistrolink), pero
@@ -127,6 +90,7 @@ COPY keycloak/themes/bistrolink /opt/keycloak/themes/bistrolink
 # setea en el mismo paso de copia (a nivel de capa), sin depender de que el
 # usuario activo tenga derecho a modificar el archivo despues.
 COPY --chmod=0755 keycloak/set-client-secret.sh /opt/keycloak/bin/set-client-secret.sh
+COPY --chmod=0755 keycloak/load-test-users.sh /opt/keycloak/bin/load-test-users.sh
 
 ENTRYPOINT ["/bin/bash", "/opt/keycloak/bin/set-client-secret.sh"]
 
