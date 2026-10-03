@@ -101,11 +101,27 @@ log "Importando usuarios de prueba (${#nuevos[@]} nuevos, los existentes se salt
 "$KCADM" create partialImport -r "$KC_REALM" -f "$TMP_FILE" >/dev/null
 
 # 4. Contraseña solo para los recién creados.
+#    BL-266: el realm tiene política de contraseñas (mínimo 9 caracteres,
+#    distinta del usuario). Si una contraseña de prueba no la cumple,
+#    Keycloak la rechaza: en ese caso se borra el usuario recién creado, así
+#    no queda un usuario sin contraseña y el próximo arranque lo vuelve a
+#    intentar (con la variable ya corregida).
+fallidos=()
 for par in "${nuevos[@]}"; do
   id="${par%%:*}"
   var="${par#*:}"
-  "$KCADM" set-password -r "$KC_REALM" --userid "$id" --new-password "${!var}"
-  log "Usuario $id creado, contraseña tomada de $var."
+  if "$KCADM" set-password -r "$KC_REALM" --userid "$id" --new-password "${!var}"; then
+    log "Usuario $id creado, contraseña tomada de $var."
+  else
+    log "ERROR: Keycloak rechazó la contraseña de $var (¿no cumple la política del realm?). Se borra el usuario $id para reintentar en el próximo arranque." >&2
+    "$KCADM" delete "users/$id" -r "$KC_REALM" || true
+    fallidos+=("$var")
+  fi
 done
+
+if [ "${#fallidos[@]}" -gt 0 ]; then
+  log "ERROR: usuarios sin crear por contraseña inválida: ${fallidos[*]}." >&2
+  exit 1
+fi
 
 log "Listo."

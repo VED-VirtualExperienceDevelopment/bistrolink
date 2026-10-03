@@ -4,15 +4,21 @@
   "enabled": true,
   "displayName": "BistroLink",
   "displayNameHtml": "BistroLink<span class=\"bl-subtitle\">Portal de Administración</span>",
-  "accessTokenLifespan": 3600,
-  "ssoSessionIdleTimeout": 1800,
-  "ssoSessionMaxLifespan": 36000,
+  "accessTokenLifespan": 900,
+  "ssoSessionIdleTimeout": 7200,
+  "ssoSessionMaxLifespan": 43200,
   "revokeRefreshToken": true,
   "refreshTokenMaxReuse": 0,
   "sslRequired": "external",
   "registrationAllowed": false,
   "loginWithEmailAllowed": true,
   "duplicateEmailsAllowed": false,
+  "passwordPolicy": "length(9) and notUsername(undefined) and passwordHistory(3)",
+  "eventsEnabled": true,
+  "eventsExpiration": 7776000,
+  "eventsListeners": ["jboss-logging"],
+  "adminEventsEnabled": true,
+  "adminEventsDetailsEnabled": false,
   "roles": {
     "realm": [
       {
@@ -67,6 +73,9 @@
     {
       "clientId": "bistrolink-backend",
       "protocol": "openid-connect",
+      "attributes": {
+        "access.token.lifespan": "3600"
+      },
       "publicClient": false,
       "bearerOnly": false,
       "standardFlowEnabled": false,
