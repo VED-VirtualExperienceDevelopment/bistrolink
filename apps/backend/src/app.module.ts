@@ -25,6 +25,11 @@ const configuracionLog = construirConfiguracionLog(process.env);
       pinoHttp: {
         level: configuracionLog.level,
         messageKey: configuracionLog.messageKey,
+        // BL-274: los logs que se emiten dentro de un request (por ejemplo,
+        // el audit log) llevan solo el reqId, no el request entero con
+        // headers e IP. El detalle queda en el log "request completed",
+        // que tiene el mismo reqId para cruzarlos.
+        quietReqLogger: true,
         base: {
           developer: process.env.DEV_NAME ?? 'unknown',
         },
