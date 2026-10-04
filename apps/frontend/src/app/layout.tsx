@@ -1,24 +1,17 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
-import { Plus_Jakarta_Sans } from "next/font/google";
 import { KeycloakProvider } from "@/components/providers/KeycloakProvider";
 import { VersionInfo } from "@/components/ui/VersionInfo";
 import "./globals.css";
 
-const geistSans = localFont({
-  src: "./fonts/GeistVF.woff",
-  variable: "--font-geist-sans",
-  weight: "100 900",
-});
-const geistMono = localFont({
-  src: "./fonts/GeistMonoVF.woff",
-  variable: "--font-geist-mono",
-  weight: "100 900",
-});
-
-const plusJakarta = Plus_Jakarta_Sans({
-  subsets: ["latin"],
-  weight: ["400", "600", "700", "800"],
+// BL-222: única tipografía de la app, autoalojada en ./fonts para que el
+// build no dependa de Google Fonts. Es la versión variable (pesos 200 a 800
+// en un solo archivo), subconjunto latin, de @fontsource-variable/plus-jakarta-sans
+// 5.3.0. Licencia SIL OFL 1.1 en ./fonts/PlusJakartaSans-OFL.txt.
+const plusJakarta = localFont({
+  src: "./fonts/plus-jakarta-sans-latin-wght-normal.woff2",
+  weight: "200 800",
+  style: "normal",
   display: "swap",
 });
 
@@ -41,7 +34,7 @@ export default function RootLayout({
         />
       </head>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} ${plusJakarta.className} antialiased`}
+        className={`${plusJakarta.className} antialiased`}
       >
         <KeycloakProvider>{children}</KeycloakProvider>
         <VersionInfo />
