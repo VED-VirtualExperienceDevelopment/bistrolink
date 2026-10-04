@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useCallback, useMemo } from 'react';
-import { Inter, Public_Sans } from 'next/font/google';
 import type {
   CategoriaCarta,
   ItemCarrito,
@@ -14,8 +13,6 @@ import { apiFetch, ApiError } from '@/lib/api-client';
 import ItemNotaModal from './ItemNotaModal';
 import { SeguimientoPedido } from './SeguimientoPedido';
 import ItemImagen from './menu/ItemImagen';
-const inter = Inter({ subsets: ['latin'], weight: ['600', '700', '800'] });
-const publicSans = Public_Sans({ subsets: ['latin'], weight: ['500', '600'] });
 
 interface MenuPublicoProps {
   readonly restaurante: RestaurantePublico;
@@ -189,15 +186,15 @@ export default function MenuPublico({
     <div className="min-h-screen bg-culinary-background">
       <header className="bg-culinary-primary shadow-sm sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
-          <h1 className={`${inter.className} text-2xl font-bold text-white sm:text-3xl`}>
+          <h1 className="text-2xl font-bold text-white sm:text-3xl">
             {restaurante.nombre}
           </h1>
-          <p className={`${publicSans.className} text-sm text-white/80 mt-1 sm:text-base`}>
+          <p className="text-sm text-white/80 mt-1 sm:text-base">
             {restaurante.direccion}
           </p>
           <div className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 bg-white/15 border border-white/25 rounded-full">
             <span className="text-sm" role="img" aria-label="Tienda">🛍️</span>
-            <span className={`${publicSans.className} text-sm font-medium text-white`}>
+            <span className="text-sm font-medium text-white">
               Pedido desde fuera del local
             </span>
           </div>
@@ -212,7 +209,7 @@ export default function MenuPublico({
               <span className="text-2xl" role="img" aria-label="Confirmado">
                 ✅
               </span>
-              <p className={`${inter.className} font-semibold text-culinary-on-surface`}>
+              <p className="font-semibold text-culinary-on-surface">
                 ¡Pedido enviado! Cocina ya lo recibió.
               </p>
             </div>
@@ -229,10 +226,10 @@ export default function MenuPublico({
         {categorias.length === 0 ? (
           <div className="text-center py-16 bg-white rounded-[1rem] border border-culinary-neutral/10">
             <div className="text-6xl mb-4">🍽️</div>
-            <h2 className={`${inter.className} text-xl font-semibold text-culinary-on-surface mb-2`}>
+            <h2 className="text-xl font-semibold text-culinary-on-surface mb-2">
               Menú no disponible
             </h2>
-            <p className={`${publicSans.className} text-culinary-neutral`}>
+            <p className="text-culinary-neutral">
               Este restaurante aún no tiene su menú publicado.
             </p>
           </div>
@@ -243,7 +240,7 @@ export default function MenuPublico({
                 key={categoria.id}
                 className="bg-white rounded-[1rem] border border-culinary-neutral/10 p-6"
               >
-                <h2 className={`${inter.className} text-xl font-bold text-culinary-on-surface mb-4 pb-2 border-b border-culinary-neutral/10`}>
+                <h2 className="text-xl font-bold text-culinary-on-surface mb-4 pb-2 border-b border-culinary-neutral/10">
                   {categoria.nombre}
                 </h2>
 
@@ -260,24 +257,24 @@ export default function MenuPublico({
                         className="w-full h-48 object-cover rounded-[0.5rem] mb-3"
                       />
                       )}
-                      <h3 className={`${inter.className} font-semibold text-culinary-on-surface mb-1`}>
+                      <h3 className="font-semibold text-culinary-on-surface mb-1">
                         {item.nombre}
                       </h3>
 
                       {item.descripcion && (
-                        <p className={`${publicSans.className} text-sm text-culinary-neutral mb-2 line-clamp-2`}>
+                        <p className="text-sm text-culinary-neutral mb-2 line-clamp-2">
                           {item.descripcion}
                         </p>
                       )}
 
                       <div className="flex items-center justify-between mt-auto pt-3">
-                        <span className={`${inter.className} text-lg font-bold text-culinary-primary`}>
+                        <span className="text-lg font-bold text-culinary-primary">
                           ${formatearPrecio(Number(item.precio))}
                         </span>
                         <button
                           type="button"
                           onClick={() => agregarAlCarrito(item)}
-                          className={`${publicSans.className} px-4 py-2 bg-culinary-primary text-white text-sm font-medium rounded-[0.5rem] hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-culinary-primary focus:ring-offset-2 transition-opacity`}
+                          className="px-4 py-2 bg-culinary-primary text-white text-sm font-medium rounded-[0.5rem] hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-culinary-primary focus:ring-offset-2 transition-opacity"
                           aria-label={`Agregar ${item.nombre} al carrito`}
                         >
                           Agregar
@@ -295,13 +292,13 @@ export default function MenuPublico({
       {carrito.length > 0 && (
         <div className="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-4 sm:w-96 bg-white rounded-[1rem] shadow-[0px_4px_20px_rgba(121,118,125,0.12)] border border-culinary-neutral/10 p-4 z-20">
           <div className="flex items-center justify-between mb-3">
-            <h3 className={`${inter.className} font-semibold text-culinary-on-surface`}>
+            <h3 className="font-semibold text-culinary-on-surface">
               🛒 Tu pedido ({cantidadTotalItems} {cantidadTotalItems === 1 ? 'item' : 'items'})
             </h3>
             <button
               type="button"
               onClick={() => setCarrito([])}
-              className={`${publicSans.className} text-sm text-error hover:opacity-80 font-medium`}
+              className="text-sm text-error hover:opacity-80 font-medium"
               aria-label="Vaciar carrito"
               disabled={estadoPedido === 'enviando'}
             >
@@ -313,7 +310,7 @@ export default function MenuPublico({
             {carrito.map((item) => (
               <div
                 key={item.itemCartaId}
-                className={`${publicSans.className} flex items-center justify-between text-sm`}
+                className="flex items-center justify-between text-sm"
               >
                 <div className="flex-1">
                   <span className="font-medium text-culinary-on-surface">
@@ -353,7 +350,7 @@ export default function MenuPublico({
           <div className="border-t border-culinary-neutral/10 pt-3 mb-3">
             <label
               htmlFor="observacion-general"
-              className={`${publicSans.className} text-sm font-semibold text-culinary-on-surface mb-2 block`}
+              className="text-sm font-semibold text-culinary-on-surface mb-2 block"
             >
               Instrucciones generales (alergias, preferencias de la mesa)
             </label>
@@ -362,27 +359,27 @@ export default function MenuPublico({
               value={observacionGeneral}
               onChange={(e) => setObservacionGeneral(e.target.value)}
               placeholder="Ej: Ningún plato debe llevar maní. Mesa 4."
-              className={`w-full p-3 rounded-lg ${publicSans.className} text-sm resize-none outline-none transition-all duration-200 text-[#1C1B20] placeholder:text-[#7a7582] ${getGeneralBorderClasses()}`}
+              className={`w-full p-3 rounded-lg text-sm resize-none outline-none transition-all duration-200 text-[#1C1B20] placeholder:text-[#7a7582] ${getGeneralBorderClasses()}`}
               maxLength={MAX_CHARS_GENERAL + 20}
               rows={3}
             />
             <div className="flex justify-end mt-1">
-              <span className={`${publicSans.className} text-xs font-semibold ${getGeneralCounterColor()}`}>
+              <span className={`text-xs font-semibold ${getGeneralCounterColor()}`}>
                 {generalCharCount}/{MAX_CHARS_GENERAL}
               </span>
             </div>
           </div>
 
           {errorPedido && (
-            <p className={`${publicSans.className} text-sm text-error mb-2`} role="alert">
+            <p className="text-sm text-error mb-2" role="alert">
               {errorPedido}
             </p>
           )}
 
           <div className="border-t border-culinary-neutral/10 pt-3">
             <div className="flex items-center justify-between mb-3">
-              <span className={`${inter.className} font-bold text-culinary-on-surface`}>Total:</span>
-              <span className={`${inter.className} text-xl font-bold text-culinary-primary`}>
+              <span className="font-bold text-culinary-on-surface">Total:</span>
+              <span className="text-xl font-bold text-culinary-primary">
                 ${formatearPrecio(totalCarrito)}
               </span>
             </div>
@@ -391,7 +388,7 @@ export default function MenuPublico({
               type="button"
               onClick={realizarPedido}
               disabled={estadoPedido === 'enviando' || isGeneralOverLimit}
-              className={`${publicSans.className} w-full px-4 py-3 bg-culinary-primary text-white font-semibold rounded-[0.5rem] hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-culinary-primary focus:ring-offset-2 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed`}
+              className="w-full px-4 py-3 bg-culinary-primary text-white font-semibold rounded-[0.5rem] hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-culinary-primary focus:ring-offset-2 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {estadoPedido === 'enviando' ? 'Enviando...' : 'Realizar pedido'}
             </button>

@@ -2,12 +2,9 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { io, type Socket } from 'socket.io-client';
-import { Inter, Public_Sans } from 'next/font/google';
 import { ESTADO_LABEL } from './kds/OrderTicket';
 import type { EstadoPedido } from '@/types/pedido';
 
-const inter = Inter({ subsets: ['latin'], weight: ['600', '700'] });
-const publicSans = Public_Sans({ subsets: ['latin'], weight: ['500', '600'] });
 
 const WS_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
@@ -73,11 +70,11 @@ export function SeguimientoPedido({
   return (
     <div className="mt-4">
       <div className="flex items-center justify-between mb-3">
-        <span className={`${publicSans.className} text-xs text-culinary-neutral`}>
+        <span className="text-xs text-culinary-neutral">
           {conectado ? '🟢 En vivo' : '⏳ Reconectando...'}
         </span>
         {actualizadoEn && (
-          <span className={`${publicSans.className} text-xs text-culinary-neutral`}>
+          <span className="text-xs text-culinary-neutral">
             Actualizado {new Date(actualizadoEn).toLocaleTimeString('es-UY')}
           </span>
         )}
@@ -100,7 +97,7 @@ export function SeguimientoPedido({
                 {alcanzado ? '✓' : i + 1}
               </div>
               <span
-                className={`${publicSans.className} mt-1 text-xs ${
+                className={`mt-1 text-xs ${
                   esActual
                     ? 'font-semibold text-culinary-on-surface'
                     : 'text-culinary-neutral'
@@ -121,7 +118,7 @@ export function SeguimientoPedido({
         })}
       </ol>
 
-      <p className={`${inter.className} text-center text-sm font-semibold text-culinary-primary mt-4`}>
+      <p className="text-center text-sm font-semibold text-culinary-primary mt-4">
         {ESTADO_LABEL[estado]}
       </p>
     </div>

@@ -1,10 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Inter, Public_Sans } from 'next/font/google';
 
-const inter = Inter({ subsets: ['latin'], weight: ['600', '700'] });
-const publicSans = Public_Sans({ subsets: ['latin'], weight: ['500', '600'] });
 
 interface ItemNotaModalProps {
   readonly isOpen: boolean;
@@ -84,7 +81,7 @@ export default function ItemNotaModal({
         <div className="flex items-center justify-between mb-4">
           <h3
             id="item-note-title"
-            className={`${inter.className} text-xl font-semibold text-[#1C1B20]`}
+            className="text-xl font-semibold text-[#1C1B20]"
           >
             Nota para: {itemName}
           </h3>
@@ -115,13 +112,13 @@ export default function ItemNotaModal({
           value={note}
           onChange={(e) => setNote(e.target.value)}
           placeholder="Ej: Sin cebolla, poca sal, bien cocido..."
-          className={`w-full h-32 p-3 rounded-lg ${inter.className} text-base resize-none outline-none transition-all duration-200 text-[#1C1B20] placeholder:text-[#7a7582] ${getBorderClasses()}`}
+          className={`w-full h-32 p-3 rounded-lg text-base resize-none outline-none transition-all duration-200 text-[#1C1B20] placeholder:text-[#7a7582] ${getBorderClasses()}`}
           maxLength={MAX_CHARS + 20}
           autoFocus
         />
 
         <div className="flex justify-end mt-2">
-          <span className={`${publicSans.className} text-sm font-semibold ${getCounterColor()}`}>
+          <span className={`text-sm font-semibold ${getCounterColor()}`}>
             {charCount}/{MAX_CHARS}
           </span>
         </div>
@@ -129,7 +126,7 @@ export default function ItemNotaModal({
         <div className="flex gap-3 mt-6">
           <button
             onClick={onClose}
-            className={`flex-1 px-4 py-3 rounded-lg ${publicSans.className} font-semibold transition-colors bg-[#F1ECF4] text-[#644da1] hover:bg-[#ebe6ee]`}
+            className="flex-1 px-4 py-3 rounded-lg font-semibold transition-colors bg-[#F1ECF4] text-[#644da1] hover:bg-[#ebe6ee]"
             type="button"
           >
             Cancelar
@@ -137,7 +134,7 @@ export default function ItemNotaModal({
           <button
             onClick={handleSave}
             disabled={isOverLimit}
-            className={`flex-1 px-4 py-3 rounded-lg ${publicSans.className} font-semibold text-white transition-all ${isOverLimit ? 'bg-[#cac4d2] cursor-not-allowed opacity-50' : 'bg-[#644da1] hover:opacity-90'}`}
+            className={`flex-1 px-4 py-3 rounded-lg font-semibold text-white transition-all ${isOverLimit ? 'bg-[#cac4d2] cursor-not-allowed opacity-50' : 'bg-[#644da1] hover:opacity-90'}`}
             type="button"
           >
             Guardar nota
