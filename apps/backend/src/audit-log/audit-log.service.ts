@@ -27,6 +27,11 @@ export interface AuditLogEntry {
  * El contexto 'Audit' permite filtrar en Grafana Loki con
  * `{app="bistrolink"} | json | context="Audit"` sin mezclarse con el
  * resto de los logs operativos.
+ *
+ * BL-273: fuera de local, cada entrada sale también por stdout como una
+ * línea JSON (ver logger/destinos-log.ts). En los logs de Railway se filtra
+ * con `@context:Audit` o `@action:USUARIO_DESACTIVADO`. El campo `message`
+ * es el texto que Railway muestra en la lista; sin él, la fila aparece vacía.
  */
 @Injectable()
 export class AuditLogService {
@@ -34,6 +39,7 @@ export class AuditLogService {
 
   registrar(entry: AuditLogEntry): void {
     this.logger.log({
+      message: `Auditoría: ${entry.action}`,
       audit: true,
       action: entry.action,
       tenantId: entry.tenantId,

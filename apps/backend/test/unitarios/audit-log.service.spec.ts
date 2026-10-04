@@ -66,6 +66,26 @@ describe('AuditLogService', () => {
       );
     });
 
+    it('[TC-U-035] AuditLogService.registrar incluye un message con la acción, que es el texto que muestran los logs de Railway (BL-273)', () => {
+      const logSpy = jest
+        .spyOn((service as any).logger, 'log')
+        .mockImplementation(() => undefined);
+
+      service.registrar({
+        action: AuditAction.USUARIO_DESACTIVADO,
+        tenantId: 'tenant-1',
+        actorKeycloakId: 'kc-actor-1',
+        targetUsuarioId: 'usuario-1',
+        detalle: { rol: 'MOZO', sesionesCerradas: true },
+      });
+
+      const payload = logSpy.mock.calls[0][0] as Record<string, unknown>;
+      expect(payload.message).toBe(
+        `Auditoría: ${AuditAction.USUARIO_DESACTIVADO}`,
+      );
+      expect(payload).toMatchObject({ rol: 'MOZO', sesionesCerradas: true });
+    });
+
     it('[TC-U-024] AuditLogService.registrar funciona sin `detalle` (campo opcional)', () => {
       const logSpy = jest
         .spyOn((service as any).logger, 'log')
