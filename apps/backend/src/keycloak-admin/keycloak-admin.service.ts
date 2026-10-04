@@ -260,6 +260,41 @@ export class KeycloakAdminService {
   }
 
   /**
+   * BL-272: cierra todas las sesiones del usuario en Keycloak y revoca sus
+   * refresh tokens (POST /users/{id}/logout, requiere manage-users).
+   *
+   * Se usa después de desactivar una cuenta: setEnabled(false) solo impide
+   * los logins nuevos. Las sesiones abiertas seguían vivas y, si la cuenta
+   * se volvía a activar, el refresh token viejo volvía a servir.
+   *
+   * No lanza: si falla, la desactivación ya quedó hecha y el access token
+   * vigente vence solo (accessTokenLifespan de 15 min, BL-266). Devuelve si
+   * pudo cerrarlas, para dejarlo registrado en el audit log.
+   */
+  async logoutUser(keycloakId: string): Promise<boolean> {
+    try {
+      const res = await this.adminFetch(`/users/${keycloakId}/logout`, {
+        method: 'POST',
+      });
+      if (!res.ok) {
+        const body = await res.text();
+        this.logAndBuildError(
+          `No se pudieron cerrar las sesiones del usuario ${keycloakId} en Keycloak (queda desactivado; su access token vence solo)`,
+          res.status,
+          body,
+        );
+        return false;
+      }
+      return true;
+    } catch (error) {
+      this.logger.error(
+        `No se pudieron cerrar las sesiones del usuario ${keycloakId} en Keycloak (queda desactivado; su access token vence solo): ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return false;
+    }
+  }
+
+  /**
    * Elimina el usuario en Keycloak. Se usa como compensación: si algo falla
    * después de crear la identidad (asignar el rol, o persistir la fila en
    * Postgres), UsuariosService.crear() llama a esto para no dejar un usuario

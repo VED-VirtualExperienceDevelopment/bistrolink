@@ -317,6 +317,49 @@ describe('KeycloakAdminService', () => {
     });
   });
 
+  describe('logoutUser (BL-272)', () => {
+    it('[TC-U-025] KeycloakAdminService.logoutUser llama a POST /users/{id}/logout y devuelve true cuando Keycloak cierra las sesiones (204)', async () => {
+      mockTokenRequest();
+      fetchMock.mockResolvedValueOnce({ ok: true, status: 204 });
+
+      await expect(service.logoutUser('keycloak-id-123')).resolves.toBe(true);
+
+      const [url, init] = fetchMock.mock.calls[1];
+      expect(url).toMatch(
+        /\/admin\/realms\/[^/]+\/users\/keycloak-id-123\/logout$/,
+      );
+      expect(init.method).toBe('POST');
+    });
+
+    it('[TC-U-026] [S] KeycloakAdminService.logoutUser devuelve false sin lanzar y loguea el keycloakId si Keycloak rechaza el cierre de sesiones', async () => {
+      mockTokenRequest();
+      fetchMock.mockResolvedValueOnce({
+        status: 500,
+        ok: false,
+        text: async () => 'Internal error',
+      });
+
+      await expect(
+        service.logoutUser('keycloak-id-para-auditar'),
+      ).resolves.toBe(false);
+
+      const todosLosLogs = loggerErrorSpy.mock.calls.flat().join(' ');
+      expect(todosLosLogs).toContain('keycloak-id-para-auditar');
+      expect(todosLosLogs).toContain('500');
+    });
+
+    it('[TC-U-027] KeycloakAdminService.logoutUser devuelve false sin lanzar si Keycloak no responde', async () => {
+      fetchMock.mockRejectedValueOnce(new Error('fetch failed'));
+
+      await expect(service.logoutUser('keycloak-id-sin-red')).resolves.toBe(
+        false,
+      );
+
+      const todosLosLogs = loggerErrorSpy.mock.calls.flat().join(' ');
+      expect(todosLosLogs).toContain('keycloak-id-sin-red');
+    });
+  });
+
   describe('deleteUser', () => {
     it('[TC-U-017] resuelve sin lanzar cuando Keycloak confirma la eliminación (204)', async () => {
       mockTokenRequest();
