@@ -334,3 +334,147 @@ describe('Gestión de usuarios (HU-013) - aislamiento de PATCH y DELETE (BL-265)
     },
   );
 });
+
+// ── BL-272 (BL-262): al desactivar se cierran las sesiones de Keycloak ──────
+// setEnabled(false) solo impedía los logins nuevos: la sesión abierta seguía
+// viva en Keycloak y, si la cuenta se volvía a activar, el refresh token
+// viejo volvía a servir. Ahora DELETE /usuarios/:id también llama a
+// POST /users/{id}/logout. Este caso abre una sesión real, desactiva al
+// usuario por la API y verifica en Keycloak que la sesión ya no existe.
+describe('Gestión de usuarios (HU-013) - cierre de sesiones al desactivar (BL-272)', () => {
+  let app: INestApplication;
+  let prisma: PrismaClient;
+  let creado: { id: string; keycloakId: string; tenantId: string } | undefined;
+
+  const itConAdmin = ADMIN_PASS ? it : it.skip;
+
+  const adminHeaders = async () => ({
+    Authorization: `Bearer ${await getMasterAdminToken()}`,
+    'Content-Type': 'application/json',
+  });
+
+  // Sesiones activas del usuario en Keycloak.
+  async function sesionesKeycloak(keycloakId: string): Promise<number> {
+    const res = await fetch(
+      `${KEYCLOAK_URL}/admin/realms/${REALM}/users/${keycloakId}/sessions`,
+      { headers: await adminHeaders() },
+    );
+    return ((await res.json()) as unknown[]).length;
+  }
+
+  // Pedido de token al endpoint del realm (password o refresh_token).
+  async function pedirToken(params: Record<string, string>) {
+    const res = await fetch(
+      `${KEYCLOAK_URL}/realms/${REALM}/protocol/openid-connect/token`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          client_id: CLIENT_ID,
+          client_secret: CLIENT_SECRET,
+          ...params,
+        }),
+      },
+    );
+    return { status: res.status, body: await res.json() };
+  }
+
+  beforeAll(async () => {
+    const moduleRef: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
+    app = moduleRef.createNestApplication();
+    await app.init();
+    prisma = new PrismaClient();
+  });
+
+  afterAll(async () => {
+    if (creado) {
+      const { keycloakId, tenantId } = creado;
+      await borrarUsuarioKeycloak(keycloakId).catch(() => undefined);
+      await prisma
+        .$transaction(async (tx) => {
+          await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`;
+          await tx.usuario.deleteMany({ where: { keycloakId } });
+        })
+        .catch(() => undefined); // best-effort
+    }
+    await prisma.$disconnect();
+    await app.close();
+  });
+
+  itConAdmin(
+    '[TC-I-045] Usuarios: al desactivar un usuario se cierran sus sesiones de Keycloak y su refresh token deja de servir',
+    async () => {
+      const tokenAdmin = await getToken(ADMIN_USER, ADMIN_PASS as string);
+      const username = `mozo-sesion-${Date.now()}`;
+
+      // 1. Alta por la API, como desde Admin → Usuarios.
+      const res = await request(app.getHttpServer())
+        .post('/usuarios')
+        .set('Authorization', `Bearer ${tokenAdmin}`)
+        .send({
+          username,
+          email: `${username}@bistrolink.dev`,
+          rol: 'MOZO',
+          restauranteId: RESTAURANTE_TENANT_A,
+        })
+        .expect(201);
+      creado = {
+        id: res.body.id,
+        keycloakId: res.body.keycloakId,
+        tenantId: res.body.tenantId,
+      };
+      const { keycloakId } = creado;
+
+      // 2. La contraseña de /usuarios es temporal y el perfil pide nombre y
+      //    apellido: el password grant responde «Account is not fully set
+      //    up». Se completan por la Admin API para poder abrir sesión.
+      const password = `Sesion-${Date.now()}`;
+      const base = `${KEYCLOAK_URL}/admin/realms/${REALM}/users/${keycloakId}`;
+      await fetch(base, {
+        method: 'PUT',
+        headers: await adminHeaders(),
+        body: JSON.stringify({ firstName: 'Mozo', lastName: 'Sesion' }),
+      });
+      await fetch(`${base}/reset-password`, {
+        method: 'PUT',
+        headers: await adminHeaders(),
+        body: JSON.stringify({
+          type: 'password',
+          value: password,
+          temporary: false,
+        }),
+      });
+
+      // 3. El mozo inicia sesión.
+      const login = await pedirToken({
+        grant_type: 'password',
+        username,
+        password,
+      });
+      expect(login.status).toBe(200);
+      expect(await sesionesKeycloak(keycloakId)).toBe(1);
+
+      // 4. El admin lo desactiva.
+      await request(app.getHttpServer())
+        .delete(`/usuarios/${creado.id}`)
+        .set('Authorization', `Bearer ${tokenAdmin}`)
+        .expect(200);
+
+      // 5. No le queda ninguna sesión en Keycloak.
+      expect(await sesionesKeycloak(keycloakId)).toBe(0);
+
+      // 6. Su refresh token ya no sirve. «Session not active» indica que la
+      //    sesión se cerró; solo desactivando, Keycloak respondía «User
+      //    disabled» y el token volvía a servir al reactivar la cuenta.
+      const refresh = await pedirToken({
+        grant_type: 'refresh_token',
+        refresh_token: login.body.refresh_token,
+      });
+      expect(refresh.status).toBe(400);
+      expect(refresh.body.error).toBe('invalid_grant');
+      expect(refresh.body.error_description).toBe('Session not active');
+    },
+  );
+});
