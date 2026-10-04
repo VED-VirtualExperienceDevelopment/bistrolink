@@ -47,6 +47,7 @@ describe('UsuariosService', () => {
       assignRealmRole: jest.fn(),
       setEnabled: jest.fn(),
       deleteUser: jest.fn(),
+      logoutUser: jest.fn().mockResolvedValue(true),
     };
 
     const auditLogMock = {
@@ -373,6 +374,72 @@ describe('UsuariosService', () => {
       // Postgres no debe quedar desincronizado marcándolo inactivo igual.
       expect(tx().usuario.update).not.toHaveBeenCalled();
       expect(auditLog.registrar).not.toHaveBeenCalled();
+      // Tampoco se cierran sesiones de un usuario que sigue activo.
+      expect(keycloakAdmin.logoutUser).not.toHaveBeenCalled();
+    });
+
+    it('[TC-U-028] [S] UsuariosService.desactivar cierra las sesiones de Keycloak después de desactivar y lo registra en el audit log (BL-272)', async () => {
+      tx().usuario.findUnique.mockResolvedValue({
+        id: 'usuario-mozo',
+        rol: 'MOZO',
+        keycloakId: 'kc-mozo',
+      });
+      tx().usuario.update.mockResolvedValue({
+        id: 'usuario-mozo',
+        activo: false,
+      });
+
+      await service.desactivar(TENANT_ID, ACTOR_KEYCLOAK_ID, 'usuario-mozo');
+
+      expect(keycloakAdmin.logoutUser).toHaveBeenCalledWith('kc-mozo');
+      // Orden: primero se impide el login y se marca inactivo en Postgres;
+      // recién después se cierran las sesiones abiertas.
+      const ordenSetEnabled =
+        keycloakAdmin.setEnabled.mock.invocationCallOrder[0];
+      const ordenUpdate = tx().usuario.update.mock.invocationCallOrder[0];
+      const ordenLogout = keycloakAdmin.logoutUser.mock.invocationCallOrder[0];
+      expect(ordenSetEnabled).toBeLessThan(ordenLogout);
+      expect(ordenUpdate).toBeLessThan(ordenLogout);
+
+      expect(auditLog.registrar).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: AuditAction.USUARIO_DESACTIVADO,
+          detalle: { rol: 'MOZO', sesionesCerradas: true },
+        }),
+      );
+    });
+
+    it('[TC-U-029] UsuariosService.desactivar completa la baja aunque falle el cierre de sesiones, y lo deja en el audit log (BL-272)', async () => {
+      tx().usuario.findUnique.mockResolvedValue({
+        id: 'usuario-mozo',
+        rol: 'MOZO',
+        keycloakId: 'kc-mozo',
+      });
+      tx().usuario.update.mockResolvedValue({
+        id: 'usuario-mozo',
+        activo: false,
+      });
+      keycloakAdmin.logoutUser.mockResolvedValue(false);
+
+      const resultado = await service.desactivar(
+        TENANT_ID,
+        ACTOR_KEYCLOAK_ID,
+        'usuario-mozo',
+      );
+
+      // La baja no se deshace: el usuario no puede volver a loguearse y el
+      // access token vigente vence solo.
+      expect(resultado).toEqual({ desactivado: true, id: 'usuario-mozo' });
+      expect(tx().usuario.update).toHaveBeenCalledWith({
+        where: { id: 'usuario-mozo' },
+        data: { activo: false },
+      });
+      expect(auditLog.registrar).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: AuditAction.USUARIO_DESACTIVADO,
+          detalle: { rol: 'MOZO', sesionesCerradas: false },
+        }),
+      );
     });
   });
 

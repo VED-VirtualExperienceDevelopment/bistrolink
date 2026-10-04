@@ -212,9 +212,22 @@ export class UsuariosService {
           data: { activo: false },
         });
 
-        return { desactivado: true, id: usuarioId, rol: usuario.rol };
+        return {
+          desactivado: true,
+          id: usuarioId,
+          rol: usuario.rol,
+          keycloakId: usuario.keycloakId,
+        };
       },
       { timeout: 10_000 },
+    );
+
+    // BL-272: setEnabled(false) solo frena los logins nuevos; acá se cierran
+    // las sesiones abiertas y se revocan los refresh tokens. Va después del
+    // commit y no lanza: si falla, la baja ya está hecha y el access token
+    // vigente vence solo. El resultado queda en el audit log.
+    const sesionesCerradas = await this.keycloakAdmin.logoutUser(
+      resultado.keycloakId,
     );
 
     this.auditLog.registrar({
@@ -222,7 +235,7 @@ export class UsuariosService {
       tenantId,
       actorKeycloakId,
       targetUsuarioId: usuarioId,
-      detalle: { rol: resultado.rol },
+      detalle: { rol: resultado.rol, sesionesCerradas },
     });
 
     return { desactivado: resultado.desactivado, id: resultado.id };
