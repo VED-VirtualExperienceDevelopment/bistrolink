@@ -13,47 +13,23 @@ import { AuthComensalModule } from './auth-comensal/auth-comensal.module';
 import { PedidosModule } from './pedidos/pedidos.module';
 import { MesasModule } from './mesas/mesas.module';
 import { PagosModule } from './pagos/pagos.module';
+import { construirConfiguracionLog } from './logger/destinos-log';
 
-const isProd = process.env.NODE_ENV === 'production';
-
-const targets = [
-  ...(!isProd
-    ? [
-        {
-          target: 'pino-pretty',
-          level: 'trace',
-          options: {
-            colorize: true,
-            translateTime: 'SYS:HH:MM:ss',
-            ignore: 'pid,hostname',
-          },
-        },
-      ]
-    : []),
-  {
-    target: 'pino-loki',
-    level: 'trace',
-    options: {
-      batching: true,
-      interval: 5,
-      host: `${process.env.LOKI_URL}`,
-      basicAuth: {
-        username: process.env.LOKI_USERNAME,
-        password: process.env.LOKI_PASSWORD,
-      },
-      labels: {
-        app: 'bistrolink',
-        env: process.env.NODE_ENV ?? 'staging',
-        developer: process.env.DEV_NAME ?? 'unknown',
-      },
-    },
-  },
-];
+// BL-273: destinos y formato de los logs según el entorno (ver
+// logger/destinos-log.ts).
+const configuracionLog = construirConfiguracionLog(process.env);
 
 @Module({
   imports: [
     LoggerModule.forRoot({
       pinoHttp: {
+        level: configuracionLog.level,
+        messageKey: configuracionLog.messageKey,
+        // BL-274: los logs que se emiten dentro de un request (por ejemplo,
+        // el audit log) llevan solo el reqId, no el request entero con
+        // headers e IP. El detalle queda en el log "request completed",
+        // que tiene el mismo reqId para cruzarlos.
+        quietReqLogger: true,
         base: {
           developer: process.env.DEV_NAME ?? 'unknown',
         },
@@ -78,7 +54,7 @@ const targets = [
           ],
           censor: '[REDACTED]',
         },
-        transport: { targets },
+        transport: { targets: configuracionLog.targets },
       },
     }),
     AuthModule,
