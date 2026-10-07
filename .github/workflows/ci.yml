@@ -464,7 +464,7 @@ jobs:
         # reescribieron 75 de 76 tags de este repo con un payload malicioso que
         # robaba secrets del pipeline; @master queda expuesto a que el próximo
         # push del mantenedor se ejecute acá sin revisión de nadie del equipo.
-        uses: aquasecurity/trivy-action@0.35.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ matrix.image }}:${{ env.TAG }}
           severity: CRITICAL,HIGH
@@ -514,7 +514,7 @@ jobs:
         # nuestro Dockerfile de 3 líneas pueda filtrar). El scanner de
         # secrets siempre lo va a marcar como HIGH sin que sea un secret
         # real — así que acá solo nos importa el escaneo de vulnerabilidades.
-        uses: aquasecurity/trivy-action@0.35.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: testmgmt-scan:${{ env.TAG }}
           scanners: vuln
