@@ -18,7 +18,53 @@ RUN npx prisma@5.19.1 generate --schema=apps/backend/prisma/schema.prisma
 
 RUN npm run build --workspace=apps/backend
 
-# Stage 2: producción
+# Stage 2: CLI de Prisma para las migraciones (BL-231)
+# Railway aplica las migraciones con el pre-deploy command de bistrolink-api
+# (docker/predeploy-migrate.sh): corre con esta misma imagen, dentro de la red
+# privada y antes de ponerla en línea. Así la base no necesita acceso público.
+# La imagen final no tiene npm ni npx, así que el CLI va armado acá, aparte de
+# las dependencias de la app:
+# - Misma versión de prisma que el lockfile, leída en el build para que no se
+#   desincronice cuando se actualice.
+# - Mismos "overrides" que el package.json raíz: sin ellos, el CLI trae
+#   dependencias que el proyecto ya fuerza a versiones corregidas (por
+#   ejemplo deepmerge-ts, HIGH en 7.x) y Trivy corta el build.
+# - Los motores se descargan ACÁ (postinstall de @prisma/engines). Si faltan,
+#   el CLI los baja recién al ejecutarse: en cada pre-deploy, desde
+#   binaries.prisma.sh.
+# - Target forzado a linux-musl-openssl-3.0.x: en Alpine la detección
+#   automática de OpenSSL falla (ver binaryTargets en schema.prisma).
+FROM node:22-alpine AS migrate
+WORKDIR /migrate
+ENV PRISMA_CLI_BINARY_TARGETS=linux-musl-openssl-3.0.x
+COPY package.json package-lock.json /tmp/root/
+RUN set -eux; \
+  node -e " \
+  const root = require('/tmp/root/package.json'); \
+  const lock = require('/tmp/root/package-lock.json'); \
+  const version = lock.packages['node_modules/prisma'].version; \
+  require('fs').writeFileSync('package.json', JSON.stringify({ \
+  name: 'bistrolink-migrate', private: true, \
+  dependencies: { prisma: version }, \
+  overrides: root.overrides || {} \
+  }, null, 2)); \
+  console.log('prisma', version); \
+  "; \
+  npm install --omit=dev --no-audit --no-fund; \
+  # El postinstall falla en silencio si no puede descargar: "mv" corta el
+  # build si los motores no están.
+  mkdir engines; \
+  mv node_modules/@prisma/engines/schema-engine-linux-musl-openssl-3.0.x engines/schema-engine; \
+  mv node_modules/@prisma/engines/libquery_engine-linux-musl-openssl-3.0.x.so.node engines/libquery_engine.so.node; \
+  # Comprobación: el CLI usa los motores horneados (no descarga nada) y el
+  # binario del schema engine y la librería del query engine cargan en Alpine.
+  PRISMA_SCHEMA_ENGINE_BINARY=/migrate/engines/schema-engine \
+  PRISMA_QUERY_ENGINE_LIBRARY=/migrate/engines/libquery_engine.so.node \
+  node node_modules/prisma/build/index.js --version; \
+  rm -rf /tmp/root; \
+  npm cache clean --force
+
+# Stage 3: producción
 FROM node:22-alpine AS production
 WORKDIR /app
 ENV NODE_ENV=production
@@ -58,6 +104,11 @@ COPY --from=builder /app/apps/backend/dist ./apps/backend/dist
 COPY --from=builder /app/apps/backend/prisma ./apps/backend/prisma
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 
+# CLI de Prisma y script del pre-deploy de Railway (BL-231). Usa el schema y
+# las migraciones de apps/backend/prisma, copiados arriba.
+
+COPY --from=migrate /migrate /app/migrate
+COPY --chmod=0755 apps/backend/docker/predeploy-migrate.sh /app/migrate/predeploy-migrate.sh
 RUN addgroup -S bistrolink && adduser -S bistrolink -G bistrolink
 WORKDIR /app/apps/backend
 USER bistrolink
