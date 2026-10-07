@@ -87,7 +87,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@v4
         id: filter
         with:
           filters: |
@@ -105,7 +105,7 @@ jobs:
       # predicate-quantifier "every" (el archivo tiene que cumplir TODOS los
       # patrones: no ser .md Y no estar en docs/), y eso cambiaría el sentido
       # de los filtros de arriba, que son "alguno de".
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@v4
         id: code
         with:
           predicate-quantifier: every
@@ -162,7 +162,7 @@ jobs:
       # la caché y además puede reescribir el lock dentro de CI.
       - uses: actions/setup-node@v7
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
 
       - name: Instalar dependencias
@@ -181,7 +181,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
 
       - name: Instalar dependencias
@@ -214,7 +214,7 @@ jobs:
       - name: Upload coverage artifact (backend)
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-report-backend
           path: apps/backend/coverage/
@@ -223,7 +223,7 @@ jobs:
       - name: Upload coverage to Codecov (backend)
         if: always()
         continue-on-error: true
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v7
         with:
           files: apps/backend/coverage/lcov.info
           flags: backend
@@ -242,7 +242,7 @@ jobs:
       - name: Upload coverage artifact (frontend)
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-report-frontend
           path: apps/frontend/coverage/
@@ -251,7 +251,7 @@ jobs:
       - name: Upload coverage to Codecov (frontend)
         if: always()
         continue-on-error: true
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v7
         with:
           files: apps/frontend/coverage/lcov.info
           flags: frontend
@@ -282,7 +282,7 @@ jobs:
 
   #     - uses: actions/setup-node@v7
   #       with:
-  #         node-version: "20"
+  #         node-version: "22"
   #         cache: npm
 
   #     - name: Instalar dependencias
@@ -380,7 +380,7 @@ jobs:
       # BL-251: npm ci + caché (ver job "lint").
       - uses: actions/setup-node@v7
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
 
       - name: Instalar dependencias
@@ -464,7 +464,7 @@ jobs:
         # reescribieron 75 de 76 tags de este repo con un payload malicioso que
         # robaba secrets del pipeline; @master queda expuesto a que el próximo
         # push del mantenedor se ejecute acá sin revisión de nadie del equipo.
-        uses: aquasecurity/trivy-action@0.35.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ matrix.image }}:${{ env.TAG }}
           severity: CRITICAL,HIGH
@@ -514,7 +514,7 @@ jobs:
         # nuestro Dockerfile de 3 líneas pueda filtrar). El scanner de
         # secrets siempre lo va a marcar como HIGH sin que sea un secret
         # real — así que acá solo nos importa el escaneo de vulnerabilidades.
-        uses: aquasecurity/trivy-action@0.35.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: testmgmt-scan:${{ env.TAG }}
           scanners: vuln
@@ -889,7 +889,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: "20"
+          node-version: "22"
 
       - name: Lighthouse CI — menú digital (HU-001)
         run: npx @lhci/cli@0.14.x autorun
@@ -930,7 +930,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
 
       - name: Instalar dependencias
@@ -984,7 +984,7 @@ jobs:
       - name: Upload Playwright report (artifact, ${{ matrix.project }})
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report-${{ matrix.project }}
           path: playwright-report/
@@ -1008,7 +1008,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Descargar los 4 reportes
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: playwright-report-*
           path: reports
@@ -1040,7 +1040,7 @@ jobs:
 
       - name: Upload Playwright report combinado (artifact)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report
           path: playwright-report/junit.xml
