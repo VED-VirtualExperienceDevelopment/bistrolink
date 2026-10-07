@@ -141,6 +141,17 @@ CVE-2026-84939
 GHSA-6v7p-g79w-8964
 CVE-2025-47273
 
+# CVE-2026-97687 y CVE-2026-97689 (HIGH) — urllib3 2.7.0 del venv de la imagen
+
+# oficial kiwitcms/kiwi:latest (corregido en 2.8.0). No es código propio y Kiwi
+
+# solo se usa en staging, sin datos de producción. BL-278 (07/10/2026).
+
+# Pendiente: revisar cuando kiwitcms/kiwi publique una imagen con urllib3 >= 2.8.0.
+
+CVE-2026-97687
+CVE-2026-97689
+
 # CVE-2025-59250 — mssql-jdbc HIGH, bundleado por defecto en la imagen oficial
 
 # de Keycloak (quay.io/keycloak/keycloak:26.7.2). No usamos SQL Server como
@@ -181,10 +192,16 @@ CVE-2026-8763
 CVE-2026-13506
 
 # CVE-2026-89407 y CVE-2026-89425 (HIGH) — com.fasterxml.jackson.core:jackson-core
+
 # bundleado por la imagen oficial de Keycloak (quay.io/keycloak/keycloak:26.7.2),
+
 # específicamente dentro de keycloak-admin-cli-26.7.2.jar.
+
 # No es código propio ni una dependencia que gestionemos directamente.
+
 # Pendiente (BL-137): revisar cuando Keycloak publique un patch release que actualice
+
 # jackson-core y sacar estas excepciones.
+
 CVE-2026-89407
 CVE-2026-89425

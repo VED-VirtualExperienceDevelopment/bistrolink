@@ -32,14 +32,14 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           token: ${{ secrets.DASHBOARD_PUSH_TOKEN }}
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: "22"
 
       - name: Actualizar dashboard desde Linear
         env:
@@ -48,7 +48,7 @@ jobs:
         run: node scripts/update-dashboard-from-linear.mjs
 
       - name: Crear PR si hubo cambios
-        uses: peter-evans/create-pull-request@v6
+        uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.DASHBOARD_PUSH_TOKEN }}
           commit-message: "chore: actualizar dashboard EDT desde Linear"
@@ -95,7 +95,7 @@ jobs:
 
       - name: Enviar email de estado
         if: github.event_name == 'schedule' || github.event.inputs.enviar_email == 'true'
-        uses: dawidd6/action-send-mail@v3
+        uses: dawidd6/action-send-mail@v22
         with:
           server_address: smtp.gmail.com
           server_port: 465
