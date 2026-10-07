@@ -111,6 +111,8 @@ jobs:
               - 'apps/**'
               - 'packages/**'
               - 'keycloak/**'
+              - 'package.json'
+              - 'package-lock.json'
             testmgmt:
               - 'testmgmt/docker/**'
 
@@ -579,39 +581,13 @@ jobs:
       WEB_SERVICE_ID: 070e5864-c5af-47e3-89d4-89c3041bc98b
       AUTH_SERVICE_ID: dd1b662a-4bcb-450c-a57e-fa0fe6fb5773
     steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: "20"
-          cache: npm
-
-      - name: Instalar dependencias (solo backend, para prisma migrate)
-        # npm pkg delete scripts.prepare: sin esto, "npm ci" dispara el
-        # script "prepare" (husky) del package.json raíz, y falla con
-        # "husky: not found" porque --workspace no instala esa devDependency
-        # de la raíz. Mismo ajuste que ya usan los Dockerfiles de API/Web.
-        run: npm pkg delete scripts.prepare && npm ci --workspace=apps/backend
-
-      # NOTA (hallazgo BL-137): la base de staging quedó sin ninguna tabla
-      # por un buen tiempo sin que nadie lo notara — el pipeline nunca
-      # aplicaba migraciones ahí, solo contra la base efímera del job de
-      # tests. Este paso corre ANTES de los deploys de servicios para que el
-      # código nuevo siempre arranque contra un esquema ya al día. No corre
-      # el seed (son datos de prueba, no forman parte de un deploy real).
-      - name: Aplicar migraciones de Prisma en staging
-        working-directory: apps/backend
-        env:
-          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
-        run: |
-          for i in 1 2 3 4 5; do
-            npx prisma migrate deploy && exit 0
-            echo "Intento $i falló, esperando 10s..."
-            sleep 10
-          done
-          echo "Las migraciones fallaron tras 5 intentos"
-          exit 1
-
+      # BL-231: las migraciones ya NO se aplican desde acá. La base de
+      # staging no tiene acceso público (se borró el TCP Proxy, hallazgo D2
+      # del Anexo 12) y GitHub ya no tiene su URL (se eliminó el secret
+      # STAGING_DATABASE_URL). Las aplica Railway con el pre-deploy command
+      # de bistrolink-api (apps/backend/docker/predeploy-migrate.sh), con la
+      # imagen nueva, dentro de la red privada y antes de ponerla en línea.
+      # El paso "Esperar la API nueva" confirma que quedaron aplicadas.
       # NOTA: ya NO usamos "railway redeploy" — ese comando solo vuelve a
       # desplegar el commit/imagen que el servicio ya tenía configurado, no
       # fuerza un pull nuevo del tag actualizado. Por eso el servicio se
@@ -650,6 +626,42 @@ jobs:
             }')")
           echo "$RESPONSE"
           echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
+
+      - name: Esperar la API nueva (pre-deploy con migraciones)
+        # Railway corre primero el pre-deploy (migrate deploy) y recién
+        # después pone la imagen en línea. Si el pre-deploy falla, deja la
+        # versión anterior y el deploy queda en FAILED: sin este paso el
+        # pipeline no se enteraba, porque /health responde igual con la
+        # versión vieja. Espera a que /health/version devuelva el SHA de esta
+        # corrida y upToDate == true (la última migración aplicada en la base
+        # es la última de la imagen). Va ANTES de Web y Keycloak para que, si
+        # la API no cambió, el frontend nuevo no quede apuntando a un backend
+        # viejo. Cubre también el hallazgo BL-137 (base sin migraciones sin
+        # que nadie lo notara).
+        run: |
+          URL=https://bistrolink-api-staging.up.railway.app/health/version
+          ESPERADO="${{ env.TAG }}"
+          BODY=""
+          for i in $(seq 1 60); do
+            BODY=$(curl -fsS --max-time 15 "$URL" 2>/dev/null || true)
+            API=$(echo "$BODY" | jq -r '.api // empty' 2>/dev/null || true)
+            UPTODATE=$(echo "$BODY" | jq -r '.upToDate' 2>/dev/null || true)
+            if [ "$API" = "$ESPERADO" ]; then
+              if [ "$UPTODATE" = "true" ]; then
+                echo "OK: la API $API está en línea con las migraciones al día"
+                echo "$BODY" | jq .
+                exit 0
+              fi
+              echo "::error::La API $API está en línea pero upToDate=$UPTODATE: la última migración de la base no coincide con la de la imagen."
+              echo "$BODY" | jq . || echo "$BODY"
+              exit 1
+            fi
+            echo "Intento $i/60: la API responde '${API:-sin respuesta}', se espera $ESPERADO. Reintento en 10 s..."
+            sleep 10
+          done
+          echo "::error::A los 10 minutos la API sigue sin la versión $ESPERADO. Si falló el pre-deploy (migraciones), Railway dejó la versión anterior: revisar bistrolink-api → Deployments → deploy de este SHA → logs del pre-deploy. Web y Keycloak no se desplegaron."
+          echo "Última respuesta: $BODY"
+          exit 1
 
       - name: Actualizar y deployar Web (tag por SHA)
         env:
@@ -734,8 +746,14 @@ jobs:
   # "rollback_version" en workflow_dispatch — con cualquiera de los dos
   # vacío, este job no corre (ver "if").
   #
-  # Política: este job NUNCA toca la base de datos (no corre
-  # "prisma migrate"). El equipo trabaja con el patrón expand/contract:
+  # Política: este job NUNCA revierte la base de datos. Desde BL-231, al
+  # cambiar la imagen Railway vuelve a correr el pre-deploy de la API
+  # ("prisma migrate deploy" con la carpeta de migraciones de la imagen
+  # vieja): solo aplica migraciones pendientes, así que con una imagen
+  # anterior no hace nada. Solo se puede volver a imágenes posteriores a
+  # BL-231 (las anteriores no tienen el script del pre-deploy y Railway no
+  # las pondría en línea); lo verifica el paso "Verificar que la API tenga
+  # el pre-deploy". El equipo trabaja con el patrón expand/contract:
   # todo cambio de schema se vuelve compatible con la versión anterior del
   # código ANTES de eliminar lo viejo, así que revertir la imagen nunca
   # debería requerir revertir el schema. Prisma tampoco tiene un comando de
@@ -771,6 +789,19 @@ jobs:
             docker manifest inspect "${IMAGE}:${ROLLBACK_TAG}" > /dev/null \
               || { echo "No existe ${IMAGE}:${ROLLBACK_TAG} en GHCR — no se puede revertir a un tag que nunca se publicó."; exit 1; }
           done
+
+      - name: Verificar que la API tenga el pre-deploy (BL-231)
+        # Railway corre /app/migrate/predeploy-migrate.sh en cada deploy de
+        # bistrolink-api, también en un rollback. Una imagen anterior a
+        # BL-231 no lo tiene: el pre-deploy fallaría y Railway no la pondría
+        # en línea. Se corta acá, antes de tocar ningún servicio.
+        run: |
+          set -euo pipefail
+          IMAGE="${{ env.IMAGE_API }}:${ROLLBACK_TAG}"
+          docker pull -q "$IMAGE" > /dev/null
+          docker run --rm --entrypoint /bin/sh "$IMAGE" -c 'test -x /app/migrate/predeploy-migrate.sh' \
+            || { echo "::error::$IMAGE es anterior a BL-231 (no tiene /app/migrate/predeploy-migrate.sh): con el pre-deploy configurado, Railway no puede ponerla en línea. Elegir un SHA posterior."; exit 1; }
+          echo "OK: $IMAGE tiene el script del pre-deploy"
 
       - name: Revertir API al tag indicado
         env:
@@ -868,6 +899,25 @@ jobs:
           check https://bistrolink-api-staging.up.railway.app/health/ready
           check https://bistrolink-web-staging.up.railway.app
           check https://bistrolink-auth-staging.up.railway.app/realms/bistrolink/.well-known/openid-configuration
+
+      - name: Confirmar la versión de la API después del rollback
+        # /health responde aunque Railway haya dejado la versión anterior
+        # (por ejemplo, si falló el pre-deploy). upToDate puede dar false:
+        # la imagen vieja no conoce las migraciones más nuevas de la base.
+        run: |
+          URL=https://bistrolink-api-staging.up.railway.app/health/version
+          for i in $(seq 1 30); do
+            API=$(curl -fsS --max-time 15 "$URL" 2>/dev/null | jq -r '.api // empty' 2>/dev/null || true)
+            if [ "$API" = "$ROLLBACK_TAG" ]; then
+              echo "OK: la API quedó en $API"
+              curl -fsS --max-time 15 "$URL" | jq . || true
+              exit 0
+            fi
+            echo "Intento $i/30: la API responde '${API:-sin respuesta}'. Reintento en 10 s..."
+            sleep 10
+          done
+          echo "::error::La API no quedó en $ROLLBACK_TAG. Revisar bistrolink-api → Deployments → logs del pre-deploy."
+          exit 1
 
   # ── JOB 9B: LIGHTHOUSE (Performance mobile) — staging ────────────────────────
   lighthouse:
@@ -1127,30 +1177,13 @@ jobs:
   #       WEB_SERVICE_ID: "070e5864-c5af-47e3-89d4-89c3041bc98b"
   #       AUTH_SERVICE_ID: "dd1b662a-4bcb-450c-a57e-fa0fe6fb5773"
   #     steps:
-  #       - uses: actions/checkout@v7
-  #
-  #       - uses: actions/setup-node@v7
-  #         with:
-  #           node-version: "20"
-  #           cache: npm
-  #
-  #       - name: Instalar dependencias (solo backend, para prisma migrate)
-  #         run: npm pkg delete scripts.prepare && npm ci --workspace=apps/backend
-  #
-  #       - name: Aplicar migraciones de Prisma en producción
-  #         working-directory: apps/backend
-  #         env:
-  #           # PENDIENTE: crear el secret PROD_DATABASE_URL (mismo patrón que
-  #           # STAGING_DATABASE_URL) apuntando a la base de producción.
-  #           DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
-  #         run: |
-  #           for i in 1 2 3 4 5; do
-  #             npx prisma migrate deploy && exit 0
-  #             echo "Intento $i falló, esperando 10s..."
-  #             sleep 10
-  #           done
-  #           echo "Las migraciones fallaron tras 5 intentos"
-  #           exit 1
+  #       # BL-231: sin migraciones desde GitHub ni secret PROD_DATABASE_URL.
+  #       # Las aplica el pre-deploy command de bistrolink-api en el entorno
+  #       # production de Railway (mismo script que en staging), y
+  #       # bistrolink-db de producción no tiene TCP Proxy (checklist BL-232).
+  #       # Después del paso de la API va un "Esperar la API nueva" igual al de
+  #       # staging, con la URL de producción y ESPERADO="${{ github.ref_name }}"
+  #       # (en un tag, la imagen hornea el tag semántico como versión).
   #
   #       - name: Actualizar y deployar API (tag semántico)
   #         env:
