@@ -111,6 +111,8 @@ jobs:
               - 'apps/**'
               - 'packages/**'
               - 'keycloak/**'
+              - 'package.json'
+              - 'package-lock.json'
             testmgmt:
               - 'testmgmt/docker/**'
 
