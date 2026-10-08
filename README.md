@@ -45,7 +45,7 @@ Pipeline en GitHub Actions (`.github/workflows/ci.yml`), disparado en push/PR a 
 | Web | https://bistrolink-web-staging.up.railway.app |
 | Auth (Keycloak) | https://bistrolink-auth-staging.up.railway.app |
 | Testing (Kiwi TCMS) | https://testmgmt-staging.up.railway.app |
-
+## TESTING TESTING PRUEBA PRUEBA
 ---
 [![CI/CD BistroLink](https://github.com/VED-VirtualExperienceDevelopment/bistrolink/actions/workflows/ci.yml/badge.svg)](https://github.com/VED-VirtualExperienceDevelopment/bistrolink/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/VED-VirtualExperienceDevelopment/bistrolink/branch/develop/graph/badge.svg)](https://codecov.io/gh/VED-VirtualExperienceDevelopment/bistrolink/branch/develop)
