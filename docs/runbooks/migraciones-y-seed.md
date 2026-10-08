@@ -1,7 +1,7 @@
 # Runbook: migraciones de la base y seed en Railway
 
 > **Ticket:** BL-231 · **Relacionado:** BL-220 (release a producción), BL-232 (checklist de producción), BL-137 (base sin migraciones en staging) · **Documentación del proyecto:** Anexo 12, hallazgos A7, D2 y D8.
-> **Última revisión:** 07/10/2026.
+> **Última revisión:** 08/10/2026 (§5: acceso a la base por túnel SSH con `railway connect`, sin volver a abrir el TCP Proxy).
 
 ## 1. Cómo se aplican las migraciones
 
@@ -24,12 +24,12 @@ sequenceDiagram
   GH->>RW: recién ahí despliega Web y Keycloak
 ```
 
-| Pieza | Dónde |
-| --- | --- |
-| CLI de Prisma (versión del lockfile) con los motores ya descargados | `apps/backend/Dockerfile`, stage `migrate` → `/app/migrate` en la imagen |
-| Script del pre-deploy | `apps/backend/docker/predeploy-migrate.sh` → `/app/migrate/predeploy-migrate.sh` |
-| Schema y migraciones que se aplican | `apps/backend/prisma/` de la misma imagen |
-| Control en el pipeline | Paso «Esperar la API nueva (pre-deploy con migraciones)» de `deploy-staging` en `ci.yml` |
+| Pieza                                                               | Dónde                                                                                    |
+| ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| CLI de Prisma (versión del lockfile) con los motores ya descargados | `apps/backend/Dockerfile`, stage `migrate` → `/app/migrate` en la imagen                 |
+| Script del pre-deploy                                               | `apps/backend/docker/predeploy-migrate.sh` → `/app/migrate/predeploy-migrate.sh`         |
+| Schema y migraciones que se aplican                                 | `apps/backend/prisma/` de la misma imagen                                                |
+| Control en el pipeline                                              | Paso «Esperar la API nueva (pre-deploy con migraciones)» de `deploy-staging` en `ci.yml` |
 
 **Rollback:** al volver a una imagen anterior, Railway corre de nuevo el pre-deploy con las migraciones de esa imagen. `migrate deploy` solo aplica las pendientes, así que no toca la base (patrón expand/contract). Solo se puede volver a imágenes **posteriores a BL-231**: las anteriores no tienen el script y Railway no las pondría en línea. El job de rollback lo verifica antes de empezar.
 
@@ -37,9 +37,9 @@ sequenceDiagram
 
 En `bistrolink-api` → **Settings → Deploy**:
 
-| Campo | Valor |
-| --- | --- |
-| Pre-deploy Command | `/app/migrate/predeploy-migrate.sh` |
+| Campo              | Valor                                                                                   |
+| ------------------ | --------------------------------------------------------------------------------------- |
+| Pre-deploy Command | `/app/migrate/predeploy-migrate.sh`                                                     |
 | Pre-deploy Timeout | `300` segundos (si una migración se cuelga, el deploy falla en vez de quedar esperando) |
 
 El script necesita `DATABASE_URL` con la URL **interna** (`${{bistrolink-db.DATABASE_URL}}`, hallazgo A8). Producción se configura igual (checklist BL-232).
@@ -66,34 +66,57 @@ Railway deja en línea la versión anterior y el paso «Esperar la API nueva» f
 1. Railway → `bistrolink-api` → **Deployments** → el deploy del SHA → **logs del pre-deploy**.
 2. Según el error:
    - **`Error: P1001` (no llega a la base):** revisar que `bistrolink-db` esté en línea y que `DATABASE_URL` de `bistrolink-api` sea la referencia interna.
-   - **Error de SQL en una migración:** la migración quedó marcada como fallida en `_prisma_migrations` y Prisma no aplica nada más hasta resolverla (`P3009`). Corregir **hacia adelante**: nunca editar una migración ya aplicada en otra base. Para marcarla como revertida o aplicada hace falta `prisma migrate resolve` contra la base, con el acceso temporal de la sección 5.
+   - **Error de SQL en una migración:** la migración quedó marcada como fallida en `_prisma_migrations` y Prisma no aplica nada más hasta resolverla (`P3009`). Corregir **hacia adelante**: nunca editar una migración ya aplicada en otra base. Para marcarla como revertida o aplicada hace falta `prisma migrate resolve` contra la base, con el túnel de la sección 5.
 3. Corregir, mergear y dejar que el pipeline despliegue de nuevo.
 
-## 5. Acceso temporal a la base (seed y casos excepcionales)
+## 5. Acceso a la base desde una PC del equipo (seed y casos excepcionales)
 
-El seed (`apps/backend/prisma/seed.ts`) solo hace falta si se resetea la base de staging; en producción **nunca** se corre. Como la base no tiene acceso público, se habilita un TCP Proxy **solo mientras dura la tarea**:
+Sirve para el seed, `prisma migrate resolve` (sección 4) o una consulta con DBeaver, pgAdmin o `psql`. El seed (`apps/backend/prisma/seed.ts`) solo hace falta si se resetea la base de staging; en producción **nunca** se corre.
 
-1. Railway → `bistrolink-db` → Settings → Networking → **TCP Proxy** → agregar (puerto `5432`). Railway crea `DATABASE_PUBLIC_URL`.
-2. Copiar `DATABASE_PUBLIC_URL` (pestaña Variables) **solo a la terminal**: no pegarla en archivos, chats ni documentos.
-3. Correr el seed desde `apps/backend`:
+La base no tiene acceso público y **no se vuelve a habilitar el TCP Proxy** (hallazgos D2 y D8). Se entra con un **túnel SSH de la CLI de Railway**: autenticado con el usuario de Railway de cada integrante, abierto solo en la PC que lo pide y cerrado con `Ctrl+C`. La base nunca queda expuesta a internet.
+
+**Requisitos (una vez por PC):**
+
+- CLI de Railway actualizada (`railway --version`; para actualizar, `railway upgrade` o reinstalar con `npm i -g @railway/cli`).
+- Sesión iniciada (`railway login`) y el repositorio vinculado al proyecto (`railway link`).
+- Si la CLI lo pide, registrar una clave SSH en la cuenta de Railway (muestra el enlace para hacerlo).
+
+**Pasos:**
+
+1. **Terminal 1, abrir el túnel** (queda abierto hasta `Ctrl+C`):
+
+   ```bash
+   railway connect bistrolink-db --environment staging --tunnel-only --port 15432
+   ```
+
+   La CLI imprime host (`127.0.0.1`), puerto, usuario, contraseña, base y la URL completa de conexión. **La salida incluye la contraseña:** no compartir pantalla ni grabar mientras se ve, y no copiarla a archivos, chats ni documentos.
+
+2. **Terminal 2, correr el seed** desde `apps/backend`, con la URL que imprimió el túnel:
 
    ```bash
    # Linux / macOS
-   DATABASE_URL='<DATABASE_PUBLIC_URL>' npx prisma db seed
+   DATABASE_URL='<URL que imprimió el túnel>' npx prisma db seed
    ```
 
    ```powershell
    # Windows (PowerShell)
-   $env:DATABASE_URL='<DATABASE_PUBLIC_URL>'; npx prisma db seed; Remove-Item Env:DATABASE_URL
+   $env:DATABASE_URL='<URL que imprimió el túnel>'; npx prisma db seed; Remove-Item Env:DATABASE_URL
    ```
 
-4. Verificar con la API de staging (mismos IDs que `e2e/support/ids.ts`):
+   Para DBeaver o pgAdmin: host `127.0.0.1`, puerto `15432` y el resto de los datos que imprimió el túnel.
+
+3. **Verificar** con la API de staging (mismos IDs que `e2e/support/ids.ts`):
 
    ```bash
    curl https://bistrolink-api-staging.up.railway.app/menu/tenant/11111111-1111-1111-1111-111111111111/restaurante/22222222-2222-2222-2222-222222222222
    ```
 
-5. **Borrar el TCP Proxy** y confirmar que `DATABASE_PUBLIC_URL` desapareció.
-6. Registrar en el Anexo 12 §9: fecha, quién, motivo, y hora de apertura y cierre del proxy.
+4. **Cerrar el túnel** con `Ctrl+C` en la terminal 1.
+5. **Registrar** en el Anexo 12 §9: fecha, quién, entorno, motivo y qué se ejecutó.
+
+**Si el túnel falla:**
+
+- **`Connection URL should point to the Railway TCP proxy`** (reportado por otros usuarios en Windows): actualizar la CLI y reintentar. Si sigue, abrir el túnel a mano: `railway ssh config --service bistrolink-db --alias bistrolink-db-staging` y después `ssh -L 15432:127.0.0.1:5432 bistrolink-db-staging` (sin `-N`). Conectarse a `127.0.0.1:15432` con el usuario y la contraseña de la variable `DATABASE_URL` de `bistrolink-db`.
+- **Aun así no hay forma de entrar:** no habilitar el TCP Proxy por cuenta propia. Reabre la base a internet (D2) y se decide en el equipo; si se acuerda, se borra apenas termina la tarea y se registra en el Anexo 12 §9 con la hora de apertura y de cierre.
 
 **Nunca** correr `prisma migrate reset` ni `prisma migrate dev` contra staging o producción: borran o recrean la base. Las migraciones solo llegan por el pre-deploy.
