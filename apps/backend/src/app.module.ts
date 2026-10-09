@@ -13,6 +13,7 @@ import { AuthComensalModule } from './auth-comensal/auth-comensal.module';
 import { PedidosModule } from './pedidos/pedidos.module';
 import { MesasModule } from './mesas/mesas.module';
 import { PagosModule } from './pagos/pagos.module';
+import { PlataformaApiModule } from './plataforma/plataforma-api.module';
 import { construirConfiguracionLog } from './logger/destinos-log';
 
 // BL-273: destinos y formato de los logs según el entorno (ver
@@ -66,6 +67,8 @@ const configuracionLog = construirConfiguracionLog(process.env);
     PedidosModule,
     MesasModule,
     PagosModule,
+    // BL-163 (HU-027): /plataforma/establecimientos, solo rol PLATAFORMA.
+    PlataformaApiModule,
   ],
   controllers: [AppController, HealthController, TestController],
   providers: [AppService],

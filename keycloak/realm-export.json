@@ -36,6 +36,10 @@
       {
         "name": "COMENSAL",
         "description": "Cliente final: sesión limitada a la mesa activa"
+      },
+      {
+        "name": "PLATAFORMA",
+        "description": "Equipo de BistroLink: alta de establecimientos (/plataforma). Sin tenant_id y con OTP obligatorio (BL-163)"
       }
     ]
   },

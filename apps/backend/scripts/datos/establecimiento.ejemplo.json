@@ -1,0 +1,21 @@
+{
+  "razonSocial": "Restaurante de Prueba SRL",
+  "rut": "219999999901",
+  "plan": "BASICO",
+  "restaurante": {
+    "nombre": "Restaurante de Prueba",
+    "direccion": "Calle de Prueba 123, Montevideo",
+    "timezone": "America/Montevideo"
+  },
+  "admin": {
+    "username": "prueba-admin",
+    "email": "prueba-admin@prueba.bistrolink.local",
+    "nombre": "Admin",
+    "apellido": "De Prueba",
+    "passwordEnv": "PRUEBA_ADMIN_PASSWORD"
+  },
+  "cocina": {
+    "username": "prueba-cocina",
+    "passwordEnv": "PRUEBA_COCINA_PASSWORD"
+  }
+}

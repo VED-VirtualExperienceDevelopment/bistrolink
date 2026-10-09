@@ -73,7 +73,10 @@ export class MenuAdminController {
   }
 
   @Delete('categoria/:id')
-  async deleteCategoria(@Req() req: any, @Param('id', ParseUUIDPipe) id: string) {
+  async deleteCategoria(
+    @Req() req: any,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
     return this.menuAdminService.deleteCategoria(req.user.tenantId, id);
   }
 
