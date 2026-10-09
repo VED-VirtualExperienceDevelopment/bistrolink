@@ -4,7 +4,6 @@ import { ITEM_DISPONIBLE, MENU_URL_PATH } from '../support/ids';
 test.describe('HU-003: Carrito y confirmación de pedido', () => {
   test('[TC-E-010] HU-003: agregar un ítem, confirmar, y ver la confirmación visual', async ({ page }) => {
     await page.goto(MENU_URL_PATH);
-    await page.goto(MENU_URL_PATH);
     await expect(page.getByText(ITEM_DISPONIBLE)).toBeVisible();
 
     await page
@@ -19,14 +18,16 @@ test.describe('HU-003: Carrito y confirmación de pedido', () => {
       page.getByText('¡Pedido enviado! Cocina ya lo recibió.'),
     ).toBeVisible({ timeout: 10000 });
 
+    // El carrito se vacía al confirmar.
     await expect(page.getByText(/Tu pedido \(/i)).not.toBeVisible();
 
-    await expect(
-      page.getByText('¡Pedido enviado! Cocina ya lo recibió.'),
-    ).toBeVisible({ timeout: 10000 });
-
-    // Verificación explícita del criterio de aceptación: estado 'Recibido'.
-    await expect(page.getByText('Estado: RECIBIDO')).toBeVisible();
+    // Criterio de aceptación: el pedido queda en estado Recibido.
+    // BL-253: la pantalla muestra un seguimiento por pasos (SeguimientoPedido).
+    // El paso actual se identifica por aria-current="step"; buscar solo el texto
+    // "Recibido" chocaría con la etiqueta del paso 1 y con el estado de abajo.
+    const pasoActual = page.locator('li[aria-current="step"]');
+    await expect(pasoActual).toHaveCount(1);
+    await expect(pasoActual).toContainText('Recibido');
   });
 
   test('[TC-E-011] HU-003: agregar dos unidades del mismo ítem suma la cantidad, no duplica la fila', async ({

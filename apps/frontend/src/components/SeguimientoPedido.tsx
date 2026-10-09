@@ -86,7 +86,9 @@ export function SeguimientoPedido({
           const esActual = i === indiceActual;
 
           return (
-            <li key={paso} className="flex flex-1 flex-col items-center text-center">
+            <li key={paso}
+             aria-current={esActual ? 'step' : undefined}
+             className="flex flex-1 flex-col items-center text-center">
               <div
                 className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
                   alcanzado
@@ -118,7 +120,7 @@ export function SeguimientoPedido({
         })}
       </ol>
 
-      <p className="text-center text-sm font-semibold text-culinary-primary mt-4">
+    <p role="status" className="text-center text-sm font-semibold text-culinary-primary mt-4">
         {ESTADO_LABEL[estado]}
       </p>
     </div>
