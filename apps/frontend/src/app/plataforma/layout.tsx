@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import { useEffect } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
-import { useKeycloakAuth } from '@/components/providers/KeycloakProvider';
+import { useEffect } from "react";
+import { useRouter, usePathname } from "next/navigation";
+import { useKeycloakAuth } from "@/components/providers/KeycloakProvider";
 
 /**
  * BL-163 (HU-027): pantalla del equipo de BistroLink (rol PLATAFORMA) para
@@ -14,11 +14,13 @@ import { useKeycloakAuth } from '@/components/providers/KeycloakProvider';
  * tenant_id (PlataformaJwtStrategy), y un token PLATAFORMA no sirve en
  * ninguna ruta de un restaurante.
  */
-export default function PlataformaLayout({ children }: { children: React.ReactNode }) {
+export default function PlataformaLayout({
+  children,
+}: Readonly<{ children: React.ReactNode }>) {
   const { initializing, authenticated, hasRole, logout } = useKeycloakAuth();
   const router = useRouter();
   const pathname = usePathname();
-  const esPlataforma = hasRole('PLATAFORMA');
+  const esPlataforma = hasRole("PLATAFORMA");
 
   useEffect(() => {
     if (initializing) return;
@@ -27,7 +29,7 @@ export default function PlataformaLayout({ children }: { children: React.ReactNo
       return;
     }
     if (!esPlataforma) {
-      router.replace('/');
+      router.replace("/");
     }
   }, [initializing, authenticated, esPlataforma, router, pathname]);
 
@@ -47,8 +49,12 @@ export default function PlataformaLayout({ children }: { children: React.ReactNo
     <div className="flex h-screen flex-col overflow-hidden bg-background">
       <header className="flex h-16 shrink-0 items-center justify-between border-b border-outline-variant bg-surface px-6 shadow-sm">
         <div>
-          <div className="text-headline-sm font-bold text-primary">Bistro Link</div>
-          <div className="text-label-md text-on-surface-variant">Plataforma</div>
+          <div className="text-headline-sm font-bold text-primary">
+            Bistro Link
+          </div>
+          <div className="text-label-md text-on-surface-variant">
+            Plataforma
+          </div>
         </div>
         <button
           type="button"

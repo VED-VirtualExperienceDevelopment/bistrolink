@@ -28,7 +28,21 @@ export const FORMULARIO_VACIO: FormularioAlta = {
 
 const FORMATO_RUT = /^\d{12}$/;
 const FORMATO_USERNAME = /^[a-z0-9][a-z0-9._-]{2,49}$/;
-const FORMATO_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
+ * Control básico de email (algo@dominio.tld), sin expresión regular: la
+ * versión con regex (/^[^\s@]+@[^\s@]+\.[^\s@]+$/) tiene backtracking
+ * superlineal (SonarCloud S5852). El backend vuelve a validar el email al
+ * recibir el alta.
+ */
+export function esEmailValido(email: string): boolean {
+  if (/\s/.test(email)) return false;
+  const partes = email.split("@");
+  if (partes.length !== 2) return false;
+  const [local, dominio] = partes;
+  const punto = dominio.lastIndexOf(".");
+  return local.length > 0 && punto > 0 && punto < dominio.length - 1;
+}
 
 const MENSAJE_USERNAME =
   "De 3 a 50 caracteres, en minúsculas: letras, números, punto, guion o guion bajo";
@@ -65,12 +79,12 @@ export function validarFormulario(f: FormularioAlta): ErroresFormulario {
     errores.cocinaUsername = "Tiene que ser distinto del Administrador";
   }
 
-  if (!FORMATO_EMAIL.test(f.adminEmail.trim())) {
+  if (!esEmailValido(f.adminEmail.trim())) {
     errores.adminEmail = "Email inválido";
   }
   requerido("adminNombre", 80);
   requerido("adminApellido", 80);
-  if (f.cocinaEmail.trim() && !FORMATO_EMAIL.test(f.cocinaEmail.trim())) {
+  if (f.cocinaEmail.trim() && !esEmailValido(f.cocinaEmail.trim())) {
     errores.cocinaEmail = "Email inválido";
   }
 

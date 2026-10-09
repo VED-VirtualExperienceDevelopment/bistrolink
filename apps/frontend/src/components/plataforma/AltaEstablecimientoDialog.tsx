@@ -1,8 +1,8 @@
-'use client';
-import { useState } from 'react';
-import { Dialog } from '@/components/ui/Dialog';
-import { apiFetch, ApiError } from '@/lib/api-client';
-import type { FormularioAlta, ResultadoAlta } from '@/types/plataforma';
+"use client";
+import { useState } from "react";
+import { Dialog } from "@/components/ui/Dialog";
+import { apiFetch, ApiError } from "@/lib/api-client";
+import type { FormularioAlta, ResultadoAlta } from "@/types/plataforma";
 import {
   construirPedidoAlta,
   credencialesAMostrar,
@@ -12,7 +12,7 @@ import {
   resumirAlta,
   validarFormulario,
   type ErroresFormulario,
-} from './plataforma.utils';
+} from "./plataforma.utils";
 
 interface Props {
   open: boolean;
@@ -23,7 +23,7 @@ interface Props {
 }
 
 const CLASE_INPUT =
-  'w-full rounded-lg border px-3 py-2 text-body-md text-on-surface focus:outline-none focus:ring-2';
+  "w-full rounded-lg border px-3 py-2 text-body-md text-on-surface focus:outline-none focus:ring-2";
 
 interface CampoProps {
   id: keyof FormularioAlta;
@@ -31,16 +31,28 @@ interface CampoProps {
   valor: string;
   error?: string;
   ayuda?: string;
-  tipo?: 'text' | 'email';
-  inputMode?: 'numeric';
+  tipo?: "text" | "email";
+  inputMode?: "numeric";
   onChange: (id: keyof FormularioAlta, valor: string) => void;
 }
 
-function Campo({ id, label, valor, error, ayuda, tipo = 'text', inputMode, onChange }: CampoProps) {
+function Campo({
+  id,
+  label,
+  valor,
+  error,
+  ayuda,
+  tipo = "text",
+  inputMode,
+  onChange,
+}: Readonly<CampoProps>) {
   const idAyuda = `${id}-ayuda`;
   return (
     <div>
-      <label htmlFor={id} className="mb-1 block text-label-md text-on-surface-variant">
+      <label
+        htmlFor={id}
+        className="mb-1 block text-label-md text-on-surface-variant"
+      >
         {label}
       </label>
       <input
@@ -54,12 +66,15 @@ function Campo({ id, label, valor, error, ayuda, tipo = 'text', inputMode, onCha
         onChange={(e) => onChange(id, e.target.value)}
         className={`${CLASE_INPUT} ${
           error
-            ? 'border-error focus:border-error focus:ring-error/20'
-            : 'border-outline-variant focus:border-primary focus:ring-primary/20'
+            ? "border-error focus:border-error focus:ring-error/20"
+            : "border-outline-variant focus:border-primary focus:ring-primary/20"
         }`}
       />
       {(error || ayuda) && (
-        <p id={idAyuda} className={`mt-1 text-body-sm ${error ? 'text-error' : 'text-on-surface-variant'}`}>
+        <p
+          id={idAyuda}
+          className={`mt-1 text-body-sm ${error ? "text-error" : "text-on-surface-variant"}`}
+        >
           {error ?? ayuda}
         </p>
       )}
@@ -75,7 +90,12 @@ function Campo({ id, label, valor, error, ayuda, tipo = 'text', inputMode, onCha
  * temporales y vuelven UNA sola vez en la respuesta (mismo criterio que
  * CrearUsuarioDialog): se muestran acá y no se guardan en ningún lado.
  */
-export function AltaEstablecimientoDialog({ open, onClose, token, onCreado }: Props) {
+export function AltaEstablecimientoDialog({
+  open,
+  onClose,
+  token,
+  onCreado,
+}: Readonly<Props>) {
   const [form, setForm] = useState<FormularioAlta>(FORMULARIO_VACIO);
   const [errores, setErrores] = useState<ErroresFormulario>({});
   const [enviando, setEnviando] = useState(false);
@@ -107,17 +127,21 @@ export function AltaEstablecimientoDialog({ open, onClose, token, onCreado }: Pr
     setEnviando(true);
     setErrorApi(null);
     try {
-      const respuesta = await apiFetch<ResultadoAlta>('/plataforma/establecimientos', token, {
-        method: 'POST',
-        body: JSON.stringify(construirPedidoAlta(form)),
-      });
+      const respuesta = await apiFetch<ResultadoAlta>(
+        "/plataforma/establecimientos",
+        token,
+        {
+          method: "POST",
+          body: JSON.stringify(construirPedidoAlta(form)),
+        },
+      );
       setResultado(respuesta);
       onCreado(respuesta);
     } catch (err) {
       setErrorApi(
         err instanceof ApiError
           ? mensajeDeError(err.status, err.message)
-          : 'No se pudo dar de alta el establecimiento',
+          : "No se pudo dar de alta el establecimiento",
       );
     } finally {
       setEnviando(false);
@@ -134,14 +158,17 @@ export function AltaEstablecimientoDialog({ open, onClose, token, onCreado }: Pr
     return (
       <Dialog open={open} onClose={cerrar} title="Establecimiento listo">
         <div className="max-h-[70vh] space-y-4 overflow-y-auto pr-1">
-          <p className="text-body-md text-on-surface">{resumirAlta(resultado)}</p>
+          <p className="text-body-md text-on-surface">
+            {resumirAlta(resultado)}
+          </p>
 
           {credenciales.length > 0 && (
             <>
               <p className="rounded-lg bg-tertiary-fixed px-3 py-2 text-body-sm text-on-tertiary-fixed">
-                Estas contraseñas temporales <strong>solo se muestran ahora</strong>. Copialas y pasalas
-                por la base KeePass del equipo, nunca por chat ni mail. Keycloak pide cambiarlas en el
-                primer ingreso.
+                Estas contraseñas temporales{" "}
+                <strong>solo se muestran ahora</strong>. Copialas y pasalas por
+                la base KeePass del equipo, nunca por chat ni mail. Keycloak
+                pide cambiarlas en el primer ingreso.
               </p>
               <ul className="space-y-2">
                 {credenciales.map((u) => (
@@ -150,16 +177,23 @@ export function AltaEstablecimientoDialog({ open, onClose, token, onCreado }: Pr
                     className="rounded-lg border border-outline-variant bg-surface-container-low px-3 py-2"
                   >
                     <p className="text-label-md text-on-surface-variant">
-                      {ETIQUETA_ROL[u.rol]} · <span className="font-semibold text-on-surface">{u.username}</span>
+                      {ETIQUETA_ROL[u.rol]} ·{" "}
+                      <span className="font-semibold text-on-surface">
+                        {u.username}
+                      </span>
                     </p>
                     <div className="mt-1 flex items-center justify-between gap-2">
-                      <code className="break-all text-body-md text-on-surface">{u.passwordGenerada}</code>
+                      <code className="break-all text-body-md text-on-surface">
+                        {u.passwordGenerada}
+                      </code>
                       <button
                         type="button"
-                        onClick={() => copiar(u.username, u.passwordGenerada as string)}
+                        onClick={() =>
+                          copiar(u.username, u.passwordGenerada as string)
+                        }
                         className="shrink-0 text-label-md font-semibold text-primary hover:underline"
                       >
-                        {copiado === u.username ? 'Copiada' : 'Copiar'}
+                        {copiado === u.username ? "Copiada" : "Copiar"}
                       </button>
                     </div>
                   </li>
@@ -182,10 +216,22 @@ export function AltaEstablecimientoDialog({ open, onClose, token, onCreado }: Pr
 
   return (
     <Dialog open={open} onClose={cerrar} title="Nuevo establecimiento">
-      <form onSubmit={enviar} noValidate className="max-h-[70vh] space-y-5 overflow-y-auto pr-1">
+      <form
+        onSubmit={enviar}
+        noValidate
+        className="max-h-[70vh] space-y-5 overflow-y-auto pr-1"
+      >
         <fieldset className="space-y-3">
-          <legend className="mb-1 text-label-md font-semibold text-on-surface">Empresa</legend>
-          <Campo id="razonSocial" label="Razón social" valor={form.razonSocial} error={errores.razonSocial} onChange={cambiar} />
+          <legend className="mb-1 text-label-md font-semibold text-on-surface">
+            Empresa
+          </legend>
+          <Campo
+            id="razonSocial"
+            label="Razón social"
+            valor={form.razonSocial}
+            error={errores.razonSocial}
+            onChange={cambiar}
+          />
           <Campo
             id="rut"
             label="RUT"
@@ -198,24 +244,73 @@ export function AltaEstablecimientoDialog({ open, onClose, token, onCreado }: Pr
         </fieldset>
 
         <fieldset className="space-y-3">
-          <legend className="mb-1 text-label-md font-semibold text-on-surface">Restaurante</legend>
-          <Campo id="restauranteNombre" label="Nombre" valor={form.restauranteNombre} error={errores.restauranteNombre} onChange={cambiar} />
-          <Campo id="restauranteDireccion" label="Dirección" valor={form.restauranteDireccion} error={errores.restauranteDireccion} onChange={cambiar} />
+          <legend className="mb-1 text-label-md font-semibold text-on-surface">
+            Restaurante
+          </legend>
+          <Campo
+            id="restauranteNombre"
+            label="Nombre"
+            valor={form.restauranteNombre}
+            error={errores.restauranteNombre}
+            onChange={cambiar}
+          />
+          <Campo
+            id="restauranteDireccion"
+            label="Dirección"
+            valor={form.restauranteDireccion}
+            error={errores.restauranteDireccion}
+            onChange={cambiar}
+          />
         </fieldset>
 
         <fieldset className="space-y-3">
-          <legend className="mb-1 text-label-md font-semibold text-on-surface">Administrador</legend>
-          <Campo id="adminUsername" label="Usuario" valor={form.adminUsername} error={errores.adminUsername} onChange={cambiar} />
-          <Campo id="adminEmail" label="Email" tipo="email" valor={form.adminEmail} error={errores.adminEmail} onChange={cambiar} />
+          <legend className="mb-1 text-label-md font-semibold text-on-surface">
+            Administrador
+          </legend>
+          <Campo
+            id="adminUsername"
+            label="Usuario"
+            valor={form.adminUsername}
+            error={errores.adminUsername}
+            onChange={cambiar}
+          />
+          <Campo
+            id="adminEmail"
+            label="Email"
+            tipo="email"
+            valor={form.adminEmail}
+            error={errores.adminEmail}
+            onChange={cambiar}
+          />
           <div className="grid grid-cols-2 gap-3">
-            <Campo id="adminNombre" label="Nombre" valor={form.adminNombre} error={errores.adminNombre} onChange={cambiar} />
-            <Campo id="adminApellido" label="Apellido" valor={form.adminApellido} error={errores.adminApellido} onChange={cambiar} />
+            <Campo
+              id="adminNombre"
+              label="Nombre"
+              valor={form.adminNombre}
+              error={errores.adminNombre}
+              onChange={cambiar}
+            />
+            <Campo
+              id="adminApellido"
+              label="Apellido"
+              valor={form.adminApellido}
+              error={errores.adminApellido}
+              onChange={cambiar}
+            />
           </div>
         </fieldset>
 
         <fieldset className="space-y-3">
-          <legend className="mb-1 text-label-md font-semibold text-on-surface">Cocina (monitor de pedidos)</legend>
-          <Campo id="cocinaUsername" label="Usuario" valor={form.cocinaUsername} error={errores.cocinaUsername} onChange={cambiar} />
+          <legend className="mb-1 text-label-md font-semibold text-on-surface">
+            Cocina (monitor de pedidos)
+          </legend>
+          <Campo
+            id="cocinaUsername"
+            label="Usuario"
+            valor={form.cocinaUsername}
+            error={errores.cocinaUsername}
+            onChange={cambiar}
+          />
           <Campo
             id="cocinaEmail"
             label="Email (opcional)"
@@ -228,12 +323,15 @@ export function AltaEstablecimientoDialog({ open, onClose, token, onCreado }: Pr
         </fieldset>
 
         <p className="text-body-sm text-on-surface-variant">
-          Las contraseñas del Administrador y de Cocina las genera el sistema. El comensal técnico y la mesa
-          virtual se crean solos.
+          Las contraseñas del Administrador y de Cocina las genera el sistema.
+          El comensal técnico y la mesa virtual se crean solos.
         </p>
 
         {errorApi && (
-          <p role="alert" className="rounded-lg bg-error-container px-3 py-2 text-body-sm text-on-error-container">
+          <p
+            role="alert"
+            className="rounded-lg bg-error-container px-3 py-2 text-body-sm text-on-error-container"
+          >
             {errorApi}
           </p>
         )}
@@ -251,7 +349,7 @@ export function AltaEstablecimientoDialog({ open, onClose, token, onCreado }: Pr
             disabled={enviando}
             className="rounded-lg bg-primary px-4 py-2 text-body-md font-medium text-on-primary hover:opacity-90 disabled:opacity-50"
           >
-            {enviando ? 'Dando de alta…' : 'Dar de alta'}
+            {enviando ? "Dando de alta…" : "Dar de alta"}
           </button>
         </div>
       </form>

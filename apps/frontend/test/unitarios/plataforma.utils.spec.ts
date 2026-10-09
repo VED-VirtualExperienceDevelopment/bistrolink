@@ -2,6 +2,7 @@ import {
   construirPedidoAlta,
   credencialesAMostrar,
   describirCreadoPor,
+  esEmailValido,
   formatearFechaAlta,
   FORMULARIO_VACIO,
   mensajeDeError,
@@ -240,5 +241,31 @@ describe("mensajeDeError", () => {
     expect(
       mensajeDeError(409, "El RUT ya pertenece a otro establecimiento"),
     ).toBe("El RUT ya pertenece a otro establecimiento");
+  });
+});
+
+describe("esEmailValido", () => {
+  it("acepta un email con usuario, dominio y extensión", () => {
+    expect(esEmailValido("admin@prueba.uy")).toBe(true);
+    expect(esEmailValido("ana.perez@mail.prueba.com.uy")).toBe(true);
+  });
+
+  it("rechaza emails sin @, con más de una @ o con espacios", () => {
+    expect(esEmailValido("no-es-email")).toBe(false);
+    expect(esEmailValido("a@b@prueba.uy")).toBe(false);
+    expect(esEmailValido("ana perez@prueba.uy")).toBe(false);
+  });
+
+  it("rechaza emails sin usuario o sin un punto dentro del dominio", () => {
+    expect(esEmailValido("@prueba.uy")).toBe(false);
+    expect(esEmailValido("admin@prueba")).toBe(false);
+    expect(esEmailValido("admin@.uy")).toBe(false);
+    expect(esEmailValido("admin@prueba.")).toBe(false);
+  });
+
+  it("responde rápido con entradas largas y maliciosas", () => {
+    const inicio = Date.now();
+    expect(esEmailValido("a@" + ".".repeat(50_000))).toBe(false);
+    expect(Date.now() - inicio).toBeLessThan(100);
   });
 });
