@@ -1,6 +1,11 @@
-import { test, expect } from '@playwright/test';
-import type { APIRequestContext } from '@playwright/test';
-import { MENU_URL_PATH, MESA_ID, RESTAURANTE_ID, TENANT_ID } from '../support/ids';
+import { test, expect } from "@playwright/test";
+import type { APIRequestContext } from "@playwright/test";
+import {
+  MENU_URL_PATH,
+  MESA_ID,
+  RESTAURANTE_ID,
+  TENANT_ID,
+} from "../support/ids";
 // MESA_PATH: solo lo usaba MENU_QR_PATH, para la regresión visual comentada
 // más abajo. Si se reactiva esa sección, volver a importarlo.
 
@@ -18,7 +23,7 @@ import { MENU_URL_PATH, MESA_ID, RESTAURANTE_ID, TENANT_ID } from '../support/id
 // estas corridas.
 
 // Backend como fuente de verdad. En CI apunta a la API de staging.
-const API_URL = process.env.API_URL ?? 'http://localhost:3001';
+const API_URL = process.env.API_URL ?? "http://localhost:3001";
 
 type ItemMenu = { nombre: string; disponible: boolean };
 type CategoriaMenu = { items: ItemMenu[] };
@@ -41,8 +46,8 @@ function itemsDe(menu: MenuResponse): ItemMenu[] {
   return menu.categorias.flatMap((c) => c.items);
 }
 
-test.describe('HU-002: menú vía URL directa (verificado en mobile)', () => {
-  test(' [TC-E-006] HU-002: renderiza el restaurante que declara la API, sin login', async ({
+test.describe("HU-002: menú vía URL directa (verificado en mobile)", () => {
+  test(" [TC-E-006] HU-002: renderiza el restaurante que declara la API, sin login", async ({
     page,
     request,
   }) => {
@@ -55,12 +60,12 @@ test.describe('HU-002: menú vía URL directa (verificado en mobile)', () => {
 
     // El nombre viene de la API, no hardcodeado: si cambia el seed, sigue pasando.
     await expect(
-      page.getByRole('heading', { name: menu.restaurante.nombre }),
+      page.getByRole("heading", { name: menu.restaurante.nombre }),
     ).toBeVisible();
-    await expect(page.getByText('Pedido desde fuera del local')).toBeVisible();
+    await expect(page.getByText("Pedido desde fuera del local")).toBeVisible();
   });
 
-  test('[TC-E-007] HU-002: muestra exactamente los items disponibles y oculta los agotados', async ({
+  test("[TC-E-007] HU-002: muestra exactamente los items disponibles y oculta los agotados", async ({
     page,
     request,
   }) => {
@@ -74,26 +79,34 @@ test.describe('HU-002: menú vía URL directa (verificado en mobile)', () => {
     const disponibles = itemsDe(menuQr).filter((i) => i.disponible);
     const agotados = itemsDe(menuQr).filter((i) => !i.disponible);
 
-    test.skip(disponibles.length === 0, 'Fixture sin items disponibles');
+    test.skip(disponibles.length === 0, "Fixture sin items disponibles");
+
+    // BL-253: el seed siempre tiene un ítem agotado ("Agua con gas"). Si la
+    // lista llega vacía, el endpoint QR dejó de devolverlos (BL-288) y el
+    // loop de abajo no verificaría nada: el test pasaría sin probar.
+    expect(
+      agotados.length,
+      "El menú QR no devolvió ningún ítem agotado",
+    ).toBeGreaterThan(0);
 
     await page.goto(MENU_URL_PATH);
 
     // Todo item disponible aparece (escalable: no depende de nombres).
     for (const item of disponibles) {
       await expect(
-        page.getByRole('heading', { name: item.nombre }),
+        page.getByRole("heading", { name: item.nombre }),
       ).toBeVisible();
     }
 
     // Y todo item agotado queda oculto (invariante de HU-002).
     for (const item of agotados) {
       await expect(
-        page.getByRole('heading', { name: item.nombre }),
+        page.getByRole("heading", { name: item.nombre }),
       ).toHaveCount(0);
     }
   });
 
-  test('[TC-E-008] HU-002: permite agregar al carrito el primer item disponible que exista', async ({
+  test("[TC-E-008] HU-002: permite agregar al carrito el primer item disponible que exista", async ({
     page,
     request,
   }) => {
@@ -102,27 +115,31 @@ test.describe('HU-002: menú vía URL directa (verificado en mobile)', () => {
       `${API_URL}/menu/tenant/${TENANT_ID}/restaurante/${RESTAURANTE_ID}`,
     );
     const primerItem = itemsDe(menu)[0];
-    test.skip(!primerItem, 'Fixture sin items disponibles');
+    test.skip(!primerItem, "Fixture sin items disponibles");
 
     await page.goto(MENU_URL_PATH);
 
     await page
-      .getByRole('button', { name: new RegExp(`agregar ${primerItem.nombre}`, 'i') })
+      .getByRole("button", {
+        name: new RegExp(`agregar ${primerItem.nombre}`, "i"),
+      })
       .click();
 
     await expect(page.getByText(`1x ${primerItem.nombre}`)).toBeVisible();
     await expect(
-      page.getByRole('button', { name: /realizar pedido/i }),
+      page.getByRole("button", { name: /realizar pedido/i }),
     ).toBeVisible();
   });
 
-  test('[TC-E-009] HU-002: error controlado para un restaurante inexistente', async ({ page }) => {
+  test("[TC-E-009] HU-002: error controlado para un restaurante inexistente", async ({
+    page,
+  }) => {
     // UUID cero: mismo patrón determinista que e2e/comensal/menu.spec.ts.
     await page.goto(
       `/m/${TENANT_ID}/restaurante/00000000-0000-0000-0000-000000000000`,
     );
 
-    await expect(page.getByText('This page could not be found')).toBeVisible();
+    await expect(page.getByText("This page could not be found")).toBeVisible();
   });
 });
 

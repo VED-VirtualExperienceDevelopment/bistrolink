@@ -21,7 +21,7 @@ test('[TC-E-016] HU-018: cocina mozo comensal, pedido llega a Entregado', async 
   await expect(ticket).toBeVisible({ timeout: 5000 });
 
   const estadoActual = (texto: string) =>
-    comensalPage.getByRole('paragraph').filter({ hasText: texto });
+    comensalPage.getByRole('status').filter({ hasText: texto });
 
   await expect(comensalPage.getByText('🟢 En vivo')).toBeVisible({ timeout: 5000 });
 
