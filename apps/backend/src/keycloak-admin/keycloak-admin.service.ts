@@ -272,6 +272,33 @@ export class KeycloakAdminService {
   }
 
   /**
+   * BL-163: busca un usuario por su id (el `sub` de su token). Devuelve null
+   * si no existe. El alta de establecimientos lo usa para guardar el username
+   * de quien la hizo: el token no siempre trae `preferred_username` (depende
+   * de que el realm tenga el client scope `profile`).
+   */
+  async findUserById(keycloakId: string): Promise<KeycloakUser | null> {
+    const res = await this.adminFetch(
+      `/users/${encodeURIComponent(keycloakId)}`,
+    );
+    if (res.status === 404) {
+      return null;
+    }
+    if (!res.ok) {
+      const body = await res.text();
+      this.logAndBuildError(
+        `No se pudo leer el usuario ${keycloakId} en Keycloak`,
+        res.status,
+        body,
+      );
+      throw new InternalServerErrorException(
+        `No se pudo leer el usuario en Keycloak: ${res.status} ${body}`,
+      );
+    }
+    return (await res.json()) as KeycloakUser;
+  }
+
+  /**
    * BL-163: completa el email, el nombre y el apellido de un usuario que no
    * los tiene (por ejemplo, uno creado antes de que el alta los mandara).
    * Solo llena los que faltan: nunca pisa un valor que ya existe. Devuelve

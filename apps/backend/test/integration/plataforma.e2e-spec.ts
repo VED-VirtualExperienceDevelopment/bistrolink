@@ -14,6 +14,7 @@ import { AppModule } from '../../src/app.module';
  * - Un token PLATAFORMA contra endpoints de tenant → 401.
  * - El alta crea el kit mínimo y el comensal técnico puede emitir su token.
  * - Reintentar el alta no duplica nada.
+ * - El listado muestra el establecimiento nuevo y quién lo dio de alta.
  *
  * Setup: el realm tiene que tener el rol PLATAFORMA (keycloak/realm-export.json;
  * en un Keycloak ya levantado, crearlo a mano o reimportar el realm) y el
@@ -312,6 +313,8 @@ describe('Alta de establecimientos por la plataforma (HU-027) - e2e', () => {
       // Base: tenant, restaurante, mesa virtual y fila del Admin.
       const tenant = await prisma.tenant.findUnique({ where: { rut: RUT } });
       expect(tenant?.id).toBe(tenantId);
+      // Quién dio el alta: el username del token, no un dato del body.
+      expect(tenant?.creadoPor).toBe(USUARIO_PLATAFORMA);
       const filas = await enTenant(tenantId, async (tx) => ({
         restaurantes: await tx.restaurante.findMany({ where: { tenantId } }),
         mesas: await tx.mesa.findMany({ where: { tenantId } }),
@@ -386,6 +389,41 @@ describe('Alta de establecimientos por la plataforma (HU-027) - e2e', () => {
         tx.mesa.count({ where: { tenantId } }),
       );
       expect(mesas).toBe(1);
+    },
+  );
+
+  itConPlataforma(
+    '[TC-I-053] Plataforma: el listado muestra el establecimiento nuevo, su restaurante y quién lo dio de alta (200)',
+    async () => {
+      const res = await request(app.getHttpServer())
+        .get('/plataforma/establecimientos')
+        .set('Authorization', `Bearer ${tokenPlataforma}`)
+        .expect(200);
+
+      // El alta más reciente va primero.
+      expect(res.body.pagina).toBe(1);
+      expect(res.body.items[0]).toEqual(
+        expect.objectContaining({
+          tenantId: tenantIdCreado,
+          rut: RUT,
+          creadoPor: USUARIO_PLATAFORMA,
+          restaurante: expect.objectContaining({
+            nombre: ALTA.restaurante.nombre,
+          }),
+        }),
+      );
+      expect(JSON.stringify(res.body)).not.toMatch(/password/i);
+    },
+  );
+
+  itConAdmin(
+    '[TC-I-054] Plataforma: un ADMIN de un establecimiento no puede ver el listado de establecimientos (403)',
+    async () => {
+      const token = await pedirToken(ADMIN_USER, ADMIN_PASS as string);
+      await request(app.getHttpServer())
+        .get('/plataforma/establecimientos')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
     },
   );
 

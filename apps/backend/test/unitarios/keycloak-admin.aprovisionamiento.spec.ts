@@ -110,6 +110,33 @@ describe('KeycloakAdminService: métodos del alta de establecimientos (BL-163)',
     });
   });
 
+  describe('findUserById', () => {
+    it('devuelve el usuario con su username', async () => {
+      respuestasAdmin.push(
+        respuesta(200, { id: 'kc-1', username: 'dev-daiana-plataforma' }),
+      );
+
+      await expect(service.findUserById('kc-1')).resolves.toEqual(
+        expect.objectContaining({ username: 'dev-daiana-plataforma' }),
+      );
+      expect(pedidos[0].url).toMatch(/\/users\/kc-1$/);
+    });
+
+    it('devuelve null si no existe (404)', async () => {
+      respuestasAdmin.push(respuesta(404, 'User not found'));
+
+      await expect(service.findUserById('kc-x')).resolves.toBeNull();
+    });
+
+    it('lanza un error interno ante otro error de Keycloak', async () => {
+      respuestasAdmin.push(respuesta(500, 'error'));
+
+      await expect(service.findUserById('kc-1')).rejects.toThrow(
+        InternalServerErrorException,
+      );
+    });
+  });
+
   describe('createUser', () => {
     const creado = () =>
       respuesta(201, '', {

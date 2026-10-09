@@ -21,7 +21,8 @@ const OTRO_TENANT_ID = 'bbbbbbbb-2222-4222-8222-222222222222';
 const RESTAURANTE_ID = 'cccccccc-3333-4333-8333-333333333333';
 const MESA_VIRTUAL_ID = 'dddddddd-4444-4444-8444-444444444444';
 const RUT = '219999999901';
-const ACTOR = 'script:daiana';
+// Alta desde el endpoint: solo el sub del token; el username se busca en Keycloak.
+const ACTOR = { id: 'kc-plataforma-1' };
 const COMENSAL_PASSWORD = 'comensal-de-prueba';
 
 function dtoBase(
@@ -65,6 +66,7 @@ describe('AprovisionamientoService (BL-163)', () => {
       | 'assignRealmRole'
       | 'deleteUser'
       | 'completarPerfil'
+      | 'findUserById'
     >
   >;
   let auditLog: { registrar: jest.Mock };
@@ -112,6 +114,10 @@ describe('AprovisionamientoService (BL-163)', () => {
       assignRealmRole: jest.fn().mockResolvedValue(undefined),
       deleteUser: jest.fn().mockResolvedValue(undefined),
       completarPerfil: jest.fn().mockResolvedValue(true),
+      findUserById: jest.fn().mockResolvedValue({
+        id: 'kc-plataforma-1',
+        username: 'dev-daiana-plataforma',
+      }),
     };
 
     auditLog = { registrar: jest.fn() };
@@ -151,6 +157,7 @@ describe('AprovisionamientoService (BL-163)', () => {
           razonSocial: 'Restaurante de Prueba SRL',
           rut: RUT,
           plan: 'BASICO',
+          creadoPor: 'dev-daiana-plataforma',
         },
       });
       expect(tx.restaurante.create).toHaveBeenCalledWith(
@@ -318,13 +325,50 @@ describe('AprovisionamientoService (BL-163)', () => {
       expect(comensal?.passwordGenerada).toBeUndefined();
     });
 
+    it('guarda como "creado por" el username de Keycloak del actor (alta desde el endpoint)', async () => {
+      await aprovisionar();
+
+      expect(keycloakAdmin.findUserById).toHaveBeenCalledWith(
+        'kc-plataforma-1',
+      );
+      expect(tx.tenant.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ creadoPor: 'dev-daiana-plataforma' }),
+      });
+    });
+
+    it('si el actor trae nombre (script), lo usa sin consultar Keycloak', async () => {
+      await service.aprovisionar(
+        dtoBase(),
+        {},
+        {
+          id: 'script:daiana',
+          nombre: 'script:daiana',
+        },
+      );
+
+      expect(keycloakAdmin.findUserById).not.toHaveBeenCalled();
+      expect(tx.tenant.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ creadoPor: 'script:daiana' }),
+      });
+    });
+
+    it('si Keycloak no encuentra al actor, guarda su id', async () => {
+      keycloakAdmin.findUserById.mockResolvedValue(null);
+
+      await aprovisionar();
+
+      expect(tx.tenant.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ creadoPor: 'kc-plataforma-1' }),
+      });
+    });
+
     it('audita el alta sin usernames ni contraseñas', async () => {
       await aprovisionar();
 
       expect(auditLog.registrar).toHaveBeenCalledWith({
         action: AuditAction.ESTABLECIMIENTO_APROVISIONADO,
         tenantId: TENANT_ID,
-        actorKeycloakId: ACTOR,
+        actorKeycloakId: 'kc-plataforma-1',
         targetUsuarioId: 'usuario-admin',
         detalle: {
           restauranteId: RESTAURANTE_ID,

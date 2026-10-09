@@ -135,11 +135,11 @@ async function main() {
     // resolve() y no get(): el servicio depende de TenantPrismaService, que
     // es por request.
     const servicio = await app.resolve(AprovisionamientoService);
-    const resultado = await servicio.aprovisionar(
-      dto,
-      credenciales,
-      `script:${userInfo().username}`,
-    );
+    const actor = `script:${userInfo().username}`;
+    const resultado = await servicio.aprovisionar(dto, credenciales, {
+      id: actor,
+      nombre: actor,
+    });
 
     const marca = (creado: boolean) => (creado ? 'creado' : 'ya existía');
     console.log('\n✅ Establecimiento listo');

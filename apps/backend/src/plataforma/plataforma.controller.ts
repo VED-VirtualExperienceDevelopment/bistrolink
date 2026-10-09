@@ -1,13 +1,28 @@
-import { Body, Controller, Header, Post, Req, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  DefaultValuePipe,
+  Get,
+  Header,
+  ParseIntPipe,
+  Post,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { Throttle } from '@nestjs/throttler';
 import { UsuarioPlataforma } from '../auth/plataforma-jwt.strategy';
 import { AprovisionamientoService } from './aprovisionamiento.service';
 import { AprovisionarEstablecimientoDto } from './dto/aprovisionar-establecimiento.dto';
 import { PlataformaThrottlerGuard } from './plataforma-throttler.guard';
+import { EstablecimientosService } from './establecimientos.service';
 
 /** BL-163: altas por hora y por usuario de plataforma. */
 export const LIMITE_ALTAS_POR_HORA = 10;
+/** BL-163: consultas del listado por minuto y por usuario de plataforma. */
+export const LIMITE_LISTADOS_POR_MINUTO = 60;
 
 /**
  * BL-163 (HU-027), entrega 2: alta de establecimientos para el rol
@@ -26,7 +41,25 @@ export const LIMITE_ALTAS_POR_HORA = 10;
 @Controller('plataforma/establecimientos')
 @UseGuards(AuthGuard('jwt-plataforma'), PlataformaThrottlerGuard)
 export class PlataformaController {
-  constructor(private readonly aprovisionamiento: AprovisionamientoService) {}
+  constructor(
+    private readonly aprovisionamiento: AprovisionamientoService,
+    private readonly establecimientos: EstablecimientosService,
+  ) {}
+
+  /**
+   * Listado paginado, del alta más reciente a la más vieja. Sin contraseñas:
+   * solo datos del tenant, su restaurante y quién lo dio de alta.
+   */
+  @Get()
+  @Throttle({ default: { limit: LIMITE_LISTADOS_POR_MINUTO, ttl: 60_000 } })
+  listar(
+    @Query('pagina', new DefaultValuePipe(1), ParseIntPipe) pagina: number,
+  ) {
+    if (pagina < 1) {
+      throw new BadRequestException('pagina tiene que ser 1 o más');
+    }
+    return this.establecimientos.listar(pagina);
+  }
 
   @Post()
   @Throttle({ default: { limit: LIMITE_ALTAS_POR_HORA, ttl: 60 * 60_000 } })
@@ -35,7 +68,8 @@ export class PlataformaController {
     @Req() req: { user: UsuarioPlataforma },
     @Body() dto: AprovisionarEstablecimientoDto,
   ) {
-    // Actor de la auditoría: el sub del token, nunca un dato del body.
-    return this.aprovisionamiento.aprovisionar(dto, {}, req.user.sub);
+    // Actor: el sub del token, nunca un dato del body. El username para
+    // "creado por" lo busca el servicio en Keycloak.
+    return this.aprovisionamiento.aprovisionar(dto, {}, { id: req.user.sub });
   }
 }

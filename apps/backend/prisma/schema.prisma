@@ -68,6 +68,11 @@ model Tenant {
   // ser idempotente, y la base garantiza que no haya dos con el mismo.
   rut         String   @unique
   plan        String // p.ej. "BASICO" — sin enum: el Anexo 6 no cierra los valores permitidos
+  // BL-163: quién dio el alta (username del usuario de plataforma, o
+  // "script:<usuario>" si fue por el script). Solo se escribe al crear el
+  // tenant; null en los que existían antes. El sub del token queda en la
+  // auditoría.
+  creadoPor   String?  @map("creado_por")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 

@@ -21,6 +21,17 @@ export interface CredencialesIniciales {
   cocina?: string;
 }
 
+/**
+ * Quién da el alta. `id` va al registro de auditoría (el sub del token, o
+ * "script:<usuario>"); `nombre` se guarda en tenant.creado_por para mostrarlo.
+ * Si no viene `nombre` (alta desde el endpoint), se busca el username en
+ * Keycloak a partir del `id`.
+ */
+export interface ActorAlta {
+  id: string;
+  nombre?: string;
+}
+
 export type RolAprovisionado = 'ADMIN' | 'COCINA' | 'COMENSAL';
 
 export interface UsuarioAprovisionado {
@@ -110,18 +121,19 @@ export class AprovisionamientoService {
   async aprovisionar(
     dto: AprovisionarEstablecimientoDto,
     credenciales: CredencialesIniciales,
-    actorKeycloakId: string,
+    actor: ActorAlta,
   ): Promise<ResultadoAprovisionamiento> {
     this.validarUsernames(dto);
     // Falla antes de escribir nada si falta la contraseña del comensal.
     const comensalPassword = this.comensalPassword;
+    const creadoPor = await this.nombreDelActor(actor);
 
     const tenantId =
       dto.tenantId ?? (await this.buscarTenantPorRut(dto.rut)) ?? randomUUID();
 
     const datos = await this.tenantPrisma
       .runInTenantContext(tenantId, (tx) =>
-        this.asegurarDatosDelEstablecimiento(tx, tenantId, dto),
+        this.asegurarDatosDelEstablecimiento(tx, tenantId, dto, creadoPor),
       )
       .catch((err) => this.traducirConflicto(err));
 
@@ -187,7 +199,7 @@ export class AprovisionamientoService {
     this.auditLog.registrar({
       action: AuditAction.ESTABLECIMIENTO_APROVISIONADO,
       tenantId,
-      actorKeycloakId,
+      actorKeycloakId: actor.id,
       targetUsuarioId: filaAdmin.id,
       detalle: {
         restauranteId: datos.restauranteId,
@@ -205,6 +217,19 @@ export class AprovisionamientoService {
       mesaVirtualId: datos.mesaVirtualId,
       usuarios,
     };
+  }
+
+  /**
+   * Nombre que se guarda en tenant.creado_por: el que viene, o el username
+   * del usuario de Keycloak con ese id. Si no se encuentra, el id (mejor que
+   * nada, y sigue identificando a la persona en la auditoría).
+   */
+  private async nombreDelActor(actor: ActorAlta): Promise<string> {
+    if (actor.nombre) {
+      return actor.nombre;
+    }
+    const usuario = await this.keycloakAdmin.findUserById(actor.id);
+    return usuario?.username ?? actor.id;
   }
 
   private validarUsernames(dto: AprovisionarEstablecimientoDto) {
@@ -239,6 +264,7 @@ export class AprovisionamientoService {
     tx: PrismaClient,
     tenantId: string,
     dto: AprovisionarEstablecimientoDto,
+    creadoPor: string,
   ): Promise<DatosEstablecimiento> {
     // Tenant: el RUT y el id tienen que coincidir con lo que ya exista.
     const tenantPorRut = await tx.tenant.findUnique({
@@ -266,6 +292,7 @@ export class AprovisionamientoService {
           razonSocial: dto.razonSocial,
           rut: dto.rut,
           plan: dto.plan ?? PLAN_POR_DEFECTO,
+          creadoPor,
         },
       });
       tenantCreado = true;

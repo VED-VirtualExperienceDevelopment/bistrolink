@@ -15,6 +15,7 @@ import {
 } from '../../src/plataforma/plataforma.controller';
 import { PlataformaThrottlerGuard } from '../../src/plataforma/plataforma-throttler.guard';
 import { AprovisionamientoService } from '../../src/plataforma/aprovisionamiento.service';
+import { EstablecimientosService } from '../../src/plataforma/establecimientos.service';
 
 /**
  * BL-163 (HU-027), entrega 2: POST /plataforma/establecimientos.
@@ -49,8 +50,15 @@ const ALTA = {
 describe('PlataformaController (BL-163)', () => {
   let app: INestApplication;
   const aprovisionamiento = { aprovisionar: jest.fn() };
+  const establecimientos = { listar: jest.fn() };
 
   beforeEach(async () => {
+    establecimientos.listar.mockReset().mockResolvedValue({
+      pagina: 1,
+      tamanoPagina: 20,
+      total: 0,
+      items: [],
+    });
     aprovisionamiento.aprovisionar.mockReset().mockResolvedValue({
       tenantId: 'tenant-nuevo',
       usuarios: [],
@@ -64,6 +72,7 @@ describe('PlataformaController (BL-163)', () => {
       providers: [
         PlataformaThrottlerGuard,
         { provide: AprovisionamientoService, useValue: aprovisionamiento },
+        { provide: EstablecimientosService, useValue: establecimientos },
       ],
     })
       .overrideGuard(AuthGuard('jwt-plataforma'))
@@ -94,7 +103,7 @@ describe('PlataformaController (BL-163)', () => {
     expect(aprovisionamiento.aprovisionar).toHaveBeenCalledWith(
       expect.objectContaining({ rut: '219999999901' }),
       {},
-      'kc-plataforma-1',
+      { id: 'kc-plataforma-1' },
     );
   });
 
@@ -124,6 +133,43 @@ describe('PlataformaController (BL-163)', () => {
     }
     await alta('kc-plataforma-1').expect(429);
     await alta('kc-plataforma-2').expect(201);
+  });
+
+  const listado = (query = '') =>
+    request(app.getHttpServer())
+      .get(`/plataforma/establecimientos${query}`)
+      .set('x-test-sub', 'kc-plataforma-1');
+
+  it('lista la primera página si no se indica', async () => {
+    const res = await listado().expect(200);
+
+    expect(res.body).toEqual({
+      pagina: 1,
+      tamanoPagina: 20,
+      total: 0,
+      items: [],
+    });
+    expect(establecimientos.listar).toHaveBeenCalledWith(1);
+  });
+
+  it('pasa la página pedida', async () => {
+    await listado('?pagina=3').expect(200);
+    expect(establecimientos.listar).toHaveBeenCalledWith(3);
+  });
+
+  it.each(['0', '-1', 'abc'])(
+    'rechaza con 400 la página %p sin consultar',
+    async (pagina) => {
+      await listado(`?pagina=${pagina}`).expect(400);
+      expect(establecimientos.listar).not.toHaveBeenCalled();
+    },
+  );
+
+  it('el listado no consume el límite de altas', async () => {
+    for (let i = 0; i < LIMITE_ALTAS_POR_HORA; i++) {
+      await listado().expect(200);
+    }
+    await alta('kc-plataforma-1').expect(201);
   });
 });
 
