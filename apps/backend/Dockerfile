@@ -1,5 +1,9 @@
+# BL-292: la imagen base se toma de mirror.gcr.io (copia de Docker Hub que
+# mantiene Google) en lugar de docker.io: los runners de GitHub comparten IPs
+# y el límite de descargas anónimas de Docker Hub cortaba el build con 429.
+# Es la misma imagen oficial (library/node).
 # Stage 1: compilación
-FROM node:22-alpine AS builder
+FROM mirror.gcr.io/library/node:22-alpine AS builder
 WORKDIR /app
 
 # Copiar lockfile y package.json raíz + workspace backend
@@ -34,7 +38,7 @@ RUN npm run build --workspace=apps/backend
 #   binaries.prisma.sh.
 # - Target forzado a linux-musl-openssl-3.0.x: en Alpine la detección
 #   automática de OpenSSL falla (ver binaryTargets en schema.prisma).
-FROM node:22-alpine AS migrate
+FROM mirror.gcr.io/library/node:22-alpine AS migrate
 WORKDIR /migrate
 ENV PRISMA_CLI_BINARY_TARGETS=linux-musl-openssl-3.0.x
 COPY package.json package-lock.json /tmp/root/
@@ -65,7 +69,7 @@ RUN set -eux; \
   npm cache clean --force
 
 # Stage 3: producción
-FROM node:22-alpine AS production
+FROM mirror.gcr.io/library/node:22-alpine AS production
 WORKDIR /app
 ENV NODE_ENV=production
 RUN apk update && apk upgrade --no-cache libcrypto3 libssl3 && rm -rf /var/cache/apk/*
