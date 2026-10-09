@@ -37,6 +37,7 @@ export function OrderTicket({ pedido, puedeOperarTransiciones, onTransicion }: O
 
   return (
     <article
+      data-testid="pedido-kds"
       data-pedido-id={pedido.id}
       className="flex h-full w-[300px] shrink-0 flex-col overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest shadow-sm"
     >
