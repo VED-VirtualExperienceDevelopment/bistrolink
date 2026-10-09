@@ -2,9 +2,9 @@ import 'dotenv/config';
 import { NestFactory } from '@nestjs/core';
 import { plainToInstance } from 'class-transformer';
 import { validate, ValidationError } from 'class-validator';
-import { mkdirSync, readFileSync, writeFileSync } from 'fs';
-import { userInfo } from 'os';
-import { join, resolve } from 'path';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { userInfo } from 'node:os';
+import { join, resolve } from 'node:path';
 import { PlataformaModule } from '../src/plataforma/plataforma.module';
 import {
   AprovisionamientoService,

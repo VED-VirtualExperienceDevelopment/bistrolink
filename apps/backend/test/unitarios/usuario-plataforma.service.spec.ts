@@ -1,4 +1,4 @@
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, Logger } from '@nestjs/common';
 import { UsuarioPlataformaService } from '../../src/plataforma/usuario-plataforma.service';
 import { KeycloakAdminService } from '../../src/keycloak-admin/keycloak-admin.service';
 import { CrearUsuarioPlataformaDto } from '../../src/plataforma/dto/crear-usuario-plataforma.dto';
@@ -83,6 +83,27 @@ describe('UsuarioPlataformaService (BL-163)', () => {
         'El rol PLATAFORMA no existe',
       );
       expect(keycloakAdmin.deleteUser).toHaveBeenCalledWith('kc-nuevo');
+    });
+
+    it('no oculta el error original aunque la compensación también falle', async () => {
+      keycloakAdmin.assignRealmRole.mockRejectedValue(
+        new Error('El rol PLATAFORMA no existe'),
+      );
+      keycloakAdmin.deleteUser.mockRejectedValue(
+        new Error('Keycloak no responde'),
+      );
+      const logError = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+
+      await expect(service.asegurar(DTO)).rejects.toThrow(
+        'El rol PLATAFORMA no existe',
+      );
+      expect(logError).toHaveBeenCalledWith(
+        expect.stringContaining('Requiere limpieza manual'),
+        expect.anything(),
+      );
+      logError.mockRestore();
     });
   });
 

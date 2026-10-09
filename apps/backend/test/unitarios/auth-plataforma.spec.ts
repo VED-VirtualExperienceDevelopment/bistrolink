@@ -2,9 +2,14 @@ import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 
 // validate() no usa el JWKS: se reemplaza jwks-rsa para no depender de su
 // versión (las nuevas son ESM y Jest no las carga sin configuración extra).
-jest.mock('jwks-rsa', () => ({ passportJwtSecret: jest.fn() }));
+jest.mock('jwks-rsa', () => ({
+  passportJwtSecret: jest.fn(() => jest.fn()),
+}));
 
-import { KeycloakJwtStrategy } from '../../src/auth/keycloak-jwt.strategy';
+import {
+  KeycloakJwtStrategy,
+  opcionesJwtKeycloak,
+} from '../../src/auth/keycloak-jwt.strategy';
 import { PlataformaJwtStrategy } from '../../src/auth/plataforma-jwt.strategy';
 
 /**
@@ -51,6 +56,12 @@ describe('KeycloakJwtStrategy: endpoints de tenant (BL-163)', () => {
     );
   });
 
+  it('acepta un token sin realm_access (sin roles)', async () => {
+    await expect(
+      estrategiaTenant.validate({ sub: 'kc-usuario', tenant_id: TENANT_ID }),
+    ).resolves.toEqual(expect.objectContaining({ roles: [] }));
+  });
+
   it('rechaza con 401 un token PLATAFORMA', async () => {
     await expect(
       estrategiaTenant.validate(token(['PLATAFORMA'])),
@@ -65,30 +76,64 @@ describe('KeycloakJwtStrategy: endpoints de tenant (BL-163)', () => {
 });
 
 describe('PlataformaJwtStrategy: endpoints /plataforma/* (BL-163)', () => {
-  it('acepta un token PLATAFORMA sin tenant_id', async () => {
-    await expect(
-      estrategiaPlataforma.validate(token(['PLATAFORMA'])),
-    ).resolves.toEqual({ sub: 'kc-usuario', roles: ['PLATAFORMA'] });
+  it('acepta un token PLATAFORMA sin tenant_id', () => {
+    expect(estrategiaPlataforma.validate(token(['PLATAFORMA']))).toEqual({
+      sub: 'kc-usuario',
+      roles: ['PLATAFORMA'],
+    });
   });
 
   it.each(['ADMIN', 'MOZO', 'COCINA', 'COMENSAL'])(
     'rechaza con 403 un token %s',
-    async (rol) => {
-      await expect(
+    (rol) => {
+      expect(() =>
         estrategiaPlataforma.validate(token([rol], TENANT_ID)),
-      ).rejects.toThrow(ForbiddenException);
+      ).toThrow(ForbiddenException);
     },
   );
 
-  it('rechaza con 403 un token sin roles', async () => {
-    await expect(estrategiaPlataforma.validate(token([]))).rejects.toThrow(
+  it('rechaza con 403 un token sin realm_access', () => {
+    expect(() => estrategiaPlataforma.validate({ sub: 'kc-usuario' })).toThrow(
       ForbiddenException,
     );
   });
 
-  it('rechaza con 403 un token PLATAFORMA con tenant_id (configuración inválida)', async () => {
-    await expect(
+  it('rechaza con 403 un token sin roles', () => {
+    expect(() => estrategiaPlataforma.validate(token([]))).toThrow(
+      ForbiddenException,
+    );
+  });
+
+  it('rechaza con 403 un token PLATAFORMA con tenant_id (configuración inválida)', () => {
+    expect(() =>
       estrategiaPlataforma.validate(token(['PLATAFORMA'], TENANT_ID)),
-    ).rejects.toThrow(ForbiddenException);
+    ).toThrow(ForbiddenException);
+  });
+});
+
+describe('opcionesJwtKeycloak: validación compartida (BL-163)', () => {
+  const opciones = opcionesJwtKeycloak();
+  const extraer = (authorization?: string) =>
+    opciones.jwtFromRequest({ headers: { authorization } } as never);
+
+  it('toma el token del header Authorization: Bearer', () => {
+    expect(extraer('Bearer abc.def.ghi')).toBe('abc.def.ghi');
+  });
+
+  it.each([undefined, 'Basic dXNlcjpwYXNz', 'abc.def.ghi'])(
+    'no toma nada si el header es %p',
+    (authorization) => {
+      expect(extraer(authorization)).toBeNull();
+    },
+  );
+
+  it('exige RS256 y no acepta tokens vencidos', () => {
+    expect(opciones.algorithms).toEqual(['RS256']);
+    expect(opciones.ignoreExpiration).toBe(false);
+  });
+
+  it('las dos estrategias se construyen con esa misma validación', () => {
+    expect(new KeycloakJwtStrategy()).toBeInstanceOf(KeycloakJwtStrategy);
+    expect(new PlataformaJwtStrategy()).toBeInstanceOf(PlataformaJwtStrategy);
   });
 });

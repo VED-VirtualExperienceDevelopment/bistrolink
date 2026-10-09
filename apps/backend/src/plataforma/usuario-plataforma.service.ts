@@ -1,5 +1,5 @@
 import { ConflictException, Injectable, Logger } from '@nestjs/common';
-import { randomBytes } from 'crypto';
+import { randomBytes } from 'node:crypto';
 import { KeycloakAdminService } from '../keycloak-admin/keycloak-admin.service';
 import { ROL_PLATAFORMA } from '../auth/rol-plataforma';
 import { CrearUsuarioPlataformaDto } from './dto/crear-usuario-plataforma.dto';

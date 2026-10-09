@@ -4,7 +4,7 @@ import {
   Injectable,
   Logger,
 } from '@nestjs/common';
-import { randomBytes, randomUUID } from 'crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { MesaEstado, Prisma, PrismaClient } from '@prisma/client';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import {

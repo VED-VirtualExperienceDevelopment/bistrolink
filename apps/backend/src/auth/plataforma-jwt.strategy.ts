@@ -36,7 +36,9 @@ export class PlataformaJwtStrategy extends PassportStrategy(
     super(opcionesJwtKeycloak());
   }
 
-  async validate(payload: any): Promise<UsuarioPlataforma> {
+  // Síncrono: Passport acepta un valor o una promesa, y acá no hay nada que
+  // esperar.
+  validate(payload: any): UsuarioPlataforma {
     const roles: string[] = payload.realm_access?.roles ?? [];
 
     if (!roles.includes(ROL_PLATAFORMA)) {

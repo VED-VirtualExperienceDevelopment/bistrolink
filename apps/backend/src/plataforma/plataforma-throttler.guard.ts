@@ -15,7 +15,8 @@ import { ThrottlerGuard } from '@nestjs/throttler';
  */
 @Injectable()
 export class PlataformaThrottlerGuard extends ThrottlerGuard {
-  protected async getTracker(req: Record<string, any>): Promise<string> {
-    return req.user?.sub ?? req.ip;
+  // La firma de ThrottlerGuard exige una promesa; acá no hay nada que esperar.
+  protected getTracker(req: Record<string, any>): Promise<string> {
+    return Promise.resolve(req.user?.sub ?? req.ip);
   }
 }
