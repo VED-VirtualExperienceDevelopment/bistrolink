@@ -367,7 +367,7 @@ jobs:
       # analiza contra SonarQube Cloud. Versión fija: se sube a propósito,
       # revisando las notas de la versión.
       - name: SonarCloud
-        uses: SonarSource/sonarqube-scan-action@v8.3.0d209202bc7d53ff1cc128f7f907dac145c9d6ae9
+        uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8.3.0
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
