@@ -163,3 +163,6 @@ lighthouse-results/
 .claude/
 
 k6/bin/
+
+#script
+apps/backend/.aprovisionamiento/

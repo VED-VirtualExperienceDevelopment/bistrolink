@@ -8,8 +8,49 @@ import {
 export interface KeycloakUserPayload {
   username: string;
   email?: string;
-  tenantId: string;
+  /**
+   * BL-163: el perfil de usuario del realm exige email, nombre y apellido.
+   * Si faltan, Keycloak pide completarlos en el primer login (VERIFY_PROFILE)
+   * y rechaza el password grant ("Account is not fully set up").
+   */
+  firstName?: string;
+  lastName?: string;
+  /**
+   * Obligatorio para todo usuario de un establecimiento. Solo los usuarios
+   * de plataforma (BL-163, rol PLATAFORMA) se crean sin tenant_id.
+   */
+  tenantId?: string;
+  /**
+   * Acciones que Keycloak exige en el primer login. BL-163: los usuarios de
+   * plataforma se crean con CONFIGURE_TOTP (OTP obligatorio).
+   */
+  requiredActions?: string[];
   temporaryPassword: string;
+  /**
+   * Si la contraseña es temporal (Keycloak obliga a cambiarla en el primer
+   * login). Por defecto true, como en el alta de HU-013. BL-163 la crea
+   * permanente para el usuario técnico del comensal (el backend se loguea
+   * con ella por password grant) y para las contraseñas fijas de los
+   * establecimientos de prueba.
+   */
+  temporary?: boolean;
+}
+
+/** Usuario de Keycloak tal como lo devuelve la Admin API (campos usados). */
+export interface KeycloakUser {
+  id: string;
+  username: string;
+  email?: string;
+  firstName?: string;
+  lastName?: string;
+  attributes?: Record<string, string[]>;
+}
+
+/** BL-163: datos del perfil que exige el realm (email, nombre y apellido). */
+export interface PerfilKeycloak {
+  email: string;
+  firstName: string;
+  lastName: string;
 }
 
 /**
@@ -119,21 +160,31 @@ export class KeycloakAdminService {
     return res;
   }
 
-  /** Crea el usuario en Keycloak, con tenant_id ya seteado y contraseña temporal. */
+  /**
+   * Crea el usuario en Keycloak, con tenant_id ya seteado y contraseña
+   * temporal. Sin tenantId solo para usuarios de plataforma (BL-163).
+   */
   async createUser(payload: KeycloakUserPayload): Promise<string> {
     const res = await this.adminFetch('/users', {
       method: 'POST',
       body: JSON.stringify({
         username: payload.username,
         email: payload.email,
+        firstName: payload.firstName,
+        lastName: payload.lastName,
         enabled: true,
         emailVerified: true,
-        attributes: { tenant_id: [payload.tenantId] },
+        ...(payload.tenantId
+          ? { attributes: { tenant_id: [payload.tenantId] } }
+          : {}),
+        ...(payload.requiredActions
+          ? { requiredActions: payload.requiredActions }
+          : {}),
         credentials: [
           {
             type: 'password',
             value: payload.temporaryPassword,
-            temporary: true,
+            temporary: payload.temporary ?? true,
           },
         ],
       }),
@@ -192,6 +243,91 @@ export class KeycloakAdminService {
       );
     }
     return keycloakId;
+  }
+
+  /**
+   * BL-163: busca un usuario por username exacto. Devuelve null si no existe.
+   * La respuesta incluye los atributos (tenant_id), que el alta de
+   * establecimiento usa para no "adoptar" un usuario de otro tenant.
+   *
+   * [S] El username no va en el log de error (mismo criterio que createUser).
+   */
+  async findUserByUsername(username: string): Promise<KeycloakUser | null> {
+    const res = await this.adminFetch(
+      `/users?username=${encodeURIComponent(username)}&exact=true`,
+    );
+    if (!res.ok) {
+      const body = await res.text();
+      this.logAndBuildError(
+        'No se pudo buscar un usuario en Keycloak',
+        res.status,
+        body,
+      );
+      throw new InternalServerErrorException(
+        `No se pudo buscar el usuario en Keycloak: ${res.status} ${body}`,
+      );
+    }
+    const usuarios = (await res.json()) as KeycloakUser[];
+    return usuarios[0] ?? null;
+  }
+
+  /**
+   * BL-163: completa el email, el nombre y el apellido de un usuario que no
+   * los tiene (por ejemplo, uno creado antes de que el alta los mandara).
+   * Solo llena los que faltan: nunca pisa un valor que ya existe. Devuelve
+   * si tuvo que cambiar algo.
+   *
+   * Lee el usuario completo y lo vuelve a mandar entero con los datos
+   * agregados, así el PUT no puede borrar atributos como tenant_id.
+   */
+  async completarPerfil(
+    keycloakId: string,
+    perfil: PerfilKeycloak,
+  ): Promise<boolean> {
+    const getRes = await this.adminFetch(`/users/${keycloakId}`);
+    if (!getRes.ok) {
+      const body = await getRes.text();
+      this.logAndBuildError(
+        `No se pudo leer el usuario ${keycloakId} en Keycloak para completar su perfil`,
+        getRes.status,
+        body,
+      );
+      throw new InternalServerErrorException(
+        `No se pudo leer el usuario en Keycloak: ${getRes.status} ${body}`,
+      );
+    }
+    const usuario = (await getRes.json()) as Record<string, unknown>;
+
+    const faltantes: Partial<PerfilKeycloak> = {};
+    for (const campo of ['email', 'firstName', 'lastName'] as const) {
+      if (!usuario[campo]) {
+        faltantes[campo] = perfil[campo];
+      }
+    }
+    if (Object.keys(faltantes).length === 0) {
+      return false;
+    }
+
+    const res = await this.adminFetch(`/users/${keycloakId}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        ...usuario,
+        ...faltantes,
+        ...(faltantes.email ? { emailVerified: true } : {}),
+      }),
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      this.logAndBuildError(
+        `No se pudo completar el perfil del usuario ${keycloakId} en Keycloak`,
+        res.status,
+        body,
+      );
+      throw new InternalServerErrorException(
+        `No se pudo completar el perfil del usuario en Keycloak: ${res.status} ${body}`,
+      );
+    }
+    return true;
   }
 
   /** Asigna un rol de Realm (ADMIN, MOZO, COCINA, COMENSAL) a un usuario. */

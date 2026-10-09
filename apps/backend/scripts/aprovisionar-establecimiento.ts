@@ -66,7 +66,7 @@ function leerPassword(
   const valor = process.env[usuario.passwordEnv];
   if (!valor) {
     console.warn(
-      `⚠️  La variable ${usuario.passwordEnv} no está definida: si el usuario ${rol} es nuevo, se le genera una contraseña temporal.`,
+      `⚠️  Falta la variable de entorno con la contraseña del usuario ${rol}: si es nuevo, se le genera una contraseña temporal.`,
     );
     return undefined;
   }
