@@ -1,12 +1,16 @@
+# BL-292: la imagen base se toma de mirror.gcr.io (copia de Docker Hub que
+# mantiene Google) en lugar de docker.io: los runners de GitHub comparten IPs
+# y el límite de descargas anónimas de Docker Hub cortaba el build con 429.
+# Es la misma imagen oficial (library/node).
 # Stage 1: dependencias
-FROM node:22-alpine AS deps
+FROM mirror.gcr.io/library/node:22-alpine AS deps
 WORKDIR /app
 COPY package*.json ./
 COPY apps/frontend/package*.json ./apps/frontend/
 RUN npm pkg delete scripts.prepare && npm ci --workspace=apps/frontend
 
 # Stage 2: compilación
-FROM node:22-alpine AS builder
+FROM mirror.gcr.io/library/node:22-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/apps/frontend/node_modules ./apps/frontend/node_modules
@@ -28,7 +32,7 @@ ARG CACHEBUST=1
 RUN npm run build
 
 # Stage 3: producción (standalone)
-FROM node:22-alpine AS production
+FROM mirror.gcr.io/library/node:22-alpine AS production
 WORKDIR /app
 ENV NODE_ENV=production
 RUN apk update && apk upgrade --no-cache libcrypto3 libssl3 && rm -rf /var/cache/apk/*

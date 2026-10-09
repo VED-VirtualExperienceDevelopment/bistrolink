@@ -358,10 +358,17 @@ jobs:
         with:
           fetch-depth: 0
 
+      # BL-292: sonarcloud-github-action (deprecada) construía un contenedor
+      # desde Docker Hub (sonarsource/sonar-scanner-cli) y fallaba con 429
+      # cuando se agotaba el límite de descargas anónimas de los runners.
+      # sonarqube-scan-action descarga el scanner de SonarSource, sin Docker
+      # Hub, y desde la v8 verifica su firma antes de ejecutarlo. Lee
+      # sonar-project.properties igual que la anterior y, sin SONAR_HOST_URL,
+      # analiza contra SonarQube Cloud. Versión fija: se sube a propósito,
+      # revisando las notas de la versión.
       - name: SonarCloud
-        uses: SonarSource/sonarcloud-github-action@v3.0.0
+        uses: SonarSource/sonarqube-scan-action@v8.3.0d209202bc7d53ff1cc128f7f907dac145c9d6ae9
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
   # ── JOB 7: SNYK ───────────────────────────────────────────────────────────
