@@ -1,4 +1,14 @@
-# Keycloak — realm BistroLink
+<p align="center">
+  <img src="../docs/assets/banner-keycloak.svg" alt="BistroLink · Autenticación" width="100%">
+</p>
+
+<p align="center">
+  <a href="../README.md">← BistroLink</a> ·
+  <img src="https://img.shields.io/badge/Keycloak-381e72?logo=keycloak&logoColor=white" alt="Keycloak">
+  <img src="https://img.shields.io/badge/OAuth2%20%2F%20OIDC-381e72" alt="OAuth2 / OIDC">
+</p>
+
+## Realm `bistrolink`: notas de diseño
 
 Notas de diseño de `realm-export.json` que no entran en el campo `description`
 de Keycloak (columna `CLIENT_SCOPE.DESCRIPTION`, `VARCHAR(255)` — un texto
@@ -102,7 +112,7 @@ usuarios de prueba y contraseñas conocidas.
 4. Si falla, queda un aviso en el log y Keycloak sigue arriba.
 
 Los IDs fijos son los mismos que usan `apps/backend/prisma/seed.ts` y los
-tests de integración (`c832535d-…` admin, `f552ec55-…` mozo, etc.). Si se
+tests de integración. Si se
 agrega un usuario de prueba: agregarlo en `test-users.json` con un ID fijo y en
 la lista `USUARIOS` de `load-test-users.sh` con la variable de su contraseña.
 
@@ -111,21 +121,22 @@ la lista `USUARIOS` de `load-test-users.sh` con la variable de su contraseña.
 Hay dos tenants de testing. Los datos de la base (tenants, restaurantes,
 mesas, carta y filas de `usuario`) están en `apps/backend/prisma/seed.ts`.
 
-| Tenant                                       | Para qué                                                | Admin                              | Cocina                              | Mozo              | Comensal técnico      |
-| -------------------------------------------- | ------------------------------------------------------- | ---------------------------------- | ----------------------------------- | ----------------- | --------------------- |
-| **A** · «Restaurante Testing A» `11111111-…` | Todos los flujos: pedidos, KDS, carta, layout, usuarios | `admin-test`                       | `cocina-test`                       | `mozo-test`       | `comensal-11111111-…` |
-| **B** · «Restaurante Testing B» `b02579f2-…` | El «otro tenant» de los tests de aislamiento            | `admin-b-test` (`TEST_TENANT_B_*`) | `cocina-b-test` (`TEST_COCINA_B_*`) | —                 | `comensal-b02579f2-…` |
-| — (sin `tenant_id`)                          | Token sin tenant (RD.07)                                | —                                  | —                                   | `sin-tenant-test` | —                     |
+| Tenant                          | Para qué                                                | Usuarios de prueba (variables)                                                            |
+| ------------------------------- | ------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| **A** · «Restaurante Testing A» | Todos los flujos: pedidos, KDS, carta, layout, usuarios | Admin (`TEST_ADMIN_*`), cocina (`TEST_COCINA_*`), mozo (`TEST_MOZO_*`) y comensal técnico |
+| **B** · «Restaurante Testing B» | El «otro tenant» de los tests de aislamiento            | Admin (`TEST_TENANT_B_*`), cocina (`TEST_COCINA_B_*`) y comensal técnico                  |
+| — (sin `tenant_id`)             | Token sin tenant (RD.07)                                | Usuario sin tenant (`TEST_NO_TENANT_*`)                                                   |
 
-- Todos los comensales técnicos usan la misma contraseña,
-  `KEYCLOAK_COMENSAL_PASSWORD`: es con la que la API pide el token de
-  `comensal-<tenantId>`.
+Los nombres de usuario y las contraseñas salen de esas variables: no se escriben en el repositorio.
+
+- El comensal técnico de cada tenant lo usa solo la API, para pedir el token
+  del comensal; su contraseña sale de `KEYCLOAK_COMENSAL_PASSWORD`.
 - `test-users.json` es **solo para testing** (local y staging). Los tenants
   de desarrollo (`dev-<nombre>-…`) y el de demo se crean con el alta de
   HU-027 desde `/plataforma` y no van acá.
-- El tenant «Ejemplo» (`554915d0-…`) se fusionó en A. En una base o un
+- El tenant «Ejemplo» se fusionó en A. En una base o un
   Keycloak anteriores a BL-197 hay que cambiar a mano el `tenant_id` de
-  `admin-test` y `cocina-test`, correr el seed y retirar Ejemplo con
+  los usuarios admin y cocina del tenant A, correr el seed y retirar Ejemplo con
   `apps/backend/scripts/retirar-tenant-ejemplo.sql` (runbook
   `docs/runbooks/migraciones-y-seed.md`).
 
@@ -173,6 +184,6 @@ Valores declarados en `realm-export.json` (realms nuevos, por ejemplo producció
 | Eventos de usuario                            | Guardados 90 días (`eventsExpiration: 7776000`), todos los tipos       | Auditoría de logins y fallos (RF.19, HU-035). Se ven en la consola, _Events → User events_.                                                                                                               |
 | Eventos de administración                     | Guardados, **sin** representación (`adminEventsDetailsEnabled: false`) | Registra quién creó, cambió o borró qué; sin el cuerpo, para no guardar datos sensibles.                                                                                                                  |
 | Roles por defecto                             | Sin `account/manage-account` ni `account/view-profile`                 | El personal no usa la consola de cuenta de Keycloak. Los quita `set-client-secret.sh` en cada arranque (Keycloak los agrega al crear el realm y el JSON no puede sacarlos); así también aplica a staging. |
-| Detección de fuerza bruta                     | **Pendiente (BL-271)**                                                 | Activarla hoy permitiría bloquear al comensal técnico de un restaurante (su nombre se deduce del `tenantId`) y dejarlo sin pedidos por QR. Primero hay que hacer que ese nombre no se pueda adivinar.     |
+| Detección de fuerza bruta                     | Pendiente (BL-271)                                                     | Se activa con BL-271.                                                                                                                                                                                     |
 
 `load-test-users.sh`: si Keycloak rechaza la contraseña de un usuario de prueba por la política, el usuario recién creado se borra y el error queda en el log; el próximo arranque lo vuelve a intentar.
