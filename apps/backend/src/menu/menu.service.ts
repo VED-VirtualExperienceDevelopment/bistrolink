@@ -31,7 +31,10 @@ export class MenuService {
         orderBy: { orden: 'asc' },
         include: {
           items: {
-            where: { disponible: true },
+            // No filtrar: devolver TODOS los items, disponibles y agotados
+            // El frontend (HU-001) los mostrará bloqueados visualmente, no ocultos
+            // (ver menu.mapper.ts línea 21-26)
+            //   where: { disponible: true },
             orderBy: { nombre: 'asc' },
           },
         },

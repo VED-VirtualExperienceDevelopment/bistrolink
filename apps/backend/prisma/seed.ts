@@ -189,7 +189,7 @@ async function tenantA() {
   // menu-publico.spec.ts).
   await prisma.itemCarta.upsert({
     where: { id: ITEM_AGUA_ID },
-    update: { categoriaId: CATEGORIA_BEBIDAS_ID },
+    update: { categoriaId: CATEGORIA_BEBIDAS_ID, disponible: false },
     create: {
       id: ITEM_AGUA_ID,
       tenantId: TENANT_A_ID,

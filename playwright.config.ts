@@ -1,5 +1,9 @@
-import { defineConfig, devices } from '@playwright/test';
+import { defineConfig, devices } from "@playwright/test";
+import dotenv from "dotenv";
+import path from "path";
 
+// El .env está en apps/backend/.env, no en la raíz del monorepo
+dotenv.config({ path: path.resolve(__dirname, "apps/backend/.env") });
 // Config a nivel raíz del monorepo, a propósito: el job de CI comentado en
 // .github/workflows/ci.yml (JOB 10) corre `npx playwright test` desde acá,
 // contra un BASE_URL de staging ya desplegado — no levanta servidores
@@ -13,7 +17,7 @@ export default defineConfig({
   // busca specs recursivamente, y los testMatch de abajo no están anclados
   // al path, así que "menu-publico.spec.ts" sigue matcheando
   // "e2e/comensal/menu-publico.spec.ts" sin tocar nada más.
-  testDir: './e2e',
+  testDir: "./e2e",
   fullyParallel: true,
   retries: process.env.CI ? 2 : 0,
   // BL-182: reporter pasa de string a array. 'github' no hace nada fuera de
@@ -24,38 +28,38 @@ export default defineConfig({
   // playwright-report/junit.xml) y el artifact que sube a CI incluye
   // también el 'html' para inspección manual del run.
   reporter: [
-    ['list'],
-    ['github'],
-    ['junit', { outputFile: 'playwright-report/junit.xml' }],
-    ['html', { outputFolder: 'playwright-report/html', open: 'never' }],
+    ["list"],
+    ["github"],
+    ["junit", { outputFile: "playwright-report/junit.xml" }],
+    ["html", { outputFolder: "playwright-report/html", open: "never" }],
   ],
   use: {
-    baseURL: process.env.BASE_URL ?? 'http://localhost:3000',
-    trace: 'on-first-retry',
+    baseURL: process.env.BASE_URL ?? "http://localhost:3000",
+    trace: "on-first-retry",
   },
   projects: [
     {
-      name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      name: "chromium",
+      use: { ...devices["Desktop Chrome"] },
     },
     // HU-002 (subtask Testing): el criterio del ticket pide verificar el
     // acceso por URL directa en Chrome y Safari mobile; se suma Safari de
-    // escritorio para cubrir también el caso desktop (si bien en el mercado de UY no es lo mas frecuente, es un navegador que va ganando terreno dado el acceso a macOS). 
+    // escritorio para cubrir también el caso desktop (si bien en el mercado de UY no es lo mas frecuente, es un navegador que va ganando terreno dado el acceso a macOS).
     // testMatch acota estos
     // proyectos al spec nuevo para no alterar la corrida desktop de HU-001.
     {
-      name: 'mobile-chrome',
-      use: { ...devices['Pixel 5'] },
+      name: "mobile-chrome",
+      use: { ...devices["Pixel 5"] },
       testMatch: /menu-publico\.spec\.ts/,
     },
     {
-      name: 'mobile-safari',
-      use: { ...devices['iPhone 12'] },
+      name: "mobile-safari",
+      use: { ...devices["iPhone 12"] },
       testMatch: /menu-publico\.spec\.ts/,
     },
     {
-      name: 'desktop-safari',
-      use: { ...devices['Desktop Safari'] },
+      name: "desktop-safari",
+      use: { ...devices["Desktop Safari"] },
       testMatch: /menu-publico\.spec\.ts/,
     },
   ],
