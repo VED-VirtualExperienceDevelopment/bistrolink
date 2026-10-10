@@ -14,7 +14,15 @@ interface PageProps {
 /**
  * BL-224: `cache` hace que generateMetadata y la página compartan una sola
  * llamada a la API por request (con `no-store`, fetch no la deduplica solo).
- * Devuelve null si la API responde con error (restaurante inexistente, 404).
+ *
+ * BL-196: distingue "no existe" de "falló":
+ * - 404 → el restaurante no existe (o es de otro tenant, por RLS).
+ * - 400 → algún ID no es un UUID válido (ParseUUIDPipe): para el comensal
+ *   es lo mismo que un link inexistente.
+ *   En ambos casos devuelve null y la página responde con notFound().
+ * - Cualquier otro error (500, API caída, error de red) se lanza, para que
+ *   se loguee y se muestre la página de error en vez de un 404 engañoso.
+ *   Mismo criterio que getMenu() de HU-001 en m/[tenantId]/[mesaId]/page.tsx.
  */
 const obtenerMenuPublico = cache(
   async (
@@ -26,8 +34,11 @@ const obtenerMenuPublico = cache(
       `${apiUrl}/menu/tenant/${tenantId}/restaurante/${restauranteId}`,
       { cache: 'no-store' },
     );
-    if (!response.ok) {
+    if (response.status === 404 || response.status === 400) {
       return null;
+    }
+    if (!response.ok) {
+      throw new Error(`Error al cargar el menú público: ${response.status}`);
     }
     return response.json();
   },
@@ -53,27 +64,33 @@ export async function generateMetadata({
  *
  * Nota: en Next.js 15 `params` es una Promesa, por eso se usa `await params`
  * (mismo patrón que la página de HU-001 en m/[tenantId]/[mesaId]/page.tsx).
+ *
+ * BL-196: notFound() queda FUERA del try/catch. notFound() funciona lanzando
+ * una excepción interna de Next (NEXT_HTTP_ERROR_FALLBACK;404); si la atrapa
+ * el catch, cada 404 legítimo se loguea como error. El try/catch envuelve
+ * solo la llamada a la API: ahí sí se loguea y se relanza el error real.
  */
 export default async function MenuPublicoPage({ params }: PageProps) {
   const { tenantId, restauranteId } = await params;
 
+  let data: MenuPublicoResponse | null;
   try {
-    const data = await obtenerMenuPublico(tenantId, restauranteId);
-
-    if (!data) {
-      notFound();
-    }
-
-    return (
-      <MenuPublico
-        restaurante={data.restaurante}
-        categorias={data.categorias}
-        tenantId={tenantId}
-        restauranteId={restauranteId}
-      />
-    );
+    data = await obtenerMenuPublico(tenantId, restauranteId);
   } catch (error) {
     console.error('Error en MenuPublicoPage:', error);
+    throw error;
+  }
+
+  if (!data) {
     notFound();
   }
+
+  return (
+    <MenuPublico
+      restaurante={data.restaurante}
+      categorias={data.categorias}
+      tenantId={tenantId}
+      restauranteId={restauranteId}
+    />
+  );
 }
