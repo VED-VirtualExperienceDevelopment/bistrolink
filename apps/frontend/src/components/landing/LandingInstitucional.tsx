@@ -65,7 +65,7 @@ export function LandingInstitucional() {
 
           <div>
             <h1 className="text-headline-md font-extrabold tracking-tight text-primary md:text-headline-lg">
-              Bistro Link
+              BistroLink
             </h1>
             <p className="mt-1 text-body-lg font-semibold text-on-surface-variant">
               Pedí y pagá desde la mesa, sin esperas.
@@ -73,7 +73,7 @@ export function LandingInstitucional() {
           </div>
 
           <p className="text-body-md text-on-surface-variant md:text-body-lg">
-            Bistro Link conecta el menú digital de tu restaurante con la cocina y la caja. Si
+            BistroLink conecta el menú digital de tu restaurante con la cocina y la caja. Si
             estás en un local que lo usa, escaneá el código QR de tu mesa para ver el menú y
             hacer tu pedido.
           </p>
@@ -166,7 +166,7 @@ export function LandingInstitucional() {
       </main>
 
       <footer className="border-t border-outline-variant py-6 text-center text-label-sm text-on-surface-variant">
-        © {new Date().getFullYear()} Bistro Link
+        © {new Date().getFullYear()} BistroLink
       </footer>
     </div>
   );
