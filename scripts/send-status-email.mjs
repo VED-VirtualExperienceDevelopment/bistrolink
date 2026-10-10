@@ -457,4 +457,3 @@ main().catch((err) => {
   console.error("❌ Error generando el email de estado:", err);
   process.exit(1);
 });
-g
