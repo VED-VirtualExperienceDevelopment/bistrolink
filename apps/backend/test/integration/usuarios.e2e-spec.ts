@@ -14,7 +14,8 @@ const CLIENT_SECRET = process.env.KEYCLOAK_CLIENT_SECRET ?? '';
 const ADMIN_USER = process.env.TEST_ADMIN_USERNAME ?? 'admin-test';
 const ADMIN_PASS = process.env.TEST_ADMIN_PASSWORD;
 
-const RESTAURANTE_TENANT_A = '87152395-a721-4651-99b8-f21075d1d8ae';
+// Restaurante del tenant de testing A, donde está admin-test (BL-197).
+const RESTAURANTE_TENANT_A = '22222222-2222-2222-2222-222222222222';
 const RESTAURANTE_TENANT_B = 'a46faef3-7412-45ae-af80-3829cd27b990';
 
 async function getToken(username: string, password: string): Promise<string> {

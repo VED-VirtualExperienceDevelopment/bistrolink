@@ -10,7 +10,7 @@
       "firstName": "Admin",
       "lastName": "Test",
       "attributes": {
-        "tenant_id": ["554915d0-f7ed-4053-b841-56479df29fd9"]
+        "tenant_id": ["11111111-1111-1111-1111-111111111111"]
       },
       "realmRoles": ["ADMIN"]
     },
@@ -23,7 +23,7 @@
       "firstName": "Cocina",
       "lastName": "Test",
       "attributes": {
-        "tenant_id": ["554915d0-f7ed-4053-b841-56479df29fd9"]
+        "tenant_id": ["11111111-1111-1111-1111-111111111111"]
       },
       "realmRoles": ["COCINA"]
     },
@@ -66,13 +66,39 @@
     {
       "id": "aeb7e03f-8364-58a1-b31d-9aaed44a32cf",
       "username": "comensal-11111111-1111-1111-1111-111111111111",
-      "email": "comensal-demo@bistrolink.dev.com",
+      "email": "comensal-testing@bistrolink.dev.com",
       "enabled": true,
       "emailVerified": true,
       "firstName": "Comensal",
-      "lastName": "Demo",
+      "lastName": "Testing",
       "attributes": {
         "tenant_id": ["11111111-1111-1111-1111-111111111111"]
+      },
+      "realmRoles": ["COMENSAL"]
+    },
+    {
+      "id": "0fd5421a-a1f4-4fe4-ab95-8a3482a3e5cd",
+      "username": "${TEST_COCINA_B_USERNAME}",
+      "email": "cocina-b-test@bistrolink.dev.com",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Cocina",
+      "lastName": "TenantB",
+      "attributes": {
+        "tenant_id": ["b02579f2-2bb0-496b-abf2-33c494c93122"]
+      },
+      "realmRoles": ["COCINA"]
+    },
+    {
+      "id": "ef9069c3-2243-49b4-9814-a8e53717857c",
+      "username": "comensal-b02579f2-2bb0-496b-abf2-33c494c93122",
+      "email": "comensal-testing-b@bistrolink.dev.com",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Comensal",
+      "lastName": "TestingB",
+      "attributes": {
+        "tenant_id": ["b02579f2-2bb0-496b-abf2-33c494c93122"]
       },
       "realmRoles": ["COMENSAL"]
     }

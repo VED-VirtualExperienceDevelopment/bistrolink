@@ -25,13 +25,11 @@ import { AppModule } from '../../src/app.module';
 const KEYCLOAK_URL = process.env.KEYCLOAK_URL ?? 'http://localhost:8080';
 const REALM = process.env.KEYCLOAK_REALM ?? 'bistrolink';
 
-const TENANT_A = '554915d0-f7ed-4053-b841-56479df29fd9'; // tenant Ejemplo
+// Tenants de testing del seed (BL-197). A tiene mesas cargadas, que hacen
+// falta para pedir un token de comensal (mismo fixture que kds.e2e-spec.ts).
+const TENANT_A = '11111111-1111-1111-1111-111111111111';
+const MESA_A = '33333333-3333-3333-3333-333333333333';
 const TENANT_B = 'b02579f2-2bb0-496b-abf2-33c494c93122';
-
-// Tenant Demo: el único con mesa cargada en el seed (mismo fixture que
-// kds.e2e-spec.ts), necesario para pedir un token de comensal.
-const TENANT_DEMO = '11111111-1111-1111-1111-111111111111';
-const MESA_DEMO = '33333333-3333-3333-3333-333333333333';
 
 const ACCOUNT_URL = `${KEYCLOAK_URL}/realms/${REALM}/account`;
 
@@ -327,7 +325,7 @@ describe('Token de comensal contra la API de cuenta (BL-265, R1)', () => {
   it('[TC-I-044] Keycloak: el token anónimo de comensal no puede cambiar el tenant por la API de cuenta', async () => {
     const res = await request(app.getHttpServer())
       .post('/auth/comensal')
-      .send({ tenantId: TENANT_DEMO, mesaId: MESA_DEMO })
+      .send({ tenantId: TENANT_A, mesaId: MESA_A })
       .expect(200);
     const token = res.body.accessToken as string;
 
@@ -352,7 +350,7 @@ describe('Token de comensal contra la API de cuenta (BL-265, R1)', () => {
 
     // El usuario técnico del comensal sigue en su tenant.
     expect(await tenantIdEnKeycloak(claims(token).sub as string)).toEqual([
-      TENANT_DEMO,
+      TENANT_A,
     ]);
   });
 });
