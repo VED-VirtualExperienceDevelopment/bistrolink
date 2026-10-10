@@ -6,16 +6,16 @@
 //   - Resumen breve de calidad (recalculado desde GitHub Issues, misma
 //     lógica que update-github-bugs-dashboard.mjs).
 //
-// Se ejecuta como paso adicional del workflow "Actualizar Dashboard EDT
-// desde Linear" (update-dashboard.yml) — en las fechas de cierre de sprint
-// y en el disparo manual — NO en el workflow de bugs, que dispara además
-// por cada apertura/cierre/label de issue; si el email colgara de ahí se
-// mandaría un correo por cada bug individual, no lo que se pidió.
+// Se ejecuta en el job "Email de estado" del workflow "Publicar dashboards
+// (GitHub Pages)" (publicar-dashboards.yml, BL-298), solo en las fechas de
+// cierre de sprint y en el disparo manual con "enviar_email"; nunca por los
+// eventos de issues, que también disparan ese workflow (si no, se mandaría
+// un correo por cada bug individual).
 //
 // Vuelve a calcular ambos resúmenes de forma independiente (no lee los
-// .md ya commiteados) para no depender de si el PR de cada dashboard ya
-// fue mergeado: el email siempre refleja el estado más reciente en Linear
-// y GitHub, tal como lo calcularon los propios dashboards en su corrida.
+// .md del repositorio, que son solo plantillas): el email siempre refleja
+// el estado más reciente en Linear y GitHub. Los links del email apuntan a
+// los dashboards publicados en GitHub Pages.
 //
 // Requiere Node 18+ (usa fetch nativo).
 //
@@ -276,12 +276,13 @@ async function computeCalidad() {
 // 3. Armar el email
 // ---------------------------------------------------------------------------
 
-function buildRepoFileUrl(subpath) {
-  const repo = process.env.GITHUB_REPOSITORY;
-  const serverUrl = process.env.GITHUB_SERVER_URL || "https://github.com";
-  const ref = process.env.GITHUB_REF_NAME || "main";
-  if (!repo) return null;
-  return `${serverUrl}/${repo}/blob/${ref}/${subpath}`;
+// BL-298: URL del sitio de GitHub Pages del repositorio
+// (https://<owner en minúsculas>.github.io/<repo>/<archivo>).
+function buildPagesUrl(archivo) {
+  const repoCompleto = process.env.GITHUB_REPOSITORY;
+  if (!repoCompleto) return null;
+  const [owner, repo] = repoCompleto.split("/");
+  return `https://${owner.toLowerCase()}.github.io/${repo}/${archivo}`;
 }
 
 function fraseTendenciaBugs({ nuevosEstaSemana, nuevosSemanaPasada }) {
@@ -301,70 +302,72 @@ function fraseTendenciaBugs({ nuevosEstaSemana, nuevosSemanaPasada }) {
 // destinatario, y forzar un fondo oscuro puede salir mal si el cliente de
 // correo re-invierte colores automáticamente.
 function renderEmailBody(progreso, calidad, fechaHoy) {
-  const dashboardUrl = buildRepoFileUrl("docs/dashboard-avance-edt.md");
-  const bugsUrl = buildRepoFileUrl("docs/dashboard-bugs-github.md");
+  // BL-298: los dashboards al día están en GitHub Pages; los .md del
+  // repositorio son solo las plantillas.
+  const dashboardUrl = buildPagesUrl("avance-edt.html");
+  const bugsUrl = buildPagesUrl("bugs.html");
 
   const filasCapas = progreso.capas
     .map(
       (c) => `
       <tr>
-        <td style="padding:6px 10px; border:1px solid #e2e8f0;">${c.emoji} ${c.nombre}</td>
-        <td style="padding:6px 10px; border:1px solid #e2e8f0; text-align:center;">${c.sprints[0]}–${c.sprints[c.sprints.length - 1]}</td>
-        <td style="padding:6px 10px; border:1px solid #e2e8f0; text-align:center;">${c.huCompletadas}/${c.huTotales}</td>
-        <td style="padding:6px 10px; border:1px solid #e2e8f0; text-align:center;">${c.pctAvance}</td>
+        <td style="padding:6px 10px; border:1px solid #cbc4d2;">${c.emoji} ${c.nombre}</td>
+        <td style="padding:6px 10px; border:1px solid #cbc4d2; text-align:center;">${c.sprints[0]}–${c.sprints[c.sprints.length - 1]}</td>
+        <td style="padding:6px 10px; border:1px solid #cbc4d2; text-align:center;">${c.huCompletadas}/${c.huTotales}</td>
+        <td style="padding:6px 10px; border:1px solid #cbc4d2; text-align:center;">${c.pctAvance}</td>
       </tr>`
     )
     .join("");
 
   return `<!doctype html>
 <html>
-  <body style="margin:0; padding:0; background-color:#f4f5f7; font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f5f7; padding:24px 0;">
+  <body style="margin:0; padding:0; background-color:#fdf8ff; font-family: 'Plus Jakarta Sans', -apple-system, Segoe UI, Roboto, Arial, sans-serif;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#fdf8ff; padding:24px 0;">
       <tr><td align="center">
-        <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="background-color:#ffffff; border-radius:8px; overflow:hidden; border:1px solid #e2e8f0;">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="background-color:#ffffff; border-radius:8px; overflow:hidden; border:1px solid #cbc4d2;">
 
-          <tr><td style="background-color:#1a202c; padding:20px 24px;">
+          <tr><td style="background-color:#381e72; padding:20px 24px;">
             <span style="color:#ffffff; font-size:18px; font-weight:bold;">🚀 BistroLink — Estado del proyecto</span>
           </td></tr>
 
           <tr><td style="padding:24px;">
-            <p style="margin:0 0 20px; color:#2d3748; font-size:14px;">
+            <p style="margin:0 0 20px; color:#1c1b20; font-size:14px;">
               Resumen automático generado el <strong>${fechaHoy}</strong>.
             </p>
 
-            <h3 style="margin:0 0 10px; font-size:14px; color:#1a202c;">📊 Avance general</h3>
+            <h3 style="margin:0 0 10px; font-size:14px; color:#381e72;">📊 Avance general</h3>
             <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:16px;">
               <tr>
-                <td style="padding:10px; background-color:#ebf8ff; border-radius:6px; text-align:center; width:33%;">
-                  <div style="font-size:22px; font-weight:bold; color:#2b6cb0;">${progreso.sprintActual}</div>
-                  <div style="font-size:12px; color:#4a5568;">Sprint actual</div>
+                <td style="padding:10px; background-color:#e9ddff; border-radius:6px; text-align:center; width:33%;">
+                  <div style="font-size:22px; font-weight:bold; color:#4f378a;">${progreso.sprintActual}</div>
+                  <div style="font-size:12px; color:#494551;">Sprint actual</div>
                 </td>
                 <td style="width:8px;"></td>
-                <td style="padding:10px; background-color:#faf5ff; border-radius:6px; text-align:center; width:33%;">
-                  <div style="font-size:22px; font-weight:bold; color:#805ad5;">${progreso.pctAvanceGlobal}</div>
-                  <div style="font-size:12px; color:#4a5568;">Avance global</div>
+                <td style="padding:10px; background-color:#e0d4fd; border-radius:6px; text-align:center; width:33%;">
+                  <div style="font-size:22px; font-weight:bold; color:#381e72;">${progreso.pctAvanceGlobal}</div>
+                  <div style="font-size:12px; color:#494551;">Avance global</div>
                 </td>
                 <td style="width:8px;"></td>
-                <td style="padding:10px; background-color:#fff5f5; border-radius:6px; text-align:center; width:33%;">
-                  <div style="font-size:22px; font-weight:bold; color:#e05263;">${progreso.spCompletados}/${progreso.totalStoryPoints}</div>
-                  <div style="font-size:12px; color:#4a5568;">Story Points</div>
+                <td style="padding:10px; background-color:#f1ecf4; border-radius:6px; text-align:center; width:33%;">
+                  <div style="font-size:22px; font-weight:bold; color:#4f378a;">${progreso.spCompletados}/${progreso.totalStoryPoints}</div>
+                  <div style="font-size:12px; color:#494551;">Story Points</div>
                 </td>
               </tr>
             </table>
 
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse; font-size:13px; color:#2d3748; margin-bottom:8px;">
-              <tr style="background-color:#f7fafc;">
-                <th style="padding:6px 10px; border:1px solid #e2e8f0; text-align:left;">Capa</th>
-                <th style="padding:6px 10px; border:1px solid #e2e8f0;">Sprints</th>
-                <th style="padding:6px 10px; border:1px solid #e2e8f0;">HU</th>
-                <th style="padding:6px 10px; border:1px solid #e2e8f0;">% Avance</th>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse; font-size:13px; color:#1c1b20; margin-bottom:8px;">
+              <tr style="background-color:#e0d4fd; color:#381e72;">
+                <th style="padding:6px 10px; border:1px solid #cbc4d2; text-align:left;">Capa</th>
+                <th style="padding:6px 10px; border:1px solid #cbc4d2;">Sprints</th>
+                <th style="padding:6px 10px; border:1px solid #cbc4d2;">HU</th>
+                <th style="padding:6px 10px; border:1px solid #cbc4d2;">% Avance</th>
               </tr>
               ${filasCapas}
             </table>
 
             ${
               progreso.scopeCambio
-                ? `<p style="margin:0 0 16px; padding:10px 12px; background-color:#fffaf0; border-left:3px solid #f2a541; font-size:12px; color:#744210;">
+                ? `<p style="margin:0 0 16px; padding:10px 12px; background-color:#e9ddff; border-left:3px solid #4f378a; font-size:12px; color:#494551;">
                     ℹ️ El alcance actual (${progreso.totalHistoriasUsuario} HU / ${progreso.totalStoryPoints} pts) difiere de la línea base de planning (${progreso.baseline.totalHistoriasUsuario} HU / ${progreso.baseline.totalStoryPoints} pts).
                   </p>`
                 : ""
@@ -372,41 +375,41 @@ function renderEmailBody(progreso, calidad, fechaHoy) {
 
             ${
               dashboardUrl
-                ? `<p style="margin:0 0 24px; font-size:13px;"><a href="${dashboardUrl}" style="color:#2b6cb0; text-decoration:underline;">Ver dashboard de avance completo →</a></p>`
+                ? `<p style="margin:0 0 24px; font-size:13px;"><a href="${dashboardUrl}" style="color:#4f378a; text-decoration:underline;">Ver dashboard de avance completo →</a></p>`
                 : ""
             }
 
-            <h3 style="margin:0 0 10px; font-size:14px; color:#1a202c;">🐛 Calidad (bugs)</h3>
+            <h3 style="margin:0 0 10px; font-size:14px; color:#381e72;">🐛 Calidad (bugs)</h3>
             <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:10px;">
               <tr>
-                <td style="padding:10px; background-color:#f0fff4; border-radius:6px; text-align:center; width:33%;">
-                  <div style="font-size:22px; font-weight:bold; color:#38a169;">${calidad.abiertos}</div>
-                  <div style="font-size:12px; color:#4a5568;">Bugs abiertos</div>
+                <td style="padding:10px; background-color:#ffdf93; border-radius:6px; text-align:center; width:33%;">
+                  <div style="font-size:22px; font-weight:bold; color:#594400;">${calidad.abiertos}</div>
+                  <div style="font-size:12px; color:#494551;">Bugs abiertos</div>
                 </td>
                 <td style="width:8px;"></td>
-                <td style="padding:10px; background-color:#f7fafc; border-radius:6px; text-align:center; width:33%;">
-                  <div style="font-size:22px; font-weight:bold; color:#2d3748;">${calidad.pctResueltos}</div>
-                  <div style="font-size:12px; color:#4a5568;">% resueltos (${calidad.cerrados}/${calidad.total})</div>
+                <td style="padding:10px; background-color:#f1ecf4; border-radius:6px; text-align:center; width:33%;">
+                  <div style="font-size:22px; font-weight:bold; color:#1c1b20;">${calidad.pctResueltos}</div>
+                  <div style="font-size:12px; color:#494551;">% resueltos (${calidad.cerrados}/${calidad.total})</div>
                 </td>
                 <td style="width:8px;"></td>
-                <td style="padding:10px; background-color:#f7fafc; border-radius:6px; text-align:center; width:33%;">
-                  <div style="font-size:22px; font-weight:bold; color:#2d3748;">${calidad.promedioDias}</div>
-                  <div style="font-size:12px; color:#4a5568;">días prom. de resolución</div>
+                <td style="padding:10px; background-color:#f1ecf4; border-radius:6px; text-align:center; width:33%;">
+                  <div style="font-size:22px; font-weight:bold; color:#1c1b20;">${calidad.promedioDias}</div>
+                  <div style="font-size:12px; color:#494551;">días prom. de resolución</div>
                 </td>
               </tr>
             </table>
 
-            <p style="margin:0 0 16px; font-size:13px; color:#2d3748;">${fraseTendenciaBugs(calidad)}</p>
+            <p style="margin:0 0 16px; font-size:13px; color:#1c1b20;">${fraseTendenciaBugs(calidad)}</p>
 
             ${
               bugsUrl
-                ? `<p style="margin:0; font-size:13px;"><a href="${bugsUrl}" style="color:#2b6cb0; text-decoration:underline;">Ver dashboard de bugs completo →</a></p>`
+                ? `<p style="margin:0; font-size:13px;"><a href="${bugsUrl}" style="color:#4f378a; text-decoration:underline;">Ver dashboard de bugs completo →</a></p>`
                 : ""
             }
           </td></tr>
 
-          <tr><td style="padding:12px 24px; background-color:#f7fafc; border-top:1px solid #e2e8f0;">
-            <span style="font-size:11px; color:#a0aec0;">Generado automáticamente por GitHub Action — no responder a este correo.</span>
+          <tr><td style="padding:12px 24px; background-color:#f7f2fa; border-top:1px solid #cbc4d2;">
+            <span style="font-size:11px; color:#7a7582;">Generado automáticamente por GitHub Action — no responder a este correo.</span>
           </td></tr>
 
         </table>

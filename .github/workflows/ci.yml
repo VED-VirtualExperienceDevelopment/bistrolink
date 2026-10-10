@@ -319,7 +319,7 @@ jobs:
             --exit-code=2 \
             --report-format=sarif \
             --report-path=gitleaks-results \
-            --log-level=debug \
+            --log-level=info \
             --log-opts="--no-merges"
 
       - name: Subir reporte Gitleaks al Code Scanning
@@ -371,9 +371,18 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
-  # ── JOB 7: SNYK ───────────────────────────────────────────────────────────
-  snyk:
-    name: 📦 Dependencias (Snyk)
+  # ── JOB 7: DEPENDENCIAS (TRIVY) ───────────────────────────────────────────
+  # BL-300: reemplaza a Snyk. Snyk cortó el pipeline dos veces por causas
+  # externas (CLI 1.1308.0 con 404 el 08/10, BL-290; cupo del plan gratuito
+  # agotado el 10/10) y dependía de un token personal. Trivy es la misma
+  # herramienta y la misma base de vulnerabilidades que el escaneo de las
+  # imágenes, sin token ni cupo. Lee package-lock.json (no hace falta npm ci)
+  # y, por defecto, no reporta las dependencias de desarrollo: el criterio es
+  # el mismo que tenía Snyk (sin críticas ni altas en lo que llega a
+  # producción). La base de Trivy sale de la misma caché diaria que usan los
+  # builds (cache-trivy-<fecha>, BL-260).
+  dependencias:
+    name: 📦 Dependencias (Trivy)
     runs-on: ubuntu-latest
     needs: [changes]
     # BL-251: en un PR que solo toca documentación tampoco corre (no es un
@@ -384,25 +393,25 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # BL-251: npm ci + caché (ver job "lint").
-      - uses: actions/setup-node@v7
+      - name: Escaneo de dependencias (Trivy fs)
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
-          node-version: "22"
-          cache: npm
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          trivyignores: .trivyignore
 
-      - name: Instalar dependencias
-        run: npm ci
-
-      # CLI de Snyk fijada en 1.1307.4. La acción snyk/actions/node@0.4.0 usa
-      # la imagen snyk/snyk:node sin versión, y la CLI 1.1308.0 (08/10/2026)
-      # falla con 404 (SNYK-CLI-0000) al consultar el test job: Snyk crea el
-      # test con la nueva "unified test API" y después no lo encuentra.
-      # Probado en local: 1.1308.0 falla, 1.1307.4 funciona. Antes de subir la
-      # versión, probar la nueva con `npx snyk@<versión> test`.
-      - name: Auditoría Snyk
-        run: npx --yes snyk@1.1307.4 test --severity-threshold=high
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      # BL-300: en los PR, frena las dependencias nuevas o actualizadas que
+      # traen vulnerabilidades altas o críticas (por defecto solo las de
+      # producción), con la base de avisos de GitHub. Gratis en repositorios
+      # públicos. Fijada por SHA, como las demás actions de terceros.
+      - name: Revisión de dependencias del PR
+        if: github.event_name == 'pull_request'
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
 
   # ── JOB 8: BUILD + TRIVY ──────────────────────────────────────────────────
   # Matrix: las 3 imágenes se buildean y escanean en paralelo (3 runners
@@ -576,7 +585,7 @@ jobs:
   # ── JOB 9: DEPLOY STAGING ─────────────────────────────────────────────────
   deploy-staging:
     name: 🚀 Deploy staging (Railway)
-    needs: [gitleaks, codeql, sonarcloud, snyk, build, changes]
+    needs: [gitleaks, codeql, sonarcloud, dependencias, build, changes]
     if: |
       github.ref == 'refs/heads/develop' &&
       (
@@ -1011,7 +1020,14 @@ jobs:
           # http://localhost:3001 si esto no está seteado, y este job no
           # levanta ninguna API local → ECONNREFUSED. Misma URL de Railway
           # que ya usa el build-arg NEXT_PUBLIC_API_URL del job "build".
-          API_URL: https://bistrolink-api-staging.up.railway.app
+          API_URL:
+            https://bistrolink-api-staging.up.railway.app
+            # BL-303: credenciales de los usuarios de prueba desde los secrets.
+          # e2e/support/auth.ts ya no tiene valores por defecto.
+          TEST_MOZO_USERNAME: ${{ secrets.TEST_MOZO_USERNAME }}
+          TEST_MOZO_PASSWORD: ${{ secrets.TEST_MOZO_PASSWORD }}
+          TEST_ADMIN_USERNAME: ${{ secrets.TEST_ADMIN_USERNAME }}
+          TEST_ADMIN_PASSWORD: ${{ secrets.TEST_ADMIN_PASSWORD }}
 
       # BL-250: aviso visible en el resumen de la corrida cuando E2E falla
       # (el workflow sigue en verde en develop, así que el aviso es lo que
@@ -1144,7 +1160,7 @@ jobs:
   # dispara un push de tag esa condición es falsa, así que quedarían
   # "skipped" y deploy-prod nunca correría. En su lugar se re-exige el mismo
   # gate de seguridad + build que valida staging (gitleaks, codeql,
-  # sonarcloud, snyk, build), que sí se re-ejecuta en el push del tag.
+  # sonarcloud, dependencias, build), que sí se re-ejecuta en el push del tag.
   #
   # "playwright-report" SÍ puede ir en needs a pesar de correr solo contra
   # develop: un tag v*.*.* normalmente sale de un commit de develop que ya
@@ -1170,7 +1186,7 @@ jobs:
   #   # notas arriba), solo comentado. Para reactivarlo: descomentar todo
   #   # este bloque (job "deploy-prod" completo, hasta el final del archivo).
   #     name: 🏁 Deploy producción (aprobación manual)
-  #     needs: [gitleaks, codeql, sonarcloud, snyk, build, playwright-report]
+  #     needs: [gitleaks, codeql, sonarcloud, dependencias, build, playwright-report]
   #     if: startsWith(github.ref, 'refs/tags/v')
   #     # GitHub Environment "production": configurar en Settings → Environments
   #     # → production → Required reviewers, con al menos un integrante distinto

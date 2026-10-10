@@ -1,99 +1,76 @@
 <p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
+  <img src="../../docs/assets/banner-backend.svg" alt="BistroLink · API" width="100%">
 </p>
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
-
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://coveralls.io/github/nestjs/nest?branch=master" target="_blank"><img src="https://coveralls.io/repos/github/nestjs/nest/badge.svg?branch=master#9" alt="Coverage" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
+<p align="center">
+  <a href="../../README.md">← BistroLink</a> ·
+  <img src="https://img.shields.io/badge/NestJS-381e72?logo=nestjs&logoColor=white" alt="NestJS">
+  <img src="https://img.shields.io/badge/Prisma-381e72?logo=prisma&logoColor=white" alt="Prisma">
+  <img src="https://img.shields.io/badge/PostgreSQL-381e72?logo=postgresql&logoColor=white" alt="PostgreSQL">
+  <img src="https://img.shields.io/badge/Socket.io-381e72?logo=socketdotio&logoColor=white" alt="Socket.io">
 </p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
 
-## Description
+## API de BistroLink
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+API en **NestJS** con **Prisma** sobre PostgreSQL. Es **multi-tenant**: cada restaurante ve solo sus datos, y el aislamiento lo garantiza la base con políticas RLS, no solo el código. La autenticación la valida contra Keycloak (tokens OIDC) y el tiempo real (KDS, seguimiento del pedido, mapa de mesas) va por Socket.io.
 
-## Project setup
+## Estructura
 
-```bash
-$ npm install
+```
+src/
+├── menu/             → Menú público del comensal (QR y enlace directo)
+├── pedidos/          → Pedidos, estados y eventos en tiempo real para el KDS
+├── mesas/            → Mesas, layout del salón y llamado al mozo
+├── pagos/            → Pago electrónico
+├── restaurantes/     → Restaurantes del tenant
+├── usuarios/         → Personal del local (alta, baja y roles)
+├── plataforma/       → Alta y gestión de restaurantes (rol de plataforma)
+├── auth/             → Validación de tokens y roles
+├── auth-comensal/    → Token del comensal sin login
+├── keycloak-admin/   → Alta de usuarios en Keycloak desde la API
+├── audit-log/        → Registro de auditoría
+├── prisma/           → Conexión a la base con el contexto del tenant (RLS)
+├── logger/           → Logs estructurados
+└── health.controller → /health, /health/ready y /health/version
+prisma/               → schema.prisma, migraciones y seed de datos de prueba
+scripts/              → Utilidades (aprovisionar un restaurante, generar QR)
+test/unitarios/       → Tests unitarios (Jest)
+test/integration/     → Tests de integración (*.e2e-spec.ts), incluido el aislamiento entre tenants
 ```
 
-## Compile and run the project
+## Desarrollo local
+
+Requisitos: Node.js 22 y la base y Keycloak corriendo con Docker Compose (ver el [README raíz](../../README.md#entorno-local)).
 
 ```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+npm run start:dev -w apps/backend   # solo la API, con recarga
+npm run dev                         # API y web juntas (desde la raíz)
 ```
 
-## Run tests
+La API queda en `http://localhost:3001`. Las variables se leen de `apps/backend/.env` (plantilla en [`.env.example`](../../.env.example)). La API usa dos conexiones distintas a la base: una con permisos para las migraciones y otra restringida para la aplicación, que respeta el RLS. Al arrancar controla que estén las variables obligatorias.
+
+### Base de datos
 
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+cd apps/backend
+npx prisma migrate deploy   # aplica las migraciones del repositorio
+npx prisma migrate dev      # crea una migración nueva después de cambiar schema.prisma
+npx prisma db seed          # datos de prueba (idempotente)
+npx prisma studio           # explorar las tablas en el navegador
 ```
 
-## Deployment
+En staging y producción las migraciones las aplica Railway antes de arrancar cada versión de la API. Nunca se corre `migrate dev` ni `migrate reset` contra esas bases ([runbook](../../docs/runbooks/migraciones-y-seed.md)).
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+## Tests
 
 ```bash
-$ npm install -g mau
-$ mau deploy
+npm test -w apps/backend           # unitarios
+npm run test:cov -w apps/backend   # con cobertura (mínimo 80 % en el pipeline)
+npm run test:e2e -w apps/backend   # integración (requieren la base local)
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+⚠️ `npm run test:e2e` **desde la raíz** corre Playwright, no estos tests. Los de integración se corren con `-w apps/backend`.
 
-## Resources
+## Build
 
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+La imagen se construye con el [`Dockerfile`](Dockerfile) de esta carpeta y se publica en GHCR desde el pipeline. Incluye lo necesario para aplicar las migraciones en el arranque.

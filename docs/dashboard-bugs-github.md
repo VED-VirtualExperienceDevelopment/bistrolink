@@ -1,5 +1,11 @@
 # 🐛 Dashboard de Bugs (GitHub Issues)
 
+<!-- SOLO-REPO:start -->
+
+> 📌 **La versión al día de este dashboard está publicada en GitHub Pages:** https://ved-virtualexperiencedevelopment.github.io/bistrolink/bugs.html (BL-298). Este archivo es la plantilla que usa el workflow «Publicar dashboards»: los bloques `AUTO` de acá no se actualizan en el repositorio.
+
+<!-- SOLO-REPO:end -->
+
 > **Nota de Control:** Las secciones marcadas con `<!-- AUTO -->` se actualizan automáticamente desde GitHub Issues mediante un GitHub Action (`scripts/update-github-bugs-dashboard.mjs`). No las edites a mano — se sobrescriben en la próxima corrida. Para cambiar qué se considera "bug" (label vs. Issue Type) o cuántas semanas mostrar en la tendencia, editá `scripts/github-bugs-config.json`.
 
 ---
@@ -7,16 +13,18 @@
 ## 📊 Resumen
 
 <!-- AUTO:resumen-bugs:start -->
-| Métrica | Valor |
-|---|---|
-| Total de bugs registrados | 18 |
-| **Abiertos** | **4** |
-| **Cerrados** | **14** |
-| % Resueltos | 78% |
+
+| Métrica                       | Valor    |
+| ----------------------------- | -------- |
+| Total de bugs registrados     | 18       |
+| **Abiertos**                  | **4**    |
+| **Cerrados**                  | **14**   |
+| % Resueltos                   | 78%      |
 | Tiempo promedio de resolución | 0.6 días |
-| Tiempo mediana de resolución | 0.1 días |
+| Tiempo mediana de resolución  | 0.1 días |
 
 > Última actualización automática: `10/10/2026` — generado desde GitHub Issues por GitHub Action.
+
 <!-- AUTO:resumen-bugs:end -->
 
 ---
@@ -24,6 +32,7 @@
 ## 📈 Tendencia semanal (abiertos vs. cerrados)
 
 <!-- AUTO:tendencia-bugs-chart:start -->
+
 ```mermaid
 %%{init: {'theme':'base', 'themeVariables': {
   'background': '#1a202c',
@@ -48,19 +57,22 @@ xychart-beta
     bar "Abiertos" [0, 0, 4, 1, 3, 4, 1, 5]
     bar "Cerrados" [0, 0, 4, 1, 3, 1, 2, 3]
 ```
+
 <!-- AUTO:tendencia-bugs-chart:end -->
 
 > Si tu versión de GitHub no renderiza `xychart-beta`, usa la tabla equivalente:
 
 <!-- AUTO:tendencia-bugs-tabla:start -->
+
 | Semana (inicio) | Abiertos | Cerrados |
-|---|:---:|:---:|
-| 17/8 | 0 | 0 |
-| 24/8 | 0 | 0 |
-| 31/8 | 4 | 4 |
-| 7/9 | 1 | 1 |
-| 14/9 | 3 | 3 |
-| 21/9 | 4 | 1 |
-| 28/9 | 1 | 2 |
-| 5/10 | 5 | 3 |
+| --------------- | :------: | :------: |
+| 17/8            |    0     |    0     |
+| 24/8            |    0     |    0     |
+| 31/8            |    4     |    4     |
+| 7/9             |    1     |    1     |
+| 14/9            |    3     |    3     |
+| 21/9            |    4     |    1     |
+| 28/9            |    1     |    2     |
+| 5/10            |    5     |    3     |
+
 <!-- AUTO:tendencia-bugs-tabla:end -->

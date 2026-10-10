@@ -1,4 +1,14 @@
-# Tests E2E (Playwright): guía de uso
+<p align="center">
+  <img src="../docs/assets/banner-e2e.svg" alt="BistroLink · Tests E2E" width="100%">
+</p>
+
+<p align="center">
+  <a href="../README.md">← BistroLink</a> ·
+  <img src="https://img.shields.io/badge/Playwright-381e72?logo=playwright&logoColor=white" alt="Playwright">
+  <img src="https://img.shields.io/badge/axe--core-381e72" alt="axe-core">
+</p>
+
+## Guía de uso
 
 Esta carpeta contiene los tests end-to-end de BistroLink. Leela entera antes de crear o correr tests nuevos: varias reglas existen para evitar fallos que solo aparecen en CI.
 
@@ -20,9 +30,11 @@ e2e/
 │   ├── menu.spec.ts                      # HU-001: menú vía QR
 │   ├── menu-publico.spec.ts              # HU-002: menú vía URL directa
 │   ├── menu-publico.spec.ts-snapshots/   # baselines *-linux.png (comentado hasta sprint 8)
-│   └── pedidos.spec.ts                   # HU-003: carrito y confirmación de pedido
-├── kds/
+│   ├── pedidos.spec.ts                   # HU-003: carrito y confirmación de pedido
 │   └── llamado-mozo.spec.ts              # BL-69: llamado al mozo (usa support/auth.ts)
+├── kds/
+│   └── observaciones-kds.spec.ts         # observaciones del comensal en el KDS
+├── pedido-listo-entregado.spec.ts        # flujo listo → entregado (pendiente de mover a su dominio)
 ├── support/                              # fixtures e IDs del seed; sin tests propios
 │   ├── ids.ts                            # UUIDs y paths del seed
 │   └── auth.ts                           # fixtures kdsPageMozo / kdsPageAdmin
@@ -69,12 +81,13 @@ Si tu spec también debe correr en mobile/Safari, agregalo al `testMatch` de eso
 
 `MESA_ID_RATE_LIMIT` existe porque `MESA_ID` ya lo usan varios specs para leer/agregar al carrito: si un test de rate-limit (que agota el cupo de 1 llamado/minuto) compartiera esa misma mesa, podría hacer fallar a otro test que corre en paralelo. Si tu test agota un cupo o deja la mesa en un estado particular, seguí ese patrón: agregá tu propia mesa a `ids.ts` en vez de reusar `MESA_ID`.
 
-Para usar `kdsPageMozo`/`kdsPageAdmin` localmente necesitás las credenciales del realm de Keycloak en variables de entorno (si no las seteás, cae a los defaults `mozo-test`/`admin-test` con password `Test1234!`, que deberían existir en tu Keycloak local si corriste el seed/realm de desarrollo):
+Para usar `kdsPageMozo`/`kdsPageAdmin` localmente necesitás las credenciales de los usuarios de prueba de **tu Keycloak local** en variables de entorno de la sesión (`TEST_MOZO_USERNAME`, `TEST_MOZO_PASSWORD`, `TEST_ADMIN_USERNAME`, `TEST_ADMIN_PASSWORD`). Los valores son los de tu `apps/backend/.env`. Nunca se escriben en un spec, en un README ni en un commit, y las de staging no se usan en local.
 
-```bash
-TEST_MOZO_USERNAME=mozo-test TEST_MOZO_PASSWORD='Test1234!' \
-TEST_ADMIN_USERNAME=admin-test TEST_ADMIN_PASSWORD='Test1234!' \
-npx playwright test e2e/kds --project=chromium --ignore-snapshots
+```powershell
+# PowerShell: la contraseña se pide sin mostrarla
+$env:TEST_MOZO_USERNAME = "<usuario local>"
+$env:TEST_MOZO_PASSWORD = [System.Net.NetworkCredential]::new('', (Read-Host "TEST_MOZO_PASSWORD" -AsSecureString)).Password
+npx playwright test e2e/comensal/llamado-mozo.spec.ts --project=chromium --ignore-snapshots
 ```
 
 ### Plantilla
@@ -100,7 +113,7 @@ Si tu spec necesita loguearse en `/kds` (mozo o admin), importá `test`/`expect`
 - **Aserciones web-first:** `await expect(locator).toBeVisible()` / `toHaveText(...)`. No usar `expect(await locator.isVisible()).toBe(true)`, porque no reintenta.
 - 🚫 **Sin sleeps:** ni `waitForTimeout` ni `setTimeout`. Si hace falta esperar algo, se espera a una condición visible.
 - **Sin estado compartido:** un test no puede depender de datos que crea otro.
-- ⚠️ **Cuidado con staging:** el CI corre contra datos compartidos. Los tests deben ser de lectura, o limpiar lo que crean. Hoy esto NO se cumple del todo: `pedidos.spec.ts` y el test "permite agregar al carrito..." de `menu-publico.spec.ts` completan `Realizar pedido` de verdad contra la API, así que cada corrida en staging deja pedidos reales acumulándose en el panel de cocina/mozo. Antes de activar el JOB 10 conviene tener un endpoint o script de limpieza (o un tenant de e2e aparte) para no ensuciar la demo.
+- ⚠️ **Cuidado con staging:** el CI corre contra datos compartidos. Los tests deben ser de lectura, o limpiar lo que crean. Hoy esto NO se cumple del todo: los specs que confirman pedidos los crean de verdad contra la API, y cada corrida deja pedidos acumulados en el KDS del tenant de testing. La limpieza automática está en BL-285.
 - **Accesibilidad:** `@axe-core/playwright` ya está en `devDependencies` (`new AxeBuilder({ page }).analyze()`).
 
 ## Correr en local
@@ -128,7 +141,7 @@ npx prisma db seed
 
 `apps/backend/package.json` declara `"prisma": { "seed": "ts-node prisma/seed.ts" }`, así que `npx prisma db seed` corre `apps/backend/prisma/seed.ts` directo — no hace falta un script npm aparte. Necesita `DATABASE_URL` apuntando a tu Postgres local (la misma que usa `start:dev`).
 
-**Seed en staging:** la base de staging no tiene acceso público (BL-231), así que no se puede apuntar `DATABASE_URL` a ella de forma directa. Si hace falta recargar el seed (solo después de resetear la base), seguir el procedimiento de acceso temporal de [`docs/runbooks/migraciones-y-seed.md`](../docs/runbooks/migraciones-y-seed.md) (sección 5).
+**Seed en staging:** la base de staging no tiene acceso público. Para correr el seed contra staging se sigue el procedimiento de [`docs/runbooks/migraciones-y-seed.md`](../docs/runbooks/migraciones-y-seed.md) (sección 5).
 
 **Verificar que cargó bien:** con el backend levantado (`start:dev`), pedile directamente los IDs de `e2e/support/ids.ts` a la API — es la misma llamada que hacen los specs en `obtenerMenu()`:
 
@@ -140,7 +153,7 @@ Si devuelve el JSON del menú (con categorías e ítems, incluyendo `Milanesa a 
 
 Alternativa visual: `npx prisma studio` (desde `apps/backend`) abre una UI en el browser para navegar las tablas y confirmar a ojo que `Tenant`, `Restaurante`, `Mesa` e `Item` tienen las filas esperadas.
 
-⚠️ Si corrés `npx prisma db seed` más de una vez, fijate si `seed.ts` usa `upsert` o `create`: con `create` plano, la segunda corrida puede fallar por violar una constraint única (los UUIDs son fijos). Si eso pasa, hay que resetear la base (`npx prisma migrate reset`, que dropea todo y vuelve a correr migraciones + seed) en vez de correr el seed suelto de nuevo.
+El seed es idempotente (`upsert` por id): se puede volver a correr sin resetear la base.
 
 ### Variables de entorno
 
@@ -180,10 +193,12 @@ Los proyectos `mobile-safari` y `desktop-safari` usan WebKit. Si los querés cor
 ### Reproducir lo que hace el CI (contra staging)
 
 ```bash
-BASE_URL=https://bistrolink-web-staging.up.railway.app \
-API_URL=https://bistrolink-api-staging.up.railway.app \
+BASE_URL=<URL de la web de staging> \
+API_URL=<URL de la API de staging> \
 npx playwright test --ignore-snapshots
 ```
+
+Las URL son las que usa el job de Playwright en `ci.yml`. Los usuarios de prueba de staging solo los tiene el pipeline: en local se prueba contra staging sin login, o con el Keycloak local.
 
 ### Local vs CI
 
@@ -240,22 +255,21 @@ Enmascarar o evitar: fechas y horas, contadores, imágenes remotas y el badge de
 
 ## Errores comunes
 
-| Síntoma                                                                | Causa                                                                                                                                                                                                                  | Solución                                                                                                                                                                                                |
-| ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `A snapshot doesn't exist at ...-darwin.png, writing actual`           | Corriste un spec visual fuera de Docker                                                                                                                                                                                | Correr con `--ignore-snapshots`; borrar el archivo generado. 🚫 **No commitearlo**                                                                                                                      |
-| El spec visual pasa en tu máquina y falla en CI                        | Baseline generado fuera de Docker, o contra datos distintos a staging                                                                                                                                                  | Regenerar con `npm run test:e2e:update-snapshots`                                                                                                                                                       |
-| `Please update docker image as well`                                   | `PLAYWRIGHT_IMAGE` desincronizada de `@playwright/test`                                                                                                                                                                | `npx playwright --version` y actualizar el tag                                                                                                                                                          |
-| `unable to upgrade to tcp, received 404` (Git Bash)                    | Conversión de paths de MSYS                                                                                                                                                                                            | El script ya setea `MSYS_NO_PATHCONV=1`; usarlo en vez de `docker run` a mano                                                                                                                           |
-| Contra `localhost` desde Docker no conecta (macOS/Windows)             | `--network host` solo funciona bien en Linux                                                                                                                                                                           | Usar WSL2, o apuntar a staging                                                                                                                                                                          |
-| `Executable doesn't exist ...`                                         | Faltan los navegadores                                                                                                                                                                                                 | `npx playwright install` (o `install webkit`)                                                                                                                                                           |
-| Falla en local por datos que faltan                                    | Seed no cargado                                                                                                                                                                                                        | Cargar el seed antes de correr                                                                                                                                                                          |
-| Mi spec nuevo no corre en mobile/Safari                                | Esos proyectos tienen `testMatch` acotado                                                                                                                                                                              | Sumarlo al `testMatch` en `playwright.config.ts`                                                                                                                                                        |
-| Corre un spec de otro dominio sin querer                               | Nombre de archivo duplicado que matchea el regex                                                                                                                                                                       | Nombres de spec únicos en todo el repo                                                                                                                                                                  |
-| Falla intermitente                                                     | `waitForTimeout` o dependencia entre tests                                                                                                                                                                             | Aserciones web-first; tests independientes                                                                                                                                                              |
-| Los snapshots quedan con dueño `root` (Linux)                          | Bind mount de Docker                                                                                                                                                                                                   | `sudo chown -R $USER e2e/`                                                                                                                                                                              |
-| Se rompe el visual en cada deploy                                      | El badge de versión (SHA) entra en el screenshot                                                                                                                                                                       | Enmascararlo con `mask`                                                                                                                                                                                 |
-| `kdsPageMozo`/`kdsPageAdmin` (`support/auth.ts`) no loguean en staging | `TEST_MOZO_USERNAME`/`TEST_MOZO_PASSWORD` no están entre los secrets con los que se hornea el realm de Keycloak en `ci.yml` (ahí solo se crean `TEST_ADMIN_*`, `TEST_COCINA_*`, `TEST_NO_TENANT_*`, `TEST_TENANT_B_*`) | Antes de activar specs de `/kds` en CI: confirmar si "mozo" es en realidad el usuario `TEST_COCINA_*` con otro nombre, o crear el secret `TEST_MOZO_*` y sumarlo al build de `keycloak/Dockerfile.auth` |
-| `llamado-mozo.spec.ts` (rate limit) falla en el reintento de CI        | El job tiene `retries: 2`; un reintento a menos de 1 minuto del anterior encuentra la mesa ya throttled, así que el PRIMER click del reintento ya cae en "Ya llamaste al mozo"                                         | Al activar el JOB 10, considerar `retries: 0` para este spec puntual (`test.describe.configure({ retries: 0 })`) o usar una mesa nueva por corrida                                                      |
+| Síntoma                                                         | Causa                                                                                                                                                                          | Solución                                                                                                                     |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| `A snapshot doesn't exist at ...-darwin.png, writing actual`    | Corriste un spec visual fuera de Docker                                                                                                                                        | Correr con `--ignore-snapshots`; borrar el archivo generado. 🚫 **No commitearlo**                                           |
+| El spec visual pasa en tu máquina y falla en CI                 | Baseline generado fuera de Docker, o contra datos distintos a staging                                                                                                          | Regenerar con `npm run test:e2e:update-snapshots`                                                                            |
+| `Please update docker image as well`                            | `PLAYWRIGHT_IMAGE` desincronizada de `@playwright/test`                                                                                                                        | `npx playwright --version` y actualizar el tag                                                                               |
+| `unable to upgrade to tcp, received 404` (Git Bash)             | Conversión de paths de MSYS                                                                                                                                                    | El script ya setea `MSYS_NO_PATHCONV=1`; usarlo en vez de `docker run` a mano                                                |
+| Contra `localhost` desde Docker no conecta (macOS/Windows)      | `--network host` solo funciona bien en Linux                                                                                                                                   | Usar WSL2, o apuntar a staging                                                                                               |
+| `Executable doesn't exist ...`                                  | Faltan los navegadores                                                                                                                                                         | `npx playwright install` (o `install webkit`)                                                                                |
+| Falla en local por datos que faltan                             | Seed no cargado                                                                                                                                                                | Cargar el seed antes de correr                                                                                               |
+| Mi spec nuevo no corre en mobile/Safari                         | Esos proyectos tienen `testMatch` acotado                                                                                                                                      | Sumarlo al `testMatch` en `playwright.config.ts`                                                                             |
+| Corre un spec de otro dominio sin querer                        | Nombre de archivo duplicado que matchea el regex                                                                                                                               | Nombres de spec únicos en todo el repo                                                                                       |
+| Falla intermitente                                              | `waitForTimeout` o dependencia entre tests                                                                                                                                     | Aserciones web-first; tests independientes                                                                                   |
+| Los snapshots quedan con dueño `root` (Linux)                   | Bind mount de Docker                                                                                                                                                           | `sudo chown -R $USER e2e/`                                                                                                   |
+| Se rompe el visual en cada deploy                               | El badge de versión (SHA) entra en el screenshot                                                                                                                               | Enmascararlo con `mask`                                                                                                      |
+| `llamado-mozo.spec.ts` (rate limit) falla en el reintento de CI | El job tiene `retries: 2`; un reintento a menos de 1 minuto del anterior encuentra la mesa ya throttled, así que el PRIMER click del reintento ya cae en "Ya llamaste al mozo" | Considerar `retries: 0` para este spec puntual (`test.describe.configure({ retries: 0 })`) o usar una mesa nueva por corrida |
 
 ⚠️ No confundir con `test:e2e` del backend: `npm run test:e2e` en la raíz corre **Playwright**. Los tests de aislamiento multi-tenant del backend (`*.e2e-spec.ts`, Jest) son otra cosa y se corren desde su workspace.
 

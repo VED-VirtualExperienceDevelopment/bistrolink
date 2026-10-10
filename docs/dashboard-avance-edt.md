@@ -1,5 +1,11 @@
 # 🚀 Dashboard de Avance del Proyecto
 
+<!-- SOLO-REPO:start -->
+
+> 📌 **La versión al día de este dashboard está publicada en GitHub Pages:** https://ved-virtualexperiencedevelopment.github.io/bistrolink/avance-edt.html (BL-298). Este archivo es la plantilla que usa el workflow «Publicar dashboards»: los bloques `AUTO` de acá no se actualizan en el repositorio.
+
+<!-- SOLO-REPO:end -->
+
 > **Nota de Control:** Las secciones marcadas con `<!-- AUTO -->` se actualizan automáticamente desde Linear mediante un GitHub Action (`scripts/update-dashboard-from-linear.mjs`). No edites esas tablas a mano — se sobrescriben en la próxima corrida. La distribución de sprints por capa y la línea base de planning se ajustan en `scripts/sprint-config.json`.
 
 ---
@@ -9,30 +15,34 @@
 ### Resumen ejecutivo
 
 <!-- AUTO:resumen-ejecutivo:start -->
-| Métrica | Valor |
-|---|---|
-| Período del proyecto | 03/08/2026 – 10/12/2026 |
-| Sprints planificados | 9 Sprints (2 semanas c/u) + ciclo de cierre |
-| Historias de Usuario totales (actual) | 257 |
-| Story Points totales (actual) | 407 pts |
-| **Sprint actual** | **5** |
-| **Story Points completados a la fecha** | **148** |
-| **% Avance global** | **36%** |
+
+| Métrica                                 | Valor                                       |
+| --------------------------------------- | ------------------------------------------- |
+| Período del proyecto                    | 03/08/2026 – 10/12/2026                     |
+| Sprints planificados                    | 9 Sprints (2 semanas c/u) + ciclo de cierre |
+| Historias de Usuario totales (actual)   | 257                                         |
+| Story Points totales (actual)           | 407 pts                                     |
+| **Sprint actual**                       | **5**                                       |
+| **Story Points completados a la fecha** | **148**                                     |
+| **% Avance global**                     | **36%**                                     |
 
 > Última actualización automática: `09/10/2026` — generado desde Linear por GitHub Action.
 
 > ℹ️ El alcance actual (257 HU / 407 pts) difiere de la línea base de planning (26 HU / 202 pts) — se agregaron o quitaron historias después del kickoff.
+
 <!-- AUTO:resumen-ejecutivo:end -->
 
 ### Avance por Capa
 
 <!-- AUTO:avance-por-capa:start -->
-| Capa | Sprints | HU totales | Story Points | HU completadas | % Avance |
-|---|---|---|---|---|---|
-| 🟩 Núcleo | 1–5 | 131 | 154 | 111 | 85% |
-| 🟦 Integración | 6–8 | 84 | 173 | 3 | 4% |
-| 🟪 Valor Agregado (cond.) | 9–9 | 16 | 44 | 0 | 0% |
-| **Total** | **1–9** | **231** | **371** | **114** | **49%** |
+
+| Capa                      | Sprints | HU totales | Story Points | HU completadas | % Avance |
+| ------------------------- | ------- | ---------- | ------------ | -------------- | -------- |
+| 🟩 Núcleo                 | 1–5     | 131        | 154          | 111            | 85%      |
+| 🟦 Integración            | 6–8     | 84         | 173          | 3              | 4%       |
+| 🟪 Valor Agregado (cond.) | 9–9     | 16         | 44           | 0              | 0%       |
+| **Total**                 | **1–9** | **231**    | **371**      | **114**        | **49%**  |
+
 <!-- AUTO:avance-por-capa:end -->
 
 ---
@@ -123,6 +133,7 @@ pie title Story Points por Prioridad (202 pts totales)
 ### Story Points planificados vs. completados por Sprint
 
 <!-- AUTO:sp-por-sprint-chart:start -->
+
 ```mermaid
 %%{init: {'theme':'base', 'themeVariables': {
   'background': '#1a202c',
@@ -147,4 +158,5 @@ xychart-beta
     bar "Planificado" [18, 24, 5, 16, 13, 37, 37, 8, 44]
     bar "Completado" [5, 13, 29, 21, 54, 19, 0, 0, 0]
 ```
+
 <!-- AUTO:sp-por-sprint-chart:end -->

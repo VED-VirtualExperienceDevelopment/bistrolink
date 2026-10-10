@@ -1,3 +1,5 @@
+import { cache } from 'react';
+import type { Metadata } from 'next';
 import ItemImagen from '@/components/menu/ItemImagen';
 import { LlamarMozoButton } from '@/components/LlamarMozoButton';
 
@@ -21,7 +23,9 @@ type MenuResponse = {
   categorias: CategoriaMenu[];
 };
 
-async function getMenu(tenantId: string, mesaId: string): Promise<MenuResponse | null> {
+// BL-224: `cache` hace que generateMetadata y la página compartan una sola
+// llamada a la API por request (con `no-store`, fetch no la deduplica solo).
+const getMenu = cache(async (tenantId: string, mesaId: string): Promise<MenuResponse | null> => {
   const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/menu/${tenantId}/${mesaId}`, {
     cache: 'no-store',
   });
@@ -35,6 +39,21 @@ async function getMenu(tenantId: string, mesaId: string): Promise<MenuResponse |
   }
 
   return res.json();
+});
+// BL-224: la pestaña muestra el nombre del restaurante; si no se puede
+// cargar el menú, «Menú».
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ tenantId: string; mesaId: string }>;
+}): Promise<Metadata> {
+  const { tenantId, mesaId } = await params;
+  try {
+    const menu = await getMenu(tenantId, mesaId);
+    return { title: menu?.restaurante.nombre ?? 'Menú' };
+  } catch {
+    return { title: 'Menú' };
+  }
 }
 
 function formatearPrecio(precio: string): string {
