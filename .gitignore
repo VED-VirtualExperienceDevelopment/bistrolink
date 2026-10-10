@@ -166,3 +166,11 @@ k6/bin/
 
 #script
 apps/backend/.aprovisionamiento/
+
+# BL-299: archivos locales que no van al repo (el repo es público).
+# Respuestas de login a Keycloak guardadas a mano (tokens).
+**/token_response*.json
+# Borradores de mensajes de commit.
+commit-msg.txt
+# Archivos que crea macOS en cada carpeta.
+.DS_Store

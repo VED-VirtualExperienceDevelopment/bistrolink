@@ -1,6 +1,21 @@
+# BL-299: sin [extend], este archivo REEMPLAZABA las reglas por defecto de
+# Gitleaks y el escaneo no tenía ninguna regla: no detectaba nada (por eso no
+# marcó scripts/token_response.json). useDefault = true suma las reglas por
+# defecto y este archivo solo agrega excepciones.
+[extend]
+useDefault = true
+
 [allowlist]
   description = "Falsos positivos conocidos"
   paths = [
     '''.env.example''',
     '''apps/backend/README.md'''
+  ]
+  regexes = [
+    # UUID: ids de usuarios de Keycloak del seed y de servicios de Railway en
+    # ci.yml. Son identificadores, no secretos.
+    '''^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$''',
+    # Contraseña temporal ficticia de un test unitario
+    # (keycloak-admin.aprovisionamiento.spec.ts).
+    '''^Temporal-123$'''
   ]

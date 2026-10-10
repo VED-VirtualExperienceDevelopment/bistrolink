@@ -319,7 +319,7 @@ jobs:
             --exit-code=2 \
             --report-format=sarif \
             --report-path=gitleaks-results \
-            --log-level=debug \
+            --log-level=info \
             --log-opts="--no-merges"
 
       - name: Subir reporte Gitleaks al Code Scanning
