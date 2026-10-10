@@ -71,7 +71,7 @@ export default function Home() {
 
   return (
     <div className="flex h-screen flex-col items-center justify-center gap-2 bg-background px-6 text-center">
-      <div className="text-headline-sm font-bold text-primary">Bistro Link</div>
+      <div className="text-headline-sm font-bold text-primary">BistroLink</div>
       <p className="text-body-md text-on-surface-variant">
         Tu usuario no tiene un rol de staff asignado. Contactá a un administrador.
       </p>
