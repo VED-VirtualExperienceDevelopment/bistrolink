@@ -62,6 +62,7 @@ describe('PagosWebhookService.procesarOrden (BL-78)', () => {
   };
   let tenantPrisma: { runInTenantContext: jest.Mock };
   let mercadoPago: { consultarOrden: jest.Mock };
+  let cfe: { intentarEmitir: jest.Mock };
   let service: PagosWebhookService;
 
   beforeEach(() => {
@@ -79,7 +80,12 @@ describe('PagosWebhookService.procesarOrden (BL-78)', () => {
       runInTenantContext: jest.fn((_tenantId, callback) => callback(tx)),
     };
     mercadoPago = { consultarOrden: jest.fn().mockResolvedValue(orden()) };
-    service = new PagosWebhookService(tenantPrisma as any, mercadoPago as any);
+    cfe = { intentarEmitir: jest.fn().mockResolvedValue(null) };
+    service = new PagosWebhookService(
+      tenantPrisma as any,
+      mercadoPago as any,
+      cfe as any,
+    );
   });
 
   afterEach(() => jest.restoreAllMocks());
@@ -328,6 +334,35 @@ describe('PagosWebhookService.procesarOrden (BL-78)', () => {
       await expect(service.procesarOrden(ORDER_ID)).rejects.toThrow(
         'base caída',
       );
+    });
+  });
+
+  describe('emisión del CFE', () => {
+    it('order procesada => emite el comprobante del pago', async () => {
+      await service.procesarOrden(ORDER_ID);
+
+      expect(cfe.intentarEmitir).toHaveBeenCalledWith(TENANT_ID, 'pago-1');
+    });
+
+    it('notificación repetida (sin_cambios) => reintenta la emisión, por si falló antes', async () => {
+      tx.pago.findMany.mockResolvedValue([
+        pagoGuardado({ estado: 'APROBADO', pasarelaReferencia: ORDER_ID }),
+      ]);
+
+      const resultado = await service.procesarOrden(ORDER_ID);
+
+      expect(resultado).toBe('sin_cambios');
+      expect(cfe.intentarEmitir).toHaveBeenCalledWith(TENANT_ID, 'pago-1');
+    });
+
+    it('order fallida => no emite nada', async () => {
+      mercadoPago.consultarOrden.mockResolvedValue(
+        orden({ status: 'failed', statusDetail: 'failed' }),
+      );
+
+      await service.procesarOrden(ORDER_ID);
+
+      expect(cfe.intentarEmitir).not.toHaveBeenCalled();
     });
   });
 });

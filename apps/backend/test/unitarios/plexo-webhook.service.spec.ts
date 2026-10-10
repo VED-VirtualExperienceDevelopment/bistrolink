@@ -55,6 +55,7 @@ describe('PlexoWebhookService.procesarPago (BL-78)', () => {
   };
   let tenantPrisma: { runInTenantContext: jest.Mock };
   let plexo: { consultarPago: jest.Mock };
+  let cfe: { intentarEmitir: jest.Mock };
   let service: PlexoWebhookService;
 
   beforeEach(() => {
@@ -72,7 +73,12 @@ describe('PlexoWebhookService.procesarPago (BL-78)', () => {
       runInTenantContext: jest.fn((_tenantId, callback) => callback(tx)),
     };
     plexo = { consultarPago: jest.fn().mockResolvedValue(pago()) };
-    service = new PlexoWebhookService(tenantPrisma as any, plexo as any);
+    cfe = { intentarEmitir: jest.fn().mockResolvedValue(null) };
+    service = new PlexoWebhookService(
+      tenantPrisma as any,
+      plexo as any,
+      cfe as any,
+    );
   });
 
   afterEach(() => jest.restoreAllMocks());
@@ -109,7 +115,7 @@ describe('PlexoWebhookService.procesarPago (BL-78)', () => {
     });
 
     it.each(['pending', 'authorized'])(
-      'status %s: todavía no es final, no se toca nada',
+      'status %s: todavía no es final, no se toca nada ni se avisa',
       async (status) => {
         plexo.consultarPago.mockResolvedValue(pago({ status }));
 
@@ -117,6 +123,23 @@ describe('PlexoWebhookService.procesarPago (BL-78)', () => {
 
         expect(resultado).toBe('sin_resolver');
         expect(tenantPrisma.runInTenantContext).not.toHaveBeenCalled();
+        expect(Logger.warn).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(['declined', ''])(
+      'status desconocido (%p): queda sin resolver pero deja un warning para detectarlo',
+      async (status) => {
+        plexo.consultarPago.mockResolvedValue(pago({ status }));
+
+        const resultado = await service.procesarPago(PAYMENT_ID);
+
+        expect(resultado).toBe('sin_resolver');
+        expect(tenantPrisma.runInTenantContext).not.toHaveBeenCalled();
+        expect(Logger.warn).toHaveBeenCalledWith(
+          expect.stringContaining('status desconocido'),
+          'PlexoWebhookService',
+        );
       },
     );
   });
@@ -242,6 +265,41 @@ describe('PlexoWebhookService.procesarPago (BL-78)', () => {
       await expect(service.procesarPago(PAYMENT_ID)).rejects.toThrow(
         'base caída',
       );
+    });
+  });
+
+  describe('emisión del CFE', () => {
+    it('pago aprobado => emite el comprobante del pago', async () => {
+      await service.procesarPago(PAYMENT_ID);
+
+      expect(cfe.intentarEmitir).toHaveBeenCalledWith(TENANT_ID, 'pago-1');
+    });
+
+    it('notificación repetida (sin_cambios) => reintenta la emisión, por si falló antes', async () => {
+      tx.pago.findMany.mockResolvedValue([
+        pagoGuardado({ estado: 'APROBADO' }),
+      ]);
+
+      const resultado = await service.procesarPago(PAYMENT_ID);
+
+      expect(resultado).toBe('sin_cambios');
+      expect(cfe.intentarEmitir).toHaveBeenCalledWith(TENANT_ID, 'pago-1');
+    });
+
+    it('pago rechazado => no emite nada', async () => {
+      plexo.consultarPago.mockResolvedValue(pago({ status: 'denied' }));
+
+      await service.procesarPago(PAYMENT_ID);
+
+      expect(cfe.intentarEmitir).not.toHaveBeenCalled();
+    });
+
+    it('monto que no coincide => no emite nada', async () => {
+      plexo.consultarPago.mockResolvedValue(pago({ totalAmount: 1 }));
+
+      await service.procesarPago(PAYMENT_ID);
+
+      expect(cfe.intentarEmitir).not.toHaveBeenCalled();
     });
   });
 });

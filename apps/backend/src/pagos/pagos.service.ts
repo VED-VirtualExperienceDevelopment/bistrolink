@@ -12,12 +12,14 @@ import { PagoGatewayFactory } from './gateways/pago-gateway.factory';
 import { ResultadoCobro } from './gateways/pago-gateway.interface';
 import { PagoRechazadoException } from './gateways/pago-rechazado.exception';
 import { PagoTemporalmenteNoDisponibleException } from './gateways/pago-temporalmente-no-disponible.exception';
+import { CfeService } from '../cfe/cfe.service';
 
 @Injectable()
 export class PagosService {
   constructor(
     private readonly tenantPrisma: TenantPrismaService,
     private readonly gatewayFactory: PagoGatewayFactory,
+    private readonly cfe: CfeService,
   ) {}
 
   async crear(tenantId: string, dto: CrearPagoDto) {
@@ -92,6 +94,13 @@ export class PagosService {
     // BL-77: ya guardado como RECHAZADO; recién ahora se le avisa al comensal.
     if (pagoFinal.estado === 'RECHAZADO') {
       throw new PagoRechazadoException(resultado.motivoRechazo);
+    }
+
+    // Pago aprobado: se emite el eTicket. Si Surtec falla, el cobro no se
+    // pierde: el comprobante queda pendiente de reintento (ver CfeService).
+    if (pagoFinal.estado === 'APROBADO') {
+      const comprobante = await this.cfe.intentarEmitir(tenantId, pagoFinal.id);
+      return { ...pagoFinal, comprobante };
     }
 
     // Checkout embebido (Plexo): esto nunca se persiste — es una URL de un
