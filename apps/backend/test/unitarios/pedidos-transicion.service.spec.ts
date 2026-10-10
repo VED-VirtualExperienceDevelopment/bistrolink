@@ -243,7 +243,21 @@ describe('PedidosTransicionService', () => {
             ],
           },
         },
-        include: { mesa: true, lineas: true },
+        select: {
+          id: true,
+          estado: true,
+          createdAt: true,
+          observacionGeneral: true,
+          mesa: { select: { numero: true } },
+          lineas: {
+            select: {
+              id: true,
+              nombreSnapshot: true,
+              cantidad: true,
+              observacion: true,
+            },
+          },
+        },
         orderBy: { createdAt: 'asc' },
       });
 
