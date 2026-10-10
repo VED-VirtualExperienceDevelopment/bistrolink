@@ -1020,7 +1020,14 @@ jobs:
           # http://localhost:3001 si esto no está seteado, y este job no
           # levanta ninguna API local → ECONNREFUSED. Misma URL de Railway
           # que ya usa el build-arg NEXT_PUBLIC_API_URL del job "build".
-          API_URL: https://bistrolink-api-staging.up.railway.app
+          API_URL:
+            https://bistrolink-api-staging.up.railway.app
+            # BL-303: credenciales de los usuarios de prueba desde los secrets.
+          # e2e/support/auth.ts ya no tiene valores por defecto.
+          TEST_MOZO_USERNAME: ${{ secrets.TEST_MOZO_USERNAME }}
+          TEST_MOZO_PASSWORD: ${{ secrets.TEST_MOZO_PASSWORD }}
+          TEST_ADMIN_USERNAME: ${{ secrets.TEST_ADMIN_USERNAME }}
+          TEST_ADMIN_PASSWORD: ${{ secrets.TEST_ADMIN_PASSWORD }}
 
       # BL-250: aviso visible en el resumen de la corrida cuando E2E falla
       # (el workflow sigue en verde en develop, así que el aviso es lo que

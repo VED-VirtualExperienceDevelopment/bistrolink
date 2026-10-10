@@ -1,18 +1,25 @@
-# testmgmt
+<p align="center">
+  <img src="../docs/assets/banner-testmgmt.svg" alt="BistroLink · Gestión de pruebas" width="100%">
+</p>
 
-Instancia de test management (Kiwi TCMS) para BistroLink — configuración de
-referencia. La instancia local ya no está corriendo; los datos reales viven
-en la instancia de Railway.
+<p align="center">
+  <a href="../README.md">← BistroLink</a> ·
+  <img src="https://img.shields.io/badge/Kiwi%20TCMS-381e72" alt="Kiwi TCMS">
+  <img src="https://img.shields.io/badge/Docker-381e72?logo=docker&logoColor=white" alt="Docker">
+</p>
 
-## Estado
+## Kiwi TCMS
 
-- Instancia local: dada de baja (era solo para validar el setup).
-- Producción: Railway — ver URL en el 1Password del equipo / variables del
-  proyecto en Railway.
+Instancia de gestión de pruebas de BistroLink. Guarda los casos de prueba, los planes y los resultados que reporta el pipeline (Jest, Playwright, k6 y Lighthouse).
+
+- **Instancia en uso:** staging en Railway (URL en el [README raíz](../README.md#ambientes)). Las credenciales están en el gestor de contraseñas del equipo, nunca en el repositorio.
+- **Imagen:** [`docker/`](docker/), que se escanea con Trivy en el pipeline.
+- **Instancia local:** dada de baja (solo sirvió para validar el setup).
 
 ## Setup desde cero (contra una instancia nueva y vacía)
 
 Antes de correr los scripts, crear a mano en la UI de Kiwi:
+
 1. El Product `BistroLink` (Admin → Products).
 2. El Test Plan `TP-1: Integration tests`, tipo `Integration`, asociado al
    Product de arriba. Confirmar que quede con ID `1` (si no, ajustar
@@ -37,4 +44,5 @@ que algo falle por un método inexistente.
 
 Referencia de cómo se armó la instancia local que se usó para probar todo
 esto antes de migrar a Railway (imagen `pub.kiwitcms.eu/kiwitcms/kiwi:latest`
-+ MariaDB). No se usa para levantar producción.
+
+- MariaDB). No se usa para levantar producción.
