@@ -1,0 +1,141 @@
+name: Publicar dashboards (GitHub Pages)
+
+# BL-298: reemplaza a update-dashboard.yml y update-github-bugs-dashboard.yml.
+# Antes, cada workflow regeneraba su .md y abría un PR contra develop que
+# requería la aprobación de otra persona (Actions no puede aprobar PRs), con
+# un token personal (DASHBOARD_PUSH_TOKEN, G12) y carreras entre corridas
+# (G15, BL-296). Ahora los dos dashboards se generan en cada corrida y se
+# publican en GitHub Pages: sin PRs, sin commits y sin token personal.
+# Sitio: https://ved-virtualexperiencedevelopment.github.io/bistrolink/
+
+on:
+  workflow_dispatch: # botón manual "Run workflow" en la pestaña Actions
+    inputs:
+      enviar_email:
+        description: "Mandar también el email de estado en este run manual (para probarlo). Dejar sin marcar en un run normal."
+        type: boolean
+        default: false
+  schedule:
+    # Fechas de cierre de sprint del plan ORIGINAL (Anexo 7). El email de
+    # estado se manda solo en estas corridas.
+    - cron: "0 18 14 8 *" # Cierre Sprint 1 - 14/08
+    - cron: "0 18 28 8 *" # Cierre Sprint 2 - 28/08
+    - cron: "0 18 11 9 *" # Cierre Sprint 3 - 11/09
+    - cron: "0 18 25 9 *" # Cierre Sprint 4 - 25/09
+    - cron: "0 18 9 10 *" # Cierre Sprint 5 - 09/10
+    - cron: "0 18 23 10 *" # Cierre Sprint 6 - 23/10
+    - cron: "0 18 6 11 *" # Cierre Sprint 7 - 06/11
+    - cron: "0 18 20 11 *" # Cierre Sprint 8 - 20/11
+    - cron: "0 18 4 12 *" # Cierre Sprint 9 - 04/12
+    - cron: "0 18 10 12 *" # Entrega final - 10/12
+  # El dashboard de bugs se actualiza con cada cambio de un issue.
+  issues:
+    types: [opened, closed, reopened, labeled, unlabeled]
+
+# Una sola publicación a la vez; las nuevas esperan en cola (cada deploy
+# reemplaza el sitio entero, así que la última corrida deja los datos más
+# nuevos). Reemplaza el concurrency propuesto en BL-296 (G15).
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  generar:
+    name: Generar dashboards
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Search API de GitHub para leer los bugs.
+      issues: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      # Los scripts actualizan los bloques AUTO de los .md de docs/ en la
+      # copia del runner; no se commitea nada.
+      - name: Dashboard de avance (Linear)
+        env:
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+          LINEAR_TEAM_KEY: ${{ secrets.LINEAR_TEAM_KEY }}
+        run: node scripts/update-dashboard-from-linear.mjs
+
+      - name: Dashboard de bugs (GitHub Issues)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/update-github-bugs-dashboard.mjs
+
+      - name: Armar el sitio (HTML)
+        run: node scripts/publicar-dashboards.mjs _site
+
+      - name: Subir el sitio
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: _site
+
+  publicar:
+    name: Publicar en GitHub Pages
+    needs: generar
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deploy
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+
+  # -------------------------------------------------------------------------
+  # Email combinado: avance general (Linear) + resumen breve de calidad (bugs
+  # de GitHub Issues). Solo en las fechas de cierre de sprint (schedule) o en
+  # una corrida manual con "enviar_email" tildado; nunca por los eventos de
+  # issues. Va después de publicar porque el email enlaza a las páginas.
+  # send-status-email.mjs recalcula los dos resúmenes en el momento.
+  # -------------------------------------------------------------------------
+  email:
+    name: Email de estado
+    needs: publicar
+    if: github.event_name == 'schedule' || github.event.inputs.enviar_email == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      - name: Generar email de estado (avance + calidad)
+        id: status-email
+        env:
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+          LINEAR_TEAM_KEY: ${{ secrets.LINEAR_TEAM_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DASHBOARD_EMAIL_RECIPIENTS: ${{ secrets.DASHBOARD_EMAIL_RECIPIENTS }}
+        run: node scripts/send-status-email.mjs
+
+      - name: Enviar email de estado
+        uses: dawidd6/action-send-mail@v22
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: ${{ steps.status-email.outputs.subject }}
+          to: ${{ steps.status-email.outputs.to }}
+          from: ${{ steps.status-email.outputs.from }}
+          html_body: file://${{ steps.status-email.outputs.body_path }}
