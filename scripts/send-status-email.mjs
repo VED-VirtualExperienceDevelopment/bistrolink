@@ -6,16 +6,16 @@
 //   - Resumen breve de calidad (recalculado desde GitHub Issues, misma
 //     lógica que update-github-bugs-dashboard.mjs).
 //
-// Se ejecuta como paso adicional del workflow "Actualizar Dashboard EDT
-// desde Linear" (update-dashboard.yml) — en las fechas de cierre de sprint
-// y en el disparo manual — NO en el workflow de bugs, que dispara además
-// por cada apertura/cierre/label de issue; si el email colgara de ahí se
-// mandaría un correo por cada bug individual, no lo que se pidió.
+// Se ejecuta en el job "Email de estado" del workflow "Publicar dashboards
+// (GitHub Pages)" (publicar-dashboards.yml, BL-298), solo en las fechas de
+// cierre de sprint y en el disparo manual con "enviar_email"; nunca por los
+// eventos de issues, que también disparan ese workflow (si no, se mandaría
+// un correo por cada bug individual).
 //
 // Vuelve a calcular ambos resúmenes de forma independiente (no lee los
-// .md ya commiteados) para no depender de si el PR de cada dashboard ya
-// fue mergeado: el email siempre refleja el estado más reciente en Linear
-// y GitHub, tal como lo calcularon los propios dashboards en su corrida.
+// .md del repositorio, que son solo plantillas): el email siempre refleja
+// el estado más reciente en Linear y GitHub. Los links del email apuntan a
+// los dashboards publicados en GitHub Pages.
 //
 // Requiere Node 18+ (usa fetch nativo).
 //
@@ -276,12 +276,13 @@ async function computeCalidad() {
 // 3. Armar el email
 // ---------------------------------------------------------------------------
 
-function buildRepoFileUrl(subpath) {
-  const repo = process.env.GITHUB_REPOSITORY;
-  const serverUrl = process.env.GITHUB_SERVER_URL || "https://github.com";
-  const ref = process.env.GITHUB_REF_NAME || "main";
-  if (!repo) return null;
-  return `${serverUrl}/${repo}/blob/${ref}/${subpath}`;
+// BL-298: URL del sitio de GitHub Pages del repositorio
+// (https://<owner en minúsculas>.github.io/<repo>/<archivo>).
+function buildPagesUrl(archivo) {
+  const repoCompleto = process.env.GITHUB_REPOSITORY;
+  if (!repoCompleto) return null;
+  const [owner, repo] = repoCompleto.split("/");
+  return `https://${owner.toLowerCase()}.github.io/${repo}/${archivo}`;
 }
 
 function fraseTendenciaBugs({ nuevosEstaSemana, nuevosSemanaPasada }) {
@@ -301,8 +302,10 @@ function fraseTendenciaBugs({ nuevosEstaSemana, nuevosSemanaPasada }) {
 // destinatario, y forzar un fondo oscuro puede salir mal si el cliente de
 // correo re-invierte colores automáticamente.
 function renderEmailBody(progreso, calidad, fechaHoy) {
-  const dashboardUrl = buildRepoFileUrl("docs/dashboard-avance-edt.md");
-  const bugsUrl = buildRepoFileUrl("docs/dashboard-bugs-github.md");
+  // BL-298: los dashboards al día están en GitHub Pages; los .md del
+  // repositorio son solo las plantillas.
+  const dashboardUrl = buildPagesUrl("avance-edt.html");
+  const bugsUrl = buildPagesUrl("bugs.html");
 
   const filasCapas = progreso.capas
     .map(
