@@ -10,9 +10,10 @@ import { PagosController } from './pagos.controller';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AuthModule } from '../auth/auth.module';
 import { Module } from '@nestjs/common';
+import { CfeModule } from '../cfe/cfe.module';
 
 @Module({
-  imports: [PrismaModule, AuthModule],
+  imports: [PrismaModule, AuthModule, CfeModule],
   controllers: [
     PagosController,
     PagosWebhookController,
