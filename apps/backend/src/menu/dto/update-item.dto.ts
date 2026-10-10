@@ -9,7 +9,8 @@ import {
 
 export class UpdateItemDto {
   @IsOptional()
-  @IsUUID()
+  // 'loose': mismo criterio que CreateItemDto.
+  @IsUUID('loose')
   categoriaId?: string;
 
   @IsOptional()

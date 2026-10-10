@@ -8,7 +8,10 @@ import {
 } from 'class-validator';
 
 export class CreateItemDto {
-  @IsUUID()
+  // 'loose': acepta cualquier id 8-4-4-4-12 hex, igual que la columna uuid
+  // de Postgres y ParseUUIDPipe. El modo por defecto exige RFC 4122 y rechaza
+  // los ids del seed (4444… de las categorías de A; ver TC-I-032).
+  @IsUUID('loose')
   categoriaId: string;
 
   @IsString()

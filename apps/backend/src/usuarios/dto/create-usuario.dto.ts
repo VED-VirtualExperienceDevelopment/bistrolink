@@ -26,6 +26,8 @@ export class CreateUsuarioDto {
 
   // Un tenant puede tener más de un Restaurante (Anexo 6 §4.2) — el alta
   // debe indicar a cuál queda asociado el usuario.
-  @IsUUID()
+  // 'loose': el restaurante de testing A (2222…) no es RFC 4122; ver
+  // ListarLayoutQueryDto.
+  @IsUUID('loose')
   restauranteId: string;
 }
