@@ -168,7 +168,9 @@ export class SurtecClient {
     return nuevo;
   }
 
-  private async pedirToken(cuerpo: Record<string, unknown>) {
+  private async pedirToken(
+    cuerpo: { grant_type: string } & Record<string, unknown>,
+  ) {
     const respuesta = await fetch(`${AUTH_URL}/token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -177,10 +179,7 @@ export class SurtecClient {
     });
     if (!respuesta.ok) {
       // Nunca se loguea el cuerpo enviado: lleva la contraseña.
-      Logger.warn(
-        `Surtec: no se pudo obtener el token (${String(cuerpo.grant_type)}, HTTP ${respuesta.status})`,
-        SurtecClient.name,
-      );
+      Logger.warn(SurtecClient.name);
       this.refreshToken = undefined;
       return null;
     }

@@ -30,7 +30,7 @@ export class CfeService {
       return await this.emitir(tenantId, pagoId);
     } catch (error) {
       Logger.error(
-        `CFE: no se pudo emitir el comprobante del pago ${pagoId}: ${error instanceof Error ? error.message : String(error)}`,
+        `CFE: no se pudo emitir el comprobante del pago ${pagoId}: ${error instanceof Error ? error.message : JSON.stringify(error)}`,
         undefined,
         CfeService.name,
       );
@@ -69,7 +69,7 @@ export class CfeService {
     );
 
     const { pago, tenant } = datos;
-    if (!pago || pago.estado !== 'APROBADO') {
+    if (pago?.estado !== 'APROBADO') {
       return null;
     }
     const existente = pago.comprobantes[0];
