@@ -425,9 +425,11 @@ describe('MenuService - getMenuByMesa (HU-001)', () => {
             restauranteId: restaurante.id,
             activo: true,
           },
+          orderBy: { orden: 'asc' },
           include: {
             items: {
-              where: { disponible: true },
+              // HU-001: devolver TODOS los items (disponibles y agotados)
+              // El frontend muestra los agotados bloqueados, no ocultos
               orderBy: { nombre: 'asc' },
             },
           },
