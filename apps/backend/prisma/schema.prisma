@@ -276,9 +276,20 @@ model ComprobanteFiscal {
   tipoCfe        String   @map("tipo_cfe")
   serie          String
   numero         Int
-  urlXml         String   @map("url_xml")
-  urlPdf         String   @map("url_pdf")
-  hashSha256     String   @unique @map("hash_sha256") @db.Char(64)
+  // Nulos hasta HU-009/BL-92 (XML y PDF a S3/R2).
+  urlXml         String?  @map("url_xml")
+  urlPdf         String?  @map("url_pdf")
+  // Hash que informa el proveedor (Surtec lo devuelve en Base64, 44 chars).
+  hashSha256     String?  @unique @map("hash_sha256") @db.VarChar(64)
+  // Facturación electrónica (Surtec/FEU): trazabilidad del proveedor.
+  proveedor       String    @default("SURTEC")
+  proveedorRef    String?   @map("proveedor_ref")
+  // Clave de idempotencia enviada al proveedor ("bl-<pagoId>").
+  idExterno       String?   @unique @map("id_externo")
+  caeNumero       String?   @map("cae_numero")
+  caeVencimiento  DateTime? @map("cae_vencimiento") @db.Date
+  // URL de consulta QR de DGI.
+  urlConsulta     String?   @map("url_consulta")
   fechaEmision   DateTime @map("fecha_emision")
   retencionHasta DateTime @map("retencion_hasta") @db.Date
   createdAt      DateTime @default(now()) @map("created_at")

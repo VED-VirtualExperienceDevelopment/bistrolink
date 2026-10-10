@@ -72,6 +72,7 @@ describe('PagosService.crear', () => {
   let tenantPrisma: { runInTenantContext: jest.Mock };
   let gateway: { cobrar: jest.Mock };
   let gatewayFactory: { obtener: jest.Mock };
+  let cfe: { intentarEmitir: jest.Mock };
   let service: PagosService;
 
   beforeEach(() => {
@@ -85,7 +86,12 @@ describe('PagosService.crear', () => {
         .mockResolvedValue({ aprobado: true, pasarelaReferencia: 'ORD1' }),
     };
     gatewayFactory = { obtener: jest.fn().mockReturnValue(gateway) };
-    service = new PagosService(tenantPrisma as any, gatewayFactory as any);
+    cfe = { intentarEmitir: jest.fn().mockResolvedValue(null) };
+    service = new PagosService(
+      tenantPrisma as any,
+      gatewayFactory as any,
+      cfe as any,
+    );
   });
 
   // Todos los estados por los que pasó la mesa, en orden.
@@ -508,6 +514,56 @@ describe('PagosService.crear', () => {
 
       expect(tx.pago.updateMany).not.toHaveBeenCalled();
       expect(tx.pagos.get(PAGO_ID)).toMatchObject({ estado: 'PENDIENTE' });
+    });
+  });
+
+  describe('emisión del CFE', () => {
+    it('pago aprobado => emite el comprobante y lo incluye en la respuesta', async () => {
+      cfe.intentarEmitir.mockResolvedValue({
+        serie: 'A',
+        numero: 49,
+        urlConsulta: 'https://www.efactura.dgi.gub.uy/consultaQR/cfe?x',
+      });
+
+      const pago = await service.crear(TENANT_ID, DTO);
+
+      expect(cfe.intentarEmitir).toHaveBeenCalledWith(TENANT_ID, PAGO_ID);
+      expect(pago).toMatchObject({
+        estado: 'APROBADO',
+        comprobante: { serie: 'A', numero: 49 },
+      });
+    });
+
+    it('si la emisión falla, el pago igual queda APROBADO (comprobante null)', async () => {
+      cfe.intentarEmitir.mockResolvedValue(null);
+
+      const pago = await service.crear(TENANT_ID, DTO);
+
+      expect(pago).toMatchObject({ estado: 'APROBADO', comprobante: null });
+    });
+
+    it('pago PENDIENTE (ej. Plexo) => todavía no se emite', async () => {
+      gateway.cobrar.mockResolvedValue({
+        aprobado: false,
+        pendiente: true,
+        pasarelaReferencia: 'SES1',
+      });
+
+      await service.crear(TENANT_ID, DTO);
+
+      expect(cfe.intentarEmitir).not.toHaveBeenCalled();
+    });
+
+    it('pago rechazado => no se emite', async () => {
+      gateway.cobrar.mockResolvedValue({
+        aprobado: false,
+        pasarelaReferencia: 'ORD2',
+        motivoRechazo: 'cc_rejected_insufficient_amount',
+      });
+
+      await expect(service.crear(TENANT_ID, DTO)).rejects.toThrow();
+
+      expect(cfe.intentarEmitir).not.toHaveBeenCalled();
     });
   });
 });

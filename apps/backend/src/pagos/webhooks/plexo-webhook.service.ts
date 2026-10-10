@@ -3,6 +3,7 @@ import { Prisma, PrismaClient } from '@prisma/client';
 import { TenantPrismaService } from '../../prisma/tenant-prisma.service';
 import { PlexoGateway } from '../gateways/plexo.gateway';
 import { leerReferenciaExterna } from './referencia-externa';
+import { CfeService } from '../../cfe/cfe.service';
 
 type EstadoPago = 'PENDIENTE' | 'APROBADO' | 'RECHAZADO' | 'REEMBOLSADO';
 
@@ -26,6 +27,7 @@ export class PlexoWebhookService {
   constructor(
     private readonly tenantPrisma: TenantPrismaService,
     private readonly plexo: PlexoGateway,
+    private readonly cfe: CfeService,
   ) {}
 
   async procesarPago(paymentId: string): Promise<ResultadoWebhookPlexo> {
@@ -49,12 +51,33 @@ export class PlexoWebhookService {
 
     const estado = estadoPagoDesdePlexo(pago.status);
     if (estado === 'PENDIENTE') {
+      // pending/authorized son estados esperados que todavía no son finales.
+      // Cualquier otro valor es uno que no conocemos (ej. Plexo mandando
+      // "declined" en vez de "denied"): el pago queda PENDIENTE, así que al
+      // menos tiene que quedar rastro en los logs para detectarlo.
+      if (!['pending', 'authorized'].includes(pago.status)) {
+        Logger.warn(
+          `Webhook Plexo: el pago ${pago.id} llegó con un status desconocido ("${pago.status}"), queda PENDIENTE`,
+          PlexoWebhookService.name,
+        );
+      }
       return 'sin_resolver';
     }
 
-    return this.tenantPrisma.runInTenantContext(referencia.tenantId, (tx) =>
-      this.aplicar(tx, pago, referencia.pedidoId, estado),
+    const { resultado, pagoId } = await this.tenantPrisma.runInTenantContext(
+      referencia.tenantId,
+      (tx) => this.aplicar(tx, pago, referencia.pedidoId, estado),
     );
+
+    // Pago aprobado: se emite el CFE en segundo plano (ver PagosWebhookService).
+    if (
+      estado === 'APROBADO' &&
+      pagoId &&
+      (resultado === 'actualizado' || resultado === 'sin_cambios')
+    ) {
+      void this.cfe.intentarEmitir(referencia.tenantId, pagoId);
+    }
+    return resultado;
   }
 
   private async aplicar(
@@ -62,7 +85,7 @@ export class PlexoWebhookService {
     pago: { id: string; totalAmount?: number },
     pedidoId: string,
     estado: EstadoPago,
-  ): Promise<ResultadoWebhookPlexo> {
+  ): Promise<{ resultado: ResultadoWebhookPlexo; pagoId?: string }> {
     const candidatos = await tx.pago.findMany({
       where: { pedidoId, medioPago: 'PLEXO' },
     });
@@ -79,7 +102,7 @@ export class PlexoWebhookService {
         `Webhook Plexo: no hay un Pago de Plexo para ${pago.id}`,
         PlexoWebhookService.name,
       );
-      return 'pago_no_encontrado';
+      return { resultado: 'pago_no_encontrado' };
     }
 
     if (
@@ -91,11 +114,11 @@ export class PlexoWebhookService {
         undefined,
         PlexoWebhookService.name,
       );
-      return 'monto_no_coincide';
+      return { resultado: 'monto_no_coincide' };
     }
 
     if (pagoBd.estado === estado && pagoBd.pasarelaReferencia === pago.id) {
-      return 'sin_cambios';
+      return { resultado: 'sin_cambios', pagoId: pagoBd.id };
     }
 
     await tx.pago.update({
@@ -116,6 +139,6 @@ export class PlexoWebhookService {
       }
     }
 
-    return 'actualizado';
+    return { resultado: 'actualizado', pagoId: pagoBd.id };
   }
 }

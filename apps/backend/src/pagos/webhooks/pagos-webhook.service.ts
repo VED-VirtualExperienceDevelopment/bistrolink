@@ -6,6 +6,7 @@ import {
   OrdenConsultada,
 } from '../gateways/mercadopago.gateway';
 import { leerReferenciaExterna } from './referencia-externa';
+import { CfeService } from '../../cfe/cfe.service';
 
 // TODO(Plexo): este servicio y la verificación de firma son específicos de
 // Mercado Pago. Cuando lleguen las credenciales de Plexo y se conozca su
@@ -45,6 +46,7 @@ export class PagosWebhookService {
   constructor(
     private readonly tenantPrisma: TenantPrismaService,
     private readonly mercadoPago: MercadoPagoGateway,
+    private readonly cfe: CfeService,
   ) {}
 
   // BL-78: la notificación solo avisa que algo cambió. Se consulta la order
@@ -78,11 +80,22 @@ export class PagosWebhookService {
       return 'sin_resolver';
     }
 
-    // Siempre dentro del contexto del tenant de la referencia (RLS): nunca
-    // se consulta entre restaurantes.
-    return this.tenantPrisma.runInTenantContext(referencia.tenantId, (tx) =>
-      this.aplicar(tx, orden, referencia.pedidoId, estado),
+    const { resultado, pagoId } = await this.tenantPrisma.runInTenantContext(
+      referencia.tenantId,
+      (tx) => this.aplicar(tx, orden, referencia.pedidoId, estado),
     );
+
+    // Pago aprobado: se emite el CFE. En segundo plano, para no demorar el
+    // 200 (Mercado Pago reintenta si tarda). También en 'sin_cambios': si la
+    // emisión falló antes, el reintento de la notificación la completa.
+    if (
+      estado === 'APROBADO' &&
+      pagoId &&
+      (resultado === 'actualizado' || resultado === 'sin_cambios')
+    ) {
+      void this.cfe.intentarEmitir(referencia.tenantId, pagoId);
+    }
+    return resultado;
   }
 
   private async aplicar(
@@ -90,7 +103,7 @@ export class PagosWebhookService {
     orden: OrdenConsultada,
     pedidoId: string,
     estado: EstadoPago,
-  ): Promise<ResultadoWebhook> {
+  ): Promise<{ resultado: ResultadoWebhook; pagoId?: string }> {
     const candidatos = await tx.pago.findMany({
       where: { pedidoId, medioPago: 'MERCADOPAGO' },
     });
@@ -105,7 +118,7 @@ export class PagosWebhookService {
         `Webhook: no hay un Pago de Mercado Pago para la order ${orden.id}`,
         PagosWebhookService.name,
       );
-      return 'pago_no_encontrado';
+      return { resultado: 'pago_no_encontrado' };
     }
 
     // Defensa: nunca se da por resuelto un pago cuyo monto no coincide.
@@ -118,11 +131,11 @@ export class PagosWebhookService {
         undefined,
         PagosWebhookService.name,
       );
-      return 'monto_no_coincide';
+      return { resultado: 'monto_no_coincide' };
     }
 
     if (pago.estado === estado && pago.pasarelaReferencia === orden.id) {
-      return 'sin_cambios';
+      return { resultado: 'sin_cambios', pagoId: pago.id };
     }
 
     await tx.pago.update({
@@ -145,6 +158,6 @@ export class PagosWebhookService {
       }
     }
 
-    return 'actualizado';
+    return { resultado: 'actualizado', pagoId: pago.id };
   }
 }
