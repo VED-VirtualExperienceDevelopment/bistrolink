@@ -171,7 +171,21 @@ export class PedidosTransicionService {
             ],
           },
         },
-        include: { mesa: true, lineas: true },
+        select: {
+          id: true,
+          estado: true,
+          createdAt: true,
+          observacionGeneral: true,
+          mesa: { select: { numero: true } },
+          lineas: {
+            select: {
+              id: true,
+              nombreSnapshot: true,
+              cantidad: true,
+              observacion: true,
+            },
+          },
+        },
         orderBy: { createdAt: 'asc' },
       });
 
@@ -180,13 +194,12 @@ export class PedidosTransicionService {
         mesaNumero: p.mesa.numero,
         estado: p.estado,
         createdAt: p.createdAt.toISOString(),
-        // observacionGeneral/observacion (HU-021) no existen todavía en el
-        // schema de Pedido/LineaPedido — se agregan cuando esa HU se
-        // implemente, sin romper este shape.
+        observacionGeneral: p.observacionGeneral,
         lineas: p.lineas.map((l) => ({
           id: l.id,
           nombreSnapshot: l.nombreSnapshot,
           cantidad: l.cantidad,
+          observacion: l.observacion,
         })),
       }));
     });
