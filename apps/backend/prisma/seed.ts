@@ -1,263 +1,297 @@
 import { PrismaClient } from '@prisma/client';
 
-// Seed mínimo para probar HU-001 (GET /menu/:tenantId/:mesaId) a mano con
-// curl/Postman. UUIDs fijos (no random) para poder pegarlos directo en la URL
-// sin tener que ir a buscarlos en la base cada vez.
+// Datos de los dos tenants de TESTING (BL-197): local, CI y staging. Nunca
+// producción, que nace vacía y recibe los establecimientos por HU-027.
 //
-// Nota RLS: las tablas dependientes del tenant (restaurante, mesa,
-// categoria_carta, item_carta) tienen FORCE ROW LEVEL SECURITY. Por eso,
-// antes de cualquier INSERT en esas tablas, hay que fijar la variable de
-// sesión app.tenant_id — el mismo mecanismo que usa TenantPrismaService en
-// tiempo de ejecución (ver src/prisma/tenant-prisma.service.ts), pero acá lo
-// hacemos a mano porque el seed corre fuera de un request HTTP.
+//   A · «Restaurante Testing A» (11111111-…): todos los flujos (pedidos, KDS,
+//       carta, layout, usuarios). Kit: admin-test, cocina-test, mozo-test,
+//       comensal técnico y mesa virtual.
+//   B · «Restaurante Testing B» (b02579f2-…): el «otro tenant» de los tests
+//       de aislamiento. Kit: admin-b-test, cocina-b-test, comensal técnico y
+//       mesa virtual.
+//
+// Los usuarios de Keycloak están en keycloak/test-users.json (con los mismos
+// IDs fijos de acá); este seed crea las filas de la base. El tenant
+// «Ejemplo» (554915d0-…) se fusionó en A y ya no se crea: en una base que lo
+// tenga, se retira con scripts/retirar-tenant-ejemplo.sql.
+//
+// Idempotente: cada bloque es un upsert por id fijo, así que se puede correr
+// las veces que haga falta (también contra staging, runbook
+// migraciones-y-seed.md §5). Los «update» dejan las filas existentes en el
+// estado de este archivo (nombres, categoría, imagen, tenant de admin-test);
+// lo que no figura en un «update» no se toca.
+//
+// Nota RLS: las tablas dependientes del tenant tienen FORCE ROW LEVEL
+// SECURITY. Antes de escribir en ellas se fija app.tenant_id, el mismo
+// mecanismo que usa TenantPrismaService. El seed corre con DATABASE_URL (el
+// dueño del esquema, superusuario en local y en staging), que además puede
+// mover la fila de admin-test desde el tenant Ejemplo.
 
 const prisma = new PrismaClient();
 
-const TENANT_ID = '11111111-1111-1111-1111-111111111111';
-const RESTAURANTE_ID = '22222222-2222-2222-2222-222222222222';
-const MESA_ID = '33333333-3333-3333-3333-333333333333';
-const MESA_ID_2 = '33333333-3333-3333-3333-333333333334'; // e2e/llamado-mozo.spec.ts: mesa dedicada al test de rate limiting, para no compartir cupo con la mesa 1
-const CATEGORIA_ID = '44444444-4444-4444-4444-444444444444';
-const ITEM_CON_IMAGEN_ID = '55555555-5555-5555-5555-555555555555';
-const ITEM_SIN_IMAGEN_ID = '66666666-6666-6666-6666-666666666666';
+// ── Tenant A · «Restaurante Testing A» ───────────────────────────────────────
+// Ojo: estos IDs no son UUID RFC 4122 válidos (el 4to grupo no empieza con
+// 8, 9, a ni b); un @IsUUID() estricto los rechaza (ver TC-I-032).
+const TENANT_A_ID = '11111111-1111-1111-1111-111111111111';
+const RESTAURANTE_A_ID = '22222222-2222-2222-2222-222222222222';
+const MESA_A1_ID = '33333333-3333-3333-3333-333333333333';
+const MESA_A2_ID = '33333333-3333-3333-3333-333333333334'; // e2e/llamado-mozo.spec.ts: mesa dedicada al test de rate limiting, para no compartir cupo con la mesa 1
+const CATEGORIA_PLATOS_ID = '44444444-4444-4444-4444-444444444444';
+const CATEGORIA_BEBIDAS_ID = '44444444-4444-4444-4444-444444444445';
+const ITEM_MILANESA_ID = '55555555-5555-5555-5555-555555555555';
+const ITEM_AGUA_ID = '66666666-6666-6666-6666-666666666666';
 
-// Mozo del tenant Demo: fixture de HU-004 (test/integration/kds.e2e-spec.ts).
-// Vive en el tenant Demo (no en el tenant Ejemplo, donde están admin-test/
-// cocina-test) porque es el único tenant con mesa/restaurante/ítem de carta
-// ya cargados más abajo — necesarios para crear un pedido real en esos tests.
-//
-// El id de Keycloak tiene que coincidir EXACTO con el "id" del usuario
-// mozo-test en realm-export.json — mismo mecanismo que ADMIN_EJEMPLO_KEYCLOAK_ID
-// más abajo. Este UUID es el que ya existe hoy en el Keycloak local (creado
-// a mano durante el desarrollo de HU-004, antes de que este seed lo tuviera
-// declarado formalmente).
-const MOZO_DEMO_KEYCLOAK_ID = 'f552ec55-a5b5-44c3-a400-72ffc746c9b6';
-
-// Tenants "Ejemplo" y "B": no nacieron del seed original, sino que se crearon
-// a mano en Prisma Studio durante el desarrollo de HU-013 y ya quedaron
-// hardcodeados como fixtures en usuarios.service.spec.ts y en los e2e
-// (usuarios.e2e-spec.ts, tenant-isolation.e2e-spec.ts). Los IDs de acá deben
-// coincidir exactamente con esos archivos de test — si cambian, hay que
-// actualizar ambos lados.
-const TENANT_EJEMPLO_ID = '554915d0-f7ed-4053-b841-56479df29fd9';
-const RESTAURANTE_EJEMPLO_ID = '87152395-a721-4651-99b8-f21075d1d8ae';
-
+// ── Tenant B · «Restaurante Testing B» ───────────────────────────────────────
+// Sus IDs sí son UUID v4 válidos: en los tests de aislamiento, un rechazo es
+// por aislamiento y no por formato del id.
 const TENANT_B_ID = 'b02579f2-2bb0-496b-abf2-33c494c93122';
 const RESTAURANTE_B_ID = 'a46faef3-7412-45ae-af80-3829cd27b990';
 
-// Admin real del tenant Ejemplo: creado a mano en la consola de Keycloak
-// (no vía POST /usuarios, porque ese endpoint exige ya tener un Admin
-// autenticado — problema de huevo/gallina para el primer Admin de cada
-// tenant). Tiene rol ADMIN asignado, está Enabled, y coincide con el
-// username por defecto que usan los e2e (TEST_ADMIN_USERNAME ?? 'admin-test').
-// Es, a la fecha de este seed, el ÚNICO Admin activo del tenant Ejemplo —
-// por eso sirve como fixture para el test de RF.19 (rechazo 409 al intentar
-// desactivar/degradar al último Admin).
-const ADMIN_EJEMPLO_KEYCLOAK_ID = 'c832535d-6122-449d-8b21-2371d8b7d9d0';
+// ── Usuarios con fila en la base (IDs de keycloak/test-users.json) ─────────
+// Igual que en el alta de HU-027 (BL-163), tienen fila el Admin y el Mozo;
+// Cocina y el comensal técnico solo existen en Keycloak.
+//
+// admin-test es el ÚNICO Admin activo de A: es el fixture del test de RF.19
+// (409 al desactivar o degradar al último Admin).
+const ADMIN_TEST_KEYCLOAK_ID = 'c832535d-6122-449d-8b21-2371d8b7d9d0';
+const MOZO_TEST_KEYCLOAK_ID = 'f552ec55-a5b5-44c3-a400-72ffc746c9b6';
+const ADMIN_B_TEST_KEYCLOAK_ID = 'f3c4d5e6-7788-4990-aabb-ccddeeff0011';
 
-async function main() {
-  // 1. Tenant: NO tiene RLS (es la raíz del aislamiento), se puede insertar
-  //    sin fijar ninguna variable de sesión antes.
-  await prisma.tenant.upsert({
-    where: { id: TENANT_ID },
-    update: {},
+// Usernames: los mismos de Keycloak, que salen de las variables TEST_* (el
+// valor puede cambiar entre entornos; por ejemplo, el admin de B). En la base
+// el username es solo informativo (se muestra en /admin/usuarios): el vínculo
+// con Keycloak es keycloakId.
+const ADMIN_TEST_USERNAME = process.env.TEST_ADMIN_USERNAME ?? 'admin-test';
+const MOZO_TEST_USERNAME = process.env.TEST_MOZO_USERNAME ?? 'mozo-test';
+const ADMIN_B_TEST_USERNAME =
+  process.env.TEST_TENANT_B_USERNAME ?? 'admin-b-test';
+
+// Mesa virtual de HU-003 (pedidos sin mesa física): una por restaurante,
+// número 0. La API también la crea sola la primera vez que la necesita
+// (PedidosService); el seed la deja creada para que el restaurante nazca con
+// el mismo kit que un alta de HU-027.
+const NUMERO_MESA_VIRTUAL = 0;
+
+async function fijarTenant(tenantId: string) {
+  // Session-level (no local a una transacción): el seed no corre dentro de una.
+  await prisma.$executeRawUnsafe(
+    `SELECT set_config('app.tenant_id', $1, false)`,
+    tenantId,
+  );
+}
+
+async function mesaVirtual(tenantId: string, restauranteId: string) {
+  await prisma.mesa.upsert({
+    where: {
+      restauranteId_numero: { restauranteId, numero: NUMERO_MESA_VIRTUAL },
+    },
+    update: { esVirtual: true },
     create: {
-      id: TENANT_ID,
-      razonSocial: 'Restaurante Demo SRL',
+      tenantId,
+      restauranteId,
+      numero: NUMERO_MESA_VIRTUAL,
+      estado: 'LIBRE',
+      esVirtual: true,
+    },
+  });
+}
+
+async function tenantA() {
+  // Tenant: NO tiene RLS (es la raíz del aislamiento).
+  await prisma.tenant.upsert({
+    where: { id: TENANT_A_ID },
+    update: { razonSocial: 'Restaurante Testing A SRL' },
+    create: {
+      id: TENANT_A_ID,
+      razonSocial: 'Restaurante Testing A SRL',
       rut: '210000000019', // RUT ficticio, formato UY (12 dígitos)
       plan: 'BASICO',
     },
   });
 
-  // 2. A partir de acá, todo lo que insertemos pertenece a este tenant, así
-  //    que fijamos app.tenant_id para el resto del script (session-level,
-  //    no local a una transacción, porque el seed no corre dentro de una).
-  await prisma.$executeRawUnsafe(
-    `SELECT set_config('app.tenant_id', $1, false)`,
-    TENANT_ID,
-  );
+  await fijarTenant(TENANT_A_ID);
 
   await prisma.restaurante.upsert({
-    where: { id: RESTAURANTE_ID },
-    update: {},
+    where: { id: RESTAURANTE_A_ID },
+    update: { nombre: 'Restaurante Testing A' },
     create: {
-      id: RESTAURANTE_ID,
-      tenantId: TENANT_ID,
-      nombre: 'BistroLink Demo',
+      id: RESTAURANTE_A_ID,
+      tenantId: TENANT_A_ID,
+      nombre: 'Restaurante Testing A',
       direccion: 'Av. Italia 1234, Montevideo',
       timezone: 'America/Montevideo',
     },
   });
 
-  await prisma.mesa.upsert({
-    where: { id: MESA_ID },
-    update: {},
-    create: {
-      id: MESA_ID,
-      tenantId: TENANT_ID,
-      restauranteId: RESTAURANTE_ID,
-      numero: 1,
-      estado: 'LIBRE',
-    },
-  });
-
-  await prisma.mesa.upsert({
-    where: { id: MESA_ID_2 },
-    update: {},
-    create: {
-      id: MESA_ID_2,
-      tenantId: TENANT_ID,
-      restauranteId: RESTAURANTE_ID,
-      numero: 2,
-      estado: 'LIBRE',
-    },
-  });
+  for (const [id, numero] of [
+    [MESA_A1_ID, 1],
+    [MESA_A2_ID, 2],
+  ] as const) {
+    await prisma.mesa.upsert({
+      where: { id },
+      update: {},
+      create: {
+        id,
+        tenantId: TENANT_A_ID,
+        restauranteId: RESTAURANTE_A_ID,
+        numero,
+        estado: 'LIBRE',
+      },
+    });
+  }
+  await mesaVirtual(TENANT_A_ID, RESTAURANTE_A_ID);
 
   await prisma.categoriaCarta.upsert({
-    where: { id: CATEGORIA_ID },
+    where: { id: CATEGORIA_PLATOS_ID },
     update: {},
     create: {
-      id: CATEGORIA_ID,
-      tenantId: TENANT_ID,
-      restauranteId: RESTAURANTE_ID,
+      id: CATEGORIA_PLATOS_ID,
+      tenantId: TENANT_A_ID,
+      restauranteId: RESTAURANTE_A_ID,
       nombre: 'Platos principales',
       orden: 1,
     },
   });
 
-  // Un ítem CON imagen (para probar el flujo de URL firmada) y uno SIN
-  // imagen (para confirmar que imagenUrl da null en vez de romper).
-  await prisma.itemCarta.upsert({
-    where: { id: ITEM_CON_IMAGEN_ID },
+  await prisma.categoriaCarta.upsert({
+    where: { id: CATEGORIA_BEBIDAS_ID },
     update: {},
     create: {
-      id: ITEM_CON_IMAGEN_ID,
-      tenantId: TENANT_ID,
-      categoriaId: CATEGORIA_ID,
+      id: CATEGORIA_BEBIDAS_ID,
+      tenantId: TENANT_A_ID,
+      restauranteId: RESTAURANTE_A_ID,
+      nombre: 'Bebidas',
+      orden: 2,
+    },
+  });
+
+  // Sin imagen: el seed no sube archivos a S3, así que no referencia ninguno
+  // (antes apuntaba a items/milanesa.jpg, que no existía y daba 404 en cada
+  // carga del menú). El flujo de imágenes se prueba subiendo una desde el
+  // panel de administración. Los E2E buscan estos ítems por nombre
+  // (e2e/support/ids.ts): no renombrarlos.
+  await prisma.itemCarta.upsert({
+    where: { id: ITEM_MILANESA_ID },
+    update: { imagenKey: null },
+    create: {
+      id: ITEM_MILANESA_ID,
+      tenantId: TENANT_A_ID,
+      categoriaId: CATEGORIA_PLATOS_ID,
       nombre: 'Milanesa a la napolitana',
       descripcion: 'Con papas fritas y ensalada mixta',
       precio: 590,
       disponible: true,
-      imagenKey: `${TENANT_ID}/items/milanesa.jpg`,
-    },
-  });
-
-  await prisma.itemCarta.upsert({
-    where: { id: ITEM_SIN_IMAGEN_ID },
-    update: {},
-    create: {
-      id: ITEM_SIN_IMAGEN_ID,
-      tenantId: TENANT_ID,
-      categoriaId: CATEGORIA_ID,
-      nombre: 'Agua con gas',
-      descripcion: null,
-      precio: 90,
-      disponible: false, // para probar el bloqueo visual del frontend más adelante
       imagenKey: null,
     },
   });
 
-  // Mozo del tenant Demo (ver comentario de MOZO_DEMO_KEYCLOAK_ID arriba).
-  // Igual que con admin-test: where:{ keycloakId } porque es el dato
-  // estable que no cambia si en algún momento se recrea la fila de Postgres.
-  await prisma.usuario.upsert({
-    where: { keycloakId: MOZO_DEMO_KEYCLOAK_ID },
-    update: {},
+  // Agotado a propósito: lo usan los E2E del bloqueo visual (menu.spec.ts,
+  // menu-publico.spec.ts).
+  await prisma.itemCarta.upsert({
+    where: { id: ITEM_AGUA_ID },
+    update: { categoriaId: CATEGORIA_BEBIDAS_ID },
     create: {
-      tenantId: TENANT_ID,
-      restauranteId: RESTAURANTE_ID,
-      keycloakId: MOZO_DEMO_KEYCLOAK_ID,
-      username: 'mozo-test',
+      id: ITEM_AGUA_ID,
+      tenantId: TENANT_A_ID,
+      categoriaId: CATEGORIA_BEBIDAS_ID,
+      nombre: 'Agua con gas',
+      descripcion: null,
+      precio: 90,
+      disponible: false,
+      imagenKey: null,
+    },
+  });
+
+  // where: { keycloakId }: es el dato estable, que no cambia si se recrea la
+  // fila de Postgres.
+  await prisma.usuario.upsert({
+    where: { keycloakId: MOZO_TEST_KEYCLOAK_ID },
+    update: { username: MOZO_TEST_USERNAME },
+    create: {
+      tenantId: TENANT_A_ID,
+      restauranteId: RESTAURANTE_A_ID,
+      keycloakId: MOZO_TEST_KEYCLOAK_ID,
+      username: MOZO_TEST_USERNAME,
       email: 'mozo-test@bistrolink.dev.com',
       rol: 'MOZO',
       activo: true,
     },
   });
 
-  // ── Tenant Ejemplo: fixture de HU-013 (gestión de usuarios/roles) ────────
-  // No tiene mesa/categoría/ítems propios porque no se usa para probar
-  // HU-001 (menú), sino la gestión de usuarios — si en el futuro hace falta
-  // probar el menú también sobre este tenant, agregar esos bloques acá.
-  await prisma.tenant.upsert({
-    where: { id: TENANT_EJEMPLO_ID },
-    update: {},
-    create: {
-      id: TENANT_EJEMPLO_ID,
-      razonSocial: 'Restaurante Ejemplo SRL',
-      rut: '210000000000',
-      plan: 'BASICO',
-    },
-  });
-
-  await prisma.$executeRawUnsafe(
-    `SELECT set_config('app.tenant_id', $1, false)`,
-    TENANT_EJEMPLO_ID,
-  );
-
-  await prisma.restaurante.upsert({
-    where: { id: RESTAURANTE_EJEMPLO_ID },
-    update: {},
-    create: {
-      id: RESTAURANTE_EJEMPLO_ID,
-      tenantId: TENANT_EJEMPLO_ID,
-      nombre: 'Restaurante Ejemplo - Sucursal Centro',
-      direccion: 'Av. 18 de Julio 1234, Montevideo',
-      timezone: 'America/Montevideo',
-    },
-  });
-
-  // Nota: usamos where:{ keycloakId } porque es el dato estable que no
-  // cambia si en algún momento se recrea la fila de Postgres — a diferencia
-  // de un id de Postgres autogenerado, que sería distinto cada vez.
+  // El update mueve a admin-test desde el tenant Ejemplo (bases anteriores a
+  // BL-197) y lo deja activo y como ADMIN, que es lo que espera RF.19.
   await prisma.usuario.upsert({
-    where: { keycloakId: ADMIN_EJEMPLO_KEYCLOAK_ID },
-    update: {},
+    where: { keycloakId: ADMIN_TEST_KEYCLOAK_ID },
+    update: {
+      tenantId: TENANT_A_ID,
+      restauranteId: RESTAURANTE_A_ID,
+      username: ADMIN_TEST_USERNAME,
+      rol: 'ADMIN',
+      activo: true,
+    },
     create: {
-      tenantId: TENANT_EJEMPLO_ID,
-      restauranteId: RESTAURANTE_EJEMPLO_ID,
-      keycloakId: ADMIN_EJEMPLO_KEYCLOAK_ID,
-      username: 'admin-test',
+      tenantId: TENANT_A_ID,
+      restauranteId: RESTAURANTE_A_ID,
+      keycloakId: ADMIN_TEST_KEYCLOAK_ID,
+      username: ADMIN_TEST_USERNAME,
       email: 'admin-test@bistrolink.dev.com',
       rol: 'ADMIN',
       activo: true,
     },
   });
+}
 
-  // ── Tenant B: fixture usada para probar aislamiento cruzado (RD.07) ─────
-  // Su único propósito en los tests es NO pertenecer al Admin del tenant
-  // Ejemplo — ver TC-I-007 (rechazo 403) y TC-I-005 (aislamiento de lectura).
+async function tenantB() {
   await prisma.tenant.upsert({
     where: { id: TENANT_B_ID },
-    update: {},
+    update: { razonSocial: 'Restaurante Testing B SRL' },
     create: {
       id: TENANT_B_ID,
-      razonSocial: 'Restaurante Tenant B',
+      razonSocial: 'Restaurante Testing B SRL',
       rut: '210000000001',
       plan: 'BASICO',
     },
   });
 
-  await prisma.$executeRawUnsafe(
-    `SELECT set_config('app.tenant_id', $1, false)`,
-    TENANT_B_ID,
-  );
+  await fijarTenant(TENANT_B_ID);
 
   await prisma.restaurante.upsert({
     where: { id: RESTAURANTE_B_ID },
-    update: {},
+    update: { nombre: 'Restaurante Testing B' },
     create: {
       id: RESTAURANTE_B_ID,
       tenantId: TENANT_B_ID,
-      nombre: 'Restaurante B - Sucursal',
+      nombre: 'Restaurante Testing B',
       direccion: 'Otra dirección 456',
       timezone: 'America/Montevideo',
     },
   });
 
-  console.log('✅ Seed aplicado. Probá:');
-  console.log(`   GET /menu/${TENANT_ID}/${MESA_ID}`);
-  console.log(`   Tenant Ejemplo: ${TENANT_EJEMPLO_ID}`);
-  console.log(`   Tenant B:       ${TENANT_B_ID}`);
+  await mesaVirtual(TENANT_B_ID, RESTAURANTE_B_ID);
+
+  await prisma.usuario.upsert({
+    where: { keycloakId: ADMIN_B_TEST_KEYCLOAK_ID },
+    update: { username: ADMIN_B_TEST_USERNAME },
+    create: {
+      tenantId: TENANT_B_ID,
+      restauranteId: RESTAURANTE_B_ID,
+      keycloakId: ADMIN_B_TEST_KEYCLOAK_ID,
+      username: ADMIN_B_TEST_USERNAME,
+      email: 'admin-b-test@bistrolink.dev.com',
+      rol: 'ADMIN',
+      activo: true,
+    },
+  });
+}
+
+async function main() {
+  await tenantA();
+  await tenantB();
+
+  console.log('✅ Seed aplicado (tenants de testing A y B). Probá:');
+  console.log(`   GET /menu/${TENANT_A_ID}/${MESA_A1_ID}`);
+  console.log(`   Tenant A: ${TENANT_A_ID}`);
+  console.log(`   Tenant B: ${TENANT_B_ID}`);
 }
 
 main()

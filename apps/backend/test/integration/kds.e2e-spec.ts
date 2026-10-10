@@ -10,7 +10,7 @@ const REALM = process.env.KEYCLOAK_REALM ?? 'bistrolink';
 const CLIENT_ID = process.env.KEYCLOAK_CLIENT_ID ?? 'bistrolink-backend';
 const CLIENT_SECRET = process.env.KEYCLOAK_CLIENT_SECRET ?? '';
 
-// Fixtures ya existentes (tenant Ejemplo) - alcanza para el test de
+// cocina-test del tenant de testing A (BL-197) - alcanza para el test de
 // autorizacion, que no necesita un pedido real, solo un rol invalido.
 const COCINA_USER = process.env.TEST_COCINA_USERNAME;
 const COCINA_PASS = process.env.TEST_COCINA_PASSWORD;

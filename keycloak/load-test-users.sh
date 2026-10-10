@@ -45,10 +45,15 @@ USUARIOS=(
   "f3c4d5e6-7788-4990-aabb-ccddeeff0011:TEST_TENANT_B_PASSWORD"
   "f552ec55-a5b5-44c3-a400-72ffc746c9b6:TEST_MOZO_PASSWORD"
   "aeb7e03f-8364-58a1-b31d-9aaed44a32cf:KEYCLOAK_COMENSAL_PASSWORD"
+  # BL-197: kit del tenant de testing B (Cocina y comensal técnico). Todos
+  # los comensales técnicos usan la misma contraseña: es la que usa la API
+  # para pedir el token de comensal-<tenantId> (AuthComensalService).
+  "0fd5421a-a1f4-4fe4-ab95-8a3482a3e5cd:TEST_COCINA_B_PASSWORD"
+  "ef9069c3-2243-49b4-9814-a8e53717857c:KEYCLOAK_COMENSAL_PASSWORD"
 )
 USERNAME_VARS=(
   TEST_ADMIN_USERNAME TEST_COCINA_USERNAME TEST_NO_TENANT_USERNAME
-  TEST_TENANT_B_USERNAME TEST_MOZO_USERNAME
+  TEST_TENANT_B_USERNAME TEST_MOZO_USERNAME TEST_COCINA_B_USERNAME
 )
 
 if [ ! -f "$USERS_FILE" ]; then
