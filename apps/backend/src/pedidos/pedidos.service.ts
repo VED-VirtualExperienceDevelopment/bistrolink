@@ -7,6 +7,7 @@ import { PrismaClient } from '@prisma/client';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { CrearPedidoDto } from './dto/crear-pedido.dto';
 import { KdsGateway } from './kds.gateway';
+import { aPedidoKds } from './pedido-kds.mapper';
 
 export const ESTADO_INICIAL_PEDIDO = 'RECIBIDO' as const;
 const NUMERO_MESA_VIRTUAL = 0;
@@ -19,15 +20,14 @@ export class PedidosService {
   ) {}
 
   async crear(tenantId: string, dto: CrearPedidoDto) {
-    const { pedido, esNuevo } = await this.tenantPrisma.runInTenantContext(
-      tenantId,
-      async (tx) => {
+    const { pedido, esNuevo, mesaNumero } =
+      await this.tenantPrisma.runInTenantContext(tenantId, async (tx) => {
         const existente = await tx.pedido.findUnique({
           where: { idempotencyKey: dto.idempotencyKey },
           include: { lineas: true },
         });
         if (existente) {
-          return { pedido: existente, esNuevo: false };
+          return { pedido: existente, esNuevo: false, mesaNumero: null };
         }
 
         const mesa = dto.mesaId
@@ -90,12 +90,18 @@ export class PedidosService {
           include: { lineas: true },
         });
 
-        return { pedido: nuevoPedido, esNuevo: true };
-      },
-    );
+        return { pedido: nuevoPedido, esNuevo: true, mesaNumero: mesa.numero };
+      });
 
-    if (esNuevo) {
-      this.kdsGateway.emitirNuevoPedido(tenantId, pedido);
+    // después
+    // BL-244: al KDS se le emite el pedido con la misma forma que el
+    // snapshot (mesaNumero incluido), no el objeto crudo de Prisma. La
+    // respuesta al comensal (`return pedido`) no cambia.
+    if (esNuevo && mesaNumero !== null) {
+      this.kdsGateway.emitirNuevoPedido(
+        tenantId,
+        aPedidoKds({ ...pedido, mesa: { numero: mesaNumero } }),
+      );
     }
 
     return pedido;
