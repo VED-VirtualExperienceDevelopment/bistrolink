@@ -2,6 +2,11 @@
   <img src="docs/assets/bistrolink-banner.svg" alt="BistroLink: menú digital, pedido por QR, pago y facturación electrónica" width="100%">
 </p>
 
+> **Copyright (c) 2026. Todos los derechos reservados.**
+> Este código es propietario y confidencial. Queda estrictamente prohibida su copia, distribución, modificación o uso comercial sin autorización expresa de los autores.
+
+<p align="center">
+
 <p align="center">
   <a href="https://github.com/VED-VirtualExperienceDevelopment/bistrolink/actions/workflows/ci.yml"><img src="https://github.com/VED-VirtualExperienceDevelopment/bistrolink/actions/workflows/ci.yml/badge.svg" alt="CI/CD BistroLink"></a>
   <a href="https://codecov.io/gh/VED-VirtualExperienceDevelopment/bistrolink/branch/develop"><img src="https://codecov.io/gh/VED-VirtualExperienceDevelopment/bistrolink/branch/develop/graph/badge.svg" alt="codecov"></a>
@@ -15,23 +20,22 @@
   <img src="https://img.shields.io/badge/Prisma-381e72?logo=prisma&logoColor=white" alt="Prisma">
   <img src="https://img.shields.io/badge/Keycloak-381e72?logo=keycloak&logoColor=white" alt="Keycloak">
   <img src="https://img.shields.io/badge/Playwright-c9a74d?logo=playwright&logoColor=white" alt="Playwright">
-  <img src="https://img.shields.io/badge/licencia-MIT-c9a74d" alt="Licencia MIT">
 </p>
 
 Middleware que conecta el menú digital, el pedido autogestionado (QR/web), el pago electrónico y la facturación electrónica con el POS y el KDS ya instalados en el local, sin reemplazarlos.
 
 ## Stack
 
-| Capa | Tecnología |
-|---|---|
-| Frontend | Next.js + React |
-| Backend | NestJS |
-| Tiempo real | Socket.io (WebSocket) |
-| Base de datos | PostgreSQL + Prisma (multi-tenant, RLS) |
-| Autenticación | Keycloak (OAuth2/OIDC) |
-| Testing | Jest (unitarios e integración), Playwright (E2E), k6 y Lighthouse (performance) |
-| Gestión de casos de prueba | Kiwi TCMS |
-| Hosting | Railway (staging y producción), imágenes en GHCR |
+| Capa                       | Tecnología                                                                      |
+| -------------------------- | ------------------------------------------------------------------------------- |
+| Frontend                   | Next.js + React                                                                 |
+| Backend                    | NestJS                                                                          |
+| Tiempo real                | Socket.io (WebSocket)                                                           |
+| Base de datos              | PostgreSQL + Prisma (multi-tenant, RLS)                                         |
+| Autenticación              | Keycloak (OAuth2/OIDC)                                                          |
+| Testing                    | Jest (unitarios e integración), Playwright (E2E), k6 y Lighthouse (performance) |
+| Gestión de casos de prueba | Kiwi TCMS                                                                       |
+| Hosting                    | Railway (staging y producción), imágenes en GHCR                                |
 
 ## Monorepo
 
@@ -76,11 +80,11 @@ Requisitos: **Node.js 22** y **Docker**.
 
 ## Tests
 
-| Qué | Comando (desde la raíz) | Detalle |
-|---|---|---|
-| Unitarios (backend y frontend) | `npm test` | Jest; cobertura con `npm run test:cov` |
-| E2E | `npm run test:e2e` | Playwright; ver [`e2e/README.md`](e2e/README.md) |
-| Carga | — | k6, con el workflow manual `performance.yml` |
+| Qué                            | Comando (desde la raíz) | Detalle                                          |
+| ------------------------------ | ----------------------- | ------------------------------------------------ |
+| Unitarios (backend y frontend) | `npm test`              | Jest; cobertura con `npm run test:cov`           |
+| E2E                            | `npm run test:e2e`      | Playwright; ver [`e2e/README.md`](e2e/README.md) |
+| Carga                          | —                       | k6, con el workflow manual `performance.yml`     |
 
 Los resultados de los tests automáticos se reportan a Kiwi TCMS desde el pipeline.
 
@@ -95,7 +99,7 @@ Pipeline en GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.ym
 - 🛡️ **CodeQL** y 📊 **SonarCloud**: análisis estático (SAST).
 - 📦 **Dependencias**: Trivy sobre el lockfile (vulnerabilidades críticas y altas de las dependencias de producción) y `dependency-review` en los PRs.
 - 🐳 **Build + Escaneo**: imágenes de API, Web y Auth, escaneo con Trivy y publicación en GHCR.
-- 🚀 **Deploy staging**: automático en cada push a `develop`. Railway aplica las migraciones de Prisma antes de arrancar la API (*pre-deploy*), y el pipeline hace un smoke test con reintentos.
+- 🚀 **Deploy staging**: automático en cada push a `develop`. Railway aplica las migraciones de Prisma antes de arrancar la API (_pre-deploy_), y el pipeline hace un smoke test con reintentos.
 - 🔦 **Lighthouse**: performance mobile contra staging.
 - 🎭 **E2E (Playwright)**: cuatro navegadores contra staging. En `develop` es informativo y no corta el pipeline; en `main` y en los tags de release es bloqueante.
 
@@ -105,21 +109,21 @@ Las ramas `develop` y `main` están protegidas: solo se mergea por PR, con revis
 
 ### Otros workflows
 
-| Workflow | Qué hace |
-|---|---|
-| [`publicar-dashboards.yml`](.github/workflows/publicar-dashboards.yml) | Genera los dashboards de avance (Linear) y de bugs (GitHub Issues), los publica en GitHub Pages y manda el correo de estado al cierre de cada sprint |
-| [`db-backup-check.yml`](.github/workflows/db-backup-check.yml) | Todos los días: controla que exista el respaldo del día de las bases |
-| [`db-backup-restore-test.yml`](.github/workflows/db-backup-restore-test.yml) | Todos los meses: prueba la restauración del último respaldo en un entorno temporal |
-| [`ghcr-cleanup.yml`](.github/workflows/ghcr-cleanup.yml) | Todas las semanas: limpia imágenes viejas de GHCR y conserva las de release |
-| [`performance.yml`](.github/workflows/performance.yml) | Manual: pruebas de carga con k6 y Lighthouse, con reporte a Kiwi TCMS |
-| [`cleanup-test-runs.yml`](.github/workflows/cleanup-test-runs.yml) | Manual: limpia corridas viejas en Kiwi TCMS |
+| Workflow                                                                     | Qué hace                                                                                                                                             |
+| ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`publicar-dashboards.yml`](.github/workflows/publicar-dashboards.yml)       | Genera los dashboards de avance (Linear) y de bugs (GitHub Issues), los publica en GitHub Pages y manda el correo de estado al cierre de cada sprint |
+| [`db-backup-check.yml`](.github/workflows/db-backup-check.yml)               | Todos los días: controla que exista el respaldo del día de las bases                                                                                 |
+| [`db-backup-restore-test.yml`](.github/workflows/db-backup-restore-test.yml) | Todos los meses: prueba la restauración del último respaldo en un entorno temporal                                                                   |
+| [`ghcr-cleanup.yml`](.github/workflows/ghcr-cleanup.yml)                     | Todas las semanas: limpia imágenes viejas de GHCR y conserva las de release                                                                          |
+| [`performance.yml`](.github/workflows/performance.yml)                       | Manual: pruebas de carga con k6 y Lighthouse, con reporte a Kiwi TCMS                                                                                |
+| [`cleanup-test-runs.yml`](.github/workflows/cleanup-test-runs.yml)           | Manual: limpia corridas viejas en Kiwi TCMS                                                                                                          |
 
 ## Ambientes
 
-| Servicio | Staging |
-|---|---|
-| Web | https://bistrolink-web-staging.up.railway.app |
-| Testing (Kiwi TCMS) | https://testmgmt-staging.up.railway.app |
+| Servicio                   | Staging                                                        |
+| -------------------------- | -------------------------------------------------------------- |
+| Web                        | https://bistrolink-web-staging.up.railway.app                  |
+| Testing (Kiwi TCMS)        | https://testmgmt-staging.up.railway.app                        |
 | Dashboards (avance y bugs) | https://ved-virtualexperiencedevelopment.github.io/bistrolink/ |
 
 ## Documentación
@@ -136,4 +140,6 @@ Los commits siguen Conventional Commits con el ticket de Linear y se hacen con `
 
 ## Licencia
 
-[MIT](LICENSE)
+**Copyright (c) 2026. Todos los derechos reservados.**
+
+Este código es propietario y confidencial. Queda estrictamente prohibida su copia, distribución, modificación o uso comercial sin autorización expresa de los autores. No se otorga ninguna licencia de uso público.
