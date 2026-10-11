@@ -73,6 +73,10 @@ const nextConfig = {
         protocol: "https",
         hostname: "*.s3.*.amazonaws.com",
       },
+      {
+        protocol: "https",
+        hostname: "images.unsplash.com",
+      },
     ],
   },
   // BL-160: konva trae una rama de código para Node (lib/index-node.js) que

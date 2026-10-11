@@ -4,36 +4,39 @@ import { useState } from 'react';
 import { esPlaceholder, srcImagenItem } from './item-imagen.utils';
 
 interface ItemImagenProps {
-  /** URL firmada que devuelve el backend. null/undefined si el ítem no tiene imagen o no se pudo firmar. */
   readonly url?: string | null;
   readonly alt: string;
   readonly className?: string;
+  readonly priority?: boolean;
 }
 
 /**
  * BL-195 / BL-257: imagen de un ítem del menú con placeholder.
- *
- * Si no hay URL o la imagen falla al cargar (404 en S3, URL vencida, etc.),
- * muestra el placeholder local en lugar de una imagen rota o un hueco, así
- * el layout de la tarjeta no cambia.
- *
- * Se guarda la URL que falló (y no un booleano) para que, si el ítem cambia
- * de imagen (ej. se edita en el admin), la nueva URL se intente cargar de nuevo.
+ * 
+ * Usa <img> nativa en lugar de next/Image porque las URLs firmadas de S3
+ * cambian en cada request y Next Image no puede cachearlas correctamente.
+ * Con loading="lazy" igual mejora performance en mobile.
  */
-export default function ItemImagen({ url, alt, className }: ItemImagenProps) {
+export default function ItemImagen({
+  url,
+  alt,
+  className,
+  priority = false,
+}: ItemImagenProps) {
   const [urlFallida, setUrlFallida] = useState<string | null>(null);
   const src = srcImagenItem(url, url != null && url === urlFallida);
 
-    return (
-    // URLs firmadas: cambian en cada request y el optimizador de next/image no
-    // puede cachearlas (ver BL-199). Volver a <Image /> cuando haya CDN.
+  return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
       src={src}
       alt={alt}
+      width={800}
+      height={450}
       className={className}
+      loading={priority ? 'eager' : 'lazy'}
+      decoding="async"
       onError={() => {
-        // Si el que falla es el placeholder, no hay nada más que probar.
         if (!esPlaceholder(src)) {
           setUrlFallida(url ?? null);
         }
