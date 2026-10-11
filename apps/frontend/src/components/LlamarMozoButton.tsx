@@ -88,9 +88,9 @@ export function LlamarMozoButton({ tenantId, mesaId }: LlamarMozoButtonProps) {
           group relative overflow-hidden flex items-center justify-center gap-2.5 px-8 py-3 rounded-full font-semibold text-sm md:text-base transition-all duration-300 ease-out shadow-sm
           ${
             estado === 'idle'
-              ? 'bg-white border border-brand-800/30 text-brand-800 hover:border-brand-800 hover:bg-brand-800/5 active:scale-[0.95]'
+              ? 'bg-white border border-[#6e54ad]/30 text-[#6e54ad] hover:border-[#6e54ad] hover:bg-[#6e54ad]/5 active:scale-[0.95]'
               : estado === 'enviando'
-              ? 'bg-brand-800/10 border border-transparent text-brand-800 cursor-not-allowed'
+              ? 'bg-[#6e54ad]/10 border border-transparent text-[#6e54ad] cursor-not-allowed'
               : estado === 'enviado'
               ? 'bg-[#1e8e3e]/10 border border-[#1e8e3e]/30 text-[#1e8e3e] cursor-not-allowed scale-105'
               : 'bg-red-800/10 border border-red-800/30 text-red-800 active:scale-[0.95] animate-shake'
