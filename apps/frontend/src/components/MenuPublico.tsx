@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback, useMemo } from 'react';
+import dynamic from 'next/dynamic';
 import type {
   CategoriaCarta,
   ItemCarrito,
@@ -9,10 +10,16 @@ import type {
   RestaurantePublico,
 } from '@/types/menu';
 import { apiFetch, ApiError } from '@/lib/api-client';
-// RESUELTO: Mantenemos ambos imports
-import ItemNotaModal from './ItemNotaModal';
-import { SeguimientoPedido } from './SeguimientoPedido';
 import ItemImagen from './menu/ItemImagen';
+
+const ItemNotaModal = dynamic(() => import('./ItemNotaModal'), { ssr: false });
+const SeguimientoPedido = dynamic(
+  () => import('./SeguimientoPedido').then(mod => ({ default: mod.SeguimientoPedido })),
+  {
+    ssr: false,
+    loading: () => null,
+  }
+);
 
 interface MenuPublicoProps {
   readonly restaurante: RestaurantePublico;
@@ -35,9 +42,8 @@ export default function MenuPublico({
   const [observacionGeneral, setObservacionGeneral] = useState('');
   const [itemNotaAbierto, setItemNotaAbierto] = useState<ItemCarrito | null>(null);
   const [notaTemporal, setNotaTemporal] = useState('');
-  
+
   const [estadoPedido, setEstadoPedido] = useState<'idle' | 'enviando' | 'confirmado' | 'error'>('idle');
-  // RESUELTO: Mantenemos ambos estados
   const [pedidoConfirmado, setPedidoConfirmado] = useState<PedidoConfirmado | null>(null);
   const [tokenComensal, setTokenComensal] = useState<string | null>(null);
   const [errorPedido, setErrorPedido] = useState<string | null>(null);
@@ -170,7 +176,6 @@ export default function MenuPublico({
         }),
       });
 
-      // RESUELTO: Mantenemos ambas actualizaciones de estado
       setPedidoConfirmado(pedido);
       setTokenComensal(accessToken);
       setEstadoPedido('confirmado');
@@ -183,46 +188,60 @@ export default function MenuPublico({
   };
 
   return (
-    <div className="min-h-screen bg-culinary-background">
-      <header className="bg-culinary-primary shadow-sm sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
-          <h1 className="text-2xl font-bold text-white sm:text-3xl">
-            {restaurante.nombre}
-          </h1>
-          <p className="text-sm text-white/80 mt-1 sm:text-base">
-            {restaurante.direccion}
-          </p>
-          <div className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 bg-white/15 border border-white/25 rounded-full">
-            <span className="text-sm" role="img" aria-label="Tienda">🛍️</span>
-            <span className="text-sm font-medium text-white">
-              Pedido desde fuera del local
-            </span>
+    <div className="min-h-screen bg-culinary-background pb-24">
+      {/* Top Navbar simplificado */}
+      <nav className="fixed top-0 w-full z-50 flex justify-between items-center px-4 md:px-8 h-16 bg-white border-b border-culinary-neutral/10">
+        <div className="flex items-center gap-4">
+          <span className="text-xl md:text-2xl font-bold text-culinary-primary">BistroLink</span>
+        </div>
+        <div className="flex items-center gap-4 text-culinary-primary">
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-culinary-primary/10 rounded-full">
+            <span className="text-sm font-medium">Pedido desde fuera</span>
           </div>
         </div>
-      </header>
+      </nav>
 
-      {/* RESUELTO: Usamos la estructura de develop que incluye el SeguimientoPedido */}
-      {estadoPedido === 'confirmado' && pedidoConfirmado && tokenComensal && (
-        <div className="max-w-7xl mx-auto px-4 pt-6 sm:px-6 lg:px-8">
-          <div className="bg-white border border-culinary-neutral/10 rounded-[1rem] p-4">
-            <div className="flex items-start gap-3">
-              <span className="text-2xl" role="img" aria-label="Confirmado">
-                ✅
+      <main className="pt-20 px-4 md:px-8 max-w-[1440px] mx-auto flex flex-col gap-10">
+        
+        {/* Hero Section Banner */}
+        <section className="w-full">
+          <div className="relative w-full h-[250px] md:h-[350px] rounded-[1rem] overflow-hidden group bg-culinary-neutral/80">
+            {/* Imagen de fondo genérica para el restaurante (puedes cambiar la URL o hacerla dinámica luego) */}
+            <div 
+              className="absolute inset-0 bg-cover bg-center w-full h-full transition-transform duration-700 group-hover:scale-105"
+              style={{ backgroundImage: "url('https://images.unsplash.com/photo-1514933651103-005eec06c04b?q=80&w=1974&auto=format&fit=crop')" }}
+            ></div>
+            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-black/10"></div>
+            
+            <div className="absolute bottom-0 left-0 p-6 md:p-8 w-full flex flex-col justify-end">
+              <span className="inline-flex items-center px-3 py-1 rounded-full bg-white/20 backdrop-blur-sm text-white font-medium text-xs md:text-sm mb-3 w-max">
+                📍 {restaurante.direccion}
               </span>
-              <p className="font-semibold text-culinary-on-surface">
-                ¡Pedido enviado! Cocina ya lo recibió.
-              </p>
+              <h1 className="text-3xl md:text-5xl font-bold text-white mb-2 tracking-tight">
+                {restaurante.nombre}
+              </h1>
             </div>
-            <SeguimientoPedido
-              pedidoId={pedidoConfirmado.id}
-              token={tokenComensal}
-              estadoInicial={pedidoConfirmado.estado}
-            />
           </div>
-        </div>
-      )}
+        </section>
 
-      <main className="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
+        {estadoPedido === 'confirmado' && pedidoConfirmado && tokenComensal && (
+          <section className="w-full">
+            <div className="bg-white border border-culinary-neutral/10 rounded-[1rem] p-5 shadow-sm">
+              <div className="flex items-start gap-3">
+                <span className="text-2xl" role="img" aria-label="Confirmado">✅</span>
+                <p className="font-semibold text-culinary-on-surface text-lg">
+                  ¡Pedido enviado! La cocina ya lo recibió.
+                </p>
+              </div>
+              <SeguimientoPedido
+                pedidoId={pedidoConfirmado.id}
+                token={tokenComensal}
+                estadoInicial={pedidoConfirmado.estado}
+              />
+            </div>
+          </section>
+        )}
+
         {categorias.length === 0 ? (
           <div className="text-center py-16 bg-white rounded-[1rem] border border-culinary-neutral/10">
             <div className="text-6xl mb-4">🍽️</div>
@@ -234,51 +253,64 @@ export default function MenuPublico({
             </p>
           </div>
         ) : (
-          <div className="space-y-8">
-            {categorias.map((categoria) => (
-              <section
-                key={categoria.id}
-                className="bg-white rounded-[1rem] border border-culinary-neutral/10 p-6"
-              >
-                <h2 className="text-xl font-bold text-culinary-on-surface mb-4 pb-2 border-b border-culinary-neutral/10">
-                  {categoria.nombre}
-                </h2>
+          <div className="space-y-12">
+            {categorias.map((categoria, categoriaIndex) => (
+              <section key={categoria.id} id={`categoria-${categoria.id}`} className="w-full">
+                <div className="flex items-center justify-between mb-6 border-b border-culinary-neutral/10 pb-2">
+                  <h2 className="text-2xl font-bold text-culinary-on-surface">
+                    {categoria.nombre}
+                  </h2>
+                  <span className="text-sm font-medium text-culinary-neutral">
+                    {categoria.items.length} {categoria.items.length === 1 ? 'ítem' : 'ítems'}
+                  </span>
+                </div>
 
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {categoria.items.map((item) => (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {categoria.items.map((item, index) => (
                     <article
                       key={item.id}
-                      className="border border-culinary-neutral/15 rounded-[1rem] p-4 hover:border-culinary-primary/40 transition-colors flex flex-col"
+                      className="bg-white rounded-[1rem] border border-culinary-neutral/15 flex flex-col sm:flex-row overflow-hidden hover:shadow-[0px_4px_20px_rgba(121,118,125,0.08)] transition-shadow group"
                     >
-                      {item.imagenUrl && (
+                      <div className="w-full sm:w-2/5 h-48 sm:h-auto shrink-0 relative overflow-hidden bg-culinary-neutral/5">
                         <ItemImagen
-                        url={item.imagenUrl}
-                        alt={item.nombre}
-                        className="w-full h-48 object-cover rounded-[0.5rem] mb-3"
-                      />
-                      )}
-                      <h3 className="font-semibold text-culinary-on-surface mb-1">
-                        {item.nombre}
-                      </h3>
+                          url={item.imagenUrl}
+                          alt={item.nombre}
+                          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                          priority={categoriaIndex === 0 && index === 0}
+                        />
+                      </div>
 
-                      {item.descripcion && (
-                        <p className="text-sm text-culinary-neutral mb-2 line-clamp-2">
-                          {item.descripcion}
-                        </p>
-                      )}
+                      <div className="p-5 flex flex-col justify-between flex-1">
+                        <div>
+                          <div className="flex justify-between items-start mb-2 gap-3">
+                            <h3 className="font-semibold text-lg text-culinary-on-surface leading-tight">
+                              {item.nombre}
+                            </h3>
+                            <span className="font-bold text-lg text-culinary-primary shrink-0">
+                              ${formatearPrecio(Number(item.precio))}
+                            </span>
+                          </div>
+                          {item.descripcion && (
+                            <p className="text-sm text-culinary-neutral mb-4 line-clamp-2">
+                              {item.descripcion}
+                            </p>
+                          )}
+                        </div>
 
-                      <div className="flex items-center justify-between mt-auto pt-3">
-                        <span className="text-lg font-bold text-culinary-primary">
-                          ${formatearPrecio(Number(item.precio))}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => agregarAlCarrito(item)}
-                          className="px-4 py-2 bg-culinary-primary text-white text-sm font-medium rounded-[0.5rem] hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-culinary-primary focus:ring-offset-2 transition-opacity"
-                          aria-label={`Agregar ${item.nombre} al carrito`}
-                        >
-                          Agregar
-                        </button>
+                        <div className="flex flex-col gap-3 mt-4 sm:mt-auto">
+                          <button
+                            type="button"
+                            onClick={() => agregarAlCarrito(item)}
+                            className="w-full bg-culinary-primary/10 text-culinary-primary font-semibold py-2.5 rounded-[0.5rem] hover:bg-culinary-primary hover:text-white transition-colors flex items-center justify-center gap-2"
+                            aria-label={`Agregar ${item.nombre} al carrito`}
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                              <line x1="12" y1="5" x2="12" y2="19"></line>
+                              <line x1="5" y1="12" x2="19" y2="12"></line>
+                            </svg>
+                            Agregar
+                          </button>
+                        </div>
                       </div>
                     </article>
                   ))}
@@ -289,79 +321,71 @@ export default function MenuPublico({
         )}
       </main>
 
+      {/* Cart Sidebar / Bottom View */}
       {carrito.length > 0 && (
-        <div className="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-4 sm:w-96 bg-white rounded-[1rem] shadow-[0px_4px_20px_rgba(121,118,125,0.12)] border border-culinary-neutral/10 p-4 z-20">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="font-semibold text-culinary-on-surface">
-              🛒 Tu pedido ({cantidadTotalItems} {cantidadTotalItems === 1 ? 'item' : 'items'})
+        <div className="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-4 sm:w-[400px] bg-white rounded-[1rem] shadow-[0px_8px_30px_rgba(0,0,0,0.12)] border border-culinary-neutral/10 p-5 z-20">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-bold text-lg text-culinary-on-surface flex items-center gap-2">
+              <span role="img" aria-label="Carrito">🛒</span> Tu pedido ({cantidadTotalItems})
             </h3>
             <button
               type="button"
               onClick={() => setCarrito([])}
-              className="text-sm text-error hover:opacity-80 font-medium"
-              aria-label="Vaciar carrito"
+              className="text-sm text-error hover:opacity-80 font-medium px-2 py-1 bg-error/10 rounded-md transition-colors"
               disabled={estadoPedido === 'enviando'}
             >
               Vaciar
             </button>
           </div>
 
-          <div className="max-h-60 overflow-y-auto mb-3 space-y-2">
+          <div className="max-h-60 overflow-y-auto mb-4 space-y-3 pr-1">
             {carrito.map((item) => (
-              <div
-                key={item.itemCartaId}
-                className="flex items-center justify-between text-sm"
-              >
-                <div className="flex-1">
-                  <span className="font-medium text-culinary-on-surface">
-                    {item.cantidad}x {item.nombre}
-                  </span>
-                  {item.observacion && (
-                    <div className="text-xs text-culinary-primary mt-1 flex items-center gap-1">
+              <div key={item.itemCartaId} className="flex flex-col bg-culinary-neutral/5 p-3 rounded-lg">
+                <div className="flex items-start justify-between text-sm">
+                  <div className="flex-1 pr-2">
+                    <span className="font-semibold text-culinary-on-surface">
+                      {item.cantidad}x {item.nombre}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleAbrirNotaItem(item)}
+                      className="text-xs text-culinary-primary mt-1.5 flex items-center gap-1 hover:underline font-medium"
+                    >
                       <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
                         <path d="m15 5 4 4" />
                       </svg>
-                      <span className="truncate">{item.observacion}</span>
-                    </div>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-culinary-neutral">
+                      {item.observacion ? 'Editar nota' : 'Añadir nota'}
+                    </button>
+                    {item.observacion && (
+                      <p className="text-xs text-culinary-neutral mt-1 italic line-clamp-2">
+                        "{item.observacion}"
+                      </p>
+                    )}
+                  </div>
+                  <span className="font-semibold text-culinary-on-surface">
                     ${formatearPrecio(item.precio * item.cantidad)}
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => handleAbrirNotaItem(item)}
-                    className="text-culinary-primary hover:opacity-80 transition-opacity"
-                    aria-label={`Editar nota de ${item.nombre}`}
-                    title="Editar nota"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
-                      <path d="m15 5 4 4" />
-                    </svg>
-                  </button>
                 </div>
               </div>
             ))}
           </div>
 
-          <div className="border-t border-culinary-neutral/10 pt-3 mb-3">
+          <div className="border-t border-culinary-neutral/10 pt-4 mb-4">
             <label
               htmlFor="observacion-general"
               className="text-sm font-semibold text-culinary-on-surface mb-2 block"
             >
-              Instrucciones generales (alergias, preferencias de la mesa)
+              Instrucciones generales
             </label>
             <textarea
               id="observacion-general"
               value={observacionGeneral}
               onChange={(e) => setObservacionGeneral(e.target.value)}
-              placeholder="Ej: Ningún plato debe llevar maní. Mesa 4."
-              className={`w-full p-3 rounded-lg text-sm resize-none outline-none transition-all duration-200 text-[#1C1B20] placeholder:text-[#7a7582] ${getGeneralBorderClasses()}`}
+              placeholder="Ej: Mesa 4. Ningún plato debe llevar maní."
+              className={`w-full p-3 rounded-lg text-sm resize-none outline-none transition-all duration-200 placeholder:text-culinary-neutral/60 ${getGeneralBorderClasses()}`}
               maxLength={MAX_CHARS_GENERAL + 20}
-              rows={3}
+              rows={2}
             />
             <div className="flex justify-end mt-1">
               <span className={`text-xs font-semibold ${getGeneralCounterColor()}`}>
@@ -371,15 +395,15 @@ export default function MenuPublico({
           </div>
 
           {errorPedido && (
-            <p className="text-sm text-error mb-2" role="alert">
-              {errorPedido}
-            </p>
+            <div className="p-3 bg-error/10 text-error rounded-lg text-sm font-medium mb-4 flex items-start gap-2">
+               <span>⚠️</span> {errorPedido}
+            </div>
           )}
 
-          <div className="border-t border-culinary-neutral/10 pt-3">
-            <div className="flex items-center justify-between mb-3">
-              <span className="font-bold text-culinary-on-surface">Total:</span>
-              <span className="text-xl font-bold text-culinary-primary">
+          <div className="pt-2">
+            <div className="flex items-center justify-between mb-4">
+              <span className="font-bold text-culinary-on-surface text-lg">Total:</span>
+              <span className="text-2xl font-bold text-culinary-primary">
                 ${formatearPrecio(totalCarrito)}
               </span>
             </div>
@@ -388,9 +412,9 @@ export default function MenuPublico({
               type="button"
               onClick={realizarPedido}
               disabled={estadoPedido === 'enviando' || isGeneralOverLimit}
-              className="w-full px-4 py-3 bg-culinary-primary text-white font-semibold rounded-[0.5rem] hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-culinary-primary focus:ring-offset-2 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full px-4 py-3.5 bg-culinary-primary text-white font-bold rounded-[0.5rem] hover:opacity-90 focus:outline-none focus:ring-4 focus:ring-culinary-primary/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed text-lg shadow-md"
             >
-              {estadoPedido === 'enviando' ? 'Enviando...' : 'Realizar pedido'}
+              {estadoPedido === 'enviando' ? 'Procesando...' : 'Confirmar Pedido'}
             </button>
           </div>
         </div>
