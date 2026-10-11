@@ -6,7 +6,6 @@ import ItemImagen from '@/components/menu/ItemImagen';
 import { LlamarMozoButton } from '@/components/LlamarMozoButton';
 import { apiFetch, ApiError } from '@/lib/api-client';
 
-// Modifica las rutas de estos imports si tus componentes están en otra carpeta
 const ItemNotaModal = dynamic(() => import('@/components/ItemNotaModal'), { ssr: false });
 const SeguimientoPedido = dynamic(
   () => import('@/components/SeguimientoPedido').then(mod => ({ default: mod.SeguimientoPedido })),
@@ -71,13 +70,13 @@ export default function MenuMesaCliente({
   const getGeneralBorderClasses = () => {
     if (isGeneralOverLimit) return 'border-2 border-[#BA1A1A] bg-[#FFDAD6] focus:border-[#BA1A1A] focus:ring-2 focus:ring-[#BA1A1A]/20';
     if (isGeneralNearLimit) return 'border-2 border-[#755b00] bg-[#F1ECF4] focus:border-[#755b00] focus:ring-2 focus:ring-[#755b00]/20';
-    return 'border-2 border-[#cac4d2] bg-[#F1ECF4] focus:border-[#644da1] focus:ring-2 focus:ring-[#644da1]/20';
+    return 'border-2 border-[#cac4d2] bg-[#F1ECF4] focus:border-brand-700 focus:ring-2 focus:ring-brand-700/20';
   };
 
   const getGeneralCounterColor = () => {
     if (isGeneralOverLimit) return 'text-[#BA1A1A]';
     if (isGeneralNearLimit) return 'text-[#755b00]';
-    return 'text-[#494551]';
+    return 'text-gray-700';
   };
 
   const agregarAlCarrito = (item: ItemMenu) => {
@@ -135,10 +134,11 @@ export default function MenuMesaCliente({
   );
 
   const formatearPrecio = (valor: number | string) =>
-    Number(valor).toLocaleString('es-UY', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    });
+    new Intl.NumberFormat('es-UY', {
+      style: 'currency',
+      currency: 'UYU',
+      minimumFractionDigits: 0,
+    }).format(Number(valor));
 
   const realizarPedido = async () => {
     if (isGeneralOverLimit) {
@@ -163,7 +163,7 @@ export default function MenuMesaCliente({
       const pedido = await apiFetch<any>('/pedidos', accessToken, {
         method: 'POST',
         body: JSON.stringify({
-          mesaId, // Enviamos el ID de la mesa al backend
+          mesaId,
           idempotencyKey: crypto.randomUUID(),
           observacionGeneral: observacionGeneral.trim() || undefined,
           items: carrito.map((item) => ({
@@ -186,23 +186,21 @@ export default function MenuMesaCliente({
   };
 
   return (
-    <div className="min-h-screen bg-culinary-background pb-28">
-      {/* Top Navbar Simplificado sin scroll de categorías */}
-      <nav className="fixed top-0 w-full z-50 flex justify-between items-center px-4 md:px-8 h-16 bg-white border-b border-culinary-neutral/10">
+    <div className="min-h-screen bg-gray-50 pb-28">
+      <nav className="fixed top-0 w-full z-50 flex justify-between items-center px-4 md:px-8 h-16 bg-white border-b border-gray-200">
         <div className="flex items-center gap-4">
-          <span className="text-xl md:text-2xl font-bold text-culinary-primary">BistroLink</span>
+          <span className="text-xl md:text-2xl font-bold text-brand-700">BistroLink</span>
         </div>
-        <div className="flex items-center gap-4 text-culinary-primary">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-culinary-primary/10 rounded-full">
+        <div className="flex items-center gap-4 text-brand-700">
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-brand-700/10 rounded-full">
             <span className="text-sm font-medium">📍 En el local</span>
           </div>
         </div>
       </nav>
 
       <main className="pt-20 px-4 md:px-8 max-w-[1440px] mx-auto flex flex-col gap-10">
-        {/* Hero Section Banner */}
         <section className="w-full">
-          <div className="relative w-full h-[250px] md:h-[350px] rounded-[1rem] overflow-hidden group bg-culinary-neutral/80">
+          <div className="relative w-full h-[250px] md:h-[350px] rounded-[1rem] overflow-hidden group bg-gray-800">
             <div 
               className="absolute inset-0 bg-cover bg-center w-full h-full transition-transform duration-700 group-hover:scale-105"
               style={{ backgroundImage: "url('https://images.unsplash.com/photo-1514933651103-005eec06c04b?q=80&w=1974&auto=format&fit=crop')" }}
@@ -222,11 +220,11 @@ export default function MenuMesaCliente({
 
         {estadoPedido === 'confirmado' && pedidoConfirmado && tokenComensal && (
           <section className="w-full">
-            <div className="bg-white border border-culinary-neutral/10 rounded-[1rem] p-5 shadow-sm">
+            <div className="bg-white border border-gray-200 rounded-[1rem] p-5 shadow-sm">
               <div className="flex items-start gap-3">
                 <span className="text-2xl" role="img" aria-label="Confirmado">✅</span>
-                <p className="font-semibold text-culinary-on-surface text-lg">
-                  ¡Pedido enviado a cocina!
+                <p className="font-semibold text-gray-900 text-lg">
+                  ¡Pedido enviado! Cocina ya lo recibió.
                 </p>
               </div>
               <SeguimientoPedido
@@ -241,9 +239,9 @@ export default function MenuMesaCliente({
         <div className="space-y-12">
           {categorias.map((categoria, categoriaIndex) => (
             <section key={categoria.id} id={`categoria-${categoria.id}`} className="w-full">
-              <div className="flex items-center justify-between mb-6 border-b border-culinary-neutral/10 pb-2">
-                <h2 className="text-2xl font-bold text-culinary-on-surface">{categoria.nombre}</h2>
-                <span className="text-sm font-medium text-culinary-neutral">
+              <div className="flex items-center justify-between mb-6 border-b border-gray-200 pb-2">
+                <h2 className="text-2xl font-bold text-gray-900">{categoria.nombre}</h2>
+                <span className="text-sm font-medium text-gray-600">
                   {categoria.items.length} {categoria.items.length === 1 ? 'ítem' : 'ítems'}
                 </span>
               </div>
@@ -252,13 +250,12 @@ export default function MenuMesaCliente({
                 {categoria.items.map((item, index) => (
                   <article
                     key={item.id}
-                    className={`bg-white rounded-[1rem] border border-culinary-neutral/15 flex flex-col sm:flex-row overflow-hidden hover:shadow-[0px_4px_20px_rgba(121,118,125,0.08)] transition-all group ${
+                    className={`bg-white rounded-[1rem] border border-gray-200 flex flex-col sm:flex-row overflow-hidden hover:shadow-md transition-all group ${
                       !item.disponible ? 'opacity-60 grayscale-[0.5]' : ''
                     }`}
                     aria-disabled={!item.disponible}
                   >
-                    {/* Contenedor sin validación de URL para que el placeholder se muestre siempre */}
-                    <div className="w-full sm:w-2/5 h-48 sm:h-auto shrink-0 relative overflow-hidden bg-culinary-neutral/5">
+                    <div className="w-full sm:w-2/5 h-48 sm:h-auto shrink-0 relative overflow-hidden bg-gray-100">
                       <ItemImagen
                         url={item.imagenUrl}
                         alt={item.nombre}
@@ -270,15 +267,15 @@ export default function MenuMesaCliente({
                     <div className="p-5 flex flex-col justify-between flex-1">
                       <div>
                         <div className="flex justify-between items-start mb-2 gap-3">
-                          <h3 className="font-semibold text-lg text-culinary-on-surface leading-tight">
+                          <h3 className="font-semibold text-lg text-foreground leading-tight">
                             {item.nombre}
                           </h3>
-                          <span className="font-bold text-lg text-culinary-primary shrink-0">
-                            ${formatearPrecio(item.precio)}
+                          <span className="font-bold text-lg text-brand-700 shrink-0">
+                            {formatearPrecio(item.precio)}
                           </span>
                         </div>
                         {item.descripcion && (
-                          <p className="text-sm text-culinary-neutral mb-4 line-clamp-2">
+                          <p className="text-sm text-foreground/70 mb-4 line-clamp-2">
                             {item.descripcion}
                           </p>
                         )}
@@ -286,14 +283,14 @@ export default function MenuMesaCliente({
 
                       <div className="mt-4 sm:mt-auto flex flex-col gap-3">
                         {!item.disponible ? (
-                          <span className="inline-flex rounded-md bg-error/10 text-error px-3 py-2.5 text-sm font-semibold items-center justify-center gap-1">
-                            <span role="img" aria-label="Agotado">🚫</span> Agotado
+                          <span className="inline-flex rounded-md bg-red-100 text-red-800 px-3 py-2 text-sm font-semibold items-center justify-center gap-1">
+                            <span role="img" aria-label="Agotado">🚫</span> No disponible
                           </span>
                         ) : (
                           <button
                             type="button"
                             onClick={() => agregarAlCarrito(item)}
-                            className="w-full bg-culinary-primary/10 text-culinary-primary font-semibold py-2.5 rounded-[0.5rem] hover:bg-culinary-primary hover:text-white transition-colors flex items-center justify-center gap-2"
+                            className="w-full bg-brand-700/10 text-brand-700 font-semibold py-2.5 rounded-[0.5rem] hover:bg-brand-700 hover:text-white transition-colors flex items-center justify-center gap-2"
                           >
                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                               <line x1="12" y1="5" x2="12" y2="19"></line>
@@ -316,17 +313,16 @@ export default function MenuMesaCliente({
         </div>
       </main>
 
-      {/* Cart Sidebar */}
       {carrito.length > 0 && (
-        <div className="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-4 sm:w-[400px] bg-white rounded-[1rem] shadow-[0px_8px_30px_rgba(0,0,0,0.12)] border border-culinary-neutral/10 p-5 z-20">
+        <div className="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-4 sm:w-[400px] bg-white rounded-[1rem] shadow-xl border border-gray-200 p-5 z-20">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="font-bold text-lg text-culinary-on-surface flex items-center gap-2">
-              <span role="img" aria-label="Carrito">🛒</span> Tu pedido ({cantidadTotalItems})
+            <h3 className="font-bold text-lg text-gray-900 flex items-center gap-2">
+              <span role="img" aria-label="Carrito">🛒</span> Tu pedido ({cantidadTotalItems} {cantidadTotalItems === 1 ? 'item' : 'items'})
             </h3>
             <button
               type="button"
               onClick={() => setCarrito([])}
-              className="text-sm text-error hover:opacity-80 font-medium px-2 py-1 bg-error/10 rounded-md transition-colors"
+              className="text-sm text-red-600 hover:text-red-800 font-medium px-2 py-1 bg-red-50 rounded-md transition-colors"
               disabled={estadoPedido === 'enviando'}
             >
               Vaciar
@@ -335,36 +331,36 @@ export default function MenuMesaCliente({
 
           <div className="max-h-60 overflow-y-auto mb-4 space-y-3 pr-1">
             {carrito.map((item) => (
-              <div key={item.itemCartaId} className="flex flex-col bg-culinary-neutral/5 p-3 rounded-lg">
+              <div key={item.itemCartaId} className="flex flex-col bg-gray-50 p-3 rounded-lg">
                 <div className="flex items-start justify-between text-sm">
                   <div className="flex-1 pr-2">
-                    <span className="font-semibold text-culinary-on-surface">
+                    <span className="font-semibold text-gray-900">
                       {item.cantidad}x {item.nombre}
                     </span>
                     <button
                       type="button"
                       onClick={() => handleAbrirNotaItem(item)}
-                      className="text-xs text-culinary-primary mt-1.5 flex items-center gap-1 hover:underline font-medium"
+                      className="text-xs text-brand-700 mt-1.5 flex items-center gap-1 hover:underline font-medium"
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" /><path d="m15 5 4 4" /></svg>
-                      {item.observacion ? 'Editar nota' : 'Añadir nota'}
+                      Editar nota
                     </button>
                     {item.observacion && (
-                      <p className="text-xs text-culinary-neutral mt-1 italic line-clamp-2">
+                      <p className="text-xs text-gray-600 mt-1 italic line-clamp-2">
                         "{item.observacion}"
                       </p>
                     )}
                   </div>
-                  <span className="font-semibold text-culinary-on-surface">
-                    ${formatearPrecio(item.precio * item.cantidad)}
+                  <span className="font-semibold text-gray-900">
+                    {formatearPrecio(item.precio * item.cantidad)}
                   </span>
                 </div>
               </div>
             ))}
           </div>
 
-          <div className="border-t border-culinary-neutral/10 pt-4 mb-4">
-            <label htmlFor="observacion-general" className="text-sm font-semibold text-culinary-on-surface mb-2 block">
+          <div className="border-t border-gray-200 pt-4 mb-4">
+            <label htmlFor="observacion-general" className="text-sm font-semibold text-gray-900 mb-2 block">
               Instrucciones generales
             </label>
             <textarea
@@ -372,7 +368,7 @@ export default function MenuMesaCliente({
               value={observacionGeneral}
               onChange={(e) => setObservacionGeneral(e.target.value)}
               placeholder="Ej: Ningún plato debe llevar maní."
-              className={`w-full p-3 rounded-lg text-sm resize-none outline-none transition-all duration-200 placeholder:text-culinary-neutral/60 ${getGeneralBorderClasses()}`}
+              className={`w-full p-3 rounded-lg text-sm resize-none outline-none transition-all duration-200 placeholder:text-gray-400 ${getGeneralBorderClasses()}`}
               maxLength={MAX_CHARS_GENERAL + 20}
               rows={2}
             />
@@ -384,16 +380,16 @@ export default function MenuMesaCliente({
           </div>
 
           {errorPedido && (
-            <div className="p-3 bg-error/10 text-error rounded-lg text-sm font-medium mb-4 flex items-start gap-2">
+            <div className="p-3 bg-red-50 text-red-700 rounded-lg text-sm font-medium mb-4 flex items-start gap-2">
                <span>⚠️</span> {errorPedido}
             </div>
           )}
 
           <div className="pt-2">
             <div className="flex items-center justify-between mb-4">
-              <span className="font-bold text-culinary-on-surface text-lg">Total:</span>
-              <span className="text-2xl font-bold text-culinary-primary">
-                ${formatearPrecio(totalCarrito)}
+              <span className="font-bold text-gray-900 text-lg">Total:</span>
+              <span className="text-2xl font-bold text-brand-700">
+                {formatearPrecio(totalCarrito)}
               </span>
             </div>
 
@@ -401,9 +397,9 @@ export default function MenuMesaCliente({
               type="button"
               onClick={realizarPedido}
               disabled={estadoPedido === 'enviando' || isGeneralOverLimit}
-              className="w-full px-4 py-3.5 bg-culinary-primary text-white font-bold rounded-[0.5rem] hover:opacity-90 focus:outline-none focus:ring-4 focus:ring-culinary-primary/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed text-lg shadow-md"
+              className="w-full px-4 py-3.5 bg-brand-700 text-white font-bold rounded-[0.5rem] hover:bg-brand-800 focus:outline-none focus:ring-4 focus:ring-brand-700/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed text-lg shadow-md"
             >
-              {estadoPedido === 'enviando' ? 'Enviando...' : 'Pedir a cocina'}
+              {estadoPedido === 'enviando' ? 'Enviando...' : 'Realizar pedido'}
             </button>
           </div>
         </div>

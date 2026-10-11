@@ -13,28 +13,18 @@ export function LlamarMozoButton({ tenantId, mesaId }: LlamarMozoButtonProps) {
   const [estado, setEstado] = useState<Estado>('idle');
   const [mensaje, setMensaje] = useState<string | null>(null);
 
-  // Función para manejar el feedback físico y sonoro
   const triggerFeedback = (tipo: 'click' | 'success' | 'error') => {
     if (typeof window === 'undefined') return;
-
     try {
       if (tipo === 'click') {
-        // Vibración corta
         if (navigator.vibrate) navigator.vibrate(50);
       } else if (tipo === 'success') {
-        // Doble vibración de éxito
         if (navigator.vibrate) navigator.vibrate([50, 100, 50]);
-        
-        // Sonido de campana (descomenta si agregas un archivo en public/sounds/ding.mp3)
-        // const audio = new Audio('/sounds/ding.mp3');
-        // audio.volume = 0.5;
-        // audio.play().catch(() => {}); 
       } else if (tipo === 'error') {
-        // Vibración larga de error
         if (navigator.vibrate) navigator.vibrate([200]);
       }
     } catch (e) {
-      // Ignorar errores silenciosamente si el dispositivo no soporta la API
+      // Ignorar si no hay soporte
     }
   };
 
@@ -98,17 +88,16 @@ export function LlamarMozoButton({ tenantId, mesaId }: LlamarMozoButtonProps) {
           group relative overflow-hidden flex items-center justify-center gap-2.5 px-8 py-3 rounded-full font-semibold text-sm md:text-base transition-all duration-300 ease-out shadow-sm
           ${
             estado === 'idle'
-              ? 'bg-white border border-culinary-primary/30 text-culinary-primary hover:border-culinary-primary hover:bg-culinary-primary/5 active:scale-[0.95]'
+              ? 'bg-white border border-brand-800/30 text-brand-800 hover:border-brand-800 hover:bg-brand-800/5 active:scale-[0.95]'
               : estado === 'enviando'
-              ? 'bg-culinary-primary/10 border border-transparent text-culinary-primary cursor-not-allowed'
+              ? 'bg-brand-800/10 border border-transparent text-brand-800 cursor-not-allowed'
               : estado === 'enviado'
               ? 'bg-[#1e8e3e]/10 border border-[#1e8e3e]/30 text-[#1e8e3e] cursor-not-allowed scale-105'
-              : 'bg-error/10 border border-error/30 text-error active:scale-[0.95] animate-shake'
+              : 'bg-red-800/10 border border-red-800/30 text-red-800 active:scale-[0.95] animate-shake'
           }
         `}
         aria-label="Llamar al mozo"
       >
-        {/* Ícono Idle */}
         {estado === 'idle' && (
           <>
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="transition-transform group-hover:rotate-12 group-active:-rotate-12">
@@ -119,7 +108,6 @@ export function LlamarMozoButton({ tenantId, mesaId }: LlamarMozoButtonProps) {
           </>
         )}
 
-        {/* Loading */}
         {estado === 'enviando' && (
           <>
             <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -130,7 +118,6 @@ export function LlamarMozoButton({ tenantId, mesaId }: LlamarMozoButtonProps) {
           </>
         )}
 
-        {/* Success */}
         {estado === 'enviado' && (
           <>
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="animate-bounce">
@@ -140,7 +127,6 @@ export function LlamarMozoButton({ tenantId, mesaId }: LlamarMozoButtonProps) {
           </>
         )}
 
-        {/* Error */}
         {estado === 'error' && (
           <>
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -155,7 +141,7 @@ export function LlamarMozoButton({ tenantId, mesaId }: LlamarMozoButtonProps) {
 
       <div className="h-5 mt-1">
         {mensaje && (
-          <p role="status" className={`text-xs font-medium text-center transition-opacity ${estado === 'error' ? 'text-error' : 'text-[#1e8e3e]'}`}>
+          <p role="status" className={`text-xs font-medium text-center transition-opacity ${estado === 'error' ? 'text-red-800' : 'text-[#1e8e3e]'}`}>
             {mensaje}
           </p>
         )}
