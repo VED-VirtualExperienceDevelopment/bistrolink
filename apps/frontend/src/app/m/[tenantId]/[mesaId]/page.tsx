@@ -1,7 +1,6 @@
 import { cache } from 'react';
 import type { Metadata } from 'next';
-import ItemImagen from '@/components/menu/ItemImagen';
-import { LlamarMozoButton } from '@/components/LlamarMozoButton';
+import MenuMesaCliente from '../../../../components/MenuMesaCliente'; // Importamos el nuevo componente
 
 type ItemMenu = {
   id: string;
@@ -23,8 +22,6 @@ type MenuResponse = {
   categorias: CategoriaMenu[];
 };
 
-// BL-224: `cache` hace que generateMetadata y la página compartan una sola
-// llamada a la API por request (con `no-store`, fetch no la deduplica solo).
 const getMenu = cache(async (tenantId: string, mesaId: string): Promise<MenuResponse | null> => {
   const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/menu/${tenantId}/${mesaId}`, {
     cache: 'no-store',
@@ -40,8 +37,7 @@ const getMenu = cache(async (tenantId: string, mesaId: string): Promise<MenuResp
 
   return res.json();
 });
-// BL-224: la pestaña muestra el nombre del restaurante; si no se puede
-// cargar el menú, «Menú».
+
 export async function generateMetadata({
   params,
 }: {
@@ -56,14 +52,6 @@ export async function generateMetadata({
   }
 }
 
-function formatearPrecio(precio: string): string {
-  return new Intl.NumberFormat('es-UY', {
-    style: 'currency',
-    currency: 'UYU',
-    minimumFractionDigits: 0,
-  }).format(Number(precio));
-}
-
 export default async function MenuPage({
   params,
 }: {
@@ -74,70 +62,27 @@ export default async function MenuPage({
 
   if (menu === null) {
     return (
-      <main className="flex min-h-screen items-center justify-center p-8">
-        <p className="text-center text-lg">
-          No encontramos el menú para esta mesa. Probá escaneando el código QR de nuevo.
-        </p>
+      <main className="flex min-h-screen items-center justify-center p-8 bg-culinary-background">
+        <div className="text-center bg-white p-8 rounded-[1rem] border border-culinary-neutral/10 shadow-sm">
+          <div className="text-4xl mb-4">🔍</div>
+          <p className="text-lg font-medium text-culinary-on-surface">
+            No encontramos el menú para esta mesa.
+          </p>
+          <p className="text-sm text-culinary-neutral mt-2">
+            Probá escaneando el código QR de nuevo.
+          </p>
+        </div>
       </main>
     );
   }
 
-  const { restaurante, categorias } = menu;
-
+  // En lugar de dibujar la página aquí, le pasamos los datos al componente interactivo
   return (
-    <main className="mx-auto max-w-md pb-16">
-      <header className="bg-brand-700 px-4 pb-6 pt-8 text-white">
-        <h1 className="text-2xl font-bold">{restaurante.nombre}</h1>
-      </header>
-
-      <div className="px-4">
-        {categorias.map((categoria) => (
-          <section key={categoria.id} className="mt-6">
-            <h2 className="mb-3 text-lg font-semibold text-brand-700">
-              {categoria.nombre}
-            </h2>
-
-            <div className="flex flex-col gap-3">
-              {categoria.items.map((item) => (
-                <article
-                  key={item.id}
-                  className={`flex gap-3 rounded-xl border border-black/5 bg-white p-3 shadow-sm ${
-                    !item.disponible ? 'opacity-40' : ''
-                  }`}
-                  aria-disabled={!item.disponible}
-                >
-                  <ItemImagen
-                    url={item.imagenUrl}
-                    alt={item.nombre}
-                    className="h-18 w-18 shrink-0 rounded-lg object-cover"
-                  />
-                
-                  <div className="flex flex-1 flex-col justify-between">
-                    <div>
-                      <p className="font-medium text-foreground">{item.nombre}</p>
-                      {item.descripcion && (
-                        <p className="text-sm text-foreground/60">{item.descripcion}</p>
-                      )}
-                    </div>
-
-                    <div className="mt-1 flex items-center gap-2">
-                      <span className="font-semibold text-brand-700">
-                        {formatearPrecio(item.precio)}
-                      </span>
-                      {!item.disponible && (
-                        <span className="rounded bg-black/10 px-2 py-0.5 text-xs">
-                          No disponible
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </article>
-              ))}
-            </div>
-          </section>
-        ))}
-      </div>
-      <LlamarMozoButton tenantId={tenantId} mesaId={mesaId} />
-    </main>
+    <MenuMesaCliente 
+      restaurante={menu.restaurante} 
+      categorias={menu.categorias} 
+      tenantId={tenantId} 
+      mesaId={mesaId} 
+    />
   );
 }

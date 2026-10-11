@@ -52,7 +52,7 @@ La API queda en `http://localhost:3001`. Las variables se leen de `apps/backend/
 ### Base de datos
 
 ```bash
-cd apps/backend
+cd apps/backen
 npx prisma migrate deploy   # aplica las migraciones del repositorio
 npx prisma migrate dev      # crea una migración nueva después de cambiar schema.prisma
 npx prisma db seed          # datos de prueba (idempotente)
