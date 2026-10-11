@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic';
 import ItemImagen from '@/components/menu/ItemImagen';
 import { LlamarMozoButton } from '@/components/LlamarMozoButton';
 import { apiFetch, ApiError } from '@/lib/api-client';
+import { origenPedido, solicitudAuthComensal } from '@/components/menu-digital.utils';
 import type { PedidoConfirmado } from '@/types/menu';
 
 const ItemNotaModal = dynamic(() => import('@/components/ItemNotaModal'), { ssr: false });
@@ -161,13 +162,14 @@ export default function MenuDigital({
     setErrorPedido(null);
 
     try {
-      const authPath = tipo === 'mesa' ? '/auth/comensal/mesa' : '/auth/comensal';
-      const authBody = tipo === 'mesa' ? { tenantId, mesaId: idOrigen } : { tenantId, restauranteId: idOrigen };
+      // BL-309: la ruta y el body salen de menu-digital.utils.ts (con test),
+      // para que no vuelva a quedar apuntando a una ruta inexistente.
+      const auth = solicitudAuthComensal(tipo, tenantId, idOrigen);
 
-      const authRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}${authPath}`, {
+      const authRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}${auth.ruta}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(authBody),
+        body: JSON.stringify(auth.body),
       });
 
       if (!authRes.ok) throw new ApiError(authRes.status, 'Error al identificarte para hacer el pedido.');
@@ -183,6 +185,7 @@ export default function MenuDigital({
       }
 
       const pedidoBody: PedidoBody = {
+        ...origenPedido(tipo, idOrigen),
         idempotencyKey: crypto.randomUUID(),
         observacionGeneral: observacionGeneral.trim() || undefined,
         items: carrito.map((item) => ({
@@ -191,12 +194,6 @@ export default function MenuDigital({
           observacion: item.observacion?.trim() || undefined,
         })),
       };
-
-      if (tipo === 'mesa') {
-        pedidoBody.mesaId = idOrigen;
-      } else {
-        pedidoBody.restauranteId = idOrigen;
-      }
 
       const pedido = await apiFetch<PedidoConfirmado>('/pedidos', accessToken, {
         method: 'POST',

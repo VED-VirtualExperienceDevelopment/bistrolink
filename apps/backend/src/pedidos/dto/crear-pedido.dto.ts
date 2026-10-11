@@ -9,6 +9,7 @@ import {
   Matches,
   MaxLength,
   Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 
@@ -48,8 +49,17 @@ export class CrearPedidoItemDto {
 }
 
 export class CrearPedidoDto {
+  /**
+   * BL-309: obligatorio solo en el pedido para retirar (sin mesaId). En el
+   * pedido de mesa el restaurante sale de la mesa, del lado del servidor
+   * (PedidosService.crear); si igual se manda, tiene que coincidir con el de
+   * la mesa o se rechaza con 403.
+   */
+  @ValidateIf(
+    (dto: CrearPedidoDto) => !dto.mesaId || dto.restauranteId !== undefined,
+  )
   @Matches(UUID_REGEX, { message: 'restauranteId debe tener formato UUID' })
-  restauranteId: string;
+  restauranteId?: string;
 
   @IsOptional()
   @Matches(UUID_REGEX, { message: 'mesaId debe tener formato UUID' })

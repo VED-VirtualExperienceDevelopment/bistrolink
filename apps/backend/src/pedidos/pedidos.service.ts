@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -30,19 +31,11 @@ export class PedidosService {
           return { pedido: existente, esNuevo: false, mesaNumero: null };
         }
 
-        const mesa = dto.mesaId
-          ? await tx.mesa.findUnique({ where: { id: dto.mesaId } })
-          : await this.obtenerOCrearMesaVirtual(
-              tx,
-              tenantId,
-              dto.restauranteId,
-            );
-
-        if (!mesa) {
-          throw new NotFoundException(
-            'Mesa no encontrada para este establecimiento',
-          );
-        }
+        const { mesa, restauranteId } = await this.resolverMesaYRestaurante(
+          tx,
+          tenantId,
+          dto,
+        );
 
         const itemsCarta = await tx.itemCarta.findMany({
           where: { id: { in: dto.items.map((i) => i.itemCartaId) } },
@@ -66,12 +59,12 @@ export class PedidosService {
         const nuevoPedido = await tx.pedido.create({
           data: {
             tenantId,
-            restauranteId: dto.restauranteId,
+            restauranteId,
             mesaId: mesa.id,
             idempotencyKey: dto.idempotencyKey,
             estado: ESTADO_INICIAL_PEDIDO,
             canal: dto.mesaId ? 'QR' : 'WEB',
-            observacionGeneral: dto.observacionGeneral, // <-- NUEVO
+            observacionGeneral: dto.observacionGeneral,
             lineas: {
               create: dto.items.map((linea) => {
                 const item = itemsPorId.get(linea.itemCartaId)!;
@@ -82,7 +75,7 @@ export class PedidosService {
                   precioUnitarioSnapshot: item.precio,
                   cantidad: linea.cantidad,
                   subtotal: item.precio.mul(linea.cantidad),
-                  observacion: linea.observacion, // <-- NUEVO
+                  observacion: linea.observacion,
                 };
               }),
             },
@@ -93,7 +86,6 @@ export class PedidosService {
         return { pedido: nuevoPedido, esNuevo: true, mesaNumero: mesa.numero };
       });
 
-    // después
     // BL-244: al KDS se le emite el pedido con la misma forma que el
     // snapshot (mesaNumero incluido), no el objeto crudo de Prisma. La
     // respuesta al comensal (`return pedido`) no cambia.
@@ -105,6 +97,54 @@ export class PedidosService {
     }
 
     return pedido;
+  }
+
+  /**
+   * BL-309: de qué mesa y de qué restaurante es el pedido.
+   *
+   * - Pedido de mesa (con mesaId): el restaurante sale de la mesa, nunca del
+   *   cliente. Si el body igual trae un restauranteId, tiene que coincidir
+   *   (403 si no). La mesa tiene que ser de este tenant (además de RLS) y no
+   *   puede ser la mesa virtual.
+   * - Pedido para retirar (sin mesaId): restauranteId obligatorio; el pedido
+   *   va a la mesa virtual de ese restaurante. La validación del restaurante
+   *   contra el tenant queda para BL-308.
+   */
+  private async resolverMesaYRestaurante(
+    tx: PrismaClient,
+    tenantId: string,
+    dto: CrearPedidoDto,
+  ) {
+    if (dto.mesaId) {
+      const mesa = await tx.mesa.findUnique({ where: { id: dto.mesaId } });
+
+      if (!mesa || mesa.tenantId !== tenantId || mesa.esVirtual) {
+        throw new NotFoundException(
+          'Mesa no encontrada para este establecimiento',
+        );
+      }
+
+      if (dto.restauranteId && dto.restauranteId !== mesa.restauranteId) {
+        throw new ForbiddenException(
+          'La mesa no pertenece al restaurante indicado',
+        );
+      }
+
+      return { mesa, restauranteId: mesa.restauranteId };
+    }
+
+    if (!dto.restauranteId) {
+      throw new BadRequestException(
+        'Se requiere restauranteId para un pedido sin mesa',
+      );
+    }
+
+    const mesa = await this.obtenerOCrearMesaVirtual(
+      tx,
+      tenantId,
+      dto.restauranteId,
+    );
+    return { mesa, restauranteId: dto.restauranteId };
   }
 
   private async obtenerOCrearMesaVirtual(
