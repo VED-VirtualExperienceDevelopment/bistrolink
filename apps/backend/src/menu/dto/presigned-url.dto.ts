@@ -1,10 +1,16 @@
-import { IsString, MaxLength } from 'class-validator';
+import { IsIn, IsInt, Min } from 'class-validator';
+import {
+  TIPOS_IMAGEN_PERMITIDOS,
+  TipoImagenPermitido,
+} from '../upload.constants';
 
 export class PresignedUrlDto {
-  @IsString()
-  @MaxLength(255, { message: 'El nombre del archivo es demasiado largo' })
-  fileName: string;
+  @IsIn(TIPOS_IMAGEN_PERMITIDOS, {
+    message: 'Formato no permitido. Solo se aceptan imágenes JPEG, PNG o WEBP.',
+  })
+  contentType: TipoImagenPermitido;
 
-  @IsString()
-  contentType: string;
+  @IsInt()
+  @Min(1, { message: 'La imagen está vacía' })
+  fileSize: number;
 }
