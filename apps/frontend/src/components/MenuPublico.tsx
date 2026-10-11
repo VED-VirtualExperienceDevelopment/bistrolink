@@ -18,11 +18,9 @@ export default function MenuPublico({
 }: MenuPublicoProps) {
   return (
     <MenuDigital
-      tipo="publico"
+      origen={{ tipo: 'publico', tenantId, restauranteId }}
       restaurante={restaurante}
       categorias={categorias as unknown as CategoriaMenu[]}
-      tenantId={tenantId}
-      idOrigen={restauranteId}
     />
   );
 }

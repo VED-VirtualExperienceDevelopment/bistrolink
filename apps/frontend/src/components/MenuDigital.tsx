@@ -5,7 +5,14 @@ import dynamic from 'next/dynamic';
 import ItemImagen from '@/components/menu/ItemImagen';
 import { LlamarMozoButton } from '@/components/LlamarMozoButton';
 import { apiFetch, ApiError } from '@/lib/api-client';
-import { origenPedido, solicitudAuthComensal } from '@/components/menu-digital.utils';
+import {
+  etiquetaMesa,
+  headersMesaQr,
+  mensajeErrorQr,
+  origenPedido,
+  solicitudAuthComensal,
+  type OrigenMenu,
+} from '@/components/menu-digital.utils';
 import type { PedidoConfirmado } from '@/types/menu';
 
 const ItemNotaModal = dynamic(() => import('@/components/ItemNotaModal'), { ssr: false });
@@ -39,11 +46,12 @@ type ItemCarrito = {
 };
 
 interface MenuDigitalProps {
-  readonly tipo: 'mesa' | 'publico';
+  /** HU-034 (BL-204): en la mesa, solo el token del QR; ningún id. */
+  readonly origen: OrigenMenu;
   readonly restaurante: { nombre: string; direccion?: string };
   readonly categorias: readonly CategoriaMenu[];
-  readonly tenantId: string;
-  readonly idOrigen: string; // mesaId o restauranteId
+  /** Solo en la mesa: el número que se muestra en el encabezado. */
+  readonly numeroMesa?: number;
 }
 
 const MAX_CHARS_GENERAL = 500;
@@ -51,12 +59,12 @@ const MAX_CHARS_ITEM = 300;
 const WARNING_THRESHOLD = 0.9;
 
 export default function MenuDigital({
-  tipo,
+  origen,
   restaurante,
   categorias,
-  tenantId,
-  idOrigen,
+  numeroMesa,
 }: MenuDigitalProps) {
+  const tipo = origen.tipo;
   const [carrito, setCarrito] = useState<ItemCarrito[]>([]);
   const [observacionGeneral, setObservacionGeneral] = useState('');
   const [itemNotaAbierto, setItemNotaAbierto] = useState<ItemCarrito | null>(null);
@@ -162,9 +170,10 @@ export default function MenuDigital({
     setErrorPedido(null);
 
     try {
-      // BL-309: la ruta y el body salen de menu-digital.utils.ts (con test),
-      // para que no vuelva a quedar apuntando a una ruta inexistente.
-      const auth = solicitudAuthComensal(tipo, tenantId, idOrigen);
+      // BL-309 / BL-204: la ruta, el body y el header salen de
+      // menu-digital.utils.ts (con test), para que no vuelvan a quedar
+      // apuntando a una ruta inexistente.
+      const auth = solicitudAuthComensal(origen);
 
       const authRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}${auth.ruta}`, {
         method: 'POST',
@@ -172,7 +181,12 @@ export default function MenuDigital({
         body: JSON.stringify(auth.body),
       });
 
-      if (!authRes.ok) throw new ApiError(authRes.status, 'Error al identificarte para hacer el pedido.');
+      if (!authRes.ok) {
+        throw new ApiError(
+          authRes.status,
+          mensajeErrorQr(origen, authRes.status) ?? 'Error al identificarte para hacer el pedido.',
+        );
+      }
 
       const { accessToken } = await authRes.json();
 
@@ -180,12 +194,11 @@ export default function MenuDigital({
         idempotencyKey: string;
         observacionGeneral?: string;
         items: { itemCartaId: string; cantidad: number; observacion?: string }[];
-        mesaId?: string;
         restauranteId?: string;
       }
 
       const pedidoBody: PedidoBody = {
-        ...origenPedido(tipo, idOrigen),
+        ...origenPedido(origen),
         idempotencyKey: crypto.randomUUID(),
         observacionGeneral: observacionGeneral.trim() || undefined,
         items: carrito.map((item) => ({
@@ -197,6 +210,7 @@ export default function MenuDigital({
 
       const pedido = await apiFetch<PedidoConfirmado>('/pedidos', accessToken, {
         method: 'POST',
+        headers: headersMesaQr(origen),
         body: JSON.stringify(pedidoBody),
       });
 
@@ -206,7 +220,11 @@ export default function MenuDigital({
       setCarrito([]);
       setObservacionGeneral('');
     } catch (err) {
-      setErrorPedido(err instanceof ApiError ? err.message : 'No pudimos enviar tu pedido. Probá de nuevo.');
+      setErrorPedido(
+        err instanceof ApiError
+          ? (mensajeErrorQr(origen, err.status) ?? err.message)
+          : 'No pudimos enviar tu pedido. Probá de nuevo.',
+      );
       setEstadoPedido('error');
     }
   };
@@ -237,7 +255,7 @@ export default function MenuDigital({
             
             <div className="absolute bottom-0 left-0 p-6 md:p-8 w-full flex flex-col justify-end">
               <span className="inline-flex items-center px-3 py-1 rounded-full bg-white/20 backdrop-blur-sm text-white font-medium text-xs md:text-sm mb-3 w-max">
-                {tipo === 'mesa' ? 'Mesa asignada' : `📍 ${restaurante.direccion || 'Local'}`}
+                {tipo === 'mesa' ? etiquetaMesa(numeroMesa) : `📍 ${restaurante.direccion || 'Local'}`}
               </span>
               <h1 className="text-3xl md:text-5xl font-bold text-white mb-2 tracking-tight">
                 {restaurante.nombre}
@@ -347,9 +365,9 @@ export default function MenuDigital({
           </div>
         )}
 
-        {tipo === 'mesa' && (
+        {origen.tipo === 'mesa' && (
           <div className="mt-8 flex justify-center w-full">
-            <LlamarMozoButton tenantId={tenantId} mesaId={idOrigen} />
+            <LlamarMozoButton qrToken={origen.qrToken} />
           </div>
         )}
       </main>

@@ -1,15 +1,28 @@
 'use client';
 
 import { useState } from 'react';
+import {
+  headersMesaQr,
+  mensajeErrorQr,
+  RUTA_LLAMAR_MOZO,
+  solicitudAuthComensal,
+  type OrigenMenu,
+} from '@/components/menu-digital.utils';
 
 interface LlamarMozoButtonProps {
-  readonly tenantId: string;
-  readonly mesaId: string;
+  /**
+   * HU-034 (BL-204): token opaco del QR. La mesa sale de acá, del lado del
+   * servidor (POST /mesas/llamar con X-Mesa-Token); el botón no conoce ids.
+   */
+  readonly qrToken: string;
 }
+
+const MENSAJE_ERROR_GENERICO = 'No pudimos avisarle al mozo. Probá de nuevo.';
 
 type Estado = 'idle' | 'enviando' | 'enviado' | 'error';
 
-export function LlamarMozoButton({ tenantId, mesaId }: LlamarMozoButtonProps) {
+export function LlamarMozoButton({ qrToken }: LlamarMozoButtonProps) {
+  const origen: OrigenMenu = { tipo: 'mesa', qrToken };
   const [estado, setEstado] = useState<Estado>('idle');
   const [mensaje, setMensaje] = useState<string | null>(null);
 
@@ -28,28 +41,42 @@ export function LlamarMozoButton({ tenantId, mesaId }: LlamarMozoButtonProps) {
     }
   };
 
+  function mostrarError(texto: string | null) {
+    setEstado('error');
+    setMensaje(texto ?? MENSAJE_ERROR_GENERICO);
+    triggerFeedback('error');
+    setTimeout(() => setEstado('idle'), 5000);
+  }
+
   async function llamar() {
     triggerFeedback('click');
     setEstado('enviando');
     setMensaje(null);
 
     try {
+      const auth = solicitudAuthComensal(origen);
       const authRes = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/auth/comensal`,
+        `${process.env.NEXT_PUBLIC_API_URL}${auth.ruta}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tenantId, mesaId }),
+          body: JSON.stringify(auth.body),
         },
       );
-      if (!authRes.ok) throw new Error();
+      if (!authRes.ok) {
+        mostrarError(mensajeErrorQr(origen, authRes.status));
+        return;
+      }
       const { accessToken } = await authRes.json();
 
       const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/mesas/${mesaId}/llamar`,
+        `${process.env.NEXT_PUBLIC_API_URL}${RUTA_LLAMAR_MOZO}`,
         {
           method: 'POST',
-          headers: { Authorization: `Bearer ${accessToken}` },
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            ...headersMesaQr(origen),
+          },
         },
       );
 
@@ -60,7 +87,10 @@ export function LlamarMozoButton({ tenantId, mesaId }: LlamarMozoButtonProps) {
         setTimeout(() => setEstado('idle'), 5000);
         return;
       }
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        mostrarError(mensajeErrorQr(origen, res.status));
+        return;
+      }
 
       setEstado('enviado');
       setMensaje('¡Listo! Avisamos al mozo.');
@@ -71,10 +101,7 @@ export function LlamarMozoButton({ tenantId, mesaId }: LlamarMozoButtonProps) {
         setMensaje(null);
       }, 60_000);
     } catch {
-      setEstado('error');
-      setMensaje('No pudimos avisarle al mozo. Probá de nuevo.');
-      triggerFeedback('error');
-      setTimeout(() => setEstado('idle'), 5000);
+      mostrarError(null);
     }
   }
 

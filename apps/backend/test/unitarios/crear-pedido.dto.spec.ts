@@ -161,9 +161,10 @@ describe('CrearPedidoDto - Validación de Observaciones (BL-41)', () => {
   });
 });
 
-// BL-309: restauranteId es obligatorio solo en el pedido para retirar. En el
-// pedido de mesa lo resuelve el backend a partir de la mesa.
-describe('CrearPedidoDto - restauranteId según el tipo de pedido (BL-309)', () => {
+// BL-309 / BL-204: restauranteId es opcional en el DTO, que no ve los
+// headers. Con X-Mesa-Token el body no lleva ningún id; sin QR ni mesaId, el
+// 400 por falta de restauranteId lo da PedidosService.crear.
+describe('CrearPedidoDto - restauranteId según el tipo de pedido (BL-309 / BL-204)', () => {
   const ITEMS = [
     { itemCartaId: '55555555-5555-5555-5555-555555555555', cantidad: 1 },
   ];
@@ -196,7 +197,7 @@ describe('CrearPedidoDto - restauranteId según el tipo de pedido (BL-309)', () 
     ).toEqual([]);
   });
 
-  it('pedido de mesa con restauranteId mal formado: se rechaza', async () => {
+  it('restauranteId mal formado: se rechaza', async () => {
     expect(
       await propiedadesConError({
         mesaId: MESA_ID,
@@ -207,10 +208,10 @@ describe('CrearPedidoDto - restauranteId según el tipo de pedido (BL-309)', () 
     ).toEqual(['restauranteId']);
   });
 
-  it('pedido para retirar sin restauranteId: se rechaza', async () => {
+  it('BL-204: sin mesaId ni restauranteId (pedido con X-Mesa-Token): es válido para el DTO', async () => {
     expect(
       await propiedadesConError({ idempotencyKey: 'k', items: ITEMS }),
-    ).toEqual(['restauranteId']);
+    ).toEqual([]);
   });
 
   it('pedido para retirar con restauranteId: es válido', async () => {
