@@ -2,6 +2,8 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -17,6 +19,7 @@ import { RolesGuard, Roles } from '../auth/roles.guard';
 import { AuthenticatedUser } from '../auth/keycloak-jwt.strategy';
 import { MesaThrottlerGuard } from './mesa-throttler.guard';
 import { MesasService } from './mesas.service';
+import { MesasQrService } from './mesas-qr.service';
 import { ListarLayoutQueryDto } from './dto/listar-layout-query.dto';
 import { GuardarLayoutDto } from './dto/guardar-layout.dto';
 import { MesaLayoutDto } from './dto/mesa-layout.dto';
@@ -26,7 +29,10 @@ import { ActualizarEstadoMesaDto } from './dto/actualizar-estado-mesa.dto';
 @UseGuards(AuthGuard('jwt'), RolesGuard)
 @Roles('COMENSAL')
 export class MesasController {
-  constructor(private readonly mesasService: MesasService) {}
+  constructor(
+    private readonly mesasService: MesasService,
+    private readonly mesasQrService: MesasQrService,
+  ) {}
 
   @Post(':id/llamar')
   @UseGuards(MesaThrottlerGuard)
@@ -65,6 +71,34 @@ export class MesasController {
       dto.restauranteId,
       dto.mesas,
       dto.eliminar ?? [],
+    );
+  }
+
+  // HU-034 (BL-204): URLs de los QR de cada mesa (y del link web del local)
+  // para armar el PDF imprimible. Solo ADMIN.
+  @Get('qr')
+  @Roles('ADMIN')
+  listarQr(
+    @Req() req: { user: AuthenticatedUser },
+    @Query() query: ListarLayoutQueryDto,
+  ) {
+    return this.mesasQrService.listar(req.user.tenantId, query.restauranteId);
+  }
+
+  // HU-034 (BL-204): regenera el QR de una mesa (por ejemplo, si se filtró).
+  // El anterior deja de funcionar. Solo ADMIN. 200 y no 201: no crea un
+  // recurso nuevo.
+  @Post(':id/qr/regenerar')
+  @Roles('ADMIN')
+  @HttpCode(HttpStatus.OK)
+  regenerarQr(
+    @Req() req: { user: AuthenticatedUser },
+    @Param('id', ParseUUIDPipe) mesaId: string,
+  ) {
+    return this.mesasQrService.regenerar(
+      req.user.tenantId,
+      mesaId,
+      req.user.sub,
     );
   }
 
