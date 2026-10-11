@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { PedidoEstado } from '@prisma/client';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
+import { aPedidoKds } from './pedido-kds.mapper';
 
 // Subconjunto de transiciones que el KDS puede disparar (RF.03/RNF.05).
 // El resto de la máquina de estados (RECIBIDO viene de HU-003, ENTREGADO lo
@@ -189,19 +190,9 @@ export class PedidosTransicionService {
         orderBy: { createdAt: 'asc' },
       });
 
-      return pedidos.map((p) => ({
-        id: p.id,
-        mesaNumero: p.mesa.numero,
-        estado: p.estado,
-        createdAt: p.createdAt.toISOString(),
-        observacionGeneral: p.observacionGeneral,
-        lineas: p.lineas.map((l) => ({
-          id: l.id,
-          nombreSnapshot: l.nombreSnapshot,
-          cantidad: l.cantidad,
-          observacion: l.observacion,
-        })),
-      }));
+      // BL-244: mismo mapper que usa pedido:nuevo (PedidosService.crear),
+      // para que el snapshot y el evento en vivo tengan la misma forma.
+      return pedidos.map(aPedidoKds);
     });
   }
 }

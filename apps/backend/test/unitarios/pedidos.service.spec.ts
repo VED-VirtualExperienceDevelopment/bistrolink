@@ -20,6 +20,34 @@ function dtoBase(overrides: Partial<CrearPedidoDto> = {}): CrearPedidoDto {
   } as CrearPedidoDto;
 }
 
+/**
+ * BL-244: pedido tal como lo devuelve `tx.pedido.create({ include: { lineas } })`,
+ * con los campos que el mapper del KDS necesita y los que NO debe reenviar.
+ */
+function pedidoPrisma(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'pedido-x',
+    tenantId: TENANT_ID,
+    mesaId: '33333333-3333-3333-3333-333333333333',
+    idempotencyKey: 'clave-fija-de-prueba',
+    estado: 'RECIBIDO',
+    canal: 'QR',
+    createdAt: new Date('2026-10-10T23:41:00.000Z'),
+    observacionGeneral: null,
+    lineas: [
+      {
+        id: 'linea-1',
+        nombreSnapshot: 'Milanesa a la napolitana',
+        precioUnitarioSnapshot: new Decimal('590'),
+        subtotal: new Decimal('590'),
+        cantidad: 1,
+        observacion: null,
+      },
+    ],
+    ...overrides,
+  };
+}
+
 describe('PedidosService.crear - idempotencia', () => {
   let mockTx: any;
   let mockTenantPrisma: any;
@@ -73,6 +101,7 @@ describe('PedidosService.crear - idempotencia', () => {
     mockTx.pedido.findUnique.mockResolvedValue(null);
     mockTx.mesa.findUnique.mockResolvedValue({
       id: '33333333-3333-3333-3333-333333333333',
+      numero: 5,
     });
     mockTx.itemCarta.findMany.mockResolvedValue([
       {
@@ -82,29 +111,66 @@ describe('PedidosService.crear - idempotencia', () => {
         disponible: true,
       },
     ]);
-    const pedidoCreado = { id: 'pedido-nuevo', lineas: [] };
+    const pedidoCreado = pedidoPrisma({ id: 'pedido-nuevo' });
     mockTx.pedido.create.mockResolvedValue(pedidoCreado);
 
     const resultado = await service.crear(TENANT_ID, dtoBase());
 
     expect(mockTx.pedido.create).toHaveBeenCalledTimes(1);
+    // La respuesta al comensal sigue siendo el pedido completo (HU-003).
     expect(resultado).toBe(pedidoCreado);
-    expect(mockKdsGateway.emitirNuevoPedido).toHaveBeenCalledWith(
-      TENANT_ID,
-      pedidoCreado,
+    // BL-244: al KDS va con la forma del snapshot, con mesaNumero.
+    expect(mockKdsGateway.emitirNuevoPedido).toHaveBeenCalledWith(TENANT_ID, {
+      id: 'pedido-nuevo',
+      mesaNumero: 5,
+      estado: 'RECIBIDO',
+      createdAt: '2026-10-10T23:41:00.000Z',
+      observacionGeneral: null,
+      lineas: [
+        {
+          id: 'linea-1',
+          nombreSnapshot: 'Milanesa a la napolitana',
+          cantidad: 1,
+          observacion: null,
+        },
+      ],
+    });
+  });
+
+  it('BL-244: el evento al KDS no incluye datos que el tablero no usa (precios, idempotencyKey)', async () => {
+    mockTx.pedido.findUnique.mockResolvedValue(null);
+    mockTx.mesa.findUnique.mockResolvedValue({
+      id: '33333333-3333-3333-3333-333333333333',
+      numero: 5,
+    });
+    mockTx.itemCarta.findMany.mockResolvedValue([
+      {
+        id: '55555555-5555-5555-5555-555555555555',
+        nombre: 'Milanesa a la napolitana',
+        precio: new Decimal('590'),
+        disponible: true,
+      },
+    ]);
+    mockTx.pedido.create.mockResolvedValue(
+      pedidoPrisma({ id: 'pedido-nuevo' }),
     );
+
+    await service.crear(TENANT_ID, dtoBase());
+
+    const [, emitido] = mockKdsGateway.emitirNuevoPedido.mock.calls[0];
+    expect(emitido).not.toHaveProperty('idempotencyKey');
+    expect(emitido).not.toHaveProperty('mesaId');
+    expect(emitido.lineas[0]).not.toHaveProperty('precioUnitarioSnapshot');
+    expect(emitido.lineas[0]).not.toHaveProperty('subtotal');
   });
 
   it('dos llamadas seguidas con la MISMA key: la segunda no dispara un create ni un aviso nuevo', async () => {
-    const pedidoCreado = {
-      id: 'pedido-nuevo',
-      idempotencyKey: 'clave-fija-de-prueba',
-      lineas: [],
-    };
+    const pedidoCreado = pedidoPrisma({ id: 'pedido-nuevo' });
 
     mockTx.pedido.findUnique.mockResolvedValueOnce(null);
     mockTx.mesa.findUnique.mockResolvedValue({
       id: '33333333-3333-3333-3333-333333333333',
+      numero: 5,
     });
     mockTx.itemCarta.findMany.mockResolvedValue([
       {
@@ -204,13 +270,22 @@ describe('PedidosService.crear — validaciones y mesa virtual', () => {
         disponible: true,
       },
     ]);
-    mockTx.pedido.create.mockResolvedValue({
-      id: 'pedido-web',
-      canal: 'WEB',
-      lineas: [],
-    });
+    mockTx.pedido.create.mockResolvedValue(
+      pedidoPrisma({
+        id: 'pedido-web',
+        canal: 'WEB',
+        mesaId: 'mesa-virtual-id',
+      }),
+    );
 
     await service.crear(TENANT_ID, dtoSinMesa);
+
+    // BL-244: el pedido web llega al KDS como «Mesa 0» (la mesa virtual),
+    // no como «Mesa» sin número.
+    expect(mockKdsGateway.emitirNuevoPedido).toHaveBeenCalledWith(
+      TENANT_ID,
+      expect.objectContaining({ id: 'pedido-web', mesaNumero: 0 }),
+    );
 
     expect(mockTx.mesa.findUnique).not.toHaveBeenCalled();
     expect(mockTx.mesa.upsert).toHaveBeenCalledWith(
