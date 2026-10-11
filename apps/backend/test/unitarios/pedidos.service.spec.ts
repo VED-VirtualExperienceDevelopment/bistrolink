@@ -1,5 +1,9 @@
 import { Decimal } from '@prisma/client/runtime/library';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import {
   PedidosService,
   ESTADO_INICIAL_PEDIDO,
@@ -7,6 +11,20 @@ import {
 import { CrearPedidoDto } from '../../src/pedidos/dto/crear-pedido.dto';
 
 const TENANT_ID = '11111111-1111-1111-1111-111111111111';
+const RESTAURANTE_ID = '22222222-2222-2222-2222-222222222222';
+const MESA_ID = '33333333-3333-3333-3333-333333333333';
+
+/** BL-309: mesa real tal como la devuelve tx.mesa.findUnique. */
+function mesaReal(overrides: Record<string, unknown> = {}) {
+  return {
+    id: MESA_ID,
+    tenantId: TENANT_ID,
+    restauranteId: RESTAURANTE_ID,
+    numero: 7,
+    esVirtual: false,
+    ...overrides,
+  };
+}
 
 function dtoBase(overrides: Partial<CrearPedidoDto> = {}): CrearPedidoDto {
   return {
@@ -99,10 +117,7 @@ describe('PedidosService.crear - idempotencia', () => {
 
   it('SÍ crea el pedido y notifica al KDS cuando la idempotencyKey es nueva', async () => {
     mockTx.pedido.findUnique.mockResolvedValue(null);
-    mockTx.mesa.findUnique.mockResolvedValue({
-      id: '33333333-3333-3333-3333-333333333333',
-      numero: 5,
-    });
+    mockTx.mesa.findUnique.mockResolvedValue(mesaReal({ numero: 5 }));
     mockTx.itemCarta.findMany.mockResolvedValue([
       {
         id: '55555555-5555-5555-5555-555555555555',
@@ -139,10 +154,7 @@ describe('PedidosService.crear - idempotencia', () => {
 
   it('BL-244: el evento al KDS no incluye datos que el tablero no usa (precios, idempotencyKey)', async () => {
     mockTx.pedido.findUnique.mockResolvedValue(null);
-    mockTx.mesa.findUnique.mockResolvedValue({
-      id: '33333333-3333-3333-3333-333333333333',
-      numero: 5,
-    });
+    mockTx.mesa.findUnique.mockResolvedValue(mesaReal({ numero: 5 }));
     mockTx.itemCarta.findMany.mockResolvedValue([
       {
         id: '55555555-5555-5555-5555-555555555555',
@@ -168,10 +180,7 @@ describe('PedidosService.crear - idempotencia', () => {
     const pedidoCreado = pedidoPrisma({ id: 'pedido-nuevo' });
 
     mockTx.pedido.findUnique.mockResolvedValueOnce(null);
-    mockTx.mesa.findUnique.mockResolvedValue({
-      id: '33333333-3333-3333-3333-333333333333',
-      numero: 5,
-    });
+    mockTx.mesa.findUnique.mockResolvedValue(mesaReal({ numero: 5 }));
     mockTx.itemCarta.findMany.mockResolvedValue([
       {
         id: '55555555-5555-5555-5555-555555555555',
@@ -225,9 +234,7 @@ describe('PedidosService.crear — validaciones y mesa virtual', () => {
   });
 
   it('rechaza con 400 si algún ítem del pedido no existe en la carta', async () => {
-    mockTx.mesa.findUnique.mockResolvedValue({
-      id: '33333333-3333-3333-3333-333333333333',
-    });
+    mockTx.mesa.findUnique.mockResolvedValue(mesaReal());
     mockTx.itemCarta.findMany.mockResolvedValue([]);
 
     await expect(service.crear(TENANT_ID, dtoBase())).rejects.toThrow(
@@ -237,9 +244,7 @@ describe('PedidosService.crear — validaciones y mesa virtual', () => {
   });
 
   it('rechaza con 400 si el ítem existe pero no está disponible', async () => {
-    mockTx.mesa.findUnique.mockResolvedValue({
-      id: '33333333-3333-3333-3333-333333333333',
-    });
+    mockTx.mesa.findUnique.mockResolvedValue(mesaReal());
     mockTx.itemCarta.findMany.mockResolvedValue([
       {
         id: '55555555-5555-5555-5555-555555555555',
@@ -303,6 +308,125 @@ describe('PedidosService.crear — validaciones y mesa virtual', () => {
         data: expect.objectContaining({
           canal: 'WEB',
           mesaId: 'mesa-virtual-id',
+        }),
+      }),
+    );
+  });
+});
+
+// BL-309: en el pedido de mesa, el restaurante sale de la mesa (servidor),
+// no del body. El pedido para retirar sigue necesitando restauranteId.
+describe('PedidosService.crear — mesa y restaurante (BL-309)', () => {
+  let mockTx: any;
+  let mockTenantPrisma: any;
+  let mockKdsGateway: any;
+  let service: PedidosService;
+
+  const ITEM_DISPONIBLE = {
+    id: '55555555-5555-5555-5555-555555555555',
+    nombre: 'Milanesa a la napolitana',
+    precio: new Decimal('590'),
+    disponible: true,
+  };
+
+  beforeEach(() => {
+    mockTx = {
+      pedido: { findUnique: jest.fn(), create: jest.fn() },
+      mesa: { findUnique: jest.fn(), upsert: jest.fn() },
+      itemCarta: { findMany: jest.fn() },
+    };
+    mockTenantPrisma = {
+      runInTenantContext: jest.fn(
+        (_tenantId: string, fn: (tx: unknown) => unknown) => fn(mockTx),
+      ),
+    };
+    mockKdsGateway = { emitirNuevoPedido: jest.fn() };
+    service = new PedidosService(mockTenantPrisma, mockKdsGateway);
+
+    mockTx.pedido.findUnique.mockResolvedValue(null);
+    mockTx.itemCarta.findMany.mockResolvedValue([ITEM_DISPONIBLE]);
+    mockTx.pedido.create.mockResolvedValue(pedidoPrisma());
+  });
+
+  it('pedido de mesa sin restauranteId: lo toma de la mesa y crea el pedido', async () => {
+    mockTx.mesa.findUnique.mockResolvedValue(mesaReal());
+
+    await service.crear(TENANT_ID, dtoBase({ restauranteId: undefined }));
+
+    expect(mockTx.pedido.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          restauranteId: RESTAURANTE_ID,
+          mesaId: MESA_ID,
+          canal: 'QR',
+        }),
+      }),
+    );
+    expect(mockKdsGateway.emitirNuevoPedido).toHaveBeenCalledWith(
+      TENANT_ID,
+      expect.objectContaining({ mesaNumero: 7 }),
+    );
+  });
+
+  it('pedido de mesa con el restauranteId de la mesa: se acepta', async () => {
+    mockTx.mesa.findUnique.mockResolvedValue(mesaReal());
+
+    await service.crear(TENANT_ID, dtoBase({ restauranteId: RESTAURANTE_ID }));
+
+    expect(mockTx.pedido.create).toHaveBeenCalled();
+  });
+
+  it('pedido de mesa con un restauranteId distinto al de la mesa: 403 y no se crea', async () => {
+    mockTx.mesa.findUnique.mockResolvedValue(mesaReal());
+
+    await expect(
+      service.crear(
+        TENANT_ID,
+        dtoBase({ restauranteId: '99999999-9999-9999-9999-999999999999' }),
+      ),
+    ).rejects.toThrow(ForbiddenException);
+    expect(mockTx.pedido.create).not.toHaveBeenCalled();
+    expect(mockKdsGateway.emitirNuevoPedido).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['es de otro tenant', { tenantId: 'aaaaaaaa-0000-0000-0000-000000000001' }],
+    ['es la mesa virtual', { esVirtual: true, numero: 0 }],
+  ])('404 si la mesa %s', async (_caso, overrides) => {
+    mockTx.mesa.findUnique.mockResolvedValue(mesaReal(overrides));
+
+    await expect(
+      service.crear(TENANT_ID, dtoBase({ restauranteId: undefined })),
+    ).rejects.toThrow(NotFoundException);
+    expect(mockTx.pedido.create).not.toHaveBeenCalled();
+  });
+
+  it('pedido para retirar sin restauranteId: 400 y no toca la mesa virtual', async () => {
+    await expect(
+      service.crear(
+        TENANT_ID,
+        dtoBase({ mesaId: undefined, restauranteId: undefined }),
+      ),
+    ).rejects.toThrow(BadRequestException);
+    expect(mockTx.mesa.upsert).not.toHaveBeenCalled();
+    expect(mockTx.pedido.create).not.toHaveBeenCalled();
+  });
+
+  it('pedido para retirar: guarda el restauranteId del body y usa la mesa virtual', async () => {
+    mockTx.mesa.upsert.mockResolvedValue({
+      id: 'mesa-virtual-id',
+      numero: 0,
+      esVirtual: true,
+    });
+
+    await service.crear(TENANT_ID, dtoBase({ mesaId: undefined }));
+
+    expect(mockTx.pedido.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          restauranteId: RESTAURANTE_ID,
+          mesaId: 'mesa-virtual-id',
+          canal: 'WEB',
         }),
       }),
     );

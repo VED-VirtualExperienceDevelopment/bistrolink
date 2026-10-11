@@ -55,8 +55,14 @@ describe('Pedidos Observaciones - Integración (BL-41)', () => {
     jest.clearAllMocks();
     // Setup común: el pedido no existe, la mesa existe, el ítem está disponible
     mockTx.pedido.findUnique.mockResolvedValue(null);
+    // BL-309: el servicio valida que la mesa sea del tenant y no sea la
+    // virtual, y toma el restaurante de la mesa (no del body).
     mockTx.mesa.findUnique.mockResolvedValue({
       id: '33333333-3333-3333-3333-333333333333',
+      tenantId: '11111111-1111-1111-1111-111111111111',
+      restauranteId: '22222222-2222-2222-2222-222222222222',
+      numero: 4,
+      esVirtual: false,
     });
     mockTx.itemCarta.findMany.mockResolvedValue([
       {
@@ -84,13 +90,21 @@ describe('Pedidos Observaciones - Integración (BL-41)', () => {
       ],
     };
 
+    // BL-244: el pedido tal como lo devuelve Prisma, con los campos que el
+    // mapper del KDS (aPedidoKds) necesita: estado, createdAt y, por línea,
+    // id, nombreSnapshot y cantidad.
     const pedidoCreado = {
       id: 'pedido-nuevo-1',
       tenantId,
+      estado: 'RECIBIDO',
+      createdAt: new Date('2026-10-11T20:00:00.000Z'),
       observacionGeneral: dto.observacionGeneral,
       lineas: [
         {
+          id: 'linea-1',
           itemCartaId: '55555555-5555-5555-5555-555555555555',
+          nombreSnapshot: 'Milanesa a la napolitana',
+          cantidad: 1,
           observacion: 'Sin cebolla',
         },
       ],
@@ -104,6 +118,7 @@ describe('Pedidos Observaciones - Integración (BL-41)', () => {
     expect(kdsGateway.emitirNuevoPedido).toHaveBeenCalledWith(
       tenantId,
       expect.objectContaining({
+        mesaNumero: 4,
         observacionGeneral: 'Sin gluten, por favor. Mesa 4.',
         lineas: expect.arrayContaining([
           expect.objectContaining({
@@ -131,10 +146,15 @@ describe('Pedidos Observaciones - Integración (BL-41)', () => {
     const pedidoCreado = {
       id: 'pedido-nuevo-2',
       tenantId,
+      estado: 'RECIBIDO',
+      createdAt: new Date('2026-10-11T20:05:00.000Z'),
       observacionGeneral: undefined,
       lineas: [
         {
+          id: 'linea-2',
           itemCartaId: '55555555-5555-5555-5555-555555555555',
+          nombreSnapshot: 'Milanesa a la napolitana',
+          cantidad: 1,
           observacion: undefined,
         },
       ],
