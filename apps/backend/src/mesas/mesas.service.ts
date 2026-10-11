@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -9,6 +10,7 @@ import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { KdsGateway } from '../pedidos/kds.gateway';
 import { MesaLayoutDto } from './dto/mesa-layout.dto';
 import { MesaLayoutItemDto } from './dto/guardar-layout.dto';
+import { MesaDelQr } from '../qr-mesa/qr-mesa-acceso.service';
 
 /** "mesa 3" o "mesas 3, 5", para los mensajes de error del editor. */
 function listarMesas(numeros: number[]): string {
@@ -23,7 +25,17 @@ export class MesasService {
     private readonly kdsGateway: KdsGateway,
   ) {}
 
-  async llamarMozo(tenantId: string, mesaId: string) {
+  /**
+   * @param mesaQr mesa del QR validada por MesaQrGuard (BL-204). Si viene,
+   *   solo se puede llamar al mozo desde esa mesa.
+   */
+  async llamarMozo(tenantId: string, mesaId: string, mesaQr?: MesaDelQr) {
+    if (mesaQr && mesaQr.mesaId !== mesaId) {
+      throw new ForbiddenException(
+        'La mesa del llamado no coincide con la del QR',
+      );
+    }
+
     const mesa = await this.tenantPrisma.runInTenantContext(tenantId, (tx) =>
       tx.mesa.findUnique({
         where: { id: mesaId },

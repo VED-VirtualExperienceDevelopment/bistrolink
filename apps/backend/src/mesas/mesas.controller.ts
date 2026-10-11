@@ -20,6 +20,8 @@ import { AuthenticatedUser } from '../auth/keycloak-jwt.strategy';
 import { MesaThrottlerGuard } from './mesa-throttler.guard';
 import { MesasService } from './mesas.service';
 import { MesasQrService } from './mesas-qr.service';
+import { MesaDelQr } from '../qr-mesa/qr-mesa-acceso.service';
+import { MesaDelQrActual, MesaQrGuard } from '../qr-mesa/mesa-qr.guard';
 import { ListarLayoutQueryDto } from './dto/listar-layout-query.dto';
 import { GuardarLayoutDto } from './dto/guardar-layout.dto';
 import { MesaLayoutDto } from './dto/mesa-layout.dto';
@@ -34,14 +36,18 @@ export class MesasController {
     private readonly mesasQrService: MesasQrService,
   ) {}
 
+  // HU-034 (BL-204): con X-Mesa-Token, el llamado solo vale para la mesa del
+  // QR. MesaQrGuard va antes que el throttler: un token inválido no consume
+  // el cupo de llamados de la mesa.
   @Post(':id/llamar')
-  @UseGuards(MesaThrottlerGuard)
+  @UseGuards(MesaQrGuard, MesaThrottlerGuard)
   @Throttle({ default: { limit: 1, ttl: 60_000 } })
   llamar(
     @Req() req: { user: AuthenticatedUser },
     @Param('id', ParseUUIDPipe) mesaId: string,
+    @MesaDelQrActual() mesaQr?: MesaDelQr,
   ) {
-    return this.mesasService.llamarMozo(req.user.tenantId, mesaId);
+    return this.mesasService.llamarMozo(req.user.tenantId, mesaId, mesaQr);
   }
 
   // HU-016: mapa visual de mesas. A diferencia de "llamar" (COMENSAL), estas

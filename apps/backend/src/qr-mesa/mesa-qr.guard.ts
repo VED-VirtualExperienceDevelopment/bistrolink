@@ -1,0 +1,71 @@
+import {
+  BadRequestException,
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+  Injectable,
+  createParamDecorator,
+} from '@nestjs/common';
+import { AuthenticatedUser } from '../auth/keycloak-jwt.strategy';
+import { MesaDelQr, QrMesaAccesoService } from './qr-mesa-acceso.service';
+
+/** Header con el token del QR de la mesa (el mismo de la URL /q/<token>). */
+export const HEADER_MESA_TOKEN = 'x-mesa-token';
+
+export interface RequestConMesaQr {
+  user?: AuthenticatedUser;
+  headers: Record<string, string | string[] | undefined>;
+  mesaQr?: MesaDelQr;
+}
+
+/**
+ * HU-034 (BL-204): ata un pedido o un llamado a la mesa del QR escaneado.
+ *
+ * Si la request trae el header X-Mesa-Token:
+ * - el QR tiene que ser válido y vigente (QrMesaAccesoService: 404 / 410);
+ * - la mesa tiene que ser del mismo tenant que el JWT del comensal (403);
+ * - la mesa queda en `request.mesaQr` (decorador @MesaDelQrActual): el
+ *   endpoint usa ESA mesa, no la que diga el cliente.
+ *
+ * Va después de AuthGuard('jwt') y RolesGuard, porque necesita `request.user`.
+ *
+ * PROVISORIO (BL-204, paso 6): sin el header, deja pasar la request, para
+ * que el frontend actual (que todavía manda mesaId) siga funcionando. En el
+ * paso 6, junto con el cambio del frontend, el token pasa a ser obligatorio
+ * para los pedidos y llamados de mesa.
+ */
+@Injectable()
+export class MesaQrGuard implements CanActivate {
+  constructor(private readonly qrMesaAcceso: QrMesaAccesoService) {}
+
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const request = context.switchToHttp().getRequest<RequestConMesaQr>();
+    const valor = request.headers[HEADER_MESA_TOKEN];
+
+    if (valor === undefined) {
+      return true;
+    }
+
+    // Un header repetido o vacío no es un token: no se intenta adivinar cuál usar.
+    if (typeof valor !== 'string' || valor.length === 0) {
+      throw new BadRequestException('X-Mesa-Token inválido');
+    }
+
+    const mesa = await this.qrMesaAcceso.resolver(valor);
+
+    if (!request.user || mesa.tenantId !== request.user.tenantId) {
+      throw new ForbiddenException(
+        'El QR no corresponde a este establecimiento',
+      );
+    }
+
+    request.mesaQr = mesa;
+    return true;
+  }
+}
+
+/** La mesa del QR validada por MesaQrGuard, o undefined si no vino el header. */
+export const MesaDelQrActual = createParamDecorator(
+  (_data: unknown, context: ExecutionContext): MesaDelQr | undefined =>
+    context.switchToHttp().getRequest<RequestConMesaQr>().mesaQr,
+);
