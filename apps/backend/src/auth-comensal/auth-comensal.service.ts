@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
+import { QrMesaAccesoService } from '../qr-mesa/qr-mesa-acceso.service';
 
 export interface TokenComensal {
   accessToken: string;
@@ -13,7 +14,10 @@ export interface TokenComensal {
 
 @Injectable()
 export class AuthComensalService {
-  constructor(private readonly tenantPrisma: TenantPrismaService) {}
+  constructor(
+    private readonly tenantPrisma: TenantPrismaService,
+    private readonly qrMesaAcceso: QrMesaAccesoService,
+  ) {}
 
   private get keycloakUrl(): string {
     return process.env.KEYCLOAK_URL ?? 'http://localhost:8080';
@@ -69,6 +73,25 @@ export class AuthComensalService {
       );
     }
 
+    return this.pedirTokenKeycloak(tenantId);
+  }
+
+  /**
+   * HU-034 (BL-204): token del comensal en una mesa. El tenant sale del QR
+   * (validado y vigente), nunca del cliente. QrMesaAccesoService responde
+   * 404 si el QR no es válido y 410 si fue reemplazado.
+   */
+  async emitirTokenPorQr(qrToken: string): Promise<TokenComensal> {
+    const mesa = await this.qrMesaAcceso.resolver(qrToken);
+    return this.pedirTokenKeycloak(mesa.tenantId);
+  }
+
+  /**
+   * Pide el JWT del comensal técnico del tenant (comensal-<tenantId>) a
+   * Keycloak. Es el mismo usuario para todo el tenant: la mesa se valida
+   * aparte (BL-204, MesaQrGuard en pedidos y llamados).
+   */
+  private async pedirTokenKeycloak(tenantId: string): Promise<TokenComensal> {
     const username = `comensal-${tenantId}`;
 
     const res = await fetch(

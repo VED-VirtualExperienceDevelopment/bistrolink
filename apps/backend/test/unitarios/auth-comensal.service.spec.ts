@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  GoneException,
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
@@ -11,6 +12,7 @@ const RESTAURANTE_ID = '22222222-2222-2222-2222-222222222222';
 
 describe('AuthComensalService.emitirToken', () => {
   let mockTenantPrisma: any;
+  let mockQrMesaAcceso: any;
   let service: AuthComensalService;
   const envOriginal = process.env;
   let fetchMock: jest.Mock;
@@ -26,7 +28,8 @@ describe('AuthComensalService.emitirToken', () => {
     };
 
     mockTenantPrisma = { runInTenantContext: jest.fn() };
-    service = new AuthComensalService(mockTenantPrisma);
+    mockQrMesaAcceso = { resolver: jest.fn() };
+    service = new AuthComensalService(mockTenantPrisma, mockQrMesaAcceso);
 
     fetchMock = jest.fn();
     global.fetch = fetchMock as any;
@@ -131,5 +134,43 @@ describe('AuthComensalService.emitirToken', () => {
     await expect(service.emitirToken(TENANT_ID, MESA_ID)).rejects.toThrow(
       'Falta KEYCLOAK_COMENSAL_PASSWORD en el .env',
     );
+  });
+
+  // HU-034 (BL-204): token del comensal a partir del QR de la mesa.
+  describe('emitirTokenPorQr', () => {
+    it('emite el token del comensal técnico del tenant que viene en el QR', async () => {
+      mockQrMesaAcceso.resolver.mockResolvedValue({
+        tenantId: TENANT_ID,
+        mesaId: MESA_ID,
+        restauranteId: RESTAURANTE_ID,
+        numero: 4,
+      });
+      fetchMock.mockResolvedValue({
+        ok: true,
+        json: async () => ({ access_token: 'jwt-de-prueba', expires_in: 3600 }),
+      });
+
+      const resultado = await service.emitirTokenPorQr('token-del-qr');
+
+      expect(mockQrMesaAcceso.resolver).toHaveBeenCalledWith('token-del-qr');
+      expect(resultado).toEqual({
+        accessToken: 'jwt-de-prueba',
+        expiresIn: 3600,
+      });
+      const body = fetchMock.mock.calls[0][1].body as URLSearchParams;
+      expect(body.get('username')).toBe(`comensal-${TENANT_ID}`);
+    });
+
+    it.each([
+      ['inválido (404)', new NotFoundException('QR no válido')],
+      ['reemplazado (410)', new GoneException('Este QR fue reemplazado.')],
+    ])('no pide token a Keycloak si el QR es %s', async (_caso, error) => {
+      mockQrMesaAcceso.resolver.mockRejectedValue(error);
+
+      await expect(service.emitirTokenPorQr('token-del-qr')).rejects.toBe(
+        error,
+      );
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
   });
 });
