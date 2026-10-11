@@ -78,24 +78,29 @@ export function LlamarMozoButton({ tenantId, mesaId }: LlamarMozoButtonProps) {
     }
   }
 
+  // Se extrajo la lógica para evitar los operadores ternarios anidados
+  const getEstadoClasses = (currentState: Estado) => {
+    switch (currentState) {
+      case 'idle':
+        return 'bg-white border border-[#6e54ad]/30 text-[#6e54ad] hover:border-[#6e54ad] hover:bg-[#6e54ad]/5 active:scale-[0.95]';
+      case 'enviando':
+        return 'bg-[#6e54ad]/10 border border-transparent text-[#6e54ad] cursor-not-allowed';
+      case 'enviado':
+        return 'bg-[#1e8e3e]/10 border border-[#1e8e3e]/30 text-[#1e8e3e] cursor-not-allowed scale-105';
+      case 'error':
+        return 'bg-red-800/10 border border-red-800/30 text-red-800 active:scale-[0.95] animate-shake';
+      default:
+        return '';
+    }
+  };
+
   return (
     <div className="flex flex-col items-center gap-2">
       <button
         type="button"
         onClick={llamar}
         disabled={estado === 'enviando' || estado === 'enviado'}
-        className={`
-          group relative overflow-hidden flex items-center justify-center gap-2.5 px-8 py-3 rounded-full font-semibold text-sm md:text-base transition-all duration-300 ease-out shadow-sm
-          ${
-            estado === 'idle'
-              ? 'bg-white border border-[#6e54ad]/30 text-[#6e54ad] hover:border-[#6e54ad] hover:bg-[#6e54ad]/5 active:scale-[0.95]'
-              : estado === 'enviando'
-              ? 'bg-[#6e54ad]/10 border border-transparent text-[#6e54ad] cursor-not-allowed'
-              : estado === 'enviado'
-              ? 'bg-[#1e8e3e]/10 border border-[#1e8e3e]/30 text-[#1e8e3e] cursor-not-allowed scale-105'
-              : 'bg-red-800/10 border border-red-800/30 text-red-800 active:scale-[0.95] animate-shake'
-          }
-        `}
+        className={`group relative overflow-hidden flex items-center justify-center gap-2.5 px-8 py-3 rounded-full font-semibold text-sm md:text-base transition-all duration-300 ease-out shadow-sm ${getEstadoClasses(estado)}`}
         aria-label="Llamar al mozo"
       >
         {estado === 'idle' && (
@@ -141,9 +146,9 @@ export function LlamarMozoButton({ tenantId, mesaId }: LlamarMozoButtonProps) {
 
       <div className="h-5 mt-1">
         {mensaje && (
-          <p role="status" className={`text-xs font-medium text-center transition-opacity ${estado === 'error' ? 'text-red-800' : 'text-[#1e8e3e]'}`}>
+          <output className={`block text-xs font-medium text-center transition-opacity ${estado === 'error' ? 'text-red-800' : 'text-[#1e8e3e]'}`}>
             {mensaje}
-          </p>
+          </output>
         )}
       </div>
     </div>
