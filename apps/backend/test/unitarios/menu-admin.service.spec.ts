@@ -1,5 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { MenuAdminService } from '../../src/menu/menu-admin.service';
 import { TenantPrismaService } from '../../src/prisma/tenant-prisma.service';
 import { MenuGateway } from '../../src/menu/menu.gateway';
@@ -9,6 +13,13 @@ import { UpdateItemDto } from '../../src/menu/dto/update-item.dto';
 import { UpdateCategoriaDto } from '../../src/menu/dto/update-categoria.dto';
 
 const URL_FIRMADA = 'https://bucket.example/img.jpg?X-Amz-Signature=abc';
+
+// BL-54: keys de imagen propias y ajenas para los controles de tenant.
+const KEY_PROPIA =
+  'test-tenant-id/menu/0b4f6a3e-1111-4c2d-9e8f-123456789abc.jpg';
+const KEY_AJENA = 'otro-tenant/menu/0b4f6a3e-2222-4c2d-9e8f-123456789abc.jpg';
+const MENSAJE_IMAGEN_AJENA =
+  'La imagen indicada no pertenece a este restaurante';
 
 describe('MenuAdminService', () => {
   let service: MenuAdminService;
@@ -44,6 +55,7 @@ describe('MenuAdminService', () => {
 
   const mockStorage = {
     getSignedImageUrl: jest.fn(),
+    esKeyDelTenant: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -71,6 +83,11 @@ describe('MenuAdminService', () => {
     // clearAllMocks no resetea implementaciones: se fija acá en cada test
     // para que un mockResolvedValue(null) de un test no se filtre al siguiente.
     mockStorage.getSignedImageUrl.mockResolvedValue(URL_FIRMADA);
+    // BL-54: la regla real de esKeyDelTenant se prueba en storage.service.spec.
+    // Acá alcanza con simularla: solo son propias las keys bajo el prefijo.
+    mockStorage.esKeyDelTenant.mockImplementation(
+      (key: string, tenantId: string) => key.startsWith(`${tenantId}/menu/`),
+    );
   });
 
   describe('createItem', () => {
@@ -151,6 +168,52 @@ describe('MenuAdminService', () => {
           tenantId,
           disponible: true,
         },
+      });
+    });
+
+    describe('imagen del ítem (BL-54)', () => {
+      const mockCategoria = { id: 'cat-123', nombre: 'Pizzas', tenantId };
+
+      beforeEach(() => {
+        mockTx.categoriaCarta.findFirst.mockResolvedValue(mockCategoria);
+        mockTx.itemCarta.create.mockImplementation(({ data }) => ({
+          id: 'item-123',
+          ...data,
+        }));
+      });
+
+      it('crea el ítem si la imagen es del propio tenant', async () => {
+        const dto = { ...createItemDto, imagenKey: KEY_PROPIA };
+
+        await service.createItem(tenantId, dto);
+
+        expect(mockStorage.esKeyDelTenant).toHaveBeenCalledWith(
+          KEY_PROPIA,
+          tenantId,
+        );
+        expect(mockTx.itemCarta.create).toHaveBeenCalledWith({
+          data: { ...dto, tenantId, disponible: true },
+        });
+      });
+
+      it('rechaza con BadRequestException una imagen de otro tenant', async () => {
+        const dto = { ...createItemDto, imagenKey: KEY_AJENA };
+
+        await expect(service.createItem(tenantId, dto)).rejects.toThrow(
+          BadRequestException,
+        );
+        await expect(service.createItem(tenantId, dto)).rejects.toThrow(
+          MENSAJE_IMAGEN_AJENA,
+        );
+        expect(mockTx.itemCarta.create).not.toHaveBeenCalled();
+        expect(mockMenuGateway.emitItemDataUpdated).not.toHaveBeenCalled();
+      });
+
+      it('no valida la imagen si el ítem no trae imagenKey', async () => {
+        await service.createItem(tenantId, createItemDto);
+
+        expect(mockStorage.esKeyDelTenant).not.toHaveBeenCalled();
+        expect(mockTx.itemCarta.create).toHaveBeenCalled();
       });
     });
   });
@@ -256,6 +319,58 @@ describe('MenuAdminService', () => {
 
       expect(mockTx.itemCarta.findFirst).toHaveBeenCalledTimes(1);
       expect(mockTx.categoriaCarta.findFirst).not.toHaveBeenCalled();
+    });
+
+    describe('imagen del ítem (BL-54)', () => {
+      const mockExisting = {
+        id: itemId,
+        categoriaId: 'cat-123',
+        nombre: 'Pizza',
+        precio: '10.00',
+        tenantId,
+      };
+
+      beforeEach(() => {
+        mockTx.itemCarta.findFirst.mockResolvedValue(mockExisting);
+        mockTx.itemCarta.update.mockImplementation(({ data }) => ({
+          ...mockExisting,
+          ...data,
+        }));
+      });
+
+      it('actualiza el ítem si la imagen es del propio tenant', async () => {
+        const dto: UpdateItemDto = { imagenKey: KEY_PROPIA };
+
+        await service.updateItem(tenantId, itemId, dto);
+
+        expect(mockStorage.esKeyDelTenant).toHaveBeenCalledWith(
+          KEY_PROPIA,
+          tenantId,
+        );
+        expect(mockTx.itemCarta.update).toHaveBeenCalledWith({
+          where: { id: itemId },
+          data: dto,
+        });
+      });
+
+      it('rechaza con BadRequestException una imagen de otro tenant', async () => {
+        const dto: UpdateItemDto = { imagenKey: KEY_AJENA };
+
+        await expect(service.updateItem(tenantId, itemId, dto)).rejects.toThrow(
+          BadRequestException,
+        );
+        await expect(service.updateItem(tenantId, itemId, dto)).rejects.toThrow(
+          MENSAJE_IMAGEN_AJENA,
+        );
+        expect(mockTx.itemCarta.update).not.toHaveBeenCalled();
+        expect(mockMenuGateway.emitItemDataUpdated).not.toHaveBeenCalled();
+      });
+
+      it('no valida la imagen si el dto no trae imagenKey', async () => {
+        await service.updateItem(tenantId, itemId, updateItemDto);
+
+        expect(mockStorage.esKeyDelTenant).not.toHaveBeenCalled();
+      });
     });
   });
 

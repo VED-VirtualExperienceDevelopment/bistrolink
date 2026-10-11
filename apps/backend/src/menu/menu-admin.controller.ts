@@ -31,8 +31,8 @@ export class MenuAdminController {
   @Post('presigned-url')
   async getPresignedUrl(@Req() req: any, @Body() dto: PresignedUrlDto) {
     return this.storageService.getPresignedPostUrl(
-      dto.fileName,
       dto.contentType,
+      dto.fileSize,
       req.user.tenantId,
     );
   }
