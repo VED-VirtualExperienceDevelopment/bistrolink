@@ -953,6 +953,8 @@ jobs:
 
       - name: Lighthouse CI — menú digital (HU-001)
         run: npx @lhci/cli@0.14.x autorun
+        env:
+          LHCI_GITHUB_APP_TOKEN: ${{ secrets.LHCI_GITHUB_APP_TOKEN }}
 
   # ── JOB 10: TESTS E2E (Playwright) — matrix por browser ───────────────────
   # Corre después de deploy-staging (push a develop) o a mano vía
