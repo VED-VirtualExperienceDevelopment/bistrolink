@@ -43,13 +43,15 @@ export default function ImageUploader({ onUploadSuccess, initialPreviewUrl }: Im
       try {
         const keycloak = getKeycloak();
 
+        // BL-54: se manda el tamaño para que el backend responda 413 antes de
+        // firmar. El nombre del archivo ya no viaja: la key la arma el backend.
         const { url, fields, key } = await apiFetch<{
           url: string;
           fields: Record<string, string>;
           key: string;
         }>('/admin/menu/presigned-url', keycloak.token, {
           method: 'POST',
-          body: JSON.stringify({ fileName: file.name, contentType: file.type }),
+          body: JSON.stringify({ contentType: file.type, fileSize: file.size }),
         });
 
         const formData = new FormData();

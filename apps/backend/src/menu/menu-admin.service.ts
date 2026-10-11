@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Injectable,
   Logger,
   NotFoundException,
@@ -186,6 +187,17 @@ export class MenuAdminService {
         );
       }
 
+      // BL-54: la imagen tiene que ser de este tenant; si no, se le firmaría
+      // una URL de lectura para una imagen ajena.
+      if (
+        data.imagenKey &&
+        !this.storage.esKeyDelTenant(data.imagenKey, tenantId)
+      ) {
+        throw new BadRequestException(
+          'La imagen indicada no pertenece a este restaurante',
+        );
+      }
+
       const nuevoItem = await tx.itemCarta.create({
         data: {
           ...data,
@@ -224,6 +236,16 @@ export class MenuAdminService {
             'La nueva categoría no existe o no pertenece a este tenant',
           );
         }
+      }
+
+      // BL-54: mismo control que en createItem.
+      if (
+        dto.imagenKey &&
+        !this.storage.esKeyDelTenant(dto.imagenKey, tenantId)
+      ) {
+        throw new BadRequestException(
+          'La imagen indicada no pertenece a este restaurante',
+        );
       }
 
       const updated = await tx.itemCarta.update({

@@ -1,12 +1,15 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, PayloadTooLargeException } from '@nestjs/common';
 import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { createPresignedPost } from '@aws-sdk/s3-presigned-post';
 import { v4 as uuidv4 } from 'uuid';
-
-// TTL de la URL firmada — criterio de seguridad de HU-001:
-// "las imágenes se sirven vía URLs firmadas con TTL, no URLs públicas permanentes".
-const SIGNED_URL_TTL_SECONDS = 3600;
+import {
+  EXTENSION_POR_TIPO,
+  TAMANIO_MAXIMO_IMAGEN_BYTES,
+  TipoImagenPermitido,
+  TTL_URL_LECTURA_SEGUNDOS,
+  TTL_URL_SUBIDA_SEGUNDOS,
+} from './upload.constants';
 
 @Injectable()
 export class StorageService {
@@ -26,16 +29,18 @@ export class StorageService {
     return this.s3Client;
   }
 
-  // <-- MODIFICADO: Ahora usa S3_BUCKET_IMAGES (sin prefijo AWS_) para respetar
-  // las variables de entorno existentes del proyecto.
+  /**
+   * URL firmada de LECTURA con TTL (HU-001: las imágenes se sirven vía URLs
+   * firmadas con TTL, no URLs públicas permanentes).
+   */
   async getSignedImageUrl(key: string): Promise<string | null> {
     try {
       const command = new GetObjectCommand({
-        Bucket: process.env.S3_BUCKET_IMAGES, // <-- CAMBIO CLAVE
+        Bucket: process.env.S3_BUCKET_IMAGES,
         Key: key,
       });
       return await getSignedUrl(this.getClient(), command, {
-        expiresIn: SIGNED_URL_TTL_SECONDS,
+        expiresIn: TTL_URL_LECTURA_SEGUNDOS,
       });
     } catch (error) {
       // No dejamos que un problema de S3 (bucket mal configurado, credenciales
@@ -46,26 +51,46 @@ export class StorageService {
     }
   }
 
-  // <-- NUEVO: Genera URL firmada para SUBIDA directa desde el frontend (S3/R2)
+  /**
+   * URL firmada de SUBIDA directa desde el frontend (BL-54).
+   *
+   * - El tipo ya llega validado por el DTO (solo jpeg/png/webp).
+   * - Si el tamaño declarado supera el máximo, se responde 413 sin firmar.
+   * - La policy de S3 repite ambos controles: aunque el cliente mienta el
+   *   tamaño o el tipo, S3 rechaza el archivo.
+   * - La key no usa datos del cliente: tenant + uuid + extensión del MIME.
+   */
   async getPresignedPostUrl(
-    fileName: string,
-    contentType: string,
+    contentType: TipoImagenPermitido,
+    fileSize: number,
     tenantId: string,
   ): Promise<{ url: string; fields: Record<string, string>; key: string }> {
-    // Generamos una key única con el tenantId como prefijo para organización
-    const key = `${tenantId}/menu/${uuidv4()}-${fileName.replace(/\s+/g, '_')}`;
+    if (fileSize > TAMANIO_MAXIMO_IMAGEN_BYTES) {
+      throw new PayloadTooLargeException('La imagen supera el máximo de 5 MB');
+    }
+
+    const key = `${tenantId}/menu/${uuidv4()}.${EXTENSION_POR_TIPO[contentType]}`;
 
     const { url, fields } = await createPresignedPost(this.getClient(), {
-      Bucket: process.env.S3_BUCKET_IMAGES, // <-- CAMBIO CLAVE
+      Bucket: process.env.S3_BUCKET_IMAGES,
       Key: key,
       Conditions: [
-        ['content-length-range', 0, 5 * 1024 * 1024], // Máx 5MB
+        ['content-length-range', 1, TAMANIO_MAXIMO_IMAGEN_BYTES],
         ['eq', '$Content-Type', contentType],
       ],
       Fields: { 'Content-Type': contentType },
-      Expires: 300, // 5 minutos para completar la subida
+      Expires: TTL_URL_SUBIDA_SEGUNDOS,
     });
 
     return { url, fields, key };
+  }
+
+  /**
+   * Una key solo es válida si vive bajo el prefijo del tenant que la usa.
+   * Evita que un tenant guarde la key de otro y obtenga una URL firmada
+   * para una imagen ajena.
+   */
+  esKeyDelTenant(key: string, tenantId: string): boolean {
+    return key.startsWith(`${tenantId}/menu/`) && !key.includes('..');
   }
 }
