@@ -64,6 +64,29 @@ export class MesaQrGuard implements CanActivate {
   }
 }
 
+/**
+ * HU-034 (BL-204): para las rutas que SOLO tienen sentido desde una mesa
+ * (POST /mesas/llamar). Va después de MesaQrGuard: si no vino X-Mesa-Token,
+ * MesaQrGuard deja pasar y acá se corta con 400.
+ *
+ * 400 y no 401: el JWT del comensal es válido; lo que falta es el QR. Así el
+ * frontend no lo confunde con una sesión vencida.
+ */
+@Injectable()
+export class MesaQrObligatoriaGuard implements CanActivate {
+  canActivate(context: ExecutionContext): boolean {
+    const request = context.switchToHttp().getRequest<RequestConMesaQr>();
+
+    if (!request.mesaQr) {
+      throw new BadRequestException(
+        'Falta X-Mesa-Token: escaneá el QR de la mesa',
+      );
+    }
+
+    return true;
+  }
+}
+
 /** La mesa del QR validada por MesaQrGuard, o undefined si no vino el header. */
 export const MesaDelQrActual = createParamDecorator(
   (_data: unknown, context: ExecutionContext): MesaDelQr | undefined =>

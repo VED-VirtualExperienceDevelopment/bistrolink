@@ -8,6 +8,7 @@ import {
 import {
   HEADER_MESA_TOKEN,
   MesaQrGuard,
+  MesaQrObligatoriaGuard,
   RequestConMesaQr,
 } from '../../src/qr-mesa/mesa-qr.guard';
 
@@ -112,4 +113,22 @@ describe('MesaQrGuard (BL-204)', () => {
       expect(mockQrMesaAcceso.resolver).not.toHaveBeenCalled();
     },
   );
+});
+
+describe('MesaQrObligatoriaGuard (BL-204)', () => {
+  const guard = new MesaQrObligatoriaGuard();
+
+  it('deja pasar si MesaQrGuard ya resolvió la mesa del QR', () => {
+    const request = { ...requestCon({}), mesaQr: MESA_DEL_QR };
+
+    expect(guard.canActivate(contextoCon(request))).toBe(true);
+  });
+
+  it('400 si no vino X-Mesa-Token (no hay mesa del QR)', () => {
+    const request = requestCon({});
+
+    expect(() => guard.canActivate(contextoCon(request))).toThrow(
+      BadRequestException,
+    );
+  });
 });

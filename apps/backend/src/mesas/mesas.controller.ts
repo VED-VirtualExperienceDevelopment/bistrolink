@@ -21,7 +21,11 @@ import { MesaThrottlerGuard } from './mesa-throttler.guard';
 import { MesasService } from './mesas.service';
 import { MesasQrService } from './mesas-qr.service';
 import { MesaDelQr } from '../qr-mesa/qr-mesa-acceso.service';
-import { MesaDelQrActual, MesaQrGuard } from '../qr-mesa/mesa-qr.guard';
+import {
+  MesaDelQrActual,
+  MesaQrGuard,
+  MesaQrObligatoriaGuard,
+} from '../qr-mesa/mesa-qr.guard';
 import { ListarLayoutQueryDto } from './dto/listar-layout-query.dto';
 import { GuardarLayoutDto } from './dto/guardar-layout.dto';
 import { MesaLayoutDto } from './dto/mesa-layout.dto';
@@ -36,9 +40,30 @@ export class MesasController {
     private readonly mesasQrService: MesasQrService,
   ) {}
 
-  // HU-034 (BL-204): con X-Mesa-Token, el llamado solo vale para la mesa del
-  // QR. MesaQrGuard va antes que el throttler: un token inválido no consume
-  // el cupo de llamados de la mesa.
+  // HU-034 (BL-204): llamar al mozo desde la mesa del QR. La mesa sale
+  // SOLO del X-Mesa-Token (obligatorio): no hay id en la URL que se pueda
+  // cambiar. Orden de los guards:
+  // 1. MesaQrGuard: valida el QR (404 / 410 / 403) y deja request.mesaQr.
+  // 2. MesaQrObligatoriaGuard: 400 si no vino el header.
+  // 3. MesaThrottlerGuard: 1 llamado por minuto por mesa del QR. Va último
+  //    para que un token inválido no consuma el cupo de la mesa.
+  @Post('llamar')
+  @UseGuards(MesaQrGuard, MesaQrObligatoriaGuard, MesaThrottlerGuard)
+  @Throttle({ default: { limit: 1, ttl: 60_000 } })
+  llamarDesdeQr(
+    @Req() req: { user: AuthenticatedUser },
+    @MesaDelQrActual() mesaQr: MesaDelQr,
+  ) {
+    return this.mesasService.llamarMozo(
+      req.user.tenantId,
+      mesaQr.mesaId,
+      mesaQr,
+    );
+  }
+
+  // PROVISORIO (BL-204): llamado por id de mesa, reemplazado por
+  // POST /mesas/llamar. Se retira en el paso 6c, cuando el frontend ya use
+  // la ruta nueva. Con X-Mesa-Token, el llamado solo vale para la mesa del QR.
   @Post(':id/llamar')
   @UseGuards(MesaQrGuard, MesaThrottlerGuard)
   @Throttle({ default: { limit: 1, ttl: 60_000 } })
