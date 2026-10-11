@@ -334,15 +334,12 @@ export default function MenuPublico({
                       onClick={() => handleAbrirNotaItem(item)}
                       className="text-xs text-brand-700 mt-1.5 flex items-center gap-1 hover:underline font-medium"
                     >
-                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
-                        <path d="m15 5 4 4" />
-                      </svg>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" /><path d="m15 5 4 4" /></svg>
                       Editar nota
                     </button>
                     {item.observacion && (
                       <p className="text-xs text-gray-600 mt-1 italic line-clamp-2">
-                        "{item.observacion}"
+                        &quot;{item.observacion}&quot;
                       </p>
                     )}
                   </div>

@@ -23,7 +23,7 @@ export function LlamarMozoButton({ tenantId, mesaId }: LlamarMozoButtonProps) {
       } else if (tipo === 'error') {
         if (navigator.vibrate) navigator.vibrate([200]);
       }
-    } catch (e) {
+    } catch {
       // Ignorar si no hay soporte
     }
   };

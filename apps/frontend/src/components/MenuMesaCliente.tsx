@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic';
 import ItemImagen from '@/components/menu/ItemImagen';
 import { LlamarMozoButton } from '@/components/LlamarMozoButton';
 import { apiFetch, ApiError } from '@/lib/api-client';
+import type { PedidoConfirmado } from '@/types/menu';
 
 const ItemNotaModal = dynamic(() => import('@/components/ItemNotaModal'), { ssr: false });
 const SeguimientoPedido = dynamic(
@@ -59,7 +60,7 @@ export default function MenuMesaCliente({
   const [notaTemporal, setNotaTemporal] = useState('');
 
   const [estadoPedido, setEstadoPedido] = useState<'idle' | 'enviando' | 'confirmado' | 'error'>('idle');
-  const [pedidoConfirmado, setPedidoConfirmado] = useState<any | null>(null);
+  const [pedidoConfirmado, setPedidoConfirmado] = useState<PedidoConfirmado | null>(null);
   const [tokenComensal, setTokenComensal] = useState<string | null>(null);
   const [errorPedido, setErrorPedido] = useState<string | null>(null);
 
@@ -70,7 +71,7 @@ export default function MenuMesaCliente({
   const getGeneralBorderClasses = () => {
     if (isGeneralOverLimit) return 'border-2 border-[#BA1A1A] bg-[#FFDAD6] focus:border-[#BA1A1A] focus:ring-2 focus:ring-[#BA1A1A]/20';
     if (isGeneralNearLimit) return 'border-2 border-[#755b00] bg-[#F1ECF4] focus:border-[#755b00] focus:ring-2 focus:ring-[#755b00]/20';
-    return 'border-2 border-[#cac4d2] bg-[#F1ECF4] focus:border-brand-700 focus:ring-2 focus:ring-brand-700/20';
+    return 'border-2 border-[#cac4d2] bg-[#F1ECF4] focus:border-brand-800 focus:ring-2 focus:ring-brand-800/20';
   };
 
   const getGeneralCounterColor = () => {
@@ -146,6 +147,14 @@ export default function MenuMesaCliente({
       return;
     }
 
+    const tieneNotasInvalidas = carrito.some(
+      (item) => (item.observacion || '').length > MAX_CHARS_ITEM
+    );
+    if (tieneNotasInvalidas) {
+      setErrorPedido('Las notas de los ítems no pueden exceder 300 caracteres');
+      return;
+    }
+
     setEstadoPedido('enviando');
     setErrorPedido(null);
 
@@ -160,7 +169,7 @@ export default function MenuMesaCliente({
 
       const { accessToken } = await authRes.json();
 
-      const pedido = await apiFetch<any>('/pedidos', accessToken, {
+      const pedido = await apiFetch<PedidoConfirmado>('/pedidos', accessToken, {
         method: 'POST',
         body: JSON.stringify({
           mesaId,
@@ -189,10 +198,10 @@ export default function MenuMesaCliente({
     <div className="min-h-screen bg-gray-50 pb-28">
       <nav className="fixed top-0 w-full z-50 flex justify-between items-center px-4 md:px-8 h-16 bg-white border-b border-gray-200">
         <div className="flex items-center gap-4">
-          <span className="text-xl md:text-2xl font-bold text-brand-700">BistroLink</span>
+          <span className="text-xl md:text-2xl font-bold text-brand-800">BistroLink</span>
         </div>
-        <div className="flex items-center gap-4 text-brand-700">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-brand-700/10 rounded-full">
+        <div className="flex items-center gap-4 text-brand-800">
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-brand-800/10 rounded-full">
             <span className="text-sm font-medium">📍 En el local</span>
           </div>
         </div>
@@ -250,12 +259,14 @@ export default function MenuMesaCliente({
                 {categoria.items.map((item, index) => (
                   <article
                     key={item.id}
-                    className={`bg-white rounded-[1rem] border border-gray-200 flex flex-col sm:flex-row overflow-hidden hover:shadow-md transition-all group ${
-                      !item.disponible ? 'opacity-60 grayscale-[0.5]' : ''
+                    {...(!item.disponible ? { 'aria-disabled': true } : {})}
+                    className={`rounded-[1rem] border border-gray-200 flex flex-col sm:flex-row overflow-hidden hover:shadow-md transition-all group ${
+                      !item.disponible ? 'bg-gray-50 grayscale-[0.2]' : 'bg-white'
                     }`}
-                    aria-disabled={!item.disponible}
                   >
-                    <div className="w-full sm:w-2/5 h-48 sm:h-auto shrink-0 relative overflow-hidden bg-gray-100">
+                    <div className={`w-full sm:w-2/5 h-48 sm:h-auto shrink-0 relative overflow-hidden bg-gray-100 ${
+                      !item.disponible ? 'opacity-50 grayscale' : ''
+                    }`}>
                       <ItemImagen
                         url={item.imagenUrl}
                         alt={item.nombre}
@@ -270,7 +281,7 @@ export default function MenuMesaCliente({
                           <h3 className="font-semibold text-lg text-foreground leading-tight">
                             {item.nombre}
                           </h3>
-                          <span className="font-bold text-lg text-brand-700 shrink-0">
+                          <span className="font-bold text-lg text-brand-800 shrink-0">
                             {formatearPrecio(item.precio)}
                           </span>
                         </div>
@@ -290,7 +301,7 @@ export default function MenuMesaCliente({
                           <button
                             type="button"
                             onClick={() => agregarAlCarrito(item)}
-                            className="w-full bg-brand-700/10 text-brand-700 font-semibold py-2.5 rounded-[0.5rem] hover:bg-brand-700 hover:text-white transition-colors flex items-center justify-center gap-2"
+                            className="w-full bg-brand-800/10 text-brand-800 font-semibold py-2.5 rounded-[0.5rem] hover:bg-brand-800 hover:text-white transition-colors flex items-center justify-center gap-2"
                           >
                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                               <line x1="12" y1="5" x2="12" y2="19"></line>
@@ -340,14 +351,14 @@ export default function MenuMesaCliente({
                     <button
                       type="button"
                       onClick={() => handleAbrirNotaItem(item)}
-                      className="text-xs text-brand-700 mt-1.5 flex items-center gap-1 hover:underline font-medium"
+                      className="text-xs text-brand-800 mt-1.5 flex items-center gap-1 hover:underline font-medium"
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" /><path d="m15 5 4 4" /></svg>
                       Editar nota
                     </button>
                     {item.observacion && (
                       <p className="text-xs text-gray-600 mt-1 italic line-clamp-2">
-                        "{item.observacion}"
+                        &quot;{item.observacion}&quot;
                       </p>
                     )}
                   </div>
@@ -388,7 +399,7 @@ export default function MenuMesaCliente({
           <div className="pt-2">
             <div className="flex items-center justify-between mb-4">
               <span className="font-bold text-gray-900 text-lg">Total:</span>
-              <span className="text-2xl font-bold text-brand-700">
+              <span className="text-2xl font-bold text-brand-800">
                 {formatearPrecio(totalCarrito)}
               </span>
             </div>
@@ -397,7 +408,7 @@ export default function MenuMesaCliente({
               type="button"
               onClick={realizarPedido}
               disabled={estadoPedido === 'enviando' || isGeneralOverLimit}
-              className="w-full px-4 py-3.5 bg-brand-700 text-white font-bold rounded-[0.5rem] hover:bg-brand-800 focus:outline-none focus:ring-4 focus:ring-brand-700/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed text-lg shadow-md"
+              className="w-full px-4 py-3.5 bg-brand-800 text-white font-bold rounded-[0.5rem] hover:bg-brand-900 focus:outline-none focus:ring-4 focus:ring-brand-800/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed text-lg shadow-md"
             >
               {estadoPedido === 'enviando' ? 'Enviando...' : 'Realizar pedido'}
             </button>
