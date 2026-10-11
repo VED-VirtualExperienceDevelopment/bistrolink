@@ -118,7 +118,7 @@ export class PedidosService {
     if (dto.mesaId) {
       const mesa = await tx.mesa.findUnique({ where: { id: dto.mesaId } });
 
-      if (!mesa || mesa.tenantId !== tenantId || mesa.esVirtual) {
+      if (mesa?.tenantId !== tenantId || mesa.esVirtual) {
         throw new NotFoundException(
           'Mesa no encontrada para este establecimiento',
         );
