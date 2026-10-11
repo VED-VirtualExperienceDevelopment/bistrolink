@@ -37,7 +37,9 @@ e2e/
 ├── pedido-listo-entregado.spec.ts        # flujo listo → entregado (pendiente de mover a su dominio)
 ├── support/                              # fixtures e IDs del seed; sin tests propios
 │   ├── ids.ts                            # UUIDs y paths del seed
-│   └── auth.ts                           # fixtures kdsPageMozo / kdsPageAdmin
+│   ├── auth.ts                           # fixtures kdsPageMozo / kdsPageAdmin / qrMesas
+│   ├── qr-mesas.ts                       # URLs de los QR de las mesas (HU-034)
+│   └── kds.ts                            # entregar pedidos desde el KDS
 └── README.md
 playwright.config.ts                      # raíz del monorepo
 scripts/e2e-update-snapshots.sh           # regenera baselines en Docker
@@ -74,10 +76,13 @@ Si tu spec también debe correr en mobile/Safari, agregalo al `testMatch` de eso
 
 ### `e2e/support/`
 
-| Archivo   | Qué exporta                                                                                                                                                               | Para qué                                                                                                                                                           |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `ids.ts`  | `TENANT_ID`, `RESTAURANTE_ID`, `MESA_ID`, `MESA_ID_RATE_LIMIT`, `ITEM_DISPONIBLE`, `ITEM_NO_DISPONIBLE`, `MESA_PATH`, `MESA_PATH_RATE_LIMIT`, `MENU_URL_PATH`, `KDS_PATH` | UUIDs y paths fijos que carga `apps/backend/prisma/seed.ts`. Si el seed cambia un UUID o un nombre de ítem, se actualiza acá una sola vez.                         |
-| `auth.ts` | `test`/`expect` (extiende los de `@playwright/test`), fixtures `kdsPageMozo` y `kdsPageAdmin`                                                                             | Loguea contra Keycloak en una pestaña nueva del `context` y la deja en `/kds` ya autenticada. Usalo en vez de escribir el login a mano en cada spec de `e2e/kds/`. |
+| Archivo       | Qué exporta                                                                                                                                                    | Para qué                                                                                                                                                           |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ids.ts`      | `TENANT_ID`, `RESTAURANTE_ID`, `MESA_ID`, `MESA_ID_RATE_LIMIT`, `ITEM_DISPONIBLE`, `ITEM_NO_DISPONIBLE`, `ENLACE_VIEJO_MESA_PATH`, `MENU_URL_PATH`, `KDS_PATH` | UUIDs y paths fijos que carga `apps/backend/prisma/seed.ts`. Si el seed cambia un UUID o un nombre de ítem, se actualiza acá una sola vez.                         |
+| `auth.ts`     | `test`/`expect` (extiende los de `@playwright/test`), fixtures `kdsPageMozo`, `kdsPageAdmin` y `qrMesas`                                                       | Loguea contra Keycloak en una pestaña nueva del `context` y la deja en `/kds` ya autenticada. Usalo en vez de escribir el login a mano en cada spec de `e2e/kds/`. |
+| `qr-mesas.ts` | `QrMesas` y los helpers del fixture `qrMesas`                                                                                                                  | HU-034 (BL-204): URLs de los QR de las mesas del seed. Ver abajo.                                                                                                  |
+
+**Menú de mesa (QR).** Desde HU-034 (BL-204) el menú de una mesa se abre solo desde la URL de su QR (`/q/<token>`). El token no se puede armar en el test (lo cifra el backend con `QR_TOKEN_KEY`, un secreto de cada entorno), así que lo da el fixture `qrMesas`: `await page.goto(qrMesas.ruta(MESA_ID))`, o `qrMesas.token(MESA_ID)` para la API (`/menu/qr/<token>`). Una vez por worker, loguea un ADMIN en un contexto aparte y pide `GET /mesas/qr`, así que necesita `TEST_ADMIN_USERNAME`/`TEST_ADMIN_PASSWORD`. Los tests **solo leen** los QR: nunca los regeneran, porque regenerar invalida el QR anterior y rompe a los tests que corren en paralelo.
 
 `MESA_ID_RATE_LIMIT` existe porque `MESA_ID` ya lo usan varios specs para leer/agregar al carrito: si un test de rate-limit (que agota el cupo de 1 llamado/minuto) compartiera esa misma mesa, podría hacer fallar a otro test que corre en paralelo. Si tu test agota un cupo o deja la mesa en un estado particular, seguí ese patrón: agregá tu propia mesa a `ids.ts` en vez de reusar `MESA_ID`.
 
@@ -93,12 +98,12 @@ npx playwright test e2e/comensal/llamado-mozo.spec.ts --project=chromium --ignor
 ### Plantilla
 
 ```ts
-import { test, expect } from "@playwright/test";
-import { MESA_PATH } from "../support/ids";
+import { test, expect } from "../support/auth";
+import { MESA_ID } from "../support/ids";
 
 test.describe("HU-00X · Título corto de la historia", () => {
-  test("el comensal ve el menú al entrar por QR", async ({ page }) => {
-    await page.goto(MESA_PATH); // usa BASE_URL de la config
+  test("el comensal ve el menú al entrar por QR", async ({ page, qrMesas }) => {
+    await page.goto(qrMesas.ruta(MESA_ID)); // /q/<token>, usa BASE_URL de la config
 
     await expect(page.getByRole("heading", { name: "Menú" })).toBeVisible();
   });
@@ -215,7 +220,7 @@ Las URL son las que usa el job de Playwright en `ci.yml`. Los usuarios de prueba
 
 > ⏸️ **Desactivada por ahora.** La regresión visual corresponde a los **sprints 8 y 9**; hasta entonces el foco está en los tests **funcionales** (flujos, datos y comportamiento) y no se escriben tests visuales nuevos. El `test.describe('Regresión visual...')` de `e2e/comensal/menu-publico.spec.ts` está comentado, con una nota (`COMENTADA A PROPÓSITO`) que explica por qué y cómo reactivarlo.
 >
-> 🎯 **Para reactivarla (sprint 8):** en `menu-publico.spec.ts`, descomentar ese bloque y restaurar el import de `MESA_PATH` y la const `MENU_QR_PATH` (la nota dentro del archivo dice exactamente dónde), y regenerar los baselines con `npm run test:e2e:update-snapshots`. Lo que sigue en esta sección aplica desde ese momento.
+> 🎯 **Para reactivarla (sprint 8):** en `menu-publico.spec.ts`, descomentar ese bloque y cambiar la const `MENU_QR_PATH` por `qrMesas.ruta(MESA_ID)` (la nota dentro del archivo dice exactamente dónde), y regenerar los baselines con `npm run test:e2e:update-snapshots`. Lo que sigue en esta sección aplica desde ese momento.
 
 Playwright incluye la plataforma en el nombre del baseline (`menu-qr-chromium-darwin.png` vs `menu-qr-chromium-linux.png`) y el CI corre en Linux. Un baseline generado en macOS o Windows nunca va a matchear ahí por diferencias de fuentes y antialiasing, aunque no haya ningún bug.
 

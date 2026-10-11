@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "../support/auth";
 import type { APIRequestContext } from "@playwright/test";
 import {
   MENU_URL_PATH,
@@ -6,8 +6,9 @@ import {
   RESTAURANTE_ID,
   TENANT_ID,
 } from "../support/ids";
-// MESA_PATH: solo lo usaba MENU_QR_PATH, para la regresión visual comentada
-// más abajo. Si se reactiva esa sección, volver a importarlo.
+// La ruta del menú de la mesa ya no es fija (HU-034, BL-204): sale del
+// fixture qrMesas (support/auth.ts). La regresión visual comentada más abajo
+// la usa cuando se reactive.
 
 // E2E de HU-002.
 //
@@ -68,13 +69,15 @@ test.describe("HU-002: menú vía URL directa (verificado en mobile)", () => {
   test("[TC-E-007] HU-002: muestra exactamente los items disponibles y oculta los agotados", async ({
     page,
     request,
+    qrMesas,
   }) => {
     // Fuente de verdad de agotados: el endpoint QR (HU-001) devuelve TODOS
     // los items con su flag disponible. La invariante de HU-002 es que la
-    // URL directa muestra solo los disponibles.
+    // URL directa muestra solo los disponibles. BL-204: el endpoint QR es
+    // /menu/qr/<token>.
     const menuQr = await obtenerMenu(
       request,
-      `${API_URL}/menu/${TENANT_ID}/${MESA_ID}`,
+      `${API_URL}/menu/qr/${qrMesas.token(MESA_ID)}`,
     );
     const disponibles = itemsDe(menuQr).filter((i) => i.disponible);
     const agotados = itemsDe(menuQr).filter((i) => !i.disponible);
@@ -151,9 +154,10 @@ test.describe("HU-002: menú vía URL directa (verificado en mobile)", () => {
 // generados en Docker este describe fallaría siempre en CI (o generaría
 // snapshots nuevos en cada corrida). Ver e2e/README.md.
 //
-// Para reactivar en el sprint 8: descomentar el bloque, restaurar el import
-// de MESA_PATH y la const MENU_QR_PATH de arriba, y regenerar los baselines
-// con `npm run test:e2e:update-snapshots`.
+// Para reactivar en el sprint 8: descomentar el bloque, cambiar MENU_QR_PATH
+// por qrMesas.ruta(MESA_ID) y el GET por /menu/qr/<qrMesas.token(MESA_ID)>
+// (HU-034, BL-204), y regenerar los baselines con
+// `npm run test:e2e:update-snapshots`.
 //
 // Nota de escalabilidad (se mantiene para cuando se reactive): los snapshots
 // capturan el estado visual de los datos del fixture. Cuando la DB se poble y
