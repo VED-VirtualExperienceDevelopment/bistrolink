@@ -5,6 +5,7 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request = require('supertest');
 import { MesaEstado, Prisma, PrismaClient } from '@prisma/client';
 import { AppModule } from '../../src/app.module';
+import { asegurarClaveQr, tokenQrDeMesa } from './support/qr-mesa';
 
 // ── Config de Keycloak (mismo esquema que usuarios.e2e-spec.ts) ─────────────
 const KEYCLOAK_URL = process.env.KEYCLOAK_URL ?? 'http://localhost:8080';
@@ -133,6 +134,7 @@ describe('Mapa de mesas (HU-016) - e2e', () => {
   }
 
   beforeAll(async () => {
+    asegurarClaveQr();
     const moduleRef: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -429,7 +431,7 @@ describe('Mapa de mesas (HU-016) - e2e', () => {
   );
 
   // BL-58: el controller tiene @Roles('COMENSAL') a nivel de clase (para
-  // POST /mesas/:id/llamar) y @Roles('ADMIN') / @Roles('ADMIN', 'MOZO') en
+  // POST /mesas/llamar) y @Roles('ADMIN') / @Roles('ADMIN', 'MOZO') en
   // los métodos del mapa. Este caso protege que el rol del método REEMPLACE
   // al de la clase (RolesGuard usa getAllAndOverride): si se sumaran, un
   // comensal podría modificar el layout.
@@ -444,9 +446,12 @@ describe('Mapa de mesas (HU-016) - e2e', () => {
       // Control positivo: el token es válido y tiene el rol COMENSAL (la ruta
       // de la clase lo acepta). Así un 403 más abajo solo puede deberse al
       // @Roles del método, no a un token inválido o sin rol.
+      // BL-204: el llamado va con el QR de la mesa.
+      const qrToken = await tokenQrDeMesa(app, TENANT_A_ID, MESA_A1_ID);
       await request(app.getHttpServer())
-        .post(`/mesas/${MESA_A1_ID}/llamar`)
+        .post('/mesas/llamar')
         .set('Authorization', `Bearer ${token}`)
+        .set('X-Mesa-Token', qrToken)
         .expect(201);
 
       await request(app.getHttpServer())

@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
@@ -47,30 +46,23 @@ export class AuthComensalService {
     return password;
   }
 
+  /**
+   * Token del comensal para el pedido para retirar (link web del local).
+   * El restaurante tiene que existir en el tenant (RLS); si no, 404.
+   */
   async emitirToken(
     tenantId: string,
-    mesaId?: string,
-    restauranteId?: string,
+    restauranteId: string,
   ): Promise<TokenComensal> {
-    if (!mesaId && !restauranteId) {
-      throw new BadRequestException('Se requiere mesaId o restauranteId');
-    }
-
     const existe = await this.tenantPrisma.runInTenantContext(tenantId, (tx) =>
-      mesaId
-        ? tx.mesa.findUnique({ where: { id: mesaId }, select: { id: true } })
-        : tx.restaurante.findUnique({
-            where: { id: restauranteId },
-            select: { id: true },
-          }),
+      tx.restaurante.findUnique({
+        where: { id: restauranteId },
+        select: { id: true },
+      }),
     );
 
     if (!existe) {
-      throw new NotFoundException(
-        mesaId
-          ? 'Mesa no encontrada para este establecimiento'
-          : 'Restaurante no encontrado',
-      );
+      throw new NotFoundException('Restaurante no encontrado');
     }
 
     return this.pedirTokenKeycloak(tenantId);

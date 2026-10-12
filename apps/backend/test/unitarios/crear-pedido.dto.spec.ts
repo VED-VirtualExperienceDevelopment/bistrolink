@@ -162,56 +162,39 @@ describe('CrearPedidoDto - Validación de Observaciones (BL-41)', () => {
 });
 
 // BL-309 / BL-204: restauranteId es opcional en el DTO, que no ve los
-// headers. Con X-Mesa-Token el body no lleva ningún id; sin QR ni mesaId, el
-// 400 por falta de restauranteId lo da PedidosService.crear.
-describe('CrearPedidoDto - restauranteId según el tipo de pedido (BL-309 / BL-204)', () => {
+// headers. Con X-Mesa-Token el body no lleva ningún id; sin QR, el 400 por
+// falta de restauranteId lo da PedidosService.crear. El DTO ya no tiene
+// mesaId: la mesa sale solo del QR.
+describe('CrearPedidoDto - origen del pedido (BL-309 / BL-204)', () => {
   const ITEMS = [
     { itemCartaId: '55555555-5555-5555-5555-555555555555', cantidad: 1 },
   ];
   const MESA_ID = '33333333-3333-3333-3333-333333333333';
   const RESTAURANTE_ID = '22222222-2222-2222-2222-222222222222';
 
+  // Mismas opciones que el ValidationPipe global (main.ts).
   const propiedadesConError = async (datos: Record<string, unknown>) => {
-    const errores = await validate(plainToInstance(CrearPedidoDto, datos));
+    const errores = await validate(plainToInstance(CrearPedidoDto, datos), {
+      whitelist: true,
+      forbidNonWhitelisted: true,
+    });
     return errores.map((e) => e.property);
   };
 
-  it('pedido de mesa sin restauranteId: es válido', async () => {
-    expect(
-      await propiedadesConError({
-        mesaId: MESA_ID,
-        idempotencyKey: 'k',
-        items: ITEMS,
-      }),
-    ).toEqual([]);
-  });
-
-  it('pedido de mesa con restauranteId válido: es válido', async () => {
-    expect(
-      await propiedadesConError({
-        mesaId: MESA_ID,
-        restauranteId: RESTAURANTE_ID,
-        idempotencyKey: 'k',
-        items: ITEMS,
-      }),
-    ).toEqual([]);
-  });
-
-  it('restauranteId mal formado: se rechaza', async () => {
-    expect(
-      await propiedadesConError({
-        mesaId: MESA_ID,
-        restauranteId: 'no-es-uuid',
-        idempotencyKey: 'k',
-        items: ITEMS,
-      }),
-    ).toEqual(['restauranteId']);
-  });
-
-  it('BL-204: sin mesaId ni restauranteId (pedido con X-Mesa-Token): es válido para el DTO', async () => {
+  it('pedido de mesa con QR: sin ningún id en el body, es válido', async () => {
     expect(
       await propiedadesConError({ idempotencyKey: 'k', items: ITEMS }),
     ).toEqual([]);
+  });
+
+  it('BL-204: mesaId en el body se rechaza (la mesa sale solo del QR)', async () => {
+    expect(
+      await propiedadesConError({
+        mesaId: MESA_ID,
+        idempotencyKey: 'k',
+        items: ITEMS,
+      }),
+    ).toEqual(['mesaId']);
   });
 
   it('pedido para retirar con restauranteId: es válido', async () => {
@@ -222,5 +205,15 @@ describe('CrearPedidoDto - restauranteId según el tipo de pedido (BL-309 / BL-2
         items: ITEMS,
       }),
     ).toEqual([]);
+  });
+
+  it('restauranteId mal formado: se rechaza', async () => {
+    expect(
+      await propiedadesConError({
+        restauranteId: 'no-es-uuid',
+        idempotencyKey: 'k',
+        items: ITEMS,
+      }),
+    ).toEqual(['restauranteId']);
   });
 });

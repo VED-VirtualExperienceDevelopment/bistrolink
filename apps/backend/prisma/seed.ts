@@ -289,7 +289,11 @@ async function main() {
   await tenantB();
 
   console.log('✅ Seed aplicado (tenants de testing A y B). Probá:');
-  console.log(`   GET /menu/${TENANT_A_ID}/${MESA_A1_ID}`);
+  // BL-204: el menú de mesa se abre desde el QR; las URLs las da
+  // GET /mesas/qr (ADMIN).
+  console.log(
+    `   GET /mesas/qr?restauranteId=${RESTAURANTE_A_ID} (como ADMIN)`,
+  );
   console.log(`   Tenant A: ${TENANT_A_ID}`);
   console.log(`   Tenant B: ${TENANT_B_ID}`);
 }

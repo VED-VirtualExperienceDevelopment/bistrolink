@@ -1,7 +1,6 @@
 import {
   BadRequestException,
   ConflictException,
-  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -26,31 +25,15 @@ export class MesasService {
   ) {}
 
   /**
-   * @param mesaQr mesa del QR validada por MesaQrGuard (BL-204). Si viene,
-   *   solo se puede llamar al mozo desde esa mesa.
+   * HU-019 / HU-034 (BL-204): avisa al mozo desde la mesa del QR.
+   *
+   * @param mesaQr mesa del QR, ya validada por MesaQrGuard: existe, no es la
+   *   mesa virtual, el QR está vigente y es del mismo tenant que el JWT. Por
+   *   eso no se vuelve a consultar la base: el número de mesa viene del QR
+   *   resuelto, no del cliente.
    */
-  async llamarMozo(tenantId: string, mesaId: string, mesaQr?: MesaDelQr) {
-    if (mesaQr && mesaQr.mesaId !== mesaId) {
-      throw new ForbiddenException(
-        'La mesa del llamado no coincide con la del QR',
-      );
-    }
-
-    const mesa = await this.tenantPrisma.runInTenantContext(tenantId, (tx) =>
-      tx.mesa.findUnique({
-        where: { id: mesaId },
-        select: { id: true, numero: true },
-      }),
-    );
-
-    if (!mesa) {
-      throw new NotFoundException(
-        'Mesa no encontrada para este establecimiento',
-      );
-    }
-
-    this.kdsGateway.emitirLlamado(tenantId, mesa.id, mesa.numero);
-
+  llamarMozo(tenantId: string, mesaQr: MesaDelQr) {
+    this.kdsGateway.emitirLlamado(tenantId, mesaQr.mesaId, mesaQr.numero);
     return { ok: true };
   }
 

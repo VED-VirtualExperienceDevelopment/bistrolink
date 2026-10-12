@@ -54,25 +54,7 @@ export class MesasController {
     @Req() req: { user: AuthenticatedUser },
     @MesaDelQrActual() mesaQr: MesaDelQr,
   ) {
-    return this.mesasService.llamarMozo(
-      req.user.tenantId,
-      mesaQr.mesaId,
-      mesaQr,
-    );
-  }
-
-  // PROVISORIO (BL-204): llamado por id de mesa, reemplazado por
-  // POST /mesas/llamar. Se retira en el paso 6c, cuando el frontend ya use
-  // la ruta nueva. Con X-Mesa-Token, el llamado solo vale para la mesa del QR.
-  @Post(':id/llamar')
-  @UseGuards(MesaQrGuard, MesaThrottlerGuard)
-  @Throttle({ default: { limit: 1, ttl: 60_000 } })
-  llamar(
-    @Req() req: { user: AuthenticatedUser },
-    @Param('id', ParseUUIDPipe) mesaId: string,
-    @MesaDelQrActual() mesaQr?: MesaDelQr,
-  ) {
-    return this.mesasService.llamarMozo(req.user.tenantId, mesaId, mesaQr);
+    return this.mesasService.llamarMozo(req.user.tenantId, mesaQr);
   }
 
   // HU-016: mapa visual de mesas. A diferencia de "llamar" (COMENSAL), estas

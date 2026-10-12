@@ -5,6 +5,7 @@ import { INestApplication } from '@nestjs/common';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 import request = require('supertest');
 import { AppModule } from '../../src/app.module';
+import { asegurarClaveQr, tokenQrDeMesa } from './support/qr-mesa';
 
 // BL-265 (BL-262, hallazgo R1): un usuario no puede cambiarse de tenant.
 //
@@ -311,6 +312,7 @@ describe('Token de comensal contra la API de cuenta (BL-265, R1)', () => {
   let app: INestApplication;
 
   beforeAll(async () => {
+    asegurarClaveQr();
     const moduleRef: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -323,9 +325,11 @@ describe('Token de comensal contra la API de cuenta (BL-265, R1)', () => {
   });
 
   it('[TC-I-044] Keycloak: el token anónimo de comensal no puede cambiar el tenant por la API de cuenta', async () => {
+    // BL-204: el token de comensal de una mesa sale del QR.
+    const qrToken = await tokenQrDeMesa(app, TENANT_A, MESA_A);
     const res = await request(app.getHttpServer())
-      .post('/auth/comensal')
-      .send({ tenantId: TENANT_A, mesaId: MESA_A })
+      .post('/auth/comensal/mesa')
+      .send({ qrToken })
       .expect(200);
     const token = res.body.accessToken as string;
 

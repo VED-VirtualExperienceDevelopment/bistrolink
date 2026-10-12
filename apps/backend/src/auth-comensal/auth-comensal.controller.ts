@@ -8,14 +8,12 @@ export class AuthComensalController {
   constructor(private readonly authComensalService: AuthComensalService) {}
 
   // Pedido para retirar (link web del local): { tenantId, restauranteId }.
-  // PROVISORIO (BL-204): también acepta { tenantId, mesaId }; ese camino se
-  // retira en el paso 6 de BL-204 y las mesas pasan a usar POST /mesa.
+  // La mesa ya no se acepta acá (BL-204): las mesas usan POST /mesa con el QR.
   @Post()
   @HttpCode(200)
   emitirToken(@Body() dto: EmitirTokenComensalDto) {
     return this.authComensalService.emitirToken(
       dto.tenantId,
-      dto.mesaId,
       dto.restauranteId,
     );
   }

@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   GoneException,
   InternalServerErrorException,
   NotFoundException,
@@ -40,38 +39,27 @@ describe('AuthComensalService.emitirToken', () => {
     jest.restoreAllMocks();
   });
 
-  it('rechaza si no se manda ni mesaId ni restauranteId', async () => {
-    await expect(service.emitirToken(TENANT_ID)).rejects.toThrow(
-      BadRequestException,
-    );
-    expect(mockTenantPrisma.runInTenantContext).not.toHaveBeenCalled();
-  });
-
-  it('rechaza con 404 si la mesa no existe', async () => {
-    mockTenantPrisma.runInTenantContext.mockResolvedValue(null);
-
-    await expect(service.emitirToken(TENANT_ID, MESA_ID)).rejects.toThrow(
-      NotFoundException,
-    );
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it('rechaza con 404 si el restaurante no existe (flujo sin mesa)', async () => {
+  // Pedido para retirar (link web del local). La mesa ya no se acepta acá:
+  // sale solo del QR (BL-204, emitirTokenPorQr).
+  it('rechaza con 404 si el restaurante no existe', async () => {
     mockTenantPrisma.runInTenantContext.mockResolvedValue(null);
 
     await expect(
-      service.emitirToken(TENANT_ID, undefined, RESTAURANTE_ID),
+      service.emitirToken(TENANT_ID, RESTAURANTE_ID),
     ).rejects.toThrow(NotFoundException);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('emite el token con el username derivado del tenant, cuando la mesa existe', async () => {
-    mockTenantPrisma.runInTenantContext.mockResolvedValue({ id: MESA_ID });
+  it('emite el token con el username derivado del tenant, cuando el restaurante existe', async () => {
+    mockTenantPrisma.runInTenantContext.mockResolvedValue({
+      id: RESTAURANTE_ID,
+    });
     fetchMock.mockResolvedValue({
       ok: true,
       json: async () => ({ access_token: 'jwt-de-prueba', expires_in: 3600 }),
     });
 
-    const resultado = await service.emitirToken(TENANT_ID, MESA_ID);
+    const resultado = await service.emitirToken(TENANT_ID, RESTAURANTE_ID);
 
     expect(resultado).toEqual({
       accessToken: 'jwt-de-prueba',
@@ -87,53 +75,64 @@ describe('AuthComensalService.emitirToken', () => {
     expect(body.get('grant_type')).toBe('password');
   });
 
-  it('emite el token también en el flujo sin mesa (restauranteId solo)', async () => {
-    mockTenantPrisma.runInTenantContext.mockResolvedValue({
-      id: RESTAURANTE_ID,
-    });
+  it('busca el restaurante dentro del contexto del tenant (RLS)', async () => {
+    const findUnique = jest.fn().mockResolvedValue({ id: RESTAURANTE_ID });
+    mockTenantPrisma.runInTenantContext.mockImplementation(
+      (_tenantId: string, fn: (tx: any) => unknown) =>
+        fn({ restaurante: { findUnique } }),
+    );
     fetchMock.mockResolvedValue({
       ok: true,
       json: async () => ({ access_token: 'jwt-de-prueba', expires_in: 3600 }),
     });
 
-    const resultado = await service.emitirToken(
-      TENANT_ID,
-      undefined,
-      RESTAURANTE_ID,
-    );
+    await service.emitirToken(TENANT_ID, RESTAURANTE_ID);
 
-    expect(resultado.accessToken).toBe('jwt-de-prueba');
+    expect(mockTenantPrisma.runInTenantContext).toHaveBeenCalledWith(
+      TENANT_ID,
+      expect.any(Function),
+    );
+    expect(findUnique).toHaveBeenCalledWith({
+      where: { id: RESTAURANTE_ID },
+      select: { id: true },
+    });
   });
 
   it('lanza un error de servidor si Keycloak responde con error', async () => {
-    mockTenantPrisma.runInTenantContext.mockResolvedValue({ id: MESA_ID });
+    mockTenantPrisma.runInTenantContext.mockResolvedValue({
+      id: RESTAURANTE_ID,
+    });
     fetchMock.mockResolvedValue({
       ok: false,
       status: 400,
       text: async () => 'invalid_grant',
     });
 
-    await expect(service.emitirToken(TENANT_ID, MESA_ID)).rejects.toThrow(
-      InternalServerErrorException,
-    );
+    await expect(
+      service.emitirToken(TENANT_ID, RESTAURANTE_ID),
+    ).rejects.toThrow(InternalServerErrorException);
   });
 
   it('lanza un error si falta KEYCLOAK_CLIENT_SECRET en el entorno', async () => {
     delete process.env.KEYCLOAK_CLIENT_SECRET;
-    mockTenantPrisma.runInTenantContext.mockResolvedValue({ id: MESA_ID });
+    mockTenantPrisma.runInTenantContext.mockResolvedValue({
+      id: RESTAURANTE_ID,
+    });
 
-    await expect(service.emitirToken(TENANT_ID, MESA_ID)).rejects.toThrow(
-      'Falta KEYCLOAK_CLIENT_SECRET en el .env',
-    );
+    await expect(
+      service.emitirToken(TENANT_ID, RESTAURANTE_ID),
+    ).rejects.toThrow('Falta KEYCLOAK_CLIENT_SECRET en el .env');
   });
 
   it('lanza un error si falta KEYCLOAK_COMENSAL_PASSWORD en el entorno', async () => {
     delete process.env.KEYCLOAK_COMENSAL_PASSWORD;
-    mockTenantPrisma.runInTenantContext.mockResolvedValue({ id: MESA_ID });
+    mockTenantPrisma.runInTenantContext.mockResolvedValue({
+      id: RESTAURANTE_ID,
+    });
 
-    await expect(service.emitirToken(TENANT_ID, MESA_ID)).rejects.toThrow(
-      'Falta KEYCLOAK_COMENSAL_PASSWORD en el .env',
-    );
+    await expect(
+      service.emitirToken(TENANT_ID, RESTAURANTE_ID),
+    ).rejects.toThrow('Falta KEYCLOAK_COMENSAL_PASSWORD en el .env');
   });
 
   // HU-034 (BL-204): token del comensal a partir del QR de la mesa.

@@ -84,19 +84,25 @@ type WorkerFixtures = {
 
 export const test = base.extend<Fixtures, WorkerFixtures>({
   qrMesas: [
-    async ({ browser }, use) => {
-      // browser.newContext() no hereda el `use` de playwright.config.ts: el
-      // baseURL se pasa a mano, con el mismo valor por defecto.
-      const context = await browser.newContext({
-        baseURL: process.env.BASE_URL ?? "http://localhost:3000",
-      });
+    async ({ playwright }, use) => {
+      // El login del ADMIN corre SIEMPRE en Chromium, no en el navegador del
+      // proyecto: es solo un paso de preparación para obtener las URLs de
+      // los QR. En WebKit (mobile-safari) el login de Keycloak vuelve a
+      // /login después del callback, y el fixture se colgaba hasta el
+      // timeout aunque el test (TC-E-007) no tuviera nada que ver con eso.
+      const browser = await playwright.chromium.launch();
       let qrMesas: QrMesas;
       try {
+        // newContext() no hereda el `use` de playwright.config.ts: el baseURL
+        // se pasa a mano, con el mismo valor por defecto.
+        const context = await browser.newContext({
+          baseURL: process.env.BASE_URL ?? "http://localhost:3000",
+        });
         const adminPage = await loginKds(context, credenciales("TEST_ADMIN"));
         const authorization = await tokenAdminDesdePanel(adminPage);
         qrMesas = await obtenerQrMesas(context.request, authorization);
       } finally {
-        await context.close();
+        await browser.close();
       }
       await use(qrMesas);
     },

@@ -21,6 +21,10 @@ export interface RequestConMesaQr {
 /**
  * HU-034 (BL-204): ata un pedido o un llamado a la mesa del QR escaneado.
  *
+ * El header es opcional a propósito: sin él, POST /pedidos es un pedido
+ * para retirar (link web del local, canal WEB). Las rutas que solo tienen
+ * sentido desde una mesa (POST /mesas/llamar) suman MesaQrObligatoriaGuard.
+ *
  * Si la request trae el header X-Mesa-Token:
  * - el QR tiene que ser válido y vigente (QrMesaAccesoService: 404 / 410);
  * - la mesa tiene que ser del mismo tenant que el JWT del comensal (403);
@@ -28,11 +32,6 @@ export interface RequestConMesaQr {
  *   endpoint usa ESA mesa, no la que diga el cliente.
  *
  * Va después de AuthGuard('jwt') y RolesGuard, porque necesita `request.user`.
- *
- * PROVISORIO (BL-204, paso 6): sin el header, deja pasar la request, para
- * que el frontend actual (que todavía manda mesaId) siga funcionando. En el
- * paso 6, junto con el cambio del frontend, el token pasa a ser obligatorio
- * para los pedidos y llamados de mesa.
  */
 @Injectable()
 export class MesaQrGuard implements CanActivate {

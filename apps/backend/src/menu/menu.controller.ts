@@ -45,8 +45,9 @@ export class MenuController {
    *
    * La respuesta no incluye ids internos: solo el número de mesa.
    *
-   * IMPORTANTE: tiene que quedar declarada ANTES de ':tenantId/:mesaId',
-   * o Nest toma "qr" como tenantId.
+   * Reemplaza a GET /menu/:tenantId/:mesaId (acceso por ids), que se retiró
+   * en BL-204: con los ids en la URL, cualquiera podía armar el enlace de
+   * otra mesa.
    */
   @Get('qr/:token')
   async getMenuPorQr(@Param('token') token: string) {
@@ -56,20 +57,5 @@ export class MenuController {
       mesa.mesaId,
     );
     return { ...menu, mesa: { numero: mesa.numero } };
-  }
-
-  // PROVISORIO (BL-204): acceso por ids, reemplazado por 'qr/:token'. Se
-  // retira en el paso 6 de BL-204, junto con el cambio del frontend.
-  //
-  // Sin @UseGuards ni AuthGuard('jwt'): acceso público e intencional.
-  // Criterio de aceptación de HU-001: "funciona sin login ni instalación
-  // previa". La única validación de identidad acá es que tenantId/mesaId
-  // sean UUIDs válidos y que la combinación exista bajo RLS (ver MenuService).
-  @Get(':tenantId/:mesaId')
-  getMenu(
-    @Param('tenantId', ParseUUIDPipe) tenantId: string,
-    @Param('mesaId', ParseUUIDPipe) mesaId: string,
-  ) {
-    return this.menuService.getMenuByMesa(tenantId, mesaId);
   }
 }

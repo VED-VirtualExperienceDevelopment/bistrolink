@@ -49,7 +49,7 @@ describe('MesaQrGuard (BL-204)', () => {
     guard = new MesaQrGuard(mockQrMesaAcceso as any);
   });
 
-  it('sin X-Mesa-Token deja pasar sin resolver nada (PROVISORIO hasta el paso 6)', async () => {
+  it('sin X-Mesa-Token deja pasar sin resolver nada (pedido para retirar, canal WEB)', async () => {
     const request = requestCon({});
 
     await expect(guard.canActivate(contextoCon(request))).resolves.toBe(true);

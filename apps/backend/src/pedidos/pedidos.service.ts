@@ -106,13 +106,13 @@ export class PedidosService {
   /**
    * BL-309 / BL-204 / BL-308: de qué mesa y de qué restaurante es el pedido.
    *
-   * - Pedido de mesa con QR (mesaQr, validado por MesaQrGuard): la mesa es la
-   *   del QR. Si el body trae otro mesaId, 403.
-   * - Pedido de mesa sin QR (solo mesaId): PROVISORIO hasta el paso 6 de
-   *   BL-204, que vuelve obligatorio el token del QR para la mesa.
-   * - En los dos casos, el restaurante sale de la mesa, nunca del cliente (si
-   *   el body trae otro restauranteId, 403). La mesa tiene que ser de este
-   *   tenant (además de RLS) y no puede ser la mesa virtual.
+   * - Pedido de mesa: la mesa sale SOLO del QR (mesaQr, validado por
+   *   MesaQrGuard). El body no acepta mesaId (CrearPedidoDto): no hay forma
+   *   de pedir a nombre de otra mesa.
+   * - El restaurante sale de la mesa, nunca del cliente (si el body trae
+   *   otro restauranteId, 403). La mesa se vuelve a leer dentro de la
+   *   transacción: tiene que ser de este tenant (además de RLS) y no puede
+   *   ser la mesa virtual.
    * - Pedido para retirar (sin mesa): el restauranteId tiene que ser de este
    *   tenant (403 si no) ANTES de tocar la mesa virtual. Sin este chequeo, el
    *   upsert de la mesa 0 podía colgarse del restaurante de otro tenant: RLS
@@ -124,16 +124,8 @@ export class PedidosService {
     dto: CrearPedidoDto,
     mesaQr?: MesaDelQr,
   ) {
-    if (mesaQr && dto.mesaId && dto.mesaId !== mesaQr.mesaId) {
-      throw new ForbiddenException(
-        'La mesa del pedido no coincide con la del QR',
-      );
-    }
-
-    const mesaId = mesaQr?.mesaId ?? dto.mesaId;
-
-    if (mesaId) {
-      const mesa = await tx.mesa.findUnique({ where: { id: mesaId } });
+    if (mesaQr) {
+      const mesa = await tx.mesa.findUnique({ where: { id: mesaQr.mesaId } });
 
       if (mesa?.tenantId !== tenantId || mesa.esVirtual) {
         throw new NotFoundException(
