@@ -1,52 +1,57 @@
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import * as QRCode from 'qrcode';
-
-// Genera el PNG del QR que un comensal escanea en la mesa, a partir de la
-// URL que devuelve la API.
+// k6/pedidos-carga.js — [TC-P-002] HU-003: 20 comensales simultáneos
+// confirmando pedido, sin timeouts ni 5xx.
 //
-// HU-034 (BL-204): la URL de la mesa ya no se arma con ids
-// (/m/<tenantId>/<mesaId>): es /q/<token>, con un token cifrado que solo
-// emite el backend. Por eso el script ya no recibe ids: recibe la URL de
-// GET /mesas/qr (como ADMIN), que lista la de cada mesa. El PDF imprimible
-// para el administrador lo arma el panel de administración.
-//
-// Uso:
-//   npx ts-node scripts/generate-qr.ts <url-del-qr> [numeroMesa]
+// HU-034 (BL-204): la mesa solo se puede usar con el token de su QR, que no
+// se puede armar desde acá. La carga va por el link web del local (pedido
+// para retirar, canal WEB): mismo POST /pedidos, misma transacción, sin
+// depender de una URL de QR.
+import http from "k6/http";
+import { check } from "k6";
 
-const [, , url, numeroMesa] = process.argv;
+const BASE_URL = __ENV.BASE_URL || "http://localhost:3001";
+const TENANT_ID = "11111111-1111-1111-1111-111111111111";
+const RESTAURANTE_ID = "22222222-2222-2222-2222-222222222222";
+const ITEM_ID = "55555555-5555-5555-5555-555555555555";
 
-function esUrlDeQr(valor: string | undefined): valor is string {
-  if (!valor) return false;
-  try {
-    return /^\/q\/[A-Za-z0-9_-]+$/.test(new URL(valor).pathname);
-  } catch {
-    return false;
-  }
+export const options = {
+  vus: 20,
+  iterations: 20,
+  tags: { testid: "TC-P-002" }, 
+  thresholds: {
+    http_req_failed: ["rate==0"],
+  },
+};
+
+export function setup() {
+  const res = http.post(
+    `${BASE_URL}/auth/comensal`,
+    JSON.stringify({ tenantId: TENANT_ID, restauranteId: RESTAURANTE_ID }),
+    { headers: { "Content-Type": "application/json" } },
+  );
+  check(res, { "token obtenido": (r) => r.status === 200 });
+  return { token: res.json("accessToken") };
 }
 
-if (!esUrlDeQr(url)) {
-  console.error(
-    'Uso: npx ts-node scripts/generate-qr.ts <url-del-qr> [numeroMesa]',
+export default function (data) {
+  const idempotencyKey = `carga-${__VU}-${__ITER}-${Date.now()}`;
+
+  const res = http.post(
+    `${BASE_URL}/pedidos`,
+    JSON.stringify({
+      restauranteId: RESTAURANTE_ID,
+      idempotencyKey,
+      items: [{ itemCartaId: ITEM_ID, cantidad: 1 }],
+    }),
+    {
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${data.token}`,
+      },
+    },
   );
-  console.error(
-    'La URL es la que devuelve GET /mesas/qr para cada mesa (…/q/<token>).',
-  );
-  process.exit(1);
-}
 
-const outDir = path.join(__dirname, '..', 'qrcodes');
-fs.mkdirSync(outDir, { recursive: true });
-
-const filename = `mesa-${numeroMesa ?? 'qr'}.png`;
-const outPath = path.join(outDir, filename);
-
-QRCode.toFile(outPath, url, { width: 512, margin: 2 })
-  .then(() => {
-    console.log(`✅ QR generado: ${outPath}`);
-  })
-  .catch((err) => {
-    console.error('❌ Error generando el QR:', err);
-    process.exit(1);
+  check(res, {
+    "pedido creado (201)": (r) => r.status === 201,
+    "sin error de servidor": (r) => r.status < 500,
   });
-  
+}

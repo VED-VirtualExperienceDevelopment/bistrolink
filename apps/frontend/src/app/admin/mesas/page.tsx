@@ -4,6 +4,7 @@ import dynamic from 'next/dynamic';
 import { useEffect, useState } from 'react';
 import { useKeycloakAuth } from '@/components/providers/KeycloakProvider';
 import { apiFetch } from '@/lib/api-client';
+import { QrMesasPanel } from '@/components/admin/mesas/QrMesasPanel';
 
 // Konva/react-konva tocan `window`/`document` al importarse — sin ssr:false
 // Next intenta renderizar el módulo en el servidor y el build revienta con
@@ -22,7 +23,11 @@ const MapaMesasEditor = dynamic(
 );
 
 export default function MesasPage() {
-  const { token } = useKeycloakAuth();
+  const { token, hasRole } = useKeycloakAuth();
+  // HU-034 (BL-204): se incrementa cada vez que se guarda el mapa, para que
+  // el panel de QR vuelva a cargar (las mesas nuevas recién tienen QR al
+  // guardarse).
+  const [versionMapa, setVersionMapa] = useState(0);
 
   // Mismo gap de integración que usuarios/page.tsx: CreateUsuarioDto y el
   // layout de mesas exigen restauranteId, y no hay todavía un
@@ -49,7 +54,16 @@ export default function MesasPage() {
       </div>
 
       {restauranteId ? (
-        <MapaMesasEditor restauranteId={restauranteId} />
+        <>
+          <MapaMesasEditor
+            restauranteId={restauranteId}
+            onGuardado={() => setVersionMapa((v) => v + 1)}
+          />
+          {/* HU-034 (BL-204): QR imprimibles. Solo ADMIN (el backend también lo exige). */}
+          {hasRole('ADMIN') && (
+            <QrMesasPanel key={versionMapa} restauranteId={restauranteId} />
+          )}
+        </>
       ) : (
         <div className="flex justify-center py-12">
           <span className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
