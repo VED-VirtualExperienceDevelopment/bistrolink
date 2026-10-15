@@ -69,14 +69,6 @@ export async function descargarPdfQr(
       align: "center",
       maxWidth: TARJETA.ancho - 10,
     });
-
-    // Corrección de errores "M": tolera algo de suciedad o desgaste del
-    // papel sin agrandar demasiado el código.
-    const png = await QRCode.toDataURL(tarjeta.url, {
-      errorCorrectionLevel: "M",
-      margin: 1,
-      width: 600,
-    });
     doc.addImage(
       pngs[indice],
       "PNG",
