@@ -52,7 +52,7 @@ export class MesaQrGuard implements CanActivate {
 
     const mesa = await this.qrMesaAcceso.resolver(valor);
 
-    if (!request.user || mesa.tenantId !== request.user.tenantId) {
+    if (request.user?.tenantId !== mesa.tenantId) {
       throw new ForbiddenException(
         'El QR no corresponde a este establecimiento',
       );

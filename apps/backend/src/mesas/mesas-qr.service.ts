@@ -49,7 +49,11 @@ export class MesasQrService {
         'No se pudieron generar las URLs de los QR',
       );
     }
-    return url.replace(/\/+$/, '');
+    let base = url;
+    while (base.endsWith('/')) {
+      base = base.slice(0, -1);
+    }
+    return base;
   }
 
   private urlMesa(

@@ -29,6 +29,19 @@ export async function descargarPdfQr(
     import("qrcode"),
   ]);
 
+  // Corrección de errores "M": tolera algo de suciedad o desgaste del
+  // papel sin agrandar demasiado el código. Se generan todos en paralelo
+  // antes de armar el PDF (no dependen entre sí).
+  const pngs = await Promise.all(
+    tarjetas.map((tarjeta) =>
+      QRCode.toDataURL(tarjeta.url, {
+        errorCorrectionLevel: "M",
+        margin: 1,
+        width: 600,
+      }),
+    ),
+  );
+
   const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
 
   for (const [indice, tarjeta] of tarjetas.entries()) {
@@ -64,7 +77,14 @@ export async function descargarPdfQr(
       margin: 1,
       width: 600,
     });
-    doc.addImage(png, "PNG", centroX - LADO_QR / 2, y + 36, LADO_QR, LADO_QR);
+    doc.addImage(
+      pngs[indice],
+      "PNG",
+      centroX - LADO_QR / 2,
+      y + 36,
+      LADO_QR,
+      LADO_QR,
+    );
 
     doc.setFontSize(10);
     doc.setTextColor(90);

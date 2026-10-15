@@ -88,7 +88,7 @@ export function slugArchivo(texto: string): string {
     .replaceAll(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .replaceAll(/[^a-z0-9]+/g, "-")
-    .replaceAll(/^-+|-+$/g, "");
+    .replaceAll(/^-|-$/g, "");
   return slug || "restaurante";
 }
 
