@@ -5,6 +5,7 @@ import { INestApplication } from '@nestjs/common';
 import request = require('supertest');
 import { io, Socket } from 'socket.io-client';
 import { AppModule } from '../../src/app.module';
+import { asegurarClaveQr, tokenQrDeMesa } from './support/qr-mesa';
 
 // ── Config de Keycloak para pedir tokens reales (password grant) ───────────
 // Mismo patron que tenant-isolation.e2e-spec.ts / usuarios.e2e-spec.ts.
@@ -74,11 +75,14 @@ describe('WebSocket KDS (HU-003 + HU-004) - emision de pedido:nuevo', () => {
   let app: INestApplication;
   let baseUrl: string;
   let tokenComensalDemo: string;
+  // BL-204: la mesa solo se usa con el token de su QR.
+  let qrToken: string;
 
   const itConTenantB = TENANT_B_USER && TENANT_B_PASS ? it : it.skip;
   const itConMozo = MOZO_USER && MOZO_PASS ? it : it.skip;
 
   beforeAll(async () => {
+    asegurarClaveQr();
     const moduleRef: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -90,9 +94,10 @@ describe('WebSocket KDS (HU-003 + HU-004) - emision de pedido:nuevo', () => {
     const port = typeof address === 'object' && address ? address.port : 0;
     baseUrl = `http://localhost:${port}`;
 
+    qrToken = await tokenQrDeMesa(app, TENANT_ID, MESA_ID);
     const authRes = await request(app.getHttpServer())
-      .post('/auth/comensal')
-      .send({ tenantId: TENANT_ID, mesaId: MESA_ID })
+      .post('/auth/comensal/mesa')
+      .send({ qrToken })
       .expect(200);
     tokenComensalDemo = authRes.body.accessToken;
   }, 30000);
@@ -118,9 +123,9 @@ describe('WebSocket KDS (HU-003 + HU-004) - emision de pedido:nuevo', () => {
       await request(app.getHttpServer())
         .post('/pedidos')
         .set('Authorization', `Bearer ${tokenComensalDemo}`)
+        .set('X-Mesa-Token', qrToken)
         .send({
           restauranteId: RESTAURANTE_ID,
-          mesaId: MESA_ID,
           idempotencyKey: `warmup-${Date.now()}`,
           items: [{ itemCartaId: ITEM_ID, cantidad: 1 }],
         })
@@ -160,9 +165,9 @@ describe('WebSocket KDS (HU-003 + HU-004) - emision de pedido:nuevo', () => {
               await request(app.getHttpServer())
                 .post('/pedidos')
                 .set('Authorization', `Bearer ${tokenComensalDemo}`)
+                .set('X-Mesa-Token', qrToken)
                 .send({
                   restauranteId: RESTAURANTE_ID,
-                  mesaId: MESA_ID,
                   idempotencyKey: `ws-test-${Date.now()}`,
                   items: [{ itemCartaId: ITEM_ID, cantidad: 1 }],
                 })
@@ -199,9 +204,9 @@ describe('WebSocket KDS (HU-003 + HU-004) - emision de pedido:nuevo', () => {
                 await request(app.getHttpServer())
                   .post('/pedidos')
                   .set('Authorization', `Bearer ${tokenComensalDemo}`)
+                  .set('X-Mesa-Token', qrToken)
                   .send({
                     restauranteId: RESTAURANTE_ID,
-                    mesaId: MESA_ID,
                     idempotencyKey: `ws-aislamiento-${Date.now()}`,
                     items: [{ itemCartaId: ITEM_ID, cantidad: 1 }],
                   })

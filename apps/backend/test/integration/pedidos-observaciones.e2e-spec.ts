@@ -6,6 +6,15 @@ import { TenantPrismaService } from '../../src/prisma/tenant-prisma.service';
 import { KdsGateway } from '../../src/pedidos/kds.gateway';
 import { CrearPedidoDto } from '../../src/pedidos/dto/crear-pedido.dto';
 
+// BL-204: pedido desde la mesa del QR, tal como lo deja MesaQrGuard en
+// request.mesaQr (el body ya no lleva mesaId).
+const MESA_QR = {
+  tenantId: '11111111-1111-1111-1111-111111111111',
+  mesaId: '33333333-3333-3333-3333-333333333333',
+  restauranteId: '22222222-2222-2222-2222-222222222222',
+  numero: 4,
+};
+
 describe('Pedidos Observaciones - Integración (BL-41)', () => {
   let app: INestApplication;
   let pedidosService: PedidosService;
@@ -78,7 +87,6 @@ describe('Pedidos Observaciones - Integración (BL-41)', () => {
     const tenantId = '11111111-1111-1111-1111-111111111111';
     const dto: CrearPedidoDto = {
       restauranteId: '22222222-2222-2222-2222-222222222222',
-      mesaId: '33333333-3333-3333-3333-333333333333',
       idempotencyKey: 'test-integration-obs-1',
       observacionGeneral: 'Sin gluten, por favor. Mesa 4.',
       items: [
@@ -112,7 +120,7 @@ describe('Pedidos Observaciones - Integración (BL-41)', () => {
     mockTx.pedido.create.mockResolvedValue(pedidoCreado);
 
     // Ejecutamos el servicio real
-    await pedidosService.crear(tenantId, dto);
+    await pedidosService.crear(tenantId, dto, MESA_QR);
 
     // Verificamos que el gateway recibió el payload correcto
     expect(kdsGateway.emitirNuevoPedido).toHaveBeenCalledWith(
@@ -133,7 +141,6 @@ describe('Pedidos Observaciones - Integración (BL-41)', () => {
     const tenantId = '11111111-1111-1111-1111-111111111111';
     const dto: CrearPedidoDto = {
       restauranteId: '22222222-2222-2222-2222-222222222222',
-      mesaId: '33333333-3333-3333-3333-333333333333',
       idempotencyKey: 'test-integration-obs-2',
       items: [
         {
@@ -162,7 +169,7 @@ describe('Pedidos Observaciones - Integración (BL-41)', () => {
     mockTx.pedido.create.mockResolvedValue(pedidoCreado);
 
     // Ejecutamos el servicio real
-    await pedidosService.crear(tenantId, dto);
+    await pedidosService.crear(tenantId, dto, MESA_QR);
 
     // Verificamos que el gateway maneja correctamente los undefined sin romper
     expect(kdsGateway.emitirNuevoPedido).toHaveBeenCalledWith(

@@ -9,6 +9,7 @@ import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { KdsGateway } from '../pedidos/kds.gateway';
 import { MesaLayoutDto } from './dto/mesa-layout.dto';
 import { MesaLayoutItemDto } from './dto/guardar-layout.dto';
+import { MesaDelQr } from '../qr-mesa/qr-mesa-acceso.service';
 
 /** "mesa 3" o "mesas 3, 5", para los mensajes de error del editor. */
 function listarMesas(numeros: number[]): string {
@@ -23,22 +24,16 @@ export class MesasService {
     private readonly kdsGateway: KdsGateway,
   ) {}
 
-  async llamarMozo(tenantId: string, mesaId: string) {
-    const mesa = await this.tenantPrisma.runInTenantContext(tenantId, (tx) =>
-      tx.mesa.findUnique({
-        where: { id: mesaId },
-        select: { id: true, numero: true },
-      }),
-    );
-
-    if (!mesa) {
-      throw new NotFoundException(
-        'Mesa no encontrada para este establecimiento',
-      );
-    }
-
-    this.kdsGateway.emitirLlamado(tenantId, mesa.id, mesa.numero);
-
+  /**
+   * HU-019 / HU-034 (BL-204): avisa al mozo desde la mesa del QR.
+   *
+   * @param mesaQr mesa del QR, ya validada por MesaQrGuard: existe, no es la
+   *   mesa virtual, el QR está vigente y es del mismo tenant que el JWT. Por
+   *   eso no se vuelve a consultar la base: el número de mesa viene del QR
+   *   resuelto, no del cliente.
+   */
+  llamarMozo(tenantId: string, mesaQr: MesaDelQr) {
+    this.kdsGateway.emitirLlamado(tenantId, mesaQr.mesaId, mesaQr.numero);
     return { ok: true };
   }
 

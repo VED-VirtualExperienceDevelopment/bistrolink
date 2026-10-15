@@ -28,28 +28,22 @@ describe('MesasService.llamarMozo', () => {
   let mockKdsGateway: any;
   let service: MesasService;
 
+  const MESA_DEL_QR = {
+    tenantId: TENANT_ID,
+    mesaId: MESA_ID,
+    restauranteId: RESTAURANTE_ID,
+    numero: 5,
+  };
+
   beforeEach(() => {
     mockTenantPrisma = { runInTenantContext: jest.fn() };
     mockKdsGateway = { emitirLlamado: jest.fn() };
     service = new MesasService(mockTenantPrisma, mockKdsGateway);
   });
 
-  it('rechaza con 404 si la mesa no existe en este tenant', async () => {
-    mockTenantPrisma.runInTenantContext.mockResolvedValue(null);
-
-    await expect(service.llamarMozo(TENANT_ID, MESA_ID)).rejects.toThrow(
-      NotFoundException,
-    );
-    expect(mockKdsGateway.emitirLlamado).not.toHaveBeenCalled();
-  });
-
-  it('con la mesa encontrada: emite el llamado con id y numero de mesa', async () => {
-    mockTenantPrisma.runInTenantContext.mockResolvedValue({
-      id: MESA_ID,
-      numero: 5,
-    });
-
-    const resultado = await service.llamarMozo(TENANT_ID, MESA_ID);
+  // BL-204: la mesa sale solo del QR, ya validado por MesaQrGuard.
+  it('emite el llamado con la mesa y el número del QR', () => {
+    const resultado = service.llamarMozo(TENANT_ID, MESA_DEL_QR);
 
     expect(mockKdsGateway.emitirLlamado).toHaveBeenCalledWith(
       TENANT_ID,
@@ -57,6 +51,12 @@ describe('MesasService.llamarMozo', () => {
       5,
     );
     expect(resultado).toEqual({ ok: true });
+  });
+
+  it('no vuelve a consultar la base: el QR ya se resolvió en MesaQrGuard', () => {
+    service.llamarMozo(TENANT_ID, MESA_DEL_QR);
+
+    expect(mockTenantPrisma.runInTenantContext).not.toHaveBeenCalled();
   });
 });
 

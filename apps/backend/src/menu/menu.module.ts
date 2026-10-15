@@ -2,15 +2,16 @@ import { Module } from '@nestjs/common';
 import { MenuController } from './menu.controller';
 import { MenuService } from './menu.service';
 import { StorageService } from './storage.service';
-import { MenuGateway } from './menu.gateway'; // <-- NUEVO
-import { MenuAdminService } from './menu-admin.service'; // <-- NUEVO
-import { MenuAdminController } from './menu-admin.controller'; // <-- NUEVO
+import { MenuGateway } from './menu.gateway';
+import { MenuAdminService } from './menu-admin.service';
+import { MenuAdminController } from './menu-admin.controller';
 import { PrismaModule } from '../prisma/prisma.module';
+import { QrMesaModule } from '../qr-mesa/qr-mesa.module';
 
 @Module({
-  imports: [PrismaModule],
-  controllers: [MenuController, MenuAdminController], // <-- AGREGADO
-  providers: [MenuService, MenuAdminService, StorageService, MenuGateway], // <-- AGREGADOS
-  exports: [MenuService, MenuAdminService, StorageService, MenuGateway], // <-- AGREGADOS
+  imports: [PrismaModule, QrMesaModule],
+  controllers: [MenuController, MenuAdminController],
+  providers: [MenuService, MenuAdminService, StorageService, MenuGateway],
+  exports: [MenuService, MenuAdminService, StorageService, MenuGateway],
 })
 export class MenuModule {}

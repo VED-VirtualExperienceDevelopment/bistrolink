@@ -22,9 +22,13 @@ const MOZO_PASS = process.env.TEST_MOZO_PASSWORD;
 // Tenant "Demo" del seed (Anexo/seed.ts) - el unico con mesa/restaurante/
 // item de carta ya cargados, necesarios para poder crear un pedido real
 // via /auth/comensal + POST /pedidos.
+//
+// BL-204: el pedido de prueba va por el link web del local (pedido para
+// retirar, mesa virtual): estos tests verifican el canal del KDS, no el
+// origen del pedido. La mesa solo se usa con el token de su QR (ver
+// pedidos-websocket.e2e-spec.ts).
 const TENANT_DEMO_ID = '11111111-1111-1111-1111-111111111111';
 const RESTAURANTE_DEMO_ID = '22222222-2222-2222-2222-222222222222';
-const MESA_DEMO_ID = '33333333-3333-3333-3333-333333333333';
 const ITEM_CARTA_DEMO_ID = '55555555-5555-5555-5555-555555555555';
 
 async function getToken(username: string, password: string): Promise<string> {
@@ -60,7 +64,6 @@ async function getComensalToken(): Promise<string> {
       body: JSON.stringify({
         tenantId: TENANT_DEMO_ID,
         restauranteId: RESTAURANTE_DEMO_ID,
-        mesaId: MESA_DEMO_ID,
       }),
     },
   ).catch(() => null);
@@ -88,7 +91,6 @@ async function crearPedidoDePrueba(baseUrl: string): Promise<string> {
     },
     body: JSON.stringify({
       restauranteId: RESTAURANTE_DEMO_ID,
-      mesaId: MESA_DEMO_ID,
       idempotencyKey: `e2e-kds-${Date.now()}-${Math.random()}`,
       items: [{ itemCartaId: ITEM_CARTA_DEMO_ID, cantidad: 1 }],
     }),

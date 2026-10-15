@@ -5,6 +5,8 @@ import { INestApplication } from '@nestjs/common';
 import request = require('supertest');
 import { Prisma, PrismaClient } from '@prisma/client';
 import { AppModule } from '../../src/app.module';
+import { QrMesaTokenService } from '../../src/qr-mesa/qr-mesa-token.service';
+import { asegurarClaveQr, tokenQrDeMesa } from './support/qr-mesa';
 
 // Fixtures propios, aislados de los del seed de desarrollo
 // (prisma/seed.ts) — así este test no depende de que alguien haya corrido
@@ -100,10 +102,15 @@ async function borrarTenant(
   await prisma.tenant.deleteMany({ where: { id: tenantId } });
 }
 
-describe('Menú (HU-001) - aislamiento multi-tenant vía RLS - integración', () => {
+// HU-034 (BL-204): el menú de la mesa se pide con el token opaco del QR
+// (GET /menu/qr/:token). La ruta vieja por ids (GET /menu/:tenantId/:mesaId)
+// se retiró: con los ids en la URL, cualquiera podía armar el enlace de otra
+// mesa.
+describe('Menú (HU-001 / HU-034) - QR de mesa y aislamiento multi-tenant - integración', () => {
   let app: INestApplication;
 
   beforeAll(async () => {
+    asegurarClaveQr();
     await seedTenant(
       TENANT_A,
       RESTAURANTE_A,
@@ -143,33 +150,66 @@ describe('Menú (HU-001) - aislamiento multi-tenant vía RLS - integración', ()
     }
   });
 
-  it('[TC-I-010] Menú: devuelve el menú cuando tenantId y mesaId son del mismo tenant', async () => {
+  it('[TC-I-010] Menú: devuelve el menú y el número de la mesa del QR', async () => {
+    const qrToken = await tokenQrDeMesa(app, TENANT_A, MESA_A);
+
     const res = await request(app.getHttpServer())
-      .get(`/menu/${TENANT_A}/${MESA_A}`)
+      .get(`/menu/qr/${qrToken}`)
       .expect(200);
 
     expect(res.body.restaurante.nombre).toBe('Restaurante Test A');
+    expect(res.body.mesa).toEqual({ numero: 99 });
   });
 
-  it('[TC-I-011] Menú: devuelve 404 si la mesa pertenece a otro tenant', async () => {
-    // Caso crítico: MESA_B es una mesa real, no un UUID inventado. El
-    // endpoint de HU-001 es público a propósito (sin JWT) — RLS es la
-    // única barrera de aislamiento acá. Si este test alguna vez pasara
-    // con 200, sería una fuga de datos real entre tenants.
+  it('[TC-I-011] Menú: devuelve 404 si el QR combina un tenant con una mesa de OTRO tenant', async () => {
+    // Caso crítico: el token está bien cifrado (misma clave) pero junta el
+    // tenant A con una mesa real del tenant B. El endpoint es público a
+    // propósito (sin JWT); si este test pasara con 200, sería una fuga de
+    // datos real entre tenants.
+    const qrToken = app.get(QrMesaTokenService).cifrar({
+      tenantId: TENANT_A,
+      mesaId: MESA_B,
+      version: 1,
+    });
+
+    await request(app.getHttpServer()).get(`/menu/qr/${qrToken}`).expect(404);
+  });
+
+  it('[TC-I-012] Menú: devuelve 404 para el QR de una mesa inexistente', async () => {
+    const qrToken = app.get(QrMesaTokenService).cifrar({
+      tenantId: TENANT_A,
+      mesaId: '00000000-0000-0000-0000-000000000000',
+      version: 1,
+    });
+
+    await request(app.getHttpServer()).get(`/menu/qr/${qrToken}`).expect(404);
+  });
+
+  it('[TC-I-013] Menú: devuelve 404 si el token no es un QR emitido por el backend', async () => {
     await request(app.getHttpServer())
-      .get(`/menu/${TENANT_A}/${MESA_B}`)
+      .get('/menu/qr/EsteTokenNoLoEmitioElBackend')
       .expect(404);
   });
 
-  it('[TC-I-012] Menú: devuelve 404 para una mesa inexistente', async () => {
-    await request(app.getHttpServer())
-      .get(`/menu/${TENANT_A}/00000000-0000-0000-0000-000000000000`)
-      .expect(404);
+  it('[TC-I-055] Menú: devuelve 410 si el QR de la mesa se regeneró', async () => {
+    const qrViejo = await tokenQrDeMesa(app, TENANT_A, MESA_A);
+    // Mismo efecto que POST /mesas/:id/qr/regenerar: sube la versión.
+    await enTenant(TENANT_A, (tx) =>
+      tx.mesa.update({
+        where: { id: MESA_A },
+        data: { qrVersion: { increment: 1 } },
+      }),
+    );
+
+    await request(app.getHttpServer()).get(`/menu/qr/${qrViejo}`).expect(410);
+
+    const qrNuevo = await tokenQrDeMesa(app, TENANT_A, MESA_A);
+    await request(app.getHttpServer()).get(`/menu/qr/${qrNuevo}`).expect(200);
   });
 
-  it('[TC-I-013] Menú: devuelve 400 si los IDs no son UUIDs válidos', async () => {
+  it('[TC-I-056] Menú: la ruta vieja por ids ya no existe (404)', async () => {
     await request(app.getHttpServer())
-      .get('/menu/no-es-un-uuid/tampoco-esto')
-      .expect(400);
+      .get(`/menu/${TENANT_A}/${MESA_A}`)
+      .expect(404);
   });
 });

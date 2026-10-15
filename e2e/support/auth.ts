@@ -1,5 +1,6 @@
 import { test as base, type BrowserContext, type Page } from "@playwright/test";
 import { KDS_PATH } from "./ids";
+import { obtenerQrMesas, tokenAdminDesdePanel, type QrMesas } from "./qr-mesas";
 
 // BL-181: antes cada spec que necesitaba una sesión de staff en /kds
 // declaraba su propia función `prepararKds(context: any)` casi idéntica
@@ -72,7 +73,41 @@ type Fixtures = {
   kdsPageAdmin: Page;
 };
 
-export const test = base.extend<Fixtures>({
+type WorkerFixtures = {
+  /**
+   * HU-034 (BL-204): URLs de los QR de las mesas del seed (/q/<token>).
+   * Una vez por worker: loguea un ADMIN en un contexto aparte, pide
+   * GET /mesas/qr y cierra ese contexto. Solo lee los QR, nunca los regenera.
+   */
+  qrMesas: QrMesas;
+};
+
+export const test = base.extend<Fixtures, WorkerFixtures>({
+  qrMesas: [
+    async ({ playwright }, use) => {
+      // El login del ADMIN corre SIEMPRE en Chromium, no en el navegador del
+      // proyecto: es solo un paso de preparación para obtener las URLs de
+      // los QR. En WebKit (mobile-safari) el login de Keycloak vuelve a
+      // /login después del callback, y el fixture se colgaba hasta el
+      // timeout aunque el test (TC-E-007) no tuviera nada que ver con eso.
+      const browser = await playwright.chromium.launch();
+      let qrMesas: QrMesas;
+      try {
+        // newContext() no hereda el `use` de playwright.config.ts: el baseURL
+        // se pasa a mano, con el mismo valor por defecto.
+        const context = await browser.newContext({
+          baseURL: process.env.BASE_URL ?? "http://localhost:3000",
+        });
+        const adminPage = await loginKds(context, credenciales("TEST_ADMIN"));
+        const authorization = await tokenAdminDesdePanel(adminPage);
+        qrMesas = await obtenerQrMesas(context.request, authorization);
+      } finally {
+        await browser.close();
+      }
+      await use(qrMesas);
+    },
+    { scope: "worker" },
+  ],
   kdsPageMozo: async ({ context }, use) => {
     const kdsPage = await loginKds(context, credenciales("TEST_MOZO"));
     await use(kdsPage);

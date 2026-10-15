@@ -49,6 +49,8 @@ const OPCIONES_FORMA: { forma: FormaMesa; etiqueta: string; icono: string }[] =
 
 interface Props {
   restauranteId: string;
+  /** HU-034 (BL-204): avisa a la página para recargar los QR de las mesas. */
+  onGuardado?: () => void;
 }
 
 /**
@@ -66,7 +68,10 @@ interface Props {
  * edición del número, ni los botones de agregar/eliminar/guardar. La
  * lectura en sí (GET /mesas/layout) ya la permite el backend a ambos roles.
  */
-export function MapaMesasEditor({ restauranteId }: Readonly<Props>) {
+export function MapaMesasEditor({
+  restauranteId,
+  onGuardado,
+}: Readonly<Props>) {
   const { token, hasRole } = useKeycloakAuth();
   const puedeEditar = puedeEditarMapa(hasRole);
 
@@ -335,6 +340,7 @@ export function MapaMesasEditor({ restauranteId }: Readonly<Props>) {
       // un segundo guardado las volvería a crear en vez de actualizarlas
       // (guardarLayout crea cuando el item no trae `id`).
       await cargarLayout();
+      onGuardado?.();
     } catch (err) {
       const mensaje =
         err instanceof ApiError ? err.message : "No se pudo guardar el mapa";

@@ -5,6 +5,7 @@ import { INestApplication } from '@nestjs/common';
 import request = require('supertest');
 import { io, Socket } from 'socket.io-client';
 import { AppModule } from '../../src/app.module';
+import { asegurarClaveQr, tokenQrDeMesa } from './support/qr-mesa';
 
 const KEYCLOAK_URL = process.env.KEYCLOAK_URL ?? 'http://localhost:8080';
 const REALM = process.env.KEYCLOAK_REALM ?? 'bistrolink';
@@ -44,11 +45,14 @@ describe('WebSocket KDS (HU-018) - pedido listo para entregar', () => {
   let app: INestApplication;
   let baseUrl: string;
   let tokenComensal: string;
+  // BL-204: la mesa solo se usa con el token de su QR.
+  let qrToken: string;
   let tokenMozo: string;
 
   const itConMozo = MOZO_USER && MOZO_PASS ? it : it.skip;
 
   beforeAll(async () => {
+    asegurarClaveQr();
     const moduleRef: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -60,9 +64,10 @@ describe('WebSocket KDS (HU-018) - pedido listo para entregar', () => {
     const port = typeof address === 'object' && address ? address.port : 0;
     baseUrl = `http://localhost:${port}`;
 
+    qrToken = await tokenQrDeMesa(app, TENANT_ID, MESA_ID);
     const authRes = await request(app.getHttpServer())
-      .post('/auth/comensal')
-      .send({ tenantId: TENANT_ID, mesaId: MESA_ID })
+      .post('/auth/comensal/mesa')
+      .send({ qrToken })
       .expect(200);
     tokenComensal = authRes.body.accessToken;
 
@@ -81,9 +86,9 @@ describe('WebSocket KDS (HU-018) - pedido listo para entregar', () => {
       const pedidoRes = await request(app.getHttpServer())
         .post('/pedidos')
         .set('Authorization', `Bearer ${tokenComensal}`)
+        .set('X-Mesa-Token', qrToken)
         .send({
           restauranteId: RESTAURANTE_ID,
-          mesaId: MESA_ID,
           idempotencyKey: `hu018-${Date.now()}`,
           items: [{ itemCartaId: ITEM_ID, cantidad: 1 }],
         })

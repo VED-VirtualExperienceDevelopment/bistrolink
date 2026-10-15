@@ -30,6 +30,16 @@ const REQUIRED_ENV_VARS: RequiredEnvVar[] = [
     name: 'DATABASE_URL',
     hint: 'Connection string de Postgres. Ver .env.example en la raíz del repo.',
   },
+  {
+    // HU-034 (BL-204): QrMesaTokenService la valida recién al generar o
+    // leer el primer QR; sin este chequeo, un deploy sin la clave arranca
+    // bien y falla el menú de todas las mesas.
+    name: 'QR_TOKEN_KEY',
+    hint:
+      'Clave AES de los QR de mesa: 32 bytes en base64, distinta por ' +
+      'entorno. Ver el comentario en .env.example para generarla. Cambiarla ' +
+      'invalida todos los QR impresos.',
+  },
 ];
 
 export function checkRequiredEnvVars(): void {

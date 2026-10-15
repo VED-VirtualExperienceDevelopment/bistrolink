@@ -9,7 +9,6 @@ import {
   Matches,
   MaxLength,
   Min,
-  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 
@@ -50,20 +49,22 @@ export class CrearPedidoItemDto {
 
 export class CrearPedidoDto {
   /**
-   * BL-309: obligatorio solo en el pedido para retirar (sin mesaId). En el
-   * pedido de mesa el restaurante sale de la mesa, del lado del servidor
-   * (PedidosService.crear); si igual se manda, tiene que coincidir con el de
-   * la mesa o se rechaza con 403.
+   * BL-309 / BL-204: obligatorio solo en el pedido para retirar. En el
+   * pedido de mesa el restaurante sale de la mesa del QR, del lado del
+   * servidor; si igual se manda, tiene que coincidir o se rechaza con 403.
+   *
+   * Acá es opcional porque el DTO no ve los headers: con X-Mesa-Token el
+   * body no trae ningún id, y eso es válido. El "falta restauranteId en un
+   * pedido para retirar" (400) lo decide PedidosService.crear, que sí sabe
+   * si vino el QR.
+   *
+   * HU-034 (BL-204): no hay campo mesaId. La mesa sale solo del QR; si un
+   * cliente lo manda igual, el ValidationPipe (forbidNonWhitelisted) lo
+   * rechaza con 400.
    */
-  @ValidateIf(
-    (dto: CrearPedidoDto) => !dto.mesaId || dto.restauranteId !== undefined,
-  )
+  @IsOptional()
   @Matches(UUID_REGEX, { message: 'restauranteId debe tener formato UUID' })
   restauranteId?: string;
-
-  @IsOptional()
-  @Matches(UUID_REGEX, { message: 'mesaId debe tener formato UUID' })
-  mesaId?: string;
 
   @IsString()
   @Length(1, 64)

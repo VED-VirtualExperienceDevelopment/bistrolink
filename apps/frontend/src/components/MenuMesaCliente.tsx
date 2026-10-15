@@ -5,23 +5,23 @@ import MenuDigital, { type CategoriaMenu } from './MenuDigital';
 interface MenuMesaClienteProps {
   readonly restaurante: { nombre: string };
   readonly categorias: CategoriaMenu[];
-  readonly tenantId: string;
-  readonly mesaId: string;
+  /** HU-034 (BL-204): token opaco del QR de la mesa (/q/<token>). */
+  readonly qrToken: string;
+  readonly numeroMesa: number;
 }
 
 export default function MenuMesaCliente({
   restaurante,
   categorias,
-  tenantId,
-  mesaId,
+  qrToken,
+  numeroMesa,
 }: MenuMesaClienteProps) {
   return (
     <MenuDigital
-      tipo="mesa"
+      origen={{ tipo: 'mesa', qrToken }}
       restaurante={restaurante}
       categorias={categorias}
-      tenantId={tenantId}
-      idOrigen={mesaId}
+      numeroMesa={numeroMesa}
     />
   );
 }

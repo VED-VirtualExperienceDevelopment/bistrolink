@@ -7,6 +7,7 @@ import {
 import { PrismaClient } from '@prisma/client';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { CrearPedidoDto } from './dto/crear-pedido.dto';
+import { MesaDelQr } from '../qr-mesa/qr-mesa-acceso.service';
 import { KdsGateway } from './kds.gateway';
 import { aPedidoKds } from './pedido-kds.mapper';
 
@@ -20,7 +21,11 @@ export class PedidosService {
     private readonly kdsGateway: KdsGateway,
   ) {}
 
-  async crear(tenantId: string, dto: CrearPedidoDto) {
+  /**
+   * @param mesaQr mesa del QR validada por MesaQrGuard (BL-204). Si viene,
+   *   el pedido es de esa mesa y de ninguna otra.
+   */
+  async crear(tenantId: string, dto: CrearPedidoDto, mesaQr?: MesaDelQr) {
     const { pedido, esNuevo, mesaNumero } =
       await this.tenantPrisma.runInTenantContext(tenantId, async (tx) => {
         const existente = await tx.pedido.findUnique({
@@ -31,11 +36,8 @@ export class PedidosService {
           return { pedido: existente, esNuevo: false, mesaNumero: null };
         }
 
-        const { mesa, restauranteId } = await this.resolverMesaYRestaurante(
-          tx,
-          tenantId,
-          dto,
-        );
+        const { mesa, restauranteId, esPedidoDeMesa } =
+          await this.resolverMesaYRestaurante(tx, tenantId, dto, mesaQr);
 
         const itemsCarta = await tx.itemCarta.findMany({
           where: { id: { in: dto.items.map((i) => i.itemCartaId) } },
@@ -63,7 +65,9 @@ export class PedidosService {
             mesaId: mesa.id,
             idempotencyKey: dto.idempotencyKey,
             estado: ESTADO_INICIAL_PEDIDO,
-            canal: dto.mesaId ? 'QR' : 'WEB',
+            // BL-204: el canal lo decide el servidor según cómo se resolvió
+            // la mesa, no lo que diga el cliente.
+            canal: esPedidoDeMesa ? 'QR' : 'WEB',
             observacionGeneral: dto.observacionGeneral,
             lineas: {
               create: dto.items.map((linea) => {
@@ -100,23 +104,28 @@ export class PedidosService {
   }
 
   /**
-   * BL-309: de qué mesa y de qué restaurante es el pedido.
+   * BL-309 / BL-204 / BL-308: de qué mesa y de qué restaurante es el pedido.
    *
-   * - Pedido de mesa (con mesaId): el restaurante sale de la mesa, nunca del
-   *   cliente. Si el body igual trae un restauranteId, tiene que coincidir
-   *   (403 si no). La mesa tiene que ser de este tenant (además de RLS) y no
-   *   puede ser la mesa virtual.
-   * - Pedido para retirar (sin mesaId): restauranteId obligatorio; el pedido
-   *   va a la mesa virtual de ese restaurante. La validación del restaurante
-   *   contra el tenant queda para BL-308.
+   * - Pedido de mesa: la mesa sale SOLO del QR (mesaQr, validado por
+   *   MesaQrGuard). El body no acepta mesaId (CrearPedidoDto): no hay forma
+   *   de pedir a nombre de otra mesa.
+   * - El restaurante sale de la mesa, nunca del cliente (si el body trae
+   *   otro restauranteId, 403). La mesa se vuelve a leer dentro de la
+   *   transacción: tiene que ser de este tenant (además de RLS) y no puede
+   *   ser la mesa virtual.
+   * - Pedido para retirar (sin mesa): el restauranteId tiene que ser de este
+   *   tenant (403 si no) ANTES de tocar la mesa virtual. Sin este chequeo, el
+   *   upsert de la mesa 0 podía colgarse del restaurante de otro tenant: RLS
+   *   no lo frena y la FK de Postgres no aplica RLS (BL-308).
    */
   private async resolverMesaYRestaurante(
     tx: PrismaClient,
     tenantId: string,
     dto: CrearPedidoDto,
+    mesaQr?: MesaDelQr,
   ) {
-    if (dto.mesaId) {
-      const mesa = await tx.mesa.findUnique({ where: { id: dto.mesaId } });
+    if (mesaQr) {
+      const mesa = await tx.mesa.findUnique({ where: { id: mesaQr.mesaId } });
 
       if (mesa?.tenantId !== tenantId || mesa.esVirtual) {
         throw new NotFoundException(
@@ -130,7 +139,11 @@ export class PedidosService {
         );
       }
 
-      return { mesa, restauranteId: mesa.restauranteId };
+      return {
+        mesa,
+        restauranteId: mesa.restauranteId,
+        esPedidoDeMesa: true,
+      };
     }
 
     if (!dto.restauranteId) {
@@ -139,12 +152,22 @@ export class PedidosService {
       );
     }
 
+    const restaurante = await tx.restaurante.findUnique({
+      where: { id: dto.restauranteId },
+      select: { tenantId: true },
+    });
+    if (restaurante?.tenantId !== tenantId) {
+      throw new ForbiddenException(
+        'Restaurante no válido para este establecimiento',
+      );
+    }
+
     const mesa = await this.obtenerOCrearMesaVirtual(
       tx,
       tenantId,
       dto.restauranteId,
     );
-    return { mesa, restauranteId: dto.restauranteId };
+    return { mesa, restauranteId: dto.restauranteId, esPedidoDeMesa: false };
   }
 
   private async obtenerOCrearMesaVirtual(

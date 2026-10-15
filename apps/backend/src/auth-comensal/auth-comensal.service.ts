@@ -1,10 +1,10 @@
 import {
-  BadRequestException,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
+import { QrMesaAccesoService } from '../qr-mesa/qr-mesa-acceso.service';
 
 export interface TokenComensal {
   accessToken: string;
@@ -13,7 +13,10 @@ export interface TokenComensal {
 
 @Injectable()
 export class AuthComensalService {
-  constructor(private readonly tenantPrisma: TenantPrismaService) {}
+  constructor(
+    private readonly tenantPrisma: TenantPrismaService,
+    private readonly qrMesaAcceso: QrMesaAccesoService,
+  ) {}
 
   private get keycloakUrl(): string {
     return process.env.KEYCLOAK_URL ?? 'http://localhost:8080';
@@ -43,32 +46,44 @@ export class AuthComensalService {
     return password;
   }
 
+  /**
+   * Token del comensal para el pedido para retirar (link web del local).
+   * El restaurante tiene que existir en el tenant (RLS); si no, 404.
+   */
   async emitirToken(
     tenantId: string,
-    mesaId?: string,
-    restauranteId?: string,
+    restauranteId: string,
   ): Promise<TokenComensal> {
-    if (!mesaId && !restauranteId) {
-      throw new BadRequestException('Se requiere mesaId o restauranteId');
-    }
-
     const existe = await this.tenantPrisma.runInTenantContext(tenantId, (tx) =>
-      mesaId
-        ? tx.mesa.findUnique({ where: { id: mesaId }, select: { id: true } })
-        : tx.restaurante.findUnique({
-            where: { id: restauranteId },
-            select: { id: true },
-          }),
+      tx.restaurante.findUnique({
+        where: { id: restauranteId },
+        select: { id: true },
+      }),
     );
 
     if (!existe) {
-      throw new NotFoundException(
-        mesaId
-          ? 'Mesa no encontrada para este establecimiento'
-          : 'Restaurante no encontrado',
-      );
+      throw new NotFoundException('Restaurante no encontrado');
     }
 
+    return this.pedirTokenKeycloak(tenantId);
+  }
+
+  /**
+   * HU-034 (BL-204): token del comensal en una mesa. El tenant sale del QR
+   * (validado y vigente), nunca del cliente. QrMesaAccesoService responde
+   * 404 si el QR no es válido y 410 si fue reemplazado.
+   */
+  async emitirTokenPorQr(qrToken: string): Promise<TokenComensal> {
+    const mesa = await this.qrMesaAcceso.resolver(qrToken);
+    return this.pedirTokenKeycloak(mesa.tenantId);
+  }
+
+  /**
+   * Pide el JWT del comensal técnico del tenant (comensal-<tenantId>) a
+   * Keycloak. Es el mismo usuario para cualquier mesa del tenant: la mesa se valida
+   * aparte (BL-204, MesaQrGuard en pedidos y llamados).
+   */
+  private async pedirTokenKeycloak(tenantId: string): Promise<TokenComensal> {
     const username = `comensal-${tenantId}`;
 
     const res = await fetch(

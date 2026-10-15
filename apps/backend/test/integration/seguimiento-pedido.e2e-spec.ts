@@ -3,6 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import { io, Socket } from 'socket.io-client';
 import { AppModule } from '../../src/app.module';
+import { asegurarClaveQr, tokenQrDeMesa } from './support/qr-mesa';
 
 const KEYCLOAK_URL = process.env.KEYCLOAK_URL ?? 'http://localhost:8080';
 const REALM = process.env.KEYCLOAK_REALM ?? 'bistrolink';
@@ -62,10 +63,13 @@ describe('Seguimiento del comensal (HU-006) - e2e', () => {
   let app: INestApplication;
   let baseUrl: string;
   let tokenComensal: string;
+  // BL-204: la mesa solo se usa con el token de su QR.
+  let qrToken: string;
 
   const itConMozo = MOZO_USER && MOZO_PASS ? it : it.skip;
 
   beforeAll(async () => {
+    asegurarClaveQr();
     const moduleRef: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -77,13 +81,11 @@ describe('Seguimiento del comensal (HU-006) - e2e', () => {
     const port = typeof address === 'string' ? address : address?.port;
     baseUrl = `http://localhost:${port}`;
 
-    const authRes = await fetch(`${baseUrl}/auth/comensal`, {
+    qrToken = await tokenQrDeMesa(app, TENANT_DEMO_ID, MESA_DEMO_ID);
+    const authRes = await fetch(`${baseUrl}/auth/comensal/mesa`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        tenantId: TENANT_DEMO_ID,
-        mesaId: MESA_DEMO_ID,
-      }),
+      body: JSON.stringify({ qrToken }),
     });
     if (!authRes.ok) {
       throw new Error(`No se pudo emitir token de comensal: ${authRes.status}`);
@@ -110,10 +112,10 @@ describe('Seguimiento del comensal (HU-006) - e2e', () => {
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${tokenComensal}`,
+        'X-Mesa-Token': qrToken,
       },
       body: JSON.stringify({
         restauranteId: RESTAURANTE_DEMO_ID,
-        mesaId: MESA_DEMO_ID,
         idempotencyKey: `e2e-seguimiento-${Date.now()}-${Math.random()}`,
         items: [{ itemCartaId: ITEM_CARTA_DEMO_ID, cantidad: 1 }],
       }),

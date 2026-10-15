@@ -1,15 +1,28 @@
 'use client';
 
 import { useState } from 'react';
+import {
+  headersMesaQr,
+  mensajeErrorQr,
+  RUTA_LLAMAR_MOZO,
+  solicitudAuthComensal,
+  type OrigenMenu,
+} from '@/components/menu-digital.utils';
 
 interface LlamarMozoButtonProps {
-  readonly tenantId: string;
-  readonly mesaId: string;
+  /**
+   * HU-034 (BL-204): token opaco del QR. La mesa sale de acá, del lado del
+   * servidor (POST /mesas/llamar con X-Mesa-Token); el botón no conoce ids.
+   */
+  readonly qrToken: string;
 }
+
+const MENSAJE_ERROR_GENERICO = 'No pudimos avisarle al mozo. Probá de nuevo.';
 
 type Estado = 'idle' | 'enviando' | 'enviado' | 'error';
 
-export function LlamarMozoButton({ tenantId, mesaId }: LlamarMozoButtonProps) {
+export function LlamarMozoButton({ qrToken }: LlamarMozoButtonProps) {
+  const origen: OrigenMenu = { tipo: 'mesa', qrToken };
   const [estado, setEstado] = useState<Estado>('idle');
   const [mensaje, setMensaje] = useState<string | null>(null);
 
@@ -28,28 +41,42 @@ export function LlamarMozoButton({ tenantId, mesaId }: LlamarMozoButtonProps) {
     }
   };
 
+  function mostrarError(texto: string | null) {
+    setEstado('error');
+    setMensaje(texto ?? MENSAJE_ERROR_GENERICO);
+    triggerFeedback('error');
+    setTimeout(() => setEstado('idle'), 5000);
+  }
+
   async function llamar() {
     triggerFeedback('click');
     setEstado('enviando');
     setMensaje(null);
 
     try {
+      const auth = solicitudAuthComensal(origen);
       const authRes = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/auth/comensal`,
+        `${process.env.NEXT_PUBLIC_API_URL}${auth.ruta}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tenantId, mesaId }),
+          body: JSON.stringify(auth.body),
         },
       );
-      if (!authRes.ok) throw new Error();
+      if (!authRes.ok) {
+        mostrarError(mensajeErrorQr(origen, authRes.status));
+        return;
+      }
       const { accessToken } = await authRes.json();
 
       const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/mesas/${mesaId}/llamar`,
+        `${process.env.NEXT_PUBLIC_API_URL}${RUTA_LLAMAR_MOZO}`,
         {
           method: 'POST',
-          headers: { Authorization: `Bearer ${accessToken}` },
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            ...headersMesaQr(origen),
+          },
         },
       );
 
@@ -60,7 +87,10 @@ export function LlamarMozoButton({ tenantId, mesaId }: LlamarMozoButtonProps) {
         setTimeout(() => setEstado('idle'), 5000);
         return;
       }
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        mostrarError(mensajeErrorQr(origen, res.status));
+        return;
+      }
 
       setEstado('enviado');
       setMensaje('¡Listo! Avisamos al mozo.');
@@ -71,10 +101,7 @@ export function LlamarMozoButton({ tenantId, mesaId }: LlamarMozoButtonProps) {
         setMensaje(null);
       }, 60_000);
     } catch {
-      setEstado('error');
-      setMensaje('No pudimos avisarle al mozo. Probá de nuevo.');
-      triggerFeedback('error');
-      setTimeout(() => setEstado('idle'), 5000);
+      mostrarError(null);
     }
   }
 
@@ -105,7 +132,7 @@ export function LlamarMozoButton({ tenantId, mesaId }: LlamarMozoButtonProps) {
       >
         {estado === 'idle' && (
           <>
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="transition-transform group-hover:rotate-12 group-active:-rotate-12">
+            <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="transition-transform group-hover:rotate-12 group-active:-rotate-12">
               <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
               <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
             </svg>
@@ -115,7 +142,7 @@ export function LlamarMozoButton({ tenantId, mesaId }: LlamarMozoButtonProps) {
 
         {estado === 'enviando' && (
           <>
-            <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+               <svg aria-hidden="true" className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
             </svg>
@@ -125,7 +152,7 @@ export function LlamarMozoButton({ tenantId, mesaId }: LlamarMozoButtonProps) {
 
         {estado === 'enviado' && (
           <>
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="animate-bounce">
+            <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="animate-bounce">
               <path d="M20 6L9 17l-5-5"></path>
             </svg>
             ¡Mozo en camino!
@@ -134,7 +161,7 @@ export function LlamarMozoButton({ tenantId, mesaId }: LlamarMozoButtonProps) {
 
         {estado === 'error' && (
           <>
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="10"></circle>
               <line x1="12" y1="8" x2="12" y2="12"></line>
               <line x1="12" y1="16" x2="12.01" y2="16"></line>

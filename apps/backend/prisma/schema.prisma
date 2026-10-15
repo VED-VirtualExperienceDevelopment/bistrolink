@@ -147,6 +147,11 @@ model Mesa {
   // desincronizados; el endpoint de layout siempre devuelve `numero` como
   // campo hermano.
   layout        Json?
+  // HU-034 (BL-204): versión del QR de la mesa. Va cifrada dentro del token
+  // de la URL opaca (/q/<token>). Regenerar el QR suma 1: los tokens con una
+  // versión anterior dejan de funcionar (410 Gone) sin guardar nada más.
+  // Default 1: las mesas existentes quedan con un QR válido sin migrar datos.
+  qrVersion     Int        @default(1) @map("qr_version")
   createdAt     DateTime   @default(now()) @map("created_at")
   updatedAt     DateTime   @updatedAt @map("updated_at")
 
@@ -269,31 +274,31 @@ model Pago {
 // ── 4.9 ComprobanteFiscal ─────────────────────────────────────────────────────
 
 model ComprobanteFiscal {
-  id             String   @id @default(uuid()) @db.Uuid
-  tenantId       String   @map("tenant_id") @db.Uuid
-  pedidoId       String   @map("pedido_id") @db.Uuid
-  pagoId         String?  @map("pago_id") @db.Uuid
-  tipoCfe        String   @map("tipo_cfe")
+  id             String    @id @default(uuid()) @db.Uuid
+  tenantId       String    @map("tenant_id") @db.Uuid
+  pedidoId       String    @map("pedido_id") @db.Uuid
+  pagoId         String?   @map("pago_id") @db.Uuid
+  tipoCfe        String    @map("tipo_cfe")
   serie          String
   numero         Int
   // Nulos hasta HU-009/BL-92 (XML y PDF a S3/R2).
-  urlXml         String?  @map("url_xml")
-  urlPdf         String?  @map("url_pdf")
+  urlXml         String?   @map("url_xml")
+  urlPdf         String?   @map("url_pdf")
   // Hash que informa el proveedor (Surtec lo devuelve en Base64, 44 chars).
-  hashSha256     String?  @unique @map("hash_sha256") @db.VarChar(64)
+  hashSha256     String?   @unique @map("hash_sha256") @db.VarChar(64)
   // Facturación electrónica (Surtec/FEU): trazabilidad del proveedor.
-  proveedor       String    @default("SURTEC")
-  proveedorRef    String?   @map("proveedor_ref")
+  proveedor      String    @default("SURTEC")
+  proveedorRef   String?   @map("proveedor_ref")
   // Clave de idempotencia enviada al proveedor ("bl-<pagoId>").
-  idExterno       String?   @unique @map("id_externo")
-  caeNumero       String?   @map("cae_numero")
-  caeVencimiento  DateTime? @map("cae_vencimiento") @db.Date
+  idExterno      String?   @unique @map("id_externo")
+  caeNumero      String?   @map("cae_numero")
+  caeVencimiento DateTime? @map("cae_vencimiento") @db.Date
   // URL de consulta QR de DGI.
-  urlConsulta     String?   @map("url_consulta")
-  fechaEmision   DateTime @map("fecha_emision")
-  retencionHasta DateTime @map("retencion_hasta") @db.Date
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
+  urlConsulta    String?   @map("url_consulta")
+  fechaEmision   DateTime  @map("fecha_emision")
+  retencionHasta DateTime  @map("retencion_hasta") @db.Date
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
 
   pedido Pedido @relation(fields: [pedidoId], references: [id])
   pago   Pago?  @relation(fields: [pagoId], references: [id])
