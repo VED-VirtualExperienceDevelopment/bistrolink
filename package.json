@@ -24,13 +24,14 @@
     "test:e2e:update-snapshots": "bash scripts/e2e-update-snapshots.sh"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.10.0",
     "@commitlint/cli": "19.5.0",
     "@commitlint/config-conventional": "19.5.0",
+    "@playwright/test": "^1.47.0",
     "concurrently": "8.2.2",
     "husky": "9.1.6",
     "jest-junit": "^17.0.0",
-    "@playwright/test": "^1.47.0",
-    "@axe-core/playwright": "^4.10.0"
+    "tmp": "^0.2.7"
   },
   "overrides": {
     "picomatch": "4.0.4",
@@ -53,6 +54,7 @@
     },
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "basic-ftp": "6.2.1"
+    "basic-ftp": "6.2.1",
+    "handlebars": "4.7.10"
   }
 }
