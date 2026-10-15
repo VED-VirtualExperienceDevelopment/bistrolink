@@ -85,10 +85,10 @@ export function empiezaHojaNueva(indice: number): boolean {
 export function slugArchivo(texto: string): string {
   const slug = texto
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
+    .replaceAll(/[\u0300-\u036f]/g, "")
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
+    .replaceAll(/[^a-z0-9]+/g, "-")
+    .replaceAll(/^-+|-+$/g, "");
   return slug || "restaurante";
 }
 

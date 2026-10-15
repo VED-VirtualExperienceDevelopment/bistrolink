@@ -80,7 +80,7 @@ export class AuthComensalService {
 
   /**
    * Pide el JWT del comensal técnico del tenant (comensal-<tenantId>) a
-   * Keycloak. Es el mismo usuario para todo el tenant: la mesa se valida
+   * Keycloak. Es el mismo usuario para cualquier mesa del tenant: la mesa se valida
    * aparte (BL-204, MesaQrGuard en pedidos y llamados).
    */
   private async pedirTokenKeycloak(tenantId: string): Promise<TokenComensal> {

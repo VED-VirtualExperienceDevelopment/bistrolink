@@ -17,7 +17,7 @@ const LADO_QR = 60;
  * pesados y solo los usa el administrador, así que no entran en el bundle
  * del resto del panel ni del comensal.
  *
- * Todo se genera en el navegador: las URLs (con el token del QR) no salen
+ * El PDF se genera completo en el navegador: las URLs (con el token del QR) no salen
  * hacia ningún servicio externo.
  */
 export async function descargarPdfQr(

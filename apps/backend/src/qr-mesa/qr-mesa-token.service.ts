@@ -1,5 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import { createCipheriv, createDecipheriv, createHmac, hkdfSync } from 'crypto';
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHmac,
+  hkdfSync,
+} from 'node:crypto';
 
 /**
  * HU-034 (BL-204): token opaco de la URL del QR de cada mesa (/q/<token>).
@@ -58,7 +63,7 @@ function uuidABytes(uuid: string): Buffer {
   if (!UUID_REGEX.test(uuid)) {
     throw new Error('El token de QR requiere ids con formato UUID');
   }
-  return Buffer.from(uuid.replace(/-/g, ''), 'hex');
+  return Buffer.from(uuid.replaceAll('-', ''), 'hex');
 }
 
 function bytesAUuid(bytes: Buffer): string {

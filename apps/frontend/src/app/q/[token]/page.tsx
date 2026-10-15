@@ -39,7 +39,7 @@ const obtenerMenuPorQr = cache(
       return { estado: 'invalido' };
     }
 
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
     const res = await fetch(
       `${apiUrl}/menu/qr/${encodeURIComponent(token)}`,
       { cache: 'no-store' },

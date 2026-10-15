@@ -159,13 +159,13 @@ export function QrMesasPanel({ restauranteId }: Props) {
         </div>
       )}
 
-      {!cargando && datos && datos.mesas.length === 0 && (
+       {!cargando && datos?.mesas.length === 0 && (
         <p className="text-body-md text-on-surface-variant">
           Todavía no hay mesas. Agregalas en el mapa y guardalo.
         </p>
       )}
 
-      {!cargando && datos && datos.mesas.length > 0 && (
+      {!cargando && !!datos?.mesas.length && (
         <ul className="divide-y divide-outline-variant">
           {datos.mesas.map((mesa) => (
             <li

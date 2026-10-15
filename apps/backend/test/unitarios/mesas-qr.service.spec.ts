@@ -2,6 +2,7 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
+
 import { MesasQrService } from '../../src/mesas/mesas-qr.service';
 import { QrMesaTokenService } from '../../src/qr-mesa/qr-mesa-token.service';
 

@@ -5,8 +5,10 @@ import {
   GoneException,
   NotFoundException,
 } from '@nestjs/common';
+import { ROUTE_ARGS_METADATA } from '@nestjs/common/constants';
 import {
   HEADER_MESA_TOKEN,
+  MesaDelQrActual,
   MesaQrGuard,
   MesaQrObligatoriaGuard,
   RequestConMesaQr,
@@ -130,5 +132,38 @@ describe('MesaQrObligatoriaGuard (BL-204)', () => {
     expect(() => guard.canActivate(contextoCon(request))).toThrow(
       BadRequestException,
     );
+  });
+});
+
+/**
+ * Nest no expone la función interna de un createParamDecorator: se aplica
+ * el decorador a un método de prueba y se lee la factory de la metadata,
+ * que es lo que hace Nest al resolver los parámetros del controller.
+ */
+function factoryDe(decorador: () => ParameterDecorator) {
+  class Prueba {
+    metodo(@decorador() mesa: unknown) {
+      return mesa;
+    }
+  }
+  const metadata = Reflect.getMetadata(ROUTE_ARGS_METADATA, Prueba, 'metodo');
+  const clave = Object.keys(metadata)[0];
+  return metadata[clave].factory as (
+    data: unknown,
+    context: ExecutionContext,
+  ) => unknown;
+}
+
+describe('MesaDelQrActual (BL-204)', () => {
+  const factory = factoryDe(MesaDelQrActual);
+
+  it('devuelve la mesa que dejó MesaQrGuard en el request', () => {
+    const request = { ...requestCon({}), mesaQr: MESA_DEL_QR };
+
+    expect(factory(undefined, contextoCon(request))).toEqual(MESA_DEL_QR);
+  });
+
+  it('devuelve undefined si no vino X-Mesa-Token', () => {
+    expect(factory(undefined, contextoCon(requestCon({})))).toBeUndefined();
   });
 });

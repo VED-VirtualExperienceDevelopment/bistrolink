@@ -10,7 +10,7 @@ export interface MesaDelQr {
   numero: number;
 }
 
-// Mismo mensaje para todo lo que no es un QR válido (formato, firma, mesa
+//Mismo mensaje para cualquier cosa que no sea un QR válido (formato, firma, mesa
 // inexistente o virtual): no se distingue el motivo.
 export const MENSAJE_QR_INVALIDO = 'QR no válido';
 export const MENSAJE_QR_REEMPLAZADO =
