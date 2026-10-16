@@ -21,9 +21,12 @@ function textoDe(nodo: unknown): string {
 }
 
 describe('pantallas de resultado de pago (BL-76)', () => {
-  it('pago completado confirma la recepción del pago', () => {
-    expect(metaCompletado.title).toBe('Pago completado');
-    expect(textoDe(PagoCompletadoPage())).toContain('Pago recibido');
+  it('pago completado NO afirma que el pago salió bien (Plexo redirige acá también tras un rechazo)', () => {
+    expect(metaCompletado.title).toBe('Verificando tu pago');
+    const texto = textoDe(PagoCompletadoPage());
+    expect(texto).toContain('Estamos verificando tu pago');
+    expect(texto).toContain('no se realizó ningún cobro');
+    expect(texto).not.toContain('Pago recibido');
   });
 
   it('pago cancelado aclara que no hubo cobro', () => {
