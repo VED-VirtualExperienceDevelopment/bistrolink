@@ -36,6 +36,39 @@ export const COLOR_POR_ESTADO: Record<EstadoMesa, string> = {
   REQUIERE_LIMPIEZA: "#3F6FA8",
 };
 
+/**
+ * HU-028 (BL-173): color del número de la mesa sobre cada relleno. Blanco
+ * sobre los colores oscuros y casi negro sobre los claros, para llegar al
+ * contraste 4.5:1 de WCAG 2.1 AA (1.4.3) en todos los estados. El número
+ * blanco sobre el verde (3.5:1) y el dorado (2.3:1) no llegaba.
+ */
+export const TEXTO_POR_ESTADO: Record<EstadoMesa, string> = {
+  LIBRE: "#1D1B20",
+  OCUPADA: "#FFFFFF",
+  EN_PROCESO_DE_PAGO: "#1D1B20",
+  REQUIERE_LIMPIEZA: "#FFFFFF",
+};
+
+/**
+ * Relación de contraste entre dos colores #RRGGBB, con la fórmula de WCAG
+ * 2.1 (luminancia relativa). Va de 1 (iguales) a 21 (negro sobre blanco).
+ */
+export function contrasteWcag(colorA: string, colorB: string): number {
+  const luminancia = (hex: string) => {
+    const [r, g, b] = [1, 3, 5].map((i) => {
+      const canal = Number.parseInt(hex.slice(i, i + 2), 16) / 255;
+      return canal <= 0.03928
+        ? canal / 12.92
+        : ((canal + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const [claro, oscuro] = [luminancia(colorA), luminancia(colorB)].sort(
+    (x, y) => y - x,
+  );
+  return (claro + 0.05) / (oscuro + 0.05);
+}
+
 /** HU-028 (BL-173): nombre de cada estado en la leyenda del mapa. */
 export const ETIQUETA_POR_ESTADO: Record<EstadoMesa, string> = {
   LIBRE: "Disponible",

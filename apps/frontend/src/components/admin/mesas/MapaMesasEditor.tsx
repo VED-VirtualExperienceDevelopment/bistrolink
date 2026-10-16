@@ -8,18 +8,24 @@ import { useKeycloakAuth } from "@/components/providers/KeycloakProvider";
 import { apiFetch, ApiError } from "@/lib/api-client";
 import { LeyendaEstadosMesa } from "./LeyendaEstadosMesa";
 import { ElementoShape } from "./ElementoShape";
+import { ListaPlano } from "./ListaPlano";
 import { MesaShape } from "./MesaShape";
 import { ICONO_POR_ELEMENTO } from "./plano-iconos";
 import { ZonaShape } from "./ZonaShape";
 import {
+  accionDeTecla,
   acotarRecuadroZona,
   anchoNecesarioElementos,
   anchoNecesarioZonas,
+  aPlanoPayload,
   errorEtiquetaZona,
+  esCampoDeTexto,
+  fotoParaGuardar,
   girarElemento90,
   LARGO_MAXIMO_ETIQUETA_ZONA,
   MAXIMO_ELEMENTOS_PLANO,
   MAXIMO_ZONAS_PLANO,
+  normalizarPlano,
   nuevaZona,
   nuevoElemento,
   puedeAgregarElemento,
@@ -78,6 +84,9 @@ const OPCIONES_FORMA: { forma: FormaMesa; etiqueta: string; icono: string }[] =
     { forma: "RECTANGULO", etiqueta: "Rectángulo", icono: "rectangle" },
   ];
 
+const ESTILO_BOTON_PROPIEDADES =
+  "flex items-center gap-2 rounded-lg border border-outline-variant px-4 py-1.5 text-body-md text-on-surface-variant hover:bg-surface-container disabled:cursor-not-allowed disabled:opacity-50";
+
 interface Props {
   restauranteId: string;
   /** HU-034 (BL-204): avisa a la página para recargar los QR de las mesas. */
@@ -130,6 +139,9 @@ export function MapaMesasEditor({
   const [elementoSeleccionado, setElementoSeleccionado] = useState<
     string | null
   >(null);
+  // HU-028 (BL-173): foto de lo guardado (mesas y plano), para saber si hay
+  // cambios sin guardar. Se toma al cargar y después de cada guardado.
+  const [fotoGuardada, setFotoGuardada] = useState<string | null>(null);
   // BL-58: mesas ya guardadas que el administrador quitó del mapa y que se
   // borran en el próximo guardado. Se guarda la mesa completa (no solo el
   // id) para poder devolverla al mapa si el guardado falla.
@@ -153,22 +165,37 @@ export function MapaMesasEditor({
   // guarda (cada vez que se abre el mapa arranca en 100%).
   const [zoom, setZoom] = useState<number>(ZOOM_INICIAL);
 
-  // --- Carga inicial: GET /mesas/layout -------------------------------------
+  // --- Carga inicial: GET /mesas/layout y GET /mesas/plano -------------------
+  // Se piden juntas. HU-028 (BL-173): el plano (zonas y elementos fijos) lo
+  // pueden leer ADMIN y MOZO, igual que el layout de las mesas.
   const cargarLayout = useCallback(async () => {
     if (!token) return;
     setLoading(true);
     setLoadError(null);
     try {
-      const data = await apiFetch<MesaConLayout[]>(
-        `/mesas/layout?restauranteId=${restauranteId}`,
-        token,
-      );
-      const cargadas = reubicarFueraDelLienzo(
-        mesasConLayoutAEdicion(data),
-        ALTURA_STAGE,
-      );
+      const [data, datosPlano] = await Promise.all([
+        apiFetch<MesaConLayout[]>(
+          `/mesas/layout?restauranteId=${restauranteId}`,
+          token,
+        ),
+        apiFetch<unknown>(`/mesas/plano?restauranteId=${restauranteId}`, token),
+      ]);
+      const comoEstan = mesasConLayoutAEdicion(data);
+      const cargadas = reubicarFueraDelLienzo(comoEstan, ALTURA_STAGE);
       setMesas(cargadas.mesas);
       setReubicadas(cargadas.reubicadas);
+      const plano = normalizarPlano(datosPlano);
+      setZonas(plano.zonas);
+      setElementos(plano.elementos);
+      // La foto se toma con las mesas como están en la base (antes de
+      // reubicar): si se reubicó alguna, cuenta como cambio sin guardar.
+      setFotoGuardada(
+        fotoParaGuardar(
+          aGuardarLayoutItems(comoEstan),
+          plano.zonas,
+          plano.elementos,
+        ),
+      );
     } catch (err) {
       setLoadError(
         err instanceof ApiError
@@ -463,7 +490,63 @@ export function MapaMesasEditor({
 
   const puedeEliminarSeleccionada =
     !!mesaSeleccionada && puedeEliminarMesa(mesaSeleccionada);
-  const hayCambiosParaGuardar = mesas.length > 0 || eliminadas.length > 0;
+  // HU-028 (BL-173): hay cambios sin guardar si lo que se mandaría difiere
+  // de la última foto guardada, o si hay mesas quitadas pendientes.
+  const hayCambiosSinGuardar = useMemo(
+    () =>
+      eliminadas.length > 0 ||
+      (fotoGuardada !== null &&
+        fotoParaGuardar(aGuardarLayoutItems(mesas), zonas, elementos) !==
+          fotoGuardada),
+    [eliminadas, fotoGuardada, mesas, zonas, elementos],
+  );
+
+  // Aviso del navegador al cerrar o recargar la pestaña con cambios sin
+  // guardar. No cubre la navegación interna de Next (links del menú).
+  useEffect(() => {
+    if (!puedeEditar || !hayCambiosSinGuardar) return;
+    const avisar = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      // Chrome todavía lo necesita para mostrar el aviso.
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", avisar);
+    return () => window.removeEventListener("beforeunload", avisar);
+  }, [puedeEditar, hayCambiosSinGuardar]);
+
+  // Atajos de teclado: Supr / Borrar elimina lo seleccionado, Esc
+  // deselecciona. El handler se guarda en una ref para que el listener
+  // (que se registra una sola vez) use siempre el estado actual.
+  const manejarTeclaRef = useRef<(e: KeyboardEvent) => void>(() => {});
+  manejarTeclaRef.current = (e: KeyboardEvent) => {
+    if (editandoNumero) return;
+    const accion = accionDeTecla(
+      e.key,
+      esCampoDeTexto(e.target as HTMLElement | null),
+    );
+    if (accion === "deseleccionar") {
+      setSeleccionada(null);
+      setZonaSeleccionada(null);
+      setElementoSeleccionado(null);
+    } else if (accion === "eliminar") {
+      if (mesaSeleccionada && puedeEliminarSeleccionada) {
+        e.preventDefault();
+        handleEliminarSeleccionada();
+      } else if (zonaActual) {
+        e.preventDefault();
+        handleEliminarZona();
+      } else if (elementoActual) {
+        e.preventDefault();
+        handleEliminarElemento();
+      }
+    }
+  };
+  useEffect(() => {
+    if (!puedeEditar) return;
+    const escuchar = (e: KeyboardEvent) => manejarTeclaRef.current(e);
+    window.addEventListener("keydown", escuchar);
+    return () => window.removeEventListener("keydown", escuchar);
+  }, [puedeEditar]);
 
   function handleClickStage(
     e: Konva.KonvaEventObject<MouseEvent | TouchEvent>,
@@ -489,7 +572,7 @@ export function MapaMesasEditor({
 
   // --- Guardado: POST /mesas/layout ---------------------------------------------
   async function handleGuardar() {
-    if (!token || duplicados.length > 0 || !hayCambiosParaGuardar) return;
+    if (!token || duplicados.length > 0 || !hayCambiosSinGuardar) return;
     setGuardando(true);
     setGuardadoError(null);
     setGuardadoOk(false);
@@ -500,6 +583,8 @@ export function MapaMesasEditor({
         ...(eliminadas.length > 0
           ? { eliminar: idsAEliminar(eliminadas) }
           : {}),
+        // HU-028 (BL-173): el plano completo, en la misma transacción.
+        plano: aPlanoPayload(zonas, elementos),
       };
       await apiFetch("/mesas/layout", token, {
         method: "POST",
@@ -577,7 +662,12 @@ export function MapaMesasEditor({
               onClick={handleAgregarMesa}
               className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-body-md font-medium text-on-primary hover:opacity-90"
             >
-              <span className="material-symbols-outlined text-[20px]">add</span>
+              <span
+                aria-hidden="true"
+                className="material-symbols-outlined text-[20px]"
+              >
+                add
+              </span>
               <span>Agregar mesa</span>
             </button>
             <button
@@ -627,50 +717,9 @@ export function MapaMesasEditor({
                 </button>
               ))}
             </fieldset>
-            <button
-              type="button"
-              onClick={handleEliminarSeleccionada}
-              disabled={!puedeEliminarSeleccionada}
-              title={
-                mesaSeleccionada && !puedeEliminarSeleccionada
-                  ? "Solo se pueden eliminar mesas libres"
-                  : undefined
-              }
-              className="flex items-center gap-2 rounded-lg border border-outline-variant px-4 py-2 text-body-md text-on-surface-variant hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <span className="material-symbols-outlined text-[20px]">
-                delete
-              </span>
-              <span>Eliminar mesa</span>
-            </button>
-            <fieldset
-              disabled={!mesaSeleccionada}
-              className="flex items-center gap-1 rounded-lg border border-outline-variant p-1 disabled:opacity-50"
-            >
-              <legend className="sr-only">Forma de la mesa seleccionada</legend>
-              {OPCIONES_FORMA.map(({ forma, etiqueta, icono }) => (
-                <button
-                  key={forma}
-                  type="button"
-                  onClick={() => handleCambiarForma(forma)}
-                  aria-pressed={formaSeleccionada === forma}
-                  title={etiqueta}
-                  className="flex items-center gap-1 rounded-md px-3 py-1.5 text-body-sm text-on-surface-variant hover:bg-surface-container-low disabled:cursor-not-allowed aria-pressed:bg-primary aria-pressed:text-on-primary"
-                >
-                  <span className="material-symbols-outlined text-[18px]">
-                    {icono}
-                  </span>
-                  <span>{etiqueta}</span>
-                </button>
-              ))}
-            </fieldset>
-            <p className="text-label-sm text-on-surface-variant">
-              Seleccioná una mesa para cambiar su forma. Doble clic para editar
-              su número.
-            </p>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             {duplicados.length > 0 && (
               <p role="alert" className="text-label-md text-error">
                 Números repetidos: {duplicados.join(", ")}
@@ -681,14 +730,27 @@ export function MapaMesasEditor({
                 {guardadoError}
               </p>
             )}
-            {guardadoOk && (
-              <p className="text-label-md text-primary">Guardado ✓</p>
+            {/* Siempre presente: un lector de pantalla solo anuncia los
+                cambios de una región "status" que ya existía (WCAG 4.1.3). */}
+            <p role="status" className="text-label-md text-primary">
+              {guardadoOk ? "Guardado ✓" : ""}
+            </p>
+            {hayCambiosSinGuardar && !guardando && (
+              <p className="flex items-center gap-1 text-label-md text-on-surface-variant">
+                <span
+                  aria-hidden="true"
+                  className="material-symbols-outlined text-[18px]"
+                >
+                  edit_note
+                </span>
+                Cambios sin guardar
+              </p>
             )}
             <button
               type="button"
               onClick={handleGuardar}
               disabled={
-                guardando || duplicados.length > 0 || !hayCambiosParaGuardar
+                guardando || duplicados.length > 0 || !hayCambiosSinGuardar
               }
               className="rounded-lg bg-primary px-4 py-2 text-body-md font-medium text-on-primary hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -698,94 +760,160 @@ export function MapaMesasEditor({
         </div>
       )}
 
-      {puedeEditar && zonaActual && (
-        <div className="flex flex-wrap items-start gap-3 rounded-lg bg-surface-container-low px-4 py-3">
-          <div className="flex flex-col gap-1">
-            <label
-              htmlFor="etiqueta-zona"
-              className="text-label-md text-on-surface-variant"
-            >
-              Nombre de la zona
-            </label>
-            <input
-              id="etiqueta-zona"
-              type="text"
-              value={etiquetaEnEdicion}
-              maxLength={LARGO_MAXIMO_ETIQUETA_ZONA}
-              onChange={(e) => handleCambiarEtiqueta(e.target.value)}
-              aria-invalid={errorEtiqueta !== null}
-              aria-describedby={
-                errorEtiqueta ? "etiqueta-zona-error" : undefined
-              }
-              className="w-64 rounded-lg border border-outline-variant bg-surface px-3 py-1.5 text-body-md text-on-surface aria-[invalid=true]:border-error"
-            />
-            {errorEtiqueta && (
-              <p
-                id="etiqueta-zona-error"
-                role="alert"
-                className="text-label-sm text-error"
-              >
-                {errorEtiqueta}
+      {/* HU-028 (BL-173): barra de propiedades de alto fijo. Muestra las
+          acciones de lo seleccionado (mesa, zona o elemento) sin empujar el
+          mapa hacia abajo al cambiar de selección. */}
+      {puedeEditar && (
+        <section
+          aria-label="Propiedades de la selección"
+          className="flex min-h-[6.5rem] flex-wrap items-center gap-3 rounded-lg bg-surface-container-low px-4 py-3"
+        >
+          {mesaSeleccionada && (
+            <>
+              <p className="text-label-md text-on-surface">
+                Mesa {mesaSeleccionada.numero}
               </p>
-            )}
-          </div>
-          <button
-            type="button"
-            onClick={handleEliminarZona}
-            className="mt-6 flex items-center gap-2 rounded-lg border border-outline-variant px-4 py-1.5 text-body-md text-on-surface-variant hover:bg-surface-container"
-          >
-            <span
-              aria-hidden="true"
-              className="material-symbols-outlined text-[20px]"
-            >
-              delete
-            </span>
-            <span>Eliminar zona</span>
-          </button>
-        </div>
-      )}
+              <fieldset className="flex items-center gap-1 rounded-lg border border-outline-variant p-1">
+                <legend className="sr-only">Forma de la mesa</legend>
+                {OPCIONES_FORMA.map(({ forma, etiqueta, icono }) => (
+                  <button
+                    key={forma}
+                    type="button"
+                    onClick={() => handleCambiarForma(forma)}
+                    aria-pressed={formaSeleccionada === forma}
+                    title={etiqueta}
+                    className="flex items-center gap-1 rounded-md px-3 py-1.5 text-body-sm text-on-surface-variant hover:bg-surface-container aria-pressed:bg-primary aria-pressed:text-on-primary"
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="material-symbols-outlined text-[18px]"
+                    >
+                      {icono}
+                    </span>
+                    <span>{etiqueta}</span>
+                  </button>
+                ))}
+              </fieldset>
+              <button
+                type="button"
+                onClick={handleEliminarSeleccionada}
+                disabled={!puedeEliminarSeleccionada}
+                title={
+                  puedeEliminarSeleccionada
+                    ? undefined
+                    : "Solo se pueden eliminar mesas libres"
+                }
+                className={ESTILO_BOTON_PROPIEDADES}
+              >
+                <span
+                  aria-hidden="true"
+                  className="material-symbols-outlined text-[20px]"
+                >
+                  delete
+                </span>
+                <span>Eliminar mesa</span>
+              </button>
+              <p className="text-label-sm text-on-surface-variant">
+                Doble clic en la mesa para cambiar su número.
+              </p>
+            </>
+          )}
 
-      {puedeEditar && elementoActual && (
-        <div className="flex flex-wrap items-center gap-3 rounded-lg bg-surface-container-low px-4 py-3">
-          <p className="flex items-center gap-2 text-label-md text-on-surface-variant">
-            <span
-              aria-hidden="true"
-              className="material-symbols-outlined text-[20px]"
-            >
-              {ICONO_POR_ELEMENTO[elementoActual.tipo].icono}
-            </span>
-            <span>
-              Elemento seleccionado:{" "}
-              {ICONO_POR_ELEMENTO[elementoActual.tipo].etiqueta}
-            </span>
-          </p>
-          <button
-            type="button"
-            onClick={handleGirarElemento}
-            className="flex items-center gap-2 rounded-lg border border-outline-variant px-4 py-1.5 text-body-md text-on-surface-variant hover:bg-surface-container"
-          >
-            <span
-              aria-hidden="true"
-              className="material-symbols-outlined text-[20px]"
-            >
-              rotate_90_degrees_cw
-            </span>
-            <span>Girar 90°</span>
-          </button>
-          <button
-            type="button"
-            onClick={handleEliminarElemento}
-            className="flex items-center gap-2 rounded-lg border border-outline-variant px-4 py-1.5 text-body-md text-on-surface-variant hover:bg-surface-container"
-          >
-            <span
-              aria-hidden="true"
-              className="material-symbols-outlined text-[20px]"
-            >
-              delete
-            </span>
-            <span>Eliminar elemento</span>
-          </button>
-        </div>
+          {zonaActual && (
+            <>
+              <div className="flex flex-col gap-1">
+                <label
+                  htmlFor="etiqueta-zona"
+                  className="text-label-md text-on-surface-variant"
+                >
+                  Nombre de la zona
+                </label>
+                <input
+                  id="etiqueta-zona"
+                  type="text"
+                  value={etiquetaEnEdicion}
+                  maxLength={LARGO_MAXIMO_ETIQUETA_ZONA}
+                  onChange={(e) => handleCambiarEtiqueta(e.target.value)}
+                  aria-invalid={errorEtiqueta !== null}
+                  aria-describedby={
+                    errorEtiqueta ? "etiqueta-zona-error" : undefined
+                  }
+                  className="w-64 rounded-lg border border-outline-variant bg-surface px-3 py-1.5 text-body-md text-on-surface aria-[invalid=true]:border-error"
+                />
+                {errorEtiqueta && (
+                  <p
+                    id="etiqueta-zona-error"
+                    role="alert"
+                    className="text-label-sm text-error"
+                  >
+                    {errorEtiqueta}
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={handleEliminarZona}
+                className={ESTILO_BOTON_PROPIEDADES}
+              >
+                <span
+                  aria-hidden="true"
+                  className="material-symbols-outlined text-[20px]"
+                >
+                  delete
+                </span>
+                <span>Eliminar zona</span>
+              </button>
+            </>
+          )}
+
+          {elementoActual && (
+            <>
+              <p className="flex items-center gap-2 text-label-md text-on-surface">
+                <span
+                  aria-hidden="true"
+                  className="material-symbols-outlined text-[20px]"
+                >
+                  {ICONO_POR_ELEMENTO[elementoActual.tipo].icono}
+                </span>
+                <span>{ICONO_POR_ELEMENTO[elementoActual.tipo].etiqueta}</span>
+              </p>
+              <button
+                type="button"
+                onClick={handleGirarElemento}
+                className={ESTILO_BOTON_PROPIEDADES}
+              >
+                <span
+                  aria-hidden="true"
+                  className="material-symbols-outlined text-[20px]"
+                >
+                  rotate_90_degrees_cw
+                </span>
+                <span>Girar 90°</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleEliminarElemento}
+                className={ESTILO_BOTON_PROPIEDADES}
+              >
+                <span
+                  aria-hidden="true"
+                  className="material-symbols-outlined text-[20px]"
+                >
+                  delete
+                </span>
+                <span>Eliminar elemento</span>
+              </button>
+            </>
+          )}
+
+          {!mesaSeleccionada && !zonaActual && !elementoActual && (
+            <p className="text-label-md text-on-surface-variant">
+              Seleccioná una mesa, una zona o un elemento para editarlo.
+              Arrastrá para moverlo y usá las esquinas para cambiar su tamaño.
+              Atajos: Supr elimina lo seleccionado y Esc lo deselecciona.
+            </p>
+          )}
+        </section>
       )}
 
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -798,7 +926,7 @@ export function MapaMesasEditor({
             disabled={zoom <= ZOOM_MINIMO}
             aria-label="Alejar"
             title="Alejar"
-            className="flex items-center rounded-md px-2 py-1 text-on-surface-variant hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-on-surface-variant hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-50"
           >
             <span
               aria-hidden="true"
@@ -812,7 +940,7 @@ export function MapaMesasEditor({
             onClick={() => setZoom(ZOOM_INICIAL)}
             title="Volver al 100%"
             aria-label={`Zoom ${porcentajeZoom(zoom)}. Volver al 100%`}
-            className="min-w-[4rem] rounded-md px-2 py-1 text-center text-label-md text-on-surface-variant hover:bg-surface-container-low"
+            className="min-h-[44px] min-w-[4rem] rounded-md px-2 text-center text-label-md text-on-surface-variant hover:bg-surface-container-low"
           >
             {porcentajeZoom(zoom)}
           </button>
@@ -822,7 +950,7 @@ export function MapaMesasEditor({
             disabled={zoom >= ZOOM_MAXIMO}
             aria-label="Acercar"
             title="Acercar"
-            className="flex items-center rounded-md px-2 py-1 text-on-surface-variant hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-on-surface-variant hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-50"
           >
             <span
               aria-hidden="true"
@@ -1031,6 +1159,8 @@ export function MapaMesasEditor({
           />
         )}
       </div>
+
+      <ListaPlano mesas={mesas} zonas={zonas} elementos={elementos} />
     </div>
   );
 }

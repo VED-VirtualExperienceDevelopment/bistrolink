@@ -1,7 +1,9 @@
-import type {
-  ElementoPlano,
-  TipoElementoPlano,
-  ZonaPlano,
+import {
+  TIPOS_ELEMENTO_PLANO,
+  type ElementoPlano,
+  type PlanoSalon,
+  type TipoElementoPlano,
+  type ZonaPlano,
 } from "@/types/plano";
 import {
   limitarCentro,
@@ -318,4 +320,168 @@ export function disposicionElemento(
   }
 
   return { icono: { x: -tamano / 2, y: -tamano / 2, tamano }, etiqueta: null };
+}
+
+// --- Guardar y cargar (GET /mesas/plano, POST /mesas/layout) --------------------
+
+export const PLANO_VACIO: PlanoSalon = { elementos: [], zonas: [] };
+
+function esObjeto(valor: unknown): valor is Record<string, unknown> {
+  return typeof valor === "object" && valor !== null;
+}
+
+function sonNumeros(objeto: Record<string, unknown>, claves: string[]) {
+  return claves.every(
+    (clave) =>
+      typeof objeto[clave] === "number" && Number.isFinite(objeto[clave]),
+  );
+}
+
+function esTipoElemento(valor: unknown): valor is TipoElementoPlano {
+  return (TIPOS_ELEMENTO_PLANO as readonly unknown[]).includes(valor);
+}
+
+/**
+ * Pasa la respuesta de GET /mesas/plano al formato del editor. El backend ya
+ * valida al guardar, pero el JSON viene de la base: si algo no tiene la
+ * forma esperada, se descarta ese elemento en vez de romper el mapa.
+ */
+export function normalizarPlano(datos: unknown): PlanoSalon {
+  if (!esObjeto(datos)) return PLANO_VACIO;
+  const elementos = Array.isArray(datos.elementos) ? datos.elementos : [];
+  const zonas = Array.isArray(datos.zonas) ? datos.zonas : [];
+  return {
+    elementos: elementos
+      .filter(
+        (e): e is Record<string, unknown> =>
+          esObjeto(e) &&
+          typeof e.id === "string" &&
+          esTipoElemento(e.tipo) &&
+          sonNumeros(e, ["x", "y", "ancho", "alto", "rotacion"]),
+      )
+      .map((e) => ({
+        id: e.id as string,
+        tipo: e.tipo as TipoElementoPlano,
+        x: e.x as number,
+        y: e.y as number,
+        ancho: e.ancho as number,
+        alto: e.alto as number,
+        rotacion: e.rotacion as number,
+      })),
+    zonas: zonas
+      .filter(
+        (z): z is Record<string, unknown> =>
+          esObjeto(z) &&
+          typeof z.id === "string" &&
+          typeof z.etiqueta === "string" &&
+          sonNumeros(z, ["x", "y", "ancho", "alto"]),
+      )
+      .map((z) => ({
+        id: z.id as string,
+        etiqueta: z.etiqueta as string,
+        x: z.x as number,
+        y: z.y as number,
+        ancho: z.ancho as number,
+        alto: z.alto as number,
+      })),
+  };
+}
+
+/**
+ * Arma el `plano` del POST /mesas/layout copiando solo los campos que acepta
+ * el backend: el ValidationPipe tiene forbidNonWhitelisted, así que
+ * cualquier propiedad de más haría fallar todo el guardado con un 400.
+ */
+export function aPlanoPayload(
+  zonas: ZonaPlano[],
+  elementos: ElementoPlano[],
+): PlanoSalon {
+  return {
+    elementos: elementos.map(({ id, tipo, x, y, ancho, alto, rotacion }) => ({
+      id,
+      tipo,
+      x,
+      y,
+      ancho,
+      alto,
+      rotacion,
+    })),
+    zonas: zonas.map(({ id, etiqueta, x, y, ancho, alto }) => ({
+      id,
+      etiqueta,
+      x,
+      y,
+      ancho,
+      alto,
+    })),
+  };
+}
+
+// --- Lista alternativa del plano (accesibilidad) -----------------------------------
+
+/**
+ * Nombre de la zona en la que cae un punto (el centro de una mesa o de un
+ * elemento), o null si no cae en ninguna. Si dos zonas se superponen, gana
+ * la que se dibuja arriba (la última de la lista).
+ */
+export function zonaDePunto(
+  punto: { x: number; y: number },
+  zonas: ZonaPlano[],
+): string | null {
+  for (let i = zonas.length - 1; i >= 0; i -= 1) {
+    const zona = zonas[i];
+    if (
+      Math.abs(punto.x - zona.x) <= zona.ancho / 2 &&
+      Math.abs(punto.y - zona.y) <= zona.alto / 2
+    ) {
+      return zona.etiqueta;
+    }
+  }
+  return null;
+}
+
+// --- Cambios sin guardar y atajos de teclado (UX) ---------------------------------
+
+/**
+ * Foto de lo que se guardaría, para saber si hay cambios sin guardar:
+ * se compara con la foto tomada al cargar o al guardar. Usa los mismos
+ * campos que el POST, así que no cuenta lo que no se guarda (por ejemplo,
+ * el estado de una mesa que llega por WebSocket).
+ */
+export function fotoParaGuardar(
+  mesas: unknown[],
+  zonas: ZonaPlano[],
+  elementos: ElementoPlano[],
+): string {
+  return JSON.stringify({ mesas, plano: aPlanoPayload(zonas, elementos) });
+}
+
+export type AccionDeTecla = "eliminar" | "deseleccionar";
+
+/**
+ * Atajos del editor: Supr (o Borrar, en Mac) elimina lo seleccionado y Esc
+ * deselecciona. No se activan mientras se escribe en un campo de texto,
+ * para que Borrar siga borrando letras.
+ */
+export function accionDeTecla(
+  tecla: string,
+  enCampoDeTexto: boolean,
+): AccionDeTecla | null {
+  if (enCampoDeTexto) return null;
+  if (tecla === "Delete" || tecla === "Backspace") return "eliminar";
+  if (tecla === "Escape") return "deseleccionar";
+  return null;
+}
+
+export function esCampoDeTexto(
+  objetivo: { tagName?: string; isContentEditable?: boolean } | null,
+): boolean {
+  if (!objetivo) return false;
+  const etiqueta = objetivo.tagName?.toUpperCase();
+  return (
+    etiqueta === "INPUT" ||
+    etiqueta === "TEXTAREA" ||
+    etiqueta === "SELECT" ||
+    objetivo.isContentEditable === true
+  );
 }

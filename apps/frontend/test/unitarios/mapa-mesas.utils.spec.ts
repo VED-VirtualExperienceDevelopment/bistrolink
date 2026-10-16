@@ -3,6 +3,7 @@ import {
   aplicarEstadoMesa,
   BORDE_POR_ESTADO,
   COLOR_POR_ESTADO,
+  contrasteWcag,
   DIMENSION_MINIMA_MESA,
   DIMENSION_MAXIMA_MESA,
   dimensionesTrasTransformar,
@@ -21,6 +22,7 @@ import {
   siguienteNumeroDisponible,
   siguienteZoom,
   tamanoMesaPermitido,
+  TEXTO_POR_ESTADO,
   ZOOM_INICIAL,
   ZOOM_MAXIMO,
   ZOOM_MINIMO,
@@ -653,4 +655,25 @@ describe("zoom del mapa (HU-028)", () => {
       tamanoMesaPermitido({ width: DIMENSION_MINIMA_MESA, height: 80 }, 1),
     ).toBe(true);
   });
+});
+
+describe("contraste del número de mesa (HU-028, WCAG 2.1 AA 1.4.3)", () => {
+  it("contrasteWcag da los valores de referencia", () => {
+    expect(contrasteWcag("#000000", "#FFFFFF")).toBeCloseTo(21, 0);
+    expect(contrasteWcag("#FFFFFF", "#FFFFFF")).toBeCloseTo(1, 5);
+    // El orden de los colores no importa.
+    expect(contrasteWcag("#BA1A1A", "#FFFFFF")).toBeCloseTo(
+      contrasteWcag("#FFFFFF", "#BA1A1A"),
+      5,
+    );
+  });
+
+  it.each(ESTADOS_MESA_VALIDOS)(
+    "el número de una mesa %s tiene contraste de al menos 4.5:1",
+    (estado) => {
+      expect(
+        contrasteWcag(TEXTO_POR_ESTADO[estado], COLOR_POR_ESTADO[estado]),
+      ).toBeGreaterThanOrEqual(4.5);
+    },
+  );
 });

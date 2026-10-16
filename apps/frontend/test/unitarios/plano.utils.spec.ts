@@ -1,4 +1,6 @@
 import {
+  accionDeTecla,
+  aPlanoPayload,
   acotarRecuadroZona,
   anchoNecesarioElementos,
   anchoNecesarioZonas,
@@ -8,7 +10,10 @@ import {
   disposicionElemento,
   girarElemento90,
   MAXIMO_ELEMENTOS_PLANO,
+  normalizarPlano,
   nuevoElemento,
+  PLANO_VACIO,
+  zonaDePunto,
   puedeAgregarElemento,
   semiExtensionElemento,
   TAMANO_POR_ELEMENTO,
@@ -17,6 +22,8 @@ import {
   DIMENSION_MINIMA_ZONA,
   dimensionesZonaTrasTransformar,
   errorEtiquetaZona,
+  esCampoDeTexto,
+  fotoParaGuardar,
   LARGO_MAXIMO_ETIQUETA_ZONA,
   MAXIMO_ZONAS_PLANO,
   nuevaZona,
@@ -390,5 +397,209 @@ describe("disposicionElemento", () => {
       expect(icono.y).toBeGreaterThanOrEqual(-alto / 2);
       expect(icono.y + icono.tamano).toBeLessThanOrEqual(alto / 2);
     }
+  });
+});
+
+// --- Guardar y cargar -------------------------------------------------------------
+
+describe("normalizarPlano (respuesta de GET /mesas/plano)", () => {
+  it("deja pasar un plano válido tal cual", () => {
+    const plano = { elementos: [elemento()], zonas: [zona()] };
+    expect(normalizarPlano(plano)).toEqual(plano);
+  });
+
+  it.each([null, undefined, "texto", 42, []])(
+    "con una respuesta sin forma de plano (%p) devuelve un plano vacío",
+    (datos) => {
+      expect(normalizarPlano(datos)).toEqual(PLANO_VACIO);
+    },
+  );
+
+  it("si falta una de las listas, la toma como vacía", () => {
+    expect(normalizarPlano({ zonas: [zona()] })).toEqual({
+      elementos: [],
+      zonas: [zona()],
+    });
+  });
+
+  it("descarta elementos con un tipo desconocido o números inválidos", () => {
+    const plano = normalizarPlano({
+      elementos: [
+        elemento({ id: "ok" }),
+        { ...elemento({ id: "tipo" }), tipo: "ASCENSOR" },
+        { ...elemento({ id: "nan" }), x: Number.NaN },
+        { ...elemento({ id: "texto" }), ancho: "80" },
+        null,
+      ],
+      zonas: [],
+    });
+    expect(plano.elementos.map((e) => e.id)).toEqual(["ok"]);
+  });
+
+  it("descarta zonas sin etiqueta", () => {
+    const sinEtiqueta: Partial<ZonaPlano> = zona({ id: "z2" });
+    delete sinEtiqueta.etiqueta;
+    const plano = normalizarPlano({
+      elementos: [],
+      zonas: [zona(), sinEtiqueta],
+    });
+    expect(plano.zonas.map((z) => z.id)).toEqual(["z1"]);
+  });
+
+  it("no copia propiedades de más", () => {
+    const plano = normalizarPlano({
+      elementos: [{ ...elemento(), color: "rojo" }],
+      zonas: [{ ...zona(), mesas: [1] }],
+    });
+    expect(Object.keys(plano.elementos[0]).sort()).toEqual([
+      "alto",
+      "ancho",
+      "id",
+      "rotacion",
+      "tipo",
+      "x",
+      "y",
+    ]);
+    expect(Object.keys(plano.zonas[0]).sort()).toEqual([
+      "alto",
+      "ancho",
+      "etiqueta",
+      "id",
+      "x",
+      "y",
+    ]);
+  });
+});
+
+describe("aPlanoPayload (plano del POST /mesas/layout)", () => {
+  it("manda solo los campos que acepta el backend (forbidNonWhitelisted)", () => {
+    const conExtras = {
+      ...elemento(),
+      seleccionado: true,
+    } as unknown as ElementoPlano;
+    const payload = aPlanoPayload([zona()], [conExtras]);
+    expect(Object.keys(payload.elementos[0]).sort()).toEqual([
+      "alto",
+      "ancho",
+      "id",
+      "rotacion",
+      "tipo",
+      "x",
+      "y",
+    ]);
+    expect(Object.keys(payload.zonas[0]).sort()).toEqual([
+      "alto",
+      "ancho",
+      "etiqueta",
+      "id",
+      "x",
+      "y",
+    ]);
+  });
+
+  it("sobrevive la ida y vuelta: lo que se guarda es lo que se carga", () => {
+    const payload = aPlanoPayload([zona()], [elemento()]);
+    const recibido = normalizarPlano(JSON.parse(JSON.stringify(payload)));
+    expect(recibido).toEqual(payload);
+  });
+
+  it("sin zonas ni elementos manda listas vacías (vacía el plano guardado)", () => {
+    expect(aPlanoPayload([], [])).toEqual(PLANO_VACIO);
+  });
+});
+
+// --- Accesibilidad y UX (paso 6) --------------------------------------------------
+
+describe("zonaDePunto (lista alternativa del plano)", () => {
+  const patio = zona({ id: "p", etiqueta: "Patio", x: 200, y: 150 }); // 50-350 x 50-250
+
+  it("devuelve la zona que contiene el punto", () => {
+    expect(zonaDePunto({ x: 100, y: 100 }, [patio])).toBe("Patio");
+  });
+
+  it("cuenta el borde como adentro", () => {
+    expect(zonaDePunto({ x: 350, y: 250 }, [patio])).toBe("Patio");
+  });
+
+  it("devuelve null si el punto no cae en ninguna zona", () => {
+    expect(zonaDePunto({ x: 400, y: 100 }, [patio])).toBeNull();
+    expect(zonaDePunto({ x: 100, y: 100 }, [])).toBeNull();
+  });
+
+  it("si dos zonas se superponen, gana la que se dibuja arriba (la última)", () => {
+    const barra = zona({ id: "b", etiqueta: "Barra", x: 250, y: 150 });
+    expect(zonaDePunto({ x: 250, y: 150 }, [patio, barra])).toBe("Barra");
+  });
+});
+
+describe("fotoParaGuardar (cambios sin guardar)", () => {
+  it("es igual para el mismo contenido", () => {
+    expect(fotoParaGuardar([{ numero: 1 }], [zona()], [elemento()])).toBe(
+      fotoParaGuardar([{ numero: 1 }], [zona()], [elemento()]),
+    );
+  });
+
+  it("cambia si se mueve una zona o un elemento", () => {
+    const antes = fotoParaGuardar([], [zona()], [elemento()]);
+    expect(fotoParaGuardar([], [zona({ x: 201 })], [elemento()])).not.toBe(
+      antes,
+    );
+    expect(
+      fotoParaGuardar([], [zona()], [elemento({ rotacion: 90 })]),
+    ).not.toBe(antes);
+  });
+
+  it("cambia si cambian las mesas", () => {
+    expect(fotoParaGuardar([{ numero: 1 }], [], [])).not.toBe(
+      fotoParaGuardar([{ numero: 2 }], [], []),
+    );
+  });
+
+  it("ignora propiedades que no se guardan (solo usa los campos del POST)", () => {
+    const conExtra = { ...zona(), seleccionada: true } as unknown as ZonaPlano;
+    expect(fotoParaGuardar([], [conExtra], [])).toBe(
+      fotoParaGuardar([], [zona()], []),
+    );
+  });
+});
+
+describe("accionDeTecla (atajos del editor)", () => {
+  it.each(["Delete", "Backspace"])("%s elimina lo seleccionado", (tecla) => {
+    expect(accionDeTecla(tecla, false)).toBe("eliminar");
+  });
+
+  it("Escape deselecciona", () => {
+    expect(accionDeTecla("Escape", false)).toBe("deseleccionar");
+  });
+
+  it("otras teclas no hacen nada", () => {
+    expect(accionDeTecla("a", false)).toBeNull();
+    expect(accionDeTecla("Enter", false)).toBeNull();
+  });
+
+  it("mientras se escribe en un campo de texto, ningún atajo se activa", () => {
+    expect(accionDeTecla("Backspace", true)).toBeNull();
+    expect(accionDeTecla("Escape", true)).toBeNull();
+  });
+});
+
+describe("esCampoDeTexto", () => {
+  it.each(["INPUT", "TEXTAREA", "SELECT", "input"])(
+    "%s es un campo de texto",
+    (tagName) => {
+      expect(esCampoDeTexto({ tagName })).toBe(true);
+    },
+  );
+
+  it("un elemento editable también cuenta", () => {
+    expect(esCampoDeTexto({ tagName: "DIV", isContentEditable: true })).toBe(
+      true,
+    );
+  });
+
+  it("un botón, el body o null no son campos de texto", () => {
+    expect(esCampoDeTexto({ tagName: "BUTTON" })).toBe(false);
+    expect(esCampoDeTexto({ tagName: "BODY" })).toBe(false);
+    expect(esCampoDeTexto(null)).toBe(false);
   });
 });

@@ -10,6 +10,7 @@ import {
   dimensionesTrasTransformar,
   limitarCentroEnPantalla,
   semiExtension,
+  TEXTO_POR_ESTADO,
   type Lienzo,
 } from "./mapa-mesas.utils";
 
@@ -158,7 +159,7 @@ export const MesaShape = forwardRef<Konva.Group, MesaShapeProps>(
           offsetY={8}
           fontSize={16}
           fontStyle="bold"
-          fill="#ffffff"
+          fill={TEXTO_POR_ESTADO[estado]}
           listening={false}
         />
       </Group>

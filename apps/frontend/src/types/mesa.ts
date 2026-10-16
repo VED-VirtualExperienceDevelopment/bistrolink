@@ -1,3 +1,5 @@
+import type { PlanoSalon } from "./plano";
+
 // Mismos valores que el enum MesaEstado y los DTOs de layout del backend
 // (apps/backend/prisma/schema.prisma, apps/backend/src/mesas/dto/*.ts) — una
 // sola fuente de verdad de nombres entre stacks, igual que ya hace
@@ -51,6 +53,8 @@ export interface GuardarLayoutPayload {
   mesas: GuardarLayoutItem[];
   /** BL-58: ids de mesas guardadas que se quitaron del mapa (solo libres y sin pedidos). */
   eliminar?: string[];
+  /** HU-028 (BL-173): plano completo (zonas y elementos fijos). Reemplaza al guardado. */
+  plano?: PlanoSalon;
 }
 
 /** Payload del evento WS 'mesa:estado_actualizado' — ver KdsGateway.emitirEstadoMesa. */
