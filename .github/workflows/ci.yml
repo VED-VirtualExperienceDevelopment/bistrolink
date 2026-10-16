@@ -982,6 +982,23 @@ jobs:
     if: |
       (github.ref == 'refs/heads/develop' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
+    # BL-280: los E2E corren dentro de la imagen oficial de Playwright, que ya
+    # trae Chromium (con el headless shell) y WebKit con todas sus
+    # dependencias del sistema. Antes, cada job de Safari instalaba WebKit con
+    # apt (~15 min) y solo ese motor, así que el fixture qrMesas
+    # (e2e/support/auth.ts), que loguea al ADMIN siempre en Chromium, fallaba
+    # con "Executable doesn't exist" (TC-E-007 en mobile-safari y
+    # desktop-safari).
+    #
+    # ⚠️ La versión de la imagen tiene que ser la MISMA que @playwright/test
+    # en package-lock.json. Dependabot actualiza el paquete pero no esta
+    # línea: si no coinciden, el paso "Verificar imagen de Playwright" corta
+    # el job con un mensaje claro.
+    # --user 1001: el usuario del runner, para poder escribir en el workspace
+    # (lo recomienda la documentación de Playwright para GitHub Actions).
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble
+      options: --user 1001
     continue-on-error: ${{ !startsWith(github.ref, 'refs/tags/v') && github.ref != 'refs/heads/main' }}
     strategy:
       fail-fast: false
@@ -998,18 +1015,30 @@ jobs:
       - name: Instalar dependencias
         run: npm ci
 
-      # mobile-safari y desktop-safari (playwright.config.ts) corren en el
-      # motor webkit, no chromium — sin este binario, browserType.launch()
-      # falla con "Executable doesn't exist at .../webkit-*/pw_run.sh"
-      # (mobile-chrome no necesita webkit: usa chromium con emulación de
-      # Pixel 5). Se instala solo el motor que cada proyecto usa.
-      - name: Instalar navegadores Playwright
+      # BL-280: ya no se instalan navegadores (los trae la imagen). Este paso
+      # compara los navegadores que espera @playwright/test (lockfile) con
+      # los que hay en la imagen, y corta con un mensaje claro si no
+      # coinciden, en vez de fallar después en cada test.
+      - name: Verificar imagen de Playwright
         run: |
-          if [[ "${{ matrix.project }}" == *safari* ]]; then
-            npx playwright install --with-deps webkit
-          else
-            npx playwright install --with-deps chromium
-          fi
+          node -e '
+          const fs = require("fs");
+          const path = require("path");
+          const pkg = require("@playwright/test/package.json").version;
+          const dirCore = path.dirname(require.resolve("playwright-core/package.json"));
+          const { browsers } = JSON.parse(fs.readFileSync(path.join(dirCore, "browsers.json"), "utf8"));
+          const base = process.env.PLAYWRIGHT_BROWSERS_PATH || "/ms-playwright";
+          const necesarios = ["chromium", "chromium-headless-shell", "webkit"];
+          const faltan = browsers
+            .filter((b) => necesarios.includes(b.name))
+            .map((b) => `${b.name.replaceAll("-", "_")}-${b.revision}`)
+            .filter((dir) => !fs.existsSync(path.join(base, dir)));
+          if (faltan.length > 0) {
+            console.log(`::error::La imagen de Playwright no coincide con @playwright/test ${pkg} del lockfile (faltan ${faltan.join(", ")} en ${base}). Actualizá container.image a mcr.microsoft.com/playwright:v${pkg}-noble.`);
+            process.exit(1);
+          }
+          console.log(`OK: la imagen trae los navegadores de @playwright/test ${pkg}.`);
+          '
 
       - name: Tests E2E Playwright en staging (${{ matrix.project }})
         run: npx playwright test --project=${{ matrix.project }}
