@@ -1,0 +1,59 @@
+# Dependabot: actualizaciones de versiones (BL-220).
+# Unifica las dos configuraciones que había en main (esta y dependantbot.yml,
+# que tenía el nombre mal escrito y GitHub no leía).
+#
+# Dependabot lee este archivo desde la rama por defecto (develop) y abre los
+# PRs contra develop. Las alertas y los PRs de seguridad se activan aparte, en
+# Settings → Code security, y no dependen de este archivo.
+version: 2
+updates:
+  # Un solo lockfile en la raíz para los workspaces (apps/backend y apps/frontend).
+  - package-ecosystem: "npm"
+    directory: "/"
+    target-branch: "develop"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "America/Montevideo"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    # Las versiones menores y los parches llegan en un solo PR por semana.
+    groups:
+      npm-menores-y-parches:
+        update-types:
+          - "minor"
+          - "patch"
+    ignore:
+      # Las versiones mayores no se proponen: se planifican en un ticket propio,
+      # porque hay que actualizar varios paquetes juntos (por ejemplo, todos los
+      # @nestjs/* a la vez, o prisma junto con @prisma/client).
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
+      # @playwright/test va atado a la imagen del job E2E de ci.yml
+      # (mcr.microsoft.com/playwright:vX.Y.Z-noble, BL-280): se actualizan a
+      # mano y en el mismo PR, o el paso "Verificar imagen de Playwright" falla.
+      - dependency-name: "@playwright/test"
+
+  # Versiones de las actions de los workflows de .github/workflows.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    target-branch: "develop"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "ci"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    groups:
+      actions:
+        patterns:
+          - "*"
