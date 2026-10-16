@@ -1,29 +1,32 @@
-# Security Policy
+# Política de seguridad
 
+## Cómo reportar una vulnerabilidad
 
-## Reporting a Vulnerability
+Si encontrás una vulnerabilidad en BistroLink:
 
+- **No abras un issue público** en GitHub ni la menciones en un PR o un comentario.
+- Mandá los detalles al equipo por correo: **bistrolink.equipoved@gmail.com**.
+- Incluí qué componente afecta (API, Web, Auth o infraestructura), los pasos para reproducirla y el impacto que estimás.
+- Respondemos en un plazo de **48 horas hábiles**.
 
-If you discover a security vulnerability in this project,
-please report it by email to the team:
+## Versiones con soporte
 
+| Versión                                           | Soporte |
+| ------------------------------------------------- | ------- |
+| Último release publicado en `main` (tag `vX.Y.Z`) | Sí      |
+| `develop` (staging)                               | Sí      |
+| Releases anteriores                               | No      |
 
-- Do NOT open a public GitHub issue for security vulnerabilities.
-- Send details to: ved.bistrolink@gmail.com
-- We will respond within 48 hours.
+## Alcance
 
+BistroLink es un proyecto académico. El entorno `production` funciona con las integraciones de pago y facturación en modo sandbox y sin datos personales reales.
 
-## Organization
+## Controles del repositorio
 
+- El repositorio y la organización son **públicos**: todo el código, los commits y los comentarios son visibles.
+- Ninguna credencial se guarda en el repositorio. Los secretos de la aplicación se gestionan en el gestor de secretos del equipo, y los del pipeline en los secretos de GitHub Actions.
+- Cada PR pasa por detección de secretos (Gitleaks), análisis estático (CodeQL y SonarCloud) y análisis de dependencias e imágenes (Trivy y `dependency-review`).
 
-This repository is part of the VED-VirtualExperienceDevelopment
-GitHub organization:
-https://github.com/orgs/VED-VirtualExperienceDevelopment/people
+## Organización
 
-
-## Scope
-
-
-This is an academic project. Production credentials are never
-stored in this repository. All secrets are managed via
-environment variables and GitHub Secrets.
+El repositorio es parte de la organización de GitHub [VED-VirtualExperienceDevelopment](https://github.com/VED-VirtualExperienceDevelopment).
