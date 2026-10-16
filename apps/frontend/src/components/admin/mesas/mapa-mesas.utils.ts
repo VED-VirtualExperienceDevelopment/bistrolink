@@ -452,8 +452,8 @@ export function aplicarEstadoMesa(
  */
 export const NIVELES_ZOOM = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
 export const ZOOM_INICIAL = 1;
-export const ZOOM_MINIMO = NIVELES_ZOOM[0];
-export const ZOOM_MAXIMO = NIVELES_ZOOM[NIVELES_ZOOM.length - 1];
+export const ZOOM_MINIMO = Math.min(...NIVELES_ZOOM);
+export const ZOOM_MAXIMO = Math.max(...NIVELES_ZOOM);
 
 /**
  * Nivel siguiente (direccion 1) o anterior (direccion -1). En los extremos

@@ -505,11 +505,9 @@ export function MapaMesasEditor({
   // guardar. No cubre la navegación interna de Next (links del menú).
   useEffect(() => {
     if (!puedeEditar || !hayCambiosSinGuardar) return;
-    const avisar = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-      // Chrome todavía lo necesita para mostrar el aviso.
-      e.returnValue = "";
-    };
+    // preventDefault() alcanza en los navegadores actuales; returnValue
+    // está obsoleto y no hace falta.
+    const avisar = (e: BeforeUnloadEvent) => e.preventDefault();
     window.addEventListener("beforeunload", avisar);
     return () => window.removeEventListener("beforeunload", avisar);
   }, [puedeEditar, hayCambiosSinGuardar]);
@@ -731,10 +729,11 @@ export function MapaMesasEditor({
               </p>
             )}
             {/* Siempre presente: un lector de pantalla solo anuncia los
-                cambios de una región "status" que ya existía (WCAG 4.1.3). */}
-            <p role="status" className="text-label-md text-primary">
+                cambios de una región "status" que ya existía (WCAG 4.1.3).
+                <output> ya tiene ese rol de forma nativa. */}
+            <output className="text-label-md text-primary">
               {guardadoOk ? "Guardado ✓" : ""}
-            </p>
+            </output>
             {hayCambiosSinGuardar && !guardando && (
               <p className="flex items-center gap-1 text-label-md text-on-surface-variant">
                 <span
@@ -743,7 +742,7 @@ export function MapaMesasEditor({
                 >
                   edit_note
                 </span>
-                Cambios sin guardar
+                <span>Cambios sin guardar</span>
               </p>
             )}
             <button
