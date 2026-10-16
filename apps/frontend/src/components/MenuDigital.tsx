@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import ItemImagen from '@/components/menu/ItemImagen';
 import { LlamarMozoButton } from '@/components/LlamarMozoButton';
@@ -74,6 +74,13 @@ export default function MenuDigital({
   const [pedidoConfirmado, setPedidoConfirmado] = useState<PedidoConfirmado | null>(null);
   const [tokenComensal, setTokenComensal] = useState<string | null>(null);
   const [errorPedido, setErrorPedido] = useState<string | null>(null);
+
+  // BL-320: el panel "Tu pedido" es fijo y tapaba los botones "Agregar" de
+  // los platos que quedaban debajo. Se mide su alto para reservar ese espacio
+  // al final de la página y en el scroll (ver el efecto de abajo).
+  const panelPedidoRef = useRef<HTMLDivElement>(null);
+  const [altoPanelPedido, setAltoPanelPedido] = useState(0);
+  const hayCarrito = carrito.length > 0;
 
   const generalCharCount = observacionGeneral.length;
   const isGeneralOverLimit = generalCharCount > MAX_CHARS_GENERAL;
@@ -229,8 +236,43 @@ export default function MenuDigital({
     }
   };
 
+  // BL-320: mide el panel "Tu pedido" mientras está visible.
+  useEffect(() => {
+    const panel = panelPedidoRef.current;
+    if (!hayCarrito || !panel) {
+      setAltoPanelPedido(0);
+      return;
+    }
+    const observer = new ResizeObserver(() =>
+      setAltoPanelPedido(Math.ceil(panel.getBoundingClientRect().height)),
+    );
+    observer.observe(panel);
+    return () => observer.disconnect();
+  }, [hayCarrito]);
+
+  // BL-320: scroll-padding hace que el navegador, al llevar un elemento a la
+  // vista (scroll, foco con teclado, scrollIntoView), lo deje entre la barra
+  // superior fija y el panel del pedido, en vez de debajo de alguno de los
+  // dos. También cubre WCAG 2.4.11 (el foco no queda tapado).
+  useEffect(() => {
+    const html = document.documentElement;
+    html.style.scrollPaddingTop = '5rem';
+    html.style.scrollPaddingBottom = altoPanelPedido
+      ? `${altoPanelPedido + 32}px`
+      : '';
+    return () => {
+      html.style.scrollPaddingTop = '';
+      html.style.scrollPaddingBottom = '';
+    };
+  }, [altoPanelPedido]);
+
   return (
-    <div className="min-h-screen bg-culinary-background pb-28">
+    <div
+      className="min-h-screen bg-culinary-background pb-28"
+      // BL-320: espacio al final para que el último plato pueda quedar por
+      // encima del panel del pedido (pb-28 solo alcanzaba sin el panel).
+      style={altoPanelPedido ? { paddingBottom: altoPanelPedido + 32 } : undefined}
+    >
       <nav className="fixed top-0 w-full z-50 flex justify-between items-center px-4 md:px-8 h-16 bg-white border-b border-culinary-neutral/15">
         <div className="flex items-center gap-4">
           <span className="text-xl md:text-2xl font-bold text-[#6e54ad]">BistroLink</span>
@@ -244,7 +286,12 @@ export default function MenuDigital({
         </div>
       </nav>
 
-      <main className="pt-20 px-4 md:px-8 max-w-[1440px] mx-auto flex flex-col gap-10">
+      {/* BL-320: en pantallas anchas (lg) el panel del pedido va a la
+          derecha; con el carrito abierto se le reserva ese espacio para que
+          la grilla del menú no quede debajo del panel. */}
+      <main
+        className={`pt-20 px-4 md:px-8 max-w-[1440px] mx-auto flex flex-col gap-10 ${hayCarrito ? 'lg:pr-[448px]' : ''}`}
+      >
         <section className="w-full">
           <div className="relative w-full h-[250px] md:h-[350px] rounded-[1rem] overflow-hidden group bg-foreground">
             <div 
@@ -372,8 +419,14 @@ export default function MenuDigital({
         )}
       </main>
 
-      {carrito.length > 0 && (
-        <div className="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-4 sm:w-[400px] bg-white rounded-[1rem] shadow-[0px_4px_20px_rgba(121,118,125,0.15)] border border-culinary-neutral/15 p-5 z-20">
+      {hayCarrito && (
+        <div
+          ref={panelPedidoRef}
+          // BL-320: hasta lg ocupa todo el ancho abajo, con un alto máximo
+          // para que siempre quede menú visible arriba; desde lg va a la
+          // derecha, en el espacio que se le reserva al <main>.
+          className="fixed bottom-4 left-4 right-4 max-h-[60vh] overflow-y-auto lg:left-auto lg:right-4 lg:w-[400px] lg:max-h-[calc(100vh-6rem)] bg-white rounded-[1rem] shadow-[0px_4px_20px_rgba(121,118,125,0.15)] border border-culinary-neutral/15 p-5 z-20"
+        >
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-bold text-lg text-foreground flex items-center gap-2">
               <span role="img" aria-label="Carrito">🛒</span> Tu pedido ({cantidadTotalItems} {cantidadTotalItems === 1 ? 'item' : 'items'})
