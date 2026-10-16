@@ -23,13 +23,22 @@ updates:
       prefix: "chore"
       include: "scope"
     # Las versiones menores y los parches llegan en un solo PR por semana.
-    # Las versiones mayores (por ejemplo, NestJS 11) llegan de a una, para
-    # revisarlas por separado.
     groups:
       npm-menores-y-parches:
         update-types:
           - "minor"
           - "patch"
+    ignore:
+      # Las versiones mayores no se proponen: se planifican en un ticket propio,
+      # porque hay que actualizar varios paquetes juntos (por ejemplo, todos los
+      # @nestjs/* a la vez, o prisma junto con @prisma/client).
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
+      # @playwright/test va atado a la imagen del job E2E de ci.yml
+      # (mcr.microsoft.com/playwright:vX.Y.Z-noble, BL-280): se actualizan a
+      # mano y en el mismo PR, o el paso "Verificar imagen de Playwright" falla.
+      - dependency-name: "@playwright/test"
 
   # Versiones de las actions de los workflows de .github/workflows.
   - package-ecosystem: "github-actions"
