@@ -6,6 +6,7 @@ import type Konva from "konva";
 import { io, type Socket } from "socket.io-client";
 import { useKeycloakAuth } from "@/components/providers/KeycloakProvider";
 import { apiFetch, ApiError } from "@/lib/api-client";
+import { LeyendaEstadosMesa } from "./LeyendaEstadosMesa";
 import { MesaShape } from "./MesaShape";
 import {
   aGuardarLayoutItems,
@@ -479,7 +480,7 @@ export function MapaMesasEditor({
           </div>
         </div>
       )}
-
+      <LeyendaEstadosMesa />
       <div
         ref={contenedorRef}
         className="relative w-full overflow-x-auto overflow-y-hidden rounded-xl border border-outline-variant bg-surface-container-lowest"

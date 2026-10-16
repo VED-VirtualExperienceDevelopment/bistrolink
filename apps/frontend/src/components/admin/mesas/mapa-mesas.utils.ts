@@ -28,11 +28,32 @@ export interface MesaEnEdicion {
   alto: number;
   rotacion: number;
 }
-
 export const COLOR_POR_ESTADO: Record<EstadoMesa, string> = {
   LIBRE: "#4C9A5A",
   OCUPADA: "#BA1A1A",
   EN_PROCESO_DE_PAGO: "#C9A74D",
+  REQUIERE_LIMPIEZA: "#3F6FA8",
+};
+
+/** HU-028 (BL-173): nombre de cada estado en la leyenda del mapa. */
+export const ETIQUETA_POR_ESTADO: Record<EstadoMesa, string> = {
+  LIBRE: "Disponible",
+  OCUPADA: "Ocupada",
+  EN_PROCESO_DE_PAGO: "Pago pendiente",
+  REQUIERE_LIMPIEZA: "Requiere limpieza",
+};
+
+/**
+ * HU-028 (BL-173): patrón del borde de la mesa según su estado, para que el
+ * color no sea el único indicador (WCAG 1.4.1). Mismo formato que la prop
+ * `dash` de Konva y que `stroke-dasharray` de SVG (la leyenda): largo de
+ * trazo y de espacio, en px. Vacío = borde continuo.
+ */
+export const BORDE_POR_ESTADO: Record<EstadoMesa, number[]> = {
+  LIBRE: [],
+  OCUPADA: [10, 4],
+  EN_PROCESO_DE_PAGO: [2, 4],
+  REQUIERE_LIMPIEZA: [10, 4, 2, 4],
 };
 
 const LAYOUT_POR_DEFECTO = {

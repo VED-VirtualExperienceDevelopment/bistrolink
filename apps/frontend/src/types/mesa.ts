@@ -14,6 +14,8 @@ export const ESTADOS_MESA_VALIDOS = [
   "LIBRE",
   "OCUPADA",
   "EN_PROCESO_DE_PAGO",
+  // HU-028 (BL-173): mismo valor agregado al enum MesaEstado del backend.
+  "REQUIERE_LIMPIEZA",
 ] as const;
 export type EstadoMesa = (typeof ESTADOS_MESA_VALIDOS)[number];
 

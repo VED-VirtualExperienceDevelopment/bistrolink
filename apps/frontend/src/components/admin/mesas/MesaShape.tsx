@@ -5,6 +5,7 @@ import { Circle, Group, Rect, Text } from "react-konva";
 import type Konva from "konva";
 import type { EstadoMesa, FormaMesa } from "@/types/mesa";
 import {
+  BORDE_POR_ESTADO,
   COLOR_POR_ESTADO,
   dimensionesTrasTransformar,
   limitarCentro,
@@ -75,7 +76,10 @@ export const MesaShape = forwardRef<Konva.Group, MesaShapeProps>(
     ref,
   ) {
     const fill = COLOR_POR_ESTADO[estado];
-    const strokeWidth = seleccionada ? 3 : 1.5;
+    // HU-028 (BL-173): el patrón del borde también indica el estado (no solo
+    // el color). 2.5 px como mínimo para que el patrón se distinga.
+    const dash = BORDE_POR_ESTADO[estado];
+    const strokeWidth = seleccionada ? 3.5 : 2.5;
     const stroke = seleccionada ? COLOR_SELECCION : COLOR_BORDE;
 
     const handleTransformEnd = (e: Konva.KonvaEventObject<Event>) => {
@@ -126,6 +130,7 @@ export const MesaShape = forwardRef<Konva.Group, MesaShapeProps>(
             fill={fill}
             stroke={stroke}
             strokeWidth={strokeWidth}
+            dash={dash}
           />
         ) : (
           <Rect
@@ -137,6 +142,7 @@ export const MesaShape = forwardRef<Konva.Group, MesaShapeProps>(
             fill={fill}
             stroke={stroke}
             strokeWidth={strokeWidth}
+            dash={dash}
           />
         )}
         <Text

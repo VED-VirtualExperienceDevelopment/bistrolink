@@ -1,9 +1,11 @@
 import {
   aGuardarLayoutItems,
   aplicarEstadoMesa,
+  BORDE_POR_ESTADO,
   COLOR_POR_ESTADO,
   DIMENSION_MINIMA_MESA,
   dimensionesTrasTransformar,
+  ETIQUETA_POR_ESTADO,
   mesasConLayoutAEdicion,
   normalizarRotacion,
   nuevaMesaEnEdicion,
@@ -201,19 +203,40 @@ describe("HU-016: serializa y deserializa el layout sin pérdida de datos (GET �
       id: "mesa-1",
       numero: 1,
       estado: "LIBRE",
-      layout: { x: 12.75, y: -3.5, forma: "CIRCULO", ancho: 80, alto: 80, rotacion: 0 },
+      layout: {
+        x: 12.75,
+        y: -3.5,
+        forma: "CIRCULO",
+        ancho: 80,
+        alto: 80,
+        rotacion: 0,
+      },
     },
     {
       id: "mesa-2",
       numero: 2,
       estado: "OCUPADA",
-      layout: { x: 0, y: 0, forma: "CUADRADO", ancho: 20, alto: 20, rotacion: 359 },
+      layout: {
+        x: 0,
+        y: 0,
+        forma: "CUADRADO",
+        ancho: 20,
+        alto: 20,
+        rotacion: 359,
+      },
     },
     {
       id: "mesa-3",
       numero: 3,
       estado: "EN_PROCESO_DE_PAGO",
-      layout: { x: 1024.125, y: 768.5, forma: "RECTANGULO", ancho: 160.5, alto: 60, rotacion: 45 },
+      layout: {
+        x: 1024.125,
+        y: 768.5,
+        forma: "RECTANGULO",
+        ancho: 160.5,
+        alto: 60,
+        rotacion: 45,
+      },
     },
   ];
 
@@ -224,7 +247,9 @@ describe("HU-016: serializa y deserializa el layout sin pérdida de datos (GET �
       restauranteId: "restaurante-1",
       mesas: aGuardarLayoutItems(mesasConLayoutAEdicion(desdeApi)),
     };
-    const bodyEnviado: GuardarLayoutPayload = JSON.parse(JSON.stringify(payload));
+    const bodyEnviado: GuardarLayoutPayload = JSON.parse(
+      JSON.stringify(payload),
+    );
 
     expect(bodyEnviado.mesas).toStrictEqual(
       respuestaGet.map(({ id, numero, layout }) => ({ id, numero, ...layout })),
@@ -245,9 +270,16 @@ describe("HU-016: serializa y deserializa el layout sin pérdida de datos (GET �
     ] as unknown as MesaConLayout[];
 
     const [item] = aGuardarLayoutItems(mesasConLayoutAEdicion(conClaveExtra));
-    expect(Object.keys(item).sort()).toEqual(
-      ["alto", "ancho", "forma", "id", "numero", "rotacion", "x", "y"],
-    );
+    expect(Object.keys(item).sort()).toEqual([
+      "alto",
+      "ancho",
+      "forma",
+      "id",
+      "numero",
+      "rotacion",
+      "x",
+      "y",
+    ]);
   });
 });
 
@@ -258,14 +290,23 @@ describe("mesasConLayoutAEdicion — casos adicionales", () => {
         id: "mesa-1",
         numero: 1,
         estado: "LIBRE",
-        layout: { x: 10, y: 10, forma: "CIRCULO", ancho: 80, alto: 80, rotacion: 0 },
+        layout: {
+          x: 10,
+          y: 10,
+          forma: "CIRCULO",
+          ancho: 80,
+          alto: 80,
+          rotacion: 0,
+        },
       },
       { id: "mesa-2", numero: 2, estado: "OCUPADA", layout: null },
     ];
 
     const [, sinLayout] = mesasConLayoutAEdicion(mesas);
     expect(sinLayout.estado).toBe("OCUPADA");
-    expect({ x: sinLayout.x, y: sinLayout.y }).toEqual(posicionGridPorDefecto(1));
+    expect({ x: sinLayout.x, y: sinLayout.y }).toEqual(
+      posicionGridPorDefecto(1),
+    );
   });
 
   it("devuelve un array vacío si el restaurante no tiene mesas", () => {
@@ -320,7 +361,9 @@ describe("normalizarRotacion — valores límite (backend: @Min(0) @Max(359))", 
 
 describe("siguienteNumeroDisponible — casos adicionales", () => {
   it("no depende del orden ni de números repetidos", () => {
-    expect(siguienteNumeroDisponible([{ numero: 3 }, { numero: 1 }, { numero: 1 }])).toBe(2);
+    expect(
+      siguienteNumeroDisponible([{ numero: 3 }, { numero: 1 }, { numero: 1 }]),
+    ).toBe(2);
   });
 
   it("nunca sugiere 0 (reservado a la mesa virtual)", () => {
@@ -330,7 +373,9 @@ describe("siguienteNumeroDisponible — casos adicionales", () => {
 
 describe("numerosDuplicados — casos adicionales", () => {
   it("reporta una sola vez un número que aparece tres veces", () => {
-    expect(numerosDuplicados([{ numero: 4 }, { numero: 4 }, { numero: 4 }])).toEqual([4]);
+    expect(
+      numerosDuplicados([{ numero: 4 }, { numero: 4 }, { numero: 4 }]),
+    ).toEqual([4]);
   });
 });
 
@@ -344,6 +389,50 @@ describe("COLOR_POR_ESTADO", () => {
   it("tiene un color para cada estado de mesa (ninguna mesa se dibuja sin relleno)", () => {
     for (const estado of ESTADOS_MESA_VALIDOS) {
       expect(COLOR_POR_ESTADO[estado]).toMatch(/^#[0-9A-Fa-f]{6}$/);
+    }
+  });
+
+  it("no repite colores: cada estado se distingue del resto (HU-028)", () => {
+    const colores = ESTADOS_MESA_VALIDOS.map((e) =>
+      COLOR_POR_ESTADO[e].toUpperCase(),
+    );
+    expect(new Set(colores).size).toBe(ESTADOS_MESA_VALIDOS.length);
+  });
+});
+
+describe("ETIQUETA_POR_ESTADO (HU-028: leyenda)", () => {
+  it("tiene un nombre legible para cada estado", () => {
+    for (const estado of ESTADOS_MESA_VALIDOS) {
+      expect(ETIQUETA_POR_ESTADO[estado].trim().length).toBeGreaterThan(0);
+    }
+  });
+
+  it("incluye el estado nuevo REQUIERE_LIMPIEZA", () => {
+    expect(ETIQUETA_POR_ESTADO.REQUIERE_LIMPIEZA).toBe("Requiere limpieza");
+  });
+});
+
+describe("BORDE_POR_ESTADO (HU-028: el estado no depende solo del color)", () => {
+  it("tiene un patrón de borde para cada estado", () => {
+    for (const estado of ESTADOS_MESA_VALIDOS) {
+      expect(Array.isArray(BORDE_POR_ESTADO[estado])).toBe(true);
+    }
+  });
+
+  it("no repite patrones: dos estados nunca tienen el mismo borde", () => {
+    const patrones = ESTADOS_MESA_VALIDOS.map((e) =>
+      BORDE_POR_ESTADO[e].join(","),
+    );
+    expect(new Set(patrones).size).toBe(ESTADOS_MESA_VALIDOS.length);
+  });
+
+  it("los guiones y espacios son positivos y vienen de a pares", () => {
+    for (const estado of ESTADOS_MESA_VALIDOS) {
+      const patron = BORDE_POR_ESTADO[estado];
+      expect(patron.length % 2).toBe(0);
+      for (const tramo of patron) {
+        expect(tramo).toBeGreaterThan(0);
+      }
     }
   });
 });
@@ -389,7 +478,10 @@ describe("parsearNumeroMesa (edición del número con doble clic)", () => {
 
 describe("dimensionesTrasTransformar (resize con el Transformer)", () => {
   it("aplica la escala de Konva a ancho y alto", () => {
-    expect(dimensionesTrasTransformar(80, 60, 1.5, 2)).toEqual({ ancho: 120, alto: 120 });
+    expect(dimensionesTrasTransformar(80, 60, 1.5, 2)).toEqual({
+      ancho: 120,
+      alto: 120,
+    });
   });
 
   it("no baja del mínimo al achicar", () => {
@@ -406,13 +498,48 @@ describe("dimensionesTrasTransformar (resize con el Transformer)", () => {
 
 describe("aplicarEstadoMesa (evento WS mesa:estado_actualizado)", () => {
   const mesas: MesaEnEdicion[] = [
-    { clientId: "mesa-1", id: "mesa-1", numero: 1, estado: "LIBRE", x: 10, y: 10, forma: "CIRCULO", ancho: 80, alto: 80, rotacion: 0 },
-    { clientId: "mesa-2", id: "mesa-2", numero: 2, estado: "LIBRE", x: 20, y: 20, forma: "CUADRADO", ancho: 80, alto: 80, rotacion: 0 },
-    { clientId: "nueva-abc", numero: 3, estado: "LIBRE", x: 30, y: 30, forma: "CIRCULO", ancho: 80, alto: 80, rotacion: 0 },
+    {
+      clientId: "mesa-1",
+      id: "mesa-1",
+      numero: 1,
+      estado: "LIBRE",
+      x: 10,
+      y: 10,
+      forma: "CIRCULO",
+      ancho: 80,
+      alto: 80,
+      rotacion: 0,
+    },
+    {
+      clientId: "mesa-2",
+      id: "mesa-2",
+      numero: 2,
+      estado: "LIBRE",
+      x: 20,
+      y: 20,
+      forma: "CUADRADO",
+      ancho: 80,
+      alto: 80,
+      rotacion: 0,
+    },
+    {
+      clientId: "nueva-abc",
+      numero: 3,
+      estado: "LIBRE",
+      x: 30,
+      y: 30,
+      forma: "CIRCULO",
+      ancho: 80,
+      alto: 80,
+      rotacion: 0,
+    },
   ];
 
   it("cambia solo el estado de la mesa indicada, sin tocar su layout", () => {
-    const resultado = aplicarEstadoMesa(mesas, { mesaId: "mesa-2", estado: "OCUPADA" });
+    const resultado = aplicarEstadoMesa(mesas, {
+      mesaId: "mesa-2",
+      estado: "OCUPADA",
+    });
 
     expect(resultado[1]).toEqual({ ...mesas[1], estado: "OCUPADA" });
     expect(resultado[0]).toBe(mesas[0]);
@@ -420,7 +547,12 @@ describe("aplicarEstadoMesa (evento WS mesa:estado_actualizado)", () => {
   });
 
   it("ignora un evento de una mesa que no está en el mapa (otro restaurante del tenant)", () => {
-    expect(aplicarEstadoMesa(mesas, { mesaId: "mesa-de-otro-restaurante", estado: "OCUPADA" })).toEqual(mesas);
+    expect(
+      aplicarEstadoMesa(mesas, {
+        mesaId: "mesa-de-otro-restaurante",
+        estado: "OCUPADA",
+      }),
+    ).toEqual(mesas);
   });
 
   it("no modifica el array original", () => {
