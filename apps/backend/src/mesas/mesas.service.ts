@@ -9,12 +9,66 @@ import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { KdsGateway } from '../pedidos/kds.gateway';
 import { MesaLayoutDto } from './dto/mesa-layout.dto';
 import { MesaLayoutItemDto } from './dto/guardar-layout.dto';
+import { PlanoDto } from './dto/plano.dto';
 import { MesaDelQr } from '../qr-mesa/qr-mesa-acceso.service';
 
 /** "mesa 3" o "mesas 3, 5", para los mensajes de error del editor. */
 function listarMesas(numeros: number[]): string {
   const ordenados = [...numeros].sort((a, b) => a - b).join(', ');
   return numeros.length === 1 ? `mesa ${ordenados}` : `mesas ${ordenados}`;
+}
+
+/** HU-028 (BL-173): forma del plano guardado en restaurante.plano. */
+export interface PlanoSalon {
+  elementos: Array<{
+    id: string;
+    tipo: string;
+    x: number;
+    y: number;
+    ancho: number;
+    alto: number;
+    rotacion: number;
+  }>;
+  zonas: Array<{
+    id: string;
+    etiqueta: string;
+    x: number;
+    y: number;
+    ancho: number;
+    alto: number;
+  }>;
+}
+
+/** Plano de un restaurante que todavía no tiene elementos ni zonas. */
+export const PLANO_VACIO: PlanoSalon = { elementos: [], zonas: [] };
+
+/**
+ * HU-028 (BL-173): arma el JSON a guardar campo por campo, con los datos ya
+ * validados por PlanoDto. Así en la base solo queda la forma esperada, sin
+ * depender de que el ValidationPipe haya descartado propiedades extra.
+ */
+function aJsonPlano(plano: PlanoDto): PlanoSalon {
+  return {
+    elementos: plano.elementos.map(
+      ({ id, tipo, x, y, ancho, alto, rotacion }) => ({
+        id,
+        tipo,
+        x,
+        y,
+        ancho,
+        alto,
+        rotacion,
+      }),
+    ),
+    zonas: plano.zonas.map(({ id, etiqueta, x, y, ancho, alto }) => ({
+      id,
+      etiqueta,
+      x,
+      y,
+      ancho,
+      alto,
+    })),
+  };
 }
 
 @Injectable()
@@ -59,6 +113,29 @@ export class MesasService {
   }
 
   /**
+   * HU-028 (BL-173): elementos fijos y zonas del restaurante. Si nunca se
+   * guardó un plano, devuelve uno vacío: así un mapa de HU-016 (solo mesas)
+   * se dibuja igual que antes.
+   */
+  async obtenerPlano(tenantId: string, restauranteId: string) {
+    return this.tenantPrisma.runInTenantContext(tenantId, async (tx) => {
+      const restaurante = await tx.restaurante.findUnique({
+        where: { id: restauranteId },
+        select: { tenantId: true, plano: true },
+      });
+
+      // Mismo chequeo explícito de tenant que guardarLayout (TC-I-033).
+      if (restaurante?.tenantId !== tenantId) {
+        throw new NotFoundException(
+          'Restaurante no encontrado para este establecimiento',
+        );
+      }
+
+      return (restaurante.plano as unknown as PlanoSalon | null) ?? PLANO_VACIO;
+    });
+  }
+
+  /**
    * HU-016: guardado masivo del mapa completo desde el editor visual — el
    * caso de uso natural es "arrastrar N mesas y guardar una vez". Corre
    * dentro de una única transacción tenant-scoped (runInTenantContext ya la
@@ -68,12 +145,16 @@ export class MesasService {
    * Se borran primero (así una mesa nueva puede reusar el número de una
    * borrada) y solo si están LIBRES y sin pedidos. Si alguna no se puede
    * borrar, se rechaza el guardado completo con 409 y no cambia nada.
+   *
+   * HU-028 (BL-173): `plano` (elementos fijos y zonas) se guarda en la misma
+   * transacción. Si no viene, el plano guardado no se toca.
    */
   async guardarLayout(
     tenantId: string,
     restauranteId: string,
     mesas: MesaLayoutItemDto[],
     eliminar: string[] = [],
+    plano?: PlanoDto,
   ) {
     const idsActualizados = new Set(mesas.flatMap((m) => (m.id ? [m.id] : [])));
     if (eliminar.some((id) => idsActualizados.has(id))) {
@@ -97,6 +178,15 @@ export class MesasService {
         throw new NotFoundException(
           'Restaurante no encontrado para este establecimiento',
         );
+      }
+
+      if (plano !== undefined) {
+        await tx.restaurante.update({
+          where: { id: restauranteId },
+          data: {
+            plano: aJsonPlano(plano) as unknown as Prisma.InputJsonValue,
+          },
+        });
       }
 
       if (eliminar.length > 0) {
