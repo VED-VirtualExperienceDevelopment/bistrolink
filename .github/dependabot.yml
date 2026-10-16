@@ -1,0 +1,50 @@
+# Dependabot: actualizaciones de versiones (BL-220).
+# Unifica las dos configuraciones que había en main (esta y dependantbot.yml,
+# que tenía el nombre mal escrito y GitHub no leía).
+#
+# Dependabot lee este archivo desde la rama por defecto (develop) y abre los
+# PRs contra develop. Las alertas y los PRs de seguridad se activan aparte, en
+# Settings → Code security, y no dependen de este archivo.
+version: 2
+updates:
+  # Un solo lockfile en la raíz para los workspaces (apps/backend y apps/frontend).
+  - package-ecosystem: "npm"
+    directory: "/"
+    target-branch: "develop"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "America/Montevideo"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    # Las versiones menores y los parches llegan en un solo PR por semana.
+    # Las versiones mayores (por ejemplo, NestJS 11) llegan de a una, para
+    # revisarlas por separado.
+    groups:
+      npm-menores-y-parches:
+        update-types:
+          - "minor"
+          - "patch"
+
+  # Versiones de las actions de los workflows de .github/workflows.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    target-branch: "develop"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "ci"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    groups:
+      actions:
+        patterns:
+          - "*"
