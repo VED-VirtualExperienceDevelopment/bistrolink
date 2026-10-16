@@ -8,6 +8,17 @@ import { useKeycloakAuth } from "@/components/providers/KeycloakProvider";
 import { apiFetch, ApiError } from "@/lib/api-client";
 import { LeyendaEstadosMesa } from "./LeyendaEstadosMesa";
 import { MesaShape } from "./MesaShape";
+import { ZonaShape } from "./ZonaShape";
+import {
+  anchoNecesarioZonas,
+  errorEtiquetaZona,
+  LARGO_MAXIMO_ETIQUETA_ZONA,
+  MAXIMO_ZONAS_PLANO,
+  nuevaZona,
+  puedeAgregarZona,
+  acotarRecuadroZona,
+  semiExtensionZona,
+} from "./plano.utils";
 import {
   aGuardarLayoutItems,
   anchoNecesarioLienzo,
@@ -41,6 +52,7 @@ import type {
   MesaConLayout,
   MesaEstadoActualizadoPayload,
 } from "@/types/mesa";
+import type { ZonaPlano } from "@/types/plano";
 
 const WS_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 const ALTURA_STAGE = 600;
@@ -91,6 +103,14 @@ export function MapaMesasEditor({
   const [guardadoOk, setGuardadoOk] = useState(false);
 
   const [seleccionada, setSeleccionada] = useState<string | null>(null);
+  // HU-028 (BL-173): zonas del salón y la zona seleccionada. Una sola cosa
+  // seleccionada a la vez: elegir una zona deselecciona la mesa y al revés.
+  const [zonas, setZonas] = useState<ZonaPlano[]>([]);
+  const [zonaSeleccionada, setZonaSeleccionada] = useState<string | null>(null);
+  // Lo que se está escribiendo en "Nombre de la zona". Solo se pasa a la
+  // zona cuando es válido; si no, se muestra el error y la zona conserva el
+  // último nombre válido.
+  const [etiquetaEnEdicion, setEtiquetaEnEdicion] = useState("");
   // BL-58: mesas ya guardadas que el administrador quitó del mapa y que se
   // borran en el próximo guardado. Se guarda la mesa completa (no solo el
   // id) para poder devolverla al mapa si el guardado falla.
@@ -103,6 +123,8 @@ export function MapaMesasEditor({
   const contenedorRef = useRef<HTMLDivElement>(null);
   const transformerRef = useRef<Konva.Transformer>(null);
   const shapeRefs = useRef(new Map<string, Konva.Group>());
+  const transformerZonaRef = useRef<Konva.Transformer>(null);
+  const zonaRefs = useRef(new Map<string, Konva.Group>());
   const socketRef = useRef<Socket | null>(null);
   const inputNumeroRef = useRef<HTMLInputElement>(null);
   const [anchoStage, setAnchoStage] = useState(800);
@@ -166,10 +188,14 @@ export function MapaMesasEditor({
   // ancha): en ese caso aparece scroll horizontal en vez de esconderla.
   const lienzo: Lienzo = useMemo(
     () => ({
-      ancho: Math.max(anchoStage, anchoNecesarioLienzo(mesas)),
+      ancho: Math.max(
+        anchoStage,
+        anchoNecesarioLienzo(mesas),
+        anchoNecesarioZonas(zonas),
+      ),
       alto: ALTURA_STAGE,
     }),
-    [anchoStage, mesas],
+    [anchoStage, mesas, zonas],
   );
 
   // --- WebSocket: estado de ocupación en vivo ---------------------------------
@@ -222,6 +248,19 @@ export function MapaMesasEditor({
     }
   }, [seleccionada, puedeEditar, mesas]);
 
+  // HU-028 (BL-173): mismo mecanismo para la zona seleccionada, con su
+  // propio Transformer (las zonas no rotan y tienen otros límites de tamaño).
+  useEffect(() => {
+    const tr = transformerZonaRef.current;
+    if (!tr) return;
+    const nodo = zonaSeleccionada
+      ? zonaRefs.current.get(zonaSeleccionada)
+      : undefined;
+    tr.nodes(nodo && puedeEditar ? [nodo] : []);
+    tr.forceUpdate();
+    tr.getLayer()?.batchDraw();
+  }, [zonaSeleccionada, puedeEditar, zonas]);
+
   // El mensaje de "Guardado" no debe quedar pegado para siempre.
   useEffect(() => {
     if (!guardadoOk) return;
@@ -257,6 +296,23 @@ export function MapaMesasEditor({
 
   const duplicados = useMemo(() => numerosDuplicados(mesas), [mesas]);
 
+  const zonaActual = zonas.find((z) => z.id === zonaSeleccionada);
+  const errorEtiqueta = zonaActual
+    ? errorEtiquetaZona(etiquetaEnEdicion)
+    : null;
+
+  // --- Selección ------------------------------------------------------------------
+  function seleccionarMesa(clientId: string) {
+    setSeleccionada(clientId);
+    setZonaSeleccionada(null);
+  }
+
+  function seleccionarZona(zona: ZonaPlano) {
+    setZonaSeleccionada(zona.id);
+    setEtiquetaEnEdicion(zona.etiqueta);
+    setSeleccionada(null);
+  }
+
   // --- Handlers de edición -----------------------------------------------------
   function actualizarMesa(clientId: string, cambios: Partial<MesaEnEdicion>) {
     setMesas((prev) =>
@@ -276,7 +332,34 @@ export function MapaMesasEditor({
         { ...nueva, ...limitarCentro(nueva, semiExtension(nueva), lienzo) },
       ];
     });
-    setSeleccionada(clientId);
+    seleccionarMesa(clientId);
+  }
+
+  // --- Zonas (HU-028) -------------------------------------------------------------
+  function actualizarZona(id: string, cambios: Partial<ZonaPlano>) {
+    setZonas((prev) =>
+      prev.map((z) => (z.id === id ? { ...z, ...cambios } : z)),
+    );
+  }
+
+  function handleAgregarZona() {
+    if (!puedeAgregarZona(zonas)) return;
+    const zona = nuevaZona(crypto.randomUUID(), zonas, lienzo);
+    setZonas((prev) => [...prev, zona]);
+    seleccionarZona(zona);
+  }
+
+  function handleEliminarZona() {
+    if (!zonaSeleccionada) return;
+    setZonas((prev) => prev.filter((z) => z.id !== zonaSeleccionada));
+    setZonaSeleccionada(null);
+  }
+
+  function handleCambiarEtiqueta(valor: string) {
+    setEtiquetaEnEdicion(valor);
+    if (zonaSeleccionada && errorEtiquetaZona(valor) === null) {
+      actualizarZona(zonaSeleccionada, { etiqueta: valor.trim() });
+    }
   }
 
   function handleCambiarForma(forma: FormaMesa) {
@@ -312,6 +395,7 @@ export function MapaMesasEditor({
     // distinguir clic en el fondo de clic en un hijo.
     if (e.target === e.target.getStage()) {
       setSeleccionada(null);
+      setZonaSeleccionada(null);
     }
   }
 
@@ -419,6 +503,25 @@ export function MapaMesasEditor({
             </button>
             <button
               type="button"
+              onClick={handleAgregarZona}
+              disabled={!puedeAgregarZona(zonas)}
+              title={
+                puedeAgregarZona(zonas)
+                  ? undefined
+                  : `Se pueden agregar hasta ${MAXIMO_ZONAS_PLANO} zonas`
+              }
+              className="flex items-center gap-2 rounded-lg border border-outline-variant px-4 py-2 text-body-md text-on-surface-variant hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <span
+                aria-hidden="true"
+                className="material-symbols-outlined text-[20px]"
+              >
+                crop_free
+              </span>
+              <span>Agregar zona</span>
+            </button>
+            <button
+              type="button"
               onClick={handleEliminarSeleccionada}
               disabled={!puedeEliminarSeleccionada}
               title={
@@ -488,6 +591,53 @@ export function MapaMesasEditor({
         </div>
       )}
 
+      {puedeEditar && zonaActual && (
+        <div className="flex flex-wrap items-start gap-3 rounded-lg bg-surface-container-low px-4 py-3">
+          <div className="flex flex-col gap-1">
+            <label
+              htmlFor="etiqueta-zona"
+              className="text-label-md text-on-surface-variant"
+            >
+              Nombre de la zona
+            </label>
+            <input
+              id="etiqueta-zona"
+              type="text"
+              value={etiquetaEnEdicion}
+              maxLength={LARGO_MAXIMO_ETIQUETA_ZONA}
+              onChange={(e) => handleCambiarEtiqueta(e.target.value)}
+              aria-invalid={errorEtiqueta !== null}
+              aria-describedby={
+                errorEtiqueta ? "etiqueta-zona-error" : undefined
+              }
+              className="w-64 rounded-lg border border-outline-variant bg-surface px-3 py-1.5 text-body-md text-on-surface aria-[invalid=true]:border-error"
+            />
+            {errorEtiqueta && (
+              <p
+                id="etiqueta-zona-error"
+                role="alert"
+                className="text-label-sm text-error"
+              >
+                {errorEtiqueta}
+              </p>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={handleEliminarZona}
+            className="mt-6 flex items-center gap-2 rounded-lg border border-outline-variant px-4 py-1.5 text-body-md text-on-surface-variant hover:bg-surface-container"
+          >
+            <span
+              aria-hidden="true"
+              className="material-symbols-outlined text-[20px]"
+            >
+              delete
+            </span>
+            <span>Eliminar zona</span>
+          </button>
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <LeyendaEstadosMesa />
         <fieldset className="flex items-center gap-1 rounded-lg border border-outline-variant p-1">
@@ -550,6 +700,36 @@ export function MapaMesasEditor({
           onTouchStart={handleClickStage}
         >
           <Layer>
+            {/* HU-028 (BL-173): las zonas van primero para quedar debajo
+                de las mesas. */}
+            {zonas.map((zona) => (
+              <ZonaShape
+                key={zona.id}
+                ref={(nodo) => {
+                  if (nodo) zonaRefs.current.set(zona.id, nodo);
+                  else zonaRefs.current.delete(zona.id);
+                }}
+                zona={zona}
+                seleccionada={zona.id === zonaSeleccionada}
+                editable={puedeEditar}
+                lienzo={lienzo}
+                zoom={zoom}
+                onSeleccionar={() => seleccionarZona(zona)}
+                onCambiar={(cambios) => {
+                  // Agrandar una zona junto al borde puede dejar una parte
+                  // afuera: se reacomoda el centro para que entre entera.
+                  const actualizada = { ...zona, ...cambios };
+                  actualizarZona(zona.id, {
+                    ...cambios,
+                    ...limitarCentro(
+                      actualizada,
+                      semiExtensionZona(actualizada),
+                      lienzo,
+                    ),
+                  });
+                }}
+              />
+            ))}
             {mesas.map((mesa) => (
               <MesaShape
                 key={mesa.clientId}
@@ -569,7 +749,7 @@ export function MapaMesasEditor({
                 editable={puedeEditar}
                 lienzo={lienzo}
                 zoom={zoom}
-                onSeleccionar={() => setSeleccionada(mesa.clientId)}
+                onSeleccionar={() => seleccionarMesa(mesa.clientId)}
                 onArrastrar={(x, y) => actualizarMesa(mesa.clientId, { x, y })}
                 onTransformar={(cambios) => {
                   // Agrandar o rotar una mesa junto al borde puede dejar una
@@ -592,7 +772,7 @@ export function MapaMesasEditor({
                   });
                 }}
                 onEditarNumero={() => {
-                  setSeleccionada(mesa.clientId);
+                  seleccionarMesa(mesa.clientId);
                   setEditandoNumero({
                     clientId: mesa.clientId,
                     valor: String(mesa.numero),
@@ -615,6 +795,18 @@ export function MapaMesasEditor({
                 // El recuadro llega en píxeles de pantalla (con zoom).
                 boundBoxFunc={(oldBox, newBox) =>
                   tamanoMesaPermitido(newBox, zoom) ? newBox : oldBox
+                }
+              />
+            )}
+            {puedeEditar && (
+              <Transformer
+                ref={transformerZonaRef}
+                rotateEnabled={false}
+                // Ancho y alto independientes: una zona puede ser una franja.
+                keepRatio={false}
+                // El recuadro llega en píxeles de pantalla (con zoom).
+                boundBoxFunc={(oldBox, newBox) =>
+                  acotarRecuadroZona(oldBox, newBox, zoom, lienzo)
                 }
               />
             )}
