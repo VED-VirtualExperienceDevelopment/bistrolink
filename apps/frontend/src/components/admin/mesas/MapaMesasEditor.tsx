@@ -14,20 +14,24 @@ import {
   aplicarEstadoMesa,
   cambiarForma,
   idsAEliminar,
-  DIMENSION_MAXIMA_MESA,
-  DIMENSION_MINIMA_MESA,
   limitarCentro,
   mesasConLayoutAEdicion,
   normalizarRotacion,
   nuevaMesaEnEdicion,
   numerosDuplicados,
   parsearNumeroMesa,
+  porcentajeZoom,
   puedeEditarMapa,
   puedeEliminarMesa,
   quitarMesa,
   reubicarFueraDelLienzo,
   semiExtension,
   siguienteNumeroDisponible,
+  siguienteZoom,
+  tamanoMesaPermitido,
+  ZOOM_INICIAL,
+  ZOOM_MAXIMO,
+  ZOOM_MINIMO,
   type Lienzo,
   type MesaEnEdicion,
 } from "./mapa-mesas.utils";
@@ -102,6 +106,9 @@ export function MapaMesasEditor({
   const socketRef = useRef<Socket | null>(null);
   const inputNumeroRef = useRef<HTMLInputElement>(null);
   const [anchoStage, setAnchoStage] = useState(800);
+  // HU-028 (BL-173): zoom del mapa. Lo pueden usar ADMIN y MOZO; no se
+  // guarda (cada vez que se abre el mapa arranca en 100%).
+  const [zoom, setZoom] = useState<number>(ZOOM_INICIAL);
 
   // --- Carga inicial: GET /mesas/layout -------------------------------------
   const cargarLayout = useCallback(async () => {
@@ -480,14 +487,65 @@ export function MapaMesasEditor({
           </div>
         </div>
       )}
-      <LeyendaEstadosMesa />
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <LeyendaEstadosMesa />
+        <fieldset className="flex items-center gap-1 rounded-lg border border-outline-variant p-1">
+          <legend className="sr-only">Zoom del mapa</legend>
+          <button
+            type="button"
+            onClick={() => setZoom((z) => siguienteZoom(z, -1))}
+            disabled={zoom <= ZOOM_MINIMO}
+            aria-label="Alejar"
+            title="Alejar"
+            className="flex items-center rounded-md px-2 py-1 text-on-surface-variant hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <span
+              aria-hidden="true"
+              className="material-symbols-outlined text-[20px]"
+            >
+              zoom_out
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setZoom(ZOOM_INICIAL)}
+            title="Volver al 100%"
+            aria-label={`Zoom ${porcentajeZoom(zoom)}. Volver al 100%`}
+            className="min-w-[4rem] rounded-md px-2 py-1 text-center text-label-md text-on-surface-variant hover:bg-surface-container-low"
+          >
+            {porcentajeZoom(zoom)}
+          </button>
+          <button
+            type="button"
+            onClick={() => setZoom((z) => siguienteZoom(z, 1))}
+            disabled={zoom >= ZOOM_MAXIMO}
+            aria-label="Acercar"
+            title="Acercar"
+            className="flex items-center rounded-md px-2 py-1 text-on-surface-variant hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <span
+              aria-hidden="true"
+              className="material-symbols-outlined text-[20px]"
+            >
+              zoom_in
+            </span>
+          </button>
+        </fieldset>
+      </div>
+
       <div
         ref={contenedorRef}
-        className="relative w-full overflow-x-auto overflow-y-hidden rounded-xl border border-outline-variant bg-surface-container-lowest"
+        className="relative max-h-[640px] w-full overflow-auto rounded-xl border border-outline-variant bg-surface-container-lowest"
       >
+        {/* HU-028 (BL-173): el Stage se escala con el zoom. Las mesas siguen
+            en unidades del lienzo; si el mapa no entra, el contenedor
+            muestra scroll. */}
         <Stage
-          width={lienzo.ancho}
-          height={lienzo.alto}
+          width={lienzo.ancho * zoom}
+          height={lienzo.alto * zoom}
+          scaleX={zoom}
+          scaleY={zoom}
           onMouseDown={handleClickStage}
           onTouchStart={handleClickStage}
         >
@@ -510,6 +568,7 @@ export function MapaMesasEditor({
                 seleccionada={mesa.clientId === seleccionada}
                 editable={puedeEditar}
                 lienzo={lienzo}
+                zoom={zoom}
                 onSeleccionar={() => setSeleccionada(mesa.clientId)}
                 onArrastrar={(x, y) => actualizarMesa(mesa.clientId, { x, y })}
                 onTransformar={(cambios) => {
@@ -553,13 +612,9 @@ export function MapaMesasEditor({
                 }
                 // Entre el mínimo del editor y el máximo que acepta el backend
                 // (BL-58), para que un resize nunca termine en un 400 al guardar.
+                // El recuadro llega en píxeles de pantalla (con zoom).
                 boundBoxFunc={(oldBox, newBox) =>
-                  newBox.width < DIMENSION_MINIMA_MESA ||
-                  newBox.height < DIMENSION_MINIMA_MESA ||
-                  newBox.width > DIMENSION_MAXIMA_MESA ||
-                  newBox.height > DIMENSION_MAXIMA_MESA
-                    ? oldBox
-                    : newBox
+                  tamanoMesaPermitido(newBox, zoom) ? newBox : oldBox
                 }
               />
             )}

@@ -28,6 +28,7 @@ export interface MesaEnEdicion {
   alto: number;
   rotacion: number;
 }
+
 export const COLOR_POR_ESTADO: Record<EstadoMesa, string> = {
   LIBRE: "#4C9A5A",
   OCUPADA: "#BA1A1A",
@@ -406,5 +407,72 @@ export function aplicarEstadoMesa(
 ): MesaEnEdicion[] {
   return mesas.map((m) =>
     m.id === payload.mesaId ? { ...m, estado: payload.estado } : m,
+  );
+}
+
+// --- Zoom del mapa (HU-028, BL-173) ------------------------------------------
+
+/**
+ * Niveles de zoom de los botones + / −. El zoom solo cambia cómo se ve el
+ * mapa: las posiciones y tamaños que se guardan siguen en las unidades del
+ * lienzo (zoom 1), así que el mismo salón se ve igual en cualquier pantalla.
+ */
+export const NIVELES_ZOOM = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
+export const ZOOM_INICIAL = 1;
+export const ZOOM_MINIMO = NIVELES_ZOOM[0];
+export const ZOOM_MAXIMO = NIVELES_ZOOM[NIVELES_ZOOM.length - 1];
+
+/**
+ * Nivel siguiente (direccion 1) o anterior (direccion -1). En los extremos
+ * devuelve el mismo valor, para que el botón no haga nada.
+ */
+export function siguienteZoom(actual: number, direccion: 1 | -1): number {
+  const candidatos =
+    direccion === 1
+      ? NIVELES_ZOOM.filter((nivel) => nivel > actual)
+      : NIVELES_ZOOM.filter((nivel) => nivel < actual).reverse();
+  return candidatos[0] ?? actual;
+}
+
+/** Texto del nivel de zoom para mostrar al usuario: 1.25 → "125%". */
+export function porcentajeZoom(zoom: number): string {
+  return `${Math.round(zoom * 100)}%`;
+}
+
+/**
+ * Versión de limitarCentro para el dragBoundFunc de Konva con zoom. Konva le
+ * pasa la posición en píxeles de pantalla (ya multiplicada por el zoom del
+ * Stage): se pasa a unidades del lienzo, se acota y se vuelve a pantalla.
+ */
+export function limitarCentroEnPantalla(
+  pos: { x: number; y: number },
+  extension: { dx: number; dy: number },
+  lienzo: Lienzo,
+  zoom: number,
+): { x: number; y: number } {
+  const centro = limitarCentro(
+    { x: pos.x / zoom, y: pos.y / zoom },
+    extension,
+    lienzo,
+  );
+  return { x: centro.x * zoom, y: centro.y * zoom };
+}
+
+/**
+ * Para el boundBoxFunc del Transformer: el recuadro también llega en píxeles
+ * de pantalla. Se pasa a unidades del lienzo antes de comparar con los
+ * límites de tamaño de una mesa (BL-58).
+ */
+export function tamanoMesaPermitido(
+  recuadro: { width: number; height: number },
+  zoom: number,
+): boolean {
+  const ancho = recuadro.width / zoom;
+  const alto = recuadro.height / zoom;
+  return (
+    ancho >= DIMENSION_MINIMA_MESA &&
+    alto >= DIMENSION_MINIMA_MESA &&
+    ancho <= DIMENSION_MAXIMA_MESA &&
+    alto <= DIMENSION_MAXIMA_MESA
   );
 }

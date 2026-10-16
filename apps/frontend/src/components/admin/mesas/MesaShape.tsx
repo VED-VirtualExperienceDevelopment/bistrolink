@@ -8,7 +8,7 @@ import {
   BORDE_POR_ESTADO,
   COLOR_POR_ESTADO,
   dimensionesTrasTransformar,
-  limitarCentro,
+  limitarCentroEnPantalla,
   semiExtension,
   type Lienzo,
 } from "./mapa-mesas.utils";
@@ -29,6 +29,8 @@ export interface MesaShapeProps {
   editable: boolean;
   /** Área dibujable del editor: la mesa no se puede arrastrar fuera de ella. */
   lienzo: Lienzo;
+  /** HU-028 (BL-173): zoom actual del Stage, para acotar el arrastre. */
+  zoom: number;
   onSeleccionar: () => void;
   onArrastrar: (x: number, y: number) => void;
   onTransformar: (cambios: {
@@ -68,6 +70,7 @@ export const MesaShape = forwardRef<Konva.Group, MesaShapeProps>(
       seleccionada,
       editable,
       lienzo,
+      zoom,
       onSeleccionar,
       onArrastrar,
       onTransformar,
@@ -108,13 +111,14 @@ export const MesaShape = forwardRef<Konva.Group, MesaShapeProps>(
         y={y}
         rotation={rotacion}
         draggable={editable}
-        // Konva pasa la posición absoluta (relativa al Stage, que no tiene
-        // escala ni desplazamiento), así que coincide con x/y del layout.
+        // Konva pasa la posición absoluta, en píxeles de pantalla: con zoom
+        // (HU-028) ya no coincide con x/y del layout, por eso se convierte.
         dragBoundFunc={(pos) =>
-          limitarCentro(
+          limitarCentroEnPantalla(
             pos,
             semiExtension({ forma, ancho, alto, rotacion }),
             lienzo,
+            zoom,
           )
         }
         onClick={onSeleccionar}

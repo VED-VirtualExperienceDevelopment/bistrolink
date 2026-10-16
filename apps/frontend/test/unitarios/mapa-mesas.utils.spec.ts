@@ -4,16 +4,26 @@ import {
   BORDE_POR_ESTADO,
   COLOR_POR_ESTADO,
   DIMENSION_MINIMA_MESA,
+  DIMENSION_MAXIMA_MESA,
   dimensionesTrasTransformar,
   ETIQUETA_POR_ESTADO,
+  limitarCentro,
+  limitarCentroEnPantalla,
+  NIVELES_ZOOM,
   mesasConLayoutAEdicion,
   normalizarRotacion,
   nuevaMesaEnEdicion,
   numerosDuplicados,
   parsearNumeroMesa,
+  porcentajeZoom,
   posicionGridPorDefecto,
   puedeEditarMapa,
   siguienteNumeroDisponible,
+  siguienteZoom,
+  tamanoMesaPermitido,
+  ZOOM_INICIAL,
+  ZOOM_MAXIMO,
+  ZOOM_MINIMO,
   type MesaEnEdicion,
 } from "@/components/admin/mesas/mapa-mesas.utils";
 import {
@@ -558,5 +568,89 @@ describe("aplicarEstadoMesa (evento WS mesa:estado_actualizado)", () => {
   it("no modifica el array original", () => {
     aplicarEstadoMesa(mesas, { mesaId: "mesa-1", estado: "OCUPADA" });
     expect(mesas[0].estado).toBe("LIBRE");
+  });
+});
+
+describe("zoom del mapa (HU-028)", () => {
+  const lienzo = { ancho: 800, alto: 600 };
+  const extension = { dx: 40, dy: 40 };
+
+  it("arranca en 100% y el 100% es uno de los niveles", () => {
+    expect(ZOOM_INICIAL).toBe(1);
+    expect(NIVELES_ZOOM).toContain(ZOOM_INICIAL);
+  });
+
+  it("los niveles van de menor a mayor, sin repetidos", () => {
+    const ordenados = [...NIVELES_ZOOM].sort((a, b) => a - b);
+    expect([...NIVELES_ZOOM]).toEqual(ordenados);
+    expect(new Set(NIVELES_ZOOM).size).toBe(NIVELES_ZOOM.length);
+  });
+
+  it("acerca y aleja de a un nivel", () => {
+    expect(siguienteZoom(1, 1)).toBe(1.25);
+    expect(siguienteZoom(1, -1)).toBe(0.75);
+  });
+
+  it("no pasa de los extremos", () => {
+    expect(siguienteZoom(ZOOM_MAXIMO, 1)).toBe(ZOOM_MAXIMO);
+    expect(siguienteZoom(ZOOM_MINIMO, -1)).toBe(ZOOM_MINIMO);
+  });
+
+  it("desde un valor intermedio va al nivel más cercano en esa dirección", () => {
+    expect(siguienteZoom(1.1, 1)).toBe(1.25);
+    expect(siguienteZoom(1.1, -1)).toBe(1);
+  });
+
+  it("muestra el zoom como porcentaje", () => {
+    expect(porcentajeZoom(1)).toBe("100%");
+    expect(porcentajeZoom(0.75)).toBe("75%");
+    expect(porcentajeZoom(1.25)).toBe("125%");
+  });
+
+  it("con zoom 1 acota igual que limitarCentro", () => {
+    const pos = { x: 900, y: -10 };
+    expect(limitarCentroEnPantalla(pos, extension, lienzo, 1)).toEqual(
+      limitarCentro(pos, extension, lienzo),
+    );
+  });
+
+  it("con zoom 2 acota en píxeles de pantalla (el doble del lienzo)", () => {
+    // Borde derecho del lienzo: 800 - 40 = 760 → 1520 en pantalla.
+    expect(
+      limitarCentroEnPantalla({ x: 5000, y: 5000 }, extension, lienzo, 2),
+    ).toEqual({ x: 1520, y: 1120 });
+  });
+
+  it("con zoom 2 no mueve una mesa que ya está dentro del lienzo", () => {
+    expect(
+      limitarCentroEnPantalla({ x: 400, y: 300 }, extension, lienzo, 2),
+    ).toEqual({ x: 400, y: 300 });
+  });
+
+  it("con zoom 0.5 acota en píxeles de pantalla (la mitad del lienzo)", () => {
+    expect(
+      limitarCentroEnPantalla({ x: 0, y: 0 }, extension, lienzo, 0.5),
+    ).toEqual({ x: 20, y: 20 });
+  });
+
+  it("valida el tamaño de la mesa en unidades del lienzo, no de pantalla", () => {
+    // 1200 px en pantalla con zoom 2 = 600 en el lienzo: permitido.
+    expect(tamanoMesaPermitido({ width: 1200, height: 1200 }, 2)).toBe(true);
+    // El máximo en pantalla con zoom 0.5 equivale al doble en el lienzo.
+    expect(
+      tamanoMesaPermitido(
+        { width: DIMENSION_MAXIMA_MESA, height: DIMENSION_MAXIMA_MESA },
+        0.5,
+      ),
+    ).toBe(false);
+  });
+
+  it("rechaza una mesa más chica que el mínimo", () => {
+    expect(
+      tamanoMesaPermitido({ width: DIMENSION_MINIMA_MESA - 1, height: 80 }, 1),
+    ).toBe(false);
+    expect(
+      tamanoMesaPermitido({ width: DIMENSION_MINIMA_MESA, height: 80 }, 1),
+    ).toBe(true);
   });
 });
