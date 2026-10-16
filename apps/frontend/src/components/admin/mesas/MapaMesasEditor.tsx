@@ -760,13 +760,14 @@ export function MapaMesasEditor({
         </div>
       )}
 
-      {/* HU-028 (BL-173): barra de propiedades de alto fijo. Muestra las
-          acciones de lo seleccionado (mesa, zona o elemento) sin empujar el
-          mapa hacia abajo al cambiar de selección. */}
+      {/* HU-028 (BL-173): barra de propiedades. Muestra las acciones de lo
+          seleccionado (mesa, zona o elemento). Todo va en una sola línea y la
+          barra tiene la altura de esa línea (min-h): así se ajusta al
+          contenido y el mapa no salta al cambiar de selección. */}
       {puedeEditar && (
         <section
           aria-label="Propiedades de la selección"
-          className="flex min-h-[6.5rem] flex-wrap items-center gap-3 rounded-lg bg-surface-container-low px-4 py-3"
+          className="flex min-h-[3.75rem] flex-wrap items-center gap-x-3 gap-y-2 rounded-lg bg-surface-container-low px-4 py-2"
         >
           {mesaSeleccionada && (
             <>
@@ -821,35 +822,24 @@ export function MapaMesasEditor({
 
           {zonaActual && (
             <>
-              <div className="flex flex-col gap-1">
-                <label
-                  htmlFor="etiqueta-zona"
-                  className="text-label-md text-on-surface-variant"
-                >
-                  Nombre de la zona
-                </label>
-                <input
-                  id="etiqueta-zona"
-                  type="text"
-                  value={etiquetaEnEdicion}
-                  maxLength={LARGO_MAXIMO_ETIQUETA_ZONA}
-                  onChange={(e) => handleCambiarEtiqueta(e.target.value)}
-                  aria-invalid={errorEtiqueta !== null}
-                  aria-describedby={
-                    errorEtiqueta ? "etiqueta-zona-error" : undefined
-                  }
-                  className="w-64 rounded-lg border border-outline-variant bg-surface px-3 py-1.5 text-body-md text-on-surface aria-[invalid=true]:border-error"
-                />
-                {errorEtiqueta && (
-                  <p
-                    id="etiqueta-zona-error"
-                    role="alert"
-                    className="text-label-sm text-error"
-                  >
-                    {errorEtiqueta}
-                  </p>
-                )}
-              </div>
+              <label
+                htmlFor="etiqueta-zona"
+                className="text-label-md text-on-surface"
+              >
+                Nombre de la zona
+              </label>
+              <input
+                id="etiqueta-zona"
+                type="text"
+                value={etiquetaEnEdicion}
+                maxLength={LARGO_MAXIMO_ETIQUETA_ZONA}
+                onChange={(e) => handleCambiarEtiqueta(e.target.value)}
+                aria-invalid={errorEtiqueta !== null}
+                aria-describedby={
+                  errorEtiqueta ? "etiqueta-zona-error" : undefined
+                }
+                className="w-64 rounded-lg border border-outline-variant bg-surface px-3 py-1.5 text-body-md text-on-surface aria-[invalid=true]:border-error"
+              />
               <button
                 type="button"
                 onClick={handleEliminarZona}
@@ -863,6 +853,15 @@ export function MapaMesasEditor({
                 </span>
                 <span>Eliminar zona</span>
               </button>
+              {errorEtiqueta && (
+                <p
+                  id="etiqueta-zona-error"
+                  role="alert"
+                  className="text-label-sm text-error"
+                >
+                  {errorEtiqueta}
+                </p>
+              )}
             </>
           )}
 
