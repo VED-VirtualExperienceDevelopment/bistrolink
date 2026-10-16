@@ -1,9 +1,18 @@
-import type { ZonaPlano } from "@/types/plano";
-import { limitarCentro, type Lienzo } from "./mapa-mesas.utils";
+import type {
+  ElementoPlano,
+  TipoElementoPlano,
+  ZonaPlano,
+} from "@/types/plano";
+import {
+  limitarCentro,
+  normalizarRotacion,
+  semiExtension,
+  type Lienzo,
+} from "./mapa-mesas.utils";
 
 /**
- * HU-028 (BL-173): lógica pura del plano del salón (zonas y, en el paso
- * siguiente, elementos fijos). Los límites copian los de PlanoDto del
+ * HU-028 (BL-173): lógica pura del plano del salón (zonas y elementos
+ * fijos). Los límites copian los de PlanoDto del
  * backend, para que lo que arma el editor nunca termine en un 400 al guardar.
  */
 
@@ -123,4 +132,190 @@ export function anchoNecesarioZonas(zonas: ZonaPlano[]): number {
     (maximo, zona) => Math.max(maximo, zona.x + zona.ancho / 2),
     0,
   );
+}
+
+// --- Elementos fijos ------------------------------------------------------------
+
+export const MAXIMO_ELEMENTOS_PLANO = 100;
+/** Más chico no entra el ícono. */
+export const DIMENSION_MINIMA_ELEMENTO = 20;
+/** Mismo tope que el backend (DIMENSION_MAXIMA_MESA en PlanoDto). */
+export const DIMENSION_MAXIMA_ELEMENTO = 1_000;
+
+/** Tamaño con el que aparece cada elemento nuevo (después se puede cambiar). */
+export const TAMANO_POR_ELEMENTO: Record<
+  TipoElementoPlano,
+  { ancho: number; alto: number }
+> = {
+  PUERTA: { ancho: 70, alto: 24 },
+  BANO: { ancho: 80, alto: 80 },
+  COCINA: { ancho: 160, alto: 110 },
+  CAJA: { ancho: 90, alto: 60 },
+  BARRA: { ancho: 220, alto: 60 },
+};
+
+/**
+ * Mitad del ancho y del alto que ocupa en pantalla. Un elemento se rota
+ * como una mesa rectangular, así que se reusa semiExtension (BL-58): con la
+ * caja envolvente, el elemento entra entero en el lienzo en cualquier ángulo.
+ */
+export function semiExtensionElemento(
+  elemento: Pick<ElementoPlano, "ancho" | "alto" | "rotacion">,
+): { dx: number; dy: number } {
+  return semiExtension({ forma: "RECTANGULO", ...elemento });
+}
+
+export function puedeAgregarElemento(elementos: ElementoPlano[]): boolean {
+  return elementos.length < MAXIMO_ELEMENTOS_PLANO;
+}
+
+/**
+ * Elemento nuevo en el centro del lienzo. Cada uno se corre un poco para que
+ * no queden apilados, y se acota para que aparezca entero a la vista.
+ */
+export function nuevoElemento(
+  id: string,
+  tipo: TipoElementoPlano,
+  elementos: ElementoPlano[],
+  lienzo: Lienzo,
+): ElementoPlano {
+  const desplazamiento = (elementos.length % 5) * 40;
+  const elemento: ElementoPlano = {
+    id,
+    tipo,
+    x: lienzo.ancho / 2 + desplazamiento,
+    y: lienzo.alto / 2 + desplazamiento,
+    ...TAMANO_POR_ELEMENTO[tipo],
+    rotacion: 0,
+  };
+  return {
+    ...elemento,
+    ...limitarCentro(elemento, semiExtensionElemento(elemento), lienzo),
+  };
+}
+
+/**
+ * Botón "Girar 90°": alternativa al giro con el mouse (por ejemplo, para
+ * poner una puerta en una pared lateral). Reacomoda el centro para que el
+ * elemento girado siga entrando en el lienzo.
+ */
+export function girarElemento90(
+  elemento: ElementoPlano,
+  lienzo: Lienzo,
+): Pick<ElementoPlano, "x" | "y" | "rotacion"> {
+  const rotacion = normalizarRotacion(elemento.rotacion + 90);
+  const girado = { ...elemento, rotacion };
+  return {
+    rotacion,
+    ...limitarCentro(girado, semiExtensionElemento(girado), lienzo),
+  };
+}
+
+/** Para el boundBoxFunc del Transformer (recuadro en píxeles de pantalla). */
+export function tamanoElementoPermitido(
+  recuadro: { width: number; height: number },
+  zoom: number,
+): boolean {
+  const ancho = recuadro.width / zoom;
+  const alto = recuadro.height / zoom;
+  return (
+    ancho >= DIMENSION_MINIMA_ELEMENTO &&
+    alto >= DIMENSION_MINIMA_ELEMENTO &&
+    ancho <= DIMENSION_MAXIMA_ELEMENTO &&
+    alto <= DIMENSION_MAXIMA_ELEMENTO
+  );
+}
+
+export function dimensionesElementoTrasTransformar(
+  ancho: number,
+  alto: number,
+  scaleX: number,
+  scaleY: number,
+): { ancho: number; alto: number } {
+  const acotar = (valor: number) =>
+    Math.min(
+      DIMENSION_MAXIMA_ELEMENTO,
+      Math.max(DIMENSION_MINIMA_ELEMENTO, valor),
+    );
+  return { ancho: acotar(ancho * scaleX), alto: acotar(alto * scaleY) };
+}
+
+/** Ancho que necesita el lienzo para mostrar todos los elementos enteros. */
+export function anchoNecesarioElementos(elementos: ElementoPlano[]): number {
+  return elementos.reduce(
+    (maximo, elemento) =>
+      Math.max(maximo, elemento.x + semiExtensionElemento(elemento).dx),
+    0,
+  );
+}
+
+const TAMANO_MINIMO_ICONO = 12;
+const TAMANO_MAXIMO_ICONO = 32;
+const ALTO_ETIQUETA = 14; // fontSize 12
+const ANCHO_POR_LETRA = 7; // aproximado, fontSize 12
+const SEPARACION = 4;
+
+export interface DisposicionElemento {
+  icono: { x: number; y: number; tamano: number };
+  etiqueta: {
+    x: number;
+    y: number;
+    ancho: number;
+    alineacion: "center" | "left";
+  } | null;
+}
+
+/**
+ * Dónde van el ícono y el nombre dentro del elemento, relativo a su centro.
+ * El contenido se dibuja siempre derecho (como el número de una mesa), así
+ * que se calcula sobre lo que ocupa en pantalla (la caja envolvente):
+ * - con espacio de alto, el nombre va debajo del ícono;
+ * - con espacio de ancho, a la derecha (una barra o una puerta horizontal);
+ * - si no entra, solo el ícono.
+ * Devuelve la esquina superior izquierda del ícono.
+ */
+export function disposicionElemento(
+  elemento: Pick<ElementoPlano, "ancho" | "alto" | "rotacion">,
+  etiqueta: string,
+): DisposicionElemento {
+  const { dx, dy } = semiExtensionElemento(elemento);
+  const ancho = dx * 2;
+  const alto = dy * 2;
+  const tamano = Math.min(
+    TAMANO_MAXIMO_ICONO,
+    Math.max(TAMANO_MINIMO_ICONO, Math.min(ancho, alto) - 8),
+  );
+  const anchoTexto = etiqueta.length * ANCHO_POR_LETRA;
+
+  if (
+    alto >= tamano + SEPARACION + ALTO_ETIQUETA + 8 &&
+    ancho >= anchoTexto + 8
+  ) {
+    const arriba = -(tamano + SEPARACION + ALTO_ETIQUETA) / 2;
+    return {
+      icono: { x: -tamano / 2, y: arriba, tamano },
+      etiqueta: {
+        x: -ancho / 2,
+        y: arriba + tamano + SEPARACION,
+        ancho,
+        alineacion: "center",
+      },
+    };
+  }
+
+  const anchoTotal = tamano + SEPARACION + anchoTexto;
+  if (ancho >= anchoTotal + 8) {
+    const izquierda = -anchoTotal / 2;
+    return {
+      icono: { x: izquierda, y: -tamano / 2, tamano },
+      etiqueta: {
+        x: izquierda + tamano + SEPARACION,
+        y: -ALTO_ETIQUETA / 2,
+        ancho: anchoTexto + 8,
+        alineacion: "left",
+      },
+    };
+  }
+
+  return { icono: { x: -tamano / 2, y: -tamano / 2, tamano }, etiqueta: null };
 }

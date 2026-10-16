@@ -1,6 +1,18 @@
 import {
   acotarRecuadroZona,
+  anchoNecesarioElementos,
   anchoNecesarioZonas,
+  DIMENSION_MAXIMA_ELEMENTO,
+  DIMENSION_MINIMA_ELEMENTO,
+  dimensionesElementoTrasTransformar,
+  disposicionElemento,
+  girarElemento90,
+  MAXIMO_ELEMENTOS_PLANO,
+  nuevoElemento,
+  puedeAgregarElemento,
+  semiExtensionElemento,
+  TAMANO_POR_ELEMENTO,
+  tamanoElementoPermitido,
   DIMENSION_MAXIMA_ZONA,
   DIMENSION_MINIMA_ZONA,
   dimensionesZonaTrasTransformar,
@@ -12,7 +24,12 @@ import {
   semiExtensionZona,
   siguienteEtiquetaZona,
 } from "@/components/admin/mesas/plano.utils";
-import type { ZonaPlano } from "@/types/plano";
+import { ICONO_POR_ELEMENTO } from "@/components/admin/mesas/plano-iconos";
+import {
+  TIPOS_ELEMENTO_PLANO,
+  type ElementoPlano,
+  type ZonaPlano,
+} from "@/types/plano";
 
 /** HU-028 (BL-173): zonas del plano del salón. */
 
@@ -182,5 +199,196 @@ describe("anchoNecesarioZonas", () => {
     expect(
       anchoNecesarioZonas([zona({ x: 200 }), zona({ x: 1000, ancho: 400 })]),
     ).toBe(1200);
+  });
+});
+
+// --- Elementos fijos --------------------------------------------------------------
+
+function elemento(parcial: Partial<ElementoPlano> = {}): ElementoPlano {
+  return {
+    id: "e1",
+    tipo: "BARRA",
+    x: 400,
+    y: 300,
+    ancho: 220,
+    alto: 60,
+    rotacion: 0,
+    ...parcial,
+  };
+}
+
+describe("ICONO_POR_ELEMENTO y TAMANO_POR_ELEMENTO", () => {
+  it("cada tipo tiene nombre, ícono, trazo y tamaño por defecto", () => {
+    for (const tipo of TIPOS_ELEMENTO_PLANO) {
+      const { etiqueta, icono, trazo } = ICONO_POR_ELEMENTO[tipo];
+      expect(etiqueta.length).toBeGreaterThan(0);
+      expect(icono).toMatch(/^[a-z_0-9]+$/);
+      expect(trazo).toMatch(/^M/);
+      const { ancho, alto } = TAMANO_POR_ELEMENTO[tipo];
+      expect(Math.min(ancho, alto)).toBeGreaterThanOrEqual(
+        DIMENSION_MINIMA_ELEMENTO,
+      );
+    }
+  });
+});
+
+describe("nuevoElemento", () => {
+  it.each(TIPOS_ELEMENTO_PLANO)(
+    "crea un/a %s sin rotar, con su tamaño, dentro del lienzo",
+    (tipo) => {
+      const e = nuevoElemento("x", tipo, [], LIENZO);
+      expect(e).toMatchObject({ id: "x", tipo, rotacion: 0 });
+      expect(e.ancho).toBe(TAMANO_POR_ELEMENTO[tipo].ancho);
+      expect(e.x - e.ancho / 2).toBeGreaterThanOrEqual(0);
+      expect(e.x + e.ancho / 2).toBeLessThanOrEqual(LIENZO.ancho);
+      expect(e.y + e.alto / 2).toBeLessThanOrEqual(LIENZO.alto);
+    },
+  );
+
+  it("corre cada elemento nuevo para que no queden apilados", () => {
+    const primero = nuevoElemento("a", "CAJA", [], LIENZO);
+    const segundo = nuevoElemento("b", "CAJA", [primero], LIENZO);
+    expect(segundo.x).not.toBe(primero.x);
+  });
+});
+
+describe("puedeAgregarElemento", () => {
+  it("permite agregar hasta el máximo del backend", () => {
+    const lista = Array.from({ length: MAXIMO_ELEMENTOS_PLANO - 1 }, () =>
+      elemento(),
+    );
+    expect(puedeAgregarElemento(lista)).toBe(true);
+    expect(puedeAgregarElemento([...lista, elemento()])).toBe(false);
+  });
+});
+
+describe("semiExtensionElemento", () => {
+  it("sin rotar es la mitad del ancho y del alto", () => {
+    expect(semiExtensionElemento(elemento())).toEqual({ dx: 110, dy: 30 });
+  });
+
+  it("rotado 90° intercambia ancho y alto", () => {
+    const { dx, dy } = semiExtensionElemento(elemento({ rotacion: 90 }));
+    expect(dx).toBeCloseTo(30);
+    expect(dy).toBeCloseTo(110);
+  });
+});
+
+describe("girarElemento90", () => {
+  it("suma 90° y vuelve a 0 después de 270°", () => {
+    expect(girarElemento90(elemento(), LIENZO).rotacion).toBe(90);
+    expect(girarElemento90(elemento({ rotacion: 270 }), LIENZO).rotacion).toBe(
+      0,
+    );
+  });
+
+  it("si al girar se sale del lienzo, lo reacomoda", () => {
+    // Barra horizontal pegada abajo: girada mide 220 de alto.
+    const pegada = elemento({ y: LIENZO.alto - 30 });
+    const girada = girarElemento90(pegada, LIENZO);
+    expect(girada.y + 110).toBeCloseTo(LIENZO.alto);
+  });
+
+  it("si entra, no lo mueve", () => {
+    const girada = girarElemento90(elemento(), LIENZO);
+    expect({ x: girada.x, y: girada.y }).toEqual({ x: 400, y: 300 });
+  });
+});
+
+describe("tamanoElementoPermitido", () => {
+  it("acepta entre el mínimo y el máximo", () => {
+    expect(tamanoElementoPermitido({ width: 70, height: 24 }, 1)).toBe(true);
+    expect(
+      tamanoElementoPermitido(
+        { width: DIMENSION_MINIMA_ELEMENTO - 1, height: 24 },
+        1,
+      ),
+    ).toBe(false);
+    expect(
+      tamanoElementoPermitido(
+        { width: DIMENSION_MAXIMA_ELEMENTO + 1, height: 24 },
+        1,
+      ),
+    ).toBe(false);
+  });
+
+  it("con zoom compara en unidades del lienzo", () => {
+    // 30 px en pantalla con zoom 2 = 15 en el lienzo: menos que el mínimo.
+    expect(tamanoElementoPermitido({ width: 30, height: 60 }, 2)).toBe(false);
+  });
+});
+
+describe("dimensionesElementoTrasTransformar", () => {
+  it("multiplica por la escala y respeta los topes", () => {
+    expect(dimensionesElementoTrasTransformar(100, 50, 2, 0.1)).toEqual({
+      ancho: 200,
+      alto: DIMENSION_MINIMA_ELEMENTO,
+    });
+    expect(dimensionesElementoTrasTransformar(600, 50, 3, 1).ancho).toBe(
+      DIMENSION_MAXIMA_ELEMENTO,
+    );
+  });
+});
+
+describe("anchoNecesarioElementos", () => {
+  it("considera la rotación (caja envolvente)", () => {
+    expect(anchoNecesarioElementos([elemento({ x: 900 })])).toBe(1010);
+    expect(
+      anchoNecesarioElementos([elemento({ x: 900, rotacion: 90 })]),
+    ).toBeCloseTo(930);
+  });
+});
+
+describe("disposicionElemento", () => {
+  it("con lugar de alto, el nombre va debajo del ícono", () => {
+    const d = disposicionElemento({ ancho: 80, alto: 80, rotacion: 0 }, "Baño");
+    expect(d.etiqueta?.alineacion).toBe("center");
+    expect(d.etiqueta!.y).toBeGreaterThan(d.icono.y);
+  });
+
+  it("en un elemento bajo y ancho, el nombre va a la derecha", () => {
+    const d = disposicionElemento(
+      { ancho: 220, alto: 40, rotacion: 0 },
+      "Barra",
+    );
+    expect(d.etiqueta?.alineacion).toBe("left");
+    expect(d.etiqueta!.x).toBeGreaterThan(d.icono.x);
+  });
+
+  it("si no entra el nombre, muestra solo el ícono", () => {
+    const d = disposicionElemento(
+      { ancho: 40, alto: 24, rotacion: 0 },
+      "Puerta",
+    );
+    expect(d.etiqueta).toBeNull();
+  });
+
+  it("calcula sobre lo que ocupa en pantalla: rotado 90° usa el alto como ancho", () => {
+    const horizontal = disposicionElemento(
+      { ancho: 220, alto: 50, rotacion: 0 },
+      "Barra",
+    );
+    const vertical = disposicionElemento(
+      { ancho: 220, alto: 50, rotacion: 90 },
+      "Barra",
+    );
+    expect(horizontal.etiqueta?.alineacion).toBe("left");
+    expect(vertical.etiqueta?.alineacion).toBe("center");
+  });
+
+  it("el ícono queda dentro del elemento y entre 12 y 32 px", () => {
+    for (const tipo of TIPOS_ELEMENTO_PLANO) {
+      const { ancho, alto } = TAMANO_POR_ELEMENTO[tipo];
+      const { icono } = disposicionElemento(
+        { ancho, alto, rotacion: 0 },
+        ICONO_POR_ELEMENTO[tipo].etiqueta,
+      );
+      expect(icono.tamano).toBeGreaterThanOrEqual(12);
+      expect(icono.tamano).toBeLessThanOrEqual(32);
+      expect(icono.x).toBeGreaterThanOrEqual(-ancho / 2);
+      expect(icono.x + icono.tamano).toBeLessThanOrEqual(ancho / 2);
+      expect(icono.y).toBeGreaterThanOrEqual(-alto / 2);
+      expect(icono.y + icono.tamano).toBeLessThanOrEqual(alto / 2);
+    }
   });
 });

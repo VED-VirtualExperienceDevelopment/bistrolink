@@ -7,17 +7,26 @@ import { io, type Socket } from "socket.io-client";
 import { useKeycloakAuth } from "@/components/providers/KeycloakProvider";
 import { apiFetch, ApiError } from "@/lib/api-client";
 import { LeyendaEstadosMesa } from "./LeyendaEstadosMesa";
+import { ElementoShape } from "./ElementoShape";
 import { MesaShape } from "./MesaShape";
+import { ICONO_POR_ELEMENTO } from "./plano-iconos";
 import { ZonaShape } from "./ZonaShape";
 import {
+  acotarRecuadroZona,
+  anchoNecesarioElementos,
   anchoNecesarioZonas,
   errorEtiquetaZona,
+  girarElemento90,
   LARGO_MAXIMO_ETIQUETA_ZONA,
+  MAXIMO_ELEMENTOS_PLANO,
   MAXIMO_ZONAS_PLANO,
   nuevaZona,
+  nuevoElemento,
+  puedeAgregarElemento,
   puedeAgregarZona,
-  acotarRecuadroZona,
+  semiExtensionElemento,
   semiExtensionZona,
+  tamanoElementoPermitido,
 } from "./plano.utils";
 import {
   aGuardarLayoutItems,
@@ -52,7 +61,12 @@ import type {
   MesaConLayout,
   MesaEstadoActualizadoPayload,
 } from "@/types/mesa";
-import type { ZonaPlano } from "@/types/plano";
+import {
+  TIPOS_ELEMENTO_PLANO,
+  type ElementoPlano,
+  type TipoElementoPlano,
+  type ZonaPlano,
+} from "@/types/plano";
 
 const WS_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 const ALTURA_STAGE = 600;
@@ -111,6 +125,11 @@ export function MapaMesasEditor({
   // zona cuando es válido; si no, se muestra el error y la zona conserva el
   // último nombre válido.
   const [etiquetaEnEdicion, setEtiquetaEnEdicion] = useState("");
+  // HU-028 (BL-173): elementos fijos (puerta, baño, cocina, caja, barra).
+  const [elementos, setElementos] = useState<ElementoPlano[]>([]);
+  const [elementoSeleccionado, setElementoSeleccionado] = useState<
+    string | null
+  >(null);
   // BL-58: mesas ya guardadas que el administrador quitó del mapa y que se
   // borran en el próximo guardado. Se guarda la mesa completa (no solo el
   // id) para poder devolverla al mapa si el guardado falla.
@@ -125,6 +144,8 @@ export function MapaMesasEditor({
   const shapeRefs = useRef(new Map<string, Konva.Group>());
   const transformerZonaRef = useRef<Konva.Transformer>(null);
   const zonaRefs = useRef(new Map<string, Konva.Group>());
+  const transformerElementoRef = useRef<Konva.Transformer>(null);
+  const elementoRefs = useRef(new Map<string, Konva.Group>());
   const socketRef = useRef<Socket | null>(null);
   const inputNumeroRef = useRef<HTMLInputElement>(null);
   const [anchoStage, setAnchoStage] = useState(800);
@@ -192,10 +213,11 @@ export function MapaMesasEditor({
         anchoStage,
         anchoNecesarioLienzo(mesas),
         anchoNecesarioZonas(zonas),
+        anchoNecesarioElementos(elementos),
       ),
       alto: ALTURA_STAGE,
     }),
-    [anchoStage, mesas, zonas],
+    [anchoStage, mesas, zonas, elementos],
   );
 
   // --- WebSocket: estado de ocupación en vivo ---------------------------------
@@ -261,6 +283,19 @@ export function MapaMesasEditor({
     tr.getLayer()?.batchDraw();
   }, [zonaSeleccionada, puedeEditar, zonas]);
 
+  // Y para el elemento fijo seleccionado (tercer Transformer: rota, con
+  // tamaños propios).
+  useEffect(() => {
+    const tr = transformerElementoRef.current;
+    if (!tr) return;
+    const nodo = elementoSeleccionado
+      ? elementoRefs.current.get(elementoSeleccionado)
+      : undefined;
+    tr.nodes(nodo && puedeEditar ? [nodo] : []);
+    tr.forceUpdate();
+    tr.getLayer()?.batchDraw();
+  }, [elementoSeleccionado, puedeEditar, elementos]);
+
   // El mensaje de "Guardado" no debe quedar pegado para siempre.
   useEffect(() => {
     if (!guardadoOk) return;
@@ -300,17 +335,27 @@ export function MapaMesasEditor({
   const errorEtiqueta = zonaActual
     ? errorEtiquetaZona(etiquetaEnEdicion)
     : null;
+  const elementoActual = elementos.find((e) => e.id === elementoSeleccionado);
 
   // --- Selección ------------------------------------------------------------------
+  // Una sola cosa seleccionada a la vez: mesa, zona o elemento fijo.
   function seleccionarMesa(clientId: string) {
     setSeleccionada(clientId);
     setZonaSeleccionada(null);
+    setElementoSeleccionado(null);
   }
 
   function seleccionarZona(zona: ZonaPlano) {
     setZonaSeleccionada(zona.id);
     setEtiquetaEnEdicion(zona.etiqueta);
     setSeleccionada(null);
+    setElementoSeleccionado(null);
+  }
+
+  function seleccionarElemento(id: string) {
+    setElementoSeleccionado(id);
+    setSeleccionada(null);
+    setZonaSeleccionada(null);
   }
 
   // --- Handlers de edición -----------------------------------------------------
@@ -362,6 +407,39 @@ export function MapaMesasEditor({
     }
   }
 
+  // --- Elementos fijos (HU-028) ------------------------------------------------
+  function actualizarElemento(id: string, cambios: Partial<ElementoPlano>) {
+    setElementos((prev) =>
+      prev.map((e) => (e.id === id ? { ...e, ...cambios } : e)),
+    );
+  }
+
+  function handleAgregarElemento(tipo: TipoElementoPlano) {
+    if (!puedeAgregarElemento(elementos)) return;
+    const elemento = nuevoElemento(
+      crypto.randomUUID(),
+      tipo,
+      elementos,
+      lienzo,
+    );
+    setElementos((prev) => [...prev, elemento]);
+    seleccionarElemento(elemento.id);
+  }
+
+  function handleGirarElemento() {
+    if (!elementoActual) return;
+    actualizarElemento(
+      elementoActual.id,
+      girarElemento90(elementoActual, lienzo),
+    );
+  }
+
+  function handleEliminarElemento() {
+    if (!elementoSeleccionado) return;
+    setElementos((prev) => prev.filter((e) => e.id !== elementoSeleccionado));
+    setElementoSeleccionado(null);
+  }
+
   function handleCambiarForma(forma: FormaMesa) {
     if (!mesaSeleccionada) return;
     const cambios = cambiarForma(mesaSeleccionada, forma);
@@ -396,6 +474,7 @@ export function MapaMesasEditor({
     if (e.target === e.target.getStage()) {
       setSeleccionada(null);
       setZonaSeleccionada(null);
+      setElementoSeleccionado(null);
     }
   }
 
@@ -520,6 +599,34 @@ export function MapaMesasEditor({
               </span>
               <span>Agregar zona</span>
             </button>
+            <fieldset
+              disabled={!puedeAgregarElemento(elementos)}
+              title={
+                puedeAgregarElemento(elementos)
+                  ? undefined
+                  : `Se pueden agregar hasta ${MAXIMO_ELEMENTOS_PLANO} elementos`
+              }
+              className="flex flex-wrap items-center gap-1 rounded-lg border border-outline-variant p-1 disabled:opacity-50"
+            >
+              <legend className="sr-only">Agregar elemento fijo</legend>
+              {TIPOS_ELEMENTO_PLANO.map((tipo) => (
+                <button
+                  key={tipo}
+                  type="button"
+                  onClick={() => handleAgregarElemento(tipo)}
+                  title={`Agregar ${ICONO_POR_ELEMENTO[tipo].etiqueta.toLowerCase()}`}
+                  className="flex items-center gap-1 rounded-md px-3 py-1.5 text-body-sm text-on-surface-variant hover:bg-surface-container-low disabled:cursor-not-allowed"
+                >
+                  <span
+                    aria-hidden="true"
+                    className="material-symbols-outlined text-[18px]"
+                  >
+                    {ICONO_POR_ELEMENTO[tipo].icono}
+                  </span>
+                  <span>{ICONO_POR_ELEMENTO[tipo].etiqueta}</span>
+                </button>
+              ))}
+            </fieldset>
             <button
               type="button"
               onClick={handleEliminarSeleccionada}
@@ -638,6 +745,49 @@ export function MapaMesasEditor({
         </div>
       )}
 
+      {puedeEditar && elementoActual && (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg bg-surface-container-low px-4 py-3">
+          <p className="flex items-center gap-2 text-label-md text-on-surface-variant">
+            <span
+              aria-hidden="true"
+              className="material-symbols-outlined text-[20px]"
+            >
+              {ICONO_POR_ELEMENTO[elementoActual.tipo].icono}
+            </span>
+            <span>
+              Elemento seleccionado:{" "}
+              {ICONO_POR_ELEMENTO[elementoActual.tipo].etiqueta}
+            </span>
+          </p>
+          <button
+            type="button"
+            onClick={handleGirarElemento}
+            className="flex items-center gap-2 rounded-lg border border-outline-variant px-4 py-1.5 text-body-md text-on-surface-variant hover:bg-surface-container"
+          >
+            <span
+              aria-hidden="true"
+              className="material-symbols-outlined text-[20px]"
+            >
+              rotate_90_degrees_cw
+            </span>
+            <span>Girar 90°</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleEliminarElemento}
+            className="flex items-center gap-2 rounded-lg border border-outline-variant px-4 py-1.5 text-body-md text-on-surface-variant hover:bg-surface-container"
+          >
+            <span
+              aria-hidden="true"
+              className="material-symbols-outlined text-[20px]"
+            >
+              delete
+            </span>
+            <span>Eliminar elemento</span>
+          </button>
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <LeyendaEstadosMesa />
         <fieldset className="flex items-center gap-1 rounded-lg border border-outline-variant p-1">
@@ -730,6 +880,39 @@ export function MapaMesasEditor({
                 }}
               />
             ))}
+            {/* Los elementos fijos van entre las zonas y las mesas. */}
+            {elementos.map((elemento) => (
+              <ElementoShape
+                key={elemento.id}
+                ref={(nodo) => {
+                  if (nodo) elementoRefs.current.set(elemento.id, nodo);
+                  else elementoRefs.current.delete(elemento.id);
+                }}
+                elemento={elemento}
+                seleccionado={elemento.id === elementoSeleccionado}
+                editable={puedeEditar}
+                lienzo={lienzo}
+                zoom={zoom}
+                onSeleccionar={() => seleccionarElemento(elemento.id)}
+                onCambiar={(cambios) => {
+                  // Igual que con las mesas: agrandar o rotar junto al borde
+                  // puede dejar una parte afuera, así que se reacomoda.
+                  const rotacion = normalizarRotacion(
+                    cambios.rotacion ?? elemento.rotacion,
+                  );
+                  const actualizado = { ...elemento, ...cambios, rotacion };
+                  actualizarElemento(elemento.id, {
+                    ...cambios,
+                    rotacion,
+                    ...limitarCentro(
+                      actualizado,
+                      semiExtensionElemento(actualizado),
+                      lienzo,
+                    ),
+                  });
+                }}
+              />
+            ))}
             {mesas.map((mesa) => (
               <MesaShape
                 key={mesa.clientId}
@@ -807,6 +990,19 @@ export function MapaMesasEditor({
                 // El recuadro llega en píxeles de pantalla (con zoom).
                 boundBoxFunc={(oldBox, newBox) =>
                   acotarRecuadroZona(oldBox, newBox, zoom, lienzo)
+                }
+              />
+            )}
+            {puedeEditar && (
+              <Transformer
+                ref={transformerElementoRef}
+                rotateEnabled
+                // Ayuda a dejar puertas y barras derechas: el giro "se pega"
+                // a 0°, 90°, 180° y 270° cuando pasa cerca.
+                rotationSnaps={[0, 90, 180, 270]}
+                keepRatio={false}
+                boundBoxFunc={(oldBox, newBox) =>
+                  tamanoElementoPermitido(newBox, zoom) ? newBox : oldBox
                 }
               />
             )}
