@@ -21,6 +21,13 @@ Si encontrás una vulnerabilidad en BistroLink:
 
 BistroLink es un proyecto académico. El entorno `production` funciona con las integraciones de pago y facturación en modo sandbox y sin datos personales reales.
 
+Al investigar un posible problema:
+
+- No accedas a datos de otros usuarios ni los modifiques, y no afectes la disponibilidad de los entornos.
+- No hagas pruebas automatizadas de carga ni de fuerza bruta contra staging o production.
+
+Reportar una vulnerabilidad no otorga ninguna licencia ni derecho sobre el código: todos los derechos están reservados (ver [COPYRIGHT.md](COPYRIGHT.md)).
+
 ## Controles del repositorio
 
 - El repositorio y la organización son **públicos**: todo el código, los commits y los comentarios son visibles.

@@ -1,5 +1,13 @@
 # Cómo contribuir a BistroLink
 
+## Quién puede contribuir
+
+BistroLink es software propietario: todos los derechos están reservados (ver [COPYRIGHT.md](COPYRIGHT.md)). El repositorio es público para la evaluación académica, pero **solo contribuyen los integrantes del equipo** de la organización VED-VirtualExperienceDevelopment.
+
+- No se aceptan pull requests externos.
+- Contribuir al repositorio no otorga ninguna licencia ni derecho sobre el código.
+- Para reportar una vulnerabilidad, seguí [SECURITY.md](SECURITY.md).
+
 ## Reglas de seguridad (obligatorias)
 
 El repositorio y la organización son **públicos**. Cualquier persona puede ver el código, los commits y los comentarios.
