@@ -8,7 +8,10 @@ import {
   Query,
   UnauthorizedException,
 } from '@nestjs/common';
-import { firmaWebhookMercadoPagoValida } from './firma-webhook-mercadopago';
+import {
+  diagnosticoFirmaWebhook,
+  firmaWebhookMercadoPagoValida,
+} from './firma-webhook-mercadopago';
 import { PagosWebhookService } from './pagos-webhook.service';
 
 interface CuerpoNotificacion {
@@ -43,6 +46,10 @@ export class PagosWebhookController {
     if (
       !firmaWebhookMercadoPagoValida({ xSignature, xRequestId, dataId, secret })
     ) {
+      Logger.warn(
+        `Notificación de Mercado Pago rechazada (firma inválida): ${diagnosticoFirmaWebhook({ xSignature, xRequestId, dataId, secret })}`,
+        PagosWebhookController.name,
+      );
       throw new UnauthorizedException('Firma inválida');
     }
 
