@@ -110,8 +110,7 @@ function clasesEditor(pantallaCompleta: boolean): string {
 // Recuadro del mapa. touch-pan-x/y: con un dedo se desplaza, pero el
 // pellizco lo maneja el mapa y no agranda la página (fuera del mapa el zoom
 // del navegador sigue funcionando, WCAG 1.4.4). Alto: hasta 640 px pero
-// nunca más del 70 % de la pantalla visible; en pantalla completa usa casi
-// todo el alto (14rem para las barras).
+// nunca más del 70 % de la pantalla visible; en pantalla completa usa alto (14rem para las barras).
 function clasesRecuadroMapa(pantallaCompleta: boolean): string {
   const alto = pantallaCompleta
     ? "max-h-[calc(100dvh-14rem)]"
