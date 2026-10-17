@@ -45,11 +45,16 @@ export default function MesasPage() {
   }, [token]);
 
   return (
-    <div className="mx-auto max-w-container space-y-6 p-6">
+    <div className="mx-auto max-w-container space-y-6 p-4 md:p-6">
       <div>
-        <h1 className="text-headline-lg text-primary">Mapa de mesas</h1>
+        <h1 className="text-headline-lg-mobile text-primary md:text-headline-lg">
+          Mapa de mesas
+        </h1>
+        {/* El MOZO ve el mapa en solo lectura: no puede arrastrar ni rotar. */}
         <p className="text-body-md text-on-surface-variant">
-          Arrastrá, rotá y redimensioná las mesas para que el mapa refleje tu salón.
+          {hasRole('ADMIN')
+            ? 'Arrastrá, rotá y redimensioná las mesas para que el mapa refleje tu salón.'
+            : 'Mirá el estado de las mesas en tiempo real.'}
         </p>
       </div>
 

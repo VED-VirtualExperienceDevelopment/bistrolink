@@ -41,6 +41,7 @@ import {
   aplicarEstadoMesa,
   cambiarForma,
   configuracionTactil,
+  CONSULTA_CELULAR,
   distanciaEntrePuntos,
   idsAEliminar,
   limitarCentro,
@@ -54,6 +55,7 @@ import {
   puedeEliminarMesa,
   quitarMesa,
   reubicarFueraDelLienzo,
+  scrollParaCentrar,
   semiExtension,
   siguienteNumeroDisponible,
   siguienteZoom,
@@ -62,6 +64,7 @@ import {
   ZOOM_MAXIMO,
   ZOOM_MINIMO,
   type Lienzo,
+  zoomParaAjustarAncho,
   zoomPorPellizco,
   type MesaEnEdicion,
 } from "./mapa-mesas.utils";
@@ -171,6 +174,10 @@ export function MapaMesasEditor({
   const socketRef = useRef<Socket | null>(null);
   const inputNumeroRef = useRef<HTMLInputElement>(null);
   const [anchoStage, setAnchoStage] = useState(800);
+  // true cuando el ResizeObserver ya midió el recuadro: antes de eso
+  // anchoStage vale 800 por defecto y no sirve para ajustar el zoom.
+  const [anchoMedido, setAnchoMedido] = useState(false);
+  const zoomAjustadoRef = useRef(false);
   // HU-028 (BL-173): zoom del mapa. Lo pueden usar ADMIN y MOZO; no se
   // guarda (cada vez que se abre el mapa arranca en 100%).
   const [zoom, setZoom] = useState<number>(ZOOM_INICIAL);
@@ -250,7 +257,10 @@ export function MapaMesasEditor({
     if (!contenedor) return;
     const observer = new ResizeObserver((entries) => {
       const ancho = entries[0]?.contentRect.width;
-      if (ancho) setAnchoStage(Math.floor(ancho));
+      if (ancho) {
+        setAnchoStage(Math.floor(ancho));
+        setAnchoMedido(true);
+      }
     });
     observer.observe(contenedor);
     return () => observer.disconnect();
@@ -271,6 +281,17 @@ export function MapaMesasEditor({
     }),
     [anchoStage, mesas, zonas, elementos],
   );
+
+  // Celular: la primera vez que se mide el recuadro, el mapa arranca
+  // ajustado al ancho para ver el salón entero. Después respeta el zoom que
+  // elija el usuario (no se vuelve a ajustar al rotar la pantalla).
+  useEffect(() => {
+    if (!anchoMedido || zoomAjustadoRef.current) return;
+    zoomAjustadoRef.current = true;
+    if (window.matchMedia(CONSULTA_CELULAR).matches) {
+      setZoom(zoomParaAjustarAncho(anchoStage, lienzo.ancho));
+    }
+  }, [anchoMedido, anchoStage, lienzo.ancho]);
 
   // --- WebSocket: estado de ocupación en vivo ---------------------------------
   // Se suscribe al evento real que ya emite KdsGateway.emitirEstadoMesa
@@ -408,6 +429,28 @@ export function MapaMesasEditor({
     setElementoSeleccionado(id);
     setSeleccionada(null);
     setZonaSeleccionada(null);
+  }
+
+  // Desde la lista del plano: selecciona la mesa y la centra en el mapa,
+  // para encontrarla sin buscarla a ojo (sobre todo en el celular, donde la
+  // lista es la vista principal).
+  function verMesaEnMapa(clientId: string) {
+    seleccionarMesa(clientId);
+    const mesa = mesas.find((m) => m.clientId === clientId);
+    const contenedor = contenedorRef.current;
+    if (!mesa || !contenedor) return;
+    const sinAnimacion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+    const comportamiento: ScrollBehavior = sinAnimacion ? "auto" : "smooth";
+    contenedor.scrollTo({
+      ...scrollParaCentrar(mesa, zoom, {
+        ancho: contenedor.clientWidth,
+        alto: contenedor.clientHeight,
+      }),
+      behavior: comportamiento,
+    });
+    contenedor.scrollIntoView({ behavior: comportamiento, block: "nearest" });
   }
 
   // --- Handlers de edición -----------------------------------------------------
@@ -1015,6 +1058,22 @@ export function MapaMesasEditor({
               zoom_in
             </span>
           </button>
+          <button
+            type="button"
+            onClick={() =>
+              setZoom(zoomParaAjustarAncho(anchoStage, lienzo.ancho))
+            }
+            aria-label="Ajustar el mapa al ancho de la pantalla"
+            title="Ajustar al ancho"
+            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-on-surface-variant hover:bg-surface-container-low touch:min-h-12 touch:min-w-12"
+          >
+            <span
+              aria-hidden="true"
+              className="material-symbols-outlined text-[20px]"
+            >
+              fit_screen
+            </span>
+          </button>
         </fieldset>
       </div>
 
@@ -1227,7 +1286,12 @@ export function MapaMesasEditor({
         )}
       </div>
 
-      <ListaPlano mesas={mesas} zonas={zonas} elementos={elementos} />
+      <ListaPlano
+        mesas={mesas}
+        zonas={zonas}
+        elementos={elementos}
+        onVerMesa={verMesaEnMapa}
+      />
     </div>
   );
 }

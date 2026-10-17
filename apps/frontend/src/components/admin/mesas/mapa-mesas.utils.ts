@@ -472,6 +472,43 @@ export function porcentajeZoom(zoom: number): string {
   return `${Math.round(zoom * 100)}%`;
 }
 
+/**
+ * Media query de celular: por debajo del corte `md` de Tailwind (768 px).
+ * Ahí el mapa arranca ajustado al ancho y la lista arranca abierta.
+ */
+export const CONSULTA_CELULAR = "(max-width: 767px)";
+
+/**
+ * Zoom para que el salón entero entre a lo ancho del recuadro visible. No
+ * agranda (máximo 100 %) ni baja del mínimo de los botones: si con el mínimo
+ * el salón todavía no entra, queda scroll dentro del recuadro (nunca en la
+ * página).
+ */
+export function zoomParaAjustarAncho(
+  anchoVisible: number,
+  anchoLienzo: number,
+): number {
+  if (anchoVisible <= 0 || anchoLienzo <= 0) return ZOOM_INICIAL;
+  const exacto = Math.floor((anchoVisible / anchoLienzo) * 100) / 100;
+  return Math.min(ZOOM_INICIAL, Math.max(ZOOM_MINIMO, exacto));
+}
+
+/**
+ * Scroll del recuadro del mapa para que un punto del lienzo (el centro de
+ * una mesa) quede en el medio de lo visible. Nunca negativo: el navegador
+ * acota el máximo solo.
+ */
+export function scrollParaCentrar(
+  punto: { x: number; y: number },
+  zoom: number,
+  visible: { ancho: number; alto: number },
+): { left: number; top: number } {
+  return {
+    left: Math.max(0, Math.round(punto.x * zoom - visible.ancho / 2)),
+    top: Math.max(0, Math.round(punto.y * zoom - visible.alto / 2)),
+  };
+}
+
 /** Distancia en píxeles entre dos dedos (o dos puntos de pantalla). */
 export function distanciaEntrePuntos(
   a: { clientX: number; clientY: number },
