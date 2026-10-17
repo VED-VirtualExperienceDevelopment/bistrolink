@@ -60,7 +60,11 @@ export default defineConfig({
     {
       name: "desktop-safari",
       use: { ...devices["Desktop Safari"] },
-      testMatch: /menu-publico\.spec\.ts/,
+      // BL-351: ingreso.spec.ts también corre en Safari (pantalla /login y
+      // login de Keycloak). Los casos que necesitan sesión se saltean en
+      // WebKit dentro del spec: ver el comentario de qrMesas en
+      // support/auth.ts.
+      testMatch: /(menu-publico|ingreso)\.spec\.ts/,
     },
   ],
 });
