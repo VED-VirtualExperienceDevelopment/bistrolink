@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Layer, Stage, Transformer } from "react-konva";
-import type Konva from "konva";
+import Konva from "konva";
 import { io, type Socket } from "socket.io-client";
 import { useKeycloakAuth } from "@/components/providers/KeycloakProvider";
 import { apiFetch, ApiError } from "@/lib/api-client";
@@ -12,7 +12,10 @@ import { ListaPlano } from "./ListaPlano";
 import { MesaShape } from "./MesaShape";
 import { ICONO_POR_ELEMENTO } from "./plano-iconos";
 import { ZonaShape } from "./ZonaShape";
+import { ControlesZoom } from "./ControlesZoom";
+import { usePunteroGrueso } from "./usePunteroGrueso";
 import {
+  accionDeAtajo,
   accionDeTecla,
   acotarRecuadroZona,
   anchoNecesarioElementos,
@@ -39,6 +42,12 @@ import {
   anchoNecesarioLienzo,
   aplicarEstadoMesa,
   cambiarForma,
+  configuracionTactil,
+  desfaseInputNumero,
+  textoEditarNumero,
+  propsAnclasTransformer,
+  CONSULTA_CELULAR,
+  distanciaEntrePuntos,
   idsAEliminar,
   limitarCentro,
   mesasConLayoutAEdicion,
@@ -46,19 +55,19 @@ import {
   nuevaMesaEnEdicion,
   numerosDuplicados,
   parsearNumeroMesa,
-  porcentajeZoom,
   puedeEditarMapa,
   puedeEliminarMesa,
   quitarMesa,
   reubicarFueraDelLienzo,
+  scrollParaCentrar,
   semiExtension,
   siguienteNumeroDisponible,
   siguienteZoom,
   tamanoMesaPermitido,
   ZOOM_INICIAL,
-  ZOOM_MAXIMO,
-  ZOOM_MINIMO,
   type Lienzo,
+  zoomParaAjustarAncho,
+  zoomPorPellizco,
   type MesaEnEdicion,
 } from "./mapa-mesas.utils";
 import type {
@@ -75,6 +84,12 @@ import {
 } from "@/types/plano";
 
 const WS_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+
+// Zoom con dos dedos: Konva sigue escuchando toques mientras se arrastra una
+// mesa, así el segundo dedo se detecta aunque el primero haya empezado un
+// arrastre. Es seguro porque este módulo se carga solo en el navegador
+// (la página lo importa con ssr: false).
+Konva.hitOnDragEnabled = true;
 const ALTURA_STAGE = 600;
 
 const OPCIONES_FORMA: { forma: FormaMesa; etiqueta: string; icono: string }[] =
@@ -84,8 +99,27 @@ const OPCIONES_FORMA: { forma: FormaMesa; etiqueta: string; icono: string }[] =
     { forma: "RECTANGULO", etiqueta: "Rectángulo", icono: "rectangle" },
   ];
 
+// Raíz del editor. En pantalla completa el navegador pinta de negro lo que
+// el elemento no cubra, y se pierden los márgenes de la página: se agregan.
+function clasesEditor(pantallaCompleta: boolean): string {
+  return pantallaCompleta
+    ? "space-y-4 overflow-y-auto bg-surface p-4 md:p-6"
+    : "space-y-4";
+}
+
+// Recuadro del mapa. touch-pan-x/y: con un dedo se desplaza, pero el
+// pellizco lo maneja el mapa y no agranda la página (fuera del mapa el zoom
+// del navegador sigue funcionando, WCAG 1.4.4). Alto: hasta 640 px pero
+// nunca más del 70 % de la pantalla visible; en pantalla completa usa alto (14rem para las barras).
+function clasesRecuadroMapa(pantallaCompleta: boolean): string {
+  const alto = pantallaCompleta
+    ? "max-h-[calc(100dvh-14rem)]"
+    : "max-h-[min(640px,70dvh)]";
+  return `relative block w-full touch-pan-x touch-pan-y overflow-auto rounded-xl border border-outline-variant bg-surface-container-lowest focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${alto}`;
+}
+
 const ESTILO_BOTON_PROPIEDADES =
-  "flex items-center gap-2 rounded-lg border border-outline-variant px-4 py-1.5 text-body-md text-on-surface-variant hover:bg-surface-container disabled:cursor-not-allowed disabled:opacity-50";
+  "flex items-center gap-2 rounded-lg border border-outline-variant px-4 py-1.5 text-body-md text-on-surface-variant hover:bg-surface-container disabled:cursor-not-allowed disabled:opacity-50 touch:min-h-12 touch:px-5";
 
 interface Props {
   restauranteId: string;
@@ -152,6 +186,13 @@ export function MapaMesasEditor({
   } | null>(null);
 
   const contenedorRef = useRef<HTMLDivElement>(null);
+  // Raíz del editor: los atajos de teclado se escuchan acá, solo con el
+  // foco dentro del editor (WCAG 2.1.4).
+  const editorRef = useRef<HTMLDivElement>(null);
+  // Modo pantalla completa del editor (tablet fija del salón o de la caja).
+  // Safari de iPhone no lo soporta: ahí el botón no se muestra.
+  const [pantallaCompleta, setPantallaCompleta] = useState(false);
+  const [admitePantallaCompleta, setAdmitePantallaCompleta] = useState(false);
   const transformerRef = useRef<Konva.Transformer>(null);
   const shapeRefs = useRef(new Map<string, Konva.Group>());
   const transformerZonaRef = useRef<Konva.Transformer>(null);
@@ -161,9 +202,18 @@ export function MapaMesasEditor({
   const socketRef = useRef<Socket | null>(null);
   const inputNumeroRef = useRef<HTMLInputElement>(null);
   const [anchoStage, setAnchoStage] = useState(800);
+  // true cuando el ResizeObserver ya midió el recuadro: antes de eso
+  // anchoStage vale 800 por defecto y no sirve para ajustar el zoom.
+  const [anchoMedido, setAnchoMedido] = useState(false);
+  const zoomAjustadoRef = useRef(false);
   // HU-028 (BL-173): zoom del mapa. Lo pueden usar ADMIN y MOZO; no se
   // guarda (cada vez que se abre el mapa arranca en 100%).
   const [zoom, setZoom] = useState<number>(ZOOM_INICIAL);
+  // Tablet o celular: anclas del Transformer y zonas de toque más grandes
+  // (Konva no ve las clases touch: de Tailwind, por eso va por props).
+  const tactil = usePunteroGrueso();
+  const tactilConfig = configuracionTactil(tactil);
+  const propsAnclas = propsAnclasTransformer(tactilConfig);
 
   // --- Carga inicial: GET /mesas/layout y GET /mesas/plano -------------------
   // Se piden juntas. HU-028 (BL-173): el plano (zonas y elementos fijos) lo
@@ -225,7 +275,10 @@ export function MapaMesasEditor({
     if (!contenedor) return;
     const observer = new ResizeObserver((entries) => {
       const ancho = entries[0]?.contentRect.width;
-      if (ancho) setAnchoStage(Math.floor(ancho));
+      if (ancho) {
+        setAnchoStage(Math.floor(ancho));
+        setAnchoMedido(true);
+      }
     });
     observer.observe(contenedor);
     return () => observer.disconnect();
@@ -246,6 +299,17 @@ export function MapaMesasEditor({
     }),
     [anchoStage, mesas, zonas, elementos],
   );
+
+  // Celular: la primera vez que se mide el recuadro, el mapa arranca
+  // ajustado al ancho para ver el salón entero. Después respeta el zoom que
+  // elija el usuario (no se vuelve a ajustar al rotar la pantalla).
+  useEffect(() => {
+    if (!anchoMedido || zoomAjustadoRef.current) return;
+    zoomAjustadoRef.current = true;
+    if (window.matchMedia(CONSULTA_CELULAR).matches) {
+      setZoom(zoomParaAjustarAncho(anchoStage, lienzo.ancho));
+    }
+  }, [anchoMedido, anchoStage, lienzo.ancho]);
 
   // --- WebSocket: estado de ocupación en vivo ---------------------------------
   // Se suscribe al evento real que ya emite KdsGateway.emitirEstadoMesa
@@ -383,6 +447,58 @@ export function MapaMesasEditor({
     setElementoSeleccionado(id);
     setSeleccionada(null);
     setZonaSeleccionada(null);
+  }
+
+  useEffect(() => {
+    setAdmitePantallaCompleta(document.fullscreenEnabled === true);
+    const alCambiar = () =>
+      setPantallaCompleta(
+        document.fullscreenElement !== null &&
+          document.fullscreenElement === editorRef.current,
+      );
+    document.addEventListener("fullscreenchange", alCambiar);
+    return () => document.removeEventListener("fullscreenchange", alCambiar);
+  }, []);
+
+  async function alternarPantallaCompleta() {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await editorRef.current?.requestFullscreen();
+    } catch {
+      // El navegador lo rechazó (permiso o política): se sigue en modo normal.
+    }
+  }
+
+  // Lleva el foco al recuadro del mapa, para que las flechas muevan lo
+  // seleccionado. preventScroll: el foco no tiene que desplazar la página.
+  // Con el dedo no hace falta (no hay teclado físico) y el anillo de foco
+  // solo molestaría.
+  function enfocarMapa() {
+    if (tactil) return;
+    contenedorRef.current?.focus({ preventScroll: true });
+  }
+
+  // Desde la lista del plano: selecciona la mesa y la centra en el mapa,
+  // para encontrarla sin buscarla a ojo (sobre todo en el celular, donde la
+  // lista es la vista principal).
+  function verMesaEnMapa(clientId: string) {
+    seleccionarMesa(clientId);
+    const mesa = mesas.find((m) => m.clientId === clientId);
+    const contenedor = contenedorRef.current;
+    if (!mesa || !contenedor) return;
+    const sinAnimacion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+    const comportamiento: ScrollBehavior = sinAnimacion ? "auto" : "smooth";
+    contenedor.scrollTo({
+      ...scrollParaCentrar(mesa, zoom, {
+        ancho: contenedor.clientWidth,
+        alto: contenedor.clientHeight,
+      }),
+      behavior: comportamiento,
+    });
+    contenedor.scrollIntoView({ behavior: comportamiento, block: "nearest" });
+    enfocarMapa();
   }
 
   // --- Handlers de edición -----------------------------------------------------
@@ -546,6 +662,80 @@ export function MapaMesasEditor({
     return () => window.removeEventListener("keydown", escuchar);
   }, [puedeEditar]);
 
+  // Mueve lo seleccionado con el teclado, sin salir del lienzo (mismo límite
+  // que al arrastrar).
+  function moverSeleccion(dx: number, dy: number) {
+    if (mesaSeleccionada) {
+      const movida = {
+        ...mesaSeleccionada,
+        x: mesaSeleccionada.x + dx,
+        y: mesaSeleccionada.y + dy,
+      };
+      actualizarMesa(
+        mesaSeleccionada.clientId,
+        limitarCentro(movida, semiExtension(movida), lienzo),
+      );
+    } else if (zonaActual) {
+      const movida = { ...zonaActual, x: zonaActual.x + dx, y: zonaActual.y + dy };
+      actualizarZona(
+        zonaActual.id,
+        limitarCentro(movida, semiExtensionZona(movida), lienzo),
+      );
+    } else if (elementoActual) {
+      const movido = {
+        ...elementoActual,
+        x: elementoActual.x + dx,
+        y: elementoActual.y + dy,
+      };
+      actualizarElemento(
+        elementoActual.id,
+        limitarCentro(movido, semiExtensionElemento(movido), lienzo),
+      );
+    }
+  }
+
+  // Atajos de zoom, mover y guardar. Mismo patrón de ref que el de Supr /
+  // Esc, pero escuchando en la raíz del editor en vez de en window: así
+  // los atajos de una sola tecla solo actúan con el foco dentro del editor.
+  const manejarAtajoRef = useRef<(e: KeyboardEvent) => void>(() => {});
+  manejarAtajoRef.current = (e: KeyboardEvent) => {
+    if (editandoNumero) return;
+    const haySeleccion = !!(mesaSeleccionada || zonaActual || elementoActual);
+    const atajo = accionDeAtajo(
+      e,
+      esCampoDeTexto(e.target as HTMLElement | null),
+      puedeEditar && haySeleccion,
+    );
+    if (!atajo) return;
+    if (atajo.tipo === "guardar" && !puedeEditar) return;
+    // Evita el scroll con las flechas y el «Guardar página» del navegador.
+    e.preventDefault();
+    if (atajo.tipo === "acercar") setZoom((z) => siguienteZoom(z, 1));
+    else if (atajo.tipo === "alejar") setZoom((z) => siguienteZoom(z, -1));
+    else if (atajo.tipo === "zoom-inicial") setZoom(ZOOM_INICIAL);
+    else if (atajo.tipo === "guardar") {
+      if (guardando) return;
+      // Al guardar se recarga el mapa (spinner) y el foco se pierde: se
+      // marca para devolverlo al mapa cuando termine de cargar.
+      reenfocarTrasCargarRef.current = true;
+      void handleGuardar();
+    } else moverSeleccion(atajo.dx, atajo.dy);
+  };
+  const reenfocarTrasCargarRef = useRef(false);
+  useEffect(() => {
+    if (loading || !reenfocarTrasCargarRef.current) return;
+    reenfocarTrasCargarRef.current = false;
+    contenedorRef.current?.focus({ preventScroll: true });
+  }, [loading]);
+  useEffect(() => {
+    // Mientras carga se muestra el spinner y la raíz todavía no existe.
+    const editor = editorRef.current;
+    if (!editor) return;
+    const escuchar = (e: KeyboardEvent) => manejarAtajoRef.current(e);
+    editor.addEventListener("keydown", escuchar);
+    return () => editor.removeEventListener("keydown", escuchar);
+  }, [loading, loadError]);
+
   function handleClickStage(
     e: Konva.KonvaEventObject<MouseEvent | TouchEvent>,
   ) {
@@ -557,6 +747,38 @@ export function MapaMesasEditor({
       setZonaSeleccionada(null);
       setElementoSeleccionado(null);
     }
+  }
+
+  // --- Zoom con dos dedos (móvil y tablet) -------------------------------------
+  // Se guarda la distancia entre los dedos y el zoom con los que arrancó el
+  // gesto, y se escala desde ahí. Con un dedo no se hace nada: sigue el
+  // arrastre de mesas (ADMIN) o el scroll del recuadro.
+  const pellizcoRef = useRef<{ distancia: number; zoom: number } | null>(
+    null,
+  );
+
+  function handleTouchMove(e: Konva.KonvaEventObject<TouchEvent>) {
+    const toques = e.evt.touches;
+    if (toques.length !== 2) return;
+    e.evt.preventDefault();
+    // Si el primer dedo había empezado a arrastrar una mesa, se suelta.
+    if (e.target.isDragging()) e.target.stopDrag();
+    const distancia = distanciaEntrePuntos(toques[0], toques[1]);
+    if (!pellizcoRef.current) {
+      pellizcoRef.current = { distancia, zoom };
+      return;
+    }
+    setZoom(
+      zoomPorPellizco(
+        pellizcoRef.current.zoom,
+        pellizcoRef.current.distancia,
+        distancia,
+      ),
+    );
+  }
+
+  function handleTouchEnd(e: Konva.KonvaEventObject<TouchEvent>) {
+    if (e.evt.touches.length < 2) pellizcoRef.current = null;
   }
 
   function confirmarEdicionNumero() {
@@ -635,7 +857,12 @@ export function MapaMesasEditor({
   }
 
   return (
-    <div className="space-y-4">
+    <div
+      ref={editorRef}
+      // En pantalla completa el navegador pinta de negro lo que el elemento
+      // no cubra, y se pierden los márgenes de la página: se agregan acá.
+      className={clasesEditor(pantallaCompleta)}
+    >
       {!puedeEditar && (
         <output className="block rounded-lg bg-surface-container-low px-4 py-2 text-label-md text-on-surface-variant">
           Estás viendo el mapa en modo solo lectura. Solo un Administrador puede
@@ -658,7 +885,7 @@ export function MapaMesasEditor({
             <button
               type="button"
               onClick={handleAgregarMesa}
-              className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-body-md font-medium text-on-primary hover:opacity-90"
+              className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-body-md font-medium text-on-primary hover:opacity-90 touch:min-h-12"
             >
               <span
                 aria-hidden="true"
@@ -677,7 +904,7 @@ export function MapaMesasEditor({
                   ? undefined
                   : `Se pueden agregar hasta ${MAXIMO_ZONAS_PLANO} zonas`
               }
-              className="flex items-center gap-2 rounded-lg border border-outline-variant px-4 py-2 text-body-md text-on-surface-variant hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex items-center gap-2 rounded-lg border border-outline-variant px-4 py-2 text-body-md text-on-surface-variant hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-50 touch:min-h-12"
             >
               <span
                 aria-hidden="true"
@@ -694,7 +921,7 @@ export function MapaMesasEditor({
                   ? undefined
                   : `Se pueden agregar hasta ${MAXIMO_ELEMENTOS_PLANO} elementos`
               }
-              className="flex flex-wrap items-center gap-1 rounded-lg border border-outline-variant p-1 disabled:opacity-50"
+              className="flex flex-wrap items-center gap-1 rounded-lg border border-outline-variant p-1 disabled:opacity-50 touch:gap-2"
             >
               <legend className="sr-only">Agregar elemento fijo</legend>
               {TIPOS_ELEMENTO_PLANO.map((tipo) => (
@@ -703,7 +930,7 @@ export function MapaMesasEditor({
                   type="button"
                   onClick={() => handleAgregarElemento(tipo)}
                   title={`Agregar ${ICONO_POR_ELEMENTO[tipo].etiqueta.toLowerCase()}`}
-                  className="flex items-center gap-1 rounded-md px-3 py-1.5 text-body-sm text-on-surface-variant hover:bg-surface-container-low disabled:cursor-not-allowed"
+                  className="flex items-center gap-1 rounded-md px-3 py-1.5 text-body-sm text-on-surface-variant hover:bg-surface-container-low disabled:cursor-not-allowed touch:min-h-12 touch:min-w-12 touch:px-4"
                 >
                   <span
                     aria-hidden="true"
@@ -751,7 +978,7 @@ export function MapaMesasEditor({
               disabled={
                 guardando || duplicados.length > 0 || !hayCambiosSinGuardar
               }
-              className="rounded-lg bg-primary px-4 py-2 text-body-md font-medium text-on-primary hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-lg bg-primary px-4 py-2 text-body-md font-medium text-on-primary hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 touch:min-h-12"
             >
               {guardando ? "Guardando…" : "Guardar mapa"}
             </button>
@@ -773,7 +1000,7 @@ export function MapaMesasEditor({
               <p className="text-label-md text-on-surface">
                 Mesa {mesaSeleccionada.numero}
               </p>
-              <fieldset className="flex items-center gap-1 rounded-lg border border-outline-variant p-1">
+              <fieldset className="flex items-center gap-1 rounded-lg border border-outline-variant p-1 touch:gap-2">
                 <legend className="sr-only">Forma de la mesa</legend>
                 {OPCIONES_FORMA.map(({ forma, etiqueta, icono }) => (
                   <button
@@ -782,7 +1009,7 @@ export function MapaMesasEditor({
                     onClick={() => handleCambiarForma(forma)}
                     aria-pressed={formaSeleccionada === forma}
                     title={etiqueta}
-                    className="flex items-center gap-1 rounded-md px-3 py-1.5 text-body-sm text-on-surface-variant hover:bg-surface-container aria-pressed:bg-primary aria-pressed:text-on-primary"
+                    className="flex items-center gap-1 rounded-md px-3 py-1.5 text-body-sm text-on-surface-variant hover:bg-surface-container aria-pressed:bg-primary aria-pressed:text-on-primary touch:min-h-12 touch:min-w-12 touch:px-4"
                   >
                     <span
                       aria-hidden="true"
@@ -814,7 +1041,7 @@ export function MapaMesasEditor({
                 <span>Eliminar mesa</span>
               </button>
               <p className="text-label-sm text-on-surface-variant">
-                Doble clic en la mesa para cambiar su número.
+                {textoEditarNumero(tactil)}
               </p>
             </>
           )}
@@ -837,7 +1064,7 @@ export function MapaMesasEditor({
                 aria-describedby={
                   errorEtiqueta ? "etiqueta-zona-error" : undefined
                 }
-                className="w-64 rounded-lg border border-outline-variant bg-surface px-3 py-1.5 text-body-md text-on-surface aria-[invalid=true]:border-error"
+                className="w-full rounded-lg border border-outline-variant bg-surface px-3 py-1.5 text-body-md text-on-surface aria-[invalid=true]:border-error sm:w-64 touch:min-h-12"
               />
               <button
                 type="button"
@@ -908,7 +1135,8 @@ export function MapaMesasEditor({
             <p className="text-label-md text-on-surface-variant">
               Seleccioná una mesa, una zona o un elemento para editarlo.
               Arrastrá para moverlo y usá las esquinas para cambiar su tamaño.
-              Atajos: Supr elimina lo seleccionado y Esc lo deselecciona.
+              Con el teclado: flechas para moverlo, Supr para eliminarlo y Esc
+              para deseleccionarlo.
             </p>
           )}
         </section>
@@ -916,57 +1144,66 @@ export function MapaMesasEditor({
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <LeyendaEstadosMesa />
-        <fieldset className="flex items-center gap-1 rounded-lg border border-outline-variant p-1">
-          <legend className="sr-only">Zoom del mapa</legend>
-          <button
-            type="button"
-            onClick={() => setZoom((z) => siguienteZoom(z, -1))}
-            disabled={zoom <= ZOOM_MINIMO}
-            aria-label="Alejar"
-            title="Alejar"
-            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-on-surface-variant hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <span
-              aria-hidden="true"
-              className="material-symbols-outlined text-[20px]"
-            >
-              zoom_out
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setZoom(ZOOM_INICIAL)}
-            title="Volver al 100%"
-            aria-label={`Zoom ${porcentajeZoom(zoom)}. Volver al 100%`}
-            className="min-h-[44px] min-w-[4rem] rounded-md px-2 text-center text-label-md text-on-surface-variant hover:bg-surface-container-low"
-          >
-            {porcentajeZoom(zoom)}
-          </button>
-          <button
-            type="button"
-            onClick={() => setZoom((z) => siguienteZoom(z, 1))}
-            disabled={zoom >= ZOOM_MAXIMO}
-            aria-label="Acercar"
-            title="Acercar"
-            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-on-surface-variant hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <span
-              aria-hidden="true"
-              className="material-symbols-outlined text-[20px]"
-            >
-              zoom_in
-            </span>
-          </button>
-        </fieldset>
+        {/* Ayuda de los atajos. Se esconde en tablets y celulares, donde no
+            hay teclado físico. */}
+        <details
+          id="atajos-plano"
+          className="text-label-md text-on-surface-variant touch:hidden"
+        >
+          <summary className="flex min-h-[44px] cursor-pointer items-center">
+            Atajos de teclado
+          </summary>
+          <ul className="mt-1 space-y-1 text-body-sm">
+            <li>
+              <kbd>+</kbd> y <kbd>-</kbd> acercan y alejan; <kbd>0</kbd> vuelve
+              al 100 %.
+            </li>
+            {puedeEditar && (
+              <>
+                <li>
+                  Flechas: mueven lo seleccionado (con <kbd>Shift</kbd>, de a
+                  10).
+                </li>
+                <li>
+                  <kbd>Supr</kbd> elimina, <kbd>Esc</kbd> deselecciona y{" "}
+                  <kbd>Ctrl</kbd> + <kbd>S</kbd> guarda.
+                </li>
+              </>
+            )}
+          </ul>
+        </details>
+        <ControlesZoom
+          zoom={zoom}
+          onCambiarZoom={setZoom}
+          onAjustarAncho={() =>
+            setZoom(zoomParaAjustarAncho(anchoStage, lienzo.ancho))
+          }
+          admitePantallaCompleta={admitePantallaCompleta}
+          pantallaCompleta={pantallaCompleta}
+          onAlternarPantallaCompleta={() => void alternarPantallaCompleta()}
+        />
       </div>
 
-      <div
+      <section
         ref={contenedorRef}
-        className="relative max-h-[640px] w-full overflow-auto rounded-xl border border-outline-variant bg-surface-container-lowest"
+        // tabIndex -1: el foco llega por código, al elegir una mesa en el
+        // mapa o en la lista ("Ver la mesa N en el mapa"), para que las
+        // flechas la muevan. No entra en el orden de Tab: un <section> no es
+        // un control (Sonar / jsx-a11y no-noninteractive-tabindex).
+        tabIndex={-1}
+        aria-label="Mapa de mesas"
+        aria-describedby="atajos-plano"
+        // touch-pan-x/y: con un dedo el recuadro se desplaza, pero el
+        // pellizco ya no agranda toda la página, lo maneja el mapa. Fuera
+        // del mapa el zoom del navegador sigue funcionando (WCAG 1.4.4).
+        // Alto: hasta 640 px pero nunca más del 70 % de la pantalla visible,
+        // así en una tablet horizontal entran las barras y el mapa juntos.
+        // En pantalla completa usa casi todo el alto (14rem para las barras).
+        className={clasesRecuadroMapa(pantallaCompleta)}
       >
-        {/* HU-028 (BL-173): el Stage se escala con el zoom. Las mesas siguen
-            en unidades del lienzo; si el mapa no entra, el contenedor
-            muestra scroll. */}
+        {/* HU-028 (BL-173): el Stage se escala con el zoom (botones o dos
+            dedos). Las mesas siguen en unidades del lienzo; si el mapa no
+            entra, el contenedor muestra scroll. */}
         <Stage
           width={lienzo.ancho * zoom}
           height={lienzo.alto * zoom}
@@ -974,6 +1211,8 @@ export function MapaMesasEditor({
           scaleY={zoom}
           onMouseDown={handleClickStage}
           onTouchStart={handleClickStage}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
         >
           <Layer>
             {/* HU-028 (BL-173): las zonas van primero para quedar debajo
@@ -990,7 +1229,10 @@ export function MapaMesasEditor({
                 editable={puedeEditar}
                 lienzo={lienzo}
                 zoom={zoom}
-                onSeleccionar={() => seleccionarZona(zona)}
+                onSeleccionar={() => {
+                  seleccionarZona(zona);
+                  enfocarMapa();
+                }}
                 onCambiar={(cambios) => {
                   // Agrandar una zona junto al borde puede dejar una parte
                   // afuera: se reacomoda el centro para que entre entera.
@@ -1019,7 +1261,10 @@ export function MapaMesasEditor({
                 editable={puedeEditar}
                 lienzo={lienzo}
                 zoom={zoom}
-                onSeleccionar={() => seleccionarElemento(elemento.id)}
+                onSeleccionar={() => {
+                  seleccionarElemento(elemento.id);
+                  enfocarMapa();
+                }}
                 onCambiar={(cambios) => {
                   // Igual que con las mesas: agrandar o rotar junto al borde
                   // puede dejar una parte afuera, así que se reacomoda.
@@ -1058,7 +1303,11 @@ export function MapaMesasEditor({
                 editable={puedeEditar}
                 lienzo={lienzo}
                 zoom={zoom}
-                onSeleccionar={() => seleccionarMesa(mesa.clientId)}
+                zonaToque={tactilConfig.zonaToqueMesa}
+                onSeleccionar={() => {
+                  seleccionarMesa(mesa.clientId);
+                  enfocarMapa();
+                }}
                 onArrastrar={(x, y) => actualizarMesa(mesa.clientId, { x, y })}
                 onTransformar={(cambios) => {
                   // Agrandar o rotar una mesa junto al borde puede dejar una
@@ -1091,6 +1340,7 @@ export function MapaMesasEditor({
             ))}
             {puedeEditar && (
               <Transformer
+                {...propsAnclas}
                 ref={transformerRef}
                 rotateEnabled
                 keepRatio={mantieneProporcion}
@@ -1109,6 +1359,7 @@ export function MapaMesasEditor({
             )}
             {puedeEditar && (
               <Transformer
+                {...propsAnclas}
                 ref={transformerZonaRef}
                 rotateEnabled={false}
                 // Ancho y alto independientes: una zona puede ser una franja.
@@ -1121,6 +1372,7 @@ export function MapaMesasEditor({
             )}
             {puedeEditar && (
               <Transformer
+                {...propsAnclas}
                 ref={transformerElementoRef}
                 rotateEnabled
                 // Ayuda a dejar puertas y barras derechas: el giro "se pega"
@@ -1149,16 +1401,23 @@ export function MapaMesasEditor({
               if (e.key === "Enter") confirmarEdicionNumero();
               if (e.key === "Escape") setEditandoNumero(null);
             }}
-            className="absolute z-10 w-14 rounded border border-primary bg-surface px-1 py-0.5 text-center text-body-sm text-on-surface shadow-md outline-none"
+            // Con el dedo el campo crece a 48 px y la letra pasa a 16 px:
+            // con menos, Safari de iOS agranda la página al enfocarlo.
+            className="absolute z-10 w-14 rounded border border-primary bg-surface px-1 py-0.5 text-center text-body-sm text-on-surface shadow-md outline-none touch:h-12 touch:w-20 touch:text-body-lg"
             style={{
-              left: posicionInputNumero.x - 28,
-              top: posicionInputNumero.y - 14,
+              left: posicionInputNumero.x - desfaseInputNumero(tactil).x,
+              top: posicionInputNumero.y - desfaseInputNumero(tactil).y,
             }}
           />
         )}
-      </div>
+      </section>
 
-      <ListaPlano mesas={mesas} zonas={zonas} elementos={elementos} />
+      <ListaPlano
+        mesas={mesas}
+        zonas={zonas}
+        elementos={elementos}
+        onVerMesa={verMesaEnMapa}
+      />
     </div>
   );
 }

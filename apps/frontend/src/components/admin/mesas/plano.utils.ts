@@ -485,3 +485,61 @@ export function esCampoDeTexto(
     objetivo.isContentEditable === true
   );
 }
+
+export type AtajoPlano =
+  | { tipo: "acercar" }
+  | { tipo: "alejar" }
+  | { tipo: "zoom-inicial" }
+  | { tipo: "guardar" }
+  | { tipo: "mover"; dx: number; dy: number };
+
+/** Lo que mueve una flecha, en unidades del lienzo. */
+export const PASO_MOVER_FINO = 1;
+/** Lo que mueve Shift + flecha, en unidades del lienzo. */
+export const PASO_MOVER_GRUESO = 10;
+
+const DIRECCION_POR_FLECHA: Record<string, [number, number]> = {
+  ArrowUp: [0, -1],
+  ArrowDown: [0, 1],
+  ArrowLeft: [-1, 0],
+  ArrowRight: [1, 0],
+};
+
+/**
+ * Atajos de teclado del editor del plano (además de Supr y Esc, que siguen
+ * en accionDeTecla):
+ * - `+` / `-` acercan y alejan, `0` vuelve al 100 %.
+ * - Flechas mueven lo seleccionado 1 unidad; con Shift, 10.
+ * - Ctrl/Cmd + S guarda, incluso desde un campo de texto.
+ *
+ * Solo se escuchan con el foco dentro del editor, así los atajos de una sola
+ * tecla no interfieren con el resto de la página (WCAG 2.1.4). Mientras se
+ * escribe en un campo no actúa ninguno salvo Ctrl/Cmd + S. Ctrl con + o −
+ * queda para el zoom del navegador (WCAG 1.4.4).
+ */
+export function accionDeAtajo(
+  tecla: {
+    key: string;
+    shiftKey: boolean;
+    ctrlKey: boolean;
+    metaKey: boolean;
+    altKey: boolean;
+  },
+  enCampoDeTexto: boolean,
+  haySeleccion: boolean,
+): AtajoPlano | null {
+  const conControl = tecla.ctrlKey || tecla.metaKey;
+  if (conControl && !tecla.altKey && tecla.key.toLowerCase() === "s") {
+    return { tipo: "guardar" };
+  }
+  if (enCampoDeTexto || conControl || tecla.altKey) return null;
+  if (tecla.key === "+" || tecla.key === "=") return { tipo: "acercar" };
+  if (tecla.key === "-") return { tipo: "alejar" };
+  if (tecla.key === "0") return { tipo: "zoom-inicial" };
+  const direccion = DIRECCION_POR_FLECHA[tecla.key];
+  if (direccion && haySeleccion) {
+    const paso = tecla.shiftKey ? PASO_MOVER_GRUESO : PASO_MOVER_FINO;
+    return { tipo: "mover", dx: direccion[0] * paso, dy: direccion[1] * paso };
+  }
+  return null;
+}

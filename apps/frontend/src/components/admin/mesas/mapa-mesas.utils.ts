@@ -4,6 +4,7 @@
 // con un test rápido es la lógica de negocio (normalización de rotación,
 // detección de números duplicados, armado del payload) — así que vive acá,
 // como funciones puras sin ninguna dependencia de react-konva.
+import type Konva from "konva";
 import type {
   EstadoMesa,
   FormaMesa,
@@ -473,6 +474,69 @@ export function porcentajeZoom(zoom: number): string {
 }
 
 /**
+ * Media query de celular: por debajo del corte `md` de Tailwind (768 px).
+ * Ahí el mapa arranca ajustado al ancho y la lista arranca abierta.
+ */
+export const CONSULTA_CELULAR = "(max-width: 767px)";
+
+/**
+ * Zoom para que el salón entero entre a lo ancho del recuadro visible. No
+ * agranda (máximo 100 %) ni baja del mínimo de los botones: si con el mínimo
+ * el salón todavía no entra, queda scroll dentro del recuadro (nunca en la
+ * página).
+ */
+export function zoomParaAjustarAncho(
+  anchoVisible: number,
+  anchoLienzo: number,
+): number {
+  if (anchoVisible <= 0 || anchoLienzo <= 0) return ZOOM_INICIAL;
+  const exacto = Math.floor((anchoVisible / anchoLienzo) * 100) / 100;
+  return Math.min(ZOOM_INICIAL, Math.max(ZOOM_MINIMO, exacto));
+}
+
+/**
+ * Scroll del recuadro del mapa para que un punto del lienzo (el centro de
+ * una mesa) quede en el medio de lo visible. Nunca negativo: el navegador
+ * acota el máximo solo.
+ */
+export function scrollParaCentrar(
+  punto: { x: number; y: number },
+  zoom: number,
+  visible: { ancho: number; alto: number },
+): { left: number; top: number } {
+  return {
+    left: Math.max(0, Math.round(punto.x * zoom - visible.ancho / 2)),
+    top: Math.max(0, Math.round(punto.y * zoom - visible.alto / 2)),
+  };
+}
+
+/** Distancia en píxeles entre dos dedos (o dos puntos de pantalla). */
+export function distanciaEntrePuntos(
+  a: { clientX: number; clientY: number },
+  b: { clientX: number; clientY: number },
+): number {
+  return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+}
+
+/**
+ * Zoom con dos dedos: escala el zoom con el que arrancó el gesto según
+ * cuánto se separaron los dedos, sin pasar de los límites de los botones
+ * + / −. Se redondea a centésimas para que el porcentaje no salte.
+ * siguienteZoom acepta valores intermedios, así que los botones siguen
+ * funcionando después de un pellizco.
+ */
+export function zoomPorPellizco(
+  zoomInicial: number,
+  distanciaInicial: number,
+  distanciaActual: number,
+): number {
+  if (distanciaInicial <= 0) return zoomInicial;
+  const crudo = zoomInicial * (distanciaActual / distanciaInicial);
+  const redondeado = Math.round(crudo * 100) / 100;
+  return Math.min(ZOOM_MAXIMO, Math.max(ZOOM_MINIMO, redondeado));
+}
+
+/**
  * Versión de limitarCentro para el dragBoundFunc de Konva con zoom. Konva le
  * pasa la posición en píxeles de pantalla (ya multiplicada por el zoom del
  * Stage): se pasa a unidades del lienzo, se acota y se vuelve a pantalla.
@@ -508,4 +572,81 @@ export function tamanoMesaPermitido(
     ancho <= DIMENSION_MAXIMA_MESA &&
     alto <= DIMENSION_MAXIMA_MESA
   );
+}
+
+// --- Uso con el dedo: tablet y celular ----------------------------------------
+
+/**
+ * Tamaño de las anclas del Transformer con el dedo. Con mouse queda el valor
+ * por defecto de Konva (10 px), que con el dedo es imposible de tomar.
+ */
+export const ANCLA_TACTIL = 24;
+
+/**
+ * Borde invisible que se suma a la zona de toque de una mesa o de un ancla,
+ * sin cambiar lo que se ve. 24 px de ancla más 24 px de borde = 48 px, la
+ * zona táctil mínima que recomienda Material (y por encima de los 44 px de
+ * WCAG 2.5.5).
+ */
+export const ZONA_TOQUE_EXTRA_TACTIL = 24;
+
+/** Distancia entre el recuadro y el ancla de rotación con el dedo. */
+export const DISTANCIA_ANCLA_ROTACION_TACTIL = 44;
+
+/**
+ * Lo que cambia en el lienzo según se use con el dedo o con mouse. Konva
+ * dibuja en un canvas y no ve las clases `touch:` de Tailwind, así que el
+ * editor le pasa estos valores por props. Con mouse no se pisa nada: Konva
+ * usa sus valores por defecto.
+ */
+export function configuracionTactil(tactil: boolean): {
+  anchorSize?: number;
+  rotateAnchorOffset?: number;
+  zonaToqueAncla?: number;
+  zonaToqueMesa: number | "auto";
+} {
+  if (!tactil) return { zonaToqueMesa: "auto" };
+  return {
+    anchorSize: ANCLA_TACTIL,
+    rotateAnchorOffset: DISTANCIA_ANCLA_ROTACION_TACTIL,
+    zonaToqueAncla: ZONA_TOQUE_EXTRA_TACTIL,
+    zonaToqueMesa: ZONA_TOQUE_EXTRA_TACTIL,
+  };
+}
+
+/**
+ * Props de las anclas de los Transformer: tamaño, distancia del ancla de
+ * rotación y un borde invisible que agranda la zona de toque. Con mouse
+ * quedan sin definir y Konva usa sus valores por defecto.
+ */
+export function propsAnclasTransformer(
+  config: ReturnType<typeof configuracionTactil>,
+): {
+  anchorSize?: number;
+  rotateAnchorOffset?: number;
+  anchorStyleFunc?: (ancla: Konva.Rect) => void;
+} {
+  const zona = config.zonaToqueAncla;
+  if (zona === undefined) return {};
+  return {
+    anchorSize: config.anchorSize,
+    rotateAnchorOffset: config.rotateAnchorOffset,
+    anchorStyleFunc: (ancla) => {
+      ancla.hitStrokeWidth(zona);
+    },
+  };
+}
+
+/** Ayuda de la barra de propiedades para cambiar el número de una mesa. */
+export function textoEditarNumero(tactil: boolean): string {
+  return `${tactil ? "Doble toque" : "Doble clic"} en la mesa para cambiar su número.`;
+}
+
+/**
+ * Cuánto se corre el campo del número de mesa desde el centro de la mesa
+ * para quedar centrado: la mitad de su ancho y de su alto (más grande con
+ * el dedo, ver las clases touch: del campo).
+ */
+export function desfaseInputNumero(tactil: boolean): { x: number; y: number } {
+  return tactil ? { x: 40, y: 24 } : { x: 28, y: 14 };
 }
