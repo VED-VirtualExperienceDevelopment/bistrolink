@@ -75,16 +75,21 @@ export function diagnosticoFirmaWebhook({
   dataId,
   secret,
 }: DatosFirmaWebhook): string {
-  const ts = xSignature?.match(/ts=([^,\s]+)/)?.[1];
-  const v1 = xSignature?.match(/v1=([^,\s]+)/)?.[1];
+  const firma = xSignature ?? '';
+  const ts = /ts=([^,\s]+)/.exec(firma)?.[1];
+  const v1 = /v1=([^,\s]+)/.exec(firma)?.[1];
+  const detalleV1 = v1
+    ? 'sí(' + v1.length + ' car., empieza con ' + v1.slice(0, 12) + ')'
+    : 'NO';
+  const manifiesto = ts ? construirManifiesto(dataId, xRequestId, ts) : '';
   return [
     `x-signature=${xSignature ? 'sí' : 'NO'}`,
     `ts=${ts ? 'sí' : 'NO'}`,
-    `v1=${v1 ? `sí(${v1.length} car., empieza con ${v1.slice(0, 12)})` : 'NO'}`,
+    `v1=${detalleV1}`,
     `x-request-id=${xRequestId ? 'sí' : 'NO'}`,
     `data.id(query)=${dataId ? 'sí' : 'NO'}`,
     `largoSecreto=${secret?.length ?? 0}`,
-    ts ? `manifiesto="${construirManifiesto(dataId, xRequestId, ts)}"` : '',
+    manifiesto ? `manifiesto="${manifiesto}"` : '',
   ]
     .filter(Boolean)
     .join(', ');
