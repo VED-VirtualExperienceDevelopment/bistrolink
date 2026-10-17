@@ -169,6 +169,10 @@ export function MapaMesasEditor({
   // Raíz del editor: los atajos de teclado se escuchan acá, solo con el
   // foco dentro del editor (WCAG 2.1.4).
   const editorRef = useRef<HTMLDivElement>(null);
+  // Modo pantalla completa del editor (tablet fija del salón o de la caja).
+  // Safari de iPhone no lo soporta: ahí el botón no se muestra.
+  const [pantallaCompleta, setPantallaCompleta] = useState(false);
+  const [admitePantallaCompleta, setAdmitePantallaCompleta] = useState(false);
   const transformerRef = useRef<Konva.Transformer>(null);
   const shapeRefs = useRef(new Map<string, Konva.Group>());
   const transformerZonaRef = useRef<Konva.Transformer>(null);
@@ -433,6 +437,26 @@ export function MapaMesasEditor({
     setElementoSeleccionado(id);
     setSeleccionada(null);
     setZonaSeleccionada(null);
+  }
+
+  useEffect(() => {
+    setAdmitePantallaCompleta(document.fullscreenEnabled === true);
+    const alCambiar = () =>
+      setPantallaCompleta(
+        document.fullscreenElement !== null &&
+          document.fullscreenElement === editorRef.current,
+      );
+    document.addEventListener("fullscreenchange", alCambiar);
+    return () => document.removeEventListener("fullscreenchange", alCambiar);
+  }, []);
+
+  async function alternarPantallaCompleta() {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await editorRef.current?.requestFullscreen();
+    } catch {
+      // El navegador lo rechazó (permiso o política): se sigue en modo normal.
+    }
   }
 
   // Lleva el foco al recuadro del mapa, para que las flechas muevan lo
@@ -823,7 +847,16 @@ export function MapaMesasEditor({
   }
 
   return (
-    <div ref={editorRef} className="space-y-4">
+    <div
+      ref={editorRef}
+      // En pantalla completa el navegador pinta de negro lo que el elemento
+      // no cubra, y se pierden los márgenes de la página: se agregan acá.
+      className={
+        pantallaCompleta
+          ? "space-y-4 overflow-y-auto bg-surface p-4 md:p-6"
+          : "space-y-4"
+      }
+    >
       {!puedeEditar && (
         <output className="block rounded-lg bg-surface-container-low px-4 py-2 text-label-md text-on-surface-variant">
           Estás viendo el mapa en modo solo lectura. Solo un Administrador puede
@@ -1191,6 +1224,29 @@ export function MapaMesasEditor({
               fit_screen
             </span>
           </button>
+          {admitePantallaCompleta && (
+            <button
+              type="button"
+              onClick={() => void alternarPantallaCompleta()}
+              aria-pressed={pantallaCompleta}
+              aria-label={
+                pantallaCompleta
+                  ? "Salir de pantalla completa"
+                  : "Ver el mapa en pantalla completa"
+              }
+              title={
+                pantallaCompleta ? "Salir de pantalla completa" : "Pantalla completa"
+              }
+              className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-on-surface-variant hover:bg-surface-container-low touch:min-h-12 touch:min-w-12"
+            >
+              <span
+                aria-hidden="true"
+                className="material-symbols-outlined text-[20px]"
+              >
+                {pantallaCompleta ? "fullscreen_exit" : "fullscreen"}
+              </span>
+            </button>
+          )}
         </fieldset>
       </div>
 
@@ -1205,7 +1261,14 @@ export function MapaMesasEditor({
         // touch-pan-x/y: con un dedo el recuadro se desplaza, pero el
         // pellizco ya no agranda toda la página, lo maneja el mapa. Fuera
         // del mapa el zoom del navegador sigue funcionando (WCAG 1.4.4).
-        className="relative max-h-[640px] w-full touch-pan-x touch-pan-y overflow-auto rounded-xl border border-outline-variant bg-surface-container-lowest focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+        // Alto: hasta 640 px pero nunca más del 70 % de la pantalla visible,
+        // así en una tablet horizontal entran las barras y el mapa juntos.
+        // En pantalla completa usa casi todo el alto (14rem para las barras).
+        className={`relative w-full touch-pan-x touch-pan-y overflow-auto rounded-xl border border-outline-variant bg-surface-container-lowest focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${
+          pantallaCompleta
+            ? "max-h-[calc(100dvh-14rem)]"
+            : "max-h-[min(640px,70dvh)]"
+        }`}
       >
         {/* HU-028 (BL-173): el Stage se escala con el zoom (botones o dos
             dedos). Las mesas siguen en unidades del lienzo; si el mapa no
