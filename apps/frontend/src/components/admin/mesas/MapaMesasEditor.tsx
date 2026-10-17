@@ -14,6 +14,7 @@ import { ICONO_POR_ELEMENTO } from "./plano-iconos";
 import { ZonaShape } from "./ZonaShape";
 import { usePunteroGrueso } from "./usePunteroGrueso";
 import {
+  accionDeAtajo,
   accionDeTecla,
   acotarRecuadroZona,
   anchoNecesarioElementos,
@@ -165,6 +166,9 @@ export function MapaMesasEditor({
   } | null>(null);
 
   const contenedorRef = useRef<HTMLDivElement>(null);
+  // Raíz del editor: los atajos de teclado se escuchan acá, solo con el
+  // foco dentro del editor (WCAG 2.1.4).
+  const editorRef = useRef<HTMLDivElement>(null);
   const transformerRef = useRef<Konva.Transformer>(null);
   const shapeRefs = useRef(new Map<string, Konva.Group>());
   const transformerZonaRef = useRef<Konva.Transformer>(null);
@@ -431,6 +435,15 @@ export function MapaMesasEditor({
     setZonaSeleccionada(null);
   }
 
+  // Lleva el foco al recuadro del mapa, para que las flechas muevan lo
+  // seleccionado. preventScroll: el foco no tiene que desplazar la página.
+  // Con el dedo no hace falta (no hay teclado físico) y el anillo de foco
+  // solo molestaría.
+  function enfocarMapa() {
+    if (tactil) return;
+    contenedorRef.current?.focus({ preventScroll: true });
+  }
+
   // Desde la lista del plano: selecciona la mesa y la centra en el mapa,
   // para encontrarla sin buscarla a ojo (sobre todo en el celular, donde la
   // lista es la vista principal).
@@ -451,6 +464,7 @@ export function MapaMesasEditor({
       behavior: comportamiento,
     });
     contenedor.scrollIntoView({ behavior: comportamiento, block: "nearest" });
+    enfocarMapa();
   }
 
   // --- Handlers de edición -----------------------------------------------------
@@ -614,6 +628,80 @@ export function MapaMesasEditor({
     return () => window.removeEventListener("keydown", escuchar);
   }, [puedeEditar]);
 
+  // Mueve lo seleccionado con el teclado, sin salir del lienzo (mismo límite
+  // que al arrastrar).
+  function moverSeleccion(dx: number, dy: number) {
+    if (mesaSeleccionada) {
+      const movida = {
+        ...mesaSeleccionada,
+        x: mesaSeleccionada.x + dx,
+        y: mesaSeleccionada.y + dy,
+      };
+      actualizarMesa(
+        mesaSeleccionada.clientId,
+        limitarCentro(movida, semiExtension(movida), lienzo),
+      );
+    } else if (zonaActual) {
+      const movida = { ...zonaActual, x: zonaActual.x + dx, y: zonaActual.y + dy };
+      actualizarZona(
+        zonaActual.id,
+        limitarCentro(movida, semiExtensionZona(movida), lienzo),
+      );
+    } else if (elementoActual) {
+      const movido = {
+        ...elementoActual,
+        x: elementoActual.x + dx,
+        y: elementoActual.y + dy,
+      };
+      actualizarElemento(
+        elementoActual.id,
+        limitarCentro(movido, semiExtensionElemento(movido), lienzo),
+      );
+    }
+  }
+
+  // Atajos de zoom, mover y guardar. Mismo patrón de ref que el de Supr /
+  // Esc, pero escuchando en la raíz del editor en vez de en window: así
+  // los atajos de una sola tecla solo actúan con el foco dentro del editor.
+  const manejarAtajoRef = useRef<(e: KeyboardEvent) => void>(() => {});
+  manejarAtajoRef.current = (e: KeyboardEvent) => {
+    if (editandoNumero) return;
+    const haySeleccion = !!(mesaSeleccionada || zonaActual || elementoActual);
+    const atajo = accionDeAtajo(
+      e,
+      esCampoDeTexto(e.target as HTMLElement | null),
+      puedeEditar && haySeleccion,
+    );
+    if (!atajo) return;
+    if (atajo.tipo === "guardar" && !puedeEditar) return;
+    // Evita el scroll con las flechas y el «Guardar página» del navegador.
+    e.preventDefault();
+    if (atajo.tipo === "acercar") setZoom((z) => siguienteZoom(z, 1));
+    else if (atajo.tipo === "alejar") setZoom((z) => siguienteZoom(z, -1));
+    else if (atajo.tipo === "zoom-inicial") setZoom(ZOOM_INICIAL);
+    else if (atajo.tipo === "guardar") {
+      if (guardando) return;
+      // Al guardar se recarga el mapa (spinner) y el foco se pierde: se
+      // marca para devolverlo al mapa cuando termine de cargar.
+      reenfocarTrasCargarRef.current = true;
+      void handleGuardar();
+    } else moverSeleccion(atajo.dx, atajo.dy);
+  };
+  const reenfocarTrasCargarRef = useRef(false);
+  useEffect(() => {
+    if (loading || !reenfocarTrasCargarRef.current) return;
+    reenfocarTrasCargarRef.current = false;
+    contenedorRef.current?.focus({ preventScroll: true });
+  }, [loading]);
+  useEffect(() => {
+    // Mientras carga se muestra el spinner y la raíz todavía no existe.
+    const editor = editorRef.current;
+    if (!editor) return;
+    const escuchar = (e: KeyboardEvent) => manejarAtajoRef.current(e);
+    editor.addEventListener("keydown", escuchar);
+    return () => editor.removeEventListener("keydown", escuchar);
+  }, [loading, loadError]);
+
   function handleClickStage(
     e: Konva.KonvaEventObject<MouseEvent | TouchEvent>,
   ) {
@@ -735,7 +823,7 @@ export function MapaMesasEditor({
   }
 
   return (
-    <div className="space-y-4">
+    <div ref={editorRef} className="space-y-4">
       {!puedeEditar && (
         <output className="block rounded-lg bg-surface-container-low px-4 py-2 text-label-md text-on-surface-variant">
           Estás viendo el mapa en modo solo lectura. Solo un Administrador puede
@@ -1009,7 +1097,8 @@ export function MapaMesasEditor({
             <p className="text-label-md text-on-surface-variant">
               Seleccioná una mesa, una zona o un elemento para editarlo.
               Arrastrá para moverlo y usá las esquinas para cambiar su tamaño.
-              Atajos: Supr elimina lo seleccionado y Esc lo deselecciona.
+              Con el teclado: flechas para moverlo, Supr para eliminarlo y Esc
+              para deseleccionarlo.
             </p>
           )}
         </section>
@@ -1017,6 +1106,34 @@ export function MapaMesasEditor({
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <LeyendaEstadosMesa />
+        {/* Ayuda de los atajos. Se esconde en tablets y celulares, donde no
+            hay teclado físico. */}
+        <details
+          id="atajos-plano"
+          className="text-label-md text-on-surface-variant touch:hidden"
+        >
+          <summary className="flex min-h-[44px] cursor-pointer items-center">
+            Atajos de teclado
+          </summary>
+          <ul className="mt-1 space-y-1 text-body-sm">
+            <li>
+              <kbd>+</kbd> y <kbd>-</kbd> acercan y alejan; <kbd>0</kbd> vuelve
+              al 100 %.
+            </li>
+            {puedeEditar && (
+              <>
+                <li>
+                  Flechas: mueven lo seleccionado (con <kbd>Shift</kbd>, de a
+                  10).
+                </li>
+                <li>
+                  <kbd>Supr</kbd> elimina, <kbd>Esc</kbd> deselecciona y{" "}
+                  <kbd>Ctrl</kbd> + <kbd>S</kbd> guarda.
+                </li>
+              </>
+            )}
+          </ul>
+        </details>
         <fieldset className="flex items-center gap-1 rounded-lg border border-outline-variant p-1 touch:gap-2">
           <legend className="sr-only">Zoom del mapa</legend>
           <button
@@ -1079,10 +1196,16 @@ export function MapaMesasEditor({
 
       <div
         ref={contenedorRef}
+        // Se puede llegar con Tab: el recuadro tiene scroll y los atajos de
+        // teclado actúan sobre él (WCAG 2.1.1).
+        tabIndex={0}
+        role="region"
+        aria-label="Mapa de mesas"
+        aria-describedby="atajos-plano"
         // touch-pan-x/y: con un dedo el recuadro se desplaza, pero el
         // pellizco ya no agranda toda la página, lo maneja el mapa. Fuera
         // del mapa el zoom del navegador sigue funcionando (WCAG 1.4.4).
-        className="relative max-h-[640px] w-full touch-pan-x touch-pan-y overflow-auto rounded-xl border border-outline-variant bg-surface-container-lowest"
+        className="relative max-h-[640px] w-full touch-pan-x touch-pan-y overflow-auto rounded-xl border border-outline-variant bg-surface-container-lowest focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
       >
         {/* HU-028 (BL-173): el Stage se escala con el zoom (botones o dos
             dedos). Las mesas siguen en unidades del lienzo; si el mapa no
@@ -1112,7 +1235,10 @@ export function MapaMesasEditor({
                 editable={puedeEditar}
                 lienzo={lienzo}
                 zoom={zoom}
-                onSeleccionar={() => seleccionarZona(zona)}
+                onSeleccionar={() => {
+                  seleccionarZona(zona);
+                  enfocarMapa();
+                }}
                 onCambiar={(cambios) => {
                   // Agrandar una zona junto al borde puede dejar una parte
                   // afuera: se reacomoda el centro para que entre entera.
@@ -1141,7 +1267,10 @@ export function MapaMesasEditor({
                 editable={puedeEditar}
                 lienzo={lienzo}
                 zoom={zoom}
-                onSeleccionar={() => seleccionarElemento(elemento.id)}
+                onSeleccionar={() => {
+                  seleccionarElemento(elemento.id);
+                  enfocarMapa();
+                }}
                 onCambiar={(cambios) => {
                   // Igual que con las mesas: agrandar o rotar junto al borde
                   // puede dejar una parte afuera, así que se reacomoda.
@@ -1181,7 +1310,10 @@ export function MapaMesasEditor({
                 lienzo={lienzo}
                 zoom={zoom}
                 zonaToque={tactilConfig.zonaToqueMesa}
-                onSeleccionar={() => seleccionarMesa(mesa.clientId)}
+                onSeleccionar={() => {
+                  seleccionarMesa(mesa.clientId);
+                  enfocarMapa();
+                }}
                 onArrastrar={(x, y) => actualizarMesa(mesa.clientId, { x, y })}
                 onTransformar={(cambios) => {
                   // Agrandar o rotar una mesa junto al borde puede dejar una
