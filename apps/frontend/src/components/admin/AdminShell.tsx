@@ -1,5 +1,5 @@
 'use client';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import { useKeycloakAuth } from '@/components/providers/KeycloakProvider';
@@ -21,6 +21,15 @@ const NAV_ITEMS = [
   // Próximos módulos (HU-001, HU-003, etc.) se suman acá a medida que
   // existan pantallas reales — evitamos linkear secciones que no existen.
 ];
+
+// Menú lateral que se puede esconder. Desde 1024 px (corte `lg`) alterna
+// entre completo y un riel de íconos, y la preferencia se recuerda en este
+// navegador (es solo una comodidad visual, no lleva datos del usuario). Por
+// debajo es un panel deslizable que arranca cerrado: el contenido usa todo
+// el ancho y el menú queda a un toque (antes, debajo de 768 px no había
+// forma de navegar).
+const CLAVE_MENU_COLAPSADO = 'bistrolink.admin.menuColapsado';
+const CONSULTA_ESCRITORIO = '(min-width: 1024px)';
 
 /**
  * BL-224: guard y estructura (sidebar y encabezado) de /admin/*. Antes era
@@ -56,6 +65,61 @@ export default function AdminShell({
     }
   }, [initializing, authenticated, esStaff, router, pathname]);
 
+  // Estado del menú. Va antes de los return de abajo: los hooks no pueden
+  // quedar después de un return condicional.
+  const [esEscritorio, setEsEscritorio] = useState(false);
+  const [colapsado, setColapsado] = useState(false);
+  const [abiertoMovil, setAbiertoMovil] = useState(false);
+
+  useEffect(() => {
+    const consulta = window.matchMedia(CONSULTA_ESCRITORIO);
+    setEsEscritorio(consulta.matches);
+    const alCambiar = (e: MediaQueryListEvent) => {
+      setEsEscritorio(e.matches);
+      if (e.matches) setAbiertoMovil(false);
+    };
+    consulta.addEventListener('change', alCambiar);
+    try {
+      setColapsado(localStorage.getItem(CLAVE_MENU_COLAPSADO) === '1');
+    } catch {
+      // Sin acceso al almacenamiento (modo privado): queda el menú completo.
+    }
+    return () => consulta.removeEventListener('change', alCambiar);
+  }, []);
+
+  // Al elegir una sección en el celular, el panel se cierra solo.
+  useEffect(() => {
+    setAbiertoMovil(false);
+  }, [pathname]);
+
+  // Esc cierra el panel deslizable.
+  useEffect(() => {
+    if (!abiertoMovil) return;
+    const alPresionar = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setAbiertoMovil(false);
+    };
+    document.addEventListener('keydown', alPresionar);
+    return () => document.removeEventListener('keydown', alPresionar);
+  }, [abiertoMovil]);
+
+  function alternarMenu() {
+    if (!esEscritorio) {
+      setAbiertoMovil((abierto) => !abierto);
+      return;
+    }
+    setColapsado((actual) => {
+      const nuevo = !actual;
+      try {
+        localStorage.setItem(CLAVE_MENU_COLAPSADO, nuevo ? '1' : '0');
+      } catch {
+        // Si no se puede guardar, el cambio vale igual para esta visita.
+      }
+      return nuevo;
+    });
+  }
+
+  const menuVisible = esEscritorio ? !colapsado : abiertoMovil;
+
   if (initializing) {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
@@ -70,8 +134,33 @@ export default function AdminShell({
 
   return (
     <div className="flex h-screen overflow-hidden">
-      <aside className="hidden md:flex w-64 h-screen flex-col shrink-0 border-r border-outline-variant bg-surface-container-lowest">
-        <div className="p-6">
+      {/* Velo del panel en pantallas angostas. Es un <button> y no un <div>
+          con onClick por la misma regla de accesibilidad que Dialog.tsx;
+          tabIndex -1 porque con teclado alcanza con Esc. */}
+      {abiertoMovil && (
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-label="Cerrar el menú"
+          onClick={() => setAbiertoMovil(false)}
+          className="fixed inset-0 z-30 bg-on-surface/40 lg:hidden"
+        />
+      )}
+      {/* Debajo de 1024 px el menú es fixed, fuera de la pantalla e
+          invisible (invisible lo saca del orden de Tab y del lector de
+          pantalla mientras está cerrado). Desde 1024 px vuelve a ser static
+          y el ancho depende de `colapsado`; todas esas clases llevan lg:, así
+          que el panel del celular siempre se ve completo. */}
+      <aside
+        id="menu-admin"
+        aria-label="Menú principal"
+        className={`fixed inset-y-0 left-0 z-40 flex h-screen w-64 shrink-0 flex-col border-r border-outline-variant bg-surface-container-lowest transition-[transform,width] duration-200 lg:static lg:z-auto lg:translate-x-0 lg:visible lg:shadow-none ${
+          abiertoMovil
+            ? 'visible translate-x-0 shadow-2xl'
+            : 'invisible -translate-x-full'
+        } ${colapsado ? 'lg:w-[72px]' : 'lg:w-64'}`}
+      >
+        <div className={`p-6 ${colapsado ? 'lg:hidden' : ''}`}>
           <div className="text-headline-md font-bold leading-tight text-primary">
             BistroLink
           </div>
@@ -98,14 +187,26 @@ export default function AdminShell({
               <Link
                 key={item.href}
                 href={item.href}
+                aria-current={active ? 'page' : undefined}
+                title={colapsado ? item.label : undefined}
                 className={`flex items-center gap-3 px-4 py-3 transition-colors duration-200 ${
+                  colapsado ? 'lg:justify-center lg:px-0' : ''
+                } ${
                   active
                     ? 'border-l-4 border-primary bg-secondary-container text-on-secondary-container'
                     : 'text-on-surface-variant hover:bg-surface-container-low'
                 }`}
               >
-                <span className="material-symbols-outlined">{item.icon}</span>
-                <span className="text-label-md">{item.label}</span>
+                <span aria-hidden="true" className="material-symbols-outlined">
+                  {item.icon}
+                </span>
+                {/* En el riel el texto se esconde a la vista, pero el lector
+                    de pantalla lo sigue leyendo: el link conserva su nombre. */}
+                <span
+                  className={`text-label-md ${colapsado ? 'lg:sr-only' : ''}`}
+                >
+                  {item.label}
+                </span>
               </Link>
             );
           })}
@@ -115,20 +216,41 @@ export default function AdminShell({
           <button
             type="button"
             onClick={logout}
-            className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-left text-on-surface-variant transition-colors hover:bg-surface-container-low"
+            title={colapsado ? 'Cerrar sesión' : undefined}
+            className={`flex w-full items-center gap-3 rounded-lg px-4 py-3 text-left text-on-surface-variant transition-colors hover:bg-surface-container-low ${
+              colapsado ? 'lg:justify-center lg:px-0' : ''
+            }`}
           >
-            <span className="material-symbols-outlined">logout</span>
-            <span className="text-label-md">Cerrar sesión</span>
+            <span aria-hidden="true" className="material-symbols-outlined">
+              logout
+            </span>
+            <span className={`text-label-md ${colapsado ? 'lg:sr-only' : ''}`}>
+              Cerrar sesión
+            </span>
           </button>
         </div>
       </aside>
 
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="flex h-16 w-full shrink-0 items-center justify-between border-b border-outline-variant bg-surface px-6 shadow-sm">
-          <div className="md:hidden text-headline-sm font-bold text-primary">
-            BistroLink
+        <header className="flex h-16 w-full shrink-0 items-center justify-between border-b border-outline-variant bg-surface px-2 shadow-sm md:px-4">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={alternarMenu}
+              aria-controls="menu-admin"
+              aria-expanded={menuVisible}
+              aria-label={menuVisible ? 'Ocultar el menú' : 'Mostrar el menú'}
+              title={menuVisible ? 'Ocultar el menú' : 'Mostrar el menú'}
+              className="flex min-h-12 min-w-12 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-low focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+            >
+              <span aria-hidden="true" className="material-symbols-outlined">
+                {menuVisible ? 'menu_open' : 'menu'}
+              </span>
+            </button>
+            <div className="text-headline-sm font-bold text-primary lg:hidden">
+              BistroLink
+            </div>
           </div>
-          <div />
           <div className="flex items-center gap-4">
             <span className="material-symbols-outlined rounded-full p-2 text-on-surface-variant transition-colors hover:bg-surface-container-low">
               notifications
