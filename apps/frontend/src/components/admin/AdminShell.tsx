@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import { useKeycloakAuth } from '@/components/providers/KeycloakProvider';
+import UsuarioSesion from '@/components/sesion/UsuarioSesion';
 
 const NAV_ITEMS = [
   // `roles: undefined` = visible para cualquier staff (ADMIN o MOZO).
@@ -251,10 +252,13 @@ export default function AdminShell({
               BistroLink
             </div>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
             <span className="material-symbols-outlined rounded-full p-2 text-on-surface-variant transition-colors hover:bg-surface-container-low">
               notifications
             </span>
+            {/* BL-350: quién inició sesión. «Cerrar sesión» del menú lateral
+                se mantiene; este también lo ofrece. */}
+            <UsuarioSesion />
           </div>
         </header>
         <div className="flex-1 overflow-y-auto">{children}</div>

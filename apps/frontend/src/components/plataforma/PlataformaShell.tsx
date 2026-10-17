@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useKeycloakAuth } from "@/components/providers/KeycloakProvider";
+import UsuarioSesion from "@/components/sesion/UsuarioSesion";
 
 /**
  * BL-163 (HU-027): pantalla del equipo de BistroLink (rol PLATAFORMA) para
@@ -20,7 +21,7 @@ import { useKeycloakAuth } from "@/components/providers/KeycloakProvider";
   export default function PlataformaShell({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  const { initializing, authenticated, hasRole, logout } = useKeycloakAuth();
+  const { initializing, authenticated, hasRole } = useKeycloakAuth();
   const router = useRouter();
   const pathname = usePathname();
   const esPlataforma = hasRole("PLATAFORMA");
@@ -50,7 +51,7 @@ import { useKeycloakAuth } from "@/components/providers/KeycloakProvider";
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background">
-      <header className="flex h-16 shrink-0 items-center justify-between border-b border-outline-variant bg-surface px-6 shadow-sm">
+      <header className="flex h-16 shrink-0 items-center justify-between border-b border-outline-variant bg-surface px-4 shadow-sm md:px-6">
         <div>
           <div className="text-headline-sm font-bold text-primary">
             BistroLink
@@ -59,16 +60,8 @@ import { useKeycloakAuth } from "@/components/providers/KeycloakProvider";
             Plataforma
           </div>
         </div>
-        <button
-          type="button"
-          onClick={logout}
-          className="flex items-center gap-2 rounded-lg px-3 py-2 text-on-surface-variant transition-colors hover:bg-surface-container-low"
-        >
-          <span className="material-symbols-outlined" aria-hidden="true">
-            logout
-          </span>
-          <span className="text-label-md">Cerrar sesión</span>
-        </button>
+        {/* BL-350: quién inició sesión. «Cerrar sesión» está en su panel. */}
+        <UsuarioSesion />
       </header>
       <main className="min-h-0 flex-1 overflow-y-auto">{children}</main>
     </div>
