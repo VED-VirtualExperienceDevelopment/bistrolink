@@ -2,8 +2,10 @@
 
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -96,25 +98,31 @@ export function KeycloakProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const logout = () => {
+  const logout = useCallback(() => {
     getKeycloak().logout({ redirectUri: window.location.origin });
-  };
+  }, []);
 
-  const hasRole = (role: string) => roles.includes(role);
+  const hasRole = useCallback((role: string) => roles.includes(role), [roles]);
+
+  // useMemo: el valor del contexto solo cambia cuando cambia la sesión, así
+  // los componentes que usan useKeycloakAuth() no se vuelven a dibujar en
+  // cada render del provider.
+  const value = useMemo(
+    () => ({
+      initializing,
+      authenticated,
+      token,
+      tenantId,
+      roles,
+      usuario,
+      hasRole,
+      logout,
+    }),
+    [initializing, authenticated, token, tenantId, roles, usuario, hasRole, logout],
+  );
 
   return (
-    <KeycloakContext.Provider
-      value={{
-        initializing,
-        authenticated,
-        token,
-        tenantId,
-        roles,
-        usuario,
-        hasRole,
-        logout,
-      }}
-    >
+    <KeycloakContext.Provider value={value}>
       {children}
     </KeycloakContext.Provider>
   );

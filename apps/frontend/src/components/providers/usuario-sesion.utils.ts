@@ -76,7 +76,7 @@ export function iniciales(
   if (palabras.length === 0) return "?";
   const primera = primeraLetra(palabras[0]);
   if (palabras.length === 1) return primera;
-  return primera + primeraLetra(palabras[palabras.length - 1]);
+  return primera + primeraLetra(palabras.at(-1) ?? "");
 }
 
 /** Rol principal en español, o `undefined` si no tiene un rol del personal. */
