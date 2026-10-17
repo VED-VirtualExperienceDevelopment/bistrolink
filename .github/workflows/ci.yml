@@ -592,6 +592,14 @@ jobs:
         github.event_name == 'workflow_dispatch' ||
         needs.changes.outputs.apps == 'true'
       )
+    # BL-220: GitHub registra cada corrida de este job como un deployment del
+    # environment "staging" (pestaña Deployments del repo). Es la fuente de
+    # datos de las métricas DORA (Anexo 9 §10.2), para comparar staging con
+    # production, y deja el link a la web desplegada en el resumen de la
+    # corrida.
+    environment:
+      name: staging
+      url: https://bistrolink-web-staging.up.railway.app
     runs-on: ubuntu-latest
     env:
       RAILWAY_GRAPHQL: https://backboard.railway.com/graphql/v2
