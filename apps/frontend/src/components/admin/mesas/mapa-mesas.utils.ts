@@ -4,6 +4,7 @@
 // con un test rápido es la lógica de negocio (normalización de rotación,
 // detección de números duplicados, armado del payload) — así que vive acá,
 // como funciones puras sin ninguna dependencia de react-konva.
+import type Konva from "konva";
 import type {
   EstadoMesa,
   FormaMesa,
@@ -611,4 +612,41 @@ export function configuracionTactil(tactil: boolean): {
     zonaToqueAncla: ZONA_TOQUE_EXTRA_TACTIL,
     zonaToqueMesa: ZONA_TOQUE_EXTRA_TACTIL,
   };
+}
+
+/**
+ * Props de las anclas de los Transformer: tamaño, distancia del ancla de
+ * rotación y un borde invisible que agranda la zona de toque. Con mouse
+ * quedan sin definir y Konva usa sus valores por defecto.
+ */
+export function propsAnclasTransformer(
+  config: ReturnType<typeof configuracionTactil>,
+): {
+  anchorSize?: number;
+  rotateAnchorOffset?: number;
+  anchorStyleFunc?: (ancla: Konva.Rect) => void;
+} {
+  const zona = config.zonaToqueAncla;
+  if (zona === undefined) return {};
+  return {
+    anchorSize: config.anchorSize,
+    rotateAnchorOffset: config.rotateAnchorOffset,
+    anchorStyleFunc: (ancla) => {
+      ancla.hitStrokeWidth(zona);
+    },
+  };
+}
+
+/** Ayuda de la barra de propiedades para cambiar el número de una mesa. */
+export function textoEditarNumero(tactil: boolean): string {
+  return `${tactil ? "Doble toque" : "Doble clic"} en la mesa para cambiar su número.`;
+}
+
+/**
+ * Cuánto se corre el campo del número de mesa desde el centro de la mesa
+ * para quedar centrado: la mitad de su ancho y de su alto (más grande con
+ * el dedo, ver las clases touch: del campo).
+ */
+export function desfaseInputNumero(tactil: boolean): { x: number; y: number } {
+  return tactil ? { x: 40, y: 24 } : { x: 28, y: 14 };
 }

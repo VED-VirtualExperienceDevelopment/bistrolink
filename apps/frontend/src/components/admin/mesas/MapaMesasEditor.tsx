@@ -12,6 +12,7 @@ import { ListaPlano } from "./ListaPlano";
 import { MesaShape } from "./MesaShape";
 import { ICONO_POR_ELEMENTO } from "./plano-iconos";
 import { ZonaShape } from "./ZonaShape";
+import { ControlesZoom } from "./ControlesZoom";
 import { usePunteroGrueso } from "./usePunteroGrueso";
 import {
   accionDeAtajo,
@@ -42,6 +43,9 @@ import {
   aplicarEstadoMesa,
   cambiarForma,
   configuracionTactil,
+  desfaseInputNumero,
+  textoEditarNumero,
+  propsAnclasTransformer,
   CONSULTA_CELULAR,
   distanciaEntrePuntos,
   idsAEliminar,
@@ -51,7 +55,6 @@ import {
   nuevaMesaEnEdicion,
   numerosDuplicados,
   parsearNumeroMesa,
-  porcentajeZoom,
   puedeEditarMapa,
   puedeEliminarMesa,
   quitarMesa,
@@ -62,8 +65,6 @@ import {
   siguienteZoom,
   tamanoMesaPermitido,
   ZOOM_INICIAL,
-  ZOOM_MAXIMO,
-  ZOOM_MINIMO,
   type Lienzo,
   zoomParaAjustarAncho,
   zoomPorPellizco,
@@ -97,6 +98,26 @@ const OPCIONES_FORMA: { forma: FormaMesa; etiqueta: string; icono: string }[] =
     { forma: "CUADRADO", etiqueta: "Cuadrado", icono: "square" },
     { forma: "RECTANGULO", etiqueta: "Rectángulo", icono: "rectangle" },
   ];
+
+// Raíz del editor. En pantalla completa el navegador pinta de negro lo que
+// el elemento no cubra, y se pierden los márgenes de la página: se agregan.
+function clasesEditor(pantallaCompleta: boolean): string {
+  return pantallaCompleta
+    ? "space-y-4 overflow-y-auto bg-surface p-4 md:p-6"
+    : "space-y-4";
+}
+
+// Recuadro del mapa. touch-pan-x/y: con un dedo se desplaza, pero el
+// pellizco lo maneja el mapa y no agranda la página (fuera del mapa el zoom
+// del navegador sigue funcionando, WCAG 1.4.4). Alto: hasta 640 px pero
+// nunca más del 70 % de la pantalla visible; en pantalla completa usa casi
+// todo el alto (14rem para las barras).
+function clasesRecuadroMapa(pantallaCompleta: boolean): string {
+  const alto = pantallaCompleta
+    ? "max-h-[calc(100dvh-14rem)]"
+    : "max-h-[min(640px,70dvh)]";
+  return `relative block w-full touch-pan-x touch-pan-y overflow-auto rounded-xl border border-outline-variant bg-surface-container-lowest focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${alto}`;
+}
 
 const ESTILO_BOTON_PROPIEDADES =
   "flex items-center gap-2 rounded-lg border border-outline-variant px-4 py-1.5 text-body-md text-on-surface-variant hover:bg-surface-container disabled:cursor-not-allowed disabled:opacity-50 touch:min-h-12 touch:px-5";
@@ -193,17 +214,7 @@ export function MapaMesasEditor({
   // (Konva no ve las clases touch: de Tailwind, por eso va por props).
   const tactil = usePunteroGrueso();
   const tactilConfig = configuracionTactil(tactil);
-  const zonaToqueAncla = tactilConfig.zonaToqueAncla;
-  const propsAnclas = {
-    anchorSize: tactilConfig.anchorSize,
-    rotateAnchorOffset: tactilConfig.rotateAnchorOffset,
-    anchorStyleFunc:
-      zonaToqueAncla === undefined
-        ? undefined
-        : (ancla: Konva.Rect) => {
-            ancla.hitStrokeWidth(zonaToqueAncla);
-          },
-  };
+  const propsAnclas = propsAnclasTransformer(tactilConfig);
 
   // --- Carga inicial: GET /mesas/layout y GET /mesas/plano -------------------
   // Se piden juntas. HU-028 (BL-173): el plano (zonas y elementos fijos) lo
@@ -851,11 +862,7 @@ export function MapaMesasEditor({
       ref={editorRef}
       // En pantalla completa el navegador pinta de negro lo que el elemento
       // no cubra, y se pierden los márgenes de la página: se agregan acá.
-      className={
-        pantallaCompleta
-          ? "space-y-4 overflow-y-auto bg-surface p-4 md:p-6"
-          : "space-y-4"
-      }
+      className={clasesEditor(pantallaCompleta)}
     >
       {!puedeEditar && (
         <output className="block rounded-lg bg-surface-container-low px-4 py-2 text-label-md text-on-surface-variant">
@@ -1035,8 +1042,7 @@ export function MapaMesasEditor({
                 <span>Eliminar mesa</span>
               </button>
               <p className="text-label-sm text-on-surface-variant">
-                {tactil ? "Doble toque" : "Doble clic"} en la mesa para
-                cambiar su número.
+                {textoEditarNumero(tactil)}
               </p>
             </>
           )}
@@ -1167,95 +1173,25 @@ export function MapaMesasEditor({
             )}
           </ul>
         </details>
-        <fieldset className="flex items-center gap-1 rounded-lg border border-outline-variant p-1 touch:gap-2">
-          <legend className="sr-only">Zoom del mapa</legend>
-          <button
-            type="button"
-            onClick={() => setZoom((z) => siguienteZoom(z, -1))}
-            disabled={zoom <= ZOOM_MINIMO}
-            aria-label="Alejar"
-            title="Alejar"
-            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-on-surface-variant hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-50 touch:min-h-12 touch:min-w-12"
-          >
-            <span
-              aria-hidden="true"
-              className="material-symbols-outlined text-[20px]"
-            >
-              zoom_out
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setZoom(ZOOM_INICIAL)}
-            title="Volver al 100%"
-            aria-label={`Zoom ${porcentajeZoom(zoom)}. Volver al 100%`}
-            className="min-h-[44px] min-w-[4rem] rounded-md px-2 text-center text-label-md text-on-surface-variant hover:bg-surface-container-low touch:min-h-12"
-          >
-            {porcentajeZoom(zoom)}
-          </button>
-          <button
-            type="button"
-            onClick={() => setZoom((z) => siguienteZoom(z, 1))}
-            disabled={zoom >= ZOOM_MAXIMO}
-            aria-label="Acercar"
-            title="Acercar"
-            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-on-surface-variant hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-50 touch:min-h-12 touch:min-w-12"
-          >
-            <span
-              aria-hidden="true"
-              className="material-symbols-outlined text-[20px]"
-            >
-              zoom_in
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={() =>
-              setZoom(zoomParaAjustarAncho(anchoStage, lienzo.ancho))
-            }
-            aria-label="Ajustar el mapa al ancho de la pantalla"
-            title="Ajustar al ancho"
-            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-on-surface-variant hover:bg-surface-container-low touch:min-h-12 touch:min-w-12"
-          >
-            <span
-              aria-hidden="true"
-              className="material-symbols-outlined text-[20px]"
-            >
-              fit_screen
-            </span>
-          </button>
-          {admitePantallaCompleta && (
-            <button
-              type="button"
-              onClick={() => void alternarPantallaCompleta()}
-              aria-pressed={pantallaCompleta}
-              aria-label={
-                pantallaCompleta
-                  ? "Salir de pantalla completa"
-                  : "Ver el mapa en pantalla completa"
-              }
-              title={
-                pantallaCompleta ? "Salir de pantalla completa" : "Pantalla completa"
-              }
-              className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-on-surface-variant hover:bg-surface-container-low touch:min-h-12 touch:min-w-12"
-            >
-              <span
-                aria-hidden="true"
-                className="material-symbols-outlined text-[20px]"
-              >
-                {pantallaCompleta ? "fullscreen_exit" : "fullscreen"}
-              </span>
-            </button>
-          )}
-        </fieldset>
+        <ControlesZoom
+          zoom={zoom}
+          onCambiarZoom={setZoom}
+          onAjustarAncho={() =>
+            setZoom(zoomParaAjustarAncho(anchoStage, lienzo.ancho))
+          }
+          admitePantallaCompleta={admitePantallaCompleta}
+          pantallaCompleta={pantallaCompleta}
+          onAlternarPantallaCompleta={() => void alternarPantallaCompleta()}
+        />
       </div>
 
-      <div
+      <section
         ref={contenedorRef}
-        // Se puede llegar con Tab: el recuadro tiene scroll y los atajos de
-        // teclado actúan sobre él (WCAG 2.1.1).
-        tabIndex={0}
-        role="region"
+        // tabIndex -1: el foco llega por código, al elegir una mesa en el
+        // mapa o en la lista ("Ver la mesa N en el mapa"), para que las
+        // flechas la muevan. No entra en el orden de Tab: un <section> no es
+        // un control (Sonar / jsx-a11y no-noninteractive-tabindex).
+        tabIndex={-1}
         aria-label="Mapa de mesas"
         aria-describedby="atajos-plano"
         // touch-pan-x/y: con un dedo el recuadro se desplaza, pero el
@@ -1264,11 +1200,7 @@ export function MapaMesasEditor({
         // Alto: hasta 640 px pero nunca más del 70 % de la pantalla visible,
         // así en una tablet horizontal entran las barras y el mapa juntos.
         // En pantalla completa usa casi todo el alto (14rem para las barras).
-        className={`relative w-full touch-pan-x touch-pan-y overflow-auto rounded-xl border border-outline-variant bg-surface-container-lowest focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${
-          pantallaCompleta
-            ? "max-h-[calc(100dvh-14rem)]"
-            : "max-h-[min(640px,70dvh)]"
-        }`}
+        className={clasesRecuadroMapa(pantallaCompleta)}
       >
         {/* HU-028 (BL-173): el Stage se escala con el zoom (botones o dos
             dedos). Las mesas siguen en unidades del lienzo; si el mapa no
@@ -1474,12 +1406,12 @@ export function MapaMesasEditor({
             // con menos, Safari de iOS agranda la página al enfocarlo.
             className="absolute z-10 w-14 rounded border border-primary bg-surface px-1 py-0.5 text-center text-body-sm text-on-surface shadow-md outline-none touch:h-12 touch:w-20 touch:text-body-lg"
             style={{
-              left: posicionInputNumero.x - (tactil ? 40 : 28),
-              top: posicionInputNumero.y - (tactil ? 24 : 14),
+              left: posicionInputNumero.x - desfaseInputNumero(tactil).x,
+              top: posicionInputNumero.y - desfaseInputNumero(tactil).y,
             }}
           />
         )}
-      </div>
+      </section>
 
       <ListaPlano
         mesas={mesas}
