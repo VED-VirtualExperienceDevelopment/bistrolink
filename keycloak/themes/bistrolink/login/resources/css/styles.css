@@ -1,11 +1,27 @@
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap');
+/* Tema de login de BistroLink (BL-347).
+   Se apoya en el tema «keycloak» (PatternFly 3 y 4) y en template.ftl, que
+   agrega el panel de marca. Colores: tokens del design system (los mismos
+   nombres que en apps/frontend/tailwind.config.ts). Sin pedidos a dominios
+   externos: la tipografía está en ../fonts y los íconos son SVG en línea. */
+
+/* Plus Jakarta Sans variable, subconjunto latin. El mismo archivo que usa la
+   app (apps/frontend/src/app/fonts). Licencia SIL OFL 1.1 en
+   ../fonts/PlusJakartaSans-OFL.txt. */
+@font-face {
+  font-family: "Plus Jakarta Sans";
+  src: url("../fonts/plus-jakarta-sans-latin-wght-normal.woff2") format("woff2");
+  font-weight: 200 800;
+  font-style: normal;
+  font-display: swap;
+}
 
 :root {
   --bl-primary: #381e72;
   --bl-primary-container: #4f378a;
+  --bl-primary-fixed: #e9ddff;
   --bl-on-primary: #ffffff;
-  --bl-on-primary-container: #c0a7ff;
+  --bl-tertiary-fixed-dim: #e7c365;
+  --bl-on-tertiary-fixed: #241a00;
   --bl-surface: #fdf8ff;
   --bl-surface-container: #f1ecf4;
   --bl-surface-container-lowest: #ffffff;
@@ -14,97 +30,344 @@
   --bl-outline: #7a7582;
   --bl-outline-variant: #cbc4d2;
   --bl-error: #ba1a1a;
+  --bl-error-container: #ffdad6;
+  --bl-on-error-container: #93000a;
+
+  --bl-fuente: "Plus Jakarta Sans", system-ui, sans-serif;
+  --bl-alto-control: 48px;
+
+  /* PatternFly 4 toma la tipografía de estas variables */
+  --pf-global--FontFamily--sans-serif: var(--bl-fuente);
+  --pf-global--FontFamily--heading--sans-serif: var(--bl-fuente);
 }
 
-/* !important a propósito: forzamos que gane sobre cualquier fondo del
-   theme base (la imagen oscura que se ve desbordada). */
-.login-pf-page {
+/* ── Página ─────────────────────────────────────────────────────────────
+   !important a propósito: el tema base pone una imagen de fondo en
+   .login-pf body con más especificidad. */
+.login-pf body {
   background: var(--bl-surface) !important;
   background-image: none !important;
-  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  font-family: var(--bl-fuente);
+  color: var(--bl-on-surface);
+  margin: 0;
+}
+
+.bl-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: auto 1fr;
+  min-height: 100vh;
+}
+
+/* ── Panel de marca ─────────────────────────────────────────────────── */
+.bl-marca {
+  background: linear-gradient(160deg, var(--bl-primary) 0%, var(--bl-primary-container) 100%);
+  color: var(--bl-on-primary);
+  padding: 20px 16px;
+}
+
+.bl-marca p {
+  margin: 0;
+}
+
+.bl-marca__nombre {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.bl-marca__logo {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  fill: var(--bl-tertiary-fixed-dim);
+}
+
+.bl-marca__subtitulo {
+  margin-top: 4px !important;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--bl-primary-fixed);
+}
+
+.bl-marca__lema {
+  margin-top: 12px !important;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--bl-tertiary-fixed-dim);
+}
+
+/* En el celular y la tablet vertical, el panel es un encabezado compacto:
+   los beneficios no se muestran (siguen en el HTML para PC). */
+.bl-marca__beneficios {
+  display: none;
+}
+
+/* ── Formulario ─────────────────────────────────────────────────────── */
+.login-pf-page {
   display: flex !important;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 20px;
-  min-height: 100vh;
-  padding: 24px;
+  justify-content: flex-start;
+  padding: 24px 16px;
+  font-family: var(--bl-fuente);
 }
 
-/* Centrado y ancho acotado del card, sin depender del theme base */
 .login-pf-page .card-pf {
   width: 100%;
   max-width: 440px;
+  margin: 0;
   background: var(--bl-surface-container-lowest);
   border: 1px solid var(--bl-outline-variant);
-  border-radius: 0.75rem;
+  border-top: 1px solid var(--bl-outline-variant);
+  border-radius: 12px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08) !important;
-  padding: 32px;
+  padding: 24px 20px;
 }
 
-#kc-header-wrapper {
-  width: 100%;
-  text-align: center;
-  color: var(--bl-primary-container);
-  font-size: 28px;
-  font-weight: 800;
-  margin-bottom: 24px;
+.login-pf-page .login-pf-header {
+  margin-bottom: 20px;
 }
 
-#kc-header-wrapper::before {
-  font-family: 'Material Symbols Outlined';
-  content: "restaurant";
-  font-size: 30px;
-  font-variation-settings: 'FILL' 1;
-  vertical-align: middle;
-  margin-right: 10px;
-}
-
-#kc-header-wrapper .bl-subtitle {
-  display: block;
-  font-size: 18px;
+#kc-page-title {
+  font-family: var(--bl-fuente);
+  font-size: 24px;
   font-weight: 700;
-  letter-spacing: normal;
-  text-transform: none;
-  color: var(--bl-on-surface-variant);
-  margin-top: 6px;
+  line-height: 1.25;
+  color: var(--bl-on-surface);
+  text-align: left;
+  margin: 0;
 }
 
 .login-pf-page label,
+.login-pf-page .pf-c-form__label,
 #kc-content-wrapper {
   color: var(--bl-on-surface);
+  font-size: 15px;
 }
 
+.login-pf-page .pf-c-form__label {
+  font-weight: 600;
+}
+
+/* Campos de 48 px. Letra de 16 px: Safari de iOS no agranda la página al
+   enfocarlos. */
+.login-pf-page .pf-c-form-control,
 .login-pf-page input[type="text"],
-.login-pf-page input[type="password"] {
-  border: 1px solid var(--bl-outline-variant);
-  border-radius: 0.5rem;
-  background: var(--bl-surface-container-lowest);
+.login-pf-page input[type="password"],
+.login-pf-page input[type="email"] {
+  min-height: var(--bl-alto-control);
+  font-size: 16px;
+  font-family: var(--bl-fuente);
   color: var(--bl-on-surface);
-  width: 100%;
+  background: var(--bl-surface-container-lowest);
+  border: 1px solid var(--bl-outline);
+  border-radius: 8px;
+  padding: 8px 12px;
   box-sizing: border-box;
+  width: 100%;
 }
 
-.login-pf-page input[type="text"]:focus,
-.login-pf-page input[type="password"]:focus {
+.login-pf-page .pf-c-form-control:focus,
+.login-pf-page input:focus {
   border-color: var(--bl-primary-container);
   box-shadow: 0 0 0 2px var(--bl-primary-container);
+  outline: none;
 }
 
-.login-pf-page .btn-primary {
-  background: var(--bl-primary-container);
-  border-color: var(--bl-primary-container);
+/* Campo con error: borde y anillo de error, no solo el color del texto */
+.login-pf-page .pf-c-form-control[aria-invalid="true"] {
+  border-color: var(--bl-error);
+  border-width: 2px;
+}
+
+/* Botón «Mostrar contraseña» pegado al campo, de 48 × 48 */
+.login-pf-page .pf-c-input-group .pf-c-form-control {
+  border-radius: 8px 0 0 8px;
+}
+
+.login-pf-page .pf-c-button.pf-m-control {
+  min-width: var(--bl-alto-control);
+  min-height: var(--bl-alto-control);
+  border: 1px solid var(--bl-outline);
+  border-radius: 0 8px 8px 0;
+  background: var(--bl-surface-container-lowest);
+  color: var(--bl-on-surface-variant);
+}
+
+.login-pf-page .pf-c-button.pf-m-control::after {
+  border: 0;
+}
+
+/* Botón principal. PatternFly 4 lo pinta con sus variables y con más
+   especificidad que .btn-primary: por eso se apunta a .pf-c-button.pf-m-primary
+   y se redefinen sus variables. */
+.login-pf-page .pf-c-button.pf-m-primary {
+  --pf-c-button--m-primary--BackgroundColor: var(--bl-primary-container);
+  --pf-c-button--m-primary--hover--BackgroundColor: var(--bl-primary);
+  --pf-c-button--m-primary--focus--BackgroundColor: var(--bl-primary);
+  --pf-c-button--m-primary--active--BackgroundColor: var(--bl-primary);
+  --pf-c-button--m-primary--Color: var(--bl-on-primary);
+  background-color: var(--bl-primary-container);
   color: var(--bl-on-primary);
+  min-height: var(--bl-alto-control);
+  border: 0;
   border-radius: 9999px;
-  font-weight: 600;
+  font-family: var(--bl-fuente);
+  font-size: 16px;
+  font-weight: 700;
   width: 100%;
 }
 
-.login-pf-page .btn-primary:hover {
-  background: var(--bl-primary);
-  border-color: var(--bl-primary);
+.login-pf-page .pf-c-button.pf-m-primary:hover,
+.login-pf-page .pf-c-button.pf-m-primary:focus {
+  background-color: var(--bl-primary);
 }
 
-.alert-error, .kc-feedback-text {
+/* Opciones arriba del botón («Cerrar la sesión en los otros dispositivos») */
+.login-pf-page #kc-form-options {
+  margin-bottom: 16px;
+}
+
+/* Foco visible en todos los controles */
+.login-pf-page a:focus-visible,
+.login-pf-page button:focus-visible,
+.login-pf-page input[type="submit"]:focus-visible,
+.login-pf-page input[type="checkbox"]:focus-visible {
+  outline: 3px solid var(--bl-primary-container);
+  outline-offset: 2px;
+}
+
+.login-pf-page a {
+  color: var(--bl-primary-container);
+  text-decoration: underline;
+}
+
+/* ── Errores ────────────────────────────────────────────────────────────
+   Ícono y texto, no solo color. El ícono es un SVG en data URI (no sale a la
+   red) y queda decorativo: el texto del error ya dice lo que pasa. */
+.login-pf-page .pf-c-form__helper-text.pf-m-error,
+.login-pf-page .kc-feedback-text {
   color: var(--bl-error);
+}
+
+.login-pf-page .pf-c-form__helper-text.pf-m-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.login-pf-page .pf-c-form__helper-text.pf-m-error::before {
+  content: "";
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  background-color: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+/* Avisos generales (sesión vencida, error del servidor) */
+.login-pf-page .pf-c-alert {
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+.login-pf-page .pf-c-alert.pf-m-danger {
+  background: var(--bl-error-container);
+  color: var(--bl-on-error-container);
+}
+
+.login-pf-page .pf-c-alert.pf-m-danger .kc-feedback-text {
+  color: var(--bl-on-error-container);
+}
+
+/* ── Desde 1024 px: dos columnas ────────────────────────────────────── */
+@media (min-width: 1024px) {
+  .bl-layout {
+    grid-template-columns: minmax(380px, 5fr) 7fr;
+    grid-template-rows: 1fr;
+  }
+
+  .bl-marca {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 64px clamp(40px, 5vw, 96px);
+  }
+
+  .bl-marca__nombre {
+    font-size: 40px;
+  }
+
+  .bl-marca__logo {
+    width: 44px;
+    height: 44px;
+  }
+
+  .bl-marca__subtitulo {
+    font-size: 18px;
+  }
+
+  .bl-marca__lema {
+    margin-top: 32px !important;
+    font-size: 28px;
+    max-width: 18ch;
+  }
+
+  .bl-marca__beneficios {
+    display: grid;
+    gap: 20px;
+    list-style: none;
+    margin: 40px 0 0;
+    padding: 0;
+    max-width: 40ch;
+  }
+
+  .bl-marca__beneficios li {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    font-size: 16px;
+    font-weight: 500;
+    line-height: 1.4;
+  }
+
+  .bl-marca__icono {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 40px;
+    height: 40px;
+    border-radius: 9999px;
+    background: var(--bl-tertiary-fixed-dim);
+  }
+
+  .bl-marca__icono svg {
+    width: 22px;
+    height: 22px;
+    fill: var(--bl-on-tertiary-fixed);
+  }
+
+  .login-pf-page {
+    justify-content: center;
+    padding: 48px 32px;
+  }
+
+  .login-pf-page .card-pf {
+    padding: 40px 36px;
+  }
+
+  #kc-page-title {
+    font-size: 28px;
+  }
 }
