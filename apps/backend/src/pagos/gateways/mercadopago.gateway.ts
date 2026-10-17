@@ -50,7 +50,18 @@ interface OrdenMp {
 
 // Rechazos reales del emisor de la tarjeta (HTTP 402 + status_detail).
 // Verificado contra el sandbox; se amplía a medida que aparecen casos.
-const DETALLES_RECHAZO = new Set(['insufficient_amount', 'rejected_by_issuer']);
+// max_attempts_exceeded: lo devuelve el sandbox con la tarjeta de débito de prueba.
+const DETALLES_RECHAZO = new Set([
+  'insufficient_amount',
+  'rejected_by_issuer',
+  'max_attempts_exceeded',
+]);
+
+// Respuestas 4xx de la consulta de una order que no mejoran reintentando:
+// el id no es válido o la order no existe. Para el webhook equivalen a
+// "orden desconocida" (se responde 200). 401, 403, 408, 429 y los 5xx
+// siguen subiendo como error para que Mercado Pago reintente.
+const ESTADOS_ORDEN_INEXISTENTE = new Set([400, 404, 422]);
 
 // UUID determinístico a partir de (tenant, clave del cliente): el mismo
 // intento reintentado usa la misma X-Idempotency-Key en Mercado Pago.
@@ -199,7 +210,13 @@ export class MercadoPagoGateway implements PagoGateway {
       },
     );
 
-    if (respuesta.status === 404) {
+    if (ESTADOS_ORDEN_INEXISTENTE.has(respuesta.status)) {
+      if (respuesta.status !== 404) {
+        Logger.warn(
+          `Mercado Pago no reconoce la order ${orderId} (HTTP ${respuesta.status})`,
+          MercadoPagoGateway.name,
+        );
+      }
       return null;
     }
 

@@ -150,6 +150,20 @@ describe('MercadoPagoGateway', () => {
       expect(resultado.motivoRechazo).toBe('rejected_by_issuer');
     });
 
+    it('402 max_attempts_exceeded (débito de prueba) => rechazo con motivo, sin lanzar', async () => {
+      fetchMock.mockResolvedValue(
+        respuestaMp(402, fallo402('max_attempts_exceeded')),
+      );
+
+      const resultado = await new MercadoPagoGateway().cobrar(solicitud());
+
+      expect(resultado).toEqual({
+        aprobado: false,
+        pasarelaReferencia: 'ORD-FALLIDA',
+        motivoRechazo: 'max_attempts_exceeded',
+      });
+    });
+
     it('402 invalid_card_token => BadRequest (dato inválido del cliente, no un rechazo)', async () => {
       fetchMock.mockResolvedValue(
         respuestaMp(402, fallo402('invalid_card_token')),
@@ -344,6 +358,28 @@ describe('MercadoPagoGateway', () => {
       await expect(
         new MercadoPagoGateway().consultarOrden('ORD-FANTASMA'),
       ).resolves.toBeNull();
+    });
+
+    it('id de order inválido (400) => null y queda un aviso, para que el webhook responda 200', async () => {
+      const aviso = jest.spyOn(Logger, 'warn').mockImplementation();
+      fetchMock.mockResolvedValue(
+        respuestaMp(400, { message: 'path param order id is invalid' }),
+      );
+
+      await expect(
+        new MercadoPagoGateway().consultarOrden('123456'),
+      ).resolves.toBeNull();
+      expect(aviso).toHaveBeenCalled();
+    });
+
+    it('401 (credencial inválida) NO se tapa: sube como 502 para que se vea y se reintente', async () => {
+      fetchMock.mockResolvedValue(
+        respuestaMp(401, { message: 'unauthorized' }),
+      );
+
+      await expect(
+        new MercadoPagoGateway().consultarOrden('ORD1'),
+      ).rejects.toThrow(BadGatewayException);
     });
 
     it('Mercado Pago falla (5xx) => 502, para que el webhook se reintente', async () => {
