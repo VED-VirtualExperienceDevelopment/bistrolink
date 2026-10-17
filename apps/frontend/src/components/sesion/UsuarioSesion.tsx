@@ -106,10 +106,10 @@ export default function UsuarioSesion() {
           onClick={logout}
           className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-full border border-outline-variant px-4 text-label-md font-semibold text-on-surface transition-colors hover:bg-surface-container-low focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
         >
-          <span aria-hidden="true" className="material-symbols-outlined">
+                <span aria-hidden="true" className="material-symbols-outlined">
             logout
           </span>
-          Cerrar sesión
+          <span>Cerrar sesión</span>
         </button>
       </div>
     </div>
