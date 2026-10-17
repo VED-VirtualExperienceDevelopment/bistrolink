@@ -12,6 +12,7 @@ import { ListaPlano } from "./ListaPlano";
 import { MesaShape } from "./MesaShape";
 import { ICONO_POR_ELEMENTO } from "./plano-iconos";
 import { ZonaShape } from "./ZonaShape";
+import { usePunteroGrueso } from "./usePunteroGrueso";
 import {
   accionDeTecla,
   acotarRecuadroZona,
@@ -39,6 +40,7 @@ import {
   anchoNecesarioLienzo,
   aplicarEstadoMesa,
   cambiarForma,
+  configuracionTactil,
   idsAEliminar,
   limitarCentro,
   mesasConLayoutAEdicion,
@@ -85,7 +87,7 @@ const OPCIONES_FORMA: { forma: FormaMesa; etiqueta: string; icono: string }[] =
   ];
 
 const ESTILO_BOTON_PROPIEDADES =
-  "flex items-center gap-2 rounded-lg border border-outline-variant px-4 py-1.5 text-body-md text-on-surface-variant hover:bg-surface-container disabled:cursor-not-allowed disabled:opacity-50";
+  "flex items-center gap-2 rounded-lg border border-outline-variant px-4 py-1.5 text-body-md text-on-surface-variant hover:bg-surface-container disabled:cursor-not-allowed disabled:opacity-50 touch:min-h-12 touch:px-5";
 
 interface Props {
   restauranteId: string;
@@ -164,6 +166,21 @@ export function MapaMesasEditor({
   // HU-028 (BL-173): zoom del mapa. Lo pueden usar ADMIN y MOZO; no se
   // guarda (cada vez que se abre el mapa arranca en 100%).
   const [zoom, setZoom] = useState<number>(ZOOM_INICIAL);
+  // Tablet o celular: anclas del Transformer y zonas de toque más grandes
+  // (Konva no ve las clases touch: de Tailwind, por eso va por props).
+  const tactil = usePunteroGrueso();
+  const tactilConfig = configuracionTactil(tactil);
+  const zonaToqueAncla = tactilConfig.zonaToqueAncla;
+  const propsAnclas = {
+    anchorSize: tactilConfig.anchorSize,
+    rotateAnchorOffset: tactilConfig.rotateAnchorOffset,
+    anchorStyleFunc:
+      zonaToqueAncla === undefined
+        ? undefined
+        : (ancla: Konva.Rect) => {
+            ancla.hitStrokeWidth(zonaToqueAncla);
+          },
+  };
 
   // --- Carga inicial: GET /mesas/layout y GET /mesas/plano -------------------
   // Se piden juntas. HU-028 (BL-173): el plano (zonas y elementos fijos) lo
@@ -658,7 +675,7 @@ export function MapaMesasEditor({
             <button
               type="button"
               onClick={handleAgregarMesa}
-              className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-body-md font-medium text-on-primary hover:opacity-90"
+              className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-body-md font-medium text-on-primary hover:opacity-90 touch:min-h-12"
             >
               <span
                 aria-hidden="true"
@@ -677,7 +694,7 @@ export function MapaMesasEditor({
                   ? undefined
                   : `Se pueden agregar hasta ${MAXIMO_ZONAS_PLANO} zonas`
               }
-              className="flex items-center gap-2 rounded-lg border border-outline-variant px-4 py-2 text-body-md text-on-surface-variant hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex items-center gap-2 rounded-lg border border-outline-variant px-4 py-2 text-body-md text-on-surface-variant hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-50 touch:min-h-12"
             >
               <span
                 aria-hidden="true"
@@ -694,7 +711,7 @@ export function MapaMesasEditor({
                   ? undefined
                   : `Se pueden agregar hasta ${MAXIMO_ELEMENTOS_PLANO} elementos`
               }
-              className="flex flex-wrap items-center gap-1 rounded-lg border border-outline-variant p-1 disabled:opacity-50"
+              className="flex flex-wrap items-center gap-1 rounded-lg border border-outline-variant p-1 disabled:opacity-50 touch:gap-2"
             >
               <legend className="sr-only">Agregar elemento fijo</legend>
               {TIPOS_ELEMENTO_PLANO.map((tipo) => (
@@ -703,7 +720,7 @@ export function MapaMesasEditor({
                   type="button"
                   onClick={() => handleAgregarElemento(tipo)}
                   title={`Agregar ${ICONO_POR_ELEMENTO[tipo].etiqueta.toLowerCase()}`}
-                  className="flex items-center gap-1 rounded-md px-3 py-1.5 text-body-sm text-on-surface-variant hover:bg-surface-container-low disabled:cursor-not-allowed"
+                  className="flex items-center gap-1 rounded-md px-3 py-1.5 text-body-sm text-on-surface-variant hover:bg-surface-container-low disabled:cursor-not-allowed touch:min-h-12 touch:min-w-12 touch:px-4"
                 >
                   <span
                     aria-hidden="true"
@@ -751,7 +768,7 @@ export function MapaMesasEditor({
               disabled={
                 guardando || duplicados.length > 0 || !hayCambiosSinGuardar
               }
-              className="rounded-lg bg-primary px-4 py-2 text-body-md font-medium text-on-primary hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-lg bg-primary px-4 py-2 text-body-md font-medium text-on-primary hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 touch:min-h-12"
             >
               {guardando ? "Guardando…" : "Guardar mapa"}
             </button>
@@ -773,7 +790,7 @@ export function MapaMesasEditor({
               <p className="text-label-md text-on-surface">
                 Mesa {mesaSeleccionada.numero}
               </p>
-              <fieldset className="flex items-center gap-1 rounded-lg border border-outline-variant p-1">
+              <fieldset className="flex items-center gap-1 rounded-lg border border-outline-variant p-1 touch:gap-2">
                 <legend className="sr-only">Forma de la mesa</legend>
                 {OPCIONES_FORMA.map(({ forma, etiqueta, icono }) => (
                   <button
@@ -782,7 +799,7 @@ export function MapaMesasEditor({
                     onClick={() => handleCambiarForma(forma)}
                     aria-pressed={formaSeleccionada === forma}
                     title={etiqueta}
-                    className="flex items-center gap-1 rounded-md px-3 py-1.5 text-body-sm text-on-surface-variant hover:bg-surface-container aria-pressed:bg-primary aria-pressed:text-on-primary"
+                    className="flex items-center gap-1 rounded-md px-3 py-1.5 text-body-sm text-on-surface-variant hover:bg-surface-container aria-pressed:bg-primary aria-pressed:text-on-primary touch:min-h-12 touch:min-w-12 touch:px-4"
                   >
                     <span
                       aria-hidden="true"
@@ -814,7 +831,8 @@ export function MapaMesasEditor({
                 <span>Eliminar mesa</span>
               </button>
               <p className="text-label-sm text-on-surface-variant">
-                Doble clic en la mesa para cambiar su número.
+                {tactil ? "Doble toque" : "Doble clic"} en la mesa para
+                cambiar su número.
               </p>
             </>
           )}
@@ -837,7 +855,7 @@ export function MapaMesasEditor({
                 aria-describedby={
                   errorEtiqueta ? "etiqueta-zona-error" : undefined
                 }
-                className="w-64 rounded-lg border border-outline-variant bg-surface px-3 py-1.5 text-body-md text-on-surface aria-[invalid=true]:border-error"
+                className="w-full rounded-lg border border-outline-variant bg-surface px-3 py-1.5 text-body-md text-on-surface aria-[invalid=true]:border-error sm:w-64 touch:min-h-12"
               />
               <button
                 type="button"
@@ -916,7 +934,7 @@ export function MapaMesasEditor({
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <LeyendaEstadosMesa />
-        <fieldset className="flex items-center gap-1 rounded-lg border border-outline-variant p-1">
+        <fieldset className="flex items-center gap-1 rounded-lg border border-outline-variant p-1 touch:gap-2">
           <legend className="sr-only">Zoom del mapa</legend>
           <button
             type="button"
@@ -924,7 +942,7 @@ export function MapaMesasEditor({
             disabled={zoom <= ZOOM_MINIMO}
             aria-label="Alejar"
             title="Alejar"
-            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-on-surface-variant hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-on-surface-variant hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-50 touch:min-h-12 touch:min-w-12"
           >
             <span
               aria-hidden="true"
@@ -938,7 +956,7 @@ export function MapaMesasEditor({
             onClick={() => setZoom(ZOOM_INICIAL)}
             title="Volver al 100%"
             aria-label={`Zoom ${porcentajeZoom(zoom)}. Volver al 100%`}
-            className="min-h-[44px] min-w-[4rem] rounded-md px-2 text-center text-label-md text-on-surface-variant hover:bg-surface-container-low"
+            className="min-h-[44px] min-w-[4rem] rounded-md px-2 text-center text-label-md text-on-surface-variant hover:bg-surface-container-low touch:min-h-12"
           >
             {porcentajeZoom(zoom)}
           </button>
@@ -948,7 +966,7 @@ export function MapaMesasEditor({
             disabled={zoom >= ZOOM_MAXIMO}
             aria-label="Acercar"
             title="Acercar"
-            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-on-surface-variant hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-on-surface-variant hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-50 touch:min-h-12 touch:min-w-12"
           >
             <span
               aria-hidden="true"
@@ -1058,6 +1076,7 @@ export function MapaMesasEditor({
                 editable={puedeEditar}
                 lienzo={lienzo}
                 zoom={zoom}
+                zonaToque={tactilConfig.zonaToqueMesa}
                 onSeleccionar={() => seleccionarMesa(mesa.clientId)}
                 onArrastrar={(x, y) => actualizarMesa(mesa.clientId, { x, y })}
                 onTransformar={(cambios) => {
@@ -1091,6 +1110,7 @@ export function MapaMesasEditor({
             ))}
             {puedeEditar && (
               <Transformer
+                {...propsAnclas}
                 ref={transformerRef}
                 rotateEnabled
                 keepRatio={mantieneProporcion}
@@ -1109,6 +1129,7 @@ export function MapaMesasEditor({
             )}
             {puedeEditar && (
               <Transformer
+                {...propsAnclas}
                 ref={transformerZonaRef}
                 rotateEnabled={false}
                 // Ancho y alto independientes: una zona puede ser una franja.
@@ -1121,6 +1142,7 @@ export function MapaMesasEditor({
             )}
             {puedeEditar && (
               <Transformer
+                {...propsAnclas}
                 ref={transformerElementoRef}
                 rotateEnabled
                 // Ayuda a dejar puertas y barras derechas: el giro "se pega"
@@ -1149,10 +1171,12 @@ export function MapaMesasEditor({
               if (e.key === "Enter") confirmarEdicionNumero();
               if (e.key === "Escape") setEditandoNumero(null);
             }}
-            className="absolute z-10 w-14 rounded border border-primary bg-surface px-1 py-0.5 text-center text-body-sm text-on-surface shadow-md outline-none"
+            // Con el dedo el campo crece a 48 px y la letra pasa a 16 px:
+            // con menos, Safari de iOS agranda la página al enfocarlo.
+            className="absolute z-10 w-14 rounded border border-primary bg-surface px-1 py-0.5 text-center text-body-sm text-on-surface shadow-md outline-none touch:h-12 touch:w-20 touch:text-body-lg"
             style={{
-              left: posicionInputNumero.x - 28,
-              top: posicionInputNumero.y - 14,
+              left: posicionInputNumero.x - (tactil ? 40 : 28),
+              top: posicionInputNumero.y - (tactil ? 24 : 14),
             }}
           />
         )}

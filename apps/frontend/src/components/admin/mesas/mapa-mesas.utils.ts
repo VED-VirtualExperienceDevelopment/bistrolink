@@ -509,3 +509,43 @@ export function tamanoMesaPermitido(
     alto <= DIMENSION_MAXIMA_MESA
   );
 }
+
+// --- Uso con el dedo: tablet y celular ----------------------------------------
+
+/**
+ * Tamaño de las anclas del Transformer con el dedo. Con mouse queda el valor
+ * por defecto de Konva (10 px), que con el dedo es imposible de tomar.
+ */
+export const ANCLA_TACTIL = 24;
+
+/**
+ * Borde invisible que se suma a la zona de toque de una mesa o de un ancla,
+ * sin cambiar lo que se ve. 24 px de ancla más 24 px de borde = 48 px, la
+ * zona táctil mínima que recomienda Material (y por encima de los 44 px de
+ * WCAG 2.5.5).
+ */
+export const ZONA_TOQUE_EXTRA_TACTIL = 24;
+
+/** Distancia entre el recuadro y el ancla de rotación con el dedo. */
+export const DISTANCIA_ANCLA_ROTACION_TACTIL = 44;
+
+/**
+ * Lo que cambia en el lienzo según se use con el dedo o con mouse. Konva
+ * dibuja en un canvas y no ve las clases `touch:` de Tailwind, así que el
+ * editor le pasa estos valores por props. Con mouse no se pisa nada: Konva
+ * usa sus valores por defecto.
+ */
+export function configuracionTactil(tactil: boolean): {
+  anchorSize?: number;
+  rotateAnchorOffset?: number;
+  zonaToqueAncla?: number;
+  zonaToqueMesa: number | "auto";
+} {
+  if (!tactil) return { zonaToqueMesa: "auto" };
+  return {
+    anchorSize: ANCLA_TACTIL,
+    rotateAnchorOffset: DISTANCIA_ANCLA_ROTACION_TACTIL,
+    zonaToqueAncla: ZONA_TOQUE_EXTRA_TACTIL,
+    zonaToqueMesa: ZONA_TOQUE_EXTRA_TACTIL,
+  };
+}

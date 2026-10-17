@@ -27,7 +27,7 @@ export function ListaPlano({ mesas, zonas, elementos }: Readonly<Props>) {
 
   return (
     <details className="rounded-xl border border-outline-variant bg-surface-container-lowest">
-      <summary className="flex min-h-[44px] cursor-pointer items-center px-4 text-label-md text-on-surface-variant">
+      <summary className="flex min-h-[44px] cursor-pointer items-center px-4 text-label-md text-on-surface-variant touch:min-h-12">
         Ver el plano como lista
       </summary>
       <div className="grid gap-6 px-4 pb-4 md:grid-cols-3">

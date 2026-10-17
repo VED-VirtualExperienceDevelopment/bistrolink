@@ -42,6 +42,11 @@ export interface MesaShapeProps {
     rotacion: number;
   }) => void;
   onEditarNumero: () => void;
+  /**
+   * Zona de toque extra alrededor del borde, en unidades del lienzo
+   * (`configuracionTactil`). "auto" con mouse: la zona es la figura.
+   */
+  zonaToque?: number | "auto";
 }
 
 /**
@@ -76,6 +81,7 @@ export const MesaShape = forwardRef<Konva.Group, MesaShapeProps>(
       onArrastrar,
       onTransformar,
       onEditarNumero,
+      zonaToque = "auto",
     },
     ref,
   ) {
@@ -136,6 +142,7 @@ export const MesaShape = forwardRef<Konva.Group, MesaShapeProps>(
             stroke={stroke}
             strokeWidth={strokeWidth}
             dash={dash}
+            hitStrokeWidth={zonaToque}
           />
         ) : (
           <Rect
@@ -148,6 +155,7 @@ export const MesaShape = forwardRef<Konva.Group, MesaShapeProps>(
             stroke={stroke}
             strokeWidth={strokeWidth}
             dash={dash}
+            hitStrokeWidth={zonaToque}
           />
         )}
         <Text
