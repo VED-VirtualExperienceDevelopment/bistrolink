@@ -2,13 +2,20 @@
 
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
 } from 'react';
 import { getKeycloak } from '@/lib/keycloak';
+import {
+  usuarioSesion,
+  type ClaimsPerfil,
+  type UsuarioSesion,
+} from './usuario-sesion.utils';
 
 interface KeycloakContextValue {
   initializing: boolean;
@@ -16,6 +23,8 @@ interface KeycloakContextValue {
   token: string | undefined;
   tenantId: string | undefined;
   roles: string[];
+  /** Quién inició sesión (BL-349). `undefined` mientras no haya sesión. */
+  usuario: UsuarioSesion | undefined;
   hasRole: (role: string) => boolean;
   logout: () => void;
 }
@@ -34,6 +43,7 @@ export function KeycloakProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | undefined>(undefined);
   const [tenantId, setTenantId] = useState<string | undefined>(undefined);
   const [roles, setRoles] = useState<string[]>([]);
+  const [usuario, setUsuario] = useState<UsuarioSesion | undefined>(undefined);
   const initStarted = useRef(false);
 
   useEffect(() => {
@@ -58,10 +68,16 @@ export function KeycloakProvider({ children }: { children: ReactNode }) {
           // confirmar con el mapper real configurado en el realm de Keycloak
           // si estos nombres de claim no coinciden.
           const parsed = keycloak.tokenParsed as
-            | { tenant_id?: string; realm_access?: { roles?: string[] } }
+            | (ClaimsPerfil & {
+                tenant_id?: string;
+                realm_access?: { roles?: string[] };
+              })
             | undefined;
+          const rolesToken = parsed?.realm_access?.roles ?? [];
           setTenantId(parsed?.tenant_id);
-          setRoles(parsed?.realm_access?.roles ?? []);
+          setRoles(rolesToken);
+          // Nombre y usuario salen del scope `profile` del realm (BL-344).
+          setUsuario(usuarioSesion(parsed, rolesToken));
         }
         setInitializing(false);
       })
@@ -82,16 +98,31 @@ export function KeycloakProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const logout = () => {
+  const logout = useCallback(() => {
     getKeycloak().logout({ redirectUri: window.location.origin });
-  };
+  }, []);
 
-  const hasRole = (role: string) => roles.includes(role);
+  const hasRole = useCallback((role: string) => roles.includes(role), [roles]);
+
+  // useMemo: el valor del contexto solo cambia cuando cambia la sesión, así
+  // los componentes que usan useKeycloakAuth() no se vuelven a dibujar en
+  // cada render del provider.
+  const value = useMemo(
+    () => ({
+      initializing,
+      authenticated,
+      token,
+      tenantId,
+      roles,
+      usuario,
+      hasRole,
+      logout,
+    }),
+    [initializing, authenticated, token, tenantId, roles, usuario, hasRole, logout],
+  );
 
   return (
-    <KeycloakContext.Provider
-      value={{ initializing, authenticated, token, tenantId, roles, hasRole, logout }}
-    >
+    <KeycloakContext.Provider value={value}>
       {children}
     </KeycloakContext.Provider>
   );
