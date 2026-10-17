@@ -53,8 +53,10 @@ async function loginKds(
 
   await kdsPage.locator('input[name="username"]').fill(credenciales.username);
   await kdsPage.locator('input[type="password"]').fill(credenciales.password);
+  // «Ingresar» es el texto del tema de BistroLink (BL-346). «Iniciar sesión»
+  // y «Sign in» quedan para un Keycloak que todavía no tenga el tema nuevo.
   await kdsPage
-    .getByRole("button", { name: /sign in|iniciar sesión/i })
+    .getByRole("button", { name: /ingresar|iniciar sesión|sign in/i })
     .click();
 
   await kdsPage.waitForURL(KDS_PATH);
