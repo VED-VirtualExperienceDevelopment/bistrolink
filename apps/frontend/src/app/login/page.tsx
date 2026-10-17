@@ -143,12 +143,11 @@ function LoginRedirect() {
   if (initializing || authenticated) {
     return (
       <main className="flex h-screen items-center justify-center bg-background px-4">
-        <span
-          role="status"
-          className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent"
-        >
+              {/* <output> ya tiene el rol «status»: el lector de pantalla anuncia
+            «Cargando…» sin necesidad de role="status" (regla de Sonar). */}
+        <output className="block h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent">
           <span className="sr-only">Cargando…</span>
-        </span>
+        </output>
       </main>
     );
   }
