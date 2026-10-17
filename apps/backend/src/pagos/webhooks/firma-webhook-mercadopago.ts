@@ -41,11 +41,7 @@ export function firmaWebhookMercadoPagoValida({
     return false;
   }
 
-  const partes: string[] = [];
-  if (dataId) partes.push(`id:${dataId.toLowerCase()}`);
-  if (xRequestId) partes.push(`request-id:${xRequestId}`);
-  partes.push(`ts:${ts}`);
-  const manifiesto = `${partes.join(';')};`;
+  const manifiesto = construirManifiesto(dataId, xRequestId, ts);
 
   const esperada = Buffer.from(
     createHmac('sha256', secret).update(manifiesto).digest('hex'),
@@ -56,4 +52,40 @@ export function firmaWebhookMercadoPagoValida({
   return (
     esperada.length === recibida.length && timingSafeEqual(esperada, recibida)
   );
+}
+
+function construirManifiesto(
+  dataId: string | undefined,
+  xRequestId: string | undefined,
+  ts: string,
+): string {
+  const partes: string[] = [];
+  if (dataId) partes.push(`id:${dataId.toLowerCase()}`);
+  if (xRequestId) partes.push(`request-id:${xRequestId}`);
+  partes.push(`ts:${ts}`);
+  return `${partes.join(';')};`;
+}
+
+// Resumen para el log cuando se rechaza una firma: qué datos llegaron, con
+// qué manifiesto se calculó y cómo empieza la firma recibida. Nunca incluye
+// el secreto ni la firma esperada.
+export function diagnosticoFirmaWebhook({
+  xSignature,
+  xRequestId,
+  dataId,
+  secret,
+}: DatosFirmaWebhook): string {
+  const ts = xSignature?.match(/ts=([^,\s]+)/)?.[1];
+  const v1 = xSignature?.match(/v1=([^,\s]+)/)?.[1];
+  return [
+    `x-signature=${xSignature ? 'sí' : 'NO'}`,
+    `ts=${ts ? 'sí' : 'NO'}`,
+    `v1=${v1 ? `sí(${v1.length} car., empieza con ${v1.slice(0, 12)})` : 'NO'}`,
+    `x-request-id=${xRequestId ? 'sí' : 'NO'}`,
+    `data.id(query)=${dataId ? 'sí' : 'NO'}`,
+    `largoSecreto=${secret?.length ?? 0}`,
+    ts ? `manifiesto="${construirManifiesto(dataId, xRequestId, ts)}"` : '',
+  ]
+    .filter(Boolean)
+    .join(', ');
 }

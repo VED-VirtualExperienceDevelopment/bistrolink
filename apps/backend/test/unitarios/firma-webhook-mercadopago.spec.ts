@@ -1,4 +1,7 @@
-import { firmaWebhookMercadoPagoValida } from '../../src/pagos/webhooks/firma-webhook-mercadopago';
+import {
+  diagnosticoFirmaWebhook,
+  firmaWebhookMercadoPagoValida,
+} from '../../src/pagos/webhooks/firma-webhook-mercadopago';
 
 // Las firmas esperadas se calcularon FUERA de Node (Python hmac) con el
 // manifiesto oficial, así el test no valida la implementación contra sí misma.
@@ -156,6 +159,24 @@ describe('firmaWebhookMercadoPagoValida (BL-78: HMAC-SHA256)', () => {
 
     it('sin ningún dato no lanza: devuelve false', () => {
       expect(firmaWebhookMercadoPagoValida({})).toBe(false);
+    });
+  });
+
+  describe('diagnosticoFirmaWebhook', () => {
+    it('describe qué llegó y el manifiesto, sin filtrar el secreto ni la firma completa', () => {
+      const texto = diagnosticoFirmaWebhook(valida);
+      expect(texto).toContain('data.id(query)=sí');
+      expect(texto).toContain('x-request-id=sí');
+      expect(texto).toContain(`manifiesto="id:${DATA_ID.toLowerCase()};`);
+      expect(texto).toContain(FIRMA_COMPLETA.slice(0, 12));
+      expect(texto).not.toContain(SECRET);
+      expect(texto).not.toContain(FIRMA_COMPLETA);
+    });
+
+    it('avisa cuando faltan datos', () => {
+      const texto = diagnosticoFirmaWebhook({ secret: undefined });
+      expect(texto).toContain('x-signature=NO');
+      expect(texto).toContain('largoSecreto=0');
     });
   });
 });
