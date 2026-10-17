@@ -9,6 +9,11 @@ import {
   type ReactNode,
 } from 'react';
 import { getKeycloak } from '@/lib/keycloak';
+import {
+  usuarioSesion,
+  type ClaimsPerfil,
+  type UsuarioSesion,
+} from './usuario-sesion.utils';
 
 interface KeycloakContextValue {
   initializing: boolean;
@@ -16,6 +21,8 @@ interface KeycloakContextValue {
   token: string | undefined;
   tenantId: string | undefined;
   roles: string[];
+  /** Quién inició sesión (BL-349). `undefined` mientras no haya sesión. */
+  usuario: UsuarioSesion | undefined;
   hasRole: (role: string) => boolean;
   logout: () => void;
 }
@@ -34,6 +41,7 @@ export function KeycloakProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | undefined>(undefined);
   const [tenantId, setTenantId] = useState<string | undefined>(undefined);
   const [roles, setRoles] = useState<string[]>([]);
+  const [usuario, setUsuario] = useState<UsuarioSesion | undefined>(undefined);
   const initStarted = useRef(false);
 
   useEffect(() => {
@@ -58,10 +66,16 @@ export function KeycloakProvider({ children }: { children: ReactNode }) {
           // confirmar con el mapper real configurado en el realm de Keycloak
           // si estos nombres de claim no coinciden.
           const parsed = keycloak.tokenParsed as
-            | { tenant_id?: string; realm_access?: { roles?: string[] } }
+            | (ClaimsPerfil & {
+                tenant_id?: string;
+                realm_access?: { roles?: string[] };
+              })
             | undefined;
+          const rolesToken = parsed?.realm_access?.roles ?? [];
           setTenantId(parsed?.tenant_id);
-          setRoles(parsed?.realm_access?.roles ?? []);
+          setRoles(rolesToken);
+          // Nombre y usuario salen del scope `profile` del realm (BL-344).
+          setUsuario(usuarioSesion(parsed, rolesToken));
         }
         setInitializing(false);
       })
@@ -90,7 +104,16 @@ export function KeycloakProvider({ children }: { children: ReactNode }) {
 
   return (
     <KeycloakContext.Provider
-      value={{ initializing, authenticated, token, tenantId, roles, hasRole, logout }}
+      value={{
+        initializing,
+        authenticated,
+        token,
+        tenantId,
+        roles,
+        usuario,
+        hasRole,
+        logout,
+      }}
     >
       {children}
     </KeycloakContext.Provider>
