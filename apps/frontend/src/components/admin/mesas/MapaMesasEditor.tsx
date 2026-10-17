@@ -110,7 +110,8 @@ function clasesEditor(pantallaCompleta: boolean): string {
 // Recuadro del mapa. touch-pan-x/y: con un dedo se desplaza, pero el
 // pellizco lo maneja el mapa y no agranda la página (fuera del mapa el zoom
 // del navegador sigue funcionando, WCAG 1.4.4). Alto: hasta 640 px pero
-// nunca más del 70 % de la pantalla visible; en pantalla completa usa alto (14rem para las barras).
+// nunca más del 70 % de la pantalla visible; en pantalla completa usa casi
+// la mayor parte del alto (14rem para las barras).
 function clasesRecuadroMapa(pantallaCompleta: boolean): string {
   const alto = pantallaCompleta
     ? "max-h-[calc(100dvh-14rem)]"
@@ -1186,11 +1187,12 @@ export function MapaMesasEditor({
 
       <section
         ref={contenedorRef}
-        // tabIndex -1: el foco llega por código, al elegir una mesa en el
-        // mapa o en la lista ("Ver la mesa N en el mapa"), para que las
-        // flechas la muevan. No entra en el orden de Tab: un <section> no es
-        // un control (Sonar / jsx-a11y no-noninteractive-tabindex).
-        tabIndex={-1}
+        // El recuadro tiene scroll: tiene que poder recibir el foco con Tab
+        // para desplazarlo con el teclado (WCAG 2.1.1; regla de axe
+        // scrollable-region-focusable, TC-E-022). Por eso lleva tabIndex 0
+        // aunque un <section> no sea un control; la regla de Sonar que lo
+        // marca no contempla las regiones con scroll.
+        tabIndex={0} // NOSONAR: región con scroll, ver comentario de arriba
         aria-label="Mapa de mesas"
         aria-describedby="atajos-plano"
         // touch-pan-x/y: con un dedo el recuadro se desplaza, pero el
