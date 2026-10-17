@@ -1,4 +1,4 @@
-# Extiende la imagen oficial de Kiwi TCMS con tres overrides:
+# Extiende la imagen oficial de Kiwi TCMS con cuatro overrides:
 #  1. local_settings.py — SECURE_PROXY_SSL_HEADER (buena práctica Django
 #     estándar, aunque terminó no siendo la causa del loop).
 #  2. nginx.conf — la causa REAL del loop de redirects: el nginx interno
@@ -14,6 +14,8 @@
 #     alguien lo corre a mano vía "railway run". Este wrapper corre
 #     "manage.py upgrade --noinput" (migrate + refresh_permissions +
 #     limpieza de datos obsoletos) antes de arrancar el server real.
+#  4. uwsgi.conf — cantidad fija de procesos de uWSGI (ver el RUN sed más
+#     abajo), en lugar de uno por CPU.
 #
 # NOTA: el paso de copiar local_settings.py vive en un .py aparte
 # (apply_local_settings.py) en vez de python inline en este RUN, porque
@@ -36,6 +38,16 @@ RUN python3 /tmp/apply_local_settings.py
 USER root
 COPY docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
+
+# Procesos de uWSGI fijos. La imagen oficial trae "processes = %k" en
+# /Kiwi/etc/uwsgi.conf: un worker de Django por cada CPU que ve el
+# contenedor. En Railway el contenedor ve las CPUs del servidor físico
+# (48), así que Kiwi levantaba 48 workers de ~50 MB cada uno para un
+# equipo de 3 personas: era el servicio que más memoria consumía de
+# staging. Con 2 workers alcanza. El grep hace fallar el build si una
+# versión nueva de la imagen cambia esa línea y el reemplazo no se aplica.
+RUN sed -i 's/^processes = %k$/processes = 2/' /Kiwi/etc/uwsgi.conf \
+    && grep -q '^processes = 2$' /Kiwi/etc/uwsgi.conf
 USER 1001
 
 ENTRYPOINT ["/docker-entrypoint.sh"]

@@ -47,6 +47,9 @@ KC_ADMIN_PASS="${KC_BOOTSTRAP_ADMIN_PASSWORD:-${KEYCLOAK_ADMIN_PASSWORD:-admin}}
 /opt/keycloak/bin/kc.sh "$@" &
 KC_PID=$!
 
+# Railway (y docker stop) mandan SIGTERM a este script, que es el PID 1 del
+# contenedor; kc.sh corre como hijo y no lo recibe solo. El trap se lo
+# reenvía, y el bloque 3 espera a que Keycloak termine de apagarse (BL-228).
 trap 'kill -TERM "$KC_PID" 2>/dev/null || true' TERM INT
 
 # 2. Espera a que el endpoint de salud (management port 9000) responda 200
@@ -111,4 +114,19 @@ fi
 
 # 3. El proceso de Keycloak sigue siendo el que manda: si termina (o lo
 #    matan), el contenedor entero termina con su mismo código de salida.
+#
+#    BL-228: con SIGTERM, el trap se lo reenvía a Keycloak y "wait" vuelve
+#    enseguida con 143. Antes, con "set -e", el script terminaba ahí, el
+#    contenedor se cerraba y Keycloak moría con SIGKILL a mitad del apagado
+#    (sesiones y conexiones a keycloak-db sin cerrar). Ahora se vuelve a
+#    esperar hasta que el proceso de Keycloak termine de verdad.
+#    El aviso "Keycloak is running inside a container, but is not PID 1"
+#    sigue apareciendo (kc.sh no es el PID 1), pero el apagado ya es ordenado.
+set +e
 wait "$KC_PID"
+status=$?
+while kill -0 "$KC_PID" 2>/dev/null; do
+  wait "$KC_PID"
+  status=$?
+done
+exit "$status"
