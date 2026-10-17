@@ -35,6 +35,25 @@ Scope OpenID Connect que agrega los roles del usuario al token.
 `--import-realm` (solo cuando el realm se crea desde la consola de admin),
 así que hay que definirlo a mano acá.
 
+## Client Scope: `profile`
+
+Scope OpenID Connect que agrega al token el usuario y el nombre de la
+persona: `preferred_username`, `given_name`, `family_name` y `name`. La app
+los usa para mostrar quién está logueado (BL-342).
+
+**Motivo:** igual que `roles`, Keycloak no lo crea al importar un realm vía
+`--import-realm`. El cliente `bistrolink-frontend` lo pide como default
+scope, pero si el realm no lo define, Keycloak lo descarta en silencio y el
+token sale sin nombre ni usuario.
+
+**El correo no se incluye a propósito:** el scope `email` no está definido,
+porque la app no necesita el correo en el token. Cuantos menos datos
+personales viajen en el token, mejor. Si en el futuro hace falta, se define
+como un scope aparte.
+
+**Entornos existentes:** como `--import-realm` no actualiza un realm que ya
+existe, en staging y producción este scope se crea por la Admin API (BL-345).
+
 ## Service account de `bistrolink-backend`: permisos declarados en el JSON
 
 El usuario `service-account-bistrolink-backend` tiene sus `clientRoles` de
