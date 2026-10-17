@@ -472,6 +472,32 @@ export function porcentajeZoom(zoom: number): string {
   return `${Math.round(zoom * 100)}%`;
 }
 
+/** Distancia en píxeles entre dos dedos (o dos puntos de pantalla). */
+export function distanciaEntrePuntos(
+  a: { clientX: number; clientY: number },
+  b: { clientX: number; clientY: number },
+): number {
+  return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+}
+
+/**
+ * Zoom con dos dedos: escala el zoom con el que arrancó el gesto según
+ * cuánto se separaron los dedos, sin pasar de los límites de los botones
+ * + / −. Se redondea a centésimas para que el porcentaje no salte.
+ * siguienteZoom acepta valores intermedios, así que los botones siguen
+ * funcionando después de un pellizco.
+ */
+export function zoomPorPellizco(
+  zoomInicial: number,
+  distanciaInicial: number,
+  distanciaActual: number,
+): number {
+  if (distanciaInicial <= 0) return zoomInicial;
+  const crudo = zoomInicial * (distanciaActual / distanciaInicial);
+  const redondeado = Math.round(crudo * 100) / 100;
+  return Math.min(ZOOM_MAXIMO, Math.max(ZOOM_MINIMO, redondeado));
+}
+
 /**
  * Versión de limitarCentro para el dragBoundFunc de Konva con zoom. Konva le
  * pasa la posición en píxeles de pantalla (ya multiplicada por el zoom del

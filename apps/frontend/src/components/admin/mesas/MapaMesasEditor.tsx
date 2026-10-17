@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Layer, Stage, Transformer } from "react-konva";
-import type Konva from "konva";
+import Konva from "konva";
 import { io, type Socket } from "socket.io-client";
 import { useKeycloakAuth } from "@/components/providers/KeycloakProvider";
 import { apiFetch, ApiError } from "@/lib/api-client";
@@ -41,6 +41,7 @@ import {
   aplicarEstadoMesa,
   cambiarForma,
   configuracionTactil,
+  distanciaEntrePuntos,
   idsAEliminar,
   limitarCentro,
   mesasConLayoutAEdicion,
@@ -61,6 +62,7 @@ import {
   ZOOM_MAXIMO,
   ZOOM_MINIMO,
   type Lienzo,
+  zoomPorPellizco,
   type MesaEnEdicion,
 } from "./mapa-mesas.utils";
 import type {
@@ -77,6 +79,12 @@ import {
 } from "@/types/plano";
 
 const WS_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+
+// Zoom con dos dedos: Konva sigue escuchando toques mientras se arrastra una
+// mesa, así el segundo dedo se detecta aunque el primero haya empezado un
+// arrastre. Es seguro porque este módulo se carga solo en el navegador
+// (la página lo importa con ssr: false).
+Konva.hitOnDragEnabled = true;
 const ALTURA_STAGE = 600;
 
 const OPCIONES_FORMA: { forma: FormaMesa; etiqueta: string; icono: string }[] =
@@ -576,6 +584,38 @@ export function MapaMesasEditor({
     }
   }
 
+  // --- Zoom con dos dedos (móvil y tablet) -------------------------------------
+  // Se guarda la distancia entre los dedos y el zoom con los que arrancó el
+  // gesto, y se escala desde ahí. Con un dedo no se hace nada: sigue el
+  // arrastre de mesas (ADMIN) o el scroll del recuadro.
+  const pellizcoRef = useRef<{ distancia: number; zoom: number } | null>(
+    null,
+  );
+
+  function handleTouchMove(e: Konva.KonvaEventObject<TouchEvent>) {
+    const toques = e.evt.touches;
+    if (toques.length !== 2) return;
+    e.evt.preventDefault();
+    // Si el primer dedo había empezado a arrastrar una mesa, se suelta.
+    if (e.target.isDragging()) e.target.stopDrag();
+    const distancia = distanciaEntrePuntos(toques[0], toques[1]);
+    if (!pellizcoRef.current) {
+      pellizcoRef.current = { distancia, zoom };
+      return;
+    }
+    setZoom(
+      zoomPorPellizco(
+        pellizcoRef.current.zoom,
+        pellizcoRef.current.distancia,
+        distancia,
+      ),
+    );
+  }
+
+  function handleTouchEnd(e: Konva.KonvaEventObject<TouchEvent>) {
+    if (e.evt.touches.length < 2) pellizcoRef.current = null;
+  }
+
   function confirmarEdicionNumero() {
     if (!editandoNumero) return;
     const nuevoNumero = parsearNumeroMesa(editandoNumero.valor);
@@ -980,11 +1020,14 @@ export function MapaMesasEditor({
 
       <div
         ref={contenedorRef}
-        className="relative max-h-[640px] w-full overflow-auto rounded-xl border border-outline-variant bg-surface-container-lowest"
+        // touch-pan-x/y: con un dedo el recuadro se desplaza, pero el
+        // pellizco ya no agranda toda la página, lo maneja el mapa. Fuera
+        // del mapa el zoom del navegador sigue funcionando (WCAG 1.4.4).
+        className="relative max-h-[640px] w-full touch-pan-x touch-pan-y overflow-auto rounded-xl border border-outline-variant bg-surface-container-lowest"
       >
-        {/* HU-028 (BL-173): el Stage se escala con el zoom. Las mesas siguen
-            en unidades del lienzo; si el mapa no entra, el contenedor
-            muestra scroll. */}
+        {/* HU-028 (BL-173): el Stage se escala con el zoom (botones o dos
+            dedos). Las mesas siguen en unidades del lienzo; si el mapa no
+            entra, el contenedor muestra scroll. */}
         <Stage
           width={lienzo.ancho * zoom}
           height={lienzo.alto * zoom}
@@ -992,6 +1035,8 @@ export function MapaMesasEditor({
           scaleY={zoom}
           onMouseDown={handleClickStage}
           onTouchStart={handleClickStage}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
         >
           <Layer>
             {/* HU-028 (BL-173): las zonas van primero para quedar debajo
