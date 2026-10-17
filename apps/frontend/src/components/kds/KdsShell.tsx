@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useKeycloakAuth } from '@/components/providers/KeycloakProvider';
+import UsuarioSesion from '@/components/sesion/UsuarioSesion';
 
 const ROLES_PERMITIDOS = ['ADMIN', 'COCINA', 'MOZO'];
 
@@ -13,7 +14,7 @@ const ROLES_PERMITIDOS = ['ADMIN', 'COCINA', 'MOZO'];
   export default function KdsShell({
     children,
   }: Readonly<{ children: React.ReactNode }>) {
-  const { initializing, authenticated, hasRole, logout } = useKeycloakAuth();
+  const { initializing, authenticated, hasRole } = useKeycloakAuth();
   const router = useRouter();
   const pathname = usePathname();
 
@@ -42,21 +43,19 @@ const ROLES_PERMITIDOS = ['ADMIN', 'COCINA', 'MOZO'];
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background">
-      <header className="flex h-16 shrink-0 items-center justify-between border-b border-outline-variant bg-surface px-6 shadow-sm">
+      <header className="flex h-16 shrink-0 items-center justify-between border-b border-outline-variant bg-surface px-4 shadow-sm md:px-6">
         <div className="text-headline-sm font-bold text-primary">BistroLink — KDS</div>
         <div className="flex items-center gap-2">
           {/* Sin link "volver a admin": ADMIN/MOZO ya tienen /admin/kds
               (embebido, con sidebar) para ver/operar esto sin salir de
               admin — este standalone es la pantalla dedicada de COCINA, que
               no tiene destino del lado admin al cual volver. Si alguien
-              entra acá directo con otro rol, el logout de abajo alcanza. */}
-          <button
-            type="button"
-            onClick={logout}
-            className="flex items-center gap-2 rounded-lg px-3 py-2 text-on-surface-variant transition-colors hover:bg-surface-container-low"
-          >
-            <span className="material-symbols-outlined">logout</span>
-          </button>
+              entra acá directo con otro rol, el «Cerrar sesión» de abajo
+              alcanza.
+              BL-350: el botón de logout (solo un ícono, sin nombre para el
+              lector de pantalla) pasa a estar dentro de UsuarioSesion, junto
+              con quién inició sesión. */}
+          <UsuarioSesion />
         </div>
       </header>
       <main className="min-h-0 flex-1 overflow-hidden">{children}</main>
