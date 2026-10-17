@@ -14,6 +14,7 @@ import {
   ValidatorConstraintInterface,
 } from 'class-validator';
 import { MesaLayoutDto } from './mesa-layout.dto';
+import { PlanoDto } from './plano.dto';
 
 /**
  * Una mesa dentro del guardado masivo del mapa (POST /mesas/layout).
@@ -39,19 +40,20 @@ export class MesaLayoutItemDto extends MesaLayoutDto {
 /**
  * Reemplaza al @ArrayMinSize(1) que tenía `mesas`: desde BL-58 un guardado
  * puede traer solo eliminaciones (por ejemplo, borrar la última mesa del
- * mapa), así que lo que no se admite es un guardado sin nada que hacer.
+ * mapa), y desde HU-028 (BL-173) solo el plano (por ejemplo, mover una zona
+ * sin tocar mesas). Lo que no se admite es un guardado sin nada que hacer.
  */
 @ValidatorConstraint({ name: 'mesasOEliminar' })
 class MesasOEliminarConstraint implements ValidatorConstraintInterface {
   validate(mesas: unknown, args: ValidationArguments): boolean {
-    const { eliminar } = args.object as GuardarLayoutDto;
+    const { eliminar, plano } = args.object as GuardarLayoutDto;
     const hayMesas = Array.isArray(mesas) && mesas.length > 0;
     const hayEliminaciones = Array.isArray(eliminar) && eliminar.length > 0;
-    return hayMesas || hayEliminaciones;
+    return hayMesas || hayEliminaciones || plano !== undefined;
   }
 
   defaultMessage(): string {
-    return 'el guardado tiene que incluir al menos una mesa para guardar o eliminar';
+    return 'el guardado tiene que incluir al menos una mesa para guardar o eliminar, o el plano';
   }
 }
 
@@ -83,4 +85,15 @@ export class GuardarLayoutDto {
   @ArrayUnique({ message: 'eliminar no puede repetir ids' })
   @IsUUID('loose', { each: true }) // ver ListarLayoutQueryDto
   eliminar?: string[];
+
+  /**
+   * HU-028 (BL-173): elementos fijos y zonas del salón. Opcional: si no
+   * viene, el plano guardado no cambia (así el editor actual de HU-016, que
+   * no lo manda, sigue funcionando igual). Si viene, reemplaza al anterior
+   * entero, en la misma transacción que las mesas.
+   */
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => PlanoDto)
+  plano?: PlanoDto;
 }

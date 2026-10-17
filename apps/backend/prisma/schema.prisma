@@ -33,6 +33,10 @@ enum MesaEstado {
   // implementa HU-017; hasta entonces queda expuesta y es seteable vía el
   // endpoint mock de MesasController.
   EN_PROCESO_DE_PAGO
+  // HU-028 (BL-173): agregado de forma aditiva, igual que EN_PROCESO_DE_PAGO.
+  // Por ahora se setea con el endpoint provisorio PATCH /mesas/:id/estado;
+  // la transición real (al liberar la mesa) la implementa HU-017 (BL-60).
+  REQUIERE_LIMPIEZA
 }
 
 enum PedidoEstado {
@@ -94,6 +98,13 @@ model Restaurante {
   nombre    String
   direccion String
   timezone  String
+  // HU-028 (BL-173): elementos fijos (puerta, baño, cocina, caja, barra) y
+  // zonas (salón, patio, calle) del plano del salón. Forma:
+  // { elementos: [{ id, tipo, x, y, ancho, alto, rotacion }],
+  //   zonas: [{ id, etiqueta, x, y, ancho, alto }] }
+  // Nullable: null = plano sin elementos ni zonas (los layouts de HU-016,
+  // que viven en mesa.layout, no cambian). Validado por PlanoDto.
+  plano     Json?
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 

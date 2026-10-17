@@ -5,10 +5,12 @@ import { Circle, Group, Rect, Text } from "react-konva";
 import type Konva from "konva";
 import type { EstadoMesa, FormaMesa } from "@/types/mesa";
 import {
+  BORDE_POR_ESTADO,
   COLOR_POR_ESTADO,
   dimensionesTrasTransformar,
-  limitarCentro,
+  limitarCentroEnPantalla,
   semiExtension,
+  TEXTO_POR_ESTADO,
   type Lienzo,
 } from "./mapa-mesas.utils";
 
@@ -28,6 +30,8 @@ export interface MesaShapeProps {
   editable: boolean;
   /** Área dibujable del editor: la mesa no se puede arrastrar fuera de ella. */
   lienzo: Lienzo;
+  /** HU-028 (BL-173): zoom actual del Stage, para acotar el arrastre. */
+  zoom: number;
   onSeleccionar: () => void;
   onArrastrar: (x: number, y: number) => void;
   onTransformar: (cambios: {
@@ -67,6 +71,7 @@ export const MesaShape = forwardRef<Konva.Group, MesaShapeProps>(
       seleccionada,
       editable,
       lienzo,
+      zoom,
       onSeleccionar,
       onArrastrar,
       onTransformar,
@@ -75,7 +80,10 @@ export const MesaShape = forwardRef<Konva.Group, MesaShapeProps>(
     ref,
   ) {
     const fill = COLOR_POR_ESTADO[estado];
-    const strokeWidth = seleccionada ? 3 : 1.5;
+    // HU-028 (BL-173): el patrón del borde también indica el estado (no solo
+    // el color). 2.5 px como mínimo para que el patrón se distinga.
+    const dash = BORDE_POR_ESTADO[estado];
+    const strokeWidth = seleccionada ? 3.5 : 2.5;
     const stroke = seleccionada ? COLOR_SELECCION : COLOR_BORDE;
 
     const handleTransformEnd = (e: Konva.KonvaEventObject<Event>) => {
@@ -104,13 +112,14 @@ export const MesaShape = forwardRef<Konva.Group, MesaShapeProps>(
         y={y}
         rotation={rotacion}
         draggable={editable}
-        // Konva pasa la posición absoluta (relativa al Stage, que no tiene
-        // escala ni desplazamiento), así que coincide con x/y del layout.
+        // Konva pasa la posición absoluta, en píxeles de pantalla: con zoom
+        // (HU-028) ya no coincide con x/y del layout, por eso se convierte.
         dragBoundFunc={(pos) =>
-          limitarCentro(
+          limitarCentroEnPantalla(
             pos,
             semiExtension({ forma, ancho, alto, rotacion }),
             lienzo,
+            zoom,
           )
         }
         onClick={onSeleccionar}
@@ -126,6 +135,7 @@ export const MesaShape = forwardRef<Konva.Group, MesaShapeProps>(
             fill={fill}
             stroke={stroke}
             strokeWidth={strokeWidth}
+            dash={dash}
           />
         ) : (
           <Rect
@@ -137,6 +147,7 @@ export const MesaShape = forwardRef<Konva.Group, MesaShapeProps>(
             fill={fill}
             stroke={stroke}
             strokeWidth={strokeWidth}
+            dash={dash}
           />
         )}
         <Text
@@ -148,7 +159,7 @@ export const MesaShape = forwardRef<Konva.Group, MesaShapeProps>(
           offsetY={8}
           fontSize={16}
           fontStyle="bold"
-          fill="#ffffff"
+          fill={TEXTO_POR_ESTADO[estado]}
           listening={false}
         />
       </Group>

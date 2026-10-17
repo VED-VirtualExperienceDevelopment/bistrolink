@@ -1,17 +1,31 @@
 import {
   aGuardarLayoutItems,
   aplicarEstadoMesa,
+  BORDE_POR_ESTADO,
   COLOR_POR_ESTADO,
+  contrasteWcag,
   DIMENSION_MINIMA_MESA,
+  DIMENSION_MAXIMA_MESA,
   dimensionesTrasTransformar,
+  ETIQUETA_POR_ESTADO,
+  limitarCentro,
+  limitarCentroEnPantalla,
+  NIVELES_ZOOM,
   mesasConLayoutAEdicion,
   normalizarRotacion,
   nuevaMesaEnEdicion,
   numerosDuplicados,
   parsearNumeroMesa,
+  porcentajeZoom,
   posicionGridPorDefecto,
   puedeEditarMapa,
   siguienteNumeroDisponible,
+  siguienteZoom,
+  tamanoMesaPermitido,
+  TEXTO_POR_ESTADO,
+  ZOOM_INICIAL,
+  ZOOM_MAXIMO,
+  ZOOM_MINIMO,
   type MesaEnEdicion,
 } from "@/components/admin/mesas/mapa-mesas.utils";
 import {
@@ -201,19 +215,40 @@ describe("HU-016: serializa y deserializa el layout sin pérdida de datos (GET �
       id: "mesa-1",
       numero: 1,
       estado: "LIBRE",
-      layout: { x: 12.75, y: -3.5, forma: "CIRCULO", ancho: 80, alto: 80, rotacion: 0 },
+      layout: {
+        x: 12.75,
+        y: -3.5,
+        forma: "CIRCULO",
+        ancho: 80,
+        alto: 80,
+        rotacion: 0,
+      },
     },
     {
       id: "mesa-2",
       numero: 2,
       estado: "OCUPADA",
-      layout: { x: 0, y: 0, forma: "CUADRADO", ancho: 20, alto: 20, rotacion: 359 },
+      layout: {
+        x: 0,
+        y: 0,
+        forma: "CUADRADO",
+        ancho: 20,
+        alto: 20,
+        rotacion: 359,
+      },
     },
     {
       id: "mesa-3",
       numero: 3,
       estado: "EN_PROCESO_DE_PAGO",
-      layout: { x: 1024.125, y: 768.5, forma: "RECTANGULO", ancho: 160.5, alto: 60, rotacion: 45 },
+      layout: {
+        x: 1024.125,
+        y: 768.5,
+        forma: "RECTANGULO",
+        ancho: 160.5,
+        alto: 60,
+        rotacion: 45,
+      },
     },
   ];
 
@@ -224,7 +259,9 @@ describe("HU-016: serializa y deserializa el layout sin pérdida de datos (GET �
       restauranteId: "restaurante-1",
       mesas: aGuardarLayoutItems(mesasConLayoutAEdicion(desdeApi)),
     };
-    const bodyEnviado: GuardarLayoutPayload = JSON.parse(JSON.stringify(payload));
+    const bodyEnviado: GuardarLayoutPayload = JSON.parse(
+      JSON.stringify(payload),
+    );
 
     expect(bodyEnviado.mesas).toStrictEqual(
       respuestaGet.map(({ id, numero, layout }) => ({ id, numero, ...layout })),
@@ -245,9 +282,16 @@ describe("HU-016: serializa y deserializa el layout sin pérdida de datos (GET �
     ] as unknown as MesaConLayout[];
 
     const [item] = aGuardarLayoutItems(mesasConLayoutAEdicion(conClaveExtra));
-    expect(Object.keys(item).sort()).toEqual(
-      ["alto", "ancho", "forma", "id", "numero", "rotacion", "x", "y"],
-    );
+    expect(Object.keys(item).sort()).toEqual([
+      "alto",
+      "ancho",
+      "forma",
+      "id",
+      "numero",
+      "rotacion",
+      "x",
+      "y",
+    ]);
   });
 });
 
@@ -258,14 +302,23 @@ describe("mesasConLayoutAEdicion — casos adicionales", () => {
         id: "mesa-1",
         numero: 1,
         estado: "LIBRE",
-        layout: { x: 10, y: 10, forma: "CIRCULO", ancho: 80, alto: 80, rotacion: 0 },
+        layout: {
+          x: 10,
+          y: 10,
+          forma: "CIRCULO",
+          ancho: 80,
+          alto: 80,
+          rotacion: 0,
+        },
       },
       { id: "mesa-2", numero: 2, estado: "OCUPADA", layout: null },
     ];
 
     const [, sinLayout] = mesasConLayoutAEdicion(mesas);
     expect(sinLayout.estado).toBe("OCUPADA");
-    expect({ x: sinLayout.x, y: sinLayout.y }).toEqual(posicionGridPorDefecto(1));
+    expect({ x: sinLayout.x, y: sinLayout.y }).toEqual(
+      posicionGridPorDefecto(1),
+    );
   });
 
   it("devuelve un array vacío si el restaurante no tiene mesas", () => {
@@ -320,7 +373,9 @@ describe("normalizarRotacion — valores límite (backend: @Min(0) @Max(359))", 
 
 describe("siguienteNumeroDisponible — casos adicionales", () => {
   it("no depende del orden ni de números repetidos", () => {
-    expect(siguienteNumeroDisponible([{ numero: 3 }, { numero: 1 }, { numero: 1 }])).toBe(2);
+    expect(
+      siguienteNumeroDisponible([{ numero: 3 }, { numero: 1 }, { numero: 1 }]),
+    ).toBe(2);
   });
 
   it("nunca sugiere 0 (reservado a la mesa virtual)", () => {
@@ -330,7 +385,9 @@ describe("siguienteNumeroDisponible — casos adicionales", () => {
 
 describe("numerosDuplicados — casos adicionales", () => {
   it("reporta una sola vez un número que aparece tres veces", () => {
-    expect(numerosDuplicados([{ numero: 4 }, { numero: 4 }, { numero: 4 }])).toEqual([4]);
+    expect(
+      numerosDuplicados([{ numero: 4 }, { numero: 4 }, { numero: 4 }]),
+    ).toEqual([4]);
   });
 });
 
@@ -344,6 +401,50 @@ describe("COLOR_POR_ESTADO", () => {
   it("tiene un color para cada estado de mesa (ninguna mesa se dibuja sin relleno)", () => {
     for (const estado of ESTADOS_MESA_VALIDOS) {
       expect(COLOR_POR_ESTADO[estado]).toMatch(/^#[0-9A-Fa-f]{6}$/);
+    }
+  });
+
+  it("no repite colores: cada estado se distingue del resto (HU-028)", () => {
+    const colores = ESTADOS_MESA_VALIDOS.map((e) =>
+      COLOR_POR_ESTADO[e].toUpperCase(),
+    );
+    expect(new Set(colores).size).toBe(ESTADOS_MESA_VALIDOS.length);
+  });
+});
+
+describe("ETIQUETA_POR_ESTADO (HU-028: leyenda)", () => {
+  it("tiene un nombre legible para cada estado", () => {
+    for (const estado of ESTADOS_MESA_VALIDOS) {
+      expect(ETIQUETA_POR_ESTADO[estado].trim().length).toBeGreaterThan(0);
+    }
+  });
+
+  it("incluye el estado nuevo REQUIERE_LIMPIEZA", () => {
+    expect(ETIQUETA_POR_ESTADO.REQUIERE_LIMPIEZA).toBe("Requiere limpieza");
+  });
+});
+
+describe("BORDE_POR_ESTADO (HU-028: el estado no depende solo del color)", () => {
+  it("tiene un patrón de borde para cada estado", () => {
+    for (const estado of ESTADOS_MESA_VALIDOS) {
+      expect(Array.isArray(BORDE_POR_ESTADO[estado])).toBe(true);
+    }
+  });
+
+  it("no repite patrones: dos estados nunca tienen el mismo borde", () => {
+    const patrones = ESTADOS_MESA_VALIDOS.map((e) =>
+      BORDE_POR_ESTADO[e].join(","),
+    );
+    expect(new Set(patrones).size).toBe(ESTADOS_MESA_VALIDOS.length);
+  });
+
+  it("los guiones y espacios son positivos y vienen de a pares", () => {
+    for (const estado of ESTADOS_MESA_VALIDOS) {
+      const patron = BORDE_POR_ESTADO[estado];
+      expect(patron.length % 2).toBe(0);
+      for (const tramo of patron) {
+        expect(tramo).toBeGreaterThan(0);
+      }
     }
   });
 });
@@ -389,7 +490,10 @@ describe("parsearNumeroMesa (edición del número con doble clic)", () => {
 
 describe("dimensionesTrasTransformar (resize con el Transformer)", () => {
   it("aplica la escala de Konva a ancho y alto", () => {
-    expect(dimensionesTrasTransformar(80, 60, 1.5, 2)).toEqual({ ancho: 120, alto: 120 });
+    expect(dimensionesTrasTransformar(80, 60, 1.5, 2)).toEqual({
+      ancho: 120,
+      alto: 120,
+    });
   });
 
   it("no baja del mínimo al achicar", () => {
@@ -406,13 +510,48 @@ describe("dimensionesTrasTransformar (resize con el Transformer)", () => {
 
 describe("aplicarEstadoMesa (evento WS mesa:estado_actualizado)", () => {
   const mesas: MesaEnEdicion[] = [
-    { clientId: "mesa-1", id: "mesa-1", numero: 1, estado: "LIBRE", x: 10, y: 10, forma: "CIRCULO", ancho: 80, alto: 80, rotacion: 0 },
-    { clientId: "mesa-2", id: "mesa-2", numero: 2, estado: "LIBRE", x: 20, y: 20, forma: "CUADRADO", ancho: 80, alto: 80, rotacion: 0 },
-    { clientId: "nueva-abc", numero: 3, estado: "LIBRE", x: 30, y: 30, forma: "CIRCULO", ancho: 80, alto: 80, rotacion: 0 },
+    {
+      clientId: "mesa-1",
+      id: "mesa-1",
+      numero: 1,
+      estado: "LIBRE",
+      x: 10,
+      y: 10,
+      forma: "CIRCULO",
+      ancho: 80,
+      alto: 80,
+      rotacion: 0,
+    },
+    {
+      clientId: "mesa-2",
+      id: "mesa-2",
+      numero: 2,
+      estado: "LIBRE",
+      x: 20,
+      y: 20,
+      forma: "CUADRADO",
+      ancho: 80,
+      alto: 80,
+      rotacion: 0,
+    },
+    {
+      clientId: "nueva-abc",
+      numero: 3,
+      estado: "LIBRE",
+      x: 30,
+      y: 30,
+      forma: "CIRCULO",
+      ancho: 80,
+      alto: 80,
+      rotacion: 0,
+    },
   ];
 
   it("cambia solo el estado de la mesa indicada, sin tocar su layout", () => {
-    const resultado = aplicarEstadoMesa(mesas, { mesaId: "mesa-2", estado: "OCUPADA" });
+    const resultado = aplicarEstadoMesa(mesas, {
+      mesaId: "mesa-2",
+      estado: "OCUPADA",
+    });
 
     expect(resultado[1]).toEqual({ ...mesas[1], estado: "OCUPADA" });
     expect(resultado[0]).toBe(mesas[0]);
@@ -420,11 +559,121 @@ describe("aplicarEstadoMesa (evento WS mesa:estado_actualizado)", () => {
   });
 
   it("ignora un evento de una mesa que no está en el mapa (otro restaurante del tenant)", () => {
-    expect(aplicarEstadoMesa(mesas, { mesaId: "mesa-de-otro-restaurante", estado: "OCUPADA" })).toEqual(mesas);
+    expect(
+      aplicarEstadoMesa(mesas, {
+        mesaId: "mesa-de-otro-restaurante",
+        estado: "OCUPADA",
+      }),
+    ).toEqual(mesas);
   });
 
   it("no modifica el array original", () => {
     aplicarEstadoMesa(mesas, { mesaId: "mesa-1", estado: "OCUPADA" });
     expect(mesas[0].estado).toBe("LIBRE");
   });
+});
+
+describe("zoom del mapa (HU-028)", () => {
+  const lienzo = { ancho: 800, alto: 600 };
+  const extension = { dx: 40, dy: 40 };
+
+  it("arranca en 100% y el 100% es uno de los niveles", () => {
+    expect(ZOOM_INICIAL).toBe(1);
+    expect(NIVELES_ZOOM).toContain(ZOOM_INICIAL);
+  });
+
+  it("los niveles van de menor a mayor, sin repetidos", () => {
+    const ordenados = [...NIVELES_ZOOM].sort((a, b) => a - b);
+    expect([...NIVELES_ZOOM]).toEqual(ordenados);
+    expect(new Set(NIVELES_ZOOM).size).toBe(NIVELES_ZOOM.length);
+  });
+
+  it("acerca y aleja de a un nivel", () => {
+    expect(siguienteZoom(1, 1)).toBe(1.25);
+    expect(siguienteZoom(1, -1)).toBe(0.75);
+  });
+
+  it("no pasa de los extremos", () => {
+    expect(siguienteZoom(ZOOM_MAXIMO, 1)).toBe(ZOOM_MAXIMO);
+    expect(siguienteZoom(ZOOM_MINIMO, -1)).toBe(ZOOM_MINIMO);
+  });
+
+  it("desde un valor intermedio va al nivel más cercano en esa dirección", () => {
+    expect(siguienteZoom(1.1, 1)).toBe(1.25);
+    expect(siguienteZoom(1.1, -1)).toBe(1);
+  });
+
+  it("muestra el zoom como porcentaje", () => {
+    expect(porcentajeZoom(1)).toBe("100%");
+    expect(porcentajeZoom(0.75)).toBe("75%");
+    expect(porcentajeZoom(1.25)).toBe("125%");
+  });
+
+  it("con zoom 1 acota igual que limitarCentro", () => {
+    const pos = { x: 900, y: -10 };
+    expect(limitarCentroEnPantalla(pos, extension, lienzo, 1)).toEqual(
+      limitarCentro(pos, extension, lienzo),
+    );
+  });
+
+  it("con zoom 2 acota en píxeles de pantalla (el doble del lienzo)", () => {
+    // Borde derecho del lienzo: 800 - 40 = 760 → 1520 en pantalla.
+    expect(
+      limitarCentroEnPantalla({ x: 5000, y: 5000 }, extension, lienzo, 2),
+    ).toEqual({ x: 1520, y: 1120 });
+  });
+
+  it("con zoom 2 no mueve una mesa que ya está dentro del lienzo", () => {
+    expect(
+      limitarCentroEnPantalla({ x: 400, y: 300 }, extension, lienzo, 2),
+    ).toEqual({ x: 400, y: 300 });
+  });
+
+  it("con zoom 0.5 acota en píxeles de pantalla (la mitad del lienzo)", () => {
+    expect(
+      limitarCentroEnPantalla({ x: 0, y: 0 }, extension, lienzo, 0.5),
+    ).toEqual({ x: 20, y: 20 });
+  });
+
+  it("valida el tamaño de la mesa en unidades del lienzo, no de pantalla", () => {
+    // 1200 px en pantalla con zoom 2 = 600 en el lienzo: permitido.
+    expect(tamanoMesaPermitido({ width: 1200, height: 1200 }, 2)).toBe(true);
+    // El máximo en pantalla con zoom 0.5 equivale al doble en el lienzo.
+    expect(
+      tamanoMesaPermitido(
+        { width: DIMENSION_MAXIMA_MESA, height: DIMENSION_MAXIMA_MESA },
+        0.5,
+      ),
+    ).toBe(false);
+  });
+
+  it("rechaza una mesa más chica que el mínimo", () => {
+    expect(
+      tamanoMesaPermitido({ width: DIMENSION_MINIMA_MESA - 1, height: 80 }, 1),
+    ).toBe(false);
+    expect(
+      tamanoMesaPermitido({ width: DIMENSION_MINIMA_MESA, height: 80 }, 1),
+    ).toBe(true);
+  });
+});
+
+describe("contraste del número de mesa (HU-028, WCAG 2.1 AA 1.4.3)", () => {
+  it("contrasteWcag da los valores de referencia", () => {
+    expect(contrasteWcag("#000000", "#FFFFFF")).toBeCloseTo(21, 0);
+    expect(contrasteWcag("#FFFFFF", "#FFFFFF")).toBeCloseTo(1, 5);
+    // El orden de los colores no importa.
+    expect(contrasteWcag("#BA1A1A", "#FFFFFF")).toBeCloseTo(
+      contrasteWcag("#FFFFFF", "#BA1A1A"),
+      5,
+    );
+  });
+
+  it.each(ESTADOS_MESA_VALIDOS)(
+    "el número de una mesa %s tiene contraste de al menos 4.5:1",
+    (estado) => {
+      expect(
+        contrasteWcag(TEXTO_POR_ESTADO[estado], COLOR_POR_ESTADO[estado]),
+      ).toBeGreaterThanOrEqual(4.5);
+    },
+  );
 });

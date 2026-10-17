@@ -84,6 +84,21 @@ export class MesasController {
       dto.restauranteId,
       dto.mesas,
       dto.eliminar ?? [],
+      dto.plano,
+    );
+  }
+
+  // HU-028 (BL-173): elementos fijos y zonas del plano del salón. Lo ven los
+  // mismos roles que el mapa; solo ADMIN lo modifica (vía POST /mesas/layout).
+  @Get('plano')
+  @Roles('ADMIN', 'MOZO')
+  obtenerPlano(
+    @Req() req: { user: AuthenticatedUser },
+    @Query() query: ListarLayoutQueryDto,
+  ) {
+    return this.mesasService.obtenerPlano(
+      req.user.tenantId,
+      query.restauranteId,
     );
   }
 

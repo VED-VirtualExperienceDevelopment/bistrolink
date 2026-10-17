@@ -33,6 +33,61 @@ export const COLOR_POR_ESTADO: Record<EstadoMesa, string> = {
   LIBRE: "#4C9A5A",
   OCUPADA: "#BA1A1A",
   EN_PROCESO_DE_PAGO: "#C9A74D",
+  REQUIERE_LIMPIEZA: "#3F6FA8",
+};
+
+/**
+ * HU-028 (BL-173): color del número de la mesa sobre cada relleno. Blanco
+ * sobre los colores oscuros y casi negro sobre los claros, para llegar al
+ * contraste 4.5:1 de WCAG 2.1 AA (1.4.3) en todos los estados. El número
+ * blanco sobre el verde (3.5:1) y el dorado (2.3:1) no llegaba.
+ */
+export const TEXTO_POR_ESTADO: Record<EstadoMesa, string> = {
+  LIBRE: "#1D1B20",
+  OCUPADA: "#FFFFFF",
+  EN_PROCESO_DE_PAGO: "#1D1B20",
+  REQUIERE_LIMPIEZA: "#FFFFFF",
+};
+
+/**
+ * Relación de contraste entre dos colores #RRGGBB, con la fórmula de WCAG
+ * 2.1 (luminancia relativa). Va de 1 (iguales) a 21 (negro sobre blanco).
+ */
+export function contrasteWcag(colorA: string, colorB: string): number {
+  const luminancia = (hex: string) => {
+    const [r, g, b] = [1, 3, 5].map((i) => {
+      const canal = Number.parseInt(hex.slice(i, i + 2), 16) / 255;
+      return canal <= 0.03928
+        ? canal / 12.92
+        : ((canal + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const [claro, oscuro] = [luminancia(colorA), luminancia(colorB)].sort(
+    (x, y) => y - x,
+  );
+  return (claro + 0.05) / (oscuro + 0.05);
+}
+
+/** HU-028 (BL-173): nombre de cada estado en la leyenda del mapa. */
+export const ETIQUETA_POR_ESTADO: Record<EstadoMesa, string> = {
+  LIBRE: "Disponible",
+  OCUPADA: "Ocupada",
+  EN_PROCESO_DE_PAGO: "Pago pendiente",
+  REQUIERE_LIMPIEZA: "Requiere limpieza",
+};
+
+/**
+ * HU-028 (BL-173): patrón del borde de la mesa según su estado, para que el
+ * color no sea el único indicador (WCAG 1.4.1). Mismo formato que la prop
+ * `dash` de Konva y que `stroke-dasharray` de SVG (la leyenda): largo de
+ * trazo y de espacio, en px. Vacío = borde continuo.
+ */
+export const BORDE_POR_ESTADO: Record<EstadoMesa, number[]> = {
+  LIBRE: [],
+  OCUPADA: [10, 4],
+  EN_PROCESO_DE_PAGO: [2, 4],
+  REQUIERE_LIMPIEZA: [10, 4, 2, 4],
 };
 
 const LAYOUT_POR_DEFECTO = {
@@ -385,5 +440,72 @@ export function aplicarEstadoMesa(
 ): MesaEnEdicion[] {
   return mesas.map((m) =>
     m.id === payload.mesaId ? { ...m, estado: payload.estado } : m,
+  );
+}
+
+// --- Zoom del mapa (HU-028, BL-173) ------------------------------------------
+
+/**
+ * Niveles de zoom de los botones + / −. El zoom solo cambia cómo se ve el
+ * mapa: las posiciones y tamaños que se guardan siguen en las unidades del
+ * lienzo (zoom 1), así que el mismo salón se ve igual en cualquier pantalla.
+ */
+export const NIVELES_ZOOM = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
+export const ZOOM_INICIAL = 1;
+export const ZOOM_MINIMO = Math.min(...NIVELES_ZOOM);
+export const ZOOM_MAXIMO = Math.max(...NIVELES_ZOOM);
+
+/**
+ * Nivel siguiente (direccion 1) o anterior (direccion -1). En los extremos
+ * devuelve el mismo valor, para que el botón no haga nada.
+ */
+export function siguienteZoom(actual: number, direccion: 1 | -1): number {
+  const candidatos =
+    direccion === 1
+      ? NIVELES_ZOOM.filter((nivel) => nivel > actual)
+      : NIVELES_ZOOM.filter((nivel) => nivel < actual).reverse();
+  return candidatos[0] ?? actual;
+}
+
+/** Texto del nivel de zoom para mostrar al usuario: 1.25 → "125%". */
+export function porcentajeZoom(zoom: number): string {
+  return `${Math.round(zoom * 100)}%`;
+}
+
+/**
+ * Versión de limitarCentro para el dragBoundFunc de Konva con zoom. Konva le
+ * pasa la posición en píxeles de pantalla (ya multiplicada por el zoom del
+ * Stage): se pasa a unidades del lienzo, se acota y se vuelve a pantalla.
+ */
+export function limitarCentroEnPantalla(
+  pos: { x: number; y: number },
+  extension: { dx: number; dy: number },
+  lienzo: Lienzo,
+  zoom: number,
+): { x: number; y: number } {
+  const centro = limitarCentro(
+    { x: pos.x / zoom, y: pos.y / zoom },
+    extension,
+    lienzo,
+  );
+  return { x: centro.x * zoom, y: centro.y * zoom };
+}
+
+/**
+ * Para el boundBoxFunc del Transformer: el recuadro también llega en píxeles
+ * de pantalla. Se pasa a unidades del lienzo antes de comparar con los
+ * límites de tamaño de una mesa (BL-58).
+ */
+export function tamanoMesaPermitido(
+  recuadro: { width: number; height: number },
+  zoom: number,
+): boolean {
+  const ancho = recuadro.width / zoom;
+  const alto = recuadro.height / zoom;
+  return (
+    ancho >= DIMENSION_MINIMA_MESA &&
+    alto >= DIMENSION_MINIMA_MESA &&
+    ancho <= DIMENSION_MAXIMA_MESA &&
+    alto <= DIMENSION_MAXIMA_MESA
   );
 }
