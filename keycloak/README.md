@@ -206,3 +206,10 @@ Valores declarados en `realm-export.json` (realms nuevos, por ejemplo producció
 | Detección de fuerza bruta                     | Pendiente (BL-271)                                                     | Se activa con BL-271.                                                                                                                                                                                     |
 
 `load-test-users.sh`: si Keycloak rechaza la contraseña de un usuario de prueba por la política, el usuario recién creado se borra y el error queda en el log; el próximo arranque lo vuelve a intentar.
+
+## Tema de login (`themes/bistrolink/login`)
+
+- `template.ftl` es una copia del de Keycloak 26.7.2 (`theme/base/login/template.ftl`), con los cambios marcados con `BL-347`: panel de marca, `<main>` para el formulario y un script de accesibilidad.
+- **Al actualizar Keycloak** (`Dockerfile.auth`), comparar este archivo con el `template.ftl` de la versión nueva y pasar los cambios de Keycloak a la copia. Si no, el login puede perder arreglos o romperse.
+- Los textos están en `messages/messages_es.properties`. Solo están las claves que cambian; el resto sale del español de Keycloak.
+- La tipografía está en `resources/fonts` (la misma que usa la app, con licencia OFL). El tema no hace pedidos a dominios externos.
