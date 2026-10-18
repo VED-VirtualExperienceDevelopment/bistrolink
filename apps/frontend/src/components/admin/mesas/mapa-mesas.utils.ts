@@ -444,6 +444,45 @@ export function aplicarEstadoMesa(
   );
 }
 
+// --- Conexión en tiempo real (BL-331) ----------------------------------------
+
+/**
+ * Cuánto se espera antes de mostrar el aviso de conexión perdida. Evita que
+ * el aviso parpadee en cortes de un segundo (por ejemplo, al cambiar de red
+ * en la tablet), y queda dentro de los 5 s que pide el criterio del issue.
+ */
+export const DEMORA_AVISO_SIN_CONEXION_MS = 3000;
+
+/**
+ * Si una desconexión del socket cuenta como pérdida de conexión. La que
+ * cierra la propia app ("io client disconnect": al salir de la página o al
+ * renovar el token) no es un corte y no tiene que mostrar el aviso.
+ */
+export function esDesconexionInesperada(motivo: string): boolean {
+  return motivo !== "io client disconnect";
+}
+
+/**
+ * Al reconectar, trae los estados que pudieron cambiar mientras no había
+ * conexión. Solo actualiza el estado de cada mesa: posición, tamaño, forma y
+ * número quedan como están, para no pisar cambios sin guardar del editor.
+ * Devuelve el mismo array si no cambió ningún estado.
+ */
+export function actualizarEstadosMesas(
+  mesas: MesaEnEdicion[],
+  recargadas: Pick<MesaConLayout, "id" | "estado">[],
+): MesaEnEdicion[] {
+  const estados = new Map(recargadas.map((m) => [m.id, m.estado]));
+  let cambio = false;
+  const actualizadas = mesas.map((m) => {
+    const estado = m.id ? estados.get(m.id) : undefined;
+    if (!estado || estado === m.estado) return m;
+    cambio = true;
+    return { ...m, estado };
+  });
+  return cambio ? actualizadas : mesas;
+}
+
 // --- Zoom del mapa (HU-028, BL-173) ------------------------------------------
 
 /**
