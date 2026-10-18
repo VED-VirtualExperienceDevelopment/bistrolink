@@ -17,5 +17,11 @@ useDefault = true
     '''^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$''',
     # Contraseña temporal ficticia de un test unitario
     # (keycloak-admin.aprovisionamiento.spec.ts).
-    '''^Temporal-123$'''
+    '''^Temporal-123$''',
+    # BL-359: contraseñas ficticias de los tests de resetPassword
+    # (keycloak-admin.service.spec.ts). La regla generic-api-key las toma por
+    # estar después de un id que empieza con «keycloak» («key»).
+    '''^Temporal-123456$''',
+    '''^No-Loguear-123$'''
   ]
+  
