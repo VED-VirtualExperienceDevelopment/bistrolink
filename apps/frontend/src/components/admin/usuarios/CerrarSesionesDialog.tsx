@@ -19,7 +19,7 @@ interface Props {
  * quedó con la sesión de alguien que ya terminó el turno). Mismo patrón que
  * ReactivarUsuarioDialog; al terminar, confirma en el mismo diálogo.
  */
-export function CerrarSesionesDialog({ open, onClose, token, usuario }: Props) {
+export function CerrarSesionesDialog({ open, onClose, token, usuario }: Readonly<Props>) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [listo, setListo] = useState(false);
@@ -58,11 +58,12 @@ export function CerrarSesionesDialog({ open, onClose, token, usuario }: Props) {
     <Dialog open={open} onClose={onClose} title="Cerrar sesiones">
       {listo ? (
         <div className="space-y-4">
-          {/* role="status": el lector de pantalla anuncia el resultado. */}
-          <p role="status" className="text-body-md text-on-surface">
+          {/* <output> (rol «status» implícito): el lector de pantalla anuncia
+              el resultado sin mover el foco. */}
+          <output className="block text-body-md text-on-surface">
             Listo: se cerraron las sesiones de {nombre}. Si tenía la aplicación abierta, puede
             seguir viéndola hasta 15 minutos; después le va a pedir que ingrese de nuevo.
-          </p>
+          </output>
           <div className="flex justify-end pt-2">
             <button
               type="button"

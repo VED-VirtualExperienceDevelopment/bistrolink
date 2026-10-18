@@ -15,7 +15,7 @@ interface Props {
 
 // BL-359: dos pasos. Primero la confirmación; después, la contraseña
 // temporal, que se muestra una sola vez (igual que en el alta).
-export function RestablecerContrasenaDialog({ open, onClose, token, usuario }: Props) {
+export function RestablecerContrasenaDialog({ open, onClose, token, usuario }: Readonly<Props>) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resultado, setResultado] = useState<RestablecerContrasenaResponse | null>(null);

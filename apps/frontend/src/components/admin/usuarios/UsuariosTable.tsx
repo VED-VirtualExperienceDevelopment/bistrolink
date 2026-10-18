@@ -65,7 +65,7 @@ export function UsuariosTable({
   onRestablecerContrasena,
   onCerrarSesiones,
   keycloakIdPropio,
-}: Props) {
+}: Readonly<Props>) {
   if (usuarios.length === 0) {
     return (
       <div className="rounded-xl border border-outline-variant bg-surface-container-lowest p-12 text-center">
@@ -220,12 +220,13 @@ export function UsuariosTable({
                     </span>
                   </button>
                 )}
-                {usuario.activo && propio ? (
+                {usuario.activo && propio && (
                   <AccionNoDisponible
                     icono="person_off"
                     motivo="No podés desactivar tu propio usuario. Pedíselo a otro Administrador."
                   />
-                ) : usuario.activo ? (
+                )}
+                {usuario.activo && !propio && (
                   <button
                     type="button"
                     onClick={() => onDesactivar(usuario)}
@@ -237,7 +238,8 @@ export function UsuariosTable({
                       person_off
                     </span>
                   </button>
-                ) : (
+                )}
+                {!usuario.activo && (
                   // BL-358: un usuario desactivado ya no se queda sin acciones.
                   <button
                     type="button"
@@ -267,7 +269,7 @@ export function UsuariosTable({
  * recibe foco y su explicación no se escucharía. aria-disabled lo anuncia
  * como «no disponible» y el clic no hace nada.
  */
-function AccionNoDisponible({ icono, motivo }: { icono: string; motivo: string }) {
+function AccionNoDisponible({ icono, motivo }: Readonly<{ icono: string; motivo: string }>) {
   return (
     <button
       type="button"

@@ -13,11 +13,52 @@ import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import {
   KeycloakAdminService,
   KeycloakUser,
+  PerfilKeycloak,
 } from '../keycloak-admin/keycloak-admin.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { AuditAction } from '../audit-log/audit-action.enum';
 import { CreateUsuarioDto } from './dto/create-usuario.dto';
 import { UpdateUsuarioDto } from './dto/update-usuario.dto';
+
+/**
+ * Texto de un error para el log. Un `unknown` que no es Error puede ser un
+ * objeto: JSON.stringify lo muestra entero en vez de «[object Object]».
+ */
+function describirError(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  return JSON.stringify(error);
+}
+
+/**
+ * BL-366: datos personales que el PATCH cambia de verdad (mandar el mismo
+ * valor no cuenta), con los nombres de Keycloak, y la lista de campos para
+ * el audit log (sin los valores).
+ */
+function cambiosDePerfil(
+  usuario: {
+    nombre: string | null;
+    apellido: string | null;
+    email: string | null;
+  },
+  dto: UpdateUsuarioDto,
+): { perfil: Partial<PerfilKeycloak>; campos: string[] } {
+  const perfil: Partial<PerfilKeycloak> = {};
+  const campos: string[] = [];
+  if (dto.nombre !== undefined && dto.nombre !== usuario.nombre) {
+    perfil.firstName = dto.nombre;
+    campos.push('nombre');
+  }
+  if (dto.apellido !== undefined && dto.apellido !== usuario.apellido) {
+    perfil.lastName = dto.apellido;
+    campos.push('apellido');
+  }
+  if (dto.email !== undefined && dto.email !== usuario.email) {
+    perfil.email = dto.email;
+    campos.push('email');
+  }
+  return { perfil, campos };
+}
 
 @Injectable()
 export class UsuariosService {
@@ -89,7 +130,7 @@ export class UsuariosService {
       });
     } catch (error) {
       this.logger.warn(
-        `No se pudo leer el último ingreso de los usuarios del tenant ${tenantId}: ${error instanceof Error ? error.message : String(error)}`,
+        `No se pudo leer el último ingreso de los usuarios del tenant ${tenantId}: ${describirError(error)}`,
       );
       return usuarios;
     }
@@ -115,17 +156,16 @@ export class UsuariosService {
       const candidatos = usuarios.filter(
         (u) => !keycloakIdsConFila.has(u.id) && this.esDelTenant(u, tenantId),
       );
-      const cuentas = [];
-      for (const usuario of candidatos) {
-        const roles = await this.keycloakAdmin.rolesDeRealm(usuario.id);
-        if (roles.includes('COCINA')) {
-          cuentas.push(this.aCuentaCocina(usuario));
-        }
-      }
-      return cuentas;
+      // Los roles de cada candidata se piden en paralelo (son una o dos).
+      const roles = await Promise.all(
+        candidatos.map((u) => this.keycloakAdmin.rolesDeRealm(u.id)),
+      );
+      return candidatos
+        .filter((_, i) => roles[i].includes('COCINA'))
+        .map((u) => this.aCuentaCocina(u));
     } catch (error) {
       this.logger.warn(
-        `No se pudo listar la cuenta de cocina del tenant ${tenantId}: ${error instanceof Error ? error.message : String(error)}`,
+        `No se pudo listar la cuenta de cocina del tenant ${tenantId}: ${describirError(error)}`,
       );
       return [];
     }
@@ -446,24 +486,10 @@ export class UsuariosService {
 
           // Solo lo que cambia de verdad: mandar el mismo valor no cuenta.
           const cambiaRol = dto.rol !== undefined && dto.rol !== usuario.rol;
-          const perfil: {
-            firstName?: string;
-            lastName?: string;
-            email?: string;
-          } = {};
-          const camposPerfil: string[] = [];
-          if (dto.nombre !== undefined && dto.nombre !== usuario.nombre) {
-            perfil.firstName = dto.nombre;
-            camposPerfil.push('nombre');
-          }
-          if (dto.apellido !== undefined && dto.apellido !== usuario.apellido) {
-            perfil.lastName = dto.apellido;
-            camposPerfil.push('apellido');
-          }
-          if (dto.email !== undefined && dto.email !== usuario.email) {
-            perfil.email = dto.email;
-            camposPerfil.push('email');
-          }
+          const { perfil, campos: camposPerfil } = cambiosDePerfil(
+            usuario,
+            dto,
+          );
           if (!cambiaRol && camposPerfil.length === 0) {
             throw new BadRequestException('No hay cambios para guardar');
           }
@@ -496,15 +522,13 @@ export class UsuariosService {
 
           const actualizado = await tx.usuario.update({
             where: { id: usuarioId },
+            // Prisma no toca los campos en undefined: solo se escribe lo
+            // que cambió.
             data: {
-              ...(cambiaRol ? { rol: dto.rol } : {}),
-              ...(perfil.firstName !== undefined
-                ? { nombre: perfil.firstName }
-                : {}),
-              ...(perfil.lastName !== undefined
-                ? { apellido: perfil.lastName }
-                : {}),
-              ...(perfil.email !== undefined ? { email: perfil.email } : {}),
+              rol: cambiaRol ? dto.rol : undefined,
+              nombre: perfil.firstName,
+              apellido: perfil.lastName,
+              email: perfil.email,
             },
           });
 

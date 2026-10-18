@@ -3,7 +3,12 @@
  * validación de nombre y apellido del alta. Lógica pura, sin React, para
  * testearla con Jest en entorno node (mismo criterio que usuario-sesion.utils).
  */
-import type { RolListado, Usuario } from "@/types/usuario";
+import type {
+  ActualizarUsuarioPayload,
+  RolListado,
+  Usuario,
+  UsuarioRol,
+} from "@/types/usuario";
 
 /** Nombre y apellido, o `undefined` si el usuario no los tiene cargados. */
 export function nombreCompleto(
@@ -58,6 +63,50 @@ export function errorNombrePersona(
     return "Usá solo letras, espacios, apóstrofo, punto o guion, empezando con una letra.";
   }
   return null;
+}
+
+/**
+ * Id del primer campo con error (para llevarle el foco), o `null` si no hay.
+ * Los campos van en el orden en que aparecen en el formulario.
+ */
+export function primerCampoConError(
+  campos: ReadonlyArray<readonly [id: string, error: string | null]>,
+): string | null {
+  return campos.find(([, error]) => error !== null)?.[0] ?? null;
+}
+
+/**
+ * BL-366: error de nombre o apellido al editar. Los usuarios creados antes de
+ * BL-361 no tienen nombre: dejar el campo como estaba no es un error.
+ */
+export function errorNombreEditado(
+  valor: string,
+  original: string | null | undefined,
+  campo: "nombre" | "apellido",
+): string | null {
+  return valor.trim() === (original ?? "").trim()
+    ? null
+    : errorNombrePersona(valor, campo);
+}
+
+/**
+ * BL-366: lo que cambió en «Editar usuario», para mandar solo eso en el
+ * PATCH. El correo se puede cambiar, no borrar: vacío no cuenta.
+ */
+export function cambiosDeUsuario(
+  original: Pick<Usuario, "nombre" | "apellido" | "email">,
+  rolOriginal: UsuarioRol,
+  form: { nombre: string; apellido: string; email: string; rol: UsuarioRol },
+): ActualizarUsuarioPayload {
+  const cambios: ActualizarUsuarioPayload = {};
+  const nombre = form.nombre.trim();
+  const apellido = form.apellido.trim();
+  const email = form.email.trim();
+  if (nombre !== (original.nombre ?? "")) cambios.nombre = nombre;
+  if (apellido !== (original.apellido ?? "")) cambios.apellido = apellido;
+  if (email !== "" && email !== (original.email ?? "")) cambios.email = email;
+  if (form.rol !== rolOriginal) cambios.rol = form.rol;
+  return cambios;
 }
 
 /** BL-362: la cuenta compartida de la cocina (vive solo en Keycloak). */

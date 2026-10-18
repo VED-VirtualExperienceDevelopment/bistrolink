@@ -115,7 +115,7 @@ export default function UsuariosPage() {
           <span className="material-symbols-outlined text-[20px]" aria-hidden="true">
             person_add
           </span>
-          Nuevo usuario
+          <span>Nuevo usuario</span>
         </button>
       </div>
 

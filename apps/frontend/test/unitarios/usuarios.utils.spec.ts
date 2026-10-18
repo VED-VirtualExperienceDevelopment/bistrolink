@@ -1,4 +1,6 @@
 import {
+  cambiosDeUsuario,
+  errorNombreEditado,
   errorNombrePersona,
   esCuentaCocina,
   esUsuarioPropio,
@@ -8,6 +10,7 @@ import {
   nombreCompleto,
   nombreParaMostrar,
   normalizarParaBuscar,
+  primerCampoConError,
   rutaUsuario,
   textoCantidadUsuarios,
   textoUltimoIngreso,
@@ -291,5 +294,92 @@ describe("esUsuarioPropio (BL-369)", () => {
   it("sin sesión (keycloakId undefined o vacío), ninguna fila es propia", () => {
     expect(esUsuarioPropio({ keycloakId: "kc-ana" }, undefined)).toBe(false);
     expect(esUsuarioPropio({ keycloakId: "" }, "")).toBe(false);
+  });
+});
+
+describe("primerCampoConError", () => {
+  it("devuelve el id del primer campo con error, en el orden del formulario", () => {
+    expect(
+      primerCampoConError([
+        ["nombre", null],
+        ["apellido", "Ingresá el apellido."],
+      ]),
+    ).toBe("apellido");
+    expect(
+      primerCampoConError([
+        ["nombre", "Ingresá el nombre."],
+        ["apellido", "Ingresá el apellido."],
+      ]),
+    ).toBe("nombre");
+  });
+
+  it("sin errores devuelve null", () => {
+    expect(primerCampoConError([["nombre", null]])).toBeNull();
+  });
+});
+
+describe("errorNombreEditado (BL-366)", () => {
+  it("dejar el nombre como estaba no es un error, aunque estuviera vacío", () => {
+    expect(errorNombreEditado("", null, "nombre")).toBeNull();
+    expect(errorNombreEditado(" Juan ", "Juan", "nombre")).toBeNull();
+  });
+
+  it("un valor nuevo se valida como en el alta", () => {
+    expect(errorNombreEditado("", "Juan", "nombre")).toBe("Ingresá el nombre.");
+    expect(errorNombreEditado("Juan2", "Juan", "nombre")).not.toBeNull();
+  });
+});
+
+describe("cambiosDeUsuario (BL-366)", () => {
+  const original = {
+    nombre: "Juan",
+    apellido: "Pérez",
+    email: "jp@ejemplo.com",
+  };
+  const sinCambios = {
+    nombre: "Juan",
+    apellido: "Pérez",
+    email: "jp@ejemplo.com",
+    rol: "MOZO" as const,
+  };
+
+  it("sin cambios devuelve un objeto vacío (los espacios no cuentan)", () => {
+    expect(cambiosDeUsuario(original, "MOZO", sinCambios)).toEqual({});
+    expect(
+      cambiosDeUsuario(original, "MOZO", { ...sinCambios, nombre: " Juan " }),
+    ).toEqual({});
+  });
+
+  it("devuelve solo lo que cambió, sin espacios de más", () => {
+    expect(
+      cambiosDeUsuario(original, "MOZO", {
+        ...sinCambios,
+        apellido: " Gómez ",
+        rol: "ADMIN",
+      }),
+    ).toEqual({ apellido: "Gómez", rol: "ADMIN" });
+  });
+
+  it("el correo se puede cambiar pero no borrar", () => {
+    expect(
+      cambiosDeUsuario(original, "MOZO", { ...sinCambios, email: "  " }),
+    ).toEqual({});
+    expect(
+      cambiosDeUsuario(original, "MOZO", {
+        ...sinCambios,
+        email: "n@ejemplo.com",
+      }),
+    ).toEqual({ email: "n@ejemplo.com" });
+  });
+
+  it("completa el nombre de un usuario anterior a BL-361", () => {
+    expect(
+      cambiosDeUsuario({ nombre: null, apellido: null, email: null }, "MOZO", {
+        nombre: "Ana",
+        apellido: "",
+        email: "",
+        rol: "MOZO",
+      }),
+    ).toEqual({ nombre: "Ana" });
   });
 });

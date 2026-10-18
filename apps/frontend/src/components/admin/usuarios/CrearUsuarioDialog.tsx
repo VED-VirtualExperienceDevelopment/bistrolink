@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Dialog } from '@/components/ui/Dialog';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import type { CrearUsuarioResponse, UsuarioRol } from '@/types/usuario';
-import { errorNombrePersona, LARGO_MAXIMO_NOMBRE, nombreParaMostrar } from './Usuarios.utils';
+import { CampoNombrePersona } from './CampoNombrePersona';
+import { errorNombrePersona, nombreParaMostrar, primerCampoConError } from './Usuarios.utils';
 
 interface Props {
   open: boolean;
@@ -17,7 +18,13 @@ interface Props {
 const CLASE_INPUT =
   'min-h-12 w-full rounded-lg border px-3 text-body-md text-on-surface focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20';
 
-export function CrearUsuarioDialog({ open, onClose, token, restauranteId, onCreated }: Props) {
+export function CrearUsuarioDialog({
+  open,
+  onClose,
+  token,
+  restauranteId,
+  onCreated,
+}: Readonly<Props>) {
   const [nombre, setNombre] = useState('');
   const [apellido, setApellido] = useState('');
   const [username, setUsername] = useState('');
@@ -57,11 +64,10 @@ export function CrearUsuarioDialog({ open, onClose, token, restauranteId, onCrea
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIntentoGuardar(true);
-    const primerError = errorNombrePersona(nombre, 'nombre')
-      ? 'nombre'
-      : errorNombrePersona(apellido, 'apellido')
-        ? 'apellido'
-        : null;
+    const primerError = primerCampoConError([
+      ['nombre', errorNombrePersona(nombre, 'nombre')],
+      ['apellido', errorNombrePersona(apellido, 'apellido')],
+    ]);
     if (primerError) {
       // El foco va al primer campo con error, así el lector de pantalla lo
       // lee junto con su mensaje (aria-describedby).
@@ -124,49 +130,22 @@ export function CrearUsuarioDialog({ open, onClose, token, restauranteId, onCrea
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* BL-361: nombre y apellido, obligatorios. */}
           <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label htmlFor="nombre" className="mb-1 block text-label-md text-on-surface-variant">
-                Nombre
-              </label>
-              <input
-                id="nombre"
-                aria-required="true"
-                maxLength={LARGO_MAXIMO_NOMBRE}
-                autoComplete="off"
-                value={nombre}
-                onChange={(e) => setNombre(e.target.value)}
-                aria-invalid={errorNombre ? true : undefined}
-                aria-describedby={errorNombre ? 'nombre-error' : undefined}
-                className={`${CLASE_INPUT} ${errorNombre ? 'border-error' : 'border-outline-variant'}`}
-              />
-              {errorNombre && (
-                <p id="nombre-error" className="mt-1 text-body-sm text-error">
-                  {errorNombre}
-                </p>
-              )}
-            </div>
-
-            <div>
-              <label htmlFor="apellido" className="mb-1 block text-label-md text-on-surface-variant">
-                Apellido
-              </label>
-              <input
-                id="apellido"
-                aria-required="true"
-                maxLength={LARGO_MAXIMO_NOMBRE}
-                autoComplete="off"
-                value={apellido}
-                onChange={(e) => setApellido(e.target.value)}
-                aria-invalid={errorApellido ? true : undefined}
-                aria-describedby={errorApellido ? 'apellido-error' : undefined}
-                className={`${CLASE_INPUT} ${errorApellido ? 'border-error' : 'border-outline-variant'}`}
-              />
-              {errorApellido && (
-                <p id="apellido-error" className="mt-1 text-body-sm text-error">
-                  {errorApellido}
-                </p>
-              )}
-            </div>
+            <CampoNombrePersona
+              id="nombre"
+              etiqueta="Nombre"
+              valor={nombre}
+              onChange={setNombre}
+              error={errorNombre}
+              requerido
+            />
+            <CampoNombrePersona
+              id="apellido"
+              etiqueta="Apellido"
+              valor={apellido}
+              onChange={setApellido}
+              error={errorApellido}
+              requerido
+            />
           </div>
 
           <div>

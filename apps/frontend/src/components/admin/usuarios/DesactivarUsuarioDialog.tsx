@@ -14,7 +14,7 @@ interface Props {
   onDesactivado: (id: string) => void;
 }
 
-export function DesactivarUsuarioDialog({ open, onClose, token, usuario, onDesactivado }: Props) {
+export function DesactivarUsuarioDialog({ open, onClose, token, usuario, onDesactivado }: Readonly<Props>) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

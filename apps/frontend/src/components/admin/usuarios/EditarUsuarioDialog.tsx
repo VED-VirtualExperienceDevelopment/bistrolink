@@ -3,8 +3,14 @@
 import { useState } from 'react';
 import { Dialog } from '@/components/ui/Dialog';
 import { apiFetch, ApiError } from '@/lib/api-client';
-import type { ActualizarUsuarioPayload, Usuario, UsuarioRol } from '@/types/usuario';
-import { errorNombrePersona, LARGO_MAXIMO_NOMBRE, nombreParaMostrar } from './Usuarios.utils';
+import type { Usuario, UsuarioRol } from '@/types/usuario';
+import { CampoNombrePersona } from './CampoNombrePersona';
+import {
+  cambiosDeUsuario,
+  errorNombreEditado,
+  nombreParaMostrar,
+  primerCampoConError,
+} from './Usuarios.utils';
 
 interface Props {
   open: boolean;
@@ -35,7 +41,7 @@ export function EditarUsuarioDialog({
   usuario,
   esPropio = false,
   onUpdated,
-}: Props) {
+}: Readonly<Props>) {
   // BL-362: la cuenta de cocina no llega acá (la tabla no ofrece «Editar»
   // para ella); igual, el valor inicial solo puede ser un rol asignable.
   const rolInicial: UsuarioRol = usuario?.rol === 'ADMIN' ? 'ADMIN' : 'MOZO';
@@ -49,29 +55,25 @@ export function EditarUsuarioDialog({
 
   if (!usuario) return null;
 
-  // Los usuarios creados antes de BL-361 no tienen nombre: el campo vacío
-  // no es un error mientras no se toque.
-  const validarNombre = (valor: string, original: string | null | undefined, campo: 'nombre' | 'apellido') =>
-    valor.trim() === (original ?? '').trim() ? null : errorNombrePersona(valor, campo);
-  const errorNombre = intentoGuardar ? validarNombre(nombre, usuario.nombre, 'nombre') : null;
-  const errorApellido = intentoGuardar ? validarNombre(apellido, usuario.apellido, 'apellido') : null;
+  const erroresActuales = {
+    nombre: errorNombreEditado(nombre, usuario.nombre, 'nombre'),
+    apellido: errorNombreEditado(apellido, usuario.apellido, 'apellido'),
+  };
+  // Los errores se muestran recién después del primer intento de guardar.
+  const errorNombre = intentoGuardar ? erroresActuales.nombre : null;
+  const errorApellido = intentoGuardar ? erroresActuales.apellido : null;
 
   // Solo lo que cambió.
-  const cambios: ActualizarUsuarioPayload = {};
-  if (nombre.trim() !== (usuario.nombre ?? '')) cambios.nombre = nombre.trim();
-  if (apellido.trim() !== (usuario.apellido ?? '')) cambios.apellido = apellido.trim();
-  if (email.trim() !== (usuario.email ?? '') && email.trim() !== '') cambios.email = email.trim();
-  if (rol !== rolInicial) cambios.rol = rol;
+  const cambios = cambiosDeUsuario(usuario, rolInicial, { nombre, apellido, email, rol });
   const hayCambios = Object.keys(cambios).length > 0;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIntentoGuardar(true);
-    const primerError = validarNombre(nombre, usuario.nombre, 'nombre')
-      ? 'editar-nombre'
-      : validarNombre(apellido, usuario.apellido, 'apellido')
-        ? 'editar-apellido'
-        : null;
+    const primerError = primerCampoConError([
+      ['editar-nombre', erroresActuales.nombre],
+      ['editar-apellido', erroresActuales.apellido],
+    ]);
     if (primerError) {
       document.getElementById(primerError)?.focus();
       return;
@@ -100,47 +102,20 @@ export function EditarUsuarioDialog({
     <Dialog open={open} onClose={onClose} title={`Editar a ${nombreParaMostrar(usuario)}`}>
       <form onSubmit={handleSubmit} className="space-y-4" noValidate>
         <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <label htmlFor="editar-nombre" className="mb-1 block text-label-md text-on-surface-variant">
-              Nombre
-            </label>
-            <input
-              id="editar-nombre"
-              maxLength={LARGO_MAXIMO_NOMBRE}
-              autoComplete="off"
-              value={nombre}
-              onChange={(e) => setNombre(e.target.value)}
-              aria-invalid={errorNombre ? true : undefined}
-              aria-describedby={errorNombre ? 'editar-nombre-error' : undefined}
-              className={`${CLASE_INPUT} ${errorNombre ? 'border-error' : 'border-outline-variant'}`}
-            />
-            {errorNombre && (
-              <p id="editar-nombre-error" className="mt-1 text-body-sm text-error">
-                {errorNombre}
-              </p>
-            )}
-          </div>
-
-          <div>
-            <label htmlFor="editar-apellido" className="mb-1 block text-label-md text-on-surface-variant">
-              Apellido
-            </label>
-            <input
-              id="editar-apellido"
-              maxLength={LARGO_MAXIMO_NOMBRE}
-              autoComplete="off"
-              value={apellido}
-              onChange={(e) => setApellido(e.target.value)}
-              aria-invalid={errorApellido ? true : undefined}
-              aria-describedby={errorApellido ? 'editar-apellido-error' : undefined}
-              className={`${CLASE_INPUT} ${errorApellido ? 'border-error' : 'border-outline-variant'}`}
-            />
-            {errorApellido && (
-              <p id="editar-apellido-error" className="mt-1 text-body-sm text-error">
-                {errorApellido}
-              </p>
-            )}
-          </div>
+          <CampoNombrePersona
+            id="editar-nombre"
+            etiqueta="Nombre"
+            valor={nombre}
+            onChange={setNombre}
+            error={errorNombre}
+          />
+          <CampoNombrePersona
+            id="editar-apellido"
+            etiqueta="Apellido"
+            valor={apellido}
+            onChange={setApellido}
+            error={errorApellido}
+          />
         </div>
 
         <div>

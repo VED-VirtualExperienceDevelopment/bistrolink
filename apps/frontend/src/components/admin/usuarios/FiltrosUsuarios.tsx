@@ -28,7 +28,7 @@ const CLASE_CONTROL =
  * etiqueta visible. Es un formulario de búsqueda (role="search"): el filtrado
  * se aplica mientras se escribe, sin botón de enviar.
  */
-export function FiltrosUsuarios({ filtros, onChange }: Props) {
+export function FiltrosUsuarios({ filtros, onChange }: Readonly<Props>) {
   return (
     <form
       role="search"

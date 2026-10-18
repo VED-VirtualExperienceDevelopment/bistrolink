@@ -16,7 +16,7 @@ interface Props {
 
 // BL-358: confirmación antes de volver a habilitar a un usuario desactivado.
 // Mismo patrón que DesactivarUsuarioDialog.
-export function ReactivarUsuarioDialog({ open, onClose, token, usuario, onReactivado }: Props) {
+export function ReactivarUsuarioDialog({ open, onClose, token, usuario, onReactivado }: Readonly<Props>) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

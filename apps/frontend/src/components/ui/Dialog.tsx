@@ -49,7 +49,7 @@ export function Dialog({ open, onClose, title, children }: DialogProps) {
         return;
       }
       const primero = enfocables[0];
-      const ultimo = enfocables[enfocables.length - 1];
+      const ultimo = enfocables.at(-1) ?? primero;
       const activo = document.activeElement;
       if (e.shiftKey && (activo === primero || activo === panelRef.current)) {
         e.preventDefault();

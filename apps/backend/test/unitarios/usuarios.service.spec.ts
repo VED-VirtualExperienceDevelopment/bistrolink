@@ -3,6 +3,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  Logger,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
@@ -852,13 +853,21 @@ describe('UsuariosService', () => {
           activo: true,
         },
       ]);
+      const warn = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
       keycloakAdmin.listarUsuariosDelTenant.mockRejectedValue('timeout');
-      keycloakAdmin.ultimosIngresos.mockRejectedValue('timeout');
+      keycloakAdmin.ultimosIngresos.mockRejectedValue({ status: 503 });
 
       const resultado = await service.listar(TENANT_ID);
 
       expect(resultado).toHaveLength(1);
       expect(resultado[0]).not.toHaveProperty('ultimoIngreso');
+      // El log muestra el detalle, no «[object Object]».
+      const logs = warn.mock.calls.flat().join(' ');
+      expect(logs).toContain('timeout');
+      expect(logs).toContain('{"status":503}');
+      warn.mockRestore();
     });
 
     it('[TC-U-057] UsuariosService.restablecerContrasenaCocina cambia la contraseña, cierra las sesiones y lo audita', async () => {
