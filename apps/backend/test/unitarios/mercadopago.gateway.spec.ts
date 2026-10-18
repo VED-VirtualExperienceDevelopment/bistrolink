@@ -352,6 +352,19 @@ describe('MercadoPagoGateway', () => {
       );
     });
 
+    it('BL-215: usa MP_API_BASE_URL si está definida (mock server de Pact)', async () => {
+      process.env.MP_API_BASE_URL = 'http://127.0.0.1:4010/';
+      fetchMock.mockResolvedValue(
+        respuestaMp(200, { id: 'ORD1', status: 'processed' }),
+      );
+
+      await new MercadoPagoGateway().consultarOrden('ORD1');
+
+      expect(fetchMock.mock.calls[0][0]).toBe(
+        'http://127.0.0.1:4010/v1/orders/ORD1',
+      );
+    });
+
     it('la order no existe (404) => null', async () => {
       fetchMock.mockResolvedValue(respuestaMp(404, { message: 'not found' }));
 

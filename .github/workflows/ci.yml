@@ -272,24 +272,78 @@ jobs:
   # pendiente como paquete aparte (correspondería a EDT 1.8.6, corrido en CI).
 
   # ── JOB 3: TESTS DE CONTRATO (PactJS) ────────────────────────────────────
-  # NOTA: corresponde incorporarlo en etapa de integracion con
-  # plataformas de pago y comprobante electronico (sprint 6 en adelante)
-  # pact:
-  #   name: 🤝 Tests de contrato (PactJS)
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v7
+  # BL-215 (RNF.04, EDT 1.6.2): contratos del consumidor contra Mercado Pago
+  # (API Orders + notificación del webhook). Los pacts generados se
+  # versionan en apps/backend/pacts. El job falla — y bloquea el merge vía
+  # "build" (needs) — en dos casos:
+  #   1. Un test de contrato falla: el código dejó de cumplir lo que el
+  #      contrato dice que mandamos/esperamos de Mercado Pago.
+  #   2. El pact regenerado difiere del versionado: el contrato cambió y no
+  #      se commiteó (hay que revisarlo y commitearlo a propósito).
+  # Alcance: detecta cambios NUESTROS. Un cambio unilateral de Mercado Pago
+  # se detecta verificando el pact contra el sandbox (job aparte, pendiente).
+  pact:
+    name: 🤝 Tests de contrato (PactJS)
+    needs: [version]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
 
-  #     - uses: actions/setup-node@v7
-  #       with:
-  #         node-version: "22"
-  #         cache: npm
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
 
-  #     - name: Instalar dependencias
-  #       run: npm ci
+      - name: Instalar dependencias
+        run: npm ci
 
-  #     - name: Tests de contrato PactJS
-  #       run: npm run test:pact
+      - name: Tests de contrato PactJS
+        run: npm run test:pact --workspace=backend
+        env:
+          # El bloque "jest-junit" de apps/backend/package.json manda el
+          # reporte a coverage/junit.xml (el de los unitarios); las variables
+          # de entorno tienen prioridad y lo separan.
+          JEST_JUNIT_OUTPUT_DIR: reports
+          JEST_JUNIT_OUTPUT_NAME: contract-junit.xml
+
+      - name: El pact versionado coincide con el generado
+        run: |
+          if ! git diff --exit-code -- apps/backend/pacts \
+             || [ -n "$(git status --porcelain -- apps/backend/pacts)" ]; then
+            echo "::error::El contrato con Mercado Pago cambió y no está commiteado. Corré 'npm run test:pact --workspace=backend', revisá el diff de apps/backend/pacts y commitealo."
+            exit 1
+          fi
+
+      - name: Upload contract artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: contract-report
+          path: |
+            apps/backend/pacts/
+            apps/backend/reports/contract-junit.xml
+          retention-days: 14
+
+      # Mismo mecanismo que el reporte E2E (JOB 10): un TestRun propio con
+      # sufijo "-contract". A diferencia de los unitarios, los contratos SÍ
+      # se cargan en Kiwi (BL-215: "resultados reportados a Kiwi TCMS").
+      - name: Upload results to Kiwi TCMS (contract)
+        if: always() && github.event_name != 'pull_request'
+        continue-on-error: true
+        timeout-minutes: 5
+        env:
+          TCMS_PRODUCT: "BistroLink"
+          TCMS_PRODUCT_VERSION: ${{ github.ref_name }}
+          TCMS_BUILD: ${{ needs.version.outputs.label }}-contract
+        run: |
+          pip install kiwitcms-junit.xml-plugin --break-system-packages
+          cat <<EOF > ~/.tcms.conf
+          [tcms]
+          url = ${{ secrets.KIWI_TCMS_URL }}/xml-rpc/
+          username = ${{ secrets.KIWI_TCMS_USERNAME }}
+          password = ${{ secrets.KIWI_TCMS_PASSWORD }}
+          EOF
+          tcms-junit.xml-plugin apps/backend/reports/contract-junit.xml
 
   # ── JOB 4: GITLEAKS ───────────────────────────────────────────────────────
   gitleaks:
@@ -430,8 +484,8 @@ jobs:
   build:
     name: 🐳 Build + Escaneo (${{ matrix.name }})
     runs-on: ubuntu-latest
-    # pact sigue comentado — agregarlo a needs cuando esté listo.
-    needs: [lint, jest, version, changes]
+    # BL-215: pact en needs, una ruptura de contrato frena el build.
+    needs: [lint, jest, pact, version, changes]
     # BL-251: en un PR que solo toca documentación (*.md, docs/) se saltean
     # los tres builds: no hay imagen que cambie. OJO (BL-281): como este job
     # tiene matriz, al saltearlo GitHub no la expande y no reporta los checks
@@ -547,7 +601,7 @@ jobs:
                && [ "$CHANGES_RESULT" = "success" ] && [ "$CODE_CHANGED" != "true" ]; then
             echo "✅ PR de solo documentación: los builds se saltean a propósito (BL-251)."
           else
-            echo "::error::El build no terminó bien (build=$BUILD_RESULT, changes=$CHANGES_RESULT, code=$CODE_CHANGED). Revisá los jobs de Build, Lint, Jest y Detectar cambios."
+            echo "::error::El build no terminó bien (build=$BUILD_RESULT, changes=$CHANGES_RESULT, code=$CODE_CHANGED). Revisá los jobs de Build, Lint, Jest, Contratos (PactJS) y Detectar cambios."
             exit 1
           fi
 

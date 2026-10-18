@@ -12,7 +12,10 @@ import {
   SolicitudCobro,
 } from './pago-gateway.interface';
 
-const MP_ORDERS_URL = 'https://api.mercadopago.com/v1/orders';
+// BL-215: la URL base se puede sobrescribir con MP_API_BASE_URL para que los
+// tests de contrato (PactJS) apunten al mock server. En staging y producción
+// la variable no se define y se usa siempre la API real.
+const MP_API_BASE_URL_POR_DEFECTO = 'https://api.mercadopago.com';
 const ESTADOS_PENDIENTES = new Set([
   'created',
   'processing',
@@ -74,6 +77,7 @@ export function idempotencyKeyMp(tenantId: string, clave: string): string {
 @Injectable()
 export class MercadoPagoGateway implements PagoGateway {
   private readonly accessToken: string;
+  private readonly ordersUrl: string;
 
   constructor() {
     const accessToken = process.env.MP_ACCESS_TOKEN;
@@ -81,6 +85,11 @@ export class MercadoPagoGateway implements PagoGateway {
       throw new Error('MP_ACCESS_TOKEN no configurado');
     }
     this.accessToken = accessToken;
+    let baseUrl = process.env.MP_API_BASE_URL || MP_API_BASE_URL_POR_DEFECTO;
+    while (baseUrl.endsWith('/')) {
+      baseUrl = baseUrl.slice(0, -1);
+    }
+    this.ordersUrl = `${baseUrl}/v1/orders`;
 
     // Solo el n° de app y el user id (no son secretos): sirve para
     // confirmar que el .env cargado es el que uno cree.
@@ -107,7 +116,7 @@ export class MercadoPagoGateway implements PagoGateway {
 
     const monto = solicitud.monto.toFixed(2);
 
-    const respuesta = await fetch(MP_ORDERS_URL, {
+    const respuesta = await fetch(this.ordersUrl, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${this.accessToken}`,
@@ -203,7 +212,7 @@ export class MercadoPagoGateway implements PagoGateway {
   // fiarse del cuerpo de la notificación. null = la order no existe.
   async consultarOrden(orderId: string): Promise<OrdenConsultada | null> {
     const respuesta = await fetch(
-      `${MP_ORDERS_URL}/${encodeURIComponent(orderId)}`,
+      `${this.ordersUrl}/${encodeURIComponent(orderId)}`,
       {
         headers: { Authorization: `Bearer ${this.accessToken}` },
         signal: AbortSignal.timeout(10_000),
