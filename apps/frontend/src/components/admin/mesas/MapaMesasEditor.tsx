@@ -15,6 +15,13 @@ import { ZonaShape } from "./ZonaShape";
 import { ControlesZoom } from "./ControlesZoom";
 import { usePunteroGrueso } from "./usePunteroGrueso";
 import {
+  DURACION_DESHACER_MS,
+  restaurarMesa,
+  restaurarPorId,
+  textoEliminacion,
+  type Eliminacion,
+} from "./deshacer.utils";
+import {
   accionDeAtajo,
   accionDeTecla,
   acotarRecuadroZona,
@@ -184,6 +191,13 @@ export function MapaMesasEditor({
   // borran en el próximo guardado. Se guarda la mesa completa (no solo el
   // id) para poder devolverla al mapa si el guardado falla.
   const [eliminadas, setEliminadas] = useState<MesaEnEdicion[]>([]);
+  // BL-332: lo último que se eliminó, para el aviso «Deshacer». Se descarta
+  // a los DURACION_DESHACER_MS, al eliminar otra cosa, al guardar o al
+  // recargar el mapa. No se descarta mientras el aviso tiene el foco o el
+  // puntero encima (avisoDeshacerEnUso).
+  const [ultimaEliminacion, setUltimaEliminacion] =
+    useState<Eliminacion | null>(null);
+  const [avisoDeshacerEnUso, setAvisoDeshacerEnUso] = useState(false);
   const [editandoNumero, setEditandoNumero] = useState<{
     clientId: string;
     valor: string;
@@ -234,6 +248,9 @@ export function MapaMesasEditor({
     if (!token) return;
     setLoading(true);
     setLoadError(null);
+    // BL-332: después de guardar o recargar, lo eliminado ya no se puede
+    // devolver (en el backend ya no existe).
+    setUltimaEliminacion(null);
     try {
       const [data, datosPlano] = await Promise.all([
         apiFetch<MesaConLayout[]>(
@@ -593,6 +610,10 @@ export function MapaMesasEditor({
 
   function handleEliminarZona() {
     if (!zonaSeleccionada) return;
+    const indice = zonas.findIndex((z) => z.id === zonaSeleccionada);
+    if (indice >= 0) {
+      setUltimaEliminacion({ tipo: "zona", zona: zonas[indice], indice });
+    }
     setZonas((prev) => prev.filter((z) => z.id !== zonaSeleccionada));
     setZonaSeleccionada(null);
   }
@@ -633,6 +654,16 @@ export function MapaMesasEditor({
 
   function handleEliminarElemento() {
     if (!elementoSeleccionado) return;
+    const indice = elementos.findIndex((e) => e.id === elementoSeleccionado);
+    if (indice >= 0) {
+      const elemento = elementos[indice];
+      setUltimaEliminacion({
+        tipo: "elemento",
+        elemento,
+        indice,
+        etiqueta: ICONO_POR_ELEMENTO[elemento.tipo].etiqueta,
+      });
+    }
     setElementos((prev) => prev.filter((e) => e.id !== elementoSeleccionado));
     setElementoSeleccionado(null);
   }
@@ -652,11 +683,55 @@ export function MapaMesasEditor({
 
   function handleEliminarSeleccionada() {
     if (!seleccionada) return;
+    const indice = mesas.findIndex((m) => m.clientId === seleccionada);
     const resultado = quitarMesa(mesas, eliminadas, seleccionada);
+    // quitarMesa devuelve las mismas mesas si no se podía eliminar (por
+    // ejemplo, una mesa ocupada): en ese caso no hay nada que deshacer.
+    if (resultado.mesas !== mesas && indice >= 0) {
+      setUltimaEliminacion({ tipo: "mesa", mesa: mesas[indice], indice });
+    }
     setMesas(resultado.mesas);
     setEliminadas(resultado.eliminadas);
     setSeleccionada(null);
   }
+
+  // BL-332: devuelve lo último que se eliminó a su lugar, lo deja
+  // seleccionado y lleva el foco al mapa para seguir con el teclado.
+  function handleDeshacer() {
+    if (!ultimaEliminacion) return;
+    const e = ultimaEliminacion;
+    if (e.tipo === "mesa") {
+      const resultado = restaurarMesa(mesas, eliminadas, e.mesa, e.indice);
+      setMesas(resultado.mesas);
+      setEliminadas(resultado.eliminadas);
+      setZonaSeleccionada(null);
+      setElementoSeleccionado(null);
+      setSeleccionada(e.mesa.clientId);
+    } else if (e.tipo === "zona") {
+      setZonas((prev) => restaurarPorId(prev, e.zona, e.indice));
+      setSeleccionada(null);
+      setElementoSeleccionado(null);
+      setZonaSeleccionada(e.zona.id);
+    } else {
+      setElementos((prev) => restaurarPorId(prev, e.elemento, e.indice));
+      setSeleccionada(null);
+      setZonaSeleccionada(null);
+      setElementoSeleccionado(e.elemento.id);
+    }
+    setUltimaEliminacion(null);
+    setAvisoDeshacerEnUso(false);
+    contenedorRef.current?.focus({ preventScroll: true });
+  }
+
+  // BL-332: el aviso se cierra solo, salvo mientras se está usando.
+  useEffect(() => {
+    if (!ultimaEliminacion || avisoDeshacerEnUso) return;
+    const temporizador = setTimeout(
+      () => setUltimaEliminacion(null),
+      DURACION_DESHACER_MS,
+    );
+    return () => clearTimeout(temporizador);
+  }, [ultimaEliminacion, avisoDeshacerEnUso]);
 
   const puedeEliminarSeleccionada =
     !!mesaSeleccionada && puedeEliminarMesa(mesaSeleccionada);
@@ -762,6 +837,10 @@ export function MapaMesasEditor({
     );
     if (!atajo) return;
     if (atajo.tipo === "guardar" && !puedeEditar) return;
+    // Ctrl/Cmd + Z sin nada para deshacer: se deja pasar, no hace nada.
+    if (atajo.tipo === "deshacer" && (!puedeEditar || !ultimaEliminacion)) {
+      return;
+    }
     // Evita el scroll con las flechas y el «Guardar página» del navegador.
     e.preventDefault();
     if (atajo.tipo === "acercar") setZoom((z) => siguienteZoom(z, 1));
@@ -773,7 +852,8 @@ export function MapaMesasEditor({
       // marca para devolverlo al mapa cuando termine de cargar.
       reenfocarTrasCargarRef.current = true;
       void handleGuardar();
-    } else moverSeleccion(atajo.dx, atajo.dy);
+    } else if (atajo.tipo === "deshacer") handleDeshacer();
+    else moverSeleccion(atajo.dx, atajo.dy);
   };
   const reenfocarTrasCargarRef = useRef(false);
   useEffect(() => {
@@ -1222,6 +1302,9 @@ export function MapaMesasEditor({
                   <kbd>Supr</kbd> elimina, <kbd>Esc</kbd> deselecciona y{" "}
                   <kbd>Ctrl</kbd> + <kbd>S</kbd> guarda.
                 </li>
+                <li>
+                  <kbd>Ctrl</kbd> + <kbd>Z</kbd> deshace la última eliminación.
+                </li>
               </>
             )}
           </ul>
@@ -1237,6 +1320,37 @@ export function MapaMesasEditor({
           onAlternarPantallaCompleta={() => void alternarPantallaCompleta()}
         />
       </div>
+
+      {/* BL-332: aviso «Deshacer» después de eliminar. Abajo de la
+          pantalla, encima del contenido. El <output> (rol status) está
+          siempre en la página para que el lector de pantalla anuncie qué se
+          eliminó. */}
+      <output className="pointer-events-none fixed inset-x-0 bottom-4 z-40 flex justify-center px-4 empty:hidden">
+        {ultimaEliminacion && (
+          <div
+            className="pointer-events-auto flex max-w-full items-center gap-3 rounded-xl bg-inverse-surface py-1 pl-4 pr-1 text-inverse-on-surface shadow-lg"
+            onMouseEnter={() => setAvisoDeshacerEnUso(true)}
+            onMouseLeave={() => setAvisoDeshacerEnUso(false)}
+            onFocus={() => setAvisoDeshacerEnUso(true)}
+            onBlur={(ev) => {
+              if (!ev.currentTarget.contains(ev.relatedTarget as Node | null)) {
+                setAvisoDeshacerEnUso(false);
+              }
+            }}
+          >
+            <span className="text-body-md">
+              {textoEliminacion(ultimaEliminacion)}
+            </span>
+            <button
+              type="button"
+              onClick={handleDeshacer}
+              className="min-h-12 rounded-full px-4 text-label-md font-semibold text-inverse-primary transition-colors hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-inverse-primary"
+            >
+              Deshacer
+            </button>
+          </div>
+        )}
+      </output>
 
       {/* BL-331: aviso de conexión perdida. El <output> (rol status) está
           siempre en la página, vacío mientras hay conexión, para que el
