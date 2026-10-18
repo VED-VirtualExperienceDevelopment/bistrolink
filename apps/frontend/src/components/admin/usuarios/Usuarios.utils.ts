@@ -3,7 +3,7 @@
  * validación de nombre y apellido del alta. Lógica pura, sin React, para
  * testearla con Jest en entorno node (mismo criterio que usuario-sesion.utils).
  */
-import type { Usuario } from "@/types/usuario";
+import type { RolListado, Usuario } from "@/types/usuario";
 
 /** Nombre y apellido, o `undefined` si el usuario no los tiene cargados. */
 export function nombreCompleto(
@@ -78,4 +78,77 @@ export function rutaUsuario(
   return esCuentaCocina(usuario)
     ? `/usuarios/cocina/${usuario.id}`
     : `/usuarios/${usuario.id}`;
+}
+
+// ── BL-363: búsqueda y filtros del listado ──────────────────────────────────
+// Se filtra en el navegador: un restaurante tiene pocos usuarios.
+
+export type FiltroRol = "TODOS" | RolListado;
+export type FiltroEstado = "ACTIVOS" | "INACTIVOS" | "TODOS";
+
+export interface FiltrosUsuarios {
+  busqueda: string;
+  rol: FiltroRol;
+  estado: FiltroEstado;
+}
+
+/** Por defecto se ven los activos: los desactivados se buscan a propósito. */
+export const FILTROS_INICIALES: FiltrosUsuarios = {
+  busqueda: "",
+  rol: "TODOS",
+  estado: "ACTIVOS",
+};
+
+/**
+ * Texto para comparar sin distinguir mayúsculas ni tildes: «Pérez» y
+ * «perez» quedan iguales. NFD separa la letra de su tilde y el reemplazo
+ * borra las tildes sueltas; la ñ también pasa a n, que para buscar alcanza.
+ */
+export function normalizarParaBuscar(texto: string): string {
+  return texto
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("es")
+    .trim();
+}
+
+/** Busca en el usuario, el nombre, el apellido, el nombre completo y el correo. */
+function coincideBusqueda(usuario: Usuario, busqueda: string): boolean {
+  const termino = normalizarParaBuscar(busqueda);
+  if (!termino) return true;
+  return [
+    usuario.username,
+    usuario.nombre,
+    usuario.apellido,
+    nombreCompleto(usuario),
+    usuario.email,
+  ].some((campo) => campo && normalizarParaBuscar(campo).includes(termino));
+}
+
+/** Usuarios que cumplen la búsqueda y los dos filtros a la vez. */
+export function filtrarUsuarios(
+  usuarios: Usuario[],
+  filtros: FiltrosUsuarios,
+): Usuario[] {
+  return usuarios.filter(
+    (usuario) =>
+      (filtros.rol === "TODOS" || usuario.rol === filtros.rol) &&
+      (filtros.estado === "TODOS" ||
+        (filtros.estado === "ACTIVOS") === usuario.activo) &&
+      coincideBusqueda(usuario, filtros.busqueda),
+  );
+}
+
+/** Si hay algo distinto de los filtros iniciales (para ofrecer «Limpiar filtros»). */
+export function hayFiltrosActivos(filtros: FiltrosUsuarios): boolean {
+  return (
+    filtros.busqueda.trim() !== "" ||
+    filtros.rol !== FILTROS_INICIALES.rol ||
+    filtros.estado !== FILTROS_INICIALES.estado
+  );
+}
+
+/** «1 usuario», «3 usuarios»: lo que se anuncia al lector de pantalla. */
+export function textoCantidadUsuarios(cantidad: number): string {
+  return cantidad === 1 ? "1 usuario" : `${cantidad} usuarios`;
 }

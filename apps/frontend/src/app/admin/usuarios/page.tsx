@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useKeycloakAuth } from '@/components/providers/KeycloakProvider';
 import { apiFetch, ApiError } from '@/lib/api-client';
@@ -10,6 +10,14 @@ import { EditarRolDialog } from '@/components/admin/usuarios/EditarRolDialog';
 import { DesactivarUsuarioDialog } from '@/components/admin/usuarios/DesactivarUsuarioDialog';
 import { ReactivarUsuarioDialog } from '@/components/admin/usuarios/ReactivarUsuarioDialog';
 import { RestablecerContrasenaDialog } from '@/components/admin/usuarios/RestablecerContrasenaDialog';
+import { FiltrosUsuarios } from '@/components/admin/usuarios/FiltrosUsuarios';
+import {
+  FILTROS_INICIALES,
+  filtrarUsuarios,
+  hayFiltrosActivos,
+  textoCantidadUsuarios,
+  type FiltrosUsuarios as Filtros,
+} from '@/components/admin/usuarios/Usuarios.utils';
 import type { Usuario } from '@/types/usuario';
 
 export default function UsuariosPage() {
@@ -31,6 +39,12 @@ export default function UsuariosPage() {
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // BL-363: búsqueda y filtros (en el navegador).
+  const [filtros, setFiltros] = useState<Filtros>(FILTROS_INICIALES);
+  const usuariosFiltrados = useMemo(
+    () => filtrarUsuarios(usuarios, filtros),
+    [usuarios, filtros],
+  );
 
   // GAP DE INTEGRACIÓN: CreateUsuarioDto exige restauranteId, y un tenant
   // puede tener más de un Restaurante (Anexo 6 §4.2). No existe todavía un
@@ -111,9 +125,50 @@ export default function UsuariosPage() {
         </div>
       )}
 
-      {!loading && !loadError && (
+      {!loading && !loadError && usuarios.length > 0 && (
+        <>
+          <FiltrosUsuarios filtros={filtros} onChange={setFiltros} />
+          {/* BL-363: la cantidad se anuncia al lector de pantalla cuando
+              cambia el resultado (aria-live), sin mover el foco. */}
+          <p className="text-body-md text-on-surface-variant" aria-live="polite" aria-atomic="true">
+            {textoCantidadUsuarios(usuariosFiltrados.length)}
+          </p>
+        </>
+      )}
+
+      {/* BL-363: estado vacío propio cuando los filtros no dejan a nadie
+          (distinto del de «todavía no hay usuarios», que muestra la tabla). */}
+      {!loading && !loadError && usuarios.length > 0 && usuariosFiltrados.length === 0 && (
+        <div className="rounded-xl border border-outline-variant bg-surface-container-lowest p-12 text-center">
+          <span className="material-symbols-outlined text-4xl text-on-surface-variant" aria-hidden="true">
+            search_off
+          </span>
+          <p className="mt-2 text-body-lg text-on-surface">No hay usuarios con esos filtros</p>
+          {hayFiltrosActivos(filtros) ? (
+            <button
+              type="button"
+              onClick={() => setFiltros(FILTROS_INICIALES)}
+              className="mt-4 min-h-12 rounded-lg px-4 text-body-md font-medium text-primary hover:bg-surface-container"
+            >
+              Limpiar filtros
+            </button>
+          ) : (
+            // Con los filtros iniciales solo se ven los activos: si están
+            // todos desactivados, se ofrece verlos en vez de «limpiar».
+            <button
+              type="button"
+              onClick={() => setFiltros({ ...FILTROS_INICIALES, estado: 'TODOS' })}
+              className="mt-4 min-h-12 rounded-lg px-4 text-body-md font-medium text-primary hover:bg-surface-container"
+            >
+              Ver también los inactivos
+            </button>
+          )}
+        </div>
+      )}
+
+      {!loading && !loadError && (usuarios.length === 0 || usuariosFiltrados.length > 0) && (
         <UsuariosTable
-          usuarios={usuarios}
+          usuarios={usuariosFiltrados}
           onEditarRol={setUsuarioAEditar}
           onDesactivar={setUsuarioADesactivar}
           onReactivar={setUsuarioAReactivar}
