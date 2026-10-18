@@ -241,6 +241,67 @@ export class UsuariosService {
     return { desactivado: resultado.desactivado, id: resultado.id };
   }
 
+  /**
+   * BL-358: vuelve a habilitar a un usuario desactivado (por ejemplo, un
+   * mozo de temporada que vuelve). Mismo orden que desactivar(): primero
+   * Keycloak y después Postgres, dentro de la misma transacción. Si
+   * Keycloak falla, la transacción hace rollback y `activo` sigue en false,
+   * así la base nunca muestra como activo a alguien que no puede ingresar.
+   *
+   * No hace falta revisar RF.19: reactivar solo puede sumar Admins activos.
+   * El lock por tenant se toma igual, para que una reactivación y una
+   * desactivación concurrentes del mismo tenant no se pisen.
+   *
+   * Las sesiones viejas no reviven: desactivar() ya las cerró y revocó sus
+   * refresh tokens (BL-272), así que el usuario tiene que volver a ingresar.
+   */
+  async reactivar(
+    tenantId: string,
+    actorKeycloakId: string,
+    usuarioId: string,
+  ) {
+    const resultado = await this.tenantPrisma.runInTenantContext(
+      tenantId,
+      async (tx) => {
+        await this.lockTenant(tx, tenantId);
+
+        // Bajo RLS: un usuario de otro tenant no aparece y responde 404.
+        const usuario = await this.obtenerOFallar(tx, usuarioId);
+
+        // Ya activo: no hay nada que hacer ni que auditar. Responder igual
+        // con éxito evita un error si el admin hace doble clic o si otra
+        // persona lo reactivó un momento antes.
+        if (usuario.activo) {
+          return { yaEstabaActivo: true, rol: usuario.rol };
+        }
+
+        await this.keycloakAdmin.setEnabled(usuario.keycloakId, true);
+
+        await tx.usuario.update({
+          where: { id: usuarioId },
+          data: { activo: true },
+        });
+
+        return { yaEstabaActivo: false, rol: usuario.rol };
+      },
+      { timeout: 10_000 }, // margen extra: la transacción espera a Keycloak
+    );
+
+    // [S] Igual que la baja: se audita fuera de la transacción, para no
+    // registrar una reactivación que terminó en rollback.
+    if (!resultado.yaEstabaActivo) {
+      this.auditLog.registrar({
+        action: AuditAction.USUARIO_REACTIVADO,
+        tenantId,
+        actorKeycloakId,
+        targetUsuarioId: usuarioId,
+        detalle: { rol: resultado.rol },
+      });
+    }
+
+    return { activo: true as const, id: usuarioId };
+  }
+
   private async obtenerOFallar(tx: PrismaClient, usuarioId: string) {
     const usuario = await tx.usuario.findUnique({ where: { id: usuarioId } });
     if (!usuario) {

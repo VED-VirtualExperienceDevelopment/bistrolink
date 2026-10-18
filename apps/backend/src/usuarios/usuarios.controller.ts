@@ -51,6 +51,14 @@ export class UsuariosController {
     );
   }
 
+  // BL-358: vuelve a habilitar un usuario desactivado. Ruta propia (y no
+  // un campo `activo` en PATCH /usuarios/:id) para que reactivar sea una
+  // acción explícita, con su propio registro en la auditoría.
+  @Patch(':id/activar')
+  reactivar(@Req() req: { user: AuthenticatedUser }, @Param('id') id: string) {
+    return this.usuariosService.reactivar(req.user.tenantId, req.user.sub, id);
+  }
+
   @Delete(':id')
   desactivar(@Req() req: { user: AuthenticatedUser }, @Param('id') id: string) {
     return this.usuariosService.desactivar(req.user.tenantId, req.user.sub, id);

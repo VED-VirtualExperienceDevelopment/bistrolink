@@ -6,6 +6,7 @@ interface Props {
   usuarios: Usuario[];
   onEditarRol: (usuario: Usuario) => void;
   onDesactivar: (usuario: Usuario) => void;
+  onReactivar: (usuario: Usuario) => void;
 }
 
 const ROL_LABEL: Record<Usuario['rol'], string> = {
@@ -13,7 +14,7 @@ const ROL_LABEL: Record<Usuario['rol'], string> = {
   MOZO: 'Mozo',
 };
 
-export function UsuariosTable({ usuarios, onEditarRol, onDesactivar }: Props) {
+export function UsuariosTable({ usuarios, onEditarRol, onDesactivar, onReactivar }: Props) {
   if (usuarios.length === 0) {
     return (
       <div className="rounded-xl border border-outline-variant bg-surface-container-lowest p-12 text-center">
@@ -94,6 +95,20 @@ export function UsuariosTable({ usuarios, onEditarRol, onDesactivar }: Props) {
                     className="rounded-full p-2 text-on-surface-variant transition-colors hover:bg-error-container hover:text-error"
                   >
                     <span className="material-symbols-outlined text-[20px]">person_off</span>
+                  </button>
+                )}
+                {/* BL-358: un usuario desactivado ya no se queda sin acciones. */}
+                {!usuario.activo && (
+                  <button
+                    type="button"
+                    onClick={() => onReactivar(usuario)}
+                    aria-label={`Reactivar a ${usuario.username ?? `Usuario ${usuario.id.slice(0, 8)}`}`}
+                    title="Reactivar usuario"
+                    className="rounded-full p-2 text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-primary"
+                  >
+                    <span className="material-symbols-outlined text-[20px]" aria-hidden="true">
+                      how_to_reg
+                    </span>
                   </button>
                 )}
               </div>

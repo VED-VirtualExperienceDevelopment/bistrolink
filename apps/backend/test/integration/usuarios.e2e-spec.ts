@@ -334,6 +334,45 @@ describe('Gestión de usuarios (HU-013) - aislamiento de PATCH y DELETE (BL-265)
       expect((await estadoKeycloakB()).enabled).toBe(true);
     },
   );
+
+  itConAdmin(
+    '[TC-I-058] Usuarios: ADMIN no puede reactivar a un usuario de otro tenant (404) (BL-358)',
+    async () => {
+      // Se desactiva al usuario de B directo en Postgres y en Keycloak (no
+      // por la API, que lo rechazaría por ser de otro tenant), para que
+      // una reactivación cruzada tuviera algo que cambiar.
+      await prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT set_config('app.tenant_id', ${TENANT_B}, true)`;
+        await tx.usuario.update({
+          where: { id: usuarioIdB },
+          data: { activo: false },
+        });
+      });
+      await fetch(
+        `${KEYCLOAK_URL}/admin/realms/${REALM}/users/${keycloakIdB}`,
+        {
+          method: 'PUT',
+          headers: {
+            Authorization: `Bearer ${await getMasterAdminToken()}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ enabled: false }),
+        },
+      );
+
+      const token = await getToken(ADMIN_USER, ADMIN_PASS as string);
+
+      await request(app.getHttpServer())
+        .patch(`/usuarios/${usuarioIdB}/activar`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(404);
+
+      // Sigue desactivado de los dos lados.
+      const fila = await filaUsuarioB();
+      expect(fila?.activo).toBe(false);
+      expect((await estadoKeycloakB()).enabled).toBe(false);
+    },
+  );
 });
 
 // ── BL-272 (BL-262): al desactivar se cierran las sesiones de Keycloak ──────
@@ -476,6 +515,106 @@ describe('Gestión de usuarios (HU-013) - cierre de sesiones al desactivar (BL-2
       expect(refresh.status).toBe(400);
       expect(refresh.body.error).toBe('invalid_grant');
       expect(refresh.body.error_description).toBe('Session not active');
+    },
+  );
+});
+
+// ── BL-358: reactivar un usuario desactivado ────────────────────────────────
+// PATCH /usuarios/:id/activar vuelve a habilitar al usuario en Keycloak y
+// marca `activo: true` en Postgres. El caso cruzado (otro tenant → 404) está
+// en el bloque de BL-265 (TC-I-058).
+describe('Gestión de usuarios (HU-013) - reactivar (BL-358)', () => {
+  let app: INestApplication;
+  let prisma: PrismaClient;
+  let creado: { id: string; keycloakId: string; tenantId: string } | undefined;
+
+  const itConAdmin = ADMIN_PASS ? it : it.skip;
+
+  async function habilitadoEnKeycloak(keycloakId: string): Promise<boolean> {
+    const res = await fetch(
+      `${KEYCLOAK_URL}/admin/realms/${REALM}/users/${keycloakId}`,
+      { headers: { Authorization: `Bearer ${await getMasterAdminToken()}` } },
+    );
+    return ((await res.json()) as { enabled: boolean }).enabled;
+  }
+
+  async function filaUsuario(id: string, tenantId: string) {
+    return prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`;
+      return tx.usuario.findUnique({ where: { id } });
+    });
+  }
+
+  beforeAll(async () => {
+    const moduleRef: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
+    app = moduleRef.createNestApplication();
+    await app.init();
+    prisma = new PrismaClient();
+  });
+
+  afterAll(async () => {
+    if (creado) {
+      const { keycloakId, tenantId } = creado;
+      await borrarUsuarioKeycloak(keycloakId).catch(() => undefined);
+      await prisma
+        .$transaction(async (tx) => {
+          await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`;
+          await tx.usuario.deleteMany({ where: { keycloakId } });
+        })
+        .catch(() => undefined); // best-effort
+    }
+    await prisma.$disconnect();
+    await app.close();
+  });
+
+  itConAdmin(
+    '[TC-I-057] Usuarios: ADMIN reactiva a un usuario desactivado de su tenant (200)',
+    async () => {
+      const token = await getToken(ADMIN_USER, ADMIN_PASS as string);
+      const username = `mozo-reactivar-${Date.now()}`;
+
+      // 1. Alta y baja por la API, como desde Admin → Usuarios.
+      const alta = await request(app.getHttpServer())
+        .post('/usuarios')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          username,
+          email: `${username}@bistrolink.dev`,
+          rol: 'MOZO',
+          restauranteId: RESTAURANTE_TENANT_A,
+        })
+        .expect(201);
+      creado = {
+        id: alta.body.id,
+        keycloakId: alta.body.keycloakId,
+        tenantId: alta.body.tenantId,
+      };
+      const { id, keycloakId, tenantId } = creado;
+
+      await request(app.getHttpServer())
+        .delete(`/usuarios/${id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(await habilitadoEnKeycloak(keycloakId)).toBe(false);
+
+      // 2. Reactivación.
+      const res = await request(app.getHttpServer())
+        .patch(`/usuarios/${id}/activar`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(res.body).toEqual({ activo: true, id });
+
+      // 3. Activo de los dos lados: puede volver a ingresar.
+      expect((await filaUsuario(id, tenantId))?.activo).toBe(true);
+      expect(await habilitadoEnKeycloak(keycloakId)).toBe(true);
+
+      // 4. Repetir la reactivación no falla (doble clic, otra pestaña).
+      await request(app.getHttpServer())
+        .patch(`/usuarios/${id}/activar`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
     },
   );
 });

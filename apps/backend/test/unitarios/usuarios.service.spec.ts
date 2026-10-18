@@ -443,6 +443,106 @@ describe('UsuariosService', () => {
     });
   });
 
+  describe('reactivar (BL-358)', () => {
+    it('[TC-U-036] UsuariosService.reactivar habilita el usuario en Keycloak, lo marca activo en Postgres y lo audita', async () => {
+      tx().usuario.findUnique.mockResolvedValue({
+        id: 'usuario-mozo',
+        rol: 'MOZO',
+        keycloakId: 'kc-mozo',
+        activo: false,
+      });
+      tx().usuario.update.mockResolvedValue({
+        id: 'usuario-mozo',
+        activo: true,
+      });
+
+      const resultado = await service.reactivar(
+        TENANT_ID,
+        ACTOR_KEYCLOAK_ID,
+        'usuario-mozo',
+      );
+
+      expect(keycloakAdmin.setEnabled).toHaveBeenCalledWith('kc-mozo', true);
+      expect(tx().usuario.update).toHaveBeenCalledWith({
+        where: { id: 'usuario-mozo' },
+        data: { activo: true },
+      });
+      // Mismo orden que la baja: primero Keycloak, después Postgres.
+      expect(keycloakAdmin.setEnabled.mock.invocationCallOrder[0]).toBeLessThan(
+        tx().usuario.update.mock.invocationCallOrder[0],
+      );
+      expect(resultado).toEqual({ activo: true, id: 'usuario-mozo' });
+
+      expect(auditLog.registrar).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: AuditAction.USUARIO_REACTIVADO,
+          tenantId: TENANT_ID,
+          actorKeycloakId: ACTOR_KEYCLOAK_ID,
+          targetUsuarioId: 'usuario-mozo',
+          detalle: { rol: 'MOZO' },
+        }),
+      );
+      // Reactivar solo suma Admins activos: no consulta la regla RF.19.
+      expect(tx().usuario.count).not.toHaveBeenCalled();
+    });
+
+    it('[TC-U-037] UsuariosService.reactivar devuelve 404 si el usuario no existe en el tenant', async () => {
+      // Bajo RLS, un usuario de otro tenant tampoco aparece.
+      tx().usuario.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.reactivar(
+          TENANT_ID,
+          ACTOR_KEYCLOAK_ID,
+          'usuario-de-otro-tenant',
+        ),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(keycloakAdmin.setEnabled).not.toHaveBeenCalled();
+      expect(auditLog.registrar).not.toHaveBeenCalled();
+    });
+
+    it('[TC-U-038] UsuariosService.reactivar no marca activo:true en Postgres si Keycloak falla al habilitar', async () => {
+      tx().usuario.findUnique.mockResolvedValue({
+        id: 'usuario-mozo',
+        rol: 'MOZO',
+        keycloakId: 'kc-mozo',
+        activo: false,
+      });
+      keycloakAdmin.setEnabled.mockRejectedValue(
+        new Error('Keycloak no disponible'),
+      );
+
+      await expect(
+        service.reactivar(TENANT_ID, ACTOR_KEYCLOAK_ID, 'usuario-mozo'),
+      ).rejects.toThrow('Keycloak no disponible');
+
+      // Si Keycloak no lo habilitó, la base no debe mostrarlo como activo.
+      expect(tx().usuario.update).not.toHaveBeenCalled();
+      expect(auditLog.registrar).not.toHaveBeenCalled();
+    });
+
+    it('[TC-U-039] UsuariosService.reactivar no toca Keycloak ni audita si el usuario ya estaba activo', async () => {
+      tx().usuario.findUnique.mockResolvedValue({
+        id: 'usuario-mozo',
+        rol: 'MOZO',
+        keycloakId: 'kc-mozo',
+        activo: true,
+      });
+
+      const resultado = await service.reactivar(
+        TENANT_ID,
+        ACTOR_KEYCLOAK_ID,
+        'usuario-mozo',
+      );
+
+      expect(resultado).toEqual({ activo: true, id: 'usuario-mozo' });
+      expect(keycloakAdmin.setEnabled).not.toHaveBeenCalled();
+      expect(tx().usuario.update).not.toHaveBeenCalled();
+      expect(auditLog.registrar).not.toHaveBeenCalled();
+    });
+  });
+
   describe('actualizarRol (RF.19 al degradar un Admin)', () => {
     it('[TC-U-020] UsuariosService.actualizarRol rechaza con 409 si se intenta bajar de rol al único Admin', async () => {
       tx().usuario.findUnique.mockResolvedValue({

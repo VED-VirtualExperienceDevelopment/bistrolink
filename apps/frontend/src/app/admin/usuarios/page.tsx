@@ -8,6 +8,7 @@ import { UsuariosTable } from '@/components/admin/usuarios/UsuariosTable';
 import { CrearUsuarioDialog } from '@/components/admin/usuarios/CrearUsuarioDialog';
 import { EditarRolDialog } from '@/components/admin/usuarios/EditarRolDialog';
 import { DesactivarUsuarioDialog } from '@/components/admin/usuarios/DesactivarUsuarioDialog';
+import { ReactivarUsuarioDialog } from '@/components/admin/usuarios/ReactivarUsuarioDialog';
 import type { Usuario } from '@/types/usuario';
 
 export default function UsuariosPage() {
@@ -41,6 +42,7 @@ export default function UsuariosPage() {
   const [crearOpen, setCrearOpen] = useState(false);
   const [usuarioAEditar, setUsuarioAEditar] = useState<Usuario | null>(null);
   const [usuarioADesactivar, setUsuarioADesactivar] = useState<Usuario | null>(null);
+  const [usuarioAReactivar, setUsuarioAReactivar] = useState<Usuario | null>(null);
 
   const cargarUsuarios = useCallback(async () => {
     if (!token) return;
@@ -112,6 +114,7 @@ export default function UsuariosPage() {
           usuarios={usuarios}
           onEditarRol={setUsuarioAEditar}
           onDesactivar={setUsuarioADesactivar}
+          onReactivar={setUsuarioAReactivar}
         />
       )}
 
@@ -142,6 +145,16 @@ export default function UsuariosPage() {
         usuario={usuarioADesactivar}
         onDesactivado={(id) =>
           setUsuarios((prev) => prev.map((u) => (u.id === id ? { ...u, activo: false } : u)))
+        }
+      />
+
+      <ReactivarUsuarioDialog
+        open={usuarioAReactivar !== null}
+        onClose={() => setUsuarioAReactivar(null)}
+        token={token}
+        usuario={usuarioAReactivar}
+        onReactivado={(id) =>
+          setUsuarios((prev) => prev.map((u) => (u.id === id ? { ...u, activo: true } : u)))
         }
       />
     </div>

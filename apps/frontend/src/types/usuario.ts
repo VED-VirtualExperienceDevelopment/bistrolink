@@ -1,4 +1,4 @@
-export const ROLES_VALIDOS = ['ADMIN', 'MOZO'] as const;
+export const ROLES_VALIDOS = ["ADMIN", "MOZO"] as const;
 export type UsuarioRol = (typeof ROLES_VALIDOS)[number];
 
 export interface Usuario {
@@ -36,6 +36,12 @@ export interface ActualizarRolPayload {
 
 export interface DesactivarResponse {
   desactivado: true;
+  id: string;
+}
+
+// BL-358: respuesta de PATCH /usuarios/:id/activar.
+export interface ReactivarResponse {
+  activo: true;
   id: string;
 }
 
