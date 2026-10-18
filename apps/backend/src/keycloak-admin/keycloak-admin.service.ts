@@ -44,6 +44,9 @@ export interface KeycloakUser {
   firstName?: string;
   lastName?: string;
   attributes?: Record<string, string[]>;
+  /** BL-362: estado de la cuenta y fecha de alta (epoch en milisegundos). */
+  enabled?: boolean;
+  createdTimestamp?: number;
 }
 
 /** BL-163: datos del perfil que exige el realm (email, nombre y apellido). */
@@ -420,6 +423,57 @@ export class KeycloakAdminService {
         `No se pudo ${enabled ? 'activar' : 'desactivar'} el usuario en Keycloak: ${res.status} ${body}`,
       );
     }
+  }
+
+  /**
+   * BL-362: usuarios de Keycloak de un tenant (atributo tenant_id), con la
+   * representación completa (atributos, enabled, createdTimestamp). Un
+   * tenant tiene pocos: el personal, la cuenta de cocina y el comensal
+   * técnico. El tope de 200 es solo una red de seguridad.
+   *
+   * Quien llama igual compara el tenant_id de cada usuario: la búsqueda por
+   * atributo es del lado de Keycloak y la verificación queda en nuestro código.
+   */
+  async listarUsuariosDelTenant(tenantId: string): Promise<KeycloakUser[]> {
+    const q = encodeURIComponent(`tenant_id:${tenantId}`);
+    const res = await this.adminFetch(
+      `/users?q=${q}&briefRepresentation=false&max=200`,
+    );
+    if (!res.ok) {
+      const body = await res.text();
+      this.logAndBuildError(
+        `No se pudieron listar los usuarios del tenant ${tenantId} en Keycloak`,
+        res.status,
+        body,
+      );
+      throw new InternalServerErrorException(
+        `No se pudieron listar los usuarios en Keycloak: ${res.status} ${body}`,
+      );
+    }
+    return (await res.json()) as KeycloakUser[];
+  }
+
+  /**
+   * BL-362: nombres de los roles de realm asignados directamente al usuario
+   * (GET /users/{id}/role-mappings/realm). Así se reconoce la cuenta de
+   * cocina, que tiene COCINA asignado en el alta (BL-163).
+   */
+  async rolesDeRealm(keycloakId: string): Promise<string[]> {
+    const res = await this.adminFetch(
+      `/users/${encodeURIComponent(keycloakId)}/role-mappings/realm`,
+    );
+    if (!res.ok) {
+      const body = await res.text();
+      this.logAndBuildError(
+        `No se pudieron leer los roles del usuario ${keycloakId} en Keycloak`,
+        res.status,
+        body,
+      );
+      throw new InternalServerErrorException(
+        `No se pudieron leer los roles del usuario en Keycloak: ${res.status} ${body}`,
+      );
+    }
+    return ((await res.json()) as { name: string }[]).map((r) => r.name);
   }
 
   /**

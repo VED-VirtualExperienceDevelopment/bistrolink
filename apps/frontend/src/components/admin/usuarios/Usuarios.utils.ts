@@ -59,3 +59,23 @@ export function errorNombrePersona(
   }
   return null;
 }
+
+/** BL-362: la cuenta compartida de la cocina (vive solo en Keycloak). */
+export function esCuentaCocina(
+  usuario: Pick<Usuario, "rol" | "cuentaCompartida">,
+): boolean {
+  return usuario.cuentaCompartida === true || usuario.rol === "COCINA";
+}
+
+/**
+ * BL-362: ruta de la API para las acciones sobre un usuario. La cuenta de
+ * cocina no tiene fila en `usuario`: sus acciones van por
+ * /usuarios/cocina/:keycloakId (desactivar, reactivar y restablecer).
+ */
+export function rutaUsuario(
+  usuario: Pick<Usuario, "id" | "rol" | "cuentaCompartida">,
+): string {
+  return esCuentaCocina(usuario)
+    ? `/usuarios/cocina/${usuario.id}`
+    : `/usuarios/${usuario.id}`;
+}

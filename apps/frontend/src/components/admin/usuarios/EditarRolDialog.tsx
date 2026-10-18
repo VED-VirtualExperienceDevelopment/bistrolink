@@ -15,7 +15,9 @@ interface Props {
 }
 
 export function EditarRolDialog({ open, onClose, token, usuario, onUpdated }: Props) {
-  const [rol, setRol] = useState<UsuarioRol>(usuario?.rol ?? 'MOZO');
+  // BL-362: la cuenta de cocina no llega acá (la tabla no ofrece «Editar rol»
+  // para ella); igual, el valor inicial solo puede ser un rol asignable.
+  const [rol, setRol] = useState<UsuarioRol>(usuario?.rol === 'ADMIN' ? 'ADMIN' : 'MOZO');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

@@ -910,3 +910,178 @@ describe('Gestión de usuarios (HU-013) - nombre y apellido (BL-361)', () => {
     },
   );
 });
+
+// ── BL-362: cuenta de cocina en el listado ──────────────────────────────────
+// La cuenta de cocina vive solo en Keycloak (sin fila en `usuario`). Se lista
+// desde Keycloak y sus acciones van por /usuarios/cocina/:keycloakId. Los
+// casos que la modifican usan una cuenta de cocina temporal, creada acá,
+// para no tocar la de prueba del tenant A, que usan la KDS y los E2E.
+describe('Gestión de usuarios (HU-013) - cuenta de cocina (BL-362)', () => {
+  const TENANT_A = '11111111-1111-1111-1111-111111111111';
+  const COCINA_A_USERNAME = process.env.TEST_COCINA_USERNAME ?? 'cocina-test';
+  const COCINA_B_KEYCLOAK_ID = '0fd5421a-a1f4-4fe4-ab95-8a3482a3e5cd'; // test-users.json
+
+  let app: INestApplication;
+  let cocinaTemporalId: string | undefined;
+
+  const itConAdmin = ADMIN_PASS ? it : it.skip;
+
+  const adminHeaders = async () => ({
+    Authorization: `Bearer ${await getMasterAdminToken()}`,
+    'Content-Type': 'application/json',
+  });
+
+  async function usuarioKeycloak(keycloakId: string) {
+    const res = await fetch(
+      `${KEYCLOAK_URL}/admin/realms/${REALM}/users/${keycloakId}`,
+      { headers: await adminHeaders() },
+    );
+    return (await res.json()) as {
+      enabled: boolean;
+      requiredActions?: string[];
+    };
+  }
+
+  beforeAll(async () => {
+    const moduleRef: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
+    app = moduleRef.createNestApplication();
+    await app.init();
+
+    // Cuenta de cocina temporal del tenant A, armada como la crea el alta de
+    // establecimiento (BL-163): tenant_id, rol COCINA y perfil completo.
+    const username = `cocina-temporal-${Date.now()}`;
+    const headers = await adminHeaders();
+    const creado = await fetch(`${KEYCLOAK_URL}/admin/realms/${REALM}/users`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        username,
+        email: `${username}@tecnico.bistrolink.local`,
+        firstName: 'Cocina',
+        lastName: 'BistroLink',
+        enabled: true,
+        attributes: { tenant_id: [TENANT_A] },
+      }),
+    });
+    if (creado.status !== 201) {
+      throw new Error(
+        `No se pudo crear la cuenta de cocina temporal: ${creado.status}`,
+      );
+    }
+    cocinaTemporalId = (creado.headers.get('location') as string)
+      .split('/')
+      .pop();
+    const rolCocina = await (
+      await fetch(`${KEYCLOAK_URL}/admin/realms/${REALM}/roles/COCINA`, {
+        headers,
+      })
+    ).json();
+    await fetch(
+      `${KEYCLOAK_URL}/admin/realms/${REALM}/users/${cocinaTemporalId}/role-mappings/realm`,
+      { method: 'POST', headers, body: JSON.stringify([rolCocina]) },
+    );
+  });
+
+  afterAll(async () => {
+    if (cocinaTemporalId) {
+      await borrarUsuarioKeycloak(cocinaTemporalId).catch(() => undefined);
+    }
+    await app.close();
+  });
+
+  itConAdmin(
+    '[TC-I-063] Usuarios: el listado del tenant A incluye su cuenta de cocina como cuenta compartida, y no la del tenant B',
+    async () => {
+      const token = await getToken(ADMIN_USER, ADMIN_PASS as string);
+
+      const res = await request(app.getHttpServer())
+        .get('/usuarios')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      const lista = res.body as {
+        keycloakId: string;
+        username: string;
+        rol: string;
+        cuentaCompartida: boolean;
+      }[];
+
+      expect(lista).toContainEqual(
+        expect.objectContaining({
+          username: COCINA_A_USERNAME,
+          rol: 'COCINA',
+          cuentaCompartida: true,
+        }),
+      );
+      expect(lista.map((u) => u.keycloakId)).not.toContain(
+        COCINA_B_KEYCLOAK_ID,
+      );
+      // El personal (filas de `usuario`) sigue marcado como no compartido.
+      expect(
+        lista
+          .filter((u) => u.rol !== 'COCINA')
+          .every((u) => !u.cuentaCompartida),
+      ).toBe(true);
+    },
+  );
+
+  itConAdmin(
+    '[TC-I-064] Usuarios: ADMIN desactiva, reactiva y restablece la contraseña de la cuenta de cocina de su tenant',
+    async () => {
+      const token = await getToken(ADMIN_USER, ADMIN_PASS as string);
+      const ruta = `/usuarios/cocina/${cocinaTemporalId}`;
+
+      await request(app.getHttpServer())
+        .delete(ruta)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect((await usuarioKeycloak(cocinaTemporalId as string)).enabled).toBe(
+        false,
+      );
+
+      await request(app.getHttpServer())
+        .patch(`${ruta}/activar`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect((await usuarioKeycloak(cocinaTemporalId as string)).enabled).toBe(
+        true,
+      );
+
+      const res = await request(app.getHttpServer())
+        .post(`${ruta}/restablecer-contrasena`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(res.headers['cache-control']).toBe('no-store');
+      expect(res.body.temporaryPassword).toHaveLength(16);
+      expect(
+        (await usuarioKeycloak(cocinaTemporalId as string)).requiredActions,
+      ).toContain('UPDATE_PASSWORD');
+    },
+  );
+
+  itConAdmin(
+    '[TC-I-065] Usuarios: ADMIN no puede tocar la cuenta de cocina de otro tenant (404)',
+    async () => {
+      const token = await getToken(ADMIN_USER, ADMIN_PASS as string);
+      const ruta = `/usuarios/cocina/${COCINA_B_KEYCLOAK_ID}`;
+      const antes = await usuarioKeycloak(COCINA_B_KEYCLOAK_ID);
+
+      await request(app.getHttpServer())
+        .post(`${ruta}/restablecer-contrasena`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(404);
+      await request(app.getHttpServer())
+        .delete(ruta)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(404);
+
+      // Sin cambios en la cuenta de cocina del tenant B.
+      const despues = await usuarioKeycloak(COCINA_B_KEYCLOAK_ID);
+      expect(despues.enabled).toBe(antes.enabled);
+      expect(despues.requiredActions ?? []).toEqual(
+        antes.requiredActions ?? [],
+      );
+    },
+  );
+});

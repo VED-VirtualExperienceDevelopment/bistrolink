@@ -84,7 +84,7 @@ export default function UsuariosPage() {
         <div>
           <h1 className="text-headline-lg text-primary">Usuarios</h1>
           <p className="text-body-md text-on-surface-variant">
-            Administradores y mozos con acceso a tu restaurante.
+            Administradores, mozos y la cuenta de la cocina de tu restaurante.
           </p>
         </div>
         <button

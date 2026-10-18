@@ -32,6 +32,7 @@ describe('UsuariosService', () => {
         create: jest.fn(),
         update: jest.fn(),
         findUnique: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
         count: jest.fn(),
       },
       // Usado por lockTenant() para el advisory lock (pg_advisory_xact_lock).
@@ -49,6 +50,9 @@ describe('UsuariosService', () => {
       deleteUser: jest.fn(),
       logoutUser: jest.fn().mockResolvedValue(true),
       resetPassword: jest.fn(),
+      findUserById: jest.fn(),
+      listarUsuariosDelTenant: jest.fn().mockResolvedValue([]),
+      rolesDeRealm: jest.fn().mockResolvedValue([]),
     };
 
     const auditLogMock = {
@@ -701,6 +705,245 @@ describe('UsuariosService', () => {
           detalle: { rol: 'MOZO', sesionesCerradas: false },
         }),
       );
+    });
+  });
+
+  describe('cuenta de cocina (BL-362)', () => {
+    const COCINA_KC_ID = 'aaaaaaaa-1111-4111-8111-111111111111';
+    const COMENSAL_KC_ID = 'bbbbbbbb-2222-4222-8222-222222222222';
+    const MOZO_KC_ID = 'cccccccc-3333-4333-8333-333333333333';
+
+    const cuentaCocina = (extra: object = {}) => ({
+      id: COCINA_KC_ID,
+      username: 'cocina-prueba',
+      firstName: 'Cocina',
+      lastName: 'BistroLink',
+      enabled: true,
+      createdTimestamp: 1760000000000,
+      attributes: { tenant_id: [TENANT_ID] },
+      ...extra,
+    });
+
+    // rolesDeRealm según el usuario: solo la cuenta de cocina tiene COCINA.
+    const rolesPorUsuario = (id: string) =>
+      Promise.resolve(
+        id === COCINA_KC_ID
+          ? ['COCINA', 'default-roles-bistrolink']
+          : ['COMENSAL'],
+      );
+
+    it('[TC-U-054] UsuariosService.listar suma la cuenta de cocina del tenant, marcada como compartida', async () => {
+      tx().usuario.findMany.mockResolvedValue([
+        {
+          id: 'usuario-mozo',
+          keycloakId: MOZO_KC_ID,
+          rol: 'MOZO',
+          activo: true,
+        },
+      ]);
+      keycloakAdmin.listarUsuariosDelTenant.mockResolvedValue([
+        // El mozo tiene fila: no se vuelve a listar ni se le piden los roles.
+        {
+          id: MOZO_KC_ID,
+          username: 'mozo',
+          attributes: { tenant_id: [TENANT_ID] },
+        },
+        cuentaCocina(),
+        // El comensal técnico no tiene fila ni rol COCINA: no se lista.
+        {
+          id: COMENSAL_KC_ID,
+          username: 'comensal',
+          attributes: { tenant_id: [TENANT_ID] },
+        },
+      ]);
+      keycloakAdmin.rolesDeRealm.mockImplementation(rolesPorUsuario);
+
+      const resultado = await service.listar(TENANT_ID);
+
+      expect(keycloakAdmin.listarUsuariosDelTenant).toHaveBeenCalledWith(
+        TENANT_ID,
+      );
+      expect(keycloakAdmin.rolesDeRealm).not.toHaveBeenCalledWith(MOZO_KC_ID);
+      expect(resultado).toHaveLength(2);
+      expect(resultado[0]).toMatchObject({
+        id: 'usuario-mozo',
+        cuentaCompartida: false,
+      });
+      expect(resultado[1]).toMatchObject({
+        id: COCINA_KC_ID,
+        keycloakId: COCINA_KC_ID,
+        rol: 'COCINA',
+        activo: true,
+        cuentaCompartida: true,
+        nombre: 'Cocina',
+      });
+    });
+
+    it('[TC-U-055] UsuariosService.listar no suma cuentas de otro tenant aunque Keycloak las devuelva', async () => {
+      keycloakAdmin.listarUsuariosDelTenant.mockResolvedValue([
+        cuentaCocina({ attributes: { tenant_id: ['otro-tenant'] } }),
+      ]);
+      keycloakAdmin.rolesDeRealm.mockImplementation(rolesPorUsuario);
+
+      expect(await service.listar(TENANT_ID)).toEqual([]);
+    });
+
+    it('[TC-U-056] UsuariosService.listar devuelve el personal aunque Keycloak no responda', async () => {
+      tx().usuario.findMany.mockResolvedValue([
+        {
+          id: 'usuario-mozo',
+          keycloakId: MOZO_KC_ID,
+          rol: 'MOZO',
+          activo: true,
+        },
+      ]);
+      keycloakAdmin.listarUsuariosDelTenant.mockRejectedValue(
+        new Error('Keycloak no disponible'),
+      );
+
+      const resultado = await service.listar(TENANT_ID);
+
+      expect(resultado).toEqual([
+        expect.objectContaining({
+          id: 'usuario-mozo',
+          cuentaCompartida: false,
+        }),
+      ]);
+    });
+
+    it('[TC-U-057] UsuariosService.restablecerContrasenaCocina cambia la contraseña, cierra las sesiones y lo audita', async () => {
+      keycloakAdmin.findUserById.mockResolvedValue(cuentaCocina());
+      keycloakAdmin.rolesDeRealm.mockImplementation(rolesPorUsuario);
+
+      const resultado = await service.restablecerContrasenaCocina(
+        TENANT_ID,
+        ACTOR_KEYCLOAK_ID,
+        COCINA_KC_ID,
+      );
+
+      expect(resultado.temporaryPassword).toHaveLength(16);
+      expect(keycloakAdmin.resetPassword).toHaveBeenCalledWith(
+        COCINA_KC_ID,
+        resultado.temporaryPassword,
+      );
+      expect(keycloakAdmin.logoutUser).toHaveBeenCalledWith(COCINA_KC_ID);
+      expect(auditLog.registrar).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: AuditAction.USUARIO_CONTRASENA_RESTABLECIDA,
+          targetUsuarioId: COCINA_KC_ID,
+          detalle: {
+            rol: 'COCINA',
+            cuentaCompartida: true,
+            sesionesCerradas: true,
+          },
+        }),
+      );
+    });
+
+    it('[TC-U-058] [S] las acciones de cocina responden 404 con una cuenta de otro tenant y no la tocan', async () => {
+      keycloakAdmin.findUserById.mockResolvedValue(
+        cuentaCocina({ attributes: { tenant_id: ['otro-tenant'] } }),
+      );
+      keycloakAdmin.rolesDeRealm.mockImplementation(rolesPorUsuario);
+
+      await expect(
+        service.restablecerContrasenaCocina(
+          TENANT_ID,
+          ACTOR_KEYCLOAK_ID,
+          COCINA_KC_ID,
+        ),
+      ).rejects.toThrow(NotFoundException);
+      await expect(
+        service.desactivarCocina(TENANT_ID, ACTOR_KEYCLOAK_ID, COCINA_KC_ID),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(keycloakAdmin.resetPassword).not.toHaveBeenCalled();
+      expect(keycloakAdmin.setEnabled).not.toHaveBeenCalled();
+      expect(auditLog.registrar).not.toHaveBeenCalled();
+    });
+
+    it('[TC-U-059] [S] las acciones de cocina responden 404 con una cuenta del tenant que no es de cocina (comensal técnico)', async () => {
+      keycloakAdmin.findUserById.mockResolvedValue(
+        cuentaCocina({ id: COMENSAL_KC_ID, username: 'comensal' }),
+      );
+      keycloakAdmin.rolesDeRealm.mockImplementation(rolesPorUsuario);
+
+      await expect(
+        service.restablecerContrasenaCocina(
+          TENANT_ID,
+          ACTOR_KEYCLOAK_ID,
+          COMENSAL_KC_ID,
+        ),
+      ).rejects.toThrow(NotFoundException);
+      expect(keycloakAdmin.resetPassword).not.toHaveBeenCalled();
+    });
+
+    it('[TC-U-060] UsuariosService.restablecerContrasenaCocina rechaza con 409 una cuenta desactivada', async () => {
+      keycloakAdmin.findUserById.mockResolvedValue(
+        cuentaCocina({ enabled: false }),
+      );
+      keycloakAdmin.rolesDeRealm.mockImplementation(rolesPorUsuario);
+
+      await expect(
+        service.restablecerContrasenaCocina(
+          TENANT_ID,
+          ACTOR_KEYCLOAK_ID,
+          COCINA_KC_ID,
+        ),
+      ).rejects.toThrow(ConflictException);
+      expect(keycloakAdmin.resetPassword).not.toHaveBeenCalled();
+    });
+
+    it('[TC-U-061] UsuariosService.desactivarCocina impide el ingreso, después cierra las sesiones y lo audita', async () => {
+      keycloakAdmin.findUserById.mockResolvedValue(cuentaCocina());
+      keycloakAdmin.rolesDeRealm.mockImplementation(rolesPorUsuario);
+
+      const resultado = await service.desactivarCocina(
+        TENANT_ID,
+        ACTOR_KEYCLOAK_ID,
+        COCINA_KC_ID,
+      );
+
+      expect(resultado).toEqual({ desactivado: true, id: COCINA_KC_ID });
+      expect(keycloakAdmin.setEnabled).toHaveBeenCalledWith(
+        COCINA_KC_ID,
+        false,
+      );
+      expect(keycloakAdmin.setEnabled.mock.invocationCallOrder[0]).toBeLessThan(
+        keycloakAdmin.logoutUser.mock.invocationCallOrder[0],
+      );
+      expect(auditLog.registrar).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: AuditAction.USUARIO_DESACTIVADO,
+          detalle: {
+            rol: 'COCINA',
+            cuentaCompartida: true,
+            sesionesCerradas: true,
+          },
+        }),
+      );
+    });
+
+    it('[TC-U-062] UsuariosService.reactivarCocina habilita una cuenta desactivada y no hace nada si ya estaba activa', async () => {
+      keycloakAdmin.rolesDeRealm.mockImplementation(rolesPorUsuario);
+
+      keycloakAdmin.findUserById.mockResolvedValueOnce(
+        cuentaCocina({ enabled: false }),
+      );
+      await expect(
+        service.reactivarCocina(TENANT_ID, ACTOR_KEYCLOAK_ID, COCINA_KC_ID),
+      ).resolves.toEqual({ activo: true, id: COCINA_KC_ID });
+      expect(keycloakAdmin.setEnabled).toHaveBeenCalledWith(COCINA_KC_ID, true);
+      expect(auditLog.registrar).toHaveBeenCalledWith(
+        expect.objectContaining({ action: AuditAction.USUARIO_REACTIVADO }),
+      );
+
+      keycloakAdmin.setEnabled.mockClear();
+      auditLog.registrar.mockClear();
+      keycloakAdmin.findUserById.mockResolvedValueOnce(cuentaCocina());
+      await service.reactivarCocina(TENANT_ID, ACTOR_KEYCLOAK_ID, COCINA_KC_ID);
+      expect(keycloakAdmin.setEnabled).not.toHaveBeenCalled();
+      expect(auditLog.registrar).not.toHaveBeenCalled();
     });
   });
 

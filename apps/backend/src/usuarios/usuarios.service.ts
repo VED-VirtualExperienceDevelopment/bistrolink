@@ -8,7 +8,10 @@ import {
 import { randomBytes } from 'crypto';
 import { PrismaClient } from '@prisma/client';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
-import { KeycloakAdminService } from '../keycloak-admin/keycloak-admin.service';
+import {
+  KeycloakAdminService,
+  KeycloakUser,
+} from '../keycloak-admin/keycloak-admin.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { AuditAction } from '../audit-log/audit-action.enum';
 import { CreateUsuarioDto } from './dto/create-usuario.dto';
@@ -24,8 +27,14 @@ export class UsuariosService {
     private readonly auditLog: AuditLogService,
   ) {}
 
+  /**
+   * Personal del tenant (filas de `usuario`: Admin y Mozo) y, desde BL-362,
+   * la cuenta de cocina, que vive solo en Keycloak (Anexo 6 §4.3). Cada
+   * elemento trae `cuentaCompartida` para que la pantalla sepa qué acciones
+   * ofrecer.
+   */
   async listar(tenantId: string) {
-    return this.tenantPrisma.runInTenantContext(tenantId, (tx) =>
+    const filas = await this.tenantPrisma.runInTenantContext(tenantId, (tx) =>
       tx.usuario.findMany({
         select: {
           id: true,
@@ -41,6 +50,175 @@ export class UsuariosService {
         },
       }),
     );
+
+    const personal = filas.map((fila) => ({
+      ...fila,
+      cuentaCompartida: false,
+    }));
+    const cocina = await this.listarCuentasCocina(
+      tenantId,
+      new Set(filas.map((fila) => fila.keycloakId)),
+    );
+    return [...personal, ...cocina];
+  }
+
+  /**
+   * BL-362: cuentas de Keycloak del tenant con rol COCINA (opción A: sin
+   * cambiar el modelo de datos). Candidatas: las del tenant sin fila en
+   * `usuario` (la de cocina y el comensal técnico); de esas, se queda con
+   * las que tienen el rol.
+   *
+   * Si Keycloak no responde, el listado sale igual con el personal y queda
+   * un aviso en el log: no tiene sentido que la pantalla entera falle por
+   * la cuenta de cocina.
+   */
+  private async listarCuentasCocina(
+    tenantId: string,
+    keycloakIdsConFila: Set<string>,
+  ) {
+    try {
+      const usuarios =
+        await this.keycloakAdmin.listarUsuariosDelTenant(tenantId);
+      const candidatos = usuarios.filter(
+        (u) => !keycloakIdsConFila.has(u.id) && this.esDelTenant(u, tenantId),
+      );
+      const cuentas = [];
+      for (const usuario of candidatos) {
+        const roles = await this.keycloakAdmin.rolesDeRealm(usuario.id);
+        if (roles.includes('COCINA')) {
+          cuentas.push(this.aCuentaCocina(usuario));
+        }
+      }
+      return cuentas;
+    } catch (error) {
+      this.logger.warn(
+        `No se pudo listar la cuenta de cocina del tenant ${tenantId}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return [];
+    }
+  }
+
+  /**
+   * BL-362: restablecer la contraseña de la cuenta de cocina. Misma lógica
+   * que para el personal (BL-359), pero la cuenta se identifica por su id de
+   * Keycloak, porque no tiene fila en `usuario`.
+   */
+  async restablecerContrasenaCocina(
+    tenantId: string,
+    actorKeycloakId: string,
+    keycloakId: string,
+  ) {
+    const cuenta = await this.obtenerCuentaCocinaOFallar(tenantId, keycloakId);
+    if (cuenta.enabled === false) {
+      throw new ConflictException(
+        'La cuenta está desactivada: reactivala antes de restablecer su contraseña',
+      );
+    }
+
+    const { temporaryPassword, sesionesCerradas } =
+      await this.restablecerEnKeycloak(keycloakId);
+
+    this.auditLog.registrar({
+      action: AuditAction.USUARIO_CONTRASENA_RESTABLECIDA,
+      tenantId,
+      actorKeycloakId,
+      targetUsuarioId: keycloakId,
+      detalle: { rol: 'COCINA', cuentaCompartida: true, sesionesCerradas },
+    });
+
+    return { id: keycloakId, temporaryPassword, sesionesCerradas };
+  }
+
+  /**
+   * BL-362: desactivar la cuenta de cocina. Mismo orden que con el personal:
+   * primero se impide el ingreso y después se cierran las sesiones abiertas
+   * (la KDS de la cocina deja de recibir pedidos hasta que se reactive).
+   */
+  async desactivarCocina(
+    tenantId: string,
+    actorKeycloakId: string,
+    keycloakId: string,
+  ) {
+    await this.obtenerCuentaCocinaOFallar(tenantId, keycloakId);
+
+    await this.keycloakAdmin.setEnabled(keycloakId, false);
+    const sesionesCerradas = await this.keycloakAdmin.logoutUser(keycloakId);
+
+    this.auditLog.registrar({
+      action: AuditAction.USUARIO_DESACTIVADO,
+      tenantId,
+      actorKeycloakId,
+      targetUsuarioId: keycloakId,
+      detalle: { rol: 'COCINA', cuentaCompartida: true, sesionesCerradas },
+    });
+
+    return { desactivado: true as const, id: keycloakId };
+  }
+
+  /** BL-362: reactivar la cuenta de cocina. Si ya estaba activa, no hace nada. */
+  async reactivarCocina(
+    tenantId: string,
+    actorKeycloakId: string,
+    keycloakId: string,
+  ) {
+    const cuenta = await this.obtenerCuentaCocinaOFallar(tenantId, keycloakId);
+
+    if (cuenta.enabled === false) {
+      await this.keycloakAdmin.setEnabled(keycloakId, true);
+      this.auditLog.registrar({
+        action: AuditAction.USUARIO_REACTIVADO,
+        tenantId,
+        actorKeycloakId,
+        targetUsuarioId: keycloakId,
+        detalle: { rol: 'COCINA', cuentaCompartida: true },
+      });
+    }
+
+    return { activo: true as const, id: keycloakId };
+  }
+
+  /**
+   * BL-362: la cuenta existe, es del tenant del token y tiene el rol COCINA.
+   * Cualquier otro caso responde 404, sin distinguir cuál: así un admin no
+   * puede usar estas rutas para tocar otra cuenta de Keycloak (de otro
+   * tenant, de plataforma o el comensal técnico) ni averiguar si existe.
+   */
+  private async obtenerCuentaCocinaOFallar(
+    tenantId: string,
+    keycloakId: string,
+  ): Promise<KeycloakUser> {
+    const usuario = await this.keycloakAdmin.findUserById(keycloakId);
+    if (!usuario || !this.esDelTenant(usuario, tenantId)) {
+      throw new NotFoundException('Cuenta de cocina no encontrada');
+    }
+    const roles = await this.keycloakAdmin.rolesDeRealm(keycloakId);
+    if (!roles.includes('COCINA')) {
+      throw new NotFoundException('Cuenta de cocina no encontrada');
+    }
+    return usuario;
+  }
+
+  private esDelTenant(usuario: KeycloakUser, tenantId: string): boolean {
+    return usuario.attributes?.tenant_id?.includes(tenantId) ?? false;
+  }
+
+  /** Cómo se lista la cuenta de cocina: mismos campos que una fila de `usuario`. */
+  private aCuentaCocina(usuario: KeycloakUser) {
+    return {
+      id: usuario.id,
+      keycloakId: usuario.id,
+      username: usuario.username,
+      email: usuario.email ?? null,
+      nombre: usuario.firstName ?? null,
+      apellido: usuario.lastName ?? null,
+      rol: 'COCINA' as const,
+      activo: usuario.enabled !== false,
+      restauranteId: null,
+      createdAt: usuario.createdTimestamp
+        ? new Date(usuario.createdTimestamp)
+        : null,
+      cuentaCompartida: true,
+    };
   }
 
   async crear(
@@ -342,15 +520,8 @@ export class UsuariosService {
       );
     }
 
-    const temporaryPassword = this.generarContrasenaTemporal();
-    await this.keycloakAdmin.resetPassword(
-      usuario.keycloakId,
-      temporaryPassword,
-    );
-
-    const sesionesCerradas = await this.keycloakAdmin.logoutUser(
-      usuario.keycloakId,
-    );
+    const { temporaryPassword, sesionesCerradas } =
+      await this.restablecerEnKeycloak(usuario.keycloakId);
 
     this.auditLog.registrar({
       action: AuditAction.USUARIO_CONTRASENA_RESTABLECIDA,
@@ -361,6 +532,18 @@ export class UsuariosService {
     });
 
     return { id: usuarioId, temporaryPassword, sesionesCerradas };
+  }
+
+  /**
+   * Contraseña temporal nueva y cierre de sesiones, común al personal
+   * (BL-359) y a la cuenta de cocina (BL-362). Si Keycloak no cambia la
+   * contraseña, lanza y no se cierra nada; el cierre de sesiones no lanza.
+   */
+  private async restablecerEnKeycloak(keycloakId: string) {
+    const temporaryPassword = this.generarContrasenaTemporal();
+    await this.keycloakAdmin.resetPassword(keycloakId, temporaryPassword);
+    const sesionesCerradas = await this.keycloakAdmin.logoutUser(keycloakId);
+    return { temporaryPassword, sesionesCerradas };
   }
 
   /**

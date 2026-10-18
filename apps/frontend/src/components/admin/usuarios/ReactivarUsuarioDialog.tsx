@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Dialog } from '@/components/ui/Dialog';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import type { ReactivarResponse, Usuario } from '@/types/usuario';
-import { nombreParaMostrar } from './Usuarios.utils';
+import { nombreParaMostrar, rutaUsuario } from './Usuarios.utils';
 
 interface Props {
   open: boolean;
@@ -28,7 +28,7 @@ export function ReactivarUsuarioDialog({ open, onClose, token, usuario, onReacti
     setSubmitting(true);
     setError(null);
     try {
-      const res = await apiFetch<ReactivarResponse>(`/usuarios/${usuario.id}/activar`, token, {
+      const res = await apiFetch<ReactivarResponse>(`${rutaUsuario(usuario)}/activar`, token, {
         method: 'PATCH',
       });
       onReactivado(res.id);

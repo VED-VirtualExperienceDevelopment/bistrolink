@@ -7,6 +7,7 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Req,
@@ -38,6 +39,48 @@ export class UsuariosController {
     // req.user.sub: ID de Keycloak del Administrador que ejecuta la acción
     // (nunca del body) — es lo que AuditLogService registra como actor.
     return this.usuariosService.crear(req.user.tenantId, req.user.sub, dto);
+  }
+
+  // ── BL-362: cuenta de cocina (vive solo en Keycloak, sin fila en `usuario`).
+  // Se identifica por su id de Keycloak. El servicio verifica que sea del
+  // tenant del token y que tenga el rol COCINA; si no, 404. No hay alta ni
+  // cambio de rol: la crea el alta de establecimiento (HU-027).
+  @Post('cocina/:keycloakId/restablecer-contrasena')
+  @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'no-store')
+  restablecerContrasenaCocina(
+    @Req() req: { user: AuthenticatedUser },
+    @Param('keycloakId', new ParseUUIDPipe()) keycloakId: string,
+  ) {
+    return this.usuariosService.restablecerContrasenaCocina(
+      req.user.tenantId,
+      req.user.sub,
+      keycloakId,
+    );
+  }
+
+  @Patch('cocina/:keycloakId/activar')
+  reactivarCocina(
+    @Req() req: { user: AuthenticatedUser },
+    @Param('keycloakId', new ParseUUIDPipe()) keycloakId: string,
+  ) {
+    return this.usuariosService.reactivarCocina(
+      req.user.tenantId,
+      req.user.sub,
+      keycloakId,
+    );
+  }
+
+  @Delete('cocina/:keycloakId')
+  desactivarCocina(
+    @Req() req: { user: AuthenticatedUser },
+    @Param('keycloakId', new ParseUUIDPipe()) keycloakId: string,
+  ) {
+    return this.usuariosService.desactivarCocina(
+      req.user.tenantId,
+      req.user.sub,
+      keycloakId,
+    );
   }
 
   @Patch(':id')

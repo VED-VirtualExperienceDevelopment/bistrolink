@@ -1,7 +1,9 @@
 import {
   errorNombrePersona,
+  esCuentaCocina,
   nombreCompleto,
   nombreParaMostrar,
+  rutaUsuario,
 } from "@/components/admin/usuarios/Usuarios.utils";
 
 /** BL-361: nombre de cada usuario en la pantalla de Usuarios. */
@@ -83,4 +85,19 @@ describe("errorNombrePersona", () => {
       expect(errorNombrePersona(valor, "apellido")).toMatch(/^Usá solo letras/);
     },
   );
+});
+
+/** BL-362: la cuenta de cocina usa sus propias rutas. */
+describe("rutaUsuario y esCuentaCocina", () => {
+  it("el personal usa /usuarios/:id", () => {
+    const mozo = { id: ID, rol: "MOZO" as const, cuentaCompartida: false };
+    expect(esCuentaCocina(mozo)).toBe(false);
+    expect(rutaUsuario(mozo)).toBe(`/usuarios/${ID}`);
+  });
+
+  it("la cuenta de cocina usa /usuarios/cocina/:id", () => {
+    const cocina = { id: ID, rol: "COCINA" as const, cuentaCompartida: true };
+    expect(esCuentaCocina(cocina)).toBe(true);
+    expect(rutaUsuario(cocina)).toBe(`/usuarios/cocina/${ID}`);
+  });
 });

@@ -1,11 +1,15 @@
 export const ROLES_VALIDOS = ["ADMIN", "MOZO"] as const;
 export type UsuarioRol = (typeof ROLES_VALIDOS)[number];
+// BL-362: en el listado aparece también la cuenta de cocina, que vive solo en
+// Keycloak. No es un rol que se pueda asignar (no está en ROLES_VALIDOS).
+export type RolListado = UsuarioRol | "COCINA";
 
 export interface Usuario {
   id: string;
-  restauranteId: string;
+  // null en la cuenta de cocina (BL-362), que no tiene fila en `usuario`.
+  restauranteId: string | null;
   keycloakId: string;
-  rol: UsuarioRol;
+  rol: RolListado;
   activo: boolean;
   createdAt: string;
   updatedAt: string;
@@ -18,6 +22,9 @@ export interface Usuario {
   // BL-361: nulos en los usuarios creados antes del cambio.
   nombre?: string | null;
   apellido?: string | null;
+  // BL-362: true en la cuenta de cocina (una cuenta para toda la cocina). Su
+  // `id` es el de Keycloak y sus acciones van por /usuarios/cocina/:id.
+  cuentaCompartida?: boolean;
 }
 
 export interface CrearUsuarioPayload {

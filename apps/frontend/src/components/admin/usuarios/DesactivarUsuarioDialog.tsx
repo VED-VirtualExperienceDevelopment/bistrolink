@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Dialog } from '@/components/ui/Dialog';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import type { DesactivarResponse, Usuario } from '@/types/usuario';
-import { nombreParaMostrar } from './Usuarios.utils';
+import { esCuentaCocina, nombreParaMostrar, rutaUsuario } from './Usuarios.utils';
 
 interface Props {
   open: boolean;
@@ -24,7 +24,7 @@ export function DesactivarUsuarioDialog({ open, onClose, token, usuario, onDesac
     setSubmitting(true);
     setError(null);
     try {
-      const res = await apiFetch<DesactivarResponse>(`/usuarios/${usuario.id}`, token, {
+      const res = await apiFetch<DesactivarResponse>(rutaUsuario(usuario), token, {
         method: 'DELETE',
       });
       onDesactivado(res.id);
@@ -45,6 +45,14 @@ export function DesactivarUsuarioDialog({ open, onClose, token, usuario, onDesac
           {nombreParaMostrar(usuario)} no va a poder iniciar sesión
           hasta que se reactive. Esta acción no borra su historial.
         </p>
+        {/* BL-362: la cuenta de cocina es compartida; desactivarla deja a
+            toda la cocina sin la pantalla de pedidos. */}
+        {esCuentaCocina(usuario) && (
+          <p className="rounded-lg bg-error-container px-3 py-2 text-body-sm text-on-error-container">
+            Es la cuenta compartida de la cocina: las pantallas de la cocina (KDS) se van a cerrar y
+            no van a recibir pedidos hasta que la reactives.
+          </p>
+        )}
 
         {error && (
           <p role="alert" className="rounded-lg bg-error-container px-3 py-2 text-body-sm text-on-error-container">

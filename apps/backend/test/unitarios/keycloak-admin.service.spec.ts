@@ -356,6 +356,53 @@ describe('KeycloakAdminService', () => {
     });
   });
 
+  describe('cuenta de cocina (BL-362)', () => {
+    it('[TC-U-063] KeycloakAdminService.listarUsuariosDelTenant busca por el atributo tenant_id, con la representación completa', async () => {
+      mockTokenRequest();
+      fetchMock.mockResolvedValueOnce({
+        ok: true,
+        json: async () => [{ id: 'kc-1', username: 'cocina' }],
+      });
+
+      await expect(
+        service.listarUsuariosDelTenant('tenant-1'),
+      ).resolves.toEqual([{ id: 'kc-1', username: 'cocina' }]);
+
+      const [url] = fetchMock.mock.calls[1];
+      expect(url).toContain('/users?q=tenant_id%3Atenant-1');
+      expect(url).toContain('briefRepresentation=false');
+    });
+
+    it('[TC-U-064] KeycloakAdminService.rolesDeRealm devuelve los nombres de los roles de realm del usuario', async () => {
+      mockTokenRequest();
+      fetchMock.mockResolvedValueOnce({
+        ok: true,
+        json: async () => [
+          { name: 'COCINA' },
+          { name: 'default-roles-bistrolink' },
+        ],
+      });
+
+      await expect(service.rolesDeRealm('kc-1')).resolves.toEqual([
+        'COCINA',
+        'default-roles-bistrolink',
+      ]);
+      const [url] = fetchMock.mock.calls[1];
+      expect(url).toMatch(/\/users\/kc-1\/role-mappings\/realm$/);
+    });
+
+    it('[TC-U-065] KeycloakAdminService.rolesDeRealm lanza con status/body si Keycloak falla', async () => {
+      mockTokenRequest();
+      fetchMock.mockResolvedValueOnce({
+        status: 500,
+        ok: false,
+        text: async () => 'Internal error',
+      });
+
+      await expect(service.rolesDeRealm('kc-1')).rejects.toThrow(/500/);
+    });
+  });
+
   describe('logoutUser (BL-272)', () => {
     it('[TC-U-025] KeycloakAdminService.logoutUser llama a POST /users/{id}/logout y devuelve true cuando Keycloak cierra las sesiones (204)', async () => {
       mockTokenRequest();

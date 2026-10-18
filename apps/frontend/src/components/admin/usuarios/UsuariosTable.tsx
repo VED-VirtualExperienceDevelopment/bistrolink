@@ -1,7 +1,7 @@
 'use client';
 
 import type { Usuario } from '@/types/usuario';
-import { nombreCompleto, nombreParaMostrar } from './Usuarios.utils';
+import { esCuentaCocina, nombreCompleto, nombreParaMostrar } from './Usuarios.utils';
 
 interface Props {
   usuarios: Usuario[];
@@ -14,6 +14,19 @@ interface Props {
 const ROL_LABEL: Record<Usuario['rol'], string> = {
   ADMIN: 'Administrador',
   MOZO: 'Mozo',
+  COCINA: 'Cocina', // BL-362
+};
+
+const ROL_ICONO: Record<Usuario['rol'], string> = {
+  ADMIN: 'shield_person',
+  MOZO: 'person',
+  COCINA: 'soup_kitchen',
+};
+
+const ROL_CLASES: Record<Usuario['rol'], string> = {
+  ADMIN: 'bg-tertiary-fixed text-on-tertiary-container',
+  MOZO: 'bg-secondary-container text-on-secondary-container',
+  COCINA: 'bg-primary-fixed text-on-primary-fixed',
 };
 
 export function UsuariosTable({
@@ -48,7 +61,7 @@ export function UsuariosTable({
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-surface-container">
                 <span className="material-symbols-outlined text-primary" aria-hidden="true">
-                  {usuario.rol === 'ADMIN' ? 'shield_person' : 'person'}
+                  {ROL_ICONO[usuario.rol]}
                 </span>
               </div>
               <div>
@@ -57,6 +70,10 @@ export function UsuariosTable({
                 </p>
                 {/* BL-361: con nombre cargado, el usuario va debajo (es con lo
                     que la persona ingresa). Sin nombre, ya está arriba. */}
+                {/* BL-362: una sola cuenta para toda la cocina. */}
+                {esCuentaCocina(usuario) && (
+                  <p className="text-label-sm text-on-surface-variant">Cuenta compartida</p>
+                )}
                 {nombreCompleto(usuario) && usuario.username && (
                   <p className="text-label-sm text-on-surface-variant">
                     Usuario: {usuario.username}
@@ -70,11 +87,7 @@ export function UsuariosTable({
 
             <div className="flex items-center gap-4">
               <span
-                className={`inline-flex rounded-full px-2.5 py-1 text-label-sm ${
-                  usuario.rol === 'ADMIN'
-                    ? 'bg-tertiary-fixed text-on-tertiary-container'
-                    : 'bg-secondary-container text-on-secondary-container'
-                }`}
+                className={`inline-flex rounded-full px-2.5 py-1 text-label-sm ${ROL_CLASES[usuario.rol]}`}
               >
                 {ROL_LABEL[usuario.rol]}
               </span>
@@ -92,15 +105,18 @@ export function UsuariosTable({
               </span>
 
               <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => onEditarRol(usuario)}
-                  aria-label="Editar rol"
-                  title="Editar rol"
-                  className="rounded-full p-2 text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-primary"
-                >
-                  <span className="material-symbols-outlined text-[20px]">edit</span>
-                </button>
+                {/* BL-362: la cuenta de cocina no cambia de rol. */}
+                {!esCuentaCocina(usuario) && (
+                  <button
+                    type="button"
+                    onClick={() => onEditarRol(usuario)}
+                    aria-label="Editar rol"
+                    title="Editar rol"
+                    className="rounded-full p-2 text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-primary"
+                  >
+                    <span className="material-symbols-outlined text-[20px]">edit</span>
+                  </button>
+                )}
                 {/* BL-359: solo para usuarios activos (uno desactivado no podría ingresar). */}
                 {usuario.activo && (
                   <button

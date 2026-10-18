@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Dialog } from '@/components/ui/Dialog';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import type { RestablecerContrasenaResponse, Usuario } from '@/types/usuario';
-import { nombreParaMostrar } from './Usuarios.utils';
+import { nombreParaMostrar, rutaUsuario } from './Usuarios.utils';
 
 interface Props {
   open: boolean;
@@ -39,7 +39,7 @@ export function RestablecerContrasenaDialog({ open, onClose, token, usuario }: P
     setError(null);
     try {
       const res = await apiFetch<RestablecerContrasenaResponse>(
-        `/usuarios/${usuario.id}/restablecer-contrasena`,
+        `${rutaUsuario(usuario)}/restablecer-contrasena`,
         token,
         { method: 'POST' },
       );
