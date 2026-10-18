@@ -85,9 +85,10 @@ export class MercadoPagoGateway implements PagoGateway {
       throw new Error('MP_ACCESS_TOKEN no configurado');
     }
     this.accessToken = accessToken;
-    const baseUrl = (
-      process.env.MP_API_BASE_URL || MP_API_BASE_URL_POR_DEFECTO
-    ).replace(/\/+$/, '');
+    let baseUrl = process.env.MP_API_BASE_URL || MP_API_BASE_URL_POR_DEFECTO;
+    while (baseUrl.endsWith('/')) {
+      baseUrl = baseUrl.slice(0, -1);
+    }
     this.ordersUrl = `${baseUrl}/v1/orders`;
 
     // Solo el n° de app y el user id (no son secretos): sirve para
