@@ -14,13 +14,13 @@
     "lint": "npm run lint --workspaces",
     "test": "npm run test --workspaces",
     "test:cov": "npm run test:cov --workspaces",
-    "test:pact": "npm run test:pact --workspaces",
     "commit": "bash -i scripts/commit.sh",
     "sync": "bash -i scripts/sync.sh",
     "prepare": "husky",
     "staging:down": "bash -i scripts/staging-down.sh",
     "staging:up": "bash -i scripts/staging-up.sh",
     "test:e2e": "playwright test",
+    "test:pact": "npm run test:pact --workspaces --if-present",
     "test:e2e:update-snapshots": "bash scripts/e2e-update-snapshots.sh"
   },
   "devDependencies": {

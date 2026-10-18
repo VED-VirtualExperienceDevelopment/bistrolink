@@ -1,0 +1,21 @@
+{
+  "moduleFileExtensions": ["js", "json", "ts"],
+  "rootDir": "..",
+  "testEnvironment": "node",
+  "testRegex": "contract/.*\\.pact\\.spec\\.ts$",
+  "testTimeout": 30000,
+  "transform": {
+    "^.+\\.(t|j)s$": "ts-jest"
+  },
+  "reporters": [
+    "default",
+    [
+      "jest-junit",
+      {
+        "suiteName": "Contratos PactJS",
+        "classNameTemplate": "{classname}",
+        "titleTemplate": "{title}"
+      }
+    ]
+  ]
+}

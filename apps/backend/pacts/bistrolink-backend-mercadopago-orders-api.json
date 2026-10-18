@@ -1,0 +1,966 @@
+{
+  "consumer": {
+    "name": "bistrolink-backend"
+  },
+  "interactions": [
+    {
+      "description": "la consulta de una order aprobada",
+      "pending": false,
+      "providerStates": [
+        {
+          "name": "existe una order aprobada creada por BistroLink",
+          "params": {
+            "orderId": "ORD01JQ4S4KY8HWQ6NA5PXB65B3D3"
+          }
+        }
+      ],
+      "request": {
+        "generators": {
+          "path": {
+            "expression": "/v1/orders/${orderId}",
+            "type": "ProviderState"
+          }
+        },
+        "headers": {
+          "Authorization": [
+            "Bearer APP_USR-1234567890-101726-contrato-987654321"
+          ]
+        },
+        "matchingRules": {
+          "header": {
+            "Authorization": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^Bearer \\S+$"
+                }
+              ]
+            }
+          },
+          "path": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "type"
+              }
+            ]
+          }
+        },
+        "method": "GET",
+        "path": "/v1/orders/ORD01JQ4S4KY8HWQ6NA5PXB65B3D3"
+      },
+      "response": {
+        "body": {
+          "content": {
+            "external_reference": "v1EREREREREREREREREREREQPN8drTHWQ8mXORFIXg4j-A",
+            "id": "ORD01JQ4S4KY8HWQ6NA5PXB65B3D3",
+            "status": "processed",
+            "status_detail": "accredited",
+            "total_amount": "590.00"
+          },
+          "contentType": "application/json",
+          "encoded": false
+        },
+        "generators": {
+          "body": {
+            "$.id": {
+              "expression": "${orderId}",
+              "type": "ProviderState"
+            }
+          }
+        },
+        "headers": {
+          "Content-Type": [
+            "application/json"
+          ]
+        },
+        "matchingRules": {
+          "body": {
+            "$.external_reference": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^v1[A-Za-z0-9_-]{44}$"
+                }
+              ]
+            },
+            "$.id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.total_amount": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^\\d+\\.\\d{2}$"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      },
+      "type": "Synchronous/HTTP"
+    },
+    {
+      "description": "la consulta de una order fallida",
+      "pending": false,
+      "providerStates": [
+        {
+          "name": "existe una order fallida creada por BistroLink",
+          "params": {
+            "orderId": "ORD01JQ4S4KY8HWQ6NA5PXB65B3D3"
+          }
+        }
+      ],
+      "request": {
+        "generators": {
+          "path": {
+            "expression": "/v1/orders/${orderId}",
+            "type": "ProviderState"
+          }
+        },
+        "headers": {
+          "Authorization": [
+            "Bearer APP_USR-1234567890-101726-contrato-987654321"
+          ]
+        },
+        "matchingRules": {
+          "header": {
+            "Authorization": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^Bearer \\S+$"
+                }
+              ]
+            }
+          },
+          "path": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "type"
+              }
+            ]
+          }
+        },
+        "method": "GET",
+        "path": "/v1/orders/ORD01JQ4S4KY8HWQ6NA5PXB65B3D3"
+      },
+      "response": {
+        "body": {
+          "content": {
+            "external_reference": "v1EREREREREREREREREREREQPN8drTHWQ8mXORFIXg4j-A",
+            "id": "ORD01JQ4S4KY8HWQ6NA5PXB65B3D3",
+            "status": "failed",
+            "status_detail": "insufficient_amount",
+            "total_amount": "590.00"
+          },
+          "contentType": "application/json",
+          "encoded": false
+        },
+        "generators": {
+          "body": {
+            "$.id": {
+              "expression": "${orderId}",
+              "type": "ProviderState"
+            }
+          }
+        },
+        "headers": {
+          "Content-Type": [
+            "application/json"
+          ]
+        },
+        "matchingRules": {
+          "body": {
+            "$.external_reference": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^v1[A-Za-z0-9_-]{44}$"
+                }
+              ]
+            },
+            "$.id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.status_detail": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.total_amount": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^\\d+\\.\\d{2}$"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      },
+      "type": "Synchronous/HTTP"
+    },
+    {
+      "description": "la consulta de una order pendiente de acción",
+      "pending": false,
+      "providerStates": [
+        {
+          "name": "existe una order pendiente de acción creada por BistroLink",
+          "params": {
+            "orderId": "ORD01JQ4S4KY8HWQ6NA5PXB65B3D3"
+          }
+        }
+      ],
+      "request": {
+        "generators": {
+          "path": {
+            "expression": "/v1/orders/${orderId}",
+            "type": "ProviderState"
+          }
+        },
+        "headers": {
+          "Authorization": [
+            "Bearer APP_USR-1234567890-101726-contrato-987654321"
+          ]
+        },
+        "matchingRules": {
+          "header": {
+            "Authorization": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^Bearer \\S+$"
+                }
+              ]
+            }
+          },
+          "path": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "type"
+              }
+            ]
+          }
+        },
+        "method": "GET",
+        "path": "/v1/orders/ORD01JQ4S4KY8HWQ6NA5PXB65B3D3"
+      },
+      "response": {
+        "body": {
+          "content": {
+            "external_reference": "v1EREREREREREREREREREREQPN8drTHWQ8mXORFIXg4j-A",
+            "id": "ORD01JQ4S4KY8HWQ6NA5PXB65B3D3",
+            "status": "action_required",
+            "status_detail": "waiting_payment",
+            "total_amount": "590.00"
+          },
+          "contentType": "application/json",
+          "encoded": false
+        },
+        "generators": {
+          "body": {
+            "$.id": {
+              "expression": "${orderId}",
+              "type": "ProviderState"
+            }
+          }
+        },
+        "headers": {
+          "Content-Type": [
+            "application/json"
+          ]
+        },
+        "matchingRules": {
+          "body": {
+            "$.external_reference": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^v1[A-Za-z0-9_-]{44}$"
+                }
+              ]
+            },
+            "$.id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.status_detail": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.total_amount": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^\\d+\\.\\d{2}$"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      },
+      "type": "Synchronous/HTTP"
+    },
+    {
+      "description": "la consulta de una order que no existe",
+      "pending": false,
+      "providerStates": [
+        {
+          "name": "no existe la order consultada"
+        }
+      ],
+      "request": {
+        "headers": {
+          "Authorization": [
+            "Bearer APP_USR-1234567890-101726-contrato-987654321"
+          ]
+        },
+        "matchingRules": {
+          "header": {
+            "Authorization": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^Bearer \\S+$"
+                }
+              ]
+            }
+          }
+        },
+        "method": "GET",
+        "path": "/v1/orders/ORD-INEXISTENTE"
+      },
+      "response": {
+        "status": 404
+      },
+      "type": "Synchronous/HTTP"
+    },
+    {
+      "description": "una solicitud de cobro con tarjeta que se aprueba",
+      "pending": false,
+      "providerStates": [
+        {
+          "name": "la tarjeta de prueba del pagador tiene fondos"
+        }
+      ],
+      "request": {
+        "body": {
+          "content": {
+            "external_reference": "v1EREREREREREREREREREREQPN8drTHWQ8mXORFIXg4j-A",
+            "payer": {
+              "email": "test@testuser.com"
+            },
+            "processing_mode": "automatic",
+            "total_amount": "590.00",
+            "transactions": {
+              "payments": [
+                {
+                  "amount": "590.00",
+                  "payment_method": {
+                    "id": "master",
+                    "installments": 1,
+                    "token": "tok-tarjeta-prueba",
+                    "type": "credit_card"
+                  }
+                }
+              ]
+            },
+            "type": "online"
+          },
+          "contentType": "application/json",
+          "encoded": false
+        },
+        "headers": {
+          "Authorization": [
+            "Bearer APP_USR-1234567890-101726-contrato-987654321"
+          ],
+          "Content-Type": [
+            "application/json"
+          ],
+          "X-Idempotency-Key": [
+            "0b9a3f5e-6d1c-5e2f-8a7b-1c2d3e4f5a6b"
+          ]
+        },
+        "matchingRules": {
+          "body": {
+            "$.external_reference": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^v1[A-Za-z0-9_-]{44}$"
+                }
+              ]
+            },
+            "$.payer.email": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.total_amount": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^\\d+\\.\\d{2}$"
+                }
+              ]
+            },
+            "$.transactions.payments": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.transactions.payments[*].amount": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^\\d+\\.\\d{2}$"
+                }
+              ]
+            },
+            "$.transactions.payments[*].payment_method.id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.transactions.payments[*].payment_method.installments": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.transactions.payments[*].payment_method.token": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.transactions.payments[*].payment_method.type": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^(credit_card|debit_card)$"
+                }
+              ]
+            }
+          },
+          "header": {
+            "Authorization": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^Bearer \\S+$"
+                }
+              ]
+            },
+            "X-Idempotency-Key": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                }
+              ]
+            }
+          }
+        },
+        "method": "POST",
+        "path": "/v1/orders"
+      },
+      "response": {
+        "body": {
+          "content": {
+            "id": "ORD01JQ4S4KY8HWQ6NA5PXB65B3D3",
+            "status": "processed",
+            "status_detail": "accredited"
+          },
+          "contentType": "application/json",
+          "encoded": false
+        },
+        "headers": {
+          "Content-Type": [
+            "application/json"
+          ]
+        },
+        "matchingRules": {
+          "body": {
+            "$.id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          }
+        },
+        "status": 201
+      },
+      "type": "Synchronous/HTTP"
+    },
+    {
+      "description": "una solicitud de cobro con un token de tarjeta inválido",
+      "pending": false,
+      "providerStates": [
+        {
+          "name": "el token de tarjeta ya fue usado"
+        }
+      ],
+      "request": {
+        "body": {
+          "content": {
+            "external_reference": "v1EREREREREREREREREREREQPN8drTHWQ8mXORFIXg4j-A",
+            "payer": {
+              "email": "test@testuser.com"
+            },
+            "processing_mode": "automatic",
+            "total_amount": "590.00",
+            "transactions": {
+              "payments": [
+                {
+                  "amount": "590.00",
+                  "payment_method": {
+                    "id": "master",
+                    "installments": 1,
+                    "token": "tok-ya-usado",
+                    "type": "credit_card"
+                  }
+                }
+              ]
+            },
+            "type": "online"
+          },
+          "contentType": "application/json",
+          "encoded": false
+        },
+        "headers": {
+          "Authorization": [
+            "Bearer APP_USR-1234567890-101726-contrato-987654321"
+          ],
+          "Content-Type": [
+            "application/json"
+          ],
+          "X-Idempotency-Key": [
+            "0b9a3f5e-6d1c-5e2f-8a7b-1c2d3e4f5a6b"
+          ]
+        },
+        "matchingRules": {
+          "body": {
+            "$.external_reference": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^v1[A-Za-z0-9_-]{44}$"
+                }
+              ]
+            },
+            "$.payer.email": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.total_amount": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^\\d+\\.\\d{2}$"
+                }
+              ]
+            },
+            "$.transactions.payments": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.transactions.payments[*].amount": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^\\d+\\.\\d{2}$"
+                }
+              ]
+            },
+            "$.transactions.payments[*].payment_method.id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.transactions.payments[*].payment_method.installments": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.transactions.payments[*].payment_method.token": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.transactions.payments[*].payment_method.type": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^(credit_card|debit_card)$"
+                }
+              ]
+            }
+          },
+          "header": {
+            "Authorization": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^Bearer \\S+$"
+                }
+              ]
+            },
+            "X-Idempotency-Key": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                }
+              ]
+            }
+          }
+        },
+        "method": "POST",
+        "path": "/v1/orders"
+      },
+      "response": {
+        "body": {
+          "content": {
+            "data": {
+              "transactions": {
+                "payments": [
+                  {
+                    "status_detail": "invalid_card_token"
+                  }
+                ]
+              }
+            }
+          },
+          "contentType": "application/json",
+          "encoded": false
+        },
+        "headers": {
+          "Content-Type": [
+            "application/json"
+          ]
+        },
+        "matchingRules": {
+          "body": {
+            "$.data.transactions.payments": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            }
+          }
+        },
+        "status": 402
+      },
+      "type": "Synchronous/HTTP"
+    },
+    {
+      "description": "una solicitud de cobro que el emisor rechaza",
+      "pending": false,
+      "providerStates": [
+        {
+          "name": "la tarjeta de prueba del pagador no tiene fondos suficientes"
+        }
+      ],
+      "request": {
+        "body": {
+          "content": {
+            "external_reference": "v1EREREREREREREREREREREQPN8drTHWQ8mXORFIXg4j-A",
+            "payer": {
+              "email": "test@testuser.com"
+            },
+            "processing_mode": "automatic",
+            "total_amount": "590.00",
+            "transactions": {
+              "payments": [
+                {
+                  "amount": "590.00",
+                  "payment_method": {
+                    "id": "master",
+                    "installments": 1,
+                    "token": "tok-tarjeta-prueba",
+                    "type": "credit_card"
+                  }
+                }
+              ]
+            },
+            "type": "online"
+          },
+          "contentType": "application/json",
+          "encoded": false
+        },
+        "headers": {
+          "Authorization": [
+            "Bearer APP_USR-1234567890-101726-contrato-987654321"
+          ],
+          "Content-Type": [
+            "application/json"
+          ],
+          "X-Idempotency-Key": [
+            "0b9a3f5e-6d1c-5e2f-8a7b-1c2d3e4f5a6b"
+          ]
+        },
+        "matchingRules": {
+          "body": {
+            "$.external_reference": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^v1[A-Za-z0-9_-]{44}$"
+                }
+              ]
+            },
+            "$.payer.email": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.total_amount": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^\\d+\\.\\d{2}$"
+                }
+              ]
+            },
+            "$.transactions.payments": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.transactions.payments[*].amount": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^\\d+\\.\\d{2}$"
+                }
+              ]
+            },
+            "$.transactions.payments[*].payment_method.id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.transactions.payments[*].payment_method.installments": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.transactions.payments[*].payment_method.token": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.transactions.payments[*].payment_method.type": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^(credit_card|debit_card)$"
+                }
+              ]
+            }
+          },
+          "header": {
+            "Authorization": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^Bearer \\S+$"
+                }
+              ]
+            },
+            "X-Idempotency-Key": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                }
+              ]
+            }
+          }
+        },
+        "method": "POST",
+        "path": "/v1/orders"
+      },
+      "response": {
+        "body": {
+          "content": {
+            "data": {
+              "id": "ORD01JQ4S4KY8HWQ6NA5PXB65RECH",
+              "transactions": {
+                "payments": [
+                  {
+                    "status_detail": "insufficient_amount"
+                  }
+                ]
+              }
+            }
+          },
+          "contentType": "application/json",
+          "encoded": false
+        },
+        "headers": {
+          "Content-Type": [
+            "application/json"
+          ]
+        },
+        "matchingRules": {
+          "body": {
+            "$.data.id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.data.transactions.payments": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.data.transactions.payments[*].status_detail": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^(insufficient_amount|rejected_by_issuer|max_attempts_exceeded)$"
+                }
+              ]
+            }
+          }
+        },
+        "status": 402
+      },
+      "type": "Synchronous/HTTP"
+    }
+  ],
+  "metadata": {
+    "pact-js": {
+      "version": "17.1.4"
+    },
+    "pactRust": {
+      "ffi": "0.5.8",
+      "models": "1.3.16"
+    },
+    "pactSpecification": {
+      "version": "4.0"
+    }
+  },
+  "provider": {
+    "name": "mercadopago-orders-api"
+  }
+}
