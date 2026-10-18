@@ -55,10 +55,17 @@ const BENEFICIOS = [
 
 /**
  * BL-353: contenedor común de todas las bandas. Las bandas (fondo) ocupan
- * todo el ancho; el contenido llega hasta 1280 px, con márgenes de 16 px en
+ * el ancho completo; el contenido llega hasta 1280 px, con márgenes de 16 px en
  * el celular, 24 px en la tablet y 48 px en PC.
  */
 const CONTENEDOR = 'mx-auto w-full max-w-7xl px-4 md:px-6 lg:px-12';
+
+/**
+ * BL-354: títulos con tamaño fluido. Crecen de a poco con el ancho de la
+ * pantalla en lugar de saltar en cada breakpoint.
+ */
+const TITULO_SECCION =
+  'text-[clamp(1.375rem,1.1rem+1.2vw,2rem)] font-bold leading-tight text-primary';
 
 /** Anillo de foco visible, el mismo que en el login (BL-347/BL-348). */
 const FOCO =
@@ -94,17 +101,21 @@ export function LandingInstitucional() {
       <main className="flex-1">
         {/* Hero */}
         <section className="bg-background">
-          <div className={`${CONTENEDOR} py-10 md:py-14 lg:py-20`}>
-            <div className="mx-auto max-w-2xl space-y-5 text-center">
+          {/* BL-354: desde 1024 px, dos columnas: el texto a la izquierda y
+              el panel de la marca a la derecha. */}
+          <div
+            className={`${CONTENEDOR} grid items-center gap-10 py-10 md:py-14 lg:grid-cols-2 lg:gap-16 lg:py-20`}
+          >
+            <div className="mx-auto max-w-2xl space-y-5 text-center lg:mx-0 lg:text-left">
               <span className="inline-block rounded-full border border-secondary-container bg-secondary-container px-3.5 py-1 text-label-sm font-semibold uppercase tracking-wide text-on-secondary-container">
                 Gastronomía digital directa
               </span>
 
               <div>
-                <h1 className="text-headline-md font-extrabold tracking-tight text-primary md:text-headline-lg">
+                <h1 className="text-[clamp(2rem,1.4rem+3vw,3.5rem)] font-extrabold leading-[1.1] tracking-tight text-primary">
                   BistroLink
                 </h1>
-                <p className="mt-1 text-body-lg font-semibold text-on-surface-variant">
+                <p className="mt-2 text-[clamp(1.125rem,1rem+0.6vw,1.5rem)] font-semibold leading-snug text-on-surface-variant">
                   Pedí y pagá desde la mesa, sin esperas.
                 </p>
               </div>
@@ -119,13 +130,41 @@ export function LandingInstitucional() {
                   acción. El QR real está impreso en cada mesa y es específico
                   de esa mesa/restaurante, así que no hay nada genérico para
                   "probar" desde acá. */}
-              <div className="flex flex-col items-center gap-2 pt-2">
+              <div className="flex flex-col items-center gap-2 pt-2 lg:hidden">
                 <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-secondary-container text-on-secondary-container">
-                  <span className="material-symbols-outlined text-3xl">qr_code_2</span>
+                  <span aria-hidden="true" className="material-symbols-outlined text-3xl">qr_code_2</span>
                 </div>
                 <p className="text-label-sm text-on-surface-variant">
                   Buscá el código QR impreso en tu mesa
                 </p>
+              </div>
+            </div>
+
+            {/* BL-354: panel de la marca, desde 1024 px. Mismo gradiente
+                violeta y acento dorado que el login (BL-347). Es ilustrativo:
+                no simula un menú ni un restaurante (ver la nota de arriba),
+                solo el QR que el comensal va a encontrar en la mesa. */}
+            <div className="relative hidden aspect-[5/4] items-center justify-center overflow-hidden rounded-3xl bg-[linear-gradient(160deg,#381e72_0%,#4f378a_100%)] p-10 text-on-primary lg:flex">
+              <div
+                aria-hidden="true"
+                className="absolute -right-16 -top-16 h-64 w-64 rounded-full border-[28px] border-white/5"
+              />
+              <div
+                aria-hidden="true"
+                className="absolute -bottom-20 -left-12 h-56 w-56 rounded-full border-[24px] border-tertiary-fixed-dim/15"
+              />
+              <div className="relative flex flex-col items-center gap-6 text-center">
+                <div className="flex h-36 w-36 items-center justify-center rounded-[2rem] bg-tertiary-fixed-dim text-on-tertiary-fixed shadow-xl">
+                  <span aria-hidden="true" className="material-symbols-outlined text-[96px]">
+                    qr_code_2
+                  </span>
+                </div>
+                <div>
+                  <p className="text-headline-sm font-bold">Buscá el código QR de tu mesa</p>
+                  <p className="mt-2 max-w-xs text-body-md text-primary-fixed">
+                    Escaneás, pedís y pagás desde tu celular. Sin instalar nada.
+                  </p>
+                </div>
               </div>
             </div>
           </div>
@@ -136,13 +175,13 @@ export function LandingInstitucional() {
           <div className={`${CONTENEDOR} py-10 md:py-14`}>
             <div className="space-y-4">
               <div className="text-center">
-                <h2 className="text-headline-sm font-bold text-primary">¿Cómo funciona?</h2>
+                <h2 className={TITULO_SECCION}>¿Cómo funciona?</h2>
                 <p className="text-label-sm text-on-surface-variant">
                   Tu pedido, en tres pasos
                 </p>
               </div>
 
-              <div className="grid gap-3 md:grid-cols-3">
+              <div className="grid gap-4 md:grid-cols-3 lg:gap-6">
                 {PASOS.map((paso, i) => (
                   <article
                     key={paso.titulo}
@@ -153,7 +192,7 @@ export function LandingInstitucional() {
                     </div>
                     <div>
                       <div className="flex items-center gap-1.5">
-                        <span className="material-symbols-outlined text-[18px] text-primary">
+                        <span aria-hidden="true" className="material-symbols-outlined text-[18px] text-primary">
                           {paso.icono}
                         </span>
                         <h3 className="text-body-lg font-bold text-on-surface">{paso.titulo}</h3>
@@ -171,18 +210,19 @@ export function LandingInstitucional() {
         <section className="bg-background">
           <div className={`${CONTENEDOR} py-10 md:py-14`}>
             <div className="space-y-4">
-              <h2 className="text-center text-headline-sm font-bold text-primary">
+              <h2 className={`text-center ${TITULO_SECCION}`}>
                 Tu experiencia sin fricciones
               </h2>
 
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              {/* BL-354: 2 columnas en el celular y la tablet, 4 en PC. */}
+              <div className="grid grid-cols-2 gap-3 md:gap-4 lg:grid-cols-4 lg:gap-6">
                 {BENEFICIOS.map((beneficio) => (
                   <div
                     key={beneficio.titulo}
                     className="rounded-2xl border border-outline-variant bg-surface-container-lowest p-3.5 shadow-sm"
                   >
                     <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-secondary-container text-on-secondary-container">
-                      <span className="material-symbols-outlined text-[18px]">{beneficio.icono}</span>
+                      <span aria-hidden="true" className="material-symbols-outlined text-[18px]">{beneficio.icono}</span>
                     </div>
                     <h3 className="text-label-md font-bold text-on-surface">{beneficio.titulo}</h3>
                     <p className="mt-1 text-body-sm text-on-surface-variant">{beneficio.descripcion}</p>
@@ -193,12 +233,14 @@ export function LandingInstitucional() {
           </div>
         </section>
 
-        {/* CTA de staff — BL-353: banda a todo el ancho. El botón sigue
+        {/* CTA de staff — BL-353: banda ancho comleto. El botón sigue
             siendo de ancho completo en el celular (zona táctil grande) y de
             ancho de contenido desde la tablet. */}
         <section className="bg-primary text-on-primary">
           <div className={`${CONTENEDOR} py-10 text-center md:py-14`}>
-            <h2 className="text-headline-sm font-bold">¿Sos parte del staff?</h2>
+            <h2 className="text-[clamp(1.375rem,1.1rem+1.2vw,2rem)] font-bold leading-tight">
+              ¿Sos parte del staff?
+            </h2>
             <p className="mx-auto mt-1.5 max-w-xs text-body-sm text-primary-fixed">
               Ingresá para gestionar mesas, pedidos en tiempo real y la cocina.
             </p>
