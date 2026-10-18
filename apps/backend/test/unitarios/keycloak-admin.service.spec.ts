@@ -413,6 +413,45 @@ describe('KeycloakAdminService', () => {
         .join(' ');
       expect(logs).not.toContain('ocupado@ejemplo.com');
     });
+
+    it('[TC-U-092] KeycloakAdminService.actualizarPerfil lanza con el status y no manda el PUT si no puede leer el usuario', async () => {
+      mockTokenRequest();
+      fetchMock.mockResolvedValueOnce({
+        status: 404,
+        ok: false,
+        text: async () => '{"error":"User not found"}',
+      });
+
+      await expect(
+        service.actualizarPerfil('kc-1', { firstName: 'Juan' }),
+      ).rejects.toThrow(InternalServerErrorException);
+      expect(fetchMock).toHaveBeenCalledTimes(2); // token + GET, sin PUT
+      expect(loggerErrorSpy).toHaveBeenCalled();
+    });
+
+    it('[TC-U-093] [S] KeycloakAdminService.actualizarPerfil lanza con el status si Keycloak rechaza el PUT por otro motivo, sin loguear el correo', async () => {
+      mockTokenRequest();
+      fetchMock.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ id: 'kc-1' }),
+      });
+      mockTokenRequest();
+      fetchMock.mockResolvedValueOnce({
+        status: 500,
+        ok: false,
+        text: async () => 'Internal error',
+      });
+
+      await expect(
+        service.actualizarPerfil('kc-1', { email: 'nuevo@ejemplo.com' }),
+      ).rejects.toThrow(/500/);
+
+      const logs = [...loggerErrorSpy.mock.calls, ...loggerWarnSpy.mock.calls]
+        .flat()
+        .join(' ');
+      expect(logs).toContain('kc-1');
+      expect(logs).not.toContain('nuevo@ejemplo.com');
+    });
   });
 
   describe('cuenta de cocina (BL-362)', () => {
@@ -459,6 +498,20 @@ describe('KeycloakAdminService', () => {
       });
 
       await expect(service.rolesDeRealm('kc-1')).rejects.toThrow(/500/);
+    });
+
+    it('[TC-U-094] KeycloakAdminService.listarUsuariosDelTenant lanza con status/body si Keycloak falla', async () => {
+      mockTokenRequest();
+      fetchMock.mockResolvedValueOnce({
+        status: 403,
+        ok: false,
+        text: async () => '{"error":"HTTP 403 Forbidden"}',
+      });
+
+      await expect(service.listarUsuariosDelTenant('tenant-1')).rejects.toThrow(
+        /403/,
+      );
+      expect(loggerErrorSpy).toHaveBeenCalled();
     });
   });
 

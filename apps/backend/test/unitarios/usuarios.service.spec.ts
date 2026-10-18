@@ -815,6 +815,52 @@ describe('UsuariosService', () => {
       ]);
     });
 
+    it('[TC-U-095] UsuariosService.listar arma la cuenta de cocina aunque le falten datos en Keycloak, y descarta usuarios sin tenant_id', async () => {
+      keycloakAdmin.listarUsuariosDelTenant.mockResolvedValue([
+        // Sin nombre, apellido, correo, enabled ni fecha de alta.
+        {
+          id: COCINA_KC_ID,
+          username: 'cocina-prueba',
+          attributes: { tenant_id: [TENANT_ID] },
+        },
+        // Sin atributos: no se puede saber de qué tenant es, no se lista.
+        { id: COMENSAL_KC_ID, username: 'sin-atributos' },
+      ]);
+      keycloakAdmin.rolesDeRealm.mockResolvedValue(['COCINA']);
+
+      const resultado = await service.listar(TENANT_ID);
+
+      expect(resultado).toEqual([
+        expect.objectContaining({
+          id: COCINA_KC_ID,
+          nombre: null,
+          apellido: null,
+          email: null,
+          activo: true, // enabled ausente no es «desactivado»
+          createdAt: null,
+          cuentaCompartida: true,
+        }),
+      ]);
+    });
+
+    it('[TC-U-096] UsuariosService.listar devuelve el personal si Keycloak falla con algo que no es un Error', async () => {
+      tx().usuario.findMany.mockResolvedValue([
+        {
+          id: 'usuario-mozo',
+          keycloakId: MOZO_KC_ID,
+          rol: 'MOZO',
+          activo: true,
+        },
+      ]);
+      keycloakAdmin.listarUsuariosDelTenant.mockRejectedValue('timeout');
+      keycloakAdmin.ultimosIngresos.mockRejectedValue('timeout');
+
+      const resultado = await service.listar(TENANT_ID);
+
+      expect(resultado).toHaveLength(1);
+      expect(resultado[0]).not.toHaveProperty('ultimoIngreso');
+    });
+
     it('[TC-U-057] UsuariosService.restablecerContrasenaCocina cambia la contraseña, cierra las sesiones y lo audita', async () => {
       keycloakAdmin.findUserById.mockResolvedValue(cuentaCocina());
       keycloakAdmin.rolesDeRealm.mockImplementation(rolesPorUsuario);
