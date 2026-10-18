@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from 'react';
 import { useKeycloakAuth } from '@/components/providers/KeycloakProvider';
+import { avisoCambioContrasena } from '@/components/providers/usuario-sesion.utils';
 
 /**
  * BL-350: quién inició sesión, en el encabezado de admin, KDS y plataforma.
@@ -15,9 +16,19 @@ import { useKeycloakAuth } from '@/components/providers/KeycloakProvider';
  *   el botón, con Esc (el foco vuelve al botón) o tocando afuera.
  *
  * Los datos salen del token (BL-349). El correo no se muestra.
+ *
+ * BL-360: el panel suma «Cambiar contraseña» (para todos los roles). Al
+ * volver de Keycloak, un aviso debajo del botón dice si se cambió; si la
+ * persona canceló, no aparece nada.
  */
 export default function UsuarioSesion() {
-  const { usuario, logout } = useKeycloakAuth();
+  const {
+    usuario,
+    logout,
+    cambiarContrasena,
+    resultadoCambioContrasena,
+    descartarResultadoCambioContrasena,
+  } = useKeycloakAuth();
   const [abierto, setAbierto] = useState(false);
   const botonRef = useRef<HTMLButtonElement>(null);
   const contenedorRef = useRef<HTMLDivElement>(null);
@@ -47,6 +58,7 @@ export default function UsuarioSesion() {
   if (!usuario) return null;
 
   const { nombre, nombreUsuario, iniciales, rol } = usuario;
+  const aviso = avisoCambioContrasena(resultadoCambioContrasena);
   // El usuario se muestra aparte solo si no es lo mismo que el nombre (pasa
   // cuando el token no trae nombre y apellido).
   const mostrarUsuario = nombreUsuario && nombreUsuario !== nombre;
@@ -56,7 +68,12 @@ export default function UsuarioSesion() {
       <button
         ref={botonRef}
         type="button"
-        onClick={() => setAbierto((actual) => !actual)}
+        onClick={() => {
+          // Si quedó el aviso del cambio de contraseña, se cierra para que
+          // no tape el panel.
+          descartarResultadoCambioContrasena();
+          setAbierto((actual) => !actual);
+        }}
         aria-expanded={abierto}
         aria-controls={idPanel}
         className="flex min-h-12 items-center gap-2 rounded-full py-1 pl-1 pr-1 transition-colors hover:bg-surface-container-low focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary sm:pr-3"
@@ -103,15 +120,54 @@ export default function UsuarioSesion() {
         )}
         <button
           type="button"
-          onClick={logout}
+          onClick={cambiarContrasena}
           className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-full border border-outline-variant px-4 text-label-md font-semibold text-on-surface transition-colors hover:bg-surface-container-low focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
         >
-                <span aria-hidden="true" className="material-symbols-outlined">
+          <span aria-hidden="true" className="material-symbols-outlined">
+            lock_reset
+          </span>
+          <span>Cambiar contraseña</span>
+        </button>
+        <button
+          type="button"
+          onClick={logout}
+          className="mt-2 flex min-h-12 w-full items-center justify-center gap-2 rounded-full border border-outline-variant px-4 text-label-md font-semibold text-on-surface transition-colors hover:bg-surface-container-low focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+        >
+          <span aria-hidden="true" className="material-symbols-outlined">
             logout
           </span>
           <span>Cerrar sesión</span>
         </button>
       </div>
+
+      {/* BL-360: aviso al volver de cambiar la contraseña. role="status"
+          (éxito) o role="alert" (error) para que el lector de pantalla lo
+          lea sin mover el foco. Se cierra con su botón. */}
+      {aviso && (
+        <div
+          role={aviso.tipo === 'error' ? 'alert' : 'status'}
+          className={`absolute right-0 top-full z-50 mt-2 flex w-72 max-w-[calc(100vw-2rem)] items-start gap-2 rounded-xl px-4 py-3 text-body-md shadow-lg ${
+            aviso.tipo === 'error'
+              ? 'bg-error-container text-on-error-container'
+              : 'bg-secondary-container text-on-secondary-container'
+          }`}
+        >
+          <span aria-hidden="true" className="material-symbols-outlined">
+            {aviso.tipo === 'error' ? 'error' : 'check_circle'}
+          </span>
+          <p className="flex-1">{aviso.texto}</p>
+          <button
+            type="button"
+            onClick={descartarResultadoCambioContrasena}
+            aria-label="Cerrar aviso"
+            className="-m-2 flex h-12 w-12 flex-none items-center justify-center rounded-full hover:bg-black/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+          >
+            <span aria-hidden="true" className="material-symbols-outlined">
+              close
+            </span>
+          </button>
+        </div>
+      )}
     </div>
   );
 }

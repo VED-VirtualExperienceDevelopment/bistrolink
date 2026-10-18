@@ -1,4 +1,5 @@
 import {
+  avisoCambioContrasena,
   iniciales,
   nombreCompleto,
   nombreRol,
@@ -132,5 +133,27 @@ describe("usuarioSesion", () => {
       email: "ana@ejemplo.com",
     };
     expect(JSON.stringify(usuarioSesion(claims, ["ADMIN"]))).not.toContain("@");
+  });
+});
+
+/** BL-360: aviso al volver de «Cambiá tu contraseña». */
+describe("avisoCambioContrasena", () => {
+  it("si se cambió, avisa con un mensaje de éxito", () => {
+    expect(avisoCambioContrasena("success")).toEqual({
+      tipo: "exito",
+      texto: "Tu contraseña se cambió.",
+    });
+  });
+
+  it("si Keycloak devolvió un error, avisa con un mensaje de error", () => {
+    expect(avisoCambioContrasena("error")).toEqual({
+      tipo: "error",
+      texto: "No se pudo cambiar la contraseña. Intentá de nuevo.",
+    });
+  });
+
+  it("si canceló, o no viene de cambiarla, no muestra nada", () => {
+    expect(avisoCambioContrasena("cancelled")).toBeNull();
+    expect(avisoCambioContrasena(undefined)).toBeNull();
   });
 });
