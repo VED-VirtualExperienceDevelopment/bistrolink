@@ -53,7 +53,7 @@ como un scope aparte.
 
 **Entornos existentes:** como `--import-realm` no actualiza un realm que ya
 existe, `set-client-secret.sh` crea este scope al arrancar si falta y lo deja
-como scope por defecto (BL-345).s
+como scope por defecto (BL-345).
 
 ## Service account de `bistrolink-backend`: permisos declarados en el JSON
 
@@ -221,7 +221,7 @@ Si se cambia alguno de estos valores en `realm-export.json`, cambiarlo también 
 
 | Entorno | Aplicado |
 |---|---|
-| Staging | <fecha del deploy> |
+| Staging | 17-10-2026 |
 | Producción | <fecha del deploy> |
 
 ## Tema de login (`themes/bistrolink/login`)
@@ -230,3 +230,4 @@ Si se cambia alguno de estos valores en `realm-export.json`, cambiarlo también 
 - **Al actualizar Keycloak** (`Dockerfile.auth`), comparar este archivo con el `template.ftl` de la versión nueva y pasar los cambios de Keycloak a la copia. Si no, el login puede perder arreglos o romperse.
 - Los textos están en `messages/messages_es.properties`. Solo están las claves que cambian; el resto sale del español de Keycloak.
 - La tipografía está en `resources/fonts` (la misma que usa la app, con licencia OFL). El tema no hace pedidos a dominios externos.
+- **Caché del CSS en staging y producción.** Keycloak le dice al navegador que guarde los archivos del tema por 30 días, con una URL que solo cambia al cambiar la versión de Keycloak. Por eso `Dockerfile.auth` renombra `styles.css` a `styles.<hash>.css` (y ajusta `theme.properties`) al construir la imagen: cada cambio del CSS llega con una URL nueva. En el repo y en local el archivo sigue llamándose `styles.css`. La tipografía no se renombra: si se cambia el `.woff2`, cambiarle también el nombre.
