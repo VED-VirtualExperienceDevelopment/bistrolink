@@ -40,8 +40,11 @@ import {
 import {
   aGuardarLayoutItems,
   anchoNecesarioLienzo,
+  actualizarEstadosMesas,
   aplicarEstadoMesa,
   cambiarForma,
+  DEMORA_AVISO_SIN_CONEXION_MS,
+  esDesconexionInesperada,
   configuracionTactil,
   desfaseInputNumero,
   textoEditarNumero,
@@ -201,6 +204,14 @@ export function MapaMesasEditor({
   const transformerElementoRef = useRef<Konva.Transformer>(null);
   const elementoRefs = useRef(new Map<string, Konva.Group>());
   const socketRef = useRef<Socket | null>(null);
+  // BL-331: true desde que se corta el socket hasta que vuelve a conectar.
+  // El aviso se muestra recién si el corte dura más de
+  // DEMORA_AVISO_SIN_CONEXION_MS, para que no parpadee en cortes cortos.
+  const [sinConexion, setSinConexion] = useState(false);
+  const [avisoSinConexion, setAvisoSinConexion] = useState(false);
+  // Si el socket ya se conectó alguna vez: a partir de ahí, cada conexión
+  // es una reconexión y hay que traer los estados que se perdieron.
+  const huboConexionRef = useRef(false);
   const inputNumeroRef = useRef<HTMLInputElement>(null);
   const [anchoStage, setAnchoStage] = useState(800);
   // true cuando el ResizeObserver ya midió el recuadro: antes de eso
@@ -261,6 +272,22 @@ export function MapaMesasEditor({
   useEffect(() => {
     cargarLayout();
   }, [cargarLayout]);
+
+  // BL-331: al reconectar, trae solo los estados de las mesas. No recarga el
+  // mapa entero para no perder cambios sin guardar del editor.
+  const refrescarEstados = useCallback(async () => {
+    if (!token) return;
+    try {
+      const data = await apiFetch<MesaConLayout[]>(
+        `/mesas/layout?restauranteId=${restauranteId}`,
+        token,
+      );
+      setMesas((prev) => actualizarEstadosMesas(prev, data));
+    } catch {
+      // Si falla, el próximo evento mesa:estado_actualizado corrige el
+      // estado de esa mesa; no vale la pena cortar el uso del mapa.
+    }
+  }, [token, restauranteId]);
 
   // --- Tamaño responsive del canvas ------------------------------------------
   // Konva necesita un width/height explícito en píxeles — no se adapta solo
@@ -337,11 +364,37 @@ export function MapaMesasEditor({
       },
     );
 
+    // BL-331: estado de la conexión para el aviso de arriba del mapa.
+    socket.on("connect", () => {
+      setSinConexion(false);
+      if (huboConexionRef.current) void refrescarEstados();
+      huboConexionRef.current = true;
+    });
+    socket.on("disconnect", (motivo) => {
+      if (!esDesconexionInesperada(motivo)) return;
+      setSinConexion(true);
+      // Si lo cortó el servidor, socket.io no reintenta solo.
+      if (motivo === "io server disconnect") socket.connect();
+    });
+    socket.on("connect_error", () => setSinConexion(true));
+
     return () => {
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [token]);
+  }, [token, refrescarEstados]);
+
+  useEffect(() => {
+    if (!sinConexion) {
+      setAvisoSinConexion(false);
+      return;
+    }
+    const temporizador = setTimeout(
+      () => setAvisoSinConexion(true),
+      DEMORA_AVISO_SIN_CONEXION_MS,
+    );
+    return () => clearTimeout(temporizador);
+  }, [sinConexion]);
 
   // --- Transformer: sigue a la mesa seleccionada ------------------------------
   useEffect(() => {
@@ -1184,6 +1237,23 @@ export function MapaMesasEditor({
           onAlternarPantallaCompleta={() => void alternarPantallaCompleta()}
         />
       </div>
+
+      {/* BL-331: aviso de conexión perdida. El <output> (rol status) está
+          siempre en la página, vacío mientras hay conexión, para que el
+          lector de pantalla anuncie el aviso cuando aparece. */}
+      <output className="block empty:hidden">
+        {avisoSinConexion && (
+          <span className="flex items-start gap-2 rounded-lg border border-error bg-error-container px-3 py-2 text-label-md text-on-error-container">
+            <span aria-hidden="true" className="material-symbols-outlined">
+              wifi_off
+            </span>
+            <span>
+              Sin conexión en tiempo real. Los estados de las mesas pueden no
+              estar actualizados. Reconectando…
+            </span>
+          </span>
+        )}
+      </output>
 
       <section
         ref={contenedorRef}
