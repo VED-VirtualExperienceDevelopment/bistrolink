@@ -52,7 +52,8 @@ personales viajen en el token, mejor. Si en el futuro hace falta, se define
 como un scope aparte.
 
 **Entornos existentes:** como `--import-realm` no actualiza un realm que ya
-existe, en staging y producción este scope se crea por la Admin API (BL-345).
+existe, `set-client-secret.sh` crea este scope al arrancar si falta y lo deja
+como scope por defecto (BL-345).s
 
 ## Service account de `bistrolink-backend`: permisos declarados en el JSON
 
@@ -206,6 +207,22 @@ Valores declarados en `realm-export.json` (realms nuevos, por ejemplo producció
 | Detección de fuerza bruta                     | Pendiente (BL-271)                                                     | Se activa con BL-271.                                                                                                                                                                                     |
 
 `load-test-users.sh`: si Keycloak rechaza la contraseña de un usuario de prueba por la política, el usuario recién creado se borra y el error queda en el log; el próximo arranque lo vuelve a intentar.
+
+## Cambios del realm en entornos existentes (BL-345)
+
+`--import-realm` no actualiza un realm que ya existe, así que algunos valores de `realm-export.json` se aplican en cada arranque desde `set-client-secret.sh` (idempotente):
+
+| Qué | Origen |
+|---|---|
+| Español: `internationalizationEnabled`, `supportedLocales: ["es"]`, `defaultLocale: es` | BL-343 |
+| Client scope `profile` (se crea si falta) y scope por defecto del realm, `bistrolink-frontend` y `bistrolink-backend` | BL-344 |
+
+Si se cambia alguno de estos valores en `realm-export.json`, cambiarlo también en el script.
+
+| Entorno | Aplicado |
+|---|---|
+| Staging | <fecha del deploy> |
+| Producción | <fecha del deploy> |
 
 ## Tema de login (`themes/bistrolink/login`)
 
