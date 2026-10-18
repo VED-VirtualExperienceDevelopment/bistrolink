@@ -60,11 +60,14 @@ export function DesactivarUsuarioDialog({ open, onClose, token, usuario, onDesac
           </p>
         )}
 
+        {/* BL-364: el foco inicial va a «Cancelar» y no a «Desactivar», para
+            que un Enter apurado no desactive a nadie. */}
         <div className="flex justify-end gap-2 pt-2">
           <button
+            data-autofocus
             type="button"
             onClick={onClose}
-            className="rounded-lg px-4 py-2 text-body-md text-on-surface-variant hover:bg-surface-container"
+            className="min-h-12 rounded-lg px-4 text-body-md text-on-surface-variant hover:bg-surface-container"
           >
             Cancelar
           </button>
@@ -72,7 +75,7 @@ export function DesactivarUsuarioDialog({ open, onClose, token, usuario, onDesac
             type="button"
             onClick={handleConfirm}
             disabled={submitting}
-            className="rounded-lg bg-error px-4 py-2 text-body-md font-medium text-on-error hover:opacity-90 disabled:opacity-50"
+            className="min-h-12 rounded-lg bg-error px-4 text-body-md font-medium text-on-error hover:opacity-90 disabled:opacity-50"
           >
             {submitting ? 'Desactivando…' : 'Desactivar'}
           </button>

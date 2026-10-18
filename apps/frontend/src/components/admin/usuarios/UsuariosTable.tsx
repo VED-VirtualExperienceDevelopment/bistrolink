@@ -29,6 +29,25 @@ const ROL_CLASES: Record<Usuario['rol'], string> = {
   COCINA: 'bg-primary-fixed text-on-primary-fixed',
 };
 
+// BL-364: botones de acción de 48 px. Con el dedo, 8 px entre uno y otro
+// (gap-2 en el contenedor).
+const CLASE_ACCION =
+  'flex h-12 w-12 flex-none items-center justify-center rounded-full text-on-surface-variant transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary';
+
+// BL-364: en PC y tablet, columnas alineadas (persona, rol, estado,
+// acciones); en el celular, cada usuario es una tarjeta (una sola columna).
+// Cada fila es su propia grilla, así que todas las columnas tienen ancho fijo
+// salvo la de la persona: con "auto", una fila con menos acciones (la cocina
+// no tiene «Editar rol») corría el rol y el estado. 10rem = 3 botones de
+// 48 px + 2 espacios de 8 px.
+const COLUMNAS =
+  'md:grid md:grid-cols-[minmax(0,1fr)_10rem_9rem_10rem] md:items-center md:gap-4';
+
+/**
+ * Listado de usuarios. BL-364: cada acción tiene un nombre que dice a quién
+ * se aplica («Desactivar a Juan Pérez»), los textos miden 14–16 px y el
+ * estado se muestra con texto e ícono, no solo con color.
+ */
 export function UsuariosTable({
   usuarios,
   onEditarRol,
@@ -43,7 +62,7 @@ export function UsuariosTable({
           group
         </span>
         <p className="mt-2 text-body-lg text-on-surface">Todavía no hay usuarios en este restaurante</p>
-        <p className="mt-1 text-body-sm text-on-surface-variant">
+        <p className="mt-1 text-body-md text-on-surface-variant">
           Usá &ldquo;Nuevo usuario&rdquo; para dar de alta al primer Mozo o Administrador.
         </p>
       </div>
@@ -51,70 +70,89 @@ export function UsuariosTable({
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest">
-      <div className="divide-y divide-outline-variant">
-        {usuarios.map((usuario) => (
-          <div
-            key={usuario.id}
-            className="flex items-center justify-between px-6 py-4 transition-colors hover:bg-surface-container-low"
-          >
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-surface-container">
-                <span className="material-symbols-outlined text-primary" aria-hidden="true">
-                  {ROL_ICONO[usuario.rol]}
+    <div className="rounded-xl border border-outline-variant bg-surface-container-lowest">
+      {/* Encabezado de columnas, solo en PC y tablet. Es decorativo: cada
+          dato de la fila ya se entiende solo (el rol y el estado son texto). */}
+      <div
+        aria-hidden="true"
+        className={`hidden border-b border-outline-variant px-6 py-3 text-body-md font-semibold text-on-surface-variant ${COLUMNAS}`}
+      >
+        <span>Persona</span>
+        <span>Rol</span>
+        <span>Estado</span>
+        <span className="text-right">Acciones</span>
+      </div>
+
+      <ul aria-label="Usuarios" className="divide-y divide-outline-variant">
+        {usuarios.map((usuario) => {
+          const nombre = nombreParaMostrar(usuario);
+          const cocina = esCuentaCocina(usuario);
+          return (
+            <li
+              key={usuario.id}
+              className={`flex flex-col gap-3 px-4 py-4 transition-colors hover:bg-surface-container-low md:px-6 ${COLUMNAS}`}
+            >
+              {/* Persona */}
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="flex h-10 w-10 flex-none items-center justify-center rounded-lg bg-surface-container">
+                  <span className="material-symbols-outlined text-primary" aria-hidden="true">
+                    {ROL_ICONO[usuario.rol]}
+                  </span>
+                </div>
+                <div className="min-w-0">
+                  <p className="break-words text-body-lg font-semibold text-on-surface">{nombre}</p>
+                  {/* BL-362: una sola cuenta para toda la cocina. */}
+                  {cocina && (
+                    <p className="text-body-md text-on-surface-variant">Cuenta compartida</p>
+                  )}
+                  {/* BL-361: con nombre cargado, el usuario va debajo (es con lo
+                      que la persona ingresa). Sin nombre, ya está arriba. */}
+                  {nombreCompleto(usuario) && usuario.username && (
+                    <p className="break-all text-body-md text-on-surface-variant">
+                      Usuario: {usuario.username}
+                    </p>
+                  )}
+                  {usuario.email && (
+                    <p className="break-all text-body-md text-on-surface-variant">{usuario.email}</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Rol y estado: en el celular, en una fila; en PC, cada uno en su columna. */}
+              <div className="flex flex-wrap items-center gap-3 md:contents">
+                <span>
+                  <span className={`inline-flex rounded-full px-3 py-1 text-body-md ${ROL_CLASES[usuario.rol]}`}>
+                    {ROL_LABEL[usuario.rol]}
+                  </span>
+                </span>
+
+                {/* Estado con texto e ícono: no depende solo del color. */}
+                <span
+                  className={`inline-flex items-center gap-1.5 text-body-md ${
+                    usuario.activo ? 'text-on-surface' : 'text-error'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]" aria-hidden="true">
+                    {usuario.activo ? 'check_circle' : 'block'}
+                  </span>
+                  {usuario.activo ? 'Activo' : 'Desactivado'}
                 </span>
               </div>
-              <div>
-                <p className="text-body-md font-semibold text-on-surface">
-                  {nombreParaMostrar(usuario)}
-                </p>
-                {/* BL-361: con nombre cargado, el usuario va debajo (es con lo
-                    que la persona ingresa). Sin nombre, ya está arriba. */}
-                {/* BL-362: una sola cuenta para toda la cocina. */}
-                {esCuentaCocina(usuario) && (
-                  <p className="text-label-sm text-on-surface-variant">Cuenta compartida</p>
-                )}
-                {nombreCompleto(usuario) && usuario.username && (
-                  <p className="text-label-sm text-on-surface-variant">
-                    Usuario: {usuario.username}
-                  </p>
-                )}
-                {usuario.email && (
-                  <p className="text-label-sm text-on-surface-variant">{usuario.email}</p>
-                )}
-              </div>
-            </div>
 
-            <div className="flex items-center gap-4">
-              <span
-                className={`inline-flex rounded-full px-2.5 py-1 text-label-sm ${ROL_CLASES[usuario.rol]}`}
-              >
-                {ROL_LABEL[usuario.rol]}
-              </span>
-
-              <span
-                className={`inline-flex items-center gap-1.5 text-body-sm ${
-                  usuario.activo ? 'text-on-surface-variant' : 'text-error'
-                }`}
-              >
-                <span
-                  className={`h-1.5 w-1.5 rounded-full ${usuario.activo ? 'bg-primary' : 'bg-error'}`}
-                  aria-hidden="true"
-                />
-                {usuario.activo ? 'Activo' : 'Desactivado'}
-              </span>
-
-              <div className="flex items-center gap-1">
+              {/* Acciones: botones de 48 px con el nombre de la persona. */}
+              <div className="flex flex-wrap items-center gap-2 md:justify-end">
                 {/* BL-362: la cuenta de cocina no cambia de rol. */}
-                {!esCuentaCocina(usuario) && (
+                {!cocina && (
                   <button
                     type="button"
                     onClick={() => onEditarRol(usuario)}
-                    aria-label="Editar rol"
+                    aria-label={`Editar el rol de ${nombre}`}
                     title="Editar rol"
-                    className="rounded-full p-2 text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-primary"
+                    className={`${CLASE_ACCION} hover:bg-surface-container-high hover:text-primary`}
                   >
-                    <span className="material-symbols-outlined text-[20px]">edit</span>
+                    <span className="material-symbols-outlined text-[22px]" aria-hidden="true">
+                      edit
+                    </span>
                   </button>
                 )}
                 {/* BL-359: solo para usuarios activos (uno desactivado no podría ingresar). */}
@@ -122,45 +160,46 @@ export function UsuariosTable({
                   <button
                     type="button"
                     onClick={() => onRestablecerContrasena(usuario)}
-                    aria-label={`Restablecer la contraseña de ${nombreParaMostrar(usuario)}`}
+                    aria-label={`Restablecer la contraseña de ${nombre}`}
                     title="Restablecer contraseña"
-                    className="rounded-full p-2 text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-primary"
+                    className={`${CLASE_ACCION} hover:bg-surface-container-high hover:text-primary`}
                   >
-                    <span className="material-symbols-outlined text-[20px]" aria-hidden="true">
+                    <span className="material-symbols-outlined text-[22px]" aria-hidden="true">
                       lock_reset
                     </span>
                   </button>
                 )}
-                {usuario.activo && (
+                {usuario.activo ? (
                   <button
                     type="button"
                     onClick={() => onDesactivar(usuario)}
-                    aria-label="Desactivar usuario"
-                    title="Desactivar usuario"
-                    className="rounded-full p-2 text-on-surface-variant transition-colors hover:bg-error-container hover:text-error"
+                    aria-label={`Desactivar a ${nombre}`}
+                    title="Desactivar"
+                    className={`${CLASE_ACCION} hover:bg-error-container hover:text-error`}
                   >
-                    <span className="material-symbols-outlined text-[20px]">person_off</span>
+                    <span className="material-symbols-outlined text-[22px]" aria-hidden="true">
+                      person_off
+                    </span>
                   </button>
-                )}
-                {/* BL-358: un usuario desactivado ya no se queda sin acciones. */}
-                {!usuario.activo && (
+                ) : (
+                  // BL-358: un usuario desactivado ya no se queda sin acciones.
                   <button
                     type="button"
                     onClick={() => onReactivar(usuario)}
-                    aria-label={`Reactivar a ${nombreParaMostrar(usuario)}`}
-                    title="Reactivar usuario"
-                    className="rounded-full p-2 text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-primary"
+                    aria-label={`Reactivar a ${nombre}`}
+                    title="Reactivar"
+                    className={`${CLASE_ACCION} hover:bg-surface-container-high hover:text-primary`}
                   >
-                    <span className="material-symbols-outlined text-[20px]" aria-hidden="true">
+                    <span className="material-symbols-outlined text-[22px]" aria-hidden="true">
                       how_to_reg
                     </span>
                   </button>
                 )}
               </div>
-            </div>
-          </div>
-        ))}
-      </div>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }

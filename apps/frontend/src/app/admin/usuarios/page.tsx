@@ -93,7 +93,9 @@ export default function UsuariosPage() {
   }
 
   return (
-    <div className="mx-auto max-w-container space-y-6 p-6">
+    // BL-364: a todo el ancho del área de contenido, sin el tope de
+    // max-w-container (mismo criterio que el mapa de mesas, BL-339).
+    <div className="w-full space-y-6 p-4 md:p-6">
       <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
         <div>
           <h1 className="text-headline-lg text-primary">Usuarios</h1>
@@ -106,9 +108,11 @@ export default function UsuariosPage() {
           onClick={() => setCrearOpen(true)}
           disabled={!restauranteId}
           title={!restauranteId ? 'Falta resolver el restaurante activo' : undefined}
-          className="flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-body-md font-medium text-on-primary hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex min-h-12 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-body-md font-medium text-on-primary hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <span className="material-symbols-outlined text-[20px]">person_add</span>
+          <span className="material-symbols-outlined text-[20px]" aria-hidden="true">
+            person_add
+          </span>
           Nuevo usuario
         </button>
       </div>

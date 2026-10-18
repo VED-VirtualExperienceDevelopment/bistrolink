@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Dialog } from '@/components/ui/Dialog';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import type { RestablecerContrasenaResponse, Usuario } from '@/types/usuario';
@@ -20,6 +20,12 @@ export function RestablecerContrasenaDialog({ open, onClose, token, usuario }: P
   const [error, setError] = useState<string | null>(null);
   const [resultado, setResultado] = useState<RestablecerContrasenaResponse | null>(null);
   const [copiada, setCopiada] = useState(false);
+  // BL-364: al pasar al paso de la contraseña, el foco va a «Copiar». El
+  // botón de confirmar desaparece, y sin esto el foco se perdería.
+  const copiarRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (resultado) copiarRef.current?.focus();
+  }, [resultado]);
 
   if (!usuario) return null;
 
@@ -74,8 +80,9 @@ export function RestablecerContrasenaDialog({ open, onClose, token, usuario }: P
             <code className="break-all text-body-md text-on-surface">{resultado.temporaryPassword}</code>
             <button
               type="button"
+              ref={copiarRef}
               onClick={handleCopy}
-              className="shrink-0 text-label-md font-semibold text-primary hover:underline"
+              className="min-h-12 shrink-0 rounded-lg px-3 text-label-md font-semibold text-primary hover:bg-surface-container"
             >
               {copiada ? 'Copiada' : 'Copiar'}
             </button>
@@ -95,7 +102,7 @@ export function RestablecerContrasenaDialog({ open, onClose, token, usuario }: P
           <button
             type="button"
             onClick={handleClose}
-            className="w-full rounded-lg bg-primary px-4 py-2 text-body-md font-medium text-on-primary hover:opacity-90"
+            className="min-h-12 w-full rounded-lg bg-primary px-4 text-body-md font-medium text-on-primary hover:opacity-90"
           >
             Listo
           </button>
@@ -117,15 +124,16 @@ export function RestablecerContrasenaDialog({ open, onClose, token, usuario }: P
             <button
               type="button"
               onClick={handleClose}
-              className="rounded-lg px-4 py-2 text-body-md text-on-surface-variant hover:bg-surface-container"
+              className="min-h-12 rounded-lg px-4 text-body-md text-on-surface-variant hover:bg-surface-container"
             >
               Cancelar
             </button>
             <button
               type="button"
               onClick={handleConfirm}
+              data-autofocus
               disabled={submitting}
-              className="rounded-lg bg-primary px-4 py-2 text-body-md font-medium text-on-primary hover:opacity-90 disabled:opacity-50"
+              className="min-h-12 rounded-lg bg-primary px-4 text-body-md font-medium text-on-primary hover:opacity-90 disabled:opacity-50"
             >
               {submitting ? 'Restableciendo…' : 'Restablecer'}
             </button>

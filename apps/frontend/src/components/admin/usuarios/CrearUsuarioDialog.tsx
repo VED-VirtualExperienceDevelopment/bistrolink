@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Dialog } from '@/components/ui/Dialog';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import type { CrearUsuarioResponse, UsuarioRol } from '@/types/usuario';
@@ -15,7 +15,7 @@ interface Props {
 }
 
 const CLASE_INPUT =
-  'w-full rounded-lg border px-3 py-2 text-body-md text-on-surface focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20';
+  'min-h-12 w-full rounded-lg border px-3 text-body-md text-on-surface focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20';
 
 export function CrearUsuarioDialog({ open, onClose, token, restauranteId, onCreated }: Props) {
   const [nombre, setNombre] = useState('');
@@ -32,6 +32,12 @@ export function CrearUsuarioDialog({ open, onClose, token, restauranteId, onCrea
   // español y asociado al campo.
   const [intentoGuardar, setIntentoGuardar] = useState(false);
   const [creado, setCreado] = useState<CrearUsuarioResponse | null>(null);
+  // BL-364: al mostrar la contraseña temporal, el foco va a «Copiar» (el
+  // formulario desaparece y sin esto el foco se perdería).
+  const copiarRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (creado) copiarRef.current?.focus();
+  }, [creado]);
 
   const errorNombre = intentoGuardar ? errorNombrePersona(nombre, 'nombre') : null;
   const errorApellido = intentoGuardar ? errorNombrePersona(apellido, 'apellido') : null;
@@ -99,8 +105,9 @@ export function CrearUsuarioDialog({ open, onClose, token, restauranteId, onCrea
             <code className="text-body-md text-on-surface">{creado.temporaryPassword}</code>
             <button
               type="button"
+              ref={copiarRef}
               onClick={() => navigator.clipboard.writeText(creado.temporaryPassword)}
-              className="text-label-md font-semibold text-primary hover:underline"
+              className="min-h-12 rounded-lg px-3 text-label-md font-semibold text-primary hover:bg-surface-container"
             >
               Copiar
             </button>
@@ -108,7 +115,7 @@ export function CrearUsuarioDialog({ open, onClose, token, restauranteId, onCrea
           <button
             type="button"
             onClick={resetAndClose}
-            className="w-full rounded-lg bg-primary px-4 py-2 text-body-md font-medium text-on-primary hover:opacity-90"
+            className="min-h-12 w-full rounded-lg bg-primary px-4 text-body-md font-medium text-on-primary hover:opacity-90"
           >
             Listo
           </button>
@@ -216,14 +223,14 @@ export function CrearUsuarioDialog({ open, onClose, token, restauranteId, onCrea
             <button
               type="button"
               onClick={resetAndClose}
-              className="rounded-lg px-4 py-2 text-body-md text-on-surface-variant hover:bg-surface-container"
+              className="min-h-12 rounded-lg px-4 text-body-md text-on-surface-variant hover:bg-surface-container"
             >
               Cancelar
             </button>
             <button
               type="submit"
               disabled={submitting}
-              className="rounded-lg bg-primary px-4 py-2 text-body-md font-medium text-on-primary hover:opacity-90 disabled:opacity-50"
+              className="min-h-12 rounded-lg bg-primary px-4 text-body-md font-medium text-on-primary hover:opacity-90 disabled:opacity-50"
             >
               {submitting ? 'Creando…' : 'Crear usuario'}
             </button>

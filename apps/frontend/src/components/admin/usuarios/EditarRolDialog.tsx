@@ -54,7 +54,7 @@ export function EditarRolDialog({ open, onClose, token, usuario, onUpdated }: Pr
             id="rol-edit"
             value={rol}
             onChange={(e) => setRol(e.target.value as UsuarioRol)}
-            className="w-full rounded-lg border border-outline-variant px-3 py-2 text-body-md text-on-surface focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+            className="w-full min-h-12 rounded-lg border border-outline-variant px-3 text-body-md text-on-surface focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
           >
             <option value="MOZO">Mozo</option>
             <option value="ADMIN">Administrador</option>
@@ -71,14 +71,14 @@ export function EditarRolDialog({ open, onClose, token, usuario, onUpdated }: Pr
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg px-4 py-2 text-body-md text-on-surface-variant hover:bg-surface-container"
+            className="min-h-12 rounded-lg px-4 text-body-md text-on-surface-variant hover:bg-surface-container"
           >
             Cancelar
           </button>
           <button
             type="submit"
             disabled={submitting || rol === usuario.rol}
-            className="rounded-lg bg-primary px-4 py-2 text-body-md font-medium text-on-primary hover:opacity-90 disabled:opacity-50"
+            className="min-h-12 rounded-lg bg-primary px-4 text-body-md font-medium text-on-primary hover:opacity-90 disabled:opacity-50"
           >
             {submitting ? 'Guardando…' : 'Guardar cambios'}
           </button>

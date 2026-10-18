@@ -58,15 +58,16 @@ export function ReactivarUsuarioDialog({ open, onClose, token, usuario, onReacti
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg px-4 py-2 text-body-md text-on-surface-variant hover:bg-surface-container"
+            className="min-h-12 rounded-lg px-4 text-body-md text-on-surface-variant hover:bg-surface-container"
           >
             Cancelar
           </button>
           <button
             type="button"
             onClick={handleConfirm}
+            data-autofocus
             disabled={submitting}
-            className="rounded-lg bg-primary px-4 py-2 text-body-md font-medium text-on-primary hover:opacity-90 disabled:opacity-50"
+            className="min-h-12 rounded-lg bg-primary px-4 text-body-md font-medium text-on-primary hover:opacity-90 disabled:opacity-50"
           >
             {submitting ? 'Reactivando…' : 'Reactivar'}
           </button>
