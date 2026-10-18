@@ -317,6 +317,273 @@ describe('KeycloakAdminService', () => {
     });
   });
 
+  describe('resetPassword (BL-359)', () => {
+    it('[TC-U-046] KeycloakAdminService.resetPassword llama a PUT /users/{id}/reset-password con una contraseña temporal', async () => {
+      mockTokenRequest();
+      fetchMock.mockResolvedValueOnce({ ok: true, status: 204 });
+
+      await expect(
+        service.resetPassword('keycloak-id-123', 'Temporal-123456'),
+      ).resolves.toBeUndefined();
+
+      const [url, init] = fetchMock.mock.calls[1];
+      expect(url).toMatch(
+        /\/admin\/realms\/[^/]+\/users\/keycloak-id-123\/reset-password$/,
+      );
+      expect(init.method).toBe('PUT');
+      expect(JSON.parse(init.body)).toEqual({
+        type: 'password',
+        value: 'Temporal-123456',
+        temporary: true,
+      });
+    });
+
+    it('[TC-U-047] [S] KeycloakAdminService.resetPassword lanza con status/body y loguea el keycloakId, nunca la contraseña', async () => {
+      mockTokenRequest();
+      fetchMock.mockResolvedValueOnce({
+        status: 400,
+        ok: false,
+        text: async () => '{"error":"invalidPasswordMinLengthMessage"}',
+      });
+
+      await expect(
+        service.resetPassword('keycloak-id-para-auditar', 'No-Loguear-123'),
+      ).rejects.toThrow(/400/);
+
+      const todosLosLogs = loggerErrorSpy.mock.calls.flat().join(' ');
+      expect(todosLosLogs).toContain('keycloak-id-para-auditar');
+      expect(todosLosLogs).not.toContain('No-Loguear-123');
+    });
+  });
+
+  describe('actualizarPerfil (BL-366)', () => {
+    it('[TC-U-071] KeycloakAdminService.actualizarPerfil lee el usuario y lo manda entero con los cambios, sin perder tenant_id', async () => {
+      mockTokenRequest();
+      fetchMock.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: 'kc-1',
+          username: 'jperez',
+          firstName: 'Juan',
+          attributes: { tenant_id: ['tenant-1'] },
+        }),
+      });
+      mockTokenRequest();
+      fetchMock.mockResolvedValueOnce({ ok: true, status: 204 });
+
+      await expect(
+        service.actualizarPerfil('kc-1', {
+          firstName: 'Juan Carlos',
+          email: 'jc@ejemplo.com',
+        }),
+      ).resolves.toBeUndefined();
+
+      const putCall = fetchMock.mock.calls.find(
+        ([, init]) => init?.method === 'PUT',
+      );
+      expect(JSON.parse(putCall[1].body)).toEqual({
+        id: 'kc-1',
+        username: 'jperez',
+        firstName: 'Juan Carlos',
+        email: 'jc@ejemplo.com',
+        emailVerified: true,
+        attributes: { tenant_id: ['tenant-1'] },
+      });
+    });
+
+    it('[TC-U-072] [S] KeycloakAdminService.actualizarPerfil convierte el 409 de Keycloak en ConflictException y no loguea el correo', async () => {
+      mockTokenRequest();
+      fetchMock.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ id: 'kc-1' }),
+      });
+      mockTokenRequest();
+      fetchMock.mockResolvedValueOnce({
+        status: 409,
+        ok: false,
+        text: async () => 'User exists with same email',
+      });
+
+      await expect(
+        service.actualizarPerfil('kc-1', { email: 'ocupado@ejemplo.com' }),
+      ).rejects.toThrow(ConflictException);
+
+      const logs = [...loggerErrorSpy.mock.calls, ...loggerWarnSpy.mock.calls]
+        .flat()
+        .join(' ');
+      expect(logs).not.toContain('ocupado@ejemplo.com');
+    });
+
+    it('[TC-U-092] KeycloakAdminService.actualizarPerfil lanza con el status y no manda el PUT si no puede leer el usuario', async () => {
+      mockTokenRequest();
+      fetchMock.mockResolvedValueOnce({
+        status: 404,
+        ok: false,
+        text: async () => '{"error":"User not found"}',
+      });
+
+      await expect(
+        service.actualizarPerfil('kc-1', { firstName: 'Juan' }),
+      ).rejects.toThrow(InternalServerErrorException);
+      expect(fetchMock).toHaveBeenCalledTimes(2); // token + GET, sin PUT
+      expect(loggerErrorSpy).toHaveBeenCalled();
+    });
+
+    it('[TC-U-093] [S] KeycloakAdminService.actualizarPerfil lanza con el status si Keycloak rechaza el PUT por otro motivo, sin loguear el correo', async () => {
+      mockTokenRequest();
+      fetchMock.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ id: 'kc-1' }),
+      });
+      mockTokenRequest();
+      fetchMock.mockResolvedValueOnce({
+        status: 500,
+        ok: false,
+        text: async () => 'Internal error',
+      });
+
+      await expect(
+        service.actualizarPerfil('kc-1', { email: 'nuevo@ejemplo.com' }),
+      ).rejects.toThrow(/500/);
+
+      const logs = [...loggerErrorSpy.mock.calls, ...loggerWarnSpy.mock.calls]
+        .flat()
+        .join(' ');
+      expect(logs).toContain('kc-1');
+      expect(logs).not.toContain('nuevo@ejemplo.com');
+    });
+  });
+
+  describe('cuenta de cocina (BL-362)', () => {
+    it('[TC-U-063] KeycloakAdminService.listarUsuariosDelTenant busca por el atributo tenant_id, con la representación completa', async () => {
+      mockTokenRequest();
+      fetchMock.mockResolvedValueOnce({
+        ok: true,
+        json: async () => [{ id: 'kc-1', username: 'cocina' }],
+      });
+
+      await expect(
+        service.listarUsuariosDelTenant('tenant-1'),
+      ).resolves.toEqual([{ id: 'kc-1', username: 'cocina' }]);
+
+      const [url] = fetchMock.mock.calls[1];
+      expect(url).toContain('/users?q=tenant_id%3Atenant-1');
+      expect(url).toContain('briefRepresentation=false');
+    });
+
+    it('[TC-U-064] KeycloakAdminService.rolesDeRealm devuelve los nombres de los roles de realm del usuario', async () => {
+      mockTokenRequest();
+      fetchMock.mockResolvedValueOnce({
+        ok: true,
+        json: async () => [
+          { name: 'COCINA' },
+          { name: 'default-roles-bistrolink' },
+        ],
+      });
+
+      await expect(service.rolesDeRealm('kc-1')).resolves.toEqual([
+        'COCINA',
+        'default-roles-bistrolink',
+      ]);
+      const [url] = fetchMock.mock.calls[1];
+      expect(url).toMatch(/\/users\/kc-1\/role-mappings\/realm$/);
+    });
+
+    it('[TC-U-065] KeycloakAdminService.rolesDeRealm lanza con status/body si Keycloak falla', async () => {
+      mockTokenRequest();
+      fetchMock.mockResolvedValueOnce({
+        status: 500,
+        ok: false,
+        text: async () => 'Internal error',
+      });
+
+      await expect(service.rolesDeRealm('kc-1')).rejects.toThrow(/500/);
+    });
+
+    it('[TC-U-094] KeycloakAdminService.listarUsuariosDelTenant lanza con status/body si Keycloak falla', async () => {
+      mockTokenRequest();
+      fetchMock.mockResolvedValueOnce({
+        status: 403,
+        ok: false,
+        text: async () => '{"error":"HTTP 403 Forbidden"}',
+      });
+
+      await expect(service.listarUsuariosDelTenant('tenant-1')).rejects.toThrow(
+        /403/,
+      );
+      expect(loggerErrorSpy).toHaveBeenCalled();
+    });
+  });
+
+  describe('ultimosIngresos (BL-368)', () => {
+    const paginaDeEventos = (eventos: { userId?: string; time: number }[]) => ({
+      ok: true,
+      json: async () => eventos,
+    });
+
+    it('[TC-U-083] KeycloakAdminService.ultimosIngresos toma el LOGIN más reciente de cada usuario buscado e ignora al resto del realm', async () => {
+      mockTokenRequest();
+      // Keycloak devuelve los eventos del más nuevo al más viejo.
+      fetchMock.mockResolvedValueOnce(
+        paginaDeEventos([
+          { userId: 'kc-otro-tenant', time: 3000 },
+          { userId: 'kc-mozo', time: 2000 },
+          { userId: 'kc-mozo', time: 1000 },
+          { time: 900 }, // evento sin usuario: se ignora
+        ]),
+      );
+
+      const ultimos = await service.ultimosIngresos(['kc-mozo', 'kc-admin']);
+
+      expect([...ultimos]).toEqual([['kc-mozo', 2000]]);
+      expect(fetchMock).toHaveBeenCalledTimes(2); // token + una página
+      const [url] = fetchMock.mock.calls[1];
+      expect(url).toContain('/events?type=LOGIN');
+      expect(url).toMatch(/dateFrom=\d{4}-\d{2}-\d{2}/);
+      expect(url).toContain('first=0&max=500');
+    });
+
+    it('[TC-U-084] KeycloakAdminService.ultimosIngresos pide la página siguiente solo hasta encontrar a todos los usuarios', async () => {
+      const llena = Array.from({ length: 500 }, (_, i) => ({
+        userId: 'kc-mozo',
+        time: 10_000 - i,
+      }));
+      mockTokenRequest();
+      fetchMock.mockResolvedValueOnce(paginaDeEventos(llena));
+      mockTokenRequest();
+      fetchMock.mockResolvedValueOnce(
+        paginaDeEventos([
+          ...Array.from({ length: 499 }, () => ({ userId: 'kc-x', time: 5 })),
+          { userId: 'kc-admin', time: 4 },
+        ]),
+      );
+
+      const ultimos = await service.ultimosIngresos(['kc-mozo', 'kc-admin']);
+
+      expect(ultimos.get('kc-mozo')).toBe(10_000);
+      expect(ultimos.get('kc-admin')).toBe(4);
+      // La segunda página también vino llena, pero ya estaban los dos: no
+      // se pide una tercera.
+      expect(fetchMock).toHaveBeenCalledTimes(4);
+      expect(fetchMock.mock.calls[3][0]).toContain('first=500&max=500');
+    });
+
+    it('[TC-U-085] KeycloakAdminService.ultimosIngresos no consulta a Keycloak sin usuarios y lanza con status/body si falla (por ejemplo, sin view-events)', async () => {
+      await expect(service.ultimosIngresos([])).resolves.toEqual(new Map());
+      expect(fetchMock).not.toHaveBeenCalled();
+
+      mockTokenRequest();
+      fetchMock.mockResolvedValueOnce({
+        status: 403,
+        ok: false,
+        text: async () => '{"error":"unknown_error"}',
+      });
+
+      await expect(service.ultimosIngresos(['kc-mozo'])).rejects.toThrow(/403/);
+      expect(loggerErrorSpy).toHaveBeenCalled();
+    });
+  });
+
   describe('logoutUser (BL-272)', () => {
     it('[TC-U-025] KeycloakAdminService.logoutUser llama a POST /users/{id}/logout y devuelve true cuando Keycloak cierra las sesiones (204)', async () => {
       mockTokenRequest();

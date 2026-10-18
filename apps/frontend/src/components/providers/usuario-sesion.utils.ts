@@ -98,3 +98,35 @@ export function usuarioSesion(
     rol: nombreRol(roles),
   };
 }
+
+/**
+ * BL-360: resultado de una acción iniciada por la aplicación en Keycloak
+ * (`kc_action_status`). keycloak-js lo entrega en `onActionUpdate` al volver.
+ */
+export type ResultadoAccionKeycloak = "success" | "cancelled" | "error";
+
+/** Aviso que se muestra al volver de «Cambiá tu contraseña». */
+export interface AvisoCambioContrasena {
+  tipo: "exito" | "error";
+  texto: string;
+}
+
+/**
+ * Qué decirle a la persona al volver de cambiar su contraseña. Si canceló no
+ * hay aviso: vuelve a la pantalla tal como estaba, sin cambios.
+ */
+export function avisoCambioContrasena(
+  resultado: ResultadoAccionKeycloak | undefined,
+): AvisoCambioContrasena | null {
+  switch (resultado) {
+    case "success":
+      return { tipo: "exito", texto: "Tu contraseña se cambió." };
+    case "error":
+      return {
+        tipo: "error",
+        texto: "No se pudo cambiar la contraseña. Intentá de nuevo.",
+      };
+    default:
+      return null;
+  }
+}

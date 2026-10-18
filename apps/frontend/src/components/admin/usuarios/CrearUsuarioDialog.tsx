@@ -1,9 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Dialog } from '@/components/ui/Dialog';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import type { CrearUsuarioResponse, UsuarioRol } from '@/types/usuario';
+import { CampoNombrePersona } from './CampoNombrePersona';
+import { errorNombrePersona, nombreParaMostrar, primerCampoConError } from './Usuarios.utils';
 
 interface Props {
   open: boolean;
@@ -13,25 +15,66 @@ interface Props {
   onCreated: (usuario: CrearUsuarioResponse) => void;
 }
 
-export function CrearUsuarioDialog({ open, onClose, token, restauranteId, onCreated }: Props) {
+const CLASE_INPUT =
+  'min-h-12 w-full rounded-lg border px-3 text-body-md text-on-surface focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20';
+
+export function CrearUsuarioDialog({
+  open,
+  onClose,
+  token,
+  restauranteId,
+  onCreated,
+}: Readonly<Props>) {
+  const [nombre, setNombre] = useState('');
+  const [apellido, setApellido] = useState('');
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [rol, setRol] = useState<UsuarioRol>('MOZO');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // BL-361: errores de nombre y apellido, junto a cada campo. Se muestran
+  // recién después del primer intento de guardar, para no marcar en rojo
+  // un campo que la persona todavía no llenó. Esos dos campos no usan
+  // `required` del navegador: así el mensaje es siempre el nuestro, en
+  // español y asociado al campo.
+  const [intentoGuardar, setIntentoGuardar] = useState(false);
   const [creado, setCreado] = useState<CrearUsuarioResponse | null>(null);
+  // BL-364: al mostrar la contraseña temporal, el foco va a «Copiar» (el
+  // formulario desaparece y sin esto el foco se perdería).
+  const copiarRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (creado) copiarRef.current?.focus();
+  }, [creado]);
+
+  const errorNombre = intentoGuardar ? errorNombrePersona(nombre, 'nombre') : null;
+  const errorApellido = intentoGuardar ? errorNombrePersona(apellido, 'apellido') : null;
 
   const resetAndClose = () => {
+    setNombre('');
+    setApellido('');
     setUsername('');
     setEmail('');
     setRol('MOZO');
     setError(null);
+    setIntentoGuardar(false);
     setCreado(null);
     onClose();
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIntentoGuardar(true);
+    const primerError = primerCampoConError([
+      ['nombre', errorNombrePersona(nombre, 'nombre')],
+      ['apellido', errorNombrePersona(apellido, 'apellido')],
+    ]);
+    if (primerError) {
+      // El foco va al primer campo con error, así el lector de pantalla lo
+      // lee junto con su mensaje (aria-describedby).
+      document.getElementById(primerError)?.focus();
+      return;
+    }
+
     setSubmitting(true);
     setError(null);
     try {
@@ -40,6 +83,8 @@ export function CrearUsuarioDialog({ open, onClose, token, restauranteId, onCrea
         body: JSON.stringify({
           username,
           email: email || undefined,
+          nombre: nombre.trim(),
+          apellido: apellido.trim(),
           rol,
           restauranteId,
         }),
@@ -58,15 +103,17 @@ export function CrearUsuarioDialog({ open, onClose, token, restauranteId, onCrea
       {creado ? (
         <div className="space-y-4">
           <p className="text-body-md text-on-surface">
-            Usuario <strong>{username}</strong> creado. Esta contraseña temporal solo se
-            muestra una vez — copiala antes de cerrar esta ventana.
+            Usuario de <strong>{nombreParaMostrar(creado)}</strong> creado. Ingresa con el usuario{' '}
+            <strong>{creado.username ?? username}</strong>. Esta contraseña temporal solo se muestra
+            una vez — copiala antes de cerrar esta ventana.
           </p>
           <div className="flex items-center justify-between rounded-lg border border-outline-variant bg-surface-container-low px-3 py-2">
             <code className="text-body-md text-on-surface">{creado.temporaryPassword}</code>
             <button
               type="button"
+              ref={copiarRef}
               onClick={() => navigator.clipboard.writeText(creado.temporaryPassword)}
-              className="text-label-md font-semibold text-primary hover:underline"
+              className="min-h-12 rounded-lg px-3 text-label-md font-semibold text-primary hover:bg-surface-container"
             >
               Copiar
             </button>
@@ -74,13 +121,33 @@ export function CrearUsuarioDialog({ open, onClose, token, restauranteId, onCrea
           <button
             type="button"
             onClick={resetAndClose}
-            className="w-full rounded-lg bg-primary px-4 py-2 text-body-md font-medium text-on-primary hover:opacity-90"
+            className="min-h-12 w-full rounded-lg bg-primary px-4 text-body-md font-medium text-on-primary hover:opacity-90"
           >
             Listo
           </button>
         </div>
       ) : (
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* BL-361: nombre y apellido, obligatorios. */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <CampoNombrePersona
+              id="nombre"
+              etiqueta="Nombre"
+              valor={nombre}
+              onChange={setNombre}
+              error={errorNombre}
+              requerido
+            />
+            <CampoNombrePersona
+              id="apellido"
+              etiqueta="Apellido"
+              valor={apellido}
+              onChange={setApellido}
+              error={errorApellido}
+              requerido
+            />
+          </div>
+
           <div>
             <label htmlFor="username" className="mb-1 block text-label-md text-on-surface-variant">
               Nombre de usuario
@@ -89,10 +156,10 @@ export function CrearUsuarioDialog({ open, onClose, token, restauranteId, onCrea
               id="username"
               required
               minLength={3}
-              autoComplete='off'
+              autoComplete="off"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              className="w-full rounded-lg border border-outline-variant px-3 py-2 text-body-md text-on-surface focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+              className={`${CLASE_INPUT} border-outline-variant`}
             />
           </div>
 
@@ -103,10 +170,10 @@ export function CrearUsuarioDialog({ open, onClose, token, restauranteId, onCrea
             <input
               id="email"
               type="email"
-              autoComplete='off'
+              autoComplete="off"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-lg border border-outline-variant px-3 py-2 text-body-md text-on-surface focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+              className={`${CLASE_INPUT} border-outline-variant`}
             />
           </div>
 
@@ -118,7 +185,7 @@ export function CrearUsuarioDialog({ open, onClose, token, restauranteId, onCrea
               id="rol"
               value={rol}
               onChange={(e) => setRol(e.target.value as UsuarioRol)}
-              className="w-full rounded-lg border border-outline-variant px-3 py-2 text-body-md text-on-surface focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+              className={`${CLASE_INPUT} border-outline-variant`}
             >
               <option value="MOZO">Mozo</option>
               <option value="ADMIN">Administrador</option>
@@ -135,14 +202,14 @@ export function CrearUsuarioDialog({ open, onClose, token, restauranteId, onCrea
             <button
               type="button"
               onClick={resetAndClose}
-              className="rounded-lg px-4 py-2 text-body-md text-on-surface-variant hover:bg-surface-container"
+              className="min-h-12 rounded-lg px-4 text-body-md text-on-surface-variant hover:bg-surface-container"
             >
               Cancelar
             </button>
             <button
               type="submit"
               disabled={submitting}
-              className="rounded-lg bg-primary px-4 py-2 text-body-md font-medium text-on-primary hover:opacity-90 disabled:opacity-50"
+              className="min-h-12 rounded-lg bg-primary px-4 text-body-md font-medium text-on-primary hover:opacity-90 disabled:opacity-50"
             >
               {submitting ? 'Creando…' : 'Crear usuario'}
             </button>

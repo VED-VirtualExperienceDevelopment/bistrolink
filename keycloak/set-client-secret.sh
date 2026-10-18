@@ -242,10 +242,18 @@ JSON
         echo "[set-client-secret] Scope 'profile' agregado a ${client_id}."
       fi
     done
+
+    # 4. BL-368: la cuenta de servicio del backend lee los eventos LOGIN
+    #    (último ingreso en Admin → Usuarios). Igual que en realm-export.json,
+    #    clientRoles.realm-management. Es idempotente: si ya tiene el rol,
+    #    Keycloak no lo vuelve a asignar ni responde error.
+    "$kcadm" add-roles -r "$KC_REALM" \
+      --uusername "service-account-${KC_BACKEND_CLIENT_ID}" \
+      --cclientid realm-management --rolename view-events || return 1
   }
 
   aplicar_cambios_realm \
-    && echo "[set-client-secret] Realm al día: español y scope 'profile' (BL-345)." \
+    && echo "[set-client-secret] Realm al día: español, scope 'profile' (BL-345) y lectura de eventos (BL-368)." \
     || echo "[set-client-secret] AVISO: no se pudieron aplicar los cambios del realm de BL-345." >&2
 
   # BL-264: usuarios de prueba, solo donde el entorno lo pide (local y

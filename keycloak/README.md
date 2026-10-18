@@ -59,7 +59,7 @@ como scope por defecto (BL-345).
 
 El usuario `service-account-bistrolink-backend` tiene sus `clientRoles` de
 `realm-management` (`manage-users`, `view-users`, `query-users`,
-`view-realm`) declarados directamente en la sección `users` de este archivo
+`view-realm`, `view-events`) declarados directamente en la sección `users` de este archivo
 — **no** dependen de correr `setup-service-account.sh` a mano después de
 importar el realm.
 
@@ -76,7 +76,12 @@ necesario correrlo en un ambiente nuevo.
 
 Si en el futuro el service account necesita un permiso nuevo: agregalo acá,
 en `clientRoles.realm-management`, no como un paso manual aparte — el
-patrón manual es exactamente lo que causó este bug.
+patrón manual es exactamente lo que causó este bug. Como el import no toca un
+realm que ya existe, agregalo también en `set-client-secret.sh` (así se hizo
+con `view-events`, ver BL-345).
+
+`view-events` (BL-368): el backend lee los eventos `LOGIN` para mostrar el
+último ingreso de cada usuario en Admin → Usuarios. Es solo lectura.
 
 ## Regla general para nuevos clientScopes
 
@@ -212,16 +217,17 @@ Valores declarados en `realm-export.json` (realms nuevos, por ejemplo producció
 
 `--import-realm` no actualiza un realm que ya existe, así que algunos valores de `realm-export.json` se aplican en cada arranque desde `set-client-secret.sh` (idempotente):
 
-| Qué | Origen |
-|---|---|
-| Español: `internationalizationEnabled`, `supportedLocales: ["es"]`, `defaultLocale: es` | BL-343 |
+| Qué                                                                                                                   | Origen |
+| --------------------------------------------------------------------------------------------------------------------- | ------ |
+| Español: `internationalizationEnabled`, `supportedLocales: ["es"]`, `defaultLocale: es`                               | BL-343 |
 | Client scope `profile` (se crea si falta) y scope por defecto del realm, `bistrolink-frontend` y `bistrolink-backend` | BL-344 |
+| Rol `realm-management/view-events` de la cuenta de servicio de `bistrolink-backend`                                   | BL-368 |
 
 Si se cambia alguno de estos valores en `realm-export.json`, cambiarlo también en el script.
 
-| Entorno | Aplicado |
-|---|---|
-| Staging | 17-10-2026 |
+| Entorno    | Aplicado           |
+| ---------- | ------------------ |
+| Staging    | 17-10-2026         |
 | Producción | <fecha del deploy> |
 
 ## Tema de login (`themes/bistrolink/login`)

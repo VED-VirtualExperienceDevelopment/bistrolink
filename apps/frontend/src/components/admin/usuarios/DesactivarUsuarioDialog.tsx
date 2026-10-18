@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Dialog } from '@/components/ui/Dialog';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import type { DesactivarResponse, Usuario } from '@/types/usuario';
+import { esCuentaCocina, nombreParaMostrar, rutaUsuario } from './Usuarios.utils';
 
 interface Props {
   open: boolean;
@@ -13,7 +14,7 @@ interface Props {
   onDesactivado: (id: string) => void;
 }
 
-export function DesactivarUsuarioDialog({ open, onClose, token, usuario, onDesactivado }: Props) {
+export function DesactivarUsuarioDialog({ open, onClose, token, usuario, onDesactivado }: Readonly<Props>) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -23,7 +24,7 @@ export function DesactivarUsuarioDialog({ open, onClose, token, usuario, onDesac
     setSubmitting(true);
     setError(null);
     try {
-      const res = await apiFetch<DesactivarResponse>(`/usuarios/${usuario.id}`, token, {
+      const res = await apiFetch<DesactivarResponse>(rutaUsuario(usuario), token, {
         method: 'DELETE',
       });
       onDesactivado(res.id);
@@ -41,9 +42,17 @@ export function DesactivarUsuarioDialog({ open, onClose, token, usuario, onDesac
     <Dialog open={open} onClose={onClose} title="Desactivar usuario">
       <div className="space-y-4">
         <p className="text-body-md text-on-surface">
-          {usuario.username ?? `Usuario ${usuario.id.slice(0, 8)}`} no va a poder iniciar sesión
+          {nombreParaMostrar(usuario)} no va a poder iniciar sesión
           hasta que se reactive. Esta acción no borra su historial.
         </p>
+        {/* BL-362: la cuenta de cocina es compartida; desactivarla deja a
+            toda la cocina sin la pantalla de pedidos. */}
+        {esCuentaCocina(usuario) && (
+          <p className="rounded-lg bg-error-container px-3 py-2 text-body-sm text-on-error-container">
+            Es la cuenta compartida de la cocina: las pantallas de la cocina (KDS) se van a cerrar y
+            no van a recibir pedidos hasta que la reactives.
+          </p>
+        )}
 
         {error && (
           <p role="alert" className="rounded-lg bg-error-container px-3 py-2 text-body-sm text-on-error-container">
@@ -51,11 +60,14 @@ export function DesactivarUsuarioDialog({ open, onClose, token, usuario, onDesac
           </p>
         )}
 
+        {/* BL-364: el foco inicial va a «Cancelar» y no a «Desactivar», para
+            que un Enter apurado no desactive a nadie. */}
         <div className="flex justify-end gap-2 pt-2">
           <button
+            data-autofocus
             type="button"
             onClick={onClose}
-            className="rounded-lg px-4 py-2 text-body-md text-on-surface-variant hover:bg-surface-container"
+            className="min-h-12 rounded-lg px-4 text-body-md text-on-surface-variant hover:bg-surface-container"
           >
             Cancelar
           </button>
@@ -63,7 +75,7 @@ export function DesactivarUsuarioDialog({ open, onClose, token, usuario, onDesac
             type="button"
             onClick={handleConfirm}
             disabled={submitting}
-            className="rounded-lg bg-error px-4 py-2 text-body-md font-medium text-on-error hover:opacity-90 disabled:opacity-50"
+            className="min-h-12 rounded-lg bg-error px-4 text-body-md font-medium text-on-error hover:opacity-90 disabled:opacity-50"
           >
             {submitting ? 'Desactivando…' : 'Desactivar'}
           </button>

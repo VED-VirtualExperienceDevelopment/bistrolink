@@ -19,6 +19,6 @@ docker exec bistrolink-auth /opt/keycloak/bin/kcadm.sh add-roles \
   -r bistrolink \
   --uusername service-account-bistrolink-backend \
   --cclientid realm-management \
-  --rolename manage-users --rolename view-users --rolename query-users --rolename view-realm
+  --rolename manage-users --rolename view-users --rolename query-users --rolename view-realm --rolename view-events
 
-echo "Listo. El service account ya puede gestionar usuarios y leer roles."
+echo "Listo. El service account ya puede gestionar usuarios, leer roles y leer los eventos de ingreso."

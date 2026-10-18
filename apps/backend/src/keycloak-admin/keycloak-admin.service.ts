@@ -44,6 +44,9 @@ export interface KeycloakUser {
   firstName?: string;
   lastName?: string;
   attributes?: Record<string, string[]>;
+  /** BL-362: estado de la cuenta y fecha de alta (epoch en milisegundos). */
+  enabled?: boolean;
+  createdTimestamp?: number;
 }
 
 /** BL-163: datos del perfil que exige el realm (email, nombre y apellido). */
@@ -57,7 +60,7 @@ export interface PerfilKeycloak {
  * Encapsula la Admin REST API de Keycloak. Usa el service account del cliente
  * bistrolink-backend (grant_type=client_credentials) — requiere que ese
  * cliente tenga asignados los roles manage-users/view-users/query-users/
- * view-realm del cliente realm-management (ver BL-162: estos roles están
+ * view-realm/view-events del cliente realm-management (ver BL-162: estos roles están
  * declarados en keycloak/realm-export.json, no dependen de un script manual).
  *
  * Toda falla de la Admin API se loguea acá explícitamente (this.logger.error)
@@ -68,6 +71,11 @@ export interface PerfilKeycloak {
  * body de su respuesta. Sin este logging explícito, un 403 (permisos) y un
  * 404 (recurso inexistente) son indistinguibles en producción.
  */
+// BL-368: eventos LOGIN. Keycloak los guarda 90 días (eventsExpiration).
+const DIAS_DE_EVENTOS = 90;
+const EVENTOS_POR_PAGINA = 500;
+const PAGINAS_DE_EVENTOS = 10;
+
 @Injectable()
 export class KeycloakAdminService {
   private readonly logger = new Logger(KeycloakAdminService.name);
@@ -357,6 +365,62 @@ export class KeycloakAdminService {
     return true;
   }
 
+  /**
+   * BL-366: cambia el nombre, el apellido o el correo de un usuario. A
+   * diferencia de completarPerfil (que solo llena lo que falta), pisa los
+   * valores que vienen. Lee el usuario completo y lo vuelve a mandar entero
+   * con los cambios, así el PUT no borra atributos como tenant_id.
+   *
+   * Un correo que ya usa otra persona del realm: Keycloak responde 409 y
+   * acá se convierte en un 409 con un mensaje claro. [S] El correo no va al
+   * log: solo el keycloakId y el status.
+   */
+  async actualizarPerfil(
+    keycloakId: string,
+    cambios: Partial<PerfilKeycloak>,
+  ): Promise<void> {
+    const getRes = await this.adminFetch(`/users/${keycloakId}`);
+    if (!getRes.ok) {
+      const body = await getRes.text();
+      this.logAndBuildError(
+        `No se pudo leer el usuario ${keycloakId} en Keycloak para actualizar su perfil`,
+        getRes.status,
+        body,
+      );
+      throw new InternalServerErrorException(
+        `No se pudo leer el usuario en Keycloak: ${getRes.status}`,
+      );
+    }
+    const usuario = (await getRes.json()) as Record<string, unknown>;
+
+    const res = await this.adminFetch(`/users/${keycloakId}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        ...usuario,
+        ...cambios,
+        // Lo carga un admin, igual que en el alta (emailVerified: true).
+        ...(cambios.email ? { emailVerified: true } : {}),
+      }),
+    });
+    if (res.status === 409) {
+      this.logger.warn(
+        `Keycloak rechazó el correo nuevo del usuario ${keycloakId}: ya lo usa otro usuario`,
+      );
+      throw new ConflictException('Ya hay otro usuario con ese correo');
+    }
+    if (!res.ok) {
+      const body = await res.text();
+      this.logAndBuildError(
+        `No se pudo actualizar el perfil del usuario ${keycloakId} en Keycloak`,
+        res.status,
+        body,
+      );
+      throw new InternalServerErrorException(
+        `No se pudo actualizar el perfil del usuario en Keycloak: ${res.status}`,
+      );
+    }
+  }
+
   /** Asigna un rol de Realm (ADMIN, MOZO, COCINA, COMENSAL) a un usuario. */
   async assignRealmRole(keycloakId: string, roleName: string): Promise<void> {
     const roleRes = await this.adminFetch(`/roles/${roleName}`);
@@ -418,6 +482,150 @@ export class KeycloakAdminService {
       );
       throw new InternalServerErrorException(
         `No se pudo ${enabled ? 'activar' : 'desactivar'} el usuario en Keycloak: ${res.status} ${body}`,
+      );
+    }
+  }
+
+  /**
+   * BL-362: usuarios de Keycloak de un tenant (atributo tenant_id), con la
+   * representación completa (atributos, enabled, createdTimestamp). Un
+   * tenant tiene pocos: el personal, la cuenta de cocina y el comensal
+   * técnico. El tope de 200 es solo una red de seguridad.
+   *
+   * Quien llama igual compara el tenant_id de cada usuario: la búsqueda por
+   * atributo es del lado de Keycloak y la verificación queda en nuestro código.
+   */
+  async listarUsuariosDelTenant(tenantId: string): Promise<KeycloakUser[]> {
+    const q = encodeURIComponent(`tenant_id:${tenantId}`);
+    const res = await this.adminFetch(
+      `/users?q=${q}&briefRepresentation=false&max=200`,
+    );
+    if (!res.ok) {
+      const body = await res.text();
+      this.logAndBuildError(
+        `No se pudieron listar los usuarios del tenant ${tenantId} en Keycloak`,
+        res.status,
+        body,
+      );
+      throw new InternalServerErrorException(
+        `No se pudieron listar los usuarios en Keycloak: ${res.status} ${body}`,
+      );
+    }
+    return (await res.json()) as KeycloakUser[];
+  }
+
+  /**
+   * BL-368: fecha (ms) del último evento LOGIN de cada usuario, en los últimos
+   * 90 días (lo que guarda Keycloak, BL-266). Los que no ingresaron en ese
+   * tiempo no aparecen en el mapa.
+   *
+   * Los eventos son de todo el realm y Keycloak los devuelve del más nuevo al
+   * más viejo: se piden por páginas, se toma el primero de cada usuario
+   * buscado y se corta en cuanto están todos. Así son unas pocas consultas
+   * para todo el tenant, nunca una por usuario. El tope de páginas es una red
+   * de seguridad: con más eventos que eso, los que no aparecieron quedan
+   * «sin ingresos recientes».
+   *
+   * Necesita el rol realm-management/view-events (realm-export.json y
+   * set-client-secret.sh).
+   */
+  async ultimosIngresos(keycloakIds: string[]): Promise<Map<string, number>> {
+    const buscados = new Set(keycloakIds);
+    const ultimos = new Map<string, number>();
+    if (buscados.size === 0) return ultimos;
+
+    const desde = new Date(Date.now() - DIAS_DE_EVENTOS * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10); // yyyy-MM-dd, el formato que acepta dateFrom
+
+    for (let pagina = 0; pagina < PAGINAS_DE_EVENTOS; pagina++) {
+      const res = await this.adminFetch(
+        `/events?type=LOGIN&dateFrom=${desde}` +
+          `&first=${pagina * EVENTOS_POR_PAGINA}&max=${EVENTOS_POR_PAGINA}`,
+      );
+      if (!res.ok) {
+        const body = await res.text();
+        this.logAndBuildError(
+          'No se pudieron leer los eventos de ingreso en Keycloak',
+          res.status,
+          body,
+        );
+        throw new InternalServerErrorException(
+          `No se pudieron leer los eventos de ingreso en Keycloak: ${res.status} ${body}`,
+        );
+      }
+      const eventos = (await res.json()) as { userId?: string; time: number }[];
+      for (const evento of eventos) {
+        if (
+          evento.userId &&
+          buscados.has(evento.userId) &&
+          !ultimos.has(evento.userId)
+        ) {
+          ultimos.set(evento.userId, evento.time);
+        }
+      }
+      if (
+        ultimos.size === buscados.size ||
+        eventos.length < EVENTOS_POR_PAGINA
+      ) {
+        break;
+      }
+    }
+    return ultimos;
+  }
+
+  /**
+   * BL-362: nombres de los roles de realm asignados directamente al usuario
+   * (GET /users/{id}/role-mappings/realm). Así se reconoce la cuenta de
+   * cocina, que tiene COCINA asignado en el alta (BL-163).
+   */
+  async rolesDeRealm(keycloakId: string): Promise<string[]> {
+    const res = await this.adminFetch(
+      `/users/${encodeURIComponent(keycloakId)}/role-mappings/realm`,
+    );
+    if (!res.ok) {
+      const body = await res.text();
+      this.logAndBuildError(
+        `No se pudieron leer los roles del usuario ${keycloakId} en Keycloak`,
+        res.status,
+        body,
+      );
+      throw new InternalServerErrorException(
+        `No se pudieron leer los roles del usuario en Keycloak: ${res.status} ${body}`,
+      );
+    }
+    return ((await res.json()) as { name: string }[]).map((r) => r.name);
+  }
+
+  /**
+   * BL-359: reemplaza la contraseña del usuario
+   * (PUT /users/{id}/reset-password, requiere manage-users).
+   *
+   * Con `temporary: true` (el valor por defecto, igual que en el alta),
+   * Keycloak le agrega la acción UPDATE_PASSWORD: en el próximo ingreso le
+   * pide elegir una contraseña nueva antes de dejarlo entrar.
+   *
+   * [S] La contraseña nunca se loguea: los mensajes de error llevan solo el
+   * keycloakId, el status y el body que devuelve Keycloak (que no la incluye).
+   */
+  async resetPassword(
+    keycloakId: string,
+    password: string,
+    temporary = true,
+  ): Promise<void> {
+    const res = await this.adminFetch(`/users/${keycloakId}/reset-password`, {
+      method: 'PUT',
+      body: JSON.stringify({ type: 'password', value: password, temporary }),
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      this.logAndBuildError(
+        `No se pudo restablecer la contraseña del usuario ${keycloakId} en Keycloak`,
+        res.status,
+        body,
+      );
+      throw new InternalServerErrorException(
+        `No se pudo restablecer la contraseña en Keycloak: ${res.status} ${body}`,
       );
     }
   }

@@ -206,13 +206,16 @@ async function tenantA() {
   // fila de Postgres.
   await prisma.usuario.upsert({
     where: { keycloakId: MOZO_TEST_KEYCLOAK_ID },
-    update: { username: MOZO_TEST_USERNAME },
+    // BL-361: nombre y apellido iguales a keycloak/test-users.json.
+    update: { username: MOZO_TEST_USERNAME, nombre: 'Mozo', apellido: 'Test' },
     create: {
       tenantId: TENANT_A_ID,
       restauranteId: RESTAURANTE_A_ID,
       keycloakId: MOZO_TEST_KEYCLOAK_ID,
       username: MOZO_TEST_USERNAME,
       email: 'mozo-test@bistrolink.dev.com',
+      nombre: 'Mozo',
+      apellido: 'Test',
       rol: 'MOZO',
       activo: true,
     },
@@ -226,6 +229,8 @@ async function tenantA() {
       tenantId: TENANT_A_ID,
       restauranteId: RESTAURANTE_A_ID,
       username: ADMIN_TEST_USERNAME,
+      nombre: 'Admin',
+      apellido: 'Test',
       rol: 'ADMIN',
       activo: true,
     },
@@ -235,6 +240,8 @@ async function tenantA() {
       keycloakId: ADMIN_TEST_KEYCLOAK_ID,
       username: ADMIN_TEST_USERNAME,
       email: 'admin-test@bistrolink.dev.com',
+      nombre: 'Admin',
+      apellido: 'Test',
       rol: 'ADMIN',
       activo: true,
     },
@@ -271,13 +278,19 @@ async function tenantB() {
 
   await prisma.usuario.upsert({
     where: { keycloakId: ADMIN_B_TEST_KEYCLOAK_ID },
-    update: { username: ADMIN_B_TEST_USERNAME },
+    update: {
+      username: ADMIN_B_TEST_USERNAME,
+      nombre: 'Admin',
+      apellido: 'TenantB',
+    },
     create: {
       tenantId: TENANT_B_ID,
       restauranteId: RESTAURANTE_B_ID,
       keycloakId: ADMIN_B_TEST_KEYCLOAK_ID,
       username: ADMIN_B_TEST_USERNAME,
       email: 'admin-b-test@bistrolink.dev.com',
+      nombre: 'Admin',
+      apellido: 'TenantB',
       rol: 'ADMIN',
       activo: true,
     },
