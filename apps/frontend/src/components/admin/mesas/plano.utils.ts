@@ -491,6 +491,7 @@ export type AtajoPlano =
   | { tipo: "alejar" }
   | { tipo: "zoom-inicial" }
   | { tipo: "guardar" }
+  | { tipo: "deshacer" }
   | { tipo: "mover"; dx: number; dy: number };
 
 /** Lo que mueve una flecha, en unidades del lienzo. */
@@ -511,6 +512,8 @@ const DIRECCION_POR_FLECHA: Record<string, [number, number]> = {
  * - `+` / `-` acercan y alejan, `0` vuelve al 100 %.
  * - Flechas mueven lo seleccionado 1 unidad; con Shift, 10.
  * - Ctrl/Cmd + S guarda, incluso desde un campo de texto.
+ * - Ctrl/Cmd + Z deshace la última eliminación (BL-332). En un campo de
+ *   texto no: ahí deshace lo que se escribió, como siempre.
  *
  * Solo se escuchan con el foco dentro del editor, así los atajos de una sola
  * tecla no interfieren con el resto de la página (WCAG 2.1.4). Mientras se
@@ -531,6 +534,15 @@ export function accionDeAtajo(
   const conControl = tecla.ctrlKey || tecla.metaKey;
   if (conControl && !tecla.altKey && tecla.key.toLowerCase() === "s") {
     return { tipo: "guardar" };
+  }
+  if (
+    conControl &&
+    !tecla.altKey &&
+    !tecla.shiftKey &&
+    !enCampoDeTexto &&
+    tecla.key.toLowerCase() === "z"
+  ) {
+    return { tipo: "deshacer" };
   }
   if (enCampoDeTexto || conControl || tecla.altKey) return null;
   if (tecla.key === "+" || tecla.key === "=") return { tipo: "acercar" };
