@@ -12,12 +12,11 @@ import {
   diagnosticoFirmaWebhook,
   firmaWebhookMercadoPagoValida,
 } from './firma-webhook-mercadopago';
+import {
+  CuerpoNotificacion,
+  leerNotificacionOrden,
+} from './notificacion-mercadopago';
 import { PagosWebhookService } from './pagos-webhook.service';
-
-interface CuerpoNotificacion {
-  type?: string;
-  data?: { id?: string };
-}
 
 // Endpoint PÚBLICO (Mercado Pago no manda JWT): la autenticidad de cada
 // notificación se comprueba con la firma HMAC-SHA256 (BL-78).
@@ -53,9 +52,11 @@ export class PagosWebhookController {
       throw new UnauthorizedException('Firma inválida');
     }
 
-    const tipo = tipoQuery ?? cuerpo?.type;
-    const orderId = dataId ?? cuerpo?.data?.id;
-    if (tipo !== 'order' || !orderId) {
+    const orderId = leerNotificacionOrden(
+      { type: tipoQuery, 'data.id': dataId },
+      cuerpo,
+    );
+    if (!orderId) {
       return { recibido: true }; // otro tipo de evento: se confirma y se ignora
     }
 

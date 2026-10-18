@@ -19,6 +19,7 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json --runInBand",
+    "test:pact": "node -e \"require('fs').rmSync('pacts',{recursive:true,force:true})\" && jest --config ./test/contract/jest-contract.json --runInBand",
     "generate:qr": "ts-node scripts/generate-qr.ts",
     "aprovisionar": "ts-node scripts/aprovisionar-establecimiento.ts",
     "crear-usuario-plataforma": "ts-node scripts/crear-usuario-plataforma.ts"
@@ -65,6 +66,7 @@
     "@nestjs/cli": "^10.0.0",
     "@nestjs/schematics": "^10.0.0",
     "@nestjs/testing": "^10.0.0",
+    "@pact-foundation/pact": "^17.1.4",
     "@types/express": "^5.0.0",
     "@types/jest": "^29.5.2",
     "@types/jsonwebtoken": "^9.0.5",
