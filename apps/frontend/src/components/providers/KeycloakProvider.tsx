@@ -26,6 +26,11 @@ interface KeycloakContextValue {
   roles: string[];
   /** Quién inició sesión (BL-349). `undefined` mientras no haya sesión. */
   usuario: UsuarioSesion | undefined;
+  /**
+   * BL-369: id de Keycloak de quien inició sesión (claim `sub`). Con él,
+   * Admin → Usuarios reconoce la fila propia.
+   */
+  keycloakId: string | undefined;
   hasRole: (role: string) => boolean;
   logout: () => void;
   /**
@@ -54,6 +59,7 @@ export function KeycloakProvider({ children }: { children: ReactNode }) {
   const [tenantId, setTenantId] = useState<string | undefined>(undefined);
   const [roles, setRoles] = useState<string[]>([]);
   const [usuario, setUsuario] = useState<UsuarioSesion | undefined>(undefined);
+  const [keycloakId, setKeycloakId] = useState<string | undefined>(undefined);
   const [resultadoCambioContrasena, setResultadoCambioContrasena] = useState<
     ResultadoAccionKeycloak | undefined
   >(undefined);
@@ -94,6 +100,7 @@ export function KeycloakProvider({ children }: { children: ReactNode }) {
             | undefined;
           const rolesToken = parsed?.realm_access?.roles ?? [];
           setTenantId(parsed?.tenant_id);
+          setKeycloakId(keycloak.subject);
           setRoles(rolesToken);
           // Nombre y usuario salen del scope `profile` del realm (BL-344).
           setUsuario(usuarioSesion(parsed, rolesToken));
@@ -150,6 +157,7 @@ export function KeycloakProvider({ children }: { children: ReactNode }) {
       tenantId,
       roles,
       usuario,
+      keycloakId,
       hasRole,
       logout,
       cambiarContrasena,
@@ -163,6 +171,7 @@ export function KeycloakProvider({ children }: { children: ReactNode }) {
       tenantId,
       roles,
       usuario,
+      keycloakId,
       hasRole,
       logout,
       cambiarContrasena,

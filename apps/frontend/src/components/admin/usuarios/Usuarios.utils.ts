@@ -80,6 +80,17 @@ export function rutaUsuario(
     : `/usuarios/${usuario.id}`;
 }
 
+/**
+ * BL-369: si la fila es la de quien está usando la pantalla. Se compara el
+ * keycloakId con el `sub` del token; sin sesión, nunca es propia.
+ */
+export function esUsuarioPropio(
+  usuario: Pick<Usuario, "keycloakId">,
+  keycloakIdPropio: string | undefined,
+): boolean {
+  return Boolean(keycloakIdPropio) && usuario.keycloakId === keycloakIdPropio;
+}
+
 // ── BL-363: búsqueda y filtros del listado ──────────────────────────────────
 // Se filtra en el navegador: un restaurante tiene pocos usuarios.
 

@@ -22,7 +22,7 @@ import {
 import type { Usuario } from '@/types/usuario';
 
 export default function UsuariosPage() {
-  const { token, hasRole } = useKeycloakAuth();
+  const { token, hasRole, keycloakId } = useKeycloakAuth();
   const router = useRouter();
 
   // BL-160: el layout de /admin/* ahora deja entrar a cualquier staff
@@ -180,6 +180,7 @@ export default function UsuariosPage() {
           onReactivar={setUsuarioAReactivar}
           onRestablecerContrasena={setUsuarioARestablecer}
           onCerrarSesiones={setUsuarioACerrarSesiones}
+          keycloakIdPropio={keycloakId}
         />
       )}
 
@@ -201,6 +202,7 @@ export default function UsuariosPage() {
         onClose={() => setUsuarioAEditar(null)}
         token={token}
         usuario={usuarioAEditar}
+        esPropio={usuarioAEditar !== null && usuarioAEditar.keycloakId === keycloakId}
         onUpdated={(actualizado) =>
           setUsuarios((prev) => prev.map((u) => (u.id === actualizado.id ? actualizado : u)))
         }

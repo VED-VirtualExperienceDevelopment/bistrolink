@@ -3,6 +3,7 @@
 import type { Usuario } from '@/types/usuario';
 import {
   esCuentaCocina,
+  esUsuarioPropio,
   nombreCompleto,
   nombreParaMostrar,
   textoUltimoIngreso,
@@ -15,6 +16,8 @@ interface Props {
   onReactivar: (usuario: Usuario) => void;
   onRestablecerContrasena: (usuario: Usuario) => void;
   onCerrarSesiones: (usuario: Usuario) => void;
+  /** BL-369: keycloakId de quien está usando la pantalla (sub del token). */
+  keycloakIdPropio?: string;
 }
 
 const ROL_LABEL: Record<Usuario['rol'], string> = {
@@ -61,6 +64,7 @@ export function UsuariosTable({
   onReactivar,
   onRestablecerContrasena,
   onCerrarSesiones,
+  keycloakIdPropio,
 }: Props) {
   if (usuarios.length === 0) {
     return (
@@ -95,6 +99,7 @@ export function UsuariosTable({
           const nombre = nombreParaMostrar(usuario);
           const cocina = esCuentaCocina(usuario);
           const ingreso = textoUltimoIngreso(usuario.ultimoIngreso);
+          const propio = esUsuarioPropio(usuario, keycloakIdPropio);
           return (
             <li
               key={usuario.id}
@@ -108,7 +113,11 @@ export function UsuariosTable({
                   </span>
                 </div>
                 <div className="min-w-0">
-                  <p className="break-words text-body-lg font-semibold text-on-surface">{nombre}</p>
+                  <p className="break-words text-body-lg font-semibold text-on-surface">
+                    {nombre}
+                    {/* BL-369: la fila propia se distingue con texto. */}
+                    {propio && <span className="font-normal text-on-surface-variant"> (vos)</span>}
+                  </p>
                   {/* BL-362: una sola cuenta para toda la cocina. */}
                   {cocina && (
                     <p className="text-body-md text-on-surface-variant">Cuenta compartida</p>
@@ -192,7 +201,13 @@ export function UsuariosTable({
                 )}
                 {/* BL-367: solo para usuarios activos (uno desactivado ya no
                     tiene sesiones: desactivar las cierra). Incluye la cocina. */}
-                {usuario.activo && (
+                {usuario.activo && propio && (
+                  <AccionNoDisponible
+                    icono="logout"
+                    motivo="No podés cerrar tus propias sesiones desde acá. Usá «Cerrar sesión»."
+                  />
+                )}
+                {usuario.activo && !propio && (
                   <button
                     type="button"
                     onClick={() => onCerrarSesiones(usuario)}
@@ -205,7 +220,12 @@ export function UsuariosTable({
                     </span>
                   </button>
                 )}
-                {usuario.activo ? (
+                {usuario.activo && propio ? (
+                  <AccionNoDisponible
+                    icono="person_off"
+                    motivo="No podés desactivar tu propio usuario. Pedíselo a otro Administrador."
+                  />
+                ) : usuario.activo ? (
                   <button
                     type="button"
                     onClick={() => onDesactivar(usuario)}
@@ -237,5 +257,29 @@ export function UsuariosTable({
         })}
       </ul>
     </div>
+  );
+}
+
+/**
+ * BL-369: acción que no se puede hacer sobre el propio usuario. Se deja en su
+ * lugar (la fila no cambia de forma) y con foco, para que el motivo llegue
+ * también por teclado y con lector de pantalla: un botón `disabled` no
+ * recibe foco y su explicación no se escucharía. aria-disabled lo anuncia
+ * como «no disponible» y el clic no hace nada.
+ */
+function AccionNoDisponible({ icono, motivo }: { icono: string; motivo: string }) {
+  return (
+    <button
+      type="button"
+      aria-disabled="true"
+      aria-label={motivo}
+      title={motivo}
+      onClick={(e) => e.preventDefault()}
+      className={`${CLASE_ACCION} cursor-not-allowed opacity-40`}
+    >
+      <span className="material-symbols-outlined text-[22px]" aria-hidden="true">
+        {icono}
+      </span>
+    </button>
   );
 }

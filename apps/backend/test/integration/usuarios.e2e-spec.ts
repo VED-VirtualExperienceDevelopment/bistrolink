@@ -1406,3 +1406,85 @@ describe('Gestión de usuarios (HU-013) - último ingreso (BL-368)', () => {
     },
   );
 });
+
+// ── BL-369: el admin no actúa sobre sí mismo ────────────────────────────────
+describe('Gestión de usuarios (HU-013) - el admin no actúa sobre sí mismo (BL-369)', () => {
+  let app: INestApplication;
+
+  const itConAdmin = ADMIN_PASS ? it : it.skip;
+
+  /** Token del admin y su propia fila del listado (por el sub del token). */
+  async function adminYSuFila() {
+    const token = await getToken(ADMIN_USER, ADMIN_PASS as string);
+    const { sub } = JSON.parse(
+      Buffer.from(token.split('.')[1], 'base64url').toString(),
+    ) as { sub: string };
+    const res = await request(app.getHttpServer())
+      .get('/usuarios')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    const fila = (
+      res.body as {
+        id: string;
+        keycloakId: string;
+        activo: boolean;
+        rol: string;
+      }[]
+    ).find((u) => u.keycloakId === sub);
+    if (!fila)
+      throw new Error('El admin de prueba no tiene fila en el listado');
+    return { token, fila };
+  }
+
+  beforeAll(async () => {
+    const moduleRef: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
+    app = moduleRef.createNestApplication();
+    await app.init();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  itConAdmin(
+    '[TC-I-072] Usuarios: ADMIN no puede desactivarse a sí mismo (403) y sigue activo',
+    async () => {
+      const { token, fila } = await adminYSuFila();
+
+      const res = await request(app.getHttpServer())
+        .delete(`/usuarios/${fila.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+      expect(res.body.message).toBe(
+        'No podés desactivar tu propio usuario. Pedíselo a otro Administrador.',
+      );
+
+      const despues = await adminYSuFila();
+      expect(despues.fila.activo).toBe(true);
+    },
+  );
+
+  itConAdmin(
+    '[TC-I-073] Usuarios: ADMIN no puede cambiarse el rol ni cerrar sus propias sesiones desde la API (403)',
+    async () => {
+      const { token, fila } = await adminYSuFila();
+
+      await request(app.getHttpServer())
+        .patch(`/usuarios/${fila.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ rol: 'MOZO' })
+        .expect(403);
+
+      await request(app.getHttpServer())
+        .post(`/usuarios/${fila.id}/cerrar-sesiones`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+
+      // Sigue siendo Admin y su token sigue sirviendo.
+      const despues = await adminYSuFila();
+      expect(despues.fila.rol).toBe('ADMIN');
+    },
+  );
+});

@@ -11,6 +11,8 @@ interface Props {
   onClose: () => void;
   token: string | undefined;
   usuario: Usuario | null;
+  /** BL-369: es el usuario de quien edita. Puede cambiar sus datos, no su rol. */
+  esPropio?: boolean;
   onUpdated: (usuario: Usuario) => void;
 }
 
@@ -26,7 +28,14 @@ const CLASE_INPUT =
  * de nuevo para cada usuario (key={usuario.id}), así nunca muestra los datos
  * de la persona anterior.
  */
-export function EditarUsuarioDialog({ open, onClose, token, usuario, onUpdated }: Props) {
+export function EditarUsuarioDialog({
+  open,
+  onClose,
+  token,
+  usuario,
+  esPropio = false,
+  onUpdated,
+}: Props) {
   // BL-362: la cuenta de cocina no llega acá (la tabla no ofrece «Editar»
   // para ella); igual, el valor inicial solo puede ser un rol asignable.
   const rolInicial: UsuarioRol = usuario?.rol === 'ADMIN' ? 'ADMIN' : 'MOZO';
@@ -160,11 +169,19 @@ export function EditarUsuarioDialog({ open, onClose, token, usuario, onUpdated }
             id="editar-rol"
             value={rol}
             onChange={(e) => setRol(e.target.value as UsuarioRol)}
-            className={`${CLASE_INPUT} border-outline-variant`}
+            disabled={esPropio}
+            aria-describedby={esPropio ? 'editar-rol-ayuda' : undefined}
+            className={`${CLASE_INPUT} border-outline-variant disabled:cursor-not-allowed disabled:opacity-60`}
           >
             <option value="MOZO">Mozo</option>
             <option value="ADMIN">Administrador</option>
           </select>
+          {/* BL-369: el backend también lo rechaza (403). */}
+          {esPropio && (
+            <p id="editar-rol-ayuda" className="mt-1 text-body-sm text-on-surface-variant">
+              No podés cambiar tu propio rol. Pedíselo a otro Administrador.
+            </p>
+          )}
         </div>
 
         {usuario.username && (

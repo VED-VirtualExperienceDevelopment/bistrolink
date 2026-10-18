@@ -1,6 +1,7 @@
 import {
   errorNombrePersona,
   esCuentaCocina,
+  esUsuarioPropio,
   FILTROS_INICIALES,
   filtrarUsuarios,
   hayFiltrosActivos,
@@ -278,5 +279,17 @@ describe("textoUltimoIngreso (BL-368)", () => {
     expect(texto(new Date(AHORA + 30 * 1000).toISOString())).toBe(
       "Último ingreso: hace un momento",
     );
+  });
+});
+
+describe("esUsuarioPropio (BL-369)", () => {
+  it("es propia la fila con el mismo keycloakId que el token", () => {
+    expect(esUsuarioPropio({ keycloakId: "kc-ana" }, "kc-ana")).toBe(true);
+    expect(esUsuarioPropio({ keycloakId: "kc-juan" }, "kc-ana")).toBe(false);
+  });
+
+  it("sin sesión (keycloakId undefined o vacío), ninguna fila es propia", () => {
+    expect(esUsuarioPropio({ keycloakId: "kc-ana" }, undefined)).toBe(false);
+    expect(esUsuarioPropio({ keycloakId: "" }, "")).toBe(false);
   });
 });

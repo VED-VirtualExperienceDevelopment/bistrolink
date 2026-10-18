@@ -227,6 +227,12 @@ export class UsuariosService {
     const usuario = await this.tenantPrisma.runInTenantContext(tenantId, (tx) =>
       this.obtenerOFallar(tx, usuarioId),
     );
+    // BL-369: las propias se cierran con «Cerrar sesión».
+    this.asegurarNoEsUnoMismo(
+      actorKeycloakId,
+      usuario.keycloakId,
+      'No podés cerrar tus propias sesiones desde acá. Usá «Cerrar sesión».',
+    );
     await this.cerrarSesionesEnKeycloak(usuario.keycloakId);
 
     this.auditLog.registrar({
@@ -462,6 +468,15 @@ export class UsuariosService {
             throw new BadRequestException('No hay cambios para guardar');
           }
 
+          // BL-369: los datos propios sí se pueden editar; el rol, no.
+          if (cambiaRol) {
+            this.asegurarNoEsUnoMismo(
+              actorKeycloakId,
+              usuario.keycloakId,
+              'No podés cambiar tu propio rol. Pedíselo a otro Administrador.',
+            );
+          }
+
           if (cambiaRol && usuario.rol === 'ADMIN' && dto.rol !== 'ADMIN') {
             await this.asegurarNoEsUltimoAdmin(tx, usuarioId);
           }
@@ -540,6 +555,22 @@ export class UsuariosService {
         await this.lockTenant(tx, tenantId);
 
         const usuario = await this.obtenerOFallar(tx, usuarioId);
+
+        // BL-369: antes que RF.19. Aunque haya otro Admin, quien se
+        // desactiva a sí mismo se queda afuera en ese momento. El intento se
+        // audita, igual que el del último Admin.
+        if (usuario.keycloakId === actorKeycloakId) {
+          this.auditLog.registrar({
+            action: AuditAction.USUARIO_DESACTIVACION_RECHAZADA,
+            tenantId,
+            actorKeycloakId,
+            targetUsuarioId: usuarioId,
+            detalle: { rol: usuario.rol, motivo: 'propio_usuario' },
+          });
+          throw new ForbiddenException(
+            'No podés desactivar tu propio usuario. Pedíselo a otro Administrador.',
+          );
+        }
 
         if (usuario.rol === 'ADMIN') {
           try {
@@ -734,6 +765,21 @@ export class UsuariosService {
       throw new NotFoundException('Usuario no encontrado');
     }
     return usuario;
+  }
+
+  /**
+   * BL-369: un Admin no puede quitarse el acceso a sí mismo por error. Se
+   * compara con el sub del token (keycloakId), que no se puede falsificar
+   * desde el cliente.
+   */
+  private asegurarNoEsUnoMismo(
+    actorKeycloakId: string,
+    keycloakIdDelUsuario: string,
+    mensaje: string,
+  ) {
+    if (actorKeycloakId === keycloakIdDelUsuario) {
+      throw new ForbiddenException(mensaje);
+    }
   }
 
   /** RF.19: nunca puede quedar un tenant sin ningún Admin activo. */

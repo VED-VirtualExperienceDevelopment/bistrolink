@@ -1291,4 +1291,72 @@ describe('UsuariosService', () => {
       expect(resultado[0]).not.toHaveProperty('ultimoIngreso');
     });
   });
+
+  describe('el admin no actúa sobre sí mismo (BL-369)', () => {
+    const propio = {
+      id: 'usuario-propio',
+      keycloakId: ACTOR_KEYCLOAK_ID,
+      rol: 'ADMIN',
+      activo: true,
+      nombre: 'Ana',
+      apellido: 'Admin',
+      email: 'ana@ejemplo.com',
+    };
+
+    beforeEach(() => {
+      tx().usuario.findUnique.mockResolvedValue(propio);
+      // Hay otro Admin: el rechazo no es por RF.19.
+      tx().usuario.count.mockResolvedValue(1);
+    });
+
+    it('[TC-U-088] [S] UsuariosService.desactivar responde 403 si el admin se desactiva a sí mismo, sin tocar Keycloak, y audita el intento', async () => {
+      await expect(
+        service.desactivar(TENANT_ID, ACTOR_KEYCLOAK_ID, 'usuario-propio'),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(keycloakAdmin.setEnabled).not.toHaveBeenCalled();
+      expect(tx().usuario.update).not.toHaveBeenCalled();
+      expect(auditLog.registrar).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: AuditAction.USUARIO_DESACTIVACION_RECHAZADA,
+          detalle: { rol: 'ADMIN', motivo: 'propio_usuario' },
+        }),
+      );
+    });
+
+    it('[TC-U-089] [S] UsuariosService.actualizar responde 403 si el admin se cambia su propio rol', async () => {
+      await expect(
+        service.actualizar(TENANT_ID, ACTOR_KEYCLOAK_ID, 'usuario-propio', {
+          rol: 'MOZO',
+        }),
+      ).rejects.toThrow('No podés cambiar tu propio rol');
+
+      expect(keycloakAdmin.assignRealmRole).not.toHaveBeenCalled();
+      expect(tx().usuario.update).not.toHaveBeenCalled();
+    });
+
+    it('[TC-U-090] UsuariosService.actualizar deja que el admin edite sus propios datos', async () => {
+      tx().usuario.update.mockResolvedValue({ ...propio, nombre: 'Ana María' });
+
+      await expect(
+        service.actualizar(TENANT_ID, ACTOR_KEYCLOAK_ID, 'usuario-propio', {
+          nombre: 'Ana María',
+          rol: 'ADMIN', // el mismo rol: no es un cambio
+        }),
+      ).resolves.toMatchObject({ nombre: 'Ana María' });
+      expect(keycloakAdmin.actualizarPerfil).toHaveBeenCalledWith(
+        ACTOR_KEYCLOAK_ID,
+        { firstName: 'Ana María' },
+      );
+    });
+
+    it('[TC-U-091] [S] UsuariosService.cerrarSesiones responde 403 sobre las propias sesiones', async () => {
+      await expect(
+        service.cerrarSesiones(TENANT_ID, ACTOR_KEYCLOAK_ID, 'usuario-propio'),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(keycloakAdmin.logoutUser).not.toHaveBeenCalled();
+      expect(auditLog.registrar).not.toHaveBeenCalled();
+    });
+  });
 });
