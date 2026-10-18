@@ -50,12 +50,13 @@ export default defineConfig({
     {
       name: "mobile-chrome",
       use: { ...devices["Pixel 5"] },
-      testMatch: /menu-publico\.spec\.ts/,
+      // BL-355: la landing también se prueba en celular.
+      testMatch: /(menu-publico|landing-institucional)\.spec\.ts/,
     },
     {
       name: "mobile-safari",
       use: { ...devices["iPhone 12"] },
-      testMatch: /menu-publico\.spec\.ts/,
+      testMatch: /(menu-publico|landing-institucional)\.spec\.ts/,
     },
     {
       name: "desktop-safari",
@@ -64,7 +65,7 @@ export default defineConfig({
       // login de Keycloak). Los casos que necesitan sesión se saltean en
       // WebKit dentro del spec: ver el comentario de qrMesas en
       // support/auth.ts.
-      testMatch: /(menu-publico|ingreso)\.spec\.ts/,
+      testMatch: /(menu-publico|ingreso|landing-institucional)\.spec\.ts/,
     },
   ],
 });
