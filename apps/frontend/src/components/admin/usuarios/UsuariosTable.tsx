@@ -9,6 +9,7 @@ interface Props {
   onDesactivar: (usuario: Usuario) => void;
   onReactivar: (usuario: Usuario) => void;
   onRestablecerContrasena: (usuario: Usuario) => void;
+  onCerrarSesiones: (usuario: Usuario) => void;
 }
 
 const ROL_LABEL: Record<Usuario['rol'], string> = {
@@ -38,10 +39,10 @@ const CLASE_ACCION =
 // acciones); en el celular, cada usuario es una tarjeta (una sola columna).
 // Cada fila es su propia grilla, así que todas las columnas tienen ancho fijo
 // salvo la de la persona: con "auto", una fila con menos acciones (la cocina
-// no tiene «Editar rol») corría el rol y el estado. 10rem = 3 botones de
-// 48 px + 2 espacios de 8 px.
+// no tiene «Editar») corría el rol y el estado. BL-367: 13.5rem = 4 botones
+// de 48 px + 3 espacios de 8 px.
 const COLUMNAS =
-  'md:grid md:grid-cols-[minmax(0,1fr)_10rem_9rem_10rem] md:items-center md:gap-4';
+  'md:grid md:grid-cols-[minmax(0,1fr)_10rem_9rem_13.5rem] md:items-center md:gap-4';
 
 /**
  * Listado de usuarios. BL-364: cada acción tiene un nombre que dice a quién
@@ -54,6 +55,7 @@ export function UsuariosTable({
   onDesactivar,
   onReactivar,
   onRestablecerContrasena,
+  onCerrarSesiones,
 }: Props) {
   if (usuarios.length === 0) {
     return (
@@ -167,6 +169,21 @@ export function UsuariosTable({
                   >
                     <span className="material-symbols-outlined text-[22px]" aria-hidden="true">
                       lock_reset
+                    </span>
+                  </button>
+                )}
+                {/* BL-367: solo para usuarios activos (uno desactivado ya no
+                    tiene sesiones: desactivar las cierra). Incluye la cocina. */}
+                {usuario.activo && (
+                  <button
+                    type="button"
+                    onClick={() => onCerrarSesiones(usuario)}
+                    aria-label={`Cerrar las sesiones de ${nombre}`}
+                    title="Cerrar sesiones"
+                    className={`${CLASE_ACCION} hover:bg-surface-container-high hover:text-primary`}
+                  >
+                    <span className="material-symbols-outlined text-[22px]" aria-hidden="true">
+                      logout
                     </span>
                   </button>
                 )}

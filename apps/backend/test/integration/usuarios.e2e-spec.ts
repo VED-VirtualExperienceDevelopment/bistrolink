@@ -1208,3 +1208,152 @@ describe('Gestión de usuarios (HU-013) - editar datos (BL-366)', () => {
     },
   );
 });
+
+// ── BL-367: cerrar las sesiones de un usuario ───────────────────────────────
+describe('Gestión de usuarios (HU-013) - cerrar sesiones (BL-367)', () => {
+  const COCINA_B_KEYCLOAK_ID = '0fd5421a-a1f4-4fe4-ab95-8a3482a3e5cd'; // test-users.json
+
+  let app: INestApplication;
+  let prisma: PrismaClient;
+  let creado: { id: string; keycloakId: string; tenantId: string } | undefined;
+
+  const itConAdmin = ADMIN_PASS ? it : it.skip;
+
+  const adminHeaders = async () => ({
+    Authorization: `Bearer ${await getMasterAdminToken()}`,
+    'Content-Type': 'application/json',
+  });
+
+  async function pedirToken(params: Record<string, string>) {
+    const res = await fetch(
+      `${KEYCLOAK_URL}/realms/${REALM}/protocol/openid-connect/token`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          client_id: CLIENT_ID,
+          client_secret: CLIENT_SECRET,
+          ...params,
+        }),
+      },
+    );
+    return { status: res.status, body: await res.json() };
+  }
+
+  async function sesionesKeycloak(keycloakId: string): Promise<number> {
+    const res = await fetch(
+      `${KEYCLOAK_URL}/admin/realms/${REALM}/users/${keycloakId}/sessions`,
+      { headers: await adminHeaders() },
+    );
+    return ((await res.json()) as unknown[]).length;
+  }
+
+  beforeAll(async () => {
+    const moduleRef: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
+    app = moduleRef.createNestApplication();
+    await app.init();
+    prisma = new PrismaClient();
+  });
+
+  afterAll(async () => {
+    if (creado) {
+      const { keycloakId, tenantId } = creado;
+      await borrarUsuarioKeycloak(keycloakId).catch(() => undefined);
+      await prisma
+        .$transaction(async (tx) => {
+          await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`;
+          await tx.usuario.deleteMany({ where: { keycloakId } });
+        })
+        .catch(() => undefined); // best-effort
+    }
+    await prisma.$disconnect();
+    await app.close();
+  });
+
+  itConAdmin(
+    '[TC-I-069] Usuarios: ADMIN cierra las sesiones de un usuario, que queda sin sesiones y sigue activo',
+    async () => {
+      const tokenAdmin = await getToken(ADMIN_USER, ADMIN_PASS as string);
+      const username = `mozo-sesiones-${Date.now()}`;
+
+      const alta = await request(app.getHttpServer())
+        .post('/usuarios')
+        .set('Authorization', `Bearer ${tokenAdmin}`)
+        .send({
+          username,
+          email: `${username}@bistrolink.dev`,
+          nombre: 'Mozo',
+          apellido: 'Sesiones',
+          rol: 'MOZO',
+          restauranteId: RESTAURANTE_TENANT_A,
+        })
+        .expect(201);
+      creado = {
+        id: alta.body.id,
+        keycloakId: alta.body.keycloakId,
+        tenantId: alta.body.tenantId,
+      };
+      const { id, keycloakId } = creado;
+
+      // Contraseña definitiva para poder abrir una sesión (como TC-I-045; el
+      // nombre y el apellido ya vienen del alta desde BL-361).
+      const base = `${KEYCLOAK_URL}/admin/realms/${REALM}/users/${keycloakId}`;
+      const contrasena = `Sesiones-${Date.now()}`;
+      await fetch(`${base}/reset-password`, {
+        method: 'PUT',
+        headers: await adminHeaders(),
+        body: JSON.stringify({
+          type: 'password',
+          value: contrasena,
+          temporary: false,
+        }),
+      });
+      const login = await pedirToken({
+        grant_type: 'password',
+        username,
+        password: contrasena,
+      });
+      expect(login.status).toBe(200);
+      expect(await sesionesKeycloak(keycloakId)).toBe(1);
+
+      const res = await request(app.getHttpServer())
+        .post(`/usuarios/${id}/cerrar-sesiones`)
+        .set('Authorization', `Bearer ${tokenAdmin}`)
+        .expect(200);
+      expect(res.body).toEqual({ id, sesionesCerradas: true });
+
+      expect(await sesionesKeycloak(keycloakId)).toBe(0);
+      // Su refresh token ya no sirve: el dispositivo tiene que ingresar de nuevo.
+      const refresh = await pedirToken({
+        grant_type: 'refresh_token',
+        refresh_token: login.body.refresh_token,
+      });
+      expect(refresh.status).toBe(400);
+      expect(refresh.body.error).toBe('invalid_grant');
+      // Sigue activo de los dos lados.
+      const usuarioKc = await (
+        await fetch(base, { headers: await adminHeaders() })
+      ).json();
+      expect(usuarioKc.enabled).toBe(true);
+      const fila = await prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT set_config('app.tenant_id', ${creado?.tenantId}, true)`;
+        return tx.usuario.findUnique({ where: { id } });
+      });
+      expect(fila?.activo).toBe(true);
+    },
+  );
+
+  itConAdmin(
+    '[TC-I-070] Usuarios: ADMIN no puede cerrar las sesiones de la cuenta de cocina de otro tenant (404)',
+    async () => {
+      const token = await getToken(ADMIN_USER, ADMIN_PASS as string);
+
+      await request(app.getHttpServer())
+        .post(`/usuarios/cocina/${COCINA_B_KEYCLOAK_ID}/cerrar-sesiones`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(404);
+    },
+  );
+});

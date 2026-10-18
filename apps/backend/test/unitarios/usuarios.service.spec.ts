@@ -4,6 +4,7 @@ import {
   ConflictException,
   ForbiddenException,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { UsuariosService } from '../../src/usuarios/usuarios.service';
 import { TenantPrismaService } from '../../src/prisma/tenant-prisma.service';
@@ -1132,6 +1133,109 @@ describe('UsuariosService', () => {
         }),
       ).rejects.toThrow(NotFoundException);
       expect(keycloakAdmin.actualizarPerfil).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('cerrar sesiones (BL-367)', () => {
+    const COCINA_KC_ID = 'aaaaaaaa-1111-4111-8111-111111111111';
+
+    it('[TC-U-078] UsuariosService.cerrarSesiones cierra las sesiones en Keycloak sin desactivar y lo audita', async () => {
+      tx().usuario.findUnique.mockResolvedValue({
+        id: 'usuario-mozo',
+        rol: 'MOZO',
+        keycloakId: 'kc-mozo',
+        activo: true,
+      });
+
+      const resultado = await service.cerrarSesiones(
+        TENANT_ID,
+        ACTOR_KEYCLOAK_ID,
+        'usuario-mozo',
+      );
+
+      expect(resultado).toEqual({ id: 'usuario-mozo', sesionesCerradas: true });
+      expect(keycloakAdmin.logoutUser).toHaveBeenCalledWith('kc-mozo');
+      // Sigue activo: no se toca enabled ni la fila.
+      expect(keycloakAdmin.setEnabled).not.toHaveBeenCalled();
+      expect(tx().usuario.update).not.toHaveBeenCalled();
+      expect(auditLog.registrar).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: AuditAction.USUARIO_SESIONES_CERRADAS,
+          targetUsuarioId: 'usuario-mozo',
+          detalle: { rol: 'MOZO' },
+        }),
+      );
+    });
+
+    it('[TC-U-079] UsuariosService.cerrarSesiones devuelve 404 si el usuario no es del tenant', async () => {
+      tx().usuario.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.cerrarSesiones(
+          TENANT_ID,
+          ACTOR_KEYCLOAK_ID,
+          'usuario-de-otro-tenant',
+        ),
+      ).rejects.toThrow(NotFoundException);
+      expect(keycloakAdmin.logoutUser).not.toHaveBeenCalled();
+    });
+
+    it('[TC-U-080] UsuariosService.cerrarSesiones responde 503 y no audita si Keycloak no cierra las sesiones', async () => {
+      tx().usuario.findUnique.mockResolvedValue({
+        id: 'usuario-mozo',
+        rol: 'MOZO',
+        keycloakId: 'kc-mozo',
+        activo: true,
+      });
+      keycloakAdmin.logoutUser.mockResolvedValue(false);
+
+      await expect(
+        service.cerrarSesiones(TENANT_ID, ACTOR_KEYCLOAK_ID, 'usuario-mozo'),
+      ).rejects.toThrow(ServiceUnavailableException);
+      expect(auditLog.registrar).not.toHaveBeenCalled();
+    });
+
+    it('[TC-U-081] UsuariosService.cerrarSesionesCocina cierra las sesiones de la cuenta de cocina del tenant', async () => {
+      keycloakAdmin.findUserById.mockResolvedValue({
+        id: COCINA_KC_ID,
+        username: 'cocina',
+        enabled: true,
+        attributes: { tenant_id: [TENANT_ID] },
+      });
+      keycloakAdmin.rolesDeRealm.mockResolvedValue(['COCINA']);
+
+      await expect(
+        service.cerrarSesionesCocina(
+          TENANT_ID,
+          ACTOR_KEYCLOAK_ID,
+          COCINA_KC_ID,
+        ),
+      ).resolves.toEqual({ id: COCINA_KC_ID, sesionesCerradas: true });
+      expect(keycloakAdmin.logoutUser).toHaveBeenCalledWith(COCINA_KC_ID);
+      expect(auditLog.registrar).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: AuditAction.USUARIO_SESIONES_CERRADAS,
+          detalle: { rol: 'COCINA', cuentaCompartida: true },
+        }),
+      );
+    });
+
+    it('[TC-U-082] [S] UsuariosService.cerrarSesionesCocina devuelve 404 con una cuenta de otro tenant y no cierra nada', async () => {
+      keycloakAdmin.findUserById.mockResolvedValue({
+        id: COCINA_KC_ID,
+        username: 'cocina',
+        attributes: { tenant_id: ['otro-tenant'] },
+      });
+      keycloakAdmin.rolesDeRealm.mockResolvedValue(['COCINA']);
+
+      await expect(
+        service.cerrarSesionesCocina(
+          TENANT_ID,
+          ACTOR_KEYCLOAK_ID,
+          COCINA_KC_ID,
+        ),
+      ).rejects.toThrow(NotFoundException);
+      expect(keycloakAdmin.logoutUser).not.toHaveBeenCalled();
     });
   });
 });

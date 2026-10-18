@@ -71,6 +71,20 @@ export class UsuariosController {
     );
   }
 
+  // BL-367: cerrar las sesiones de la cuenta de cocina (sigue activa).
+  @Post('cocina/:keycloakId/cerrar-sesiones')
+  @HttpCode(HttpStatus.OK)
+  cerrarSesionesCocina(
+    @Req() req: { user: AuthenticatedUser },
+    @Param('keycloakId', new ParseUUIDPipe()) keycloakId: string,
+  ) {
+    return this.usuariosService.cerrarSesionesCocina(
+      req.user.tenantId,
+      req.user.sub,
+      keycloakId,
+    );
+  }
+
   @Delete('cocina/:keycloakId')
   desactivarCocina(
     @Req() req: { user: AuthenticatedUser },
@@ -117,6 +131,21 @@ export class UsuariosController {
     @Param('id') id: string,
   ) {
     return this.usuariosService.restablecerContrasena(
+      req.user.tenantId,
+      req.user.sub,
+      id,
+    );
+  }
+
+  // BL-367: cierra las sesiones abiertas sin desactivar al usuario. 200 y no
+  // 201: no se crea ningún recurso.
+  @Post(':id/cerrar-sesiones')
+  @HttpCode(HttpStatus.OK)
+  cerrarSesiones(
+    @Req() req: { user: AuthenticatedUser },
+    @Param('id') id: string,
+  ) {
+    return this.usuariosService.cerrarSesiones(
       req.user.tenantId,
       req.user.sub,
       id,

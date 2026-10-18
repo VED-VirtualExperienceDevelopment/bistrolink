@@ -5,6 +5,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { PrismaClient } from '@prisma/client';
@@ -176,6 +177,71 @@ export class UsuariosService {
     }
 
     return { activo: true as const, id: keycloakId };
+  }
+
+  /**
+   * BL-367: cerrar las sesiones abiertas de una persona sin desactivarla
+   * (por ejemplo, una tablet compartida que quedó con la sesión de un mozo
+   * que ya se fue del turno). Sigue activa: puede volver a ingresar.
+   *
+   * Keycloak cierra las sesiones y revoca los refresh tokens; el access
+   * token que ya tenga cada dispositivo vence solo (15 min como mucho).
+   */
+  async cerrarSesiones(
+    tenantId: string,
+    actorKeycloakId: string,
+    usuarioId: string,
+  ) {
+    // Bajo RLS: un usuario de otro tenant no aparece y responde 404.
+    const usuario = await this.tenantPrisma.runInTenantContext(tenantId, (tx) =>
+      this.obtenerOFallar(tx, usuarioId),
+    );
+    await this.cerrarSesionesEnKeycloak(usuario.keycloakId);
+
+    this.auditLog.registrar({
+      action: AuditAction.USUARIO_SESIONES_CERRADAS,
+      tenantId,
+      actorKeycloakId,
+      targetUsuarioId: usuarioId,
+      detalle: { rol: usuario.rol },
+    });
+
+    return { id: usuarioId, sesionesCerradas: true as const };
+  }
+
+  /** BL-367: lo mismo para la cuenta de cocina (BL-362). */
+  async cerrarSesionesCocina(
+    tenantId: string,
+    actorKeycloakId: string,
+    keycloakId: string,
+  ) {
+    await this.obtenerCuentaCocinaOFallar(tenantId, keycloakId);
+    await this.cerrarSesionesEnKeycloak(keycloakId);
+
+    this.auditLog.registrar({
+      action: AuditAction.USUARIO_SESIONES_CERRADAS,
+      tenantId,
+      actorKeycloakId,
+      targetUsuarioId: keycloakId,
+      detalle: { rol: 'COCINA', cuentaCompartida: true },
+    });
+
+    return { id: keycloakId, sesionesCerradas: true as const };
+  }
+
+  /**
+   * logoutUser no lanza (en desactivar y restablecer, el cierre de sesiones
+   * es un paso secundario). Acá es la acción misma: si Keycloak no las
+   * cierra, se responde 503 para que el admin sepa que tiene que reintentar,
+   * y no se audita algo que no pasó.
+   */
+  private async cerrarSesionesEnKeycloak(keycloakId: string) {
+    const cerradas = await this.keycloakAdmin.logoutUser(keycloakId);
+    if (!cerradas) {
+      throw new ServiceUnavailableException(
+        'No se pudieron cerrar las sesiones. Probá de nuevo en un momento.',
+      );
+    }
   }
 
   /**

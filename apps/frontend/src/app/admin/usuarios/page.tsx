@@ -10,6 +10,7 @@ import { EditarUsuarioDialog } from '@/components/admin/usuarios/EditarUsuarioDi
 import { DesactivarUsuarioDialog } from '@/components/admin/usuarios/DesactivarUsuarioDialog';
 import { ReactivarUsuarioDialog } from '@/components/admin/usuarios/ReactivarUsuarioDialog';
 import { RestablecerContrasenaDialog } from '@/components/admin/usuarios/RestablecerContrasenaDialog';
+import { CerrarSesionesDialog } from '@/components/admin/usuarios/CerrarSesionesDialog';
 import { FiltrosUsuarios } from '@/components/admin/usuarios/FiltrosUsuarios';
 import {
   FILTROS_INICIALES,
@@ -59,6 +60,7 @@ export default function UsuariosPage() {
   const [usuarioADesactivar, setUsuarioADesactivar] = useState<Usuario | null>(null);
   const [usuarioAReactivar, setUsuarioAReactivar] = useState<Usuario | null>(null);
   const [usuarioARestablecer, setUsuarioARestablecer] = useState<Usuario | null>(null);
+  const [usuarioACerrarSesiones, setUsuarioACerrarSesiones] = useState<Usuario | null>(null);
 
   const cargarUsuarios = useCallback(async () => {
     if (!token) return;
@@ -177,6 +179,7 @@ export default function UsuariosPage() {
           onDesactivar={setUsuarioADesactivar}
           onReactivar={setUsuarioAReactivar}
           onRestablecerContrasena={setUsuarioARestablecer}
+          onCerrarSesiones={setUsuarioACerrarSesiones}
         />
       )}
 
@@ -193,7 +196,7 @@ export default function UsuariosPage() {
       {/* BL-366: key por usuario, para que el formulario tome los datos de
           cada persona al abrirse (antes quedaba el valor de la primera). */}
       <EditarUsuarioDialog
-        key={usuarioAEditar?.id ?? 'ninguno'}
+        key={`editar-${usuarioAEditar?.id ?? 'ninguno'}`}
         open={usuarioAEditar !== null}
         onClose={() => setUsuarioAEditar(null)}
         token={token}
@@ -218,6 +221,18 @@ export default function UsuariosPage() {
         onClose={() => setUsuarioARestablecer(null)}
         token={token}
         usuario={usuarioARestablecer}
+      />
+
+      {/* BL-367: key por usuario, así el mensaje de «listo» o de error no
+          queda de una persona a otra. Con prefijo propio: las keys de los
+          diálogos hermanos no se pueden repetir (con los dos cerrados, las
+          dos valían 'ninguno'). */}
+      <CerrarSesionesDialog
+        key={`cerrar-sesiones-${usuarioACerrarSesiones?.id ?? 'ninguno'}`}
+        open={usuarioACerrarSesiones !== null}
+        onClose={() => setUsuarioACerrarSesiones(null)}
+        token={token}
+        usuario={usuarioACerrarSesiones}
       />
 
       <ReactivarUsuarioDialog

@@ -70,6 +70,14 @@ export interface RestablecerContrasenaResponse {
   sesionesCerradas: boolean;
 }
 
+// BL-367: respuesta de POST /usuarios/:id/cerrar-sesiones (y de la cuenta de
+// cocina). Si Keycloak no las cierra, el backend responde 503: no hay
+// «sesionesCerradas: false».
+export interface CerrarSesionesResponse {
+  id: string;
+  sesionesCerradas: true;
+}
+
 export interface ApiErrorBody {
   statusCode: number;
   message: string | string[];
