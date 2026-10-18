@@ -3,7 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 import request = require('supertest');
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import { AppModule } from '../../src/app.module';
 
 const KEYCLOAK_URL = process.env.KEYCLOAK_URL ?? 'http://localhost:8080';
@@ -1485,6 +1485,191 @@ describe('Gestión de usuarios (HU-013) - el admin no actúa sobre sí mismo (BL
       // Sigue siendo Admin y su token sigue sirviendo.
       const despues = await adminYSuFila();
       expect(despues.fila.rol).toBe('ADMIN');
+    },
+  );
+});
+
+// ── BL-382: eliminar definitivamente un usuario sin historial ───────────────
+describe('Gestión de usuarios (HU-013) - eliminar sin historial (BL-382)', () => {
+  let app: INestApplication;
+  let prisma: PrismaClient;
+  // Lo que haya que limpiar si un test falla a mitad de camino.
+  const creados: { id: string; keycloakId: string; tenantId: string }[] = [];
+  const pedidos: { pedidoId: string; mesaId: string; tenantId: string }[] = [];
+
+  const itConAdmin = ADMIN_PASS ? it : it.skip;
+
+  const enTenant = <T>(
+    tenantId: string,
+    fn: (tx: Prisma.TransactionClient) => Promise<T>,
+  ) =>
+    prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`;
+      return fn(tx);
+    });
+
+  async function crearMozo(token: string, prefijo: string) {
+    const username = `${prefijo}-${Date.now()}`;
+    const alta = await request(app.getHttpServer())
+      .post('/usuarios')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        username,
+        email: `${username}@bistrolink.dev`,
+        nombre: 'Mozo',
+        apellido: 'Eliminar',
+        rol: 'MOZO',
+        restauranteId: RESTAURANTE_TENANT_A,
+      })
+      .expect(201);
+    const creado = {
+      id: alta.body.id as string,
+      keycloakId: alta.body.keycloakId as string,
+      tenantId: alta.body.tenantId as string,
+    };
+    creados.push(creado);
+    return creado;
+  }
+
+  async function statusEnKeycloak(keycloakId: string): Promise<number> {
+    const res = await fetch(
+      `${KEYCLOAK_URL}/admin/realms/${REALM}/users/${keycloakId}`,
+      { headers: { Authorization: `Bearer ${await getMasterAdminToken()}` } },
+    );
+    return res.status;
+  }
+
+  beforeAll(async () => {
+    const moduleRef: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
+    app = moduleRef.createNestApplication();
+    await app.init();
+    prisma = new PrismaClient();
+  });
+
+  afterAll(async () => {
+    // best-effort: primero el pedido y la mesa, después los usuarios.
+    for (const { pedidoId, mesaId, tenantId } of pedidos) {
+      await enTenant(tenantId, async (tx) => {
+        await tx.pedido.deleteMany({ where: { id: pedidoId } });
+        await tx.mesa.deleteMany({ where: { id: mesaId } });
+      }).catch(() => undefined);
+    }
+    for (const { keycloakId, tenantId } of creados) {
+      await borrarUsuarioKeycloak(keycloakId).catch(() => undefined);
+      await enTenant(tenantId, (tx) =>
+        tx.usuario.deleteMany({ where: { keycloakId } }),
+      ).catch(() => undefined);
+    }
+    await prisma.$disconnect();
+    await app.close();
+  });
+
+  itConAdmin(
+    '[TC-I-074] Usuarios: ADMIN elimina un usuario sin historial de Keycloak y de la tabla',
+    async () => {
+      const token = await getToken(ADMIN_USER, ADMIN_PASS as string);
+      const { id, keycloakId, tenantId } = await crearMozo(
+        token,
+        'mozo-eliminar',
+      );
+
+      // El listado ofrece eliminarlo: no tiene historial.
+      const antes = await request(app.getHttpServer())
+        .get('/usuarios')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(
+        (antes.body as { id: string; tieneHistorial?: boolean }[]).find(
+          (u) => u.id === id,
+        )?.tieneHistorial,
+      ).toBe(false);
+
+      const res = await request(app.getHttpServer())
+        .delete(`/usuarios/${id}/permanente`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(res.body).toEqual({ eliminado: true, id });
+
+      expect(await statusEnKeycloak(keycloakId)).toBe(404);
+      const fila = await enTenant(tenantId, (tx) =>
+        tx.usuario.findUnique({ where: { id } }),
+      );
+      expect(fila).toBeNull();
+    },
+  );
+
+  itConAdmin(
+    '[TC-I-075] Usuarios: un usuario con pedidos no se elimina (409) y queda igual',
+    async () => {
+      const token = await getToken(ADMIN_USER, ADMIN_PASS as string);
+      const { id, keycloakId, tenantId } = await crearMozo(
+        token,
+        'mozo-historial',
+      );
+
+      // Un pedido tomado por este mozo, en una mesa de prueba.
+      const { pedidoId, mesaId } = await enTenant(tenantId, async (tx) => {
+        const mesa = await tx.mesa.create({
+          data: {
+            tenantId,
+            restauranteId: RESTAURANTE_TENANT_A,
+            numero: 9000 + (Date.now() % 900),
+            estado: 'LIBRE',
+          },
+        });
+        const pedido = await tx.pedido.create({
+          data: {
+            tenantId,
+            restauranteId: RESTAURANTE_TENANT_A,
+            mesaId: mesa.id,
+            usuarioId: id,
+            idempotencyKey: `tc-i-075-${Date.now()}`,
+            estado: 'ENTREGADO',
+            canal: 'QR',
+          },
+        });
+        return { pedidoId: pedido.id, mesaId: mesa.id };
+      });
+      pedidos.push({ pedidoId, mesaId, tenantId });
+
+      const res = await request(app.getHttpServer())
+        .delete(`/usuarios/${id}/permanente`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(409);
+      expect(res.body.message).toBe(
+        'Tiene historial: desactivalo en lugar de eliminarlo.',
+      );
+
+      expect(await statusEnKeycloak(keycloakId)).toBe(200);
+      const fila = await enTenant(tenantId, (tx) =>
+        tx.usuario.findUnique({ where: { id } }),
+      );
+      expect(fila?.activo).toBe(true);
+    },
+  );
+
+  itConAdmin(
+    '[TC-I-076] Usuarios: ADMIN no puede eliminarse a sí mismo (403)',
+    async () => {
+      const token = await getToken(ADMIN_USER, ADMIN_PASS as string);
+      const { sub } = JSON.parse(
+        Buffer.from(token.split('.')[1], 'base64url').toString(),
+      ) as { sub: string };
+      const lista = await request(app.getHttpServer())
+        .get('/usuarios')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      const propio = (lista.body as { id: string; keycloakId: string }[]).find(
+        (u) => u.keycloakId === sub,
+      );
+      if (!propio) throw new Error('El admin de prueba no tiene fila');
+
+      await request(app.getHttpServer())
+        .delete(`/usuarios/${propio.id}/permanente`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
     },
   );
 });

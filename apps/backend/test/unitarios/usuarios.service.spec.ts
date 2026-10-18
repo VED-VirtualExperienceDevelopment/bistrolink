@@ -36,6 +36,7 @@ describe('UsuariosService', () => {
         update: jest.fn(),
         findUnique: jest.fn(),
         findMany: jest.fn().mockResolvedValue([]),
+        delete: jest.fn(),
         count: jest.fn(),
       },
       // Usado por lockTenant() para el advisory lock (pg_advisory_xact_lock).
@@ -1412,6 +1413,133 @@ describe('UsuariosService', () => {
 
       expect(keycloakAdmin.logoutUser).not.toHaveBeenCalled();
       expect(auditLog.registrar).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('eliminar un usuario sin historial (BL-382)', () => {
+    const sinHistorial = { pedidosComoMozo: 0, historial: 0 };
+    const mozo = (conteo = sinHistorial) => ({
+      id: 'usuario-mozo',
+      keycloakId: 'kc-mozo',
+      rol: 'MOZO',
+      activo: true,
+      _count: conteo,
+    });
+
+    it('[TC-U-097] UsuariosService.eliminar borra la fila y el usuario de Keycloak, y lo audita sin datos personales', async () => {
+      tx().usuario.findUnique.mockResolvedValue(mozo());
+
+      await expect(
+        service.eliminar(TENANT_ID, ACTOR_KEYCLOAK_ID, 'usuario-mozo'),
+      ).resolves.toEqual({ eliminado: true, id: 'usuario-mozo' });
+
+      expect(tx().usuario.delete).toHaveBeenCalledWith({
+        where: { id: 'usuario-mozo' },
+      });
+      expect(keycloakAdmin.deleteUser).toHaveBeenCalledWith('kc-mozo');
+      // Primero la fila, después Keycloak (si Keycloak falla, rollback).
+      expect(tx().usuario.delete.mock.invocationCallOrder[0]).toBeLessThan(
+        keycloakAdmin.deleteUser.mock.invocationCallOrder[0],
+      );
+      expect(auditLog.registrar).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: AuditAction.USUARIO_ELIMINADO,
+          targetUsuarioId: 'usuario-mozo',
+          detalle: { rol: 'MOZO' },
+        }),
+      );
+    });
+
+    it('[TC-U-098] UsuariosService.eliminar responde 409 si el usuario tiene pedidos o historial, sin borrar nada', async () => {
+      for (const conteo of [
+        { pedidosComoMozo: 3, historial: 0 },
+        { pedidosComoMozo: 0, historial: 1 },
+      ]) {
+        tx().usuario.findUnique.mockResolvedValue(mozo(conteo));
+
+        await expect(
+          service.eliminar(TENANT_ID, ACTOR_KEYCLOAK_ID, 'usuario-mozo'),
+        ).rejects.toThrow(
+          'Tiene historial: desactivalo en lugar de eliminarlo.',
+        );
+      }
+      expect(tx().usuario.delete).not.toHaveBeenCalled();
+      expect(keycloakAdmin.deleteUser).not.toHaveBeenCalled();
+      expect(auditLog.registrar).not.toHaveBeenCalled();
+    });
+
+    it('[TC-U-099] [S] UsuariosService.eliminar responde 404 con un usuario de otro tenant y 403 con el propio', async () => {
+      tx().usuario.findUnique.mockResolvedValue(null);
+      await expect(
+        service.eliminar(
+          TENANT_ID,
+          ACTOR_KEYCLOAK_ID,
+          'usuario-de-otro-tenant',
+        ),
+      ).rejects.toThrow(NotFoundException);
+
+      tx().usuario.findUnique.mockResolvedValue({
+        ...mozo(),
+        rol: 'ADMIN',
+        keycloakId: ACTOR_KEYCLOAK_ID,
+      });
+      await expect(
+        service.eliminar(TENANT_ID, ACTOR_KEYCLOAK_ID, 'usuario-mozo'),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(tx().usuario.delete).not.toHaveBeenCalled();
+      expect(keycloakAdmin.deleteUser).not.toHaveBeenCalled();
+    });
+
+    it('[TC-U-100] UsuariosService.eliminar no deja al tenant sin Admin activo (RF.19)', async () => {
+      tx().usuario.findUnique.mockResolvedValue({ ...mozo(), rol: 'ADMIN' });
+      tx().usuario.count.mockResolvedValue(0);
+
+      await expect(
+        service.eliminar(TENANT_ID, ACTOR_KEYCLOAK_ID, 'usuario-mozo'),
+      ).rejects.toThrow(ConflictException);
+      expect(tx().usuario.delete).not.toHaveBeenCalled();
+    });
+
+    it('[TC-U-101] UsuariosService.eliminar no audita si Keycloak falla (la transacción hace rollback de la fila)', async () => {
+      tx().usuario.findUnique.mockResolvedValue(mozo());
+      keycloakAdmin.deleteUser.mockRejectedValue(new Error('Keycloak caído'));
+
+      await expect(
+        service.eliminar(TENANT_ID, ACTOR_KEYCLOAK_ID, 'usuario-mozo'),
+      ).rejects.toThrow('Keycloak caído');
+      expect(auditLog.registrar).not.toHaveBeenCalled();
+    });
+
+    it('[TC-U-102] UsuariosService.listar informa si cada usuario tiene historial, sin exponer el conteo', async () => {
+      tx().usuario.findMany.mockResolvedValue([
+        {
+          id: 'nuevo',
+          keycloakId: 'kc-1',
+          rol: 'MOZO',
+          activo: true,
+          _count: sinHistorial,
+        },
+        {
+          id: 'con-pedidos',
+          keycloakId: 'kc-2',
+          rol: 'MOZO',
+          activo: true,
+          _count: { pedidosComoMozo: 5, historial: 2 },
+        },
+      ]);
+
+      const resultado = await service.listar(TENANT_ID);
+
+      expect(resultado[0]).toMatchObject({
+        id: 'nuevo',
+        tieneHistorial: false,
+      });
+      expect(resultado[1]).toMatchObject({
+        id: 'con-pedidos',
+        tieneHistorial: true,
+      });
+      expect(resultado[0]).not.toHaveProperty('_count');
     });
   });
 });

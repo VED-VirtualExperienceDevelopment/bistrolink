@@ -60,6 +60,18 @@ function cambiosDePerfil(
   return { perfil, campos };
 }
 
+/**
+ * BL-382: un usuario con pedidos tomados o cambios de estado registrados no
+ * se puede eliminar (se perdería quién hizo qué): solo desactivar. Sin el
+ * conteo, por las dudas, se lo considera con historial.
+ */
+function tieneHistorial(
+  conteo: { pedidosComoMozo: number; historial: number } | undefined,
+): boolean {
+  if (!conteo) return true;
+  return conteo.pedidosComoMozo + conteo.historial > 0;
+}
+
 @Injectable()
 export class UsuariosService {
   private readonly logger = new Logger(UsuariosService.name);
@@ -90,13 +102,16 @@ export class UsuariosService {
           activo: true,
           restauranteId: true,
           createdAt: true,
+          // BL-382: si tiene pedidos o historial, no se puede eliminar.
+          _count: { select: { pedidosComoMozo: true, historial: true } },
         },
       }),
     );
 
-    const personal = filas.map((fila) => ({
+    const personal = filas.map(({ _count, ...fila }) => ({
       ...fila,
       cuentaCompartida: false,
+      tieneHistorial: tieneHistorial(_count),
     }));
     const cocina = await this.listarCuentasCocina(
       tenantId,
@@ -789,6 +804,67 @@ export class UsuariosService {
       throw new NotFoundException('Usuario no encontrado');
     }
     return usuario;
+  }
+
+  /**
+   * BL-382: eliminar definitivamente a un usuario creado por error. Solo si
+   * no tiene historial (pedidos ni cambios de estado); si lo tiene, 409 y se
+   * desactiva en su lugar. Mismas reglas que desactivar: no el propio
+   * usuario (BL-369) ni el último Admin activo (RF.19).
+   *
+   * La fila se borra primero y Keycloak después, dentro de la transacción:
+   * si Keycloak falla, la fila vuelve (rollback) y nunca queda una identidad
+   * habilitada sin fila. El caso inverso (la fila ya borrada en la base y
+   * Keycloak sin borrar) no puede pasar: el commit es lo último.
+   */
+  async eliminar(tenantId: string, actorKeycloakId: string, usuarioId: string) {
+    const { rol } = await this.tenantPrisma.runInTenantContext(
+      tenantId,
+      async (tx) => {
+        await this.lockTenant(tx, tenantId);
+
+        // Bajo RLS: un usuario de otro tenant no aparece y responde 404.
+        const usuario = await tx.usuario.findUnique({
+          where: { id: usuarioId },
+          include: {
+            _count: { select: { pedidosComoMozo: true, historial: true } },
+          },
+        });
+        if (!usuario) {
+          throw new NotFoundException('Usuario no encontrado');
+        }
+        this.asegurarNoEsUnoMismo(
+          actorKeycloakId,
+          usuario.keycloakId,
+          'No podés eliminar tu propio usuario. Pedíselo a otro Administrador.',
+        );
+        if (tieneHistorial(usuario._count)) {
+          throw new ConflictException(
+            'Tiene historial: desactivalo en lugar de eliminarlo.',
+          );
+        }
+        if (usuario.rol === 'ADMIN') {
+          await this.asegurarNoEsUltimoAdmin(tx, usuarioId);
+        }
+
+        await tx.usuario.delete({ where: { id: usuarioId } });
+        await this.keycloakAdmin.deleteUser(usuario.keycloakId);
+        return { rol: usuario.rol };
+      },
+      { timeout: 10_000 }, // margen extra: la transacción espera a Keycloak
+    );
+
+    // Fuera de la transacción: solo se audita lo que quedó hecho. Sin datos
+    // personales: el rol y el id (que ya no existe en la tabla).
+    this.auditLog.registrar({
+      action: AuditAction.USUARIO_ELIMINADO,
+      tenantId,
+      actorKeycloakId,
+      targetUsuarioId: usuarioId,
+      detalle: { rol },
+    });
+
+    return { eliminado: true as const, id: usuarioId };
   }
 
   /**

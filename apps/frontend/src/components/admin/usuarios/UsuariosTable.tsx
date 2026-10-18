@@ -6,6 +6,7 @@ import {
   esUsuarioPropio,
   nombreCompleto,
   nombreParaMostrar,
+  puedeEliminarse,
   textoUltimoIngreso,
 } from './Usuarios.utils';
 
@@ -16,6 +17,7 @@ interface Props {
   onReactivar: (usuario: Usuario) => void;
   onRestablecerContrasena: (usuario: Usuario) => void;
   onCerrarSesiones: (usuario: Usuario) => void;
+  onEliminar: (usuario: Usuario) => void;
   /** BL-369: keycloakId de quien está usando la pantalla (sub del token). */
   keycloakIdPropio?: string;
 }
@@ -47,10 +49,10 @@ const CLASE_ACCION =
 // acciones); en el celular, cada usuario es una tarjeta (una sola columna).
 // Cada fila es su propia grilla, así que todas las columnas tienen ancho fijo
 // salvo la de la persona: con "auto", una fila con menos acciones (la cocina
-// no tiene «Editar») corría el rol y el estado. BL-367: 13.5rem = 4 botones
-// de 48 px + 3 espacios de 8 px.
+// no tiene «Editar») corría el rol y el estado. BL-382: 17rem = 5 botones
+// de 48 px + 4 espacios de 8 px (con «Eliminar», en usuarios sin historial).
 const COLUMNAS =
-  'md:grid md:grid-cols-[minmax(0,1fr)_10rem_9rem_13.5rem] md:items-center md:gap-4';
+  'md:grid md:grid-cols-[minmax(0,1fr)_10rem_9rem_17rem] md:items-center md:gap-4';
 
 /**
  * Listado de usuarios. BL-364: cada acción tiene un nombre que dice a quién
@@ -64,6 +66,7 @@ export function UsuariosTable({
   onReactivar,
   onRestablecerContrasena,
   onCerrarSesiones,
+  onEliminar,
   keycloakIdPropio,
 }: Readonly<Props>) {
   if (usuarios.length === 0) {
@@ -250,6 +253,21 @@ export function UsuariosTable({
                   >
                     <span className="material-symbols-outlined text-[22px]" aria-hidden="true">
                       how_to_reg
+                    </span>
+                  </button>
+                )}
+                {/* BL-382: solo sin historial (creado por error). A los
+                    demás se los desactiva. */}
+                {puedeEliminarse(usuario, keycloakIdPropio) && (
+                  <button
+                    type="button"
+                    onClick={() => onEliminar(usuario)}
+                    aria-label={`Eliminar a ${nombre}`}
+                    title="Eliminar"
+                    className={`${CLASE_ACCION} hover:bg-error-container hover:text-error`}
+                  >
+                    <span className="material-symbols-outlined text-[22px]" aria-hidden="true">
+                      delete
                     </span>
                   </button>
                 )}

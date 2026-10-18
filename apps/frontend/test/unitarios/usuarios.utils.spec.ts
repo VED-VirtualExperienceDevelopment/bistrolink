@@ -11,6 +11,7 @@ import {
   nombreParaMostrar,
   normalizarParaBuscar,
   primerCampoConError,
+  puedeEliminarse,
   rutaUsuario,
   textoCantidadUsuarios,
   textoUltimoIngreso,
@@ -385,5 +386,36 @@ describe("cambiosDeUsuario (BL-366)", () => {
         },
       ),
     ).toEqual({ nombre: "Ana" });
+  });
+});
+
+describe("puedeEliminarse (BL-382)", () => {
+  const nuevo = {
+    keycloakId: "kc-juan",
+    rol: "MOZO" as const,
+    tieneHistorial: false,
+  };
+
+  it("se puede eliminar a quien no tiene historial", () => {
+    expect(puedeEliminarse(nuevo, "kc-ana")).toBe(true);
+  });
+
+  it("no con historial, ni si el dato no vino", () => {
+    expect(puedeEliminarse({ ...nuevo, tieneHistorial: true }, "kc-ana")).toBe(
+      false,
+    );
+    expect(
+      puedeEliminarse({ ...nuevo, tieneHistorial: undefined }, "kc-ana"),
+    ).toBe(false);
+  });
+
+  it("nunca el propio usuario ni la cuenta de cocina", () => {
+    expect(puedeEliminarse(nuevo, "kc-juan")).toBe(false);
+    expect(
+      puedeEliminarse(
+        { ...nuevo, rol: "COCINA", cuentaCompartida: true },
+        "kc-ana",
+      ),
+    ).toBe(false);
   });
 });

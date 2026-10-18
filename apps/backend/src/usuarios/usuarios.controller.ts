@@ -152,6 +152,13 @@ export class UsuariosController {
     );
   }
 
+  // BL-382: eliminar definitivamente (solo usuarios sin historial). Ruta
+  // propia: DELETE /usuarios/:id sigue siendo desactivar.
+  @Delete(':id/permanente')
+  eliminar(@Req() req: { user: AuthenticatedUser }, @Param('id') id: string) {
+    return this.usuariosService.eliminar(req.user.tenantId, req.user.sub, id);
+  }
+
   @Delete(':id')
   desactivar(@Req() req: { user: AuthenticatedUser }, @Param('id') id: string) {
     return this.usuariosService.desactivar(req.user.tenantId, req.user.sub, id);

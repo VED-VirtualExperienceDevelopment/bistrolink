@@ -28,6 +28,9 @@ export interface Usuario {
   // BL-368: último LOGIN en Keycloak (ISO). null = sin ingresos en los
   // últimos 90 días; undefined = el backend no lo pudo leer (no se muestra).
   ultimoIngreso?: string | null;
+  // BL-382: tiene pedidos o historial de estados. Solo los que no tienen se
+  // pueden eliminar. No viene en la cuenta de cocina (no se elimina).
+  tieneHistorial?: boolean;
 }
 
 export interface CrearUsuarioPayload {
@@ -51,6 +54,12 @@ export interface ActualizarUsuarioPayload {
   nombre?: string;
   apellido?: string;
   email?: string;
+}
+
+// BL-382: respuesta de DELETE /usuarios/:id/permanente.
+export interface EliminarResponse {
+  eliminado: true;
+  id: string;
 }
 
 export interface DesactivarResponse {

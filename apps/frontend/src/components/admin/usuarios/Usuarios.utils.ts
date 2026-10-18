@@ -140,6 +140,25 @@ export function esUsuarioPropio(
   return Boolean(keycloakIdPropio) && usuario.keycloakId === keycloakIdPropio;
 }
 
+/**
+ * BL-382: se ofrece «Eliminar» solo a quien no tiene historial (sin pedidos
+ * ni cambios de estado). Nunca a la cuenta de cocina ni al propio usuario.
+ * Si el dato no vino, no se ofrece: para los demás está «Desactivar».
+ */
+export function puedeEliminarse(
+  usuario: Pick<
+    Usuario,
+    "keycloakId" | "rol" | "cuentaCompartida" | "tieneHistorial"
+  >,
+  keycloakIdPropio: string | undefined,
+): boolean {
+  return (
+    usuario.tieneHistorial === false &&
+    !esCuentaCocina(usuario) &&
+    !esUsuarioPropio(usuario, keycloakIdPropio)
+  );
+}
+
 // ── BL-363: búsqueda y filtros del listado ──────────────────────────────────
 // Se filtra en el navegador: un restaurante tiene pocos usuarios.
 

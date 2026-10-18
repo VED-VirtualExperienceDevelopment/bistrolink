@@ -11,6 +11,7 @@ import { DesactivarUsuarioDialog } from '@/components/admin/usuarios/DesactivarU
 import { ReactivarUsuarioDialog } from '@/components/admin/usuarios/ReactivarUsuarioDialog';
 import { RestablecerContrasenaDialog } from '@/components/admin/usuarios/RestablecerContrasenaDialog';
 import { CerrarSesionesDialog } from '@/components/admin/usuarios/CerrarSesionesDialog';
+import { EliminarUsuarioDialog } from '@/components/admin/usuarios/EliminarUsuarioDialog';
 import { FiltrosUsuarios } from '@/components/admin/usuarios/FiltrosUsuarios';
 import {
   FILTROS_INICIALES,
@@ -59,6 +60,7 @@ export default function UsuariosPage() {
   const [usuarioAEditar, setUsuarioAEditar] = useState<Usuario | null>(null);
   const [usuarioADesactivar, setUsuarioADesactivar] = useState<Usuario | null>(null);
   const [usuarioAReactivar, setUsuarioAReactivar] = useState<Usuario | null>(null);
+  const [usuarioAEliminar, setUsuarioAEliminar] = useState<Usuario | null>(null);
   const [usuarioARestablecer, setUsuarioARestablecer] = useState<Usuario | null>(null);
   const [usuarioACerrarSesiones, setUsuarioACerrarSesiones] = useState<Usuario | null>(null);
 
@@ -180,6 +182,7 @@ export default function UsuariosPage() {
           onReactivar={setUsuarioAReactivar}
           onRestablecerContrasena={setUsuarioARestablecer}
           onCerrarSesiones={setUsuarioACerrarSesiones}
+          onEliminar={setUsuarioAEliminar}
           keycloakIdPropio={keycloakId}
         />
       )}
@@ -245,6 +248,16 @@ export default function UsuariosPage() {
         onReactivado={(id) =>
           setUsuarios((prev) => prev.map((u) => (u.id === id ? { ...u, activo: true } : u)))
         }
+      />
+
+      {/* BL-382: al eliminarlo, sale del listado. */}
+      <EliminarUsuarioDialog
+        key={`eliminar-${usuarioAEliminar?.id ?? 'ninguno'}`}
+        open={usuarioAEliminar !== null}
+        onClose={() => setUsuarioAEliminar(null)}
+        token={token}
+        usuario={usuarioAEliminar}
+        onEliminado={(id) => setUsuarios((prev) => prev.filter((u) => u.id !== id))}
       />
     </div>
   );
