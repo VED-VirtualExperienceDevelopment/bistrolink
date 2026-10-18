@@ -45,6 +45,15 @@ export interface ReactivarResponse {
   id: string;
 }
 
+// BL-359: respuesta de POST /usuarios/:id/restablecer-contrasena.
+export interface RestablecerContrasenaResponse {
+  id: string;
+  // Igual que en el alta: se muestra una única vez y no se guarda.
+  temporaryPassword: string;
+  // false si Keycloak no pudo cerrar sus sesiones abiertas.
+  sesionesCerradas: boolean;
+}
+
 export interface ApiErrorBody {
   statusCode: number;
   message: string | string[];

@@ -48,6 +48,7 @@ describe('UsuariosService', () => {
       setEnabled: jest.fn(),
       deleteUser: jest.fn(),
       logoutUser: jest.fn().mockResolvedValue(true),
+      resetPassword: jest.fn(),
     };
 
     const auditLogMock = {
@@ -540,6 +541,147 @@ describe('UsuariosService', () => {
       expect(keycloakAdmin.setEnabled).not.toHaveBeenCalled();
       expect(tx().usuario.update).not.toHaveBeenCalled();
       expect(auditLog.registrar).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('restablecerContrasena (BL-359)', () => {
+    const mozoActivo = {
+      id: 'usuario-mozo',
+      rol: 'MOZO',
+      keycloakId: 'kc-mozo',
+      activo: true,
+    };
+
+    it('[TC-U-040] UsuariosService.restablecerContrasena genera una temporal, cierra las sesiones y lo audita sin la contraseña', async () => {
+      tx().usuario.findUnique.mockResolvedValue(mozoActivo);
+
+      const resultado = await service.restablecerContrasena(
+        TENANT_ID,
+        ACTOR_KEYCLOAK_ID,
+        'usuario-mozo',
+      );
+
+      // Contraseña temporal nueva (16 caracteres, como en el alta).
+      expect(resultado.temporaryPassword).toHaveLength(16);
+      expect(keycloakAdmin.resetPassword).toHaveBeenCalledWith(
+        'kc-mozo',
+        resultado.temporaryPassword,
+      );
+
+      // Las sesiones se cierran después de cambiar la contraseña.
+      expect(keycloakAdmin.logoutUser).toHaveBeenCalledWith('kc-mozo');
+      expect(
+        keycloakAdmin.resetPassword.mock.invocationCallOrder[0],
+      ).toBeLessThan(keycloakAdmin.logoutUser.mock.invocationCallOrder[0]);
+
+      expect(resultado).toEqual({
+        id: 'usuario-mozo',
+        temporaryPassword: resultado.temporaryPassword,
+        sesionesCerradas: true,
+      });
+
+      expect(auditLog.registrar).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: AuditAction.USUARIO_CONTRASENA_RESTABLECIDA,
+          tenantId: TENANT_ID,
+          actorKeycloakId: ACTOR_KEYCLOAK_ID,
+          targetUsuarioId: 'usuario-mozo',
+          detalle: { rol: 'MOZO', sesionesCerradas: true },
+        }),
+      );
+      // [S] La contraseña no aparece en la auditoría.
+      expect(JSON.stringify(auditLog.registrar.mock.calls)).not.toContain(
+        resultado.temporaryPassword,
+      );
+    });
+
+    it('[TC-U-041] UsuariosService.restablecerContrasena genera una contraseña distinta cada vez', async () => {
+      tx().usuario.findUnique.mockResolvedValue(mozoActivo);
+
+      const primera = await service.restablecerContrasena(
+        TENANT_ID,
+        ACTOR_KEYCLOAK_ID,
+        'usuario-mozo',
+      );
+      const segunda = await service.restablecerContrasena(
+        TENANT_ID,
+        ACTOR_KEYCLOAK_ID,
+        'usuario-mozo',
+      );
+
+      expect(primera.temporaryPassword).not.toBe(segunda.temporaryPassword);
+    });
+
+    it('[TC-U-042] UsuariosService.restablecerContrasena devuelve 404 si el usuario no existe en el tenant', async () => {
+      tx().usuario.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.restablecerContrasena(
+          TENANT_ID,
+          ACTOR_KEYCLOAK_ID,
+          'usuario-de-otro-tenant',
+        ),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(keycloakAdmin.resetPassword).not.toHaveBeenCalled();
+      expect(auditLog.registrar).not.toHaveBeenCalled();
+    });
+
+    it('[TC-U-043] UsuariosService.restablecerContrasena rechaza con 409 a un usuario desactivado', async () => {
+      tx().usuario.findUnique.mockResolvedValue({
+        ...mozoActivo,
+        activo: false,
+      });
+
+      await expect(
+        service.restablecerContrasena(
+          TENANT_ID,
+          ACTOR_KEYCLOAK_ID,
+          'usuario-mozo',
+        ),
+      ).rejects.toThrow(ConflictException);
+
+      expect(keycloakAdmin.resetPassword).not.toHaveBeenCalled();
+      expect(keycloakAdmin.logoutUser).not.toHaveBeenCalled();
+      expect(auditLog.registrar).not.toHaveBeenCalled();
+    });
+
+    it('[TC-U-044] UsuariosService.restablecerContrasena no cierra sesiones ni audita si Keycloak no cambia la contraseña', async () => {
+      tx().usuario.findUnique.mockResolvedValue(mozoActivo);
+      keycloakAdmin.resetPassword.mockRejectedValue(
+        new Error('Keycloak no disponible'),
+      );
+
+      await expect(
+        service.restablecerContrasena(
+          TENANT_ID,
+          ACTOR_KEYCLOAK_ID,
+          'usuario-mozo',
+        ),
+      ).rejects.toThrow('Keycloak no disponible');
+
+      expect(keycloakAdmin.logoutUser).not.toHaveBeenCalled();
+      expect(auditLog.registrar).not.toHaveBeenCalled();
+    });
+
+    it('[TC-U-045] UsuariosService.restablecerContrasena completa el cambio aunque falle el cierre de sesiones, y lo deja en la auditoría', async () => {
+      tx().usuario.findUnique.mockResolvedValue(mozoActivo);
+      keycloakAdmin.logoutUser.mockResolvedValue(false);
+
+      const resultado = await service.restablecerContrasena(
+        TENANT_ID,
+        ACTOR_KEYCLOAK_ID,
+        'usuario-mozo',
+      );
+
+      expect(resultado.sesionesCerradas).toBe(false);
+      expect(resultado.temporaryPassword).toHaveLength(16);
+      expect(auditLog.registrar).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: AuditAction.USUARIO_CONTRASENA_RESTABLECIDA,
+          detalle: { rol: 'MOZO', sesionesCerradas: false },
+        }),
+      );
     });
   });
 

@@ -3,6 +3,9 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
+  HttpCode,
+  HttpStatus,
   Param,
   Patch,
   Post,
@@ -57,6 +60,23 @@ export class UsuariosController {
   @Patch(':id/activar')
   reactivar(@Req() req: { user: AuthenticatedUser }, @Param('id') id: string) {
     return this.usuariosService.reactivar(req.user.tenantId, req.user.sub, id);
+  }
+
+  // BL-359: genera una contraseña temporal nueva y cierra las sesiones del
+  // usuario. Responde 200 (no 201: no se crea ningún recurso) y con
+  // Cache-Control: no-store, porque la respuesta trae la contraseña.
+  @Post(':id/restablecer-contrasena')
+  @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'no-store')
+  restablecerContrasena(
+    @Req() req: { user: AuthenticatedUser },
+    @Param('id') id: string,
+  ) {
+    return this.usuariosService.restablecerContrasena(
+      req.user.tenantId,
+      req.user.sub,
+      id,
+    );
   }
 
   @Delete(':id')

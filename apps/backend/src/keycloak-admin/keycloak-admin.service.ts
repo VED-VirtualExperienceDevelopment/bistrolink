@@ -423,6 +423,39 @@ export class KeycloakAdminService {
   }
 
   /**
+   * BL-359: reemplaza la contraseña del usuario
+   * (PUT /users/{id}/reset-password, requiere manage-users).
+   *
+   * Con `temporary: true` (el valor por defecto, igual que en el alta),
+   * Keycloak le agrega la acción UPDATE_PASSWORD: en el próximo ingreso le
+   * pide elegir una contraseña nueva antes de dejarlo entrar.
+   *
+   * [S] La contraseña nunca se loguea: los mensajes de error llevan solo el
+   * keycloakId, el status y el body que devuelve Keycloak (que no la incluye).
+   */
+  async resetPassword(
+    keycloakId: string,
+    password: string,
+    temporary = true,
+  ): Promise<void> {
+    const res = await this.adminFetch(`/users/${keycloakId}/reset-password`, {
+      method: 'PUT',
+      body: JSON.stringify({ type: 'password', value: password, temporary }),
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      this.logAndBuildError(
+        `No se pudo restablecer la contraseña del usuario ${keycloakId} en Keycloak`,
+        res.status,
+        body,
+      );
+      throw new InternalServerErrorException(
+        `No se pudo restablecer la contraseña en Keycloak: ${res.status} ${body}`,
+      );
+    }
+  }
+
+  /**
    * BL-272: cierra todas las sesiones del usuario en Keycloak y revoca sus
    * refresh tokens (POST /users/{id}/logout, requiere manage-users).
    *

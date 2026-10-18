@@ -317,6 +317,45 @@ describe('KeycloakAdminService', () => {
     });
   });
 
+  describe('resetPassword (BL-359)', () => {
+    it('[TC-U-046] KeycloakAdminService.resetPassword llama a PUT /users/{id}/reset-password con una contraseña temporal', async () => {
+      mockTokenRequest();
+      fetchMock.mockResolvedValueOnce({ ok: true, status: 204 });
+
+      await expect(
+        service.resetPassword('keycloak-id-123', 'Temporal-123456'),
+      ).resolves.toBeUndefined();
+
+      const [url, init] = fetchMock.mock.calls[1];
+      expect(url).toMatch(
+        /\/admin\/realms\/[^/]+\/users\/keycloak-id-123\/reset-password$/,
+      );
+      expect(init.method).toBe('PUT');
+      expect(JSON.parse(init.body)).toEqual({
+        type: 'password',
+        value: 'Temporal-123456',
+        temporary: true,
+      });
+    });
+
+    it('[TC-U-047] [S] KeycloakAdminService.resetPassword lanza con status/body y loguea el keycloakId, nunca la contraseña', async () => {
+      mockTokenRequest();
+      fetchMock.mockResolvedValueOnce({
+        status: 400,
+        ok: false,
+        text: async () => '{"error":"invalidPasswordMinLengthMessage"}',
+      });
+
+      await expect(
+        service.resetPassword('keycloak-id-para-auditar', 'No-Loguear-123'),
+      ).rejects.toThrow(/400/);
+
+      const todosLosLogs = loggerErrorSpy.mock.calls.flat().join(' ');
+      expect(todosLosLogs).toContain('keycloak-id-para-auditar');
+      expect(todosLosLogs).not.toContain('No-Loguear-123');
+    });
+  });
+
   describe('logoutUser (BL-272)', () => {
     it('[TC-U-025] KeycloakAdminService.logoutUser llama a POST /users/{id}/logout y devuelve true cuando Keycloak cierra las sesiones (204)', async () => {
       mockTokenRequest();

@@ -7,6 +7,7 @@ interface Props {
   onEditarRol: (usuario: Usuario) => void;
   onDesactivar: (usuario: Usuario) => void;
   onReactivar: (usuario: Usuario) => void;
+  onRestablecerContrasena: (usuario: Usuario) => void;
 }
 
 const ROL_LABEL: Record<Usuario['rol'], string> = {
@@ -14,7 +15,13 @@ const ROL_LABEL: Record<Usuario['rol'], string> = {
   MOZO: 'Mozo',
 };
 
-export function UsuariosTable({ usuarios, onEditarRol, onDesactivar, onReactivar }: Props) {
+export function UsuariosTable({
+  usuarios,
+  onEditarRol,
+  onDesactivar,
+  onReactivar,
+  onRestablecerContrasena,
+}: Props) {
   if (usuarios.length === 0) {
     return (
       <div className="rounded-xl border border-outline-variant bg-surface-container-lowest p-12 text-center">
@@ -86,6 +93,20 @@ export function UsuariosTable({ usuarios, onEditarRol, onDesactivar, onReactivar
                 >
                   <span className="material-symbols-outlined text-[20px]">edit</span>
                 </button>
+                {/* BL-359: solo para usuarios activos (uno desactivado no podría ingresar). */}
+                {usuario.activo && (
+                  <button
+                    type="button"
+                    onClick={() => onRestablecerContrasena(usuario)}
+                    aria-label={`Restablecer la contraseña de ${usuario.username ?? `Usuario ${usuario.id.slice(0, 8)}`}`}
+                    title="Restablecer contraseña"
+                    className="rounded-full p-2 text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-primary"
+                  >
+                    <span className="material-symbols-outlined text-[20px]" aria-hidden="true">
+                      lock_reset
+                    </span>
+                  </button>
+                )}
                 {usuario.activo && (
                   <button
                     type="button"

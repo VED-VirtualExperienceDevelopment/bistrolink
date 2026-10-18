@@ -373,6 +373,30 @@ describe('Gestión de usuarios (HU-013) - aislamiento de PATCH y DELETE (BL-265)
       expect((await estadoKeycloakB()).enabled).toBe(false);
     },
   );
+
+  itConAdmin(
+    '[TC-I-060] Usuarios: ADMIN no puede restablecer la contraseña de un usuario de otro tenant (404) (BL-359)',
+    async () => {
+      const token = await getToken(ADMIN_USER, ADMIN_PASS as string);
+
+      const res = await request(app.getHttpServer())
+        .post(`/usuarios/${usuarioIdB}/restablecer-contrasena`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(404);
+      expect(res.body.temporaryPassword).toBeUndefined();
+
+      // El usuario de B se creó sin contraseña: sigue sin ninguna.
+      const credenciales = await (
+        await fetch(
+          `${KEYCLOAK_URL}/admin/realms/${REALM}/users/${keycloakIdB}/credentials`,
+          {
+            headers: { Authorization: `Bearer ${await getMasterAdminToken()}` },
+          },
+        )
+      ).json();
+      expect(credenciales).toEqual([]);
+    },
+  );
 });
 
 // ── BL-272 (BL-262): al desactivar se cierran las sesiones de Keycloak ──────
@@ -615,6 +639,176 @@ describe('Gestión de usuarios (HU-013) - reactivar (BL-358)', () => {
         .patch(`/usuarios/${id}/activar`)
         .set('Authorization', `Bearer ${token}`)
         .expect(200);
+    },
+  );
+});
+
+// ── BL-359: restablecer la contraseña de un usuario (admin) ─────────────────
+// POST /usuarios/:id/restablecer-contrasena reemplaza la contraseña por una
+// temporal nueva y cierra las sesiones del usuario. El caso cruzado (otro
+// tenant → 404) está en el bloque de BL-265 (TC-I-060).
+describe('Gestión de usuarios (HU-013) - restablecer contraseña (BL-359)', () => {
+  let app: INestApplication;
+  let prisma: PrismaClient;
+  let creado: { id: string; keycloakId: string; tenantId: string } | undefined;
+
+  const itConAdmin = ADMIN_PASS ? it : it.skip;
+
+  const adminHeaders = async () => ({
+    Authorization: `Bearer ${await getMasterAdminToken()}`,
+    'Content-Type': 'application/json',
+  });
+
+  async function sesionesKeycloak(keycloakId: string): Promise<number> {
+    const res = await fetch(
+      `${KEYCLOAK_URL}/admin/realms/${REALM}/users/${keycloakId}/sessions`,
+      { headers: await adminHeaders() },
+    );
+    return ((await res.json()) as unknown[]).length;
+  }
+
+  async function login(username: string, password: string) {
+    const res = await fetch(
+      `${KEYCLOAK_URL}/realms/${REALM}/protocol/openid-connect/token`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'password',
+          client_id: CLIENT_ID,
+          client_secret: CLIENT_SECRET,
+          username,
+          password,
+        }),
+      },
+    );
+    return { status: res.status, body: await res.json() };
+  }
+
+  beforeAll(async () => {
+    const moduleRef: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
+    app = moduleRef.createNestApplication();
+    await app.init();
+    prisma = new PrismaClient();
+  });
+
+  afterAll(async () => {
+    if (creado) {
+      const { keycloakId, tenantId } = creado;
+      await borrarUsuarioKeycloak(keycloakId).catch(() => undefined);
+      await prisma
+        .$transaction(async (tx) => {
+          await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`;
+          await tx.usuario.deleteMany({ where: { keycloakId } });
+        })
+        .catch(() => undefined); // best-effort
+    }
+    await prisma.$disconnect();
+    await app.close();
+  });
+
+  itConAdmin(
+    '[TC-I-059] Usuarios: ADMIN restablece la contraseña: la vieja deja de servir, se cierran las sesiones y la temporal pide cambiarla',
+    async () => {
+      const tokenAdmin = await getToken(ADMIN_USER, ADMIN_PASS as string);
+      const username = `mozo-restablecer-${Date.now()}`;
+
+      // 1. Alta por la API y contraseña definitiva por la Admin API, para
+      //    poder abrir una sesión (mismo armado que TC-I-045).
+      const alta = await request(app.getHttpServer())
+        .post('/usuarios')
+        .set('Authorization', `Bearer ${tokenAdmin}`)
+        .send({
+          username,
+          email: `${username}@bistrolink.dev`,
+          rol: 'MOZO',
+          restauranteId: RESTAURANTE_TENANT_A,
+        })
+        .expect(201);
+      creado = {
+        id: alta.body.id,
+        keycloakId: alta.body.keycloakId,
+        tenantId: alta.body.tenantId,
+      };
+      const { id, keycloakId } = creado;
+
+      const passwordVieja = `Vieja-${Date.now()}`;
+      const base = `${KEYCLOAK_URL}/admin/realms/${REALM}/users/${keycloakId}`;
+      await fetch(base, {
+        method: 'PUT',
+        headers: await adminHeaders(),
+        body: JSON.stringify({ firstName: 'Mozo', lastName: 'Restablecer' }),
+      });
+      await fetch(`${base}/reset-password`, {
+        method: 'PUT',
+        headers: await adminHeaders(),
+        body: JSON.stringify({
+          type: 'password',
+          value: passwordVieja,
+          temporary: false,
+        }),
+      });
+
+      // 2. El mozo inicia sesión.
+      expect((await login(username, passwordVieja)).status).toBe(200);
+      expect(await sesionesKeycloak(keycloakId)).toBe(1);
+
+      // 3. El admin restablece la contraseña.
+      const res = await request(app.getHttpServer())
+        .post(`/usuarios/${id}/restablecer-contrasena`)
+        .set('Authorization', `Bearer ${tokenAdmin}`)
+        .expect(200);
+      expect(res.headers['cache-control']).toBe('no-store');
+      expect(res.body.id).toBe(id);
+      expect(res.body.sesionesCerradas).toBe(true);
+      const temporal = res.body.temporaryPassword as string;
+      expect(temporal).toHaveLength(16);
+
+      // 4. No le quedan sesiones abiertas.
+      expect(await sesionesKeycloak(keycloakId)).toBe(0);
+
+      // 5. La contraseña vieja ya no sirve. Keycloak 26 responde 400 (no
+      //    401) a credenciales inválidas en el password grant; lo que
+      //    distingue el caso es el error_description.
+      const conVieja = await login(username, passwordVieja);
+      expect(conVieja.status).toBe(400);
+      expect(conVieja.body.error).toBe('invalid_grant');
+      expect(conVieja.body.error_description).toBe('Invalid user credentials');
+
+      // 6. La temporal es correcta, pero Keycloak exige cambiarla antes de
+      //    entrar: responde «Account is not fully set up» (y no «Invalid
+      //    user credentials») y el usuario queda con UPDATE_PASSWORD.
+      const conTemporal = await login(username, temporal);
+      expect(conTemporal.status).toBe(400);
+      expect(conTemporal.body.error_description).toBe(
+        'Account is not fully set up',
+      );
+      const usuarioKc = await (
+        await fetch(base, { headers: await adminHeaders() })
+      ).json();
+      expect(usuarioKc.requiredActions).toContain('UPDATE_PASSWORD');
+    },
+  );
+
+  itConAdmin(
+    '[TC-I-061] Usuarios: no se puede restablecer la contraseña de un usuario desactivado (409)',
+    async () => {
+      // Usa el usuario de TC-I-059: se lo desactiva por la API.
+      if (!creado) throw new Error('TC-I-059 no llegó a crear el usuario');
+      const tokenAdmin = await getToken(ADMIN_USER, ADMIN_PASS as string);
+
+      await request(app.getHttpServer())
+        .delete(`/usuarios/${creado.id}`)
+        .set('Authorization', `Bearer ${tokenAdmin}`)
+        .expect(200);
+
+      const res = await request(app.getHttpServer())
+        .post(`/usuarios/${creado.id}/restablecer-contrasena`)
+        .set('Authorization', `Bearer ${tokenAdmin}`)
+        .expect(409);
+      expect(res.body.temporaryPassword).toBeUndefined();
     },
   );
 });

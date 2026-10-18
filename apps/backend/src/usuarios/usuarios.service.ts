@@ -63,7 +63,7 @@ export class UsuariosService {
 
     // Genera una contraseña temporal aleatoria — el usuario la cambia en su
     // primer login (Keycloak la marca como "temporary": true).
-    const temporaryPassword = randomBytes(12).toString('base64url');
+    const temporaryPassword = this.generarContrasenaTemporal();
 
     const keycloakId = await this.keycloakAdmin.createUser({
       username: dto.username,
@@ -300,6 +300,68 @@ export class UsuariosService {
     }
 
     return { activo: true as const, id: usuarioId };
+  }
+
+  /**
+   * BL-359: el admin resuelve un «me olvidé la contraseña» sin soporte.
+   *
+   * 1. Genera una contraseña temporal nueva, igual que el alta: Keycloak
+   *    pide cambiarla en el próximo ingreso.
+   * 2. Cierra las sesiones abiertas del usuario. Así, si alguien más tenía
+   *    su sesión iniciada (por ejemplo en una tablet compartida), queda
+   *    afuera. Igual que en desactivar(), no lanza: si falla, la contraseña
+   *    ya cambió y el resultado queda en la auditoría.
+   * 3. Audita la acción. [S] La contraseña no se loguea ni se audita: solo
+   *    viaja en la respuesta, que el diálogo muestra una única vez.
+   *
+   * Un usuario desactivado responde 409: no podría ingresar con la
+   * temporal, y mostrarla sería engañoso. Primero hay que reactivarlo.
+   */
+  async restablecerContrasena(
+    tenantId: string,
+    actorKeycloakId: string,
+    usuarioId: string,
+  ) {
+    // Bajo RLS: un usuario de otro tenant no aparece y responde 404. No hay
+    // escritura en Postgres, así que alcanza con leer la fila.
+    const usuario = await this.tenantPrisma.runInTenantContext(tenantId, (tx) =>
+      this.obtenerOFallar(tx, usuarioId),
+    );
+
+    if (!usuario.activo) {
+      throw new ConflictException(
+        'El usuario está desactivado: reactivalo antes de restablecer su contraseña',
+      );
+    }
+
+    const temporaryPassword = this.generarContrasenaTemporal();
+    await this.keycloakAdmin.resetPassword(
+      usuario.keycloakId,
+      temporaryPassword,
+    );
+
+    const sesionesCerradas = await this.keycloakAdmin.logoutUser(
+      usuario.keycloakId,
+    );
+
+    this.auditLog.registrar({
+      action: AuditAction.USUARIO_CONTRASENA_RESTABLECIDA,
+      tenantId,
+      actorKeycloakId,
+      targetUsuarioId: usuarioId,
+      detalle: { rol: usuario.rol, sesionesCerradas },
+    });
+
+    return { id: usuarioId, temporaryPassword, sesionesCerradas };
+  }
+
+  /**
+   * 12 bytes aleatorios en base64url: 16 caracteres, por encima del mínimo
+   * de 9 de la política del realm (BL-266). Se usa en el alta y al
+   * restablecer, así las dos generan contraseñas con el mismo criterio.
+   */
+  private generarContrasenaTemporal(): string {
+    return randomBytes(12).toString('base64url');
   }
 
   private async obtenerOFallar(tx: PrismaClient, usuarioId: string) {
