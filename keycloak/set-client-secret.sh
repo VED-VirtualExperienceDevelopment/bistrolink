@@ -119,9 +119,11 @@ else
     #    Keycloak 26 no lo crea al importar; se crea solo si no existe, con
     #    los mismos mappers que realm-export.json.
     #    Sin awk ni grep: la imagen de Keycloak (UBI micro) no los trae.
+    #    El "|| [ -n ... ]" lee también la última línea aunque no termine en
+    #    salto de línea (si no, read la descarta y el scope "no aparece").
     buscar_scope_profile() {
       "$kcadm" get client-scopes -r "$KC_REALM" --fields id,name --format csv --noquotes \
-        | while IFS=, read -r id nombre; do
+        | while IFS=, read -r id nombre || [ -n "$id" ]; do
             if [ "$nombre" = "profile" ]; then
               echo "$id"
               break
@@ -209,13 +211,35 @@ JSON
 
     # 3. "profile" como scope por defecto del realm y de los dos clientes
     #    (igual que defaultDefaultClientScopes y defaultClientScopes del JSON).
-    #    Asignarlo de nuevo no cambia nada.
-    "$kcadm" update "default-default-client-scopes/${scope_id}" -r "$KC_REALM" || return 1
+    #    Solo se asigna si todavía no está: Keycloak NO lo trata como
+    #    idempotente. Asignarlo de nuevo inserta una fila duplicada y responde
+    #    409 «Duplicate resource error» (RealmAdapter.addDefaultClientScope
+    #    hace un persist sin revisar si ya existe). Eso pasaba en cada
+    #    arranque de staging desde el segundo deploy: el AVISO de BL-345
+    #    aparecía siempre y los pasos siguientes no corrían.
+    #
+    #    tiene_scope <ruta>: imprime "si" si la lista de scopes de esa ruta
+    #    (del realm o de un cliente) ya incluye "profile".
+    tiene_scope() {
+      "$kcadm" get "$1" -r "$KC_REALM" --fields id --format csv --noquotes \
+        | while IFS=, read -r id || [ -n "$id" ]; do
+            if [ "$id" = "$scope_id" ]; then
+              echo "si"
+              break
+            fi
+          done
+    }
+    if [ -z "$(tiene_scope default-default-client-scopes)" ]; then
+      "$kcadm" update "default-default-client-scopes/${scope_id}" -r "$KC_REALM" || return 1
+      echo "[set-client-secret] Scope 'profile' agregado a los scopes por defecto del realm."
+    fi
     local client_id client_uuid
     for client_id in bistrolink-frontend bistrolink-backend; do
       client_uuid=$("$kcadm" get clients -r "$KC_REALM" -q "clientId=${client_id}" --fields id --format csv --noquotes | tail -n1)
-      if [ -n "$client_uuid" ]; then
+      if [ -n "$client_uuid" ] \
+        && [ -z "$(tiene_scope "clients/${client_uuid}/default-client-scopes")" ]; then
         "$kcadm" update "clients/${client_uuid}/default-client-scopes/${scope_id}" -r "$KC_REALM" || return 1
+        echo "[set-client-secret] Scope 'profile' agregado a ${client_id}."
       fi
     done
   }
