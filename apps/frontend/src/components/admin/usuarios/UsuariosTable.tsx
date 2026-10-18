@@ -1,7 +1,7 @@
 'use client';
 
 import type { Usuario } from '@/types/usuario';
-import { nombreCompleto, nombreParaMostrar } from './usuarios.utils';
+import { nombreCompleto, nombreParaMostrar } from './Usuarios.utils';
 
 interface Props {
   usuarios: Usuario[];

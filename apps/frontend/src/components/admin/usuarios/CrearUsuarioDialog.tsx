@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Dialog } from '@/components/ui/Dialog';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import type { CrearUsuarioResponse, UsuarioRol } from '@/types/usuario';
-import { errorNombrePersona, LARGO_MAXIMO_NOMBRE, nombreParaMostrar } from './usuarios.utils';
+import { errorNombrePersona, LARGO_MAXIMO_NOMBRE, nombreParaMostrar } from './Usuarios.utils';
 
 interface Props {
   open: boolean;

@@ -2,7 +2,7 @@ import {
   errorNombrePersona,
   nombreCompleto,
   nombreParaMostrar,
-} from "@/components/admin/usuarios/usuarios.utils";
+} from "@/components/admin/usuarios/Usuarios.utils";
 
 /** BL-361: nombre de cada usuario en la pantalla de Usuarios. */
 

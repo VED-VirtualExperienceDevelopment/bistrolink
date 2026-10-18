@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Dialog } from '@/components/ui/Dialog';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import type { DesactivarResponse, Usuario } from '@/types/usuario';
-import { nombreParaMostrar } from './usuarios.utils';
+import { nombreParaMostrar } from './Usuarios.utils';
 
 interface Props {
   open: boolean;
