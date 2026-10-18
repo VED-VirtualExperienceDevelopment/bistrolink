@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Dialog } from '@/components/ui/Dialog';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import type { ReactivarResponse, Usuario } from '@/types/usuario';
+import { nombreParaMostrar } from './usuarios.utils';
 
 interface Props {
   open: boolean;
@@ -21,7 +22,7 @@ export function ReactivarUsuarioDialog({ open, onClose, token, usuario, onReacti
 
   if (!usuario) return null;
 
-  const nombre = usuario.username ?? `Usuario ${usuario.id.slice(0, 8)}`;
+  const nombre = nombreParaMostrar(usuario);
 
   const handleConfirm = async () => {
     setSubmitting(true);

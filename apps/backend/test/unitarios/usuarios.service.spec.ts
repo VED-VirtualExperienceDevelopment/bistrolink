@@ -94,6 +94,8 @@ describe('UsuariosService', () => {
 
       const resultado = await service.crear(TENANT_ID, ACTOR_KEYCLOAK_ID, {
         username: 'mozo-nuevo',
+        nombre: 'Juan',
+        apellido: 'Pérez',
         rol: 'MOZO',
         restauranteId: RESTAURANTE_ID,
       });
@@ -102,8 +104,15 @@ describe('UsuariosService', () => {
         expect.objectContaining({
           username: 'mozo-nuevo',
           tenantId: TENANT_ID,
+          // BL-361: nombre y apellido van a Keycloak.
+          firstName: 'Juan',
+          lastName: 'Pérez',
         }),
       );
+      // BL-361: y también a la fila, para el listado.
+      expect(tx().usuario.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ nombre: 'Juan', apellido: 'Pérez' }),
+      });
       expect(keycloakAdmin.assignRealmRole).toHaveBeenCalledWith(
         'keycloak-id-nuevo',
         'MOZO',
@@ -119,6 +128,8 @@ describe('UsuariosService', () => {
       await expect(
         service.crear(TENANT_ID, ACTOR_KEYCLOAK_ID, {
           username: 'intento-cruzado',
+          nombre: 'Juan',
+          apellido: 'Pérez',
           rol: 'MOZO',
           restauranteId: 'restaurante-de-otro-tenant',
         }),
@@ -141,6 +152,8 @@ describe('UsuariosService', () => {
       await expect(
         service.crear(TENANT_ID, ACTOR_KEYCLOAK_ID, {
           username: 'mozo-nuevo',
+          nombre: 'Juan',
+          apellido: 'Pérez',
           rol: 'MOZO',
           restauranteId: RESTAURANTE_ID,
         }),
@@ -169,6 +182,8 @@ describe('UsuariosService', () => {
       await expect(
         service.crear(TENANT_ID, ACTOR_KEYCLOAK_ID, {
           username: 'mozo-nuevo',
+          nombre: 'Juan',
+          apellido: 'Pérez',
           rol: 'MOZO',
           restauranteId: RESTAURANTE_ID,
         }),
@@ -199,6 +214,8 @@ describe('UsuariosService', () => {
       await expect(
         service.crear(TENANT_ID, ACTOR_KEYCLOAK_ID, {
           username: 'mozo-nuevo',
+          nombre: 'Juan',
+          apellido: 'Pérez',
           rol: 'MOZO',
           restauranteId: RESTAURANTE_ID,
         }),
@@ -221,6 +238,8 @@ describe('UsuariosService', () => {
 
       await service.crear(TENANT_ID, ACTOR_KEYCLOAK_ID, {
         username: 'admin-nuevo',
+        nombre: 'Juan',
+        apellido: 'Pérez',
         rol: 'ADMIN',
         restauranteId: RESTAURANTE_ID,
       });

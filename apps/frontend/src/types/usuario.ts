@@ -15,11 +15,16 @@ export interface Usuario {
   // undefined y la tabla cae al fallback (ver UsuariosTable).
   username?: string;
   email?: string;
+  // BL-361: nulos en los usuarios creados antes del cambio.
+  nombre?: string | null;
+  apellido?: string | null;
 }
 
 export interface CrearUsuarioPayload {
   username: string;
   email?: string;
+  nombre: string;
+  apellido: string;
   rol: UsuarioRol;
   restauranteId: string;
 }

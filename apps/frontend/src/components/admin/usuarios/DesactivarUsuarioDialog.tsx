@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Dialog } from '@/components/ui/Dialog';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import type { DesactivarResponse, Usuario } from '@/types/usuario';
+import { nombreParaMostrar } from './usuarios.utils';
 
 interface Props {
   open: boolean;
@@ -41,7 +42,7 @@ export function DesactivarUsuarioDialog({ open, onClose, token, usuario, onDesac
     <Dialog open={open} onClose={onClose} title="Desactivar usuario">
       <div className="space-y-4">
         <p className="text-body-md text-on-surface">
-          {usuario.username ?? `Usuario ${usuario.id.slice(0, 8)}`} no va a poder iniciar sesión
+          {nombreParaMostrar(usuario)} no va a poder iniciar sesión
           hasta que se reactive. Esta acción no borra su historial.
         </p>
 

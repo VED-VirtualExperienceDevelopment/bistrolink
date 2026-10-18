@@ -1,6 +1,7 @@
 'use client';
 
 import type { Usuario } from '@/types/usuario';
+import { nombreCompleto, nombreParaMostrar } from './usuarios.utils';
 
 interface Props {
   usuarios: Usuario[];
@@ -52,8 +53,15 @@ export function UsuariosTable({
               </div>
               <div>
                 <p className="text-body-md font-semibold text-on-surface">
-                  {usuario.username ?? `Usuario ${usuario.id.slice(0, 8)}`}
+                  {nombreParaMostrar(usuario)}
                 </p>
+                {/* BL-361: con nombre cargado, el usuario va debajo (es con lo
+                    que la persona ingresa). Sin nombre, ya está arriba. */}
+                {nombreCompleto(usuario) && usuario.username && (
+                  <p className="text-label-sm text-on-surface-variant">
+                    Usuario: {usuario.username}
+                  </p>
+                )}
                 {usuario.email && (
                   <p className="text-label-sm text-on-surface-variant">{usuario.email}</p>
                 )}
@@ -98,7 +106,7 @@ export function UsuariosTable({
                   <button
                     type="button"
                     onClick={() => onRestablecerContrasena(usuario)}
-                    aria-label={`Restablecer la contraseña de ${usuario.username ?? `Usuario ${usuario.id.slice(0, 8)}`}`}
+                    aria-label={`Restablecer la contraseña de ${nombreParaMostrar(usuario)}`}
                     title="Restablecer contraseña"
                     className="rounded-full p-2 text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-primary"
                   >
@@ -123,7 +131,7 @@ export function UsuariosTable({
                   <button
                     type="button"
                     onClick={() => onReactivar(usuario)}
-                    aria-label={`Reactivar a ${usuario.username ?? `Usuario ${usuario.id.slice(0, 8)}`}`}
+                    aria-label={`Reactivar a ${nombreParaMostrar(usuario)}`}
                     title="Reactivar usuario"
                     className="rounded-full p-2 text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-primary"
                   >

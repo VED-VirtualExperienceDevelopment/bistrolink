@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Dialog } from '@/components/ui/Dialog';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import type { Usuario, UsuarioRol } from '@/types/usuario';
+import { nombreParaMostrar } from './usuarios.utils';
 
 interface Props {
   open: boolean;
@@ -41,7 +42,7 @@ export function EditarRolDialog({ open, onClose, token, usuario, onUpdated }: Pr
   };
 
   return (
-    <Dialog open={open} onClose={onClose} title={`Editar rol — ${usuario.username ?? usuario.id.slice(0, 8)}`}>
+    <Dialog open={open} onClose={onClose} title={`Editar rol — ${nombreParaMostrar(usuario)}`}>
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label htmlFor="rol-edit" className="mb-1 block text-label-md text-on-surface-variant">

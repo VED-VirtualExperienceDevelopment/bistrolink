@@ -285,6 +285,9 @@ describe('AprovisionamientoService (BL-163)', () => {
             tenantId: TENANT_ID,
             restauranteId: RESTAURANTE_ID,
             rol: 'ADMIN',
+            // BL-361: nombre y apellido también en la fila.
+            nombre: 'Admin',
+            apellido: 'De Prueba',
           }),
         }),
       );

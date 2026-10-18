@@ -32,6 +32,8 @@ export class UsuariosService {
           keycloakId: true,
           username: true,
           email: true,
+          nombre: true,
+          apellido: true,
           rol: true,
           activo: true,
           restauranteId: true,
@@ -65,9 +67,13 @@ export class UsuariosService {
     // primer login (Keycloak la marca como "temporary": true).
     const temporaryPassword = this.generarContrasenaTemporal();
 
+    // BL-361: nombre y apellido van a Keycloak (firstName/lastName, los lee
+    // el encabezado desde el token) y a la fila (los lee el listado).
     const keycloakId = await this.keycloakAdmin.createUser({
       username: dto.username,
       email: dto.email,
+      firstName: dto.nombre,
+      lastName: dto.apellido,
       tenantId,
       temporaryPassword,
     });
@@ -85,6 +91,8 @@ export class UsuariosService {
               keycloakId,
               username: dto.username,
               email: dto.email,
+              nombre: dto.nombre,
+              apellido: dto.apellido,
               rol: dto.rol,
             },
           }),

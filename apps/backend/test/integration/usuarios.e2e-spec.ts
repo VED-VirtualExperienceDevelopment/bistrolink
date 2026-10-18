@@ -136,6 +136,8 @@ describe('Gestión de usuarios (HU-013) - e2e', () => {
         .send({
           username: `mozo-test-${Date.now()}`,
           email: `mozo-test-${Date.now()}@bistrolink.dev`,
+          nombre: 'Mozo',
+          apellido: 'Prueba',
           rol: 'MOZO',
           restauranteId: RESTAURANTE_TENANT_A,
         })
@@ -162,6 +164,8 @@ describe('Gestión de usuarios (HU-013) - e2e', () => {
         .set('Authorization', `Bearer ${token}`)
         .send({
           username: `intento-cruzado-${Date.now()}`,
+          nombre: 'Mozo',
+          apellido: 'Prueba',
           rol: 'MOZO',
           restauranteId: RESTAURANTE_TENANT_B,
         })
@@ -176,6 +180,8 @@ describe('Gestión de usuarios (HU-013) - e2e', () => {
       .post('/usuarios')
       .send({
         username: 'sin-auth-test',
+        nombre: 'Mozo',
+        apellido: 'Prueba',
         rol: 'MOZO',
         restauranteId: RESTAURANTE_TENANT_A,
       })
@@ -480,6 +486,8 @@ describe('Gestión de usuarios (HU-013) - cierre de sesiones al desactivar (BL-2
         .send({
           username,
           email: `${username}@bistrolink.dev`,
+          nombre: 'Mozo',
+          apellido: 'Prueba',
           rol: 'MOZO',
           restauranteId: RESTAURANTE_TENANT_A,
         })
@@ -606,6 +614,8 @@ describe('Gestión de usuarios (HU-013) - reactivar (BL-358)', () => {
         .send({
           username,
           email: `${username}@bistrolink.dev`,
+          nombre: 'Mozo',
+          apellido: 'Prueba',
           rol: 'MOZO',
           restauranteId: RESTAURANTE_TENANT_A,
         })
@@ -723,6 +733,8 @@ describe('Gestión de usuarios (HU-013) - restablecer contraseña (BL-359)', () 
         .send({
           username,
           email: `${username}@bistrolink.dev`,
+          nombre: 'Mozo',
+          apellido: 'Prueba',
           rol: 'MOZO',
           restauranteId: RESTAURANTE_TENANT_A,
         })
@@ -809,6 +821,92 @@ describe('Gestión de usuarios (HU-013) - restablecer contraseña (BL-359)', () 
         .set('Authorization', `Bearer ${tokenAdmin}`)
         .expect(409);
       expect(res.body.temporaryPassword).toBeUndefined();
+    },
+  );
+});
+
+// ── BL-361: nombre y apellido en el alta ────────────────────────────────────
+describe('Gestión de usuarios (HU-013) - nombre y apellido (BL-361)', () => {
+  let app: INestApplication;
+  let prisma: PrismaClient;
+  let creado: { id: string; keycloakId: string; tenantId: string } | undefined;
+
+  const itConAdmin = ADMIN_PASS ? it : it.skip;
+
+  beforeAll(async () => {
+    const moduleRef: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
+    app = moduleRef.createNestApplication();
+    await app.init();
+    prisma = new PrismaClient();
+  });
+
+  afterAll(async () => {
+    if (creado) {
+      const { keycloakId, tenantId } = creado;
+      await borrarUsuarioKeycloak(keycloakId).catch(() => undefined);
+      await prisma
+        .$transaction(async (tx) => {
+          await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`;
+          await tx.usuario.deleteMany({ where: { keycloakId } });
+        })
+        .catch(() => undefined); // best-effort
+    }
+    await prisma.$disconnect();
+    await app.close();
+  });
+
+  itConAdmin(
+    '[TC-I-062] Usuarios: el alta guarda nombre y apellido en Keycloak y en la fila, y el listado los devuelve',
+    async () => {
+      const token = await getToken(ADMIN_USER, ADMIN_PASS as string);
+      const username = `mozo-nombre-${Date.now()}`;
+
+      const alta = await request(app.getHttpServer())
+        .post('/usuarios')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          username,
+          email: `${username}@bistrolink.dev`,
+          nombre: 'María José',
+          apellido: 'Pérez-Núñez',
+          rol: 'MOZO',
+          restauranteId: RESTAURANTE_TENANT_A,
+        })
+        .expect(201);
+      creado = {
+        id: alta.body.id,
+        keycloakId: alta.body.keycloakId,
+        tenantId: alta.body.tenantId,
+      };
+      expect(alta.body.nombre).toBe('María José');
+      expect(alta.body.apellido).toBe('Pérez-Núñez');
+
+      // En Keycloak: firstName y lastName (los lee el encabezado, BL-350).
+      const usuarioKc = await (
+        await fetch(
+          `${KEYCLOAK_URL}/admin/realms/${REALM}/users/${creado.keycloakId}`,
+          {
+            headers: { Authorization: `Bearer ${await getMasterAdminToken()}` },
+          },
+        )
+      ).json();
+      expect(usuarioKc.firstName).toBe('María José');
+      expect(usuarioKc.lastName).toBe('Pérez-Núñez');
+
+      // En el listado.
+      const lista = await request(app.getHttpServer())
+        .get('/usuarios')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      const fila = (
+        lista.body as { id: string; nombre: string; apellido: string }[]
+      ).find((u) => u.id === creado?.id);
+      expect(fila).toMatchObject({
+        nombre: 'María José',
+        apellido: 'Pérez-Núñez',
+      });
     },
   );
 });

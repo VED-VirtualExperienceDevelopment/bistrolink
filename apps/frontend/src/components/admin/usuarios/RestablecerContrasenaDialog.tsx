@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Dialog } from '@/components/ui/Dialog';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import type { RestablecerContrasenaResponse, Usuario } from '@/types/usuario';
+import { nombreParaMostrar } from './usuarios.utils';
 
 interface Props {
   open: boolean;
@@ -22,7 +23,7 @@ export function RestablecerContrasenaDialog({ open, onClose, token, usuario }: P
 
   if (!usuario) return null;
 
-  const nombre = usuario.username ?? `Usuario ${usuario.id.slice(0, 8)}`;
+  const nombre = nombreParaMostrar(usuario);
 
   // El componente sigue montado entre aperturas: al cerrar se borra todo,
   // para que la contraseña no quede en memoria ni aparezca en otra fila.

@@ -185,6 +185,9 @@ export class AprovisionamientoService {
             keycloakId: admin.keycloakId,
             username: dto.admin.username,
             email: dto.admin.email,
+            // BL-361: mismo dato que firstName/lastName en Keycloak.
+            nombre: dto.admin.nombre,
+            apellido: dto.admin.apellido,
             rol: 'ADMIN',
           },
           select: { id: true },
