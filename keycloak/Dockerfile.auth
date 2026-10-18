@@ -56,6 +56,26 @@
 # test-users.json NO va en data/import/: --import-realm intentaría importarlo
 # como un realm completo.
 
+# Cache del navegador para el CSS del tema: Keycloak sirve los archivos del
+# tema bajo /resources/<versión>/..., con caché de 30 días en el navegador, y
+# esa <versión> depende solo de la versión de Keycloak, no del contenido del
+# tema. Sin esto, después de cambiar styles.css, quien ya había entrado al
+# login seguía viendo el CSS viejo (pasó en staging con BL-347). Este stage
+# renombra styles.css con un hash de su contenido (styles.<hash>.css) y
+# actualiza theme.properties: cada cambio del CSS es una URL nueva y el
+# navegador la descarga sí o sí. En local (bind mount, start-dev) no hace
+# falta: start-dev desactiva esa caché, y el tema usa styles.css tal cual.
+# El grep final corta el build si theme.properties ya no tiene la línea
+# esperada, en lugar de publicar un tema que pide un archivo inexistente.
+FROM alpine:3.22 AS tema
+COPY keycloak/themes/bistrolink /tema
+RUN set -eu; \
+    css=/tema/login/resources/css; \
+    hash=$(sha256sum "$css/styles.css" | cut -c1-10); \
+    mv "$css/styles.css" "$css/styles.$hash.css"; \
+    sed -i "s|^styles=css/styles.css\$|styles=css/styles.$hash.css|" /tema/login/theme.properties; \
+    grep -qx "styles=css/styles.$hash.css" /tema/login/theme.properties
+
 FROM quay.io/keycloak/keycloak:26.7.2
 
 # realm-export.json a la carpeta de importación estándar. Al arrancar con
@@ -75,7 +95,8 @@ COPY keycloak/test-users.json /opt/keycloak/data/test-users/test-users.json
 # local, así que acá se copia dentro de la imagen en build time. Probado
 # primero en local (bind mount) antes de este COPY para no depender de un
 # build completo en cada iteración de CSS.
-COPY keycloak/themes/bistrolink /opt/keycloak/themes/bistrolink
+# Viene del stage "tema", con el CSS ya renombrado por su hash (ver arriba).
+COPY --from=tema /tema /opt/keycloak/themes/bistrolink
 
 # BL-185: entrypoint propio que arranca Keycloak, espera a que esté listo, y
 # setea el client secret real de bistrolink-backend vía Admin REST API
