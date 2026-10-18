@@ -152,3 +152,55 @@ export function hayFiltrosActivos(filtros: FiltrosUsuarios): boolean {
 export function textoCantidadUsuarios(cantidad: number): string {
   return cantidad === 1 ? "1 usuario" : `${cantidad} usuarios`;
 }
+
+// ── BL-368: último ingreso ──────────────────────────────────────────────────
+
+const MINUTO = 60 * 1000;
+const HORA = 60 * MINUTO;
+const DIA = 24 * HORA;
+
+// numeric "always": «hace 2 días» y no «anteayer», como pide la HU.
+const RELATIVO = new Intl.RelativeTimeFormat("es", { numeric: "always" });
+
+export interface TextoUltimoIngreso {
+  /** Lo que se ve: «Último ingreso: hace 2 días». */
+  texto: string;
+  /** Fecha y hora completas (title y lector de pantalla), o undefined. */
+  completo?: string;
+}
+
+/**
+ * Texto del último ingreso, o `null` si no hay que mostrar nada (el backend
+ * no pudo leer los eventos de Keycloak). `ahora` y `zonaHoraria` se pueden
+ * pasar para que los tests no dependan del reloj ni de la zona de la PC.
+ */
+export function textoUltimoIngreso(
+  ultimoIngreso: string | null | undefined,
+  ahora: number = Date.now(),
+  zonaHoraria?: string,
+): TextoUltimoIngreso | null {
+  if (ultimoIngreso === undefined) return null;
+  if (ultimoIngreso === null) return { texto: "Sin ingresos recientes" };
+
+  const fecha = new Date(ultimoIngreso);
+  if (Number.isNaN(fecha.getTime())) return null;
+
+  // Un reloj apenas adelantado no puede dar «dentro de 1 minuto».
+  const atras = Math.max(0, ahora - fecha.getTime());
+  let relativo: string;
+  if (atras < MINUTO) relativo = "hace un momento";
+  else if (atras < HORA)
+    relativo = RELATIVO.format(-Math.floor(atras / MINUTO), "minute");
+  else if (atras < DIA)
+    relativo = RELATIVO.format(-Math.floor(atras / HORA), "hour");
+  else relativo = RELATIVO.format(-Math.floor(atras / DIA), "day");
+
+  const completo = new Intl.DateTimeFormat("es-AR", {
+    dateStyle: "long",
+    timeStyle: "short",
+    hourCycle: "h23", // «10:30», no «10:30 a. m.»
+    timeZone: zonaHoraria,
+  }).format(fecha);
+
+  return { texto: `Último ingreso: ${relativo}`, completo };
+}

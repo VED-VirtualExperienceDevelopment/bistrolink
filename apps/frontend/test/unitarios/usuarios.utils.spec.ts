@@ -9,6 +9,7 @@ import {
   normalizarParaBuscar,
   rutaUsuario,
   textoCantidadUsuarios,
+  textoUltimoIngreso,
 } from "@/components/admin/usuarios/Usuarios.utils";
 import type { Usuario } from "@/types/usuario";
 
@@ -234,5 +235,48 @@ describe("normalizarParaBuscar, hayFiltrosActivos y textoCantidadUsuarios", () =
     expect(textoCantidadUsuarios(1)).toBe("1 usuario");
     expect(textoCantidadUsuarios(0)).toBe("0 usuarios");
     expect(textoCantidadUsuarios(3)).toBe("3 usuarios");
+  });
+});
+
+describe("textoUltimoIngreso (BL-368)", () => {
+  const AHORA = Date.UTC(2026, 9, 18, 15, 0); // 18/10/2026 12:00 en Argentina
+  const hace = (ms: number) => new Date(AHORA - ms).toISOString();
+  const MIN = 60 * 1000;
+  const texto = (iso: string | null | undefined) =>
+    textoUltimoIngreso(iso, AHORA, "America/Argentina/Buenos_Aires")?.texto;
+
+  it("dice hace cuánto, en minutos, horas o días", () => {
+    expect(texto(hace(20 * 1000))).toBe("Último ingreso: hace un momento");
+    expect(texto(hace(5 * MIN))).toBe("Último ingreso: hace 5 minutos");
+    expect(texto(hace(3 * 60 * MIN))).toBe("Último ingreso: hace 3 horas");
+    expect(texto(hace(2 * 24 * 60 * MIN))).toBe("Último ingreso: hace 2 días");
+    expect(texto(hace(24 * 60 * MIN))).toBe("Último ingreso: hace 1 día");
+  });
+
+  it("sin ingresos en 90 días (null) dice «Sin ingresos recientes», sin fecha", () => {
+    expect(textoUltimoIngreso(null, AHORA)).toEqual({
+      texto: "Sin ingresos recientes",
+    });
+  });
+
+  it("si el backend no lo pudo leer (undefined) o la fecha no es válida, no muestra nada", () => {
+    expect(textoUltimoIngreso(undefined, AHORA)).toBeNull();
+    expect(textoUltimoIngreso("no-es-fecha", AHORA)).toBeNull();
+  });
+
+  it("da la fecha completa en la zona indicada, para el title y el lector de pantalla", () => {
+    const resultado = textoUltimoIngreso(
+      "2026-10-16T13:30:00.000Z",
+      AHORA,
+      "America/Argentina/Buenos_Aires",
+    );
+    expect(resultado?.completo).toContain("16 de octubre de 2026");
+    expect(resultado?.completo).toContain("10:30");
+  });
+
+  it("con el reloj de Keycloak apenas adelantado no dice «dentro de»", () => {
+    expect(texto(new Date(AHORA + 30 * 1000).toISOString())).toBe(
+      "Último ingreso: hace un momento",
+    );
   });
 });

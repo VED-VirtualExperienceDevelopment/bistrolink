@@ -1357,3 +1357,52 @@ describe('Gestión de usuarios (HU-013) - cerrar sesiones (BL-367)', () => {
     },
   );
 });
+
+// ── BL-368: último ingreso en el listado ────────────────────────────────────
+describe('Gestión de usuarios (HU-013) - último ingreso (BL-368)', () => {
+  let app: INestApplication;
+
+  const itConAdmin = ADMIN_PASS ? it : it.skip;
+
+  beforeAll(async () => {
+    const moduleRef: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
+    app = moduleRef.createNestApplication();
+    await app.init();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  itConAdmin(
+    '[TC-I-071] Usuarios: el listado muestra como último ingreso el LOGIN recién hecho por el admin',
+    async () => {
+      const antes = Date.now();
+      // getToken hace un password grant: Keycloak registra un evento LOGIN.
+      const token = await getToken(ADMIN_USER, ADMIN_PASS as string);
+
+      const res = await request(app.getHttpServer())
+        .get('/usuarios')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      // El admin se busca por el sub del token (su keycloakId).
+      const { sub } = JSON.parse(
+        Buffer.from(token.split('.')[1], 'base64url').toString(),
+      ) as { sub: string };
+      const admin = (
+        res.body as { keycloakId: string; ultimoIngreso?: string | null }[]
+      ).find((u) => u.keycloakId === sub);
+      expect(admin).toBeDefined();
+      // Si viene undefined, la cuenta de servicio no tiene view-events
+      // (reiniciá el contenedor de Keycloak para que lo asigne).
+      expect(typeof admin?.ultimoIngreso).toBe('string');
+      // Margen de 5 s por diferencias de reloj entre Keycloak y los tests.
+      expect(
+        new Date(admin?.ultimoIngreso as string).getTime(),
+      ).toBeGreaterThanOrEqual(antes - 5000);
+    },
+  );
+});

@@ -462,6 +462,75 @@ describe('KeycloakAdminService', () => {
     });
   });
 
+  describe('ultimosIngresos (BL-368)', () => {
+    const paginaDeEventos = (eventos: { userId?: string; time: number }[]) => ({
+      ok: true,
+      json: async () => eventos,
+    });
+
+    it('[TC-U-083] KeycloakAdminService.ultimosIngresos toma el LOGIN más reciente de cada usuario buscado e ignora al resto del realm', async () => {
+      mockTokenRequest();
+      // Keycloak devuelve los eventos del más nuevo al más viejo.
+      fetchMock.mockResolvedValueOnce(
+        paginaDeEventos([
+          { userId: 'kc-otro-tenant', time: 3000 },
+          { userId: 'kc-mozo', time: 2000 },
+          { userId: 'kc-mozo', time: 1000 },
+          { time: 900 }, // evento sin usuario: se ignora
+        ]),
+      );
+
+      const ultimos = await service.ultimosIngresos(['kc-mozo', 'kc-admin']);
+
+      expect([...ultimos]).toEqual([['kc-mozo', 2000]]);
+      expect(fetchMock).toHaveBeenCalledTimes(2); // token + una página
+      const [url] = fetchMock.mock.calls[1];
+      expect(url).toContain('/events?type=LOGIN');
+      expect(url).toMatch(/dateFrom=\d{4}-\d{2}-\d{2}/);
+      expect(url).toContain('first=0&max=500');
+    });
+
+    it('[TC-U-084] KeycloakAdminService.ultimosIngresos pide la página siguiente solo hasta encontrar a todos los usuarios', async () => {
+      const llena = Array.from({ length: 500 }, (_, i) => ({
+        userId: 'kc-mozo',
+        time: 10_000 - i,
+      }));
+      mockTokenRequest();
+      fetchMock.mockResolvedValueOnce(paginaDeEventos(llena));
+      mockTokenRequest();
+      fetchMock.mockResolvedValueOnce(
+        paginaDeEventos([
+          ...Array.from({ length: 499 }, () => ({ userId: 'kc-x', time: 5 })),
+          { userId: 'kc-admin', time: 4 },
+        ]),
+      );
+
+      const ultimos = await service.ultimosIngresos(['kc-mozo', 'kc-admin']);
+
+      expect(ultimos.get('kc-mozo')).toBe(10_000);
+      expect(ultimos.get('kc-admin')).toBe(4);
+      // La segunda página también vino llena, pero ya estaban los dos: no
+      // se pide una tercera.
+      expect(fetchMock).toHaveBeenCalledTimes(4);
+      expect(fetchMock.mock.calls[3][0]).toContain('first=500&max=500');
+    });
+
+    it('[TC-U-085] KeycloakAdminService.ultimosIngresos no consulta a Keycloak sin usuarios y lanza con status/body si falla (por ejemplo, sin view-events)', async () => {
+      await expect(service.ultimosIngresos([])).resolves.toEqual(new Map());
+      expect(fetchMock).not.toHaveBeenCalled();
+
+      mockTokenRequest();
+      fetchMock.mockResolvedValueOnce({
+        status: 403,
+        ok: false,
+        text: async () => '{"error":"unknown_error"}',
+      });
+
+      await expect(service.ultimosIngresos(['kc-mozo'])).rejects.toThrow(/403/);
+      expect(loggerErrorSpy).toHaveBeenCalled();
+    });
+  });
+
   describe('logoutUser (BL-272)', () => {
     it('[TC-U-025] KeycloakAdminService.logoutUser llama a POST /users/{id}/logout y devuelve true cuando Keycloak cierra las sesiones (204)', async () => {
       mockTokenRequest();

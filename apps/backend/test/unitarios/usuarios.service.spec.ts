@@ -56,6 +56,7 @@ describe('UsuariosService', () => {
       findUserById: jest.fn(),
       listarUsuariosDelTenant: jest.fn().mockResolvedValue([]),
       rolesDeRealm: jest.fn().mockResolvedValue([]),
+      ultimosIngresos: jest.fn().mockResolvedValue(new Map()),
     };
 
     const auditLogMock = {
@@ -1236,6 +1237,58 @@ describe('UsuariosService', () => {
         ),
       ).rejects.toThrow(NotFoundException);
       expect(keycloakAdmin.logoutUser).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('último ingreso en el listado (BL-368)', () => {
+    const MOZO_KC = 'kc-mozo-ingreso';
+    const ADMIN_KC = 'kc-admin-ingreso';
+
+    beforeEach(() => {
+      tx().usuario.findMany.mockResolvedValue([
+        { id: 'usuario-mozo', keycloakId: MOZO_KC, rol: 'MOZO', activo: true },
+        {
+          id: 'usuario-admin',
+          keycloakId: ADMIN_KC,
+          rol: 'ADMIN',
+          activo: true,
+        },
+      ]);
+    });
+
+    it('[TC-U-086] UsuariosService.listar suma el último ingreso de cada usuario con una sola búsqueda para todo el tenant', async () => {
+      const cuando = Date.UTC(2026, 9, 16, 13, 30);
+      keycloakAdmin.ultimosIngresos.mockResolvedValue(
+        new Map([[MOZO_KC, cuando]]),
+      );
+
+      const resultado = await service.listar(TENANT_ID);
+
+      expect(keycloakAdmin.ultimosIngresos).toHaveBeenCalledTimes(1);
+      expect(keycloakAdmin.ultimosIngresos).toHaveBeenCalledWith([
+        MOZO_KC,
+        ADMIN_KC,
+      ]);
+      expect(resultado).toEqual([
+        expect.objectContaining({
+          id: 'usuario-mozo',
+          ultimoIngreso: '2026-10-16T13:30:00.000Z',
+        }),
+        // Sin LOGIN en los 90 días que guarda Keycloak.
+        expect.objectContaining({ id: 'usuario-admin', ultimoIngreso: null }),
+      ]);
+    });
+
+    it('[TC-U-087] UsuariosService.listar devuelve el listado sin el último ingreso si Keycloak no lo puede dar', async () => {
+      keycloakAdmin.ultimosIngresos.mockRejectedValue(
+        new Error('403 sin view-events'),
+      );
+
+      const resultado = await service.listar(TENANT_ID);
+
+      expect(resultado).toHaveLength(2);
+      // Sin el campo (no null): la pantalla no dice «sin ingresos» por error.
+      expect(resultado[0]).not.toHaveProperty('ultimoIngreso');
     });
   });
 });

@@ -61,7 +61,38 @@ export class UsuariosService {
       tenantId,
       new Set(filas.map((fila) => fila.keycloakId)),
     );
-    return [...personal, ...cocina];
+    return this.conUltimoIngreso(tenantId, [...personal, ...cocina]);
+  }
+
+  /**
+   * BL-368: suma `ultimoIngreso` (ISO, o null si no ingresó en los últimos
+   * 90 días) con una sola búsqueda de eventos para todo el tenant. Si
+   * Keycloak no responde (o la cuenta de servicio todavía no tiene
+   * view-events), el listado sale igual, sin el campo: la pantalla no
+   * muestra el dato antes que mostrar «sin ingresos» por error.
+   */
+  private async conUltimoIngreso<T extends { keycloakId: string }>(
+    tenantId: string,
+    usuarios: T[],
+  ): Promise<(T & { ultimoIngreso?: string | null })[]> {
+    if (usuarios.length === 0) return usuarios;
+    try {
+      const ultimos = await this.keycloakAdmin.ultimosIngresos(
+        usuarios.map((u) => u.keycloakId),
+      );
+      return usuarios.map((u) => {
+        const time = ultimos.get(u.keycloakId);
+        return {
+          ...u,
+          ultimoIngreso: time ? new Date(time).toISOString() : null,
+        };
+      });
+    } catch (error) {
+      this.logger.warn(
+        `No se pudo leer el último ingreso de los usuarios del tenant ${tenantId}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return usuarios;
+    }
   }
 
   /**

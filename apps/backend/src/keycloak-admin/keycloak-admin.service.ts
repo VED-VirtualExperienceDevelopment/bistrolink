@@ -60,7 +60,7 @@ export interface PerfilKeycloak {
  * Encapsula la Admin REST API de Keycloak. Usa el service account del cliente
  * bistrolink-backend (grant_type=client_credentials) — requiere que ese
  * cliente tenga asignados los roles manage-users/view-users/query-users/
- * view-realm del cliente realm-management (ver BL-162: estos roles están
+ * view-realm/view-events del cliente realm-management (ver BL-162: estos roles están
  * declarados en keycloak/realm-export.json, no dependen de un script manual).
  *
  * Toda falla de la Admin API se loguea acá explícitamente (this.logger.error)
@@ -71,6 +71,11 @@ export interface PerfilKeycloak {
  * body de su respuesta. Sin este logging explícito, un 403 (permisos) y un
  * 404 (recurso inexistente) son indistinguibles en producción.
  */
+// BL-368: eventos LOGIN. Keycloak los guarda 90 días (eventsExpiration).
+const DIAS_DE_EVENTOS = 90;
+const EVENTOS_POR_PAGINA = 500;
+const PAGINAS_DE_EVENTOS = 10;
+
 @Injectable()
 export class KeycloakAdminService {
   private readonly logger = new Logger(KeycloakAdminService.name);
@@ -507,6 +512,66 @@ export class KeycloakAdminService {
       );
     }
     return (await res.json()) as KeycloakUser[];
+  }
+
+  /**
+   * BL-368: fecha (ms) del último evento LOGIN de cada usuario, en los últimos
+   * 90 días (lo que guarda Keycloak, BL-266). Los que no ingresaron en ese
+   * tiempo no aparecen en el mapa.
+   *
+   * Los eventos son de todo el realm y Keycloak los devuelve del más nuevo al
+   * más viejo: se piden por páginas, se toma el primero de cada usuario
+   * buscado y se corta en cuanto están todos. Así son unas pocas consultas
+   * para todo el tenant, nunca una por usuario. El tope de páginas es una red
+   * de seguridad: con más eventos que eso, los que no aparecieron quedan
+   * «sin ingresos recientes».
+   *
+   * Necesita el rol realm-management/view-events (realm-export.json y
+   * set-client-secret.sh).
+   */
+  async ultimosIngresos(keycloakIds: string[]): Promise<Map<string, number>> {
+    const buscados = new Set(keycloakIds);
+    const ultimos = new Map<string, number>();
+    if (buscados.size === 0) return ultimos;
+
+    const desde = new Date(Date.now() - DIAS_DE_EVENTOS * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10); // yyyy-MM-dd, el formato que acepta dateFrom
+
+    for (let pagina = 0; pagina < PAGINAS_DE_EVENTOS; pagina++) {
+      const res = await this.adminFetch(
+        `/events?type=LOGIN&dateFrom=${desde}` +
+          `&first=${pagina * EVENTOS_POR_PAGINA}&max=${EVENTOS_POR_PAGINA}`,
+      );
+      if (!res.ok) {
+        const body = await res.text();
+        this.logAndBuildError(
+          'No se pudieron leer los eventos de ingreso en Keycloak',
+          res.status,
+          body,
+        );
+        throw new InternalServerErrorException(
+          `No se pudieron leer los eventos de ingreso en Keycloak: ${res.status} ${body}`,
+        );
+      }
+      const eventos = (await res.json()) as { userId?: string; time: number }[];
+      for (const evento of eventos) {
+        if (
+          evento.userId &&
+          buscados.has(evento.userId) &&
+          !ultimos.has(evento.userId)
+        ) {
+          ultimos.set(evento.userId, evento.time);
+        }
+      }
+      if (
+        ultimos.size === buscados.size ||
+        eventos.length < EVENTOS_POR_PAGINA
+      ) {
+        break;
+      }
+    }
+    return ultimos;
   }
 
   /**

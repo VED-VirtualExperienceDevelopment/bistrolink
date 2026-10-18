@@ -1,7 +1,12 @@
 'use client';
 
 import type { Usuario } from '@/types/usuario';
-import { esCuentaCocina, nombreCompleto, nombreParaMostrar } from './Usuarios.utils';
+import {
+  esCuentaCocina,
+  nombreCompleto,
+  nombreParaMostrar,
+  textoUltimoIngreso,
+} from './Usuarios.utils';
 
 interface Props {
   usuarios: Usuario[];
@@ -89,6 +94,7 @@ export function UsuariosTable({
         {usuarios.map((usuario) => {
           const nombre = nombreParaMostrar(usuario);
           const cocina = esCuentaCocina(usuario);
+          const ingreso = textoUltimoIngreso(usuario.ultimoIngreso);
           return (
             <li
               key={usuario.id}
@@ -116,6 +122,18 @@ export function UsuariosTable({
                   )}
                   {usuario.email && (
                     <p className="break-all text-body-md text-on-surface-variant">{usuario.email}</p>
+                  )}
+                  {/* BL-368: el relativo se ve; la fecha completa va en el
+                      title (al pasar el mouse) y para el lector de pantalla. */}
+                  {ingreso && (
+                    <p className="text-body-md text-on-surface-variant" title={ingreso.completo}>
+                      {ingreso.completo ? (
+                        <time dateTime={usuario.ultimoIngreso ?? undefined}>{ingreso.texto}</time>
+                      ) : (
+                        ingreso.texto
+                      )}
+                      {ingreso.completo && <span className="sr-only"> ({ingreso.completo})</span>}
+                    </p>
                   )}
                 </div>
               </div>

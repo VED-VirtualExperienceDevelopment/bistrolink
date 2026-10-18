@@ -25,6 +25,9 @@ export interface Usuario {
   // BL-362: true en la cuenta de cocina (una cuenta para toda la cocina). Su
   // `id` es el de Keycloak y sus acciones van por /usuarios/cocina/:id.
   cuentaCompartida?: boolean;
+  // BL-368: último LOGIN en Keycloak (ISO). null = sin ingresos en los
+  // últimos 90 días; undefined = el backend no lo pudo leer (no se muestra).
+  ultimoIngreso?: string | null;
 }
 
 export interface CrearUsuarioPayload {
