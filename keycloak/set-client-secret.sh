@@ -100,6 +100,130 @@ else
     && echo "[set-client-secret] Roles de la consola de cuenta fuera de los roles por defecto." \
     || echo "[set-client-secret] AVISO: no se pudieron quitar los roles de cuenta de los roles por defecto." >&2
 
+  # BL-345: cambios de realm-export.json que --import-realm no aplica a un
+  # realm que ya existe (staging y producción). Mismo criterio que BL-266:
+  # van acá para que lleguen solos a cada entorno con el deploy, sin pasos a
+  # mano ni credenciales de admin fuera de Railway. Es idempotente: en cada
+  # arranque deja el realm igual que el JSON en estos puntos, y no toca
+  # usuarios, roles, tenant_id ni la configuración de seguridad.
+  aplicar_cambios_realm() {
+    local kcadm=/opt/keycloak/bin/kcadm.sh
+
+    # 1. Español (BL-343)
+    "$kcadm" update "realms/${KC_REALM}" \
+      -s internationalizationEnabled=true \
+      -s 'supportedLocales=["es"]' \
+      -s defaultLocale=es || return 1
+
+    # 2. Client scope "profile" (BL-344): nombre y usuario en el token.
+    #    Keycloak 26 no lo crea al importar; se crea solo si no existe, con
+    #    los mismos mappers que realm-export.json.
+    #    Sin awk ni grep: la imagen de Keycloak (UBI micro) no los trae.
+    buscar_scope_profile() {
+      "$kcadm" get client-scopes -r "$KC_REALM" --fields id,name --format csv --noquotes \
+        | while IFS=, read -r id nombre; do
+            if [ "$nombre" = "profile" ]; then
+              echo "$id"
+              break
+            fi
+          done
+    }
+    local scope_id
+    scope_id=$(buscar_scope_profile)
+    if [ -z "$scope_id" ]; then
+      "$kcadm" create client-scopes -r "$KC_REALM" -f - <<'JSON' || return 1
+{
+  "name": "profile",
+  "description": "Nombre y usuario en el token. Detalle: keycloak/README.md#client-scope-profile",
+  "protocol": "openid-connect",
+  "attributes": {
+    "include.in.token.scope": "true",
+    "display.on.consent.screen": "true",
+    "consent.screen.text": "${profileScopeConsentText}"
+  },
+  "protocolMappers": [
+    {
+      "name": "username",
+      "protocol": "openid-connect",
+      "protocolMapper": "oidc-usermodel-attribute-mapper",
+      "consentRequired": false,
+      "config": {
+        "user.attribute": "username",
+        "claim.name": "preferred_username",
+        "jsonType.label": "String",
+        "id.token.claim": "true",
+        "access.token.claim": "true",
+        "userinfo.token.claim": "true",
+        "introspection.token.claim": "true"
+      }
+    },
+    {
+      "name": "given name",
+      "protocol": "openid-connect",
+      "protocolMapper": "oidc-usermodel-attribute-mapper",
+      "consentRequired": false,
+      "config": {
+        "user.attribute": "firstName",
+        "claim.name": "given_name",
+        "jsonType.label": "String",
+        "id.token.claim": "true",
+        "access.token.claim": "true",
+        "userinfo.token.claim": "true",
+        "introspection.token.claim": "true"
+      }
+    },
+    {
+      "name": "family name",
+      "protocol": "openid-connect",
+      "protocolMapper": "oidc-usermodel-attribute-mapper",
+      "consentRequired": false,
+      "config": {
+        "user.attribute": "lastName",
+        "claim.name": "family_name",
+        "jsonType.label": "String",
+        "id.token.claim": "true",
+        "access.token.claim": "true",
+        "userinfo.token.claim": "true",
+        "introspection.token.claim": "true"
+      }
+    },
+    {
+      "name": "full name",
+      "protocol": "openid-connect",
+      "protocolMapper": "oidc-full-name-mapper",
+      "consentRequired": false,
+      "config": {
+        "id.token.claim": "true",
+        "access.token.claim": "true",
+        "userinfo.token.claim": "true",
+        "introspection.token.claim": "true"
+      }
+    }
+  ]
+}
+JSON
+      scope_id=$(buscar_scope_profile)
+      echo "[set-client-secret] Client scope 'profile' creado."
+    fi
+    [ -n "$scope_id" ] || return 1
+
+    # 3. "profile" como scope por defecto del realm y de los dos clientes
+    #    (igual que defaultDefaultClientScopes y defaultClientScopes del JSON).
+    #    Asignarlo de nuevo no cambia nada.
+    "$kcadm" update "default-default-client-scopes/${scope_id}" -r "$KC_REALM" || return 1
+    local client_id client_uuid
+    for client_id in bistrolink-frontend bistrolink-backend; do
+      client_uuid=$("$kcadm" get clients -r "$KC_REALM" -q "clientId=${client_id}" --fields id --format csv --noquotes | tail -n1)
+      if [ -n "$client_uuid" ]; then
+        "$kcadm" update "clients/${client_uuid}/default-client-scopes/${scope_id}" -r "$KC_REALM" || return 1
+      fi
+    done
+  }
+
+  aplicar_cambios_realm \
+    && echo "[set-client-secret] Realm al día: español y scope 'profile' (BL-345)." \
+    || echo "[set-client-secret] AVISO: no se pudieron aplicar los cambios del realm de BL-345." >&2
+
   # BL-264: usuarios de prueba, solo donde el entorno lo pide (local y
   # staging con KC_LOAD_TEST_USERS=true; nunca en producción). Reusa la
   # sesión de kcadm abierta arriba. Si falla, se avisa en el log pero
