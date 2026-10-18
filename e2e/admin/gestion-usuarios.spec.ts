@@ -53,10 +53,14 @@ function letras(cantidad = 6): string {
  */
 async function abrirUsuarios(page: Page) {
   const [respuesta] = await Promise.all([
+    // La llamada a la API (fetch con Bearer), no el documento de la página:
+    // /admin/usuarios también termina en "/usuarios".
     page.waitForResponse(
       (r) =>
         new URL(r.url()).pathname.endsWith("/usuarios") &&
-        r.request().method() === "GET",
+        r.request().method() === "GET" &&
+        r.request().resourceType() === "fetch" &&
+        Boolean(r.request().headers()["authorization"]),
     ),
     page.goto(USUARIOS_PATH),
   ]);
@@ -331,7 +335,12 @@ test.describe("BL-357 · Gestión de usuarios", () => {
       name: /No podés desactivar tu propio usuario/,
     });
     await expect(desactivar).toHaveAttribute("aria-disabled", "true");
-    await desactivar.click();
+    // Playwright no hace clic en un elemento con aria-disabled (lo trata como
+    // deshabilitado): se prueba con el teclado, que además confirma que el
+    // botón recibe foco y que Enter no abre nada.
+    await desactivar.focus();
+    await expect(desactivar).toBeFocused();
+    await page.keyboard.press("Enter");
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(
       propia.getByRole("button", {
