@@ -374,12 +374,16 @@ describe("cambiosDeUsuario (BL-366)", () => {
 
   it("completa el nombre de un usuario anterior a BL-361", () => {
     expect(
-      cambiosDeUsuario({ nombre: null, apellido: null, email: null }, "MOZO", {
-        nombre: "Ana",
-        apellido: "",
-        email: "",
-        rol: "MOZO",
-      }),
+      cambiosDeUsuario(
+        { nombre: null, apellido: null, email: undefined },
+        "MOZO",
+        {
+          nombre: "Ana",
+          apellido: "",
+          email: "",
+          rol: "MOZO",
+        },
+      ),
     ).toEqual({ nombre: "Ana" });
   });
 });
