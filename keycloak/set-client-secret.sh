@@ -118,9 +118,15 @@ else
     # 2. Client scope "profile" (BL-344): nombre y usuario en el token.
     #    Keycloak 26 no lo crea al importar; se crea solo si no existe, con
     #    los mismos mappers que realm-export.json.
+    #    Sin awk ni grep: la imagen de Keycloak (UBI micro) no los trae.
     buscar_scope_profile() {
       "$kcadm" get client-scopes -r "$KC_REALM" --fields id,name --format csv --noquotes \
-        | awk -F, '$2 == "profile" { print $1 }'
+        | while IFS=, read -r id nombre; do
+            if [ "$nombre" = "profile" ]; then
+              echo "$id"
+              break
+            fi
+          done
     }
     local scope_id
     scope_id=$(buscar_scope_profile)
