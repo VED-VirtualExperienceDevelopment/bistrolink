@@ -81,7 +81,7 @@ const FOCO =
  * Ícono de Material Symbols decorativo. El tamaño va en `style` porque la
  * hoja de Google Fonts fija `font-size: 24px` y pisa las clases de Tailwind.
  */
-function Icono({ nombre, tamano, className = '' }: { nombre: string; tamano: number; className?: string }) {
+function Icono({ nombre, tamano, className = '' }: Readonly<{ nombre: string; tamano: number; className?: string }>)  {
   return (
     <span
       aria-hidden="true"
