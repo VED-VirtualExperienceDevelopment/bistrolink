@@ -83,13 +83,14 @@ export class UsuariosController {
     );
   }
 
+  // Rol y, desde BL-366, nombre, apellido y correo (lo que venga en el body).
   @Patch(':id')
-  actualizarRol(
+  actualizar(
     @Req() req: { user: AuthenticatedUser },
     @Param('id') id: string,
     @Body() dto: UpdateUsuarioDto,
   ) {
-    return this.usuariosService.actualizarRol(
+    return this.usuariosService.actualizar(
       req.user.tenantId,
       req.user.sub,
       id,

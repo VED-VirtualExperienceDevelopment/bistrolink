@@ -1085,3 +1085,126 @@ describe('Gestión de usuarios (HU-013) - cuenta de cocina (BL-362)', () => {
     },
   );
 });
+
+// ── BL-366: editar nombre, apellido y correo ────────────────────────────────
+describe('Gestión de usuarios (HU-013) - editar datos (BL-366)', () => {
+  const COCINA_A_KEYCLOAK_ID = 'd1a2b3c4-5566-4778-8899-aabbccddeeff'; // test-users.json
+
+  let app: INestApplication;
+  let prisma: PrismaClient;
+  let creado: { id: string; keycloakId: string; tenantId: string } | undefined;
+
+  const itConAdmin = ADMIN_PASS ? it : it.skip;
+
+  beforeAll(async () => {
+    const moduleRef: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
+    app = moduleRef.createNestApplication();
+    await app.init();
+    prisma = new PrismaClient();
+  });
+
+  afterAll(async () => {
+    if (creado) {
+      const { keycloakId, tenantId } = creado;
+      await borrarUsuarioKeycloak(keycloakId).catch(() => undefined);
+      await prisma
+        .$transaction(async (tx) => {
+          await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`;
+          await tx.usuario.deleteMany({ where: { keycloakId } });
+        })
+        .catch(() => undefined); // best-effort
+    }
+    await prisma.$disconnect();
+    await app.close();
+  });
+
+  itConAdmin(
+    '[TC-I-066] Usuarios: ADMIN cambia el nombre y el correo de un usuario, en Keycloak y en el listado',
+    async () => {
+      const token = await getToken(ADMIN_USER, ADMIN_PASS as string);
+      const username = `mozo-editar-${Date.now()}`;
+
+      const alta = await request(app.getHttpServer())
+        .post('/usuarios')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          username,
+          email: `${username}@bistrolink.dev`,
+          nombre: 'Mozo',
+          apellido: 'Prueba',
+          rol: 'MOZO',
+          restauranteId: RESTAURANTE_TENANT_A,
+        })
+        .expect(201);
+      creado = {
+        id: alta.body.id,
+        keycloakId: alta.body.keycloakId,
+        tenantId: alta.body.tenantId,
+      };
+
+      const nuevoEmail = `${username}-nuevo@bistrolink.dev`;
+      const res = await request(app.getHttpServer())
+        .patch(`/usuarios/${creado.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ nombre: 'Juan Carlos', email: nuevoEmail })
+        .expect(200);
+      expect(res.body).toMatchObject({
+        nombre: 'Juan Carlos',
+        apellido: 'Prueba',
+        email: nuevoEmail,
+        rol: 'MOZO',
+      });
+
+      // En Keycloak (lo lee el encabezado en el próximo ingreso).
+      const usuarioKc = await (
+        await fetch(
+          `${KEYCLOAK_URL}/admin/realms/${REALM}/users/${creado.keycloakId}`,
+          {
+            headers: { Authorization: `Bearer ${await getMasterAdminToken()}` },
+          },
+        )
+      ).json();
+      expect(usuarioKc.firstName).toBe('Juan Carlos');
+      expect(usuarioKc.lastName).toBe('Prueba');
+      expect(usuarioKc.email).toBe(nuevoEmail);
+      // Se reenvía el usuario entero: el tenant_id sigue ahí.
+      expect(usuarioKc.attributes?.tenant_id).toEqual([creado.tenantId]);
+    },
+  );
+
+  itConAdmin(
+    '[TC-I-067] Usuarios: un correo que ya usa otra persona se rechaza con 409 y no cambia nada',
+    async () => {
+      if (!creado) throw new Error('TC-I-066 no llegó a crear el usuario');
+      const token = await getToken(ADMIN_USER, ADMIN_PASS as string);
+
+      const res = await request(app.getHttpServer())
+        .patch(`/usuarios/${creado.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ email: 'admin-test@bistrolink.dev.com' })
+        .expect(409);
+      expect(res.body.message).toBe('Ya hay otro usuario con ese correo');
+
+      const fila = await prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT set_config('app.tenant_id', ${creado?.tenantId}, true)`;
+        return tx.usuario.findUnique({ where: { id: creado?.id } });
+      });
+      expect(fila?.email).not.toBe('admin-test@bistrolink.dev.com');
+    },
+  );
+
+  itConAdmin(
+    '[TC-I-068] Usuarios: la cuenta de cocina no se edita por PATCH /usuarios/:id (404)',
+    async () => {
+      const token = await getToken(ADMIN_USER, ADMIN_PASS as string);
+
+      await request(app.getHttpServer())
+        .patch(`/usuarios/${COCINA_A_KEYCLOAK_ID}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ nombre: 'Otra' })
+        .expect(404);
+    },
+  );
+});

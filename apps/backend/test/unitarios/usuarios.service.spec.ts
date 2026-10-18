@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   NotFoundException,
@@ -50,6 +51,7 @@ describe('UsuariosService', () => {
       deleteUser: jest.fn(),
       logoutUser: jest.fn().mockResolvedValue(true),
       resetPassword: jest.fn(),
+      actualizarPerfil: jest.fn(),
       findUserById: jest.fn(),
       listarUsuariosDelTenant: jest.fn().mockResolvedValue([]),
       rolesDeRealm: jest.fn().mockResolvedValue([]),
@@ -165,7 +167,7 @@ describe('UsuariosService', () => {
 
       // Sin esto, "keycloak-id-huerfano" quedaría como identidad en Keycloak
       // sin ninguna fila correspondiente en usuario — invisible para
-      // listar()/actualizarRol()/desactivar().
+      // listar()/actualizar()/desactivar().
       expect(keycloakAdmin.deleteUser).toHaveBeenCalledWith(
         'keycloak-id-huerfano',
       );
@@ -947,8 +949,8 @@ describe('UsuariosService', () => {
     });
   });
 
-  describe('actualizarRol (RF.19 al degradar un Admin)', () => {
-    it('[TC-U-020] UsuariosService.actualizarRol rechaza con 409 si se intenta bajar de rol al único Admin', async () => {
+  describe('actualizar: rol (RF.19 al degradar un Admin)', () => {
+    it('[TC-U-020] UsuariosService.actualizar rechaza con 409 si se intenta bajar de rol al único Admin', async () => {
       tx().usuario.findUnique.mockResolvedValue({
         id: ADMIN_A_ID,
         rol: 'ADMIN',
@@ -957,7 +959,7 @@ describe('UsuariosService', () => {
       tx().usuario.count.mockResolvedValue(0);
 
       await expect(
-        service.actualizarRol(TENANT_ID, ACTOR_KEYCLOAK_ID, ADMIN_A_ID, {
+        service.actualizar(TENANT_ID, ACTOR_KEYCLOAK_ID, ADMIN_A_ID, {
           rol: 'MOZO',
         }),
       ).rejects.toThrow(ConflictException);
@@ -968,7 +970,7 @@ describe('UsuariosService', () => {
       expect(auditLog.registrar).not.toHaveBeenCalled();
     });
 
-    it('[TC-U-021] UsuariosService.actualizarRol permite bajar de rol a un Admin si existe otro Admin activo, y lo audita', async () => {
+    it('[TC-U-021] UsuariosService.actualizar permite bajar de rol a un Admin si existe otro Admin activo, y lo audita', async () => {
       tx().usuario.findUnique.mockResolvedValue({
         id: ADMIN_A_ID,
         rol: 'ADMIN',
@@ -980,7 +982,7 @@ describe('UsuariosService', () => {
         rol: 'MOZO',
       });
 
-      const resultado = await service.actualizarRol(
+      const resultado = await service.actualizar(
         TENANT_ID,
         ACTOR_KEYCLOAK_ID,
         ADMIN_A_ID,
@@ -1003,6 +1005,133 @@ describe('UsuariosService', () => {
           detalle: { rolAnterior: 'ADMIN', rolNuevo: 'MOZO' },
         }),
       );
+    });
+  });
+
+  describe('actualizar: nombre, apellido y correo (BL-366)', () => {
+    const mozo = {
+      id: 'usuario-mozo',
+      rol: 'MOZO',
+      keycloakId: 'kc-mozo',
+      nombre: 'Juan',
+      apellido: 'Pérez',
+      email: 'juan@ejemplo.com',
+      activo: true,
+    };
+
+    it('[TC-U-066] UsuariosService.actualizar cambia en Keycloak y en la fila solo los campos que cambian, y audita cuáles sin los valores', async () => {
+      tx().usuario.findUnique.mockResolvedValue(mozo);
+      tx().usuario.update.mockResolvedValue({
+        ...mozo,
+        nombre: 'Juan Carlos',
+        email: 'jc@ejemplo.com',
+      });
+
+      const resultado = await service.actualizar(
+        TENANT_ID,
+        ACTOR_KEYCLOAK_ID,
+        'usuario-mozo',
+        // El apellido viene igual: no cuenta como cambio.
+        { nombre: 'Juan Carlos', apellido: 'Pérez', email: 'jc@ejemplo.com' },
+      );
+
+      expect(keycloakAdmin.actualizarPerfil).toHaveBeenCalledWith('kc-mozo', {
+        firstName: 'Juan Carlos',
+        email: 'jc@ejemplo.com',
+      });
+      expect(keycloakAdmin.assignRealmRole).not.toHaveBeenCalled();
+      expect(tx().usuario.update).toHaveBeenCalledWith({
+        where: { id: 'usuario-mozo' },
+        data: { nombre: 'Juan Carlos', email: 'jc@ejemplo.com' },
+      });
+      expect(resultado).toMatchObject({
+        nombre: 'Juan Carlos',
+        cuentaCompartida: false,
+      });
+
+      expect(auditLog.registrar).toHaveBeenCalledTimes(1);
+      expect(auditLog.registrar).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: AuditAction.USUARIO_DATOS_MODIFICADOS,
+          targetUsuarioId: 'usuario-mozo',
+          detalle: { rol: 'MOZO', campos: ['nombre', 'email'] },
+        }),
+      );
+      // [S] Los valores (datos personales) no van a la auditoría.
+      const auditado = JSON.stringify(auditLog.registrar.mock.calls);
+      expect(auditado).not.toContain('Juan Carlos');
+      expect(auditado).not.toContain('jc@ejemplo.com');
+    });
+
+    it('[TC-U-067] UsuariosService.actualizar responde 400 si no hay ningún cambio', async () => {
+      tx().usuario.findUnique.mockResolvedValue(mozo);
+
+      await expect(
+        service.actualizar(TENANT_ID, ACTOR_KEYCLOAK_ID, 'usuario-mozo', {
+          rol: 'MOZO',
+          nombre: 'Juan',
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(keycloakAdmin.actualizarPerfil).not.toHaveBeenCalled();
+      expect(tx().usuario.update).not.toHaveBeenCalled();
+    });
+
+    it('[TC-U-068] UsuariosService.actualizar no toca la fila ni audita si Keycloak rechaza el correo (ya usado)', async () => {
+      tx().usuario.findUnique.mockResolvedValue(mozo);
+      keycloakAdmin.actualizarPerfil.mockRejectedValue(
+        new ConflictException('Ya hay otro usuario con ese correo'),
+      );
+
+      await expect(
+        service.actualizar(TENANT_ID, ACTOR_KEYCLOAK_ID, 'usuario-mozo', {
+          email: 'ocupado@ejemplo.com',
+        }),
+      ).rejects.toThrow(ConflictException);
+      expect(tx().usuario.update).not.toHaveBeenCalled();
+      expect(auditLog.registrar).not.toHaveBeenCalled();
+    });
+
+    it('[TC-U-069] UsuariosService.actualizar cambia el rol y los datos juntos, con una entrada de auditoría para cada cosa', async () => {
+      tx().usuario.findUnique.mockResolvedValue(mozo);
+      tx().usuario.update.mockResolvedValue({
+        ...mozo,
+        rol: 'ADMIN',
+        apellido: 'Pérez Núñez',
+      });
+
+      await service.actualizar(TENANT_ID, ACTOR_KEYCLOAK_ID, 'usuario-mozo', {
+        rol: 'ADMIN',
+        apellido: 'Pérez Núñez',
+      });
+
+      // Primero el perfil (lo que más puede fallar) y después el rol.
+      expect(
+        keycloakAdmin.actualizarPerfil.mock.invocationCallOrder[0],
+      ).toBeLessThan(keycloakAdmin.assignRealmRole.mock.invocationCallOrder[0]);
+      expect(tx().usuario.update).toHaveBeenCalledWith({
+        where: { id: 'usuario-mozo' },
+        data: { rol: 'ADMIN', apellido: 'Pérez Núñez' },
+      });
+      expect(auditLog.registrar).toHaveBeenCalledWith(
+        expect.objectContaining({ action: AuditAction.USUARIO_ROL_MODIFICADO }),
+      );
+      expect(auditLog.registrar).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: AuditAction.USUARIO_DATOS_MODIFICADOS,
+          detalle: { rol: 'ADMIN', campos: ['apellido'] },
+        }),
+      );
+    });
+
+    it('[TC-U-070] UsuariosService.actualizar responde 404 con un id sin fila (por ejemplo, la cuenta de cocina)', async () => {
+      tx().usuario.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.actualizar(TENANT_ID, ACTOR_KEYCLOAK_ID, 'kc-cocina', {
+          nombre: 'Otra',
+        }),
+      ).rejects.toThrow(NotFoundException);
+      expect(keycloakAdmin.actualizarPerfil).not.toHaveBeenCalled();
     });
   });
 });

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -292,7 +293,7 @@ export class UsuariosService {
       // Compensación: la identidad en Keycloak ya existe, pero algo falló
       // después (asignar el rol, o persistir la fila en Postgres). Sin esto,
       // quedaría un usuario en Keycloak sin fila correspondiente en la base
-      // — un huérfano invisible para listar()/actualizarRol()/desactivar().
+      // — un huérfano invisible para listar()/actualizar()/desactivar().
       try {
         await this.keycloakAdmin.deleteUser(keycloakId);
       } catch (cleanupError) {
@@ -308,13 +309,27 @@ export class UsuariosService {
     }
   }
 
-  async actualizarRol(
+  /**
+   * PATCH /usuarios/:id: cambia el rol (HU-013) y, desde BL-366, el nombre,
+   * el apellido y el correo. Se cambia solo lo que viene en el body.
+   *
+   * Orden, dentro de la transacción con el lock por tenant:
+   * 1. RF.19 si se le baja el rol a un Admin.
+   * 2. Perfil en Keycloak (nombre, apellido, correo). Va primero porque es
+   *    lo que más probablemente falla (un correo ya usado: 409); si falla,
+   *    no se cambió nada.
+   * 3. Rol en Keycloak.
+   * 4. La fila de `usuario`. Si Keycloak falló antes, hay rollback.
+   *
+   * La cuenta de cocina no tiene fila: responde 404 (BL-362, no se edita).
+   */
+  async actualizar(
     tenantId: string,
     actorKeycloakId: string,
     usuarioId: string,
     dto: UpdateUsuarioDto,
   ) {
-    const { actualizado, rolAnterior } =
+    const { actualizado, rolAnterior, cambiaRol, camposPerfil } =
       await this.tenantPrisma.runInTenantContext(
         tenantId,
         async (tx) => {
@@ -326,18 +341,67 @@ export class UsuariosService {
 
           const usuario = await this.obtenerOFallar(tx, usuarioId);
 
-          if (usuario.rol === 'ADMIN' && dto.rol !== 'ADMIN') {
+          // Solo lo que cambia de verdad: mandar el mismo valor no cuenta.
+          const cambiaRol = dto.rol !== undefined && dto.rol !== usuario.rol;
+          const perfil: {
+            firstName?: string;
+            lastName?: string;
+            email?: string;
+          } = {};
+          const camposPerfil: string[] = [];
+          if (dto.nombre !== undefined && dto.nombre !== usuario.nombre) {
+            perfil.firstName = dto.nombre;
+            camposPerfil.push('nombre');
+          }
+          if (dto.apellido !== undefined && dto.apellido !== usuario.apellido) {
+            perfil.lastName = dto.apellido;
+            camposPerfil.push('apellido');
+          }
+          if (dto.email !== undefined && dto.email !== usuario.email) {
+            perfil.email = dto.email;
+            camposPerfil.push('email');
+          }
+          if (!cambiaRol && camposPerfil.length === 0) {
+            throw new BadRequestException('No hay cambios para guardar');
+          }
+
+          if (cambiaRol && usuario.rol === 'ADMIN' && dto.rol !== 'ADMIN') {
             await this.asegurarNoEsUltimoAdmin(tx, usuarioId);
           }
 
-          await this.keycloakAdmin.assignRealmRole(usuario.keycloakId, dto.rol);
+          if (camposPerfil.length > 0) {
+            await this.keycloakAdmin.actualizarPerfil(
+              usuario.keycloakId,
+              perfil,
+            );
+          }
+          if (cambiaRol) {
+            await this.keycloakAdmin.assignRealmRole(
+              usuario.keycloakId,
+              dto.rol as string,
+            );
+          }
 
           const actualizado = await tx.usuario.update({
             where: { id: usuarioId },
-            data: { rol: dto.rol },
+            data: {
+              ...(cambiaRol ? { rol: dto.rol } : {}),
+              ...(perfil.firstName !== undefined
+                ? { nombre: perfil.firstName }
+                : {}),
+              ...(perfil.lastName !== undefined
+                ? { apellido: perfil.lastName }
+                : {}),
+              ...(perfil.email !== undefined ? { email: perfil.email } : {}),
+            },
           });
 
-          return { actualizado, rolAnterior: usuario.rol };
+          return {
+            actualizado,
+            rolAnterior: usuario.rol,
+            cambiaRol,
+            camposPerfil,
+          };
         },
         { timeout: 10_000 }, // margen extra: la transacción espera a Keycloak
       );
@@ -345,15 +409,27 @@ export class UsuariosService {
     // [S] DoD HU-013: todo cambio de rol se audita en Pino, nivel INFO —
     // fuera de la transacción, para no loguear un cambio que terminó en
     // rollback si algo posterior a esta línea fallara.
-    this.auditLog.registrar({
-      action: AuditAction.USUARIO_ROL_MODIFICADO,
-      tenantId,
-      actorKeycloakId,
-      targetUsuarioId: usuarioId,
-      detalle: { rolAnterior, rolNuevo: actualizado.rol },
-    });
+    if (cambiaRol) {
+      this.auditLog.registrar({
+        action: AuditAction.USUARIO_ROL_MODIFICADO,
+        tenantId,
+        actorKeycloakId,
+        targetUsuarioId: usuarioId,
+        detalle: { rolAnterior, rolNuevo: actualizado.rol },
+      });
+    }
+    // BL-366: qué campos cambiaron, sin los valores (son datos personales).
+    if (camposPerfil.length > 0) {
+      this.auditLog.registrar({
+        action: AuditAction.USUARIO_DATOS_MODIFICADOS,
+        tenantId,
+        actorKeycloakId,
+        targetUsuarioId: usuarioId,
+        detalle: { rol: actualizado.rol, campos: camposPerfil },
+      });
+    }
 
-    return actualizado;
+    return { ...actualizado, cuentaCompartida: false };
   }
 
   async desactivar(

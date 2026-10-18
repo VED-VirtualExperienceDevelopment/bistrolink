@@ -42,8 +42,12 @@ export interface CrearUsuarioResponse extends Usuario {
   temporaryPassword: string;
 }
 
-export interface ActualizarRolPayload {
-  rol: UsuarioRol;
+// PATCH /usuarios/:id: se manda solo lo que cambia (BL-366 suma los datos).
+export interface ActualizarUsuarioPayload {
+  rol?: UsuarioRol;
+  nombre?: string;
+  apellido?: string;
+  email?: string;
 }
 
 export interface DesactivarResponse {

@@ -360,6 +360,62 @@ export class KeycloakAdminService {
     return true;
   }
 
+  /**
+   * BL-366: cambia el nombre, el apellido o el correo de un usuario. A
+   * diferencia de completarPerfil (que solo llena lo que falta), pisa los
+   * valores que vienen. Lee el usuario completo y lo vuelve a mandar entero
+   * con los cambios, así el PUT no borra atributos como tenant_id.
+   *
+   * Un correo que ya usa otra persona del realm: Keycloak responde 409 y
+   * acá se convierte en un 409 con un mensaje claro. [S] El correo no va al
+   * log: solo el keycloakId y el status.
+   */
+  async actualizarPerfil(
+    keycloakId: string,
+    cambios: Partial<PerfilKeycloak>,
+  ): Promise<void> {
+    const getRes = await this.adminFetch(`/users/${keycloakId}`);
+    if (!getRes.ok) {
+      const body = await getRes.text();
+      this.logAndBuildError(
+        `No se pudo leer el usuario ${keycloakId} en Keycloak para actualizar su perfil`,
+        getRes.status,
+        body,
+      );
+      throw new InternalServerErrorException(
+        `No se pudo leer el usuario en Keycloak: ${getRes.status}`,
+      );
+    }
+    const usuario = (await getRes.json()) as Record<string, unknown>;
+
+    const res = await this.adminFetch(`/users/${keycloakId}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        ...usuario,
+        ...cambios,
+        // Lo carga un admin, igual que en el alta (emailVerified: true).
+        ...(cambios.email ? { emailVerified: true } : {}),
+      }),
+    });
+    if (res.status === 409) {
+      this.logger.warn(
+        `Keycloak rechazó el correo nuevo del usuario ${keycloakId}: ya lo usa otro usuario`,
+      );
+      throw new ConflictException('Ya hay otro usuario con ese correo');
+    }
+    if (!res.ok) {
+      const body = await res.text();
+      this.logAndBuildError(
+        `No se pudo actualizar el perfil del usuario ${keycloakId} en Keycloak`,
+        res.status,
+        body,
+      );
+      throw new InternalServerErrorException(
+        `No se pudo actualizar el perfil del usuario en Keycloak: ${res.status}`,
+      );
+    }
+  }
+
   /** Asigna un rol de Realm (ADMIN, MOZO, COCINA, COMENSAL) a un usuario. */
   async assignRealmRole(keycloakId: string, roleName: string): Promise<void> {
     const roleRes = await this.adminFetch(`/roles/${roleName}`);

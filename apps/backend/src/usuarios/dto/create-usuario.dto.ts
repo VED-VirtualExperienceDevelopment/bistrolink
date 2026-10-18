@@ -23,11 +23,11 @@ export const ROLES_VALIDOS = ['ADMIN', 'MOZO'] as const;
  * inválido sea un 400 claro y no un 500 de Keycloak.
  */
 export const FORMATO_NOMBRE_PERSONA = /^\p{L}[\p{L}\p{M} .'’-]*$/u;
-const MENSAJE_NOMBRE =
+export const MENSAJE_NOMBRE =
   'usá solo letras, espacios, apóstrofo, punto o guion, empezando con una letra';
 
 /** Saca espacios de los extremos y deja uno solo entre palabras. */
-const limpiarEspacios = ({ value }: { value: unknown }) =>
+export const limpiarEspacios = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : value;
 
 export class CreateUsuarioDto {

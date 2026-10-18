@@ -6,7 +6,7 @@ import { useKeycloakAuth } from '@/components/providers/KeycloakProvider';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { UsuariosTable } from '@/components/admin/usuarios/UsuariosTable';
 import { CrearUsuarioDialog } from '@/components/admin/usuarios/CrearUsuarioDialog';
-import { EditarRolDialog } from '@/components/admin/usuarios/EditarRolDialog';
+import { EditarUsuarioDialog } from '@/components/admin/usuarios/EditarUsuarioDialog';
 import { DesactivarUsuarioDialog } from '@/components/admin/usuarios/DesactivarUsuarioDialog';
 import { ReactivarUsuarioDialog } from '@/components/admin/usuarios/ReactivarUsuarioDialog';
 import { RestablecerContrasenaDialog } from '@/components/admin/usuarios/RestablecerContrasenaDialog';
@@ -173,7 +173,7 @@ export default function UsuariosPage() {
       {!loading && !loadError && (usuarios.length === 0 || usuariosFiltrados.length > 0) && (
         <UsuariosTable
           usuarios={usuariosFiltrados}
-          onEditarRol={setUsuarioAEditar}
+          onEditar={setUsuarioAEditar}
           onDesactivar={setUsuarioADesactivar}
           onReactivar={setUsuarioAReactivar}
           onRestablecerContrasena={setUsuarioARestablecer}
@@ -190,7 +190,10 @@ export default function UsuariosPage() {
         />
       )}
 
-      <EditarRolDialog
+      {/* BL-366: key por usuario, para que el formulario tome los datos de
+          cada persona al abrirse (antes quedaba el valor de la primera). */}
+      <EditarUsuarioDialog
+        key={usuarioAEditar?.id ?? 'ninguno'}
         open={usuarioAEditar !== null}
         onClose={() => setUsuarioAEditar(null)}
         token={token}

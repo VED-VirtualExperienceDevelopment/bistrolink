@@ -5,7 +5,7 @@ import { esCuentaCocina, nombreCompleto, nombreParaMostrar } from './Usuarios.ut
 
 interface Props {
   usuarios: Usuario[];
-  onEditarRol: (usuario: Usuario) => void;
+  onEditar: (usuario: Usuario) => void;
   onDesactivar: (usuario: Usuario) => void;
   onReactivar: (usuario: Usuario) => void;
   onRestablecerContrasena: (usuario: Usuario) => void;
@@ -50,7 +50,7 @@ const COLUMNAS =
  */
 export function UsuariosTable({
   usuarios,
-  onEditarRol,
+  onEditar,
   onDesactivar,
   onReactivar,
   onRestablecerContrasena,
@@ -141,13 +141,14 @@ export function UsuariosTable({
 
               {/* Acciones: botones de 48 px con el nombre de la persona. */}
               <div className="flex flex-wrap items-center gap-2 md:justify-end">
-                {/* BL-362: la cuenta de cocina no cambia de rol. */}
+                {/* BL-362 y BL-366: la cuenta de cocina no se edita (ni el rol
+                    ni los datos). */}
                 {!cocina && (
                   <button
                     type="button"
-                    onClick={() => onEditarRol(usuario)}
-                    aria-label={`Editar el rol de ${nombre}`}
-                    title="Editar rol"
+                    onClick={() => onEditar(usuario)}
+                    aria-label={`Editar a ${nombre}`}
+                    title="Editar usuario"
                     className={`${CLASE_ACCION} hover:bg-surface-container-high hover:text-primary`}
                   >
                     <span className="material-symbols-outlined text-[22px]" aria-hidden="true">

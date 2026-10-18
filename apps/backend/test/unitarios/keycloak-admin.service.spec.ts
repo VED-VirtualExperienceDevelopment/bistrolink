@@ -356,6 +356,65 @@ describe('KeycloakAdminService', () => {
     });
   });
 
+  describe('actualizarPerfil (BL-366)', () => {
+    it('[TC-U-071] KeycloakAdminService.actualizarPerfil lee el usuario y lo manda entero con los cambios, sin perder tenant_id', async () => {
+      mockTokenRequest();
+      fetchMock.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: 'kc-1',
+          username: 'jperez',
+          firstName: 'Juan',
+          attributes: { tenant_id: ['tenant-1'] },
+        }),
+      });
+      mockTokenRequest();
+      fetchMock.mockResolvedValueOnce({ ok: true, status: 204 });
+
+      await expect(
+        service.actualizarPerfil('kc-1', {
+          firstName: 'Juan Carlos',
+          email: 'jc@ejemplo.com',
+        }),
+      ).resolves.toBeUndefined();
+
+      const putCall = fetchMock.mock.calls.find(
+        ([, init]) => init?.method === 'PUT',
+      );
+      expect(JSON.parse(putCall[1].body)).toEqual({
+        id: 'kc-1',
+        username: 'jperez',
+        firstName: 'Juan Carlos',
+        email: 'jc@ejemplo.com',
+        emailVerified: true,
+        attributes: { tenant_id: ['tenant-1'] },
+      });
+    });
+
+    it('[TC-U-072] [S] KeycloakAdminService.actualizarPerfil convierte el 409 de Keycloak en ConflictException y no loguea el correo', async () => {
+      mockTokenRequest();
+      fetchMock.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ id: 'kc-1' }),
+      });
+      mockTokenRequest();
+      fetchMock.mockResolvedValueOnce({
+        status: 409,
+        ok: false,
+        text: async () => 'User exists with same email',
+      });
+
+      await expect(
+        service.actualizarPerfil('kc-1', { email: 'ocupado@ejemplo.com' }),
+      ).rejects.toThrow(ConflictException);
+
+      const logs = [...loggerErrorSpy.mock.calls, ...loggerWarnSpy.mock.calls]
+        .flat()
+        .join(' ');
+      expect(logs).not.toContain('ocupado@ejemplo.com');
+    });
+  });
+
   describe('cuenta de cocina (BL-362)', () => {
     it('[TC-U-063] KeycloakAdminService.listarUsuariosDelTenant busca por el atributo tenant_id, con la representación completa', async () => {
       mockTokenRequest();
