@@ -9,9 +9,11 @@ import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { CrearPedidoDto } from './dto/crear-pedido.dto';
 import { MesaDelQr } from '../qr-mesa/qr-mesa-acceso.service';
 import { KdsGateway } from './kds.gateway';
-import { aPedidoKds } from './pedido-kds.mapper';
+import { aPedidoKds, PedidoParaKds } from './pedido-kds.mapper';
 
-export const ESTADO_INICIAL_PEDIDO = 'RECIBIDO' as const;
+// BL-311 (RD.03, prepago): el pedido espera el pago aprobado antes de ir a
+// cocina. La transición a RECIBIDO la hace la confirmación del pago.
+export const ESTADO_INICIAL_PEDIDO = 'PENDIENTE_PAGO' as const;
 const NUMERO_MESA_VIRTUAL = 0;
 
 @Injectable()
@@ -26,8 +28,9 @@ export class PedidosService {
    *   el pedido es de esa mesa y de ninguna otra.
    */
   async crear(tenantId: string, dto: CrearPedidoDto, mesaQr?: MesaDelQr) {
-    const { pedido, esNuevo, mesaNumero } =
-      await this.tenantPrisma.runInTenantContext(tenantId, async (tx) => {
+    const { pedido } = await this.tenantPrisma.runInTenantContext(
+      tenantId,
+      async (tx) => {
         const existente = await tx.pedido.findUnique({
           where: { idempotencyKey: dto.idempotencyKey },
           include: { lineas: true },
@@ -88,19 +91,88 @@ export class PedidosService {
         });
 
         return { pedido: nuevoPedido, esNuevo: true, mesaNumero: mesa.numero };
-      });
+      },
+    );
 
-    // BL-244: al KDS se le emite el pedido con la misma forma que el
-    // snapshot (mesaNumero incluido), no el objeto crudo de Prisma. La
-    // respuesta al comensal (`return pedido`) no cambia.
-    if (esNuevo && mesaNumero !== null) {
-      this.kdsGateway.emitirNuevoPedido(
-        tenantId,
-        aPedidoKds({ ...pedido, mesa: { numero: mesaNumero } }),
-      );
+    // BL-311 (RD.03, prepago): el pedido NO va al KDS al crearse. Llega a
+    // cocina cuando se aprueba el pago (confirmarPagoEnTx + notificarPedidoConfirmado).
+    return pedido;
+  }
+
+  /**
+   * BL-311 (RD.03, prepago): el pago del pedido se aprobó. Pasa de
+   * PENDIENTE_PAGO a RECIBIDO y deja el cambio en el historial.
+   *
+   * Corre DENTRO de la transacción de quien confirma el pago (PagosService o
+   * el webhook de Mercado Pago), para que el pago aprobado y el pedido en
+   * RECIBIDO se guarden juntos o no se guarde ninguno.
+   *
+   * Idempotente: si el pedido ya no está en PENDIENTE_PAGO (la respuesta
+   * directa y el webhook llegan los dos), devuelve null y no hace nada. El
+   * que recibe el pedido es el que avisa a cocina (notificarPedidoConfirmado),
+   * así el KDS no recibe el mismo pedido dos veces.
+   */
+  async confirmarPagoEnTx(
+    tx: PrismaClient,
+    tenantId: string,
+    pedidoId: string,
+  ): Promise<PedidoParaKds | null> {
+    const { count } = await tx.pedido.updateMany({
+      where: { id: pedidoId, estado: 'PENDIENTE_PAGO' },
+      data: { estado: 'RECIBIDO' },
+    });
+    if (count === 0) {
+      return null;
     }
 
-    return pedido;
+    // Sin usuario: el cambio lo dispara el pago, no una persona del staff.
+    await tx.pedidoEstadoHistorial.create({
+      data: {
+        tenantId,
+        pedidoId,
+        estadoAnterior: 'PENDIENTE_PAGO',
+        estadoNuevo: 'RECIBIDO',
+      },
+    });
+
+    return tx.pedido.findUniqueOrThrow({
+      where: { id: pedidoId },
+      select: {
+        id: true,
+        estado: true,
+        createdAt: true,
+        updatedAt: true,
+        observacionGeneral: true,
+        mesa: { select: { numero: true } },
+        lineas: {
+          select: {
+            id: true,
+            nombreSnapshot: true,
+            cantidad: true,
+            observacion: true,
+          },
+        },
+      },
+    });
+  }
+
+  /**
+   * BL-311: avisa que el pedido ya está pago. Se llama DESPUÉS de confirmar
+   * la transacción (nunca adentro): si la transacción se revierte, cocina no
+   * tiene que haber visto el pedido.
+   * - Al KDS (sala del tenant): `pedido:nuevo`, con la forma de BL-244.
+   * - Al comensal que sigue el pedido (sala del pedido): `pedido:actualizado`.
+   */
+  notificarPedidoConfirmado(
+    tenantId: string,
+    pedido: PedidoParaKds & { updatedAt?: Date },
+  ) {
+    this.kdsGateway.emitirNuevoPedido(tenantId, aPedidoKds(pedido));
+    this.kdsGateway.emitirActualizacionPedido(pedido.id, {
+      id: pedido.id,
+      estado: pedido.estado,
+      actualizadoEn: (pedido.updatedAt ?? new Date()).toISOString(),
+    });
   }
 
   /**

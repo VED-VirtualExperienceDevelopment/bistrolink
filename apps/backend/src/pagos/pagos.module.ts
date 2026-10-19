@@ -7,13 +7,14 @@ import { PagosService } from './pagos.service';
 import { MercadoPagoGateway } from './gateways/mercadopago.gateway';
 import { PagoGatewayFactory } from './gateways/pago-gateway.factory';
 import { PagosController } from './pagos.controller';
+import { PedidosModule } from '../pedidos/pedidos.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AuthModule } from '../auth/auth.module';
 import { Module } from '@nestjs/common';
 import { CfeModule } from '../cfe/cfe.module';
 
 @Module({
-  imports: [PrismaModule, AuthModule, CfeModule],
+  imports: [PrismaModule, AuthModule, CfeModule, PedidosModule],
   controllers: [
     PagosController,
     PagosWebhookController,

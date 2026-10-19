@@ -40,6 +40,9 @@ enum MesaEstado {
 }
 
 enum PedidoEstado {
+  // BL-311 (RD.03, prepago): carrito confirmado esperando el pago aprobado.
+  // Invisible para el KDS; pasa a RECIBIDO al aprobarse el pago.
+  PENDIENTE_PAGO
   RECIBIDO
   EN_PREPARACION
   LISTO_PARA_ENTREGAR

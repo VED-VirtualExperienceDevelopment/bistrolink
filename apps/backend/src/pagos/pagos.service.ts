@@ -13,6 +13,8 @@ import { ResultadoCobro } from './gateways/pago-gateway.interface';
 import { PagoRechazadoException } from './gateways/pago-rechazado.exception';
 import { PagoTemporalmenteNoDisponibleException } from './gateways/pago-temporalmente-no-disponible.exception';
 import { CfeService } from '../cfe/cfe.service';
+import { PedidosService } from '../pedidos/pedidos.service';
+import { PedidoParaKds } from '../pedidos/pedido-kds.mapper';
 
 @Injectable()
 export class PagosService {
@@ -20,6 +22,7 @@ export class PagosService {
     private readonly tenantPrisma: TenantPrismaService,
     private readonly gatewayFactory: PagoGatewayFactory,
     private readonly cfe: CfeService,
+    private readonly pedidos: PedidosService,
   ) {}
 
   async crear(tenantId: string, dto: CrearPagoDto) {
@@ -69,9 +72,8 @@ export class PagosService {
       estado = 'RECHAZADO';
     }
 
-    const pagoFinal = await this.tenantPrisma.runInTenantContext(
-      tenantId,
-      async (tx) => {
+    const { pagoFinal, pedidoConfirmado } =
+      await this.tenantPrisma.runInTenantContext(tenantId, async (tx) => {
         // Solo si el pago sigue PENDIENTE: el webhook de Mercado Pago puede
         // haberlo resuelto antes de que llegue la respuesta de esta llamada,
         // y una respuesta más vieja no debe pisar el estado real.
@@ -79,17 +81,36 @@ export class PagosService {
           where: { id: pago.id, estado: 'PENDIENTE' },
           data: { estado, pasarelaReferencia: resultado.pasarelaReferencia },
         });
+        let confirmado: PedidoParaKds | null = null;
         if (count > 0 && !resultado.pendiente) {
-          // Pago simple (HU-007): un único pago cubre el total. HU-008 lo
-          // reemplaza por la suma de pagos parciales.
+          // BL-311: aprobado o rechazado, la mesa vuelve a OCUPADA. Con
+          // prepago, el comensal paga ANTES de comer: la mesa la libera el
+          // cierre de sesión (HU-017), no el pago.
           await tx.mesa.updateMany({
             where: { id: mesaId, estado: 'EN_PROCESO_DE_PAGO' },
-            data: { estado: resultado.aprobado ? 'LIBRE' : 'OCUPADA' },
+            data: { estado: 'OCUPADA' },
           });
+          // BL-311 (RD.03): pago aprobado => el pedido pasa a RECIBIDO.
+          if (resultado.aprobado) {
+            confirmado = await this.pedidos.confirmarPagoEnTx(
+              tx,
+              tenantId,
+              pago.pedidoId,
+            );
+          }
         }
-        return tx.pago.findUniqueOrThrow({ where: { id: pago.id } });
-      },
-    );
+        return {
+          pagoFinal: await tx.pago.findUniqueOrThrow({
+            where: { id: pago.id },
+          }),
+          pedidoConfirmado: confirmado,
+        };
+      });
+
+    // Recién con la transacción confirmada se avisa a cocina y al comensal.
+    if (pedidoConfirmado) {
+      this.pedidos.notificarPedidoConfirmado(tenantId, pedidoConfirmado);
+    }
 
     // BL-77: ya guardado como RECHAZADO; recién ahora se le avisa al comensal.
     if (pagoFinal.estado === 'RECHAZADO') {

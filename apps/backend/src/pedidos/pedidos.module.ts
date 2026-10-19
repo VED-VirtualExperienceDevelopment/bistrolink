@@ -17,6 +17,7 @@ import { QrMesaModule } from '../qr-mesa/qr-mesa.module';
     WsAuthService,
     PedidosTransicionService,
   ],
-  exports: [KdsGateway],
+  // BL-311: PagosModule usa PedidosService para confirmar el pago del pedido.
+  exports: [KdsGateway, PedidosService],
 })
 export class PedidosModule {}
