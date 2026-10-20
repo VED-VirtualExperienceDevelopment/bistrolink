@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
-import { CrearPagoDto } from './dto/crear-pago.dto';
+import { SolicitudPago } from './dto/crear-pago.dto';
 import { PagoGatewayFactory } from './gateways/pago-gateway.factory';
 import { ResultadoCobro } from './gateways/pago-gateway.interface';
 import { PagoRechazadoException } from './gateways/pago-rechazado.exception';
@@ -25,7 +25,8 @@ export class PagosService {
     private readonly pedidos: PedidosService,
   ) {}
 
-  async crear(tenantId: string, dto: CrearPagoDto) {
+  // BL-311: el pedidoId lo pone el controller desde la ruta.
+  async crear(tenantId: string, dto: SolicitudPago) {
     // Primero se elige la pasarela: si el medio de pago no está disponible,
     // se falla ACÁ, antes de reservar el pago o tocar la mesa.
     const gateway = this.gatewayFactory.obtener(dto.medioPago);
@@ -132,7 +133,7 @@ export class PagosService {
     return pagoFinal;
   }
 
-  private async reservar(tenantId: string, dto: CrearPagoDto) {
+  private async reservar(tenantId: string, dto: SolicitudPago) {
     try {
       return await this.tenantPrisma.runInTenantContext(
         tenantId,

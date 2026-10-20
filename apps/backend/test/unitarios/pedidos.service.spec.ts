@@ -8,6 +8,7 @@ import {
   PedidosService,
   ESTADO_INICIAL_PEDIDO,
 } from '../../src/pedidos/pedidos.service';
+import { hashTokenAcceso } from '../../src/pedidos/token-acceso-pedido';
 import { CrearPedidoDto } from '../../src/pedidos/dto/crear-pedido.dto';
 
 const TENANT_ID = '11111111-1111-1111-1111-111111111111';
@@ -110,7 +111,7 @@ describe('PedidosService.crear - idempotencia', () => {
 
     const resultado = await service.crear(TENANT_ID, dtoBase(), MESA_QR);
 
-    expect(resultado).toBe(pedidoExistente);
+    expect(resultado).toEqual(pedidoExistente);
     expect(mockTx.pedido.create).not.toHaveBeenCalled();
   });
 
@@ -148,7 +149,7 @@ describe('PedidosService.crear - idempotencia', () => {
       }),
     );
     // La respuesta al comensal sigue siendo el pedido completo (HU-003).
-    expect(resultado).toBe(pedidoCreado);
+    expect(resultado).toEqual(pedidoCreado);
     // RD.03: cocina recién lo ve cuando se aprueba el pago (confirmarPagoEnTx).
     expect(mockKdsGateway.emitirNuevoPedido).not.toHaveBeenCalled();
   });
@@ -492,6 +493,91 @@ describe('PedidosService.crear — QR de mesa y restaurante del tenant (BL-204)'
         data: expect.objectContaining({ canal: 'WEB' }),
       }),
     );
+  });
+
+  describe('BL-311 (RD.05): token de acceso del pedido para retirar', () => {
+    beforeEach(() => {
+      mockTx.pedido.update = jest.fn();
+      mockTx.restaurante.findUnique.mockResolvedValue({ tenantId: TENANT_ID });
+      mockTx.mesa.upsert.mockResolvedValue({
+        id: 'mesa-virtual-id',
+        numero: 0,
+        esVirtual: true,
+      });
+    });
+
+    it('pedido para retirar: guarda solo el hash y devuelve el token en claro una vez', async () => {
+      mockTx.pedido.create.mockImplementation(async ({ data }) =>
+        pedidoPrisma({ canal: 'WEB', accesoTokenHash: data.accesoTokenHash }),
+      );
+
+      const resultado: any = await service.crear(TENANT_ID, dtoBase());
+
+      const { accesoTokenHash } = mockTx.pedido.create.mock.calls[0][0].data;
+      expect(resultado.tokenAcceso).toEqual(expect.any(String));
+      expect(resultado.tokenAcceso.length).toBeGreaterThanOrEqual(43);
+      expect(accesoTokenHash).toBe(hashTokenAcceso(resultado.tokenAcceso));
+      // El hash nunca sale del backend.
+      expect(resultado).not.toHaveProperty('accesoTokenHash');
+    });
+
+    it('pedido de mesa: no lleva token (se autoriza con el QR) ni guarda hash', async () => {
+      mockTx.mesa.findUnique.mockResolvedValue(mesaReal());
+
+      const resultado: any = await service.crear(
+        TENANT_ID,
+        dtoBase({ restauranteId: undefined }),
+        MESA_QR,
+      );
+
+      expect(mockTx.pedido.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ accesoTokenHash: null }),
+        }),
+      );
+      expect(resultado).not.toHaveProperty('tokenAcceso');
+    });
+
+    it('dos pedidos para retirar no comparten token', async () => {
+      mockTx.pedido.create.mockImplementation(async () =>
+        pedidoPrisma({ canal: 'WEB' }),
+      );
+
+      const a: any = await service.crear(TENANT_ID, dtoBase());
+      const b: any = await service.crear(TENANT_ID, dtoBase());
+
+      expect(a.tokenAcceso).not.toBe(b.tokenAcceso);
+    });
+
+    it('reintento con la misma clave de un pedido para retirar: emite un token nuevo y reemplaza el hash', async () => {
+      mockTx.pedido.findUnique.mockResolvedValue(
+        pedidoPrisma({
+          id: 'pedido-web',
+          canal: 'WEB',
+          accesoTokenHash: 'a'.repeat(64),
+        }),
+      );
+
+      const resultado: any = await service.crear(TENANT_ID, dtoBase());
+
+      expect(mockTx.pedido.create).not.toHaveBeenCalled();
+      expect(mockTx.pedido.update).toHaveBeenCalledWith({
+        where: { id: 'pedido-web' },
+        data: { accesoTokenHash: hashTokenAcceso(resultado.tokenAcceso) },
+      });
+      expect(resultado).not.toHaveProperty('accesoTokenHash');
+    });
+
+    it('reintento con la misma clave de un pedido de mesa: no toca el token', async () => {
+      mockTx.pedido.findUnique.mockResolvedValue(
+        pedidoPrisma({ canal: 'QR', accesoTokenHash: null }),
+      );
+
+      const resultado: any = await service.crear(TENANT_ID, dtoBase(), MESA_QR);
+
+      expect(mockTx.pedido.update).not.toHaveBeenCalled();
+      expect(resultado).not.toHaveProperty('tokenAcceso');
+    });
   });
 
   it.each([

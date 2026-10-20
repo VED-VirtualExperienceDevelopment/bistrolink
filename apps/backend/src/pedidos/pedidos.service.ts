@@ -10,6 +10,7 @@ import { CrearPedidoDto } from './dto/crear-pedido.dto';
 import { MesaDelQr } from '../qr-mesa/qr-mesa-acceso.service';
 import { KdsGateway } from './kds.gateway';
 import { aPedidoKds, PedidoParaKds } from './pedido-kds.mapper';
+import { generarTokenAcceso } from './token-acceso-pedido';
 
 // BL-311 (RD.03, prepago): el pedido espera el pago aprobado antes de ir a
 // cocina. La transición a RECIBIDO la hace la confirmación del pago.
@@ -28,6 +29,11 @@ export class PedidosService {
    *   el pedido es de esa mesa y de ninguna otra.
    */
   async crear(tenantId: string, dto: CrearPedidoDto, mesaQr?: MesaDelQr) {
+    // BL-311 (RD.05): token de acceso, solo para pedidos para retirar (WEB).
+    // Los de mesa se autorizan con el QR. Se genera afuera de la transacción
+    // para devolverlo en claro: en la base queda solo el hash.
+    const acceso = generarTokenAcceso();
+
     const { pedido } = await this.tenantPrisma.runInTenantContext(
       tenantId,
       async (tx) => {
@@ -36,6 +42,15 @@ export class PedidosService {
           include: { lineas: true },
         });
         if (existente) {
+          // Reintento con la misma clave (el cliente no recibió la primera
+          // respuesta): el token en claro no se puede recuperar, así que se
+          // emite uno nuevo y el anterior deja de valer.
+          if (existente.canal === 'WEB') {
+            await tx.pedido.update({
+              where: { id: existente.id },
+              data: { accesoTokenHash: acceso.hash },
+            });
+          }
           return { pedido: existente, esNuevo: false, mesaNumero: null };
         }
 
@@ -71,6 +86,7 @@ export class PedidosService {
             // BL-204: el canal lo decide el servidor según cómo se resolvió
             // la mesa, no lo que diga el cliente.
             canal: esPedidoDeMesa ? 'QR' : 'WEB',
+            accesoTokenHash: esPedidoDeMesa ? null : acceso.hash,
             observacionGeneral: dto.observacionGeneral,
             lineas: {
               create: dto.items.map((linea) => {
@@ -96,7 +112,16 @@ export class PedidosService {
 
     // BL-311 (RD.03, prepago): el pedido NO va al KDS al crearse. Llega a
     // cocina cuando se aprueba el pago (confirmarPagoEnTx + notificarPedidoConfirmado).
-    return pedido;
+
+    // El hash nunca sale del backend. Al comensal de un pedido para retirar
+    // se le devuelve el token en claro: lo manda en X-Pedido-Token para pagar
+    // y consultar el comprobante.
+    const respuesta: Omit<typeof pedido, 'accesoTokenHash'> &
+      Partial<Pick<typeof pedido, 'accesoTokenHash'>> = { ...pedido };
+    delete respuesta.accesoTokenHash;
+    return pedido.canal === 'WEB'
+      ? { ...respuesta, tokenAcceso: acceso.token }
+      : respuesta;
   }
 
   /**

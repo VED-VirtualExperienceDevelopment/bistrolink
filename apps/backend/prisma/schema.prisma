@@ -232,6 +232,10 @@ model Pedido {
   estado             PedidoEstado
   canal              PedidoCanal
   observacionGeneral String?      @map("observacion_general") @db.VarChar(500) // <-- NUEVO
+  // BL-311 (RD.05): SHA-256 del token de acceso de un pedido para retirar
+  // (canal WEB, sin QR). El token en claro se devuelve una sola vez, al
+  // crear el pedido; acá nunca se guarda. Null en los pedidos de mesa.
+  accesoTokenHash    String?      @map("acceso_token_hash") @db.Char(64)
   createdAt          DateTime     @default(now()) @map("created_at")
   updatedAt          DateTime     @updatedAt @map("updated_at")
 

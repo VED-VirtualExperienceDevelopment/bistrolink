@@ -6,7 +6,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { CrearPagoDto } from '../../src/pagos/dto/crear-pago.dto';
+import { SolicitudPago } from '../../src/pagos/dto/crear-pago.dto';
 import { PagoRechazadoException } from '../../src/pagos/gateways/pago-rechazado.exception';
 import { PagoTemporalmenteNoDisponibleException } from '../../src/pagos/gateways/pago-temporalmente-no-disponible.exception';
 import { PagosService } from '../../src/pagos/pagos.service';
@@ -26,7 +26,7 @@ const PEDIDO_CONFIRMADO = {
   lineas: [],
 };
 
-const DTO: CrearPagoDto = {
+const DTO: SolicitudPago = {
   pedidoId: PEDIDO_ID,
   idempotencyKey: 'pago-001',
   medioPago: 'MERCADOPAGO',
