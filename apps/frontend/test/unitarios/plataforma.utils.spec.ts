@@ -9,6 +9,7 @@ import {
   mensajeDeError,
   resumirAlta,
   resumirPagina,
+  rutaListado,
   totalPaginas,
   validarFormulario,
 } from "@/components/plataforma/plataforma.utils";
@@ -304,6 +305,36 @@ describe("resumirPagina (BL-405)", () => {
   it("avisa cuando no hay establecimientos", () => {
     expect(resumirPagina({ total: 0, tamanoPagina: 20 }, 1)).toBe(
       "Todavía no hay establecimientos",
+    );
+  });
+});
+
+describe("resumirPagina con búsqueda (BL-406)", () => {
+  it("dice qué se buscó", () => {
+    expect(resumirPagina({ total: 3, tamanoPagina: 20 }, 1, " uno ")).toBe(
+      "Página 1 de 1. 3 establecimientos coinciden con «uno»",
+    );
+    expect(resumirPagina({ total: 1, tamanoPagina: 20 }, 1, "uno")).toBe(
+      "Página 1 de 1. 1 establecimiento coincide con «uno»",
+    );
+  });
+
+  it("avisa cuando nada coincide", () => {
+    expect(resumirPagina({ total: 0, tamanoPagina: 20 }, 1, "zzz")).toBe(
+      "Ningún establecimiento coincide con «zzz»",
+    );
+  });
+});
+
+describe("rutaListado (BL-406)", () => {
+  it("sin búsqueda, solo la página", () => {
+    expect(rutaListado(2)).toBe("/plataforma/establecimientos?pagina=2");
+    expect(rutaListado(1, "   ")).toBe("/plataforma/establecimientos?pagina=1");
+  });
+
+  it("con búsqueda, codificada y sin espacios de más", () => {
+    expect(rutaListado(1, " Bar & Co ")).toBe(
+      "/plataforma/establecimientos?pagina=1&q=Bar+%26+Co",
     );
   });
 });

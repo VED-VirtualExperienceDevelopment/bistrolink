@@ -149,12 +149,32 @@ describe('PlataformaController (BL-163)', () => {
       total: 0,
       items: [],
     });
-    expect(establecimientos.listar).toHaveBeenCalledWith(1);
+    expect(establecimientos.listar).toHaveBeenCalledWith(1, undefined);
   });
 
   it('pasa la página pedida', async () => {
     await listado('?pagina=3').expect(200);
-    expect(establecimientos.listar).toHaveBeenCalledWith(3);
+    expect(establecimientos.listar).toHaveBeenCalledWith(3, undefined);
+  });
+
+  it('BL-406: pasa la búsqueda sin espacios de más', async () => {
+    await listado('?pagina=2&q=%20Uno%20SRL%20').expect(200);
+    expect(establecimientos.listar).toHaveBeenCalledWith(2, 'Uno SRL');
+  });
+
+  it('BL-406: una búsqueda vacía o solo con espacios no filtra', async () => {
+    await listado('?q=%20%20').expect(200);
+    expect(establecimientos.listar).toHaveBeenCalledWith(1, undefined);
+  });
+
+  it('BL-406: rechaza con 400 una búsqueda de más de 100 caracteres', async () => {
+    await listado(`?q=${'a'.repeat(101)}`).expect(400);
+    expect(establecimientos.listar).not.toHaveBeenCalled();
+  });
+
+  it('BL-406: rechaza con 400 la búsqueda repetida (q=a&q=b)', async () => {
+    await listado('?q=a&q=b').expect(400);
+    expect(establecimientos.listar).not.toHaveBeenCalled();
   });
 
   it.each(['0', '-1', 'abc'])(

@@ -1,4 +1,7 @@
-import { EstablecimientosService } from '../../src/plataforma/establecimientos.service';
+import {
+  condicionBusqueda,
+  EstablecimientosService,
+} from '../../src/plataforma/establecimientos.service';
 import { TenantPrismaService } from '../../src/prisma/tenant-prisma.service';
 
 /**
@@ -122,5 +125,65 @@ describe('EstablecimientosService (BL-163)', () => {
 
     expect(texto).not.toMatch(/password/i);
     expect(texto).not.toContain('usuarios');
+  });
+
+  it('BL-406: sin búsqueda, cuenta y lista todos', async () => {
+    await service.listar(1);
+
+    expect(tx.tenant.count).toHaveBeenCalledWith({ where: undefined });
+    expect(tx.tenant.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: undefined }),
+    );
+  });
+
+  it('BL-406: con búsqueda, el total y la página usan la misma condición', async () => {
+    await service.listar(1, 'uno');
+
+    const where = {
+      razonSocial: { contains: 'uno', mode: 'insensitive' },
+    };
+    expect(tx.tenant.count).toHaveBeenCalledWith({ where });
+    expect(tx.tenant.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where }),
+    );
+  });
+});
+
+describe('condicionBusqueda (BL-406)', () => {
+  it('sin texto, no filtra', () => {
+    expect(condicionBusqueda()).toBeUndefined();
+    expect(condicionBusqueda('   ')).toBeUndefined();
+  });
+
+  it('con texto, busca en la razón social sin distinguir mayúsculas', () => {
+    expect(condicionBusqueda('  La Pasiva ')).toEqual({
+      razonSocial: { contains: 'La Pasiva', mode: 'insensitive' },
+    });
+  });
+
+  it('con dígitos, busca también RUT que empiecen así', () => {
+    expect(condicionBusqueda('2100')).toEqual({
+      OR: [
+        { rut: { startsWith: '2100' } },
+        { razonSocial: { contains: '2100', mode: 'insensitive' } },
+      ],
+    });
+  });
+
+  it('acepta el RUT escrito con puntos, guiones o espacios', () => {
+    expect(condicionBusqueda('21.000 000-0001')).toEqual({
+      OR: [
+        { rut: { startsWith: '210000000001' } },
+        {
+          razonSocial: { contains: '21.000 000-0001', mode: 'insensitive' },
+        },
+      ],
+    });
+  });
+
+  it('texto con letras y números no busca por RUT', () => {
+    expect(condicionBusqueda('Bar 18')).toEqual({
+      razonSocial: { contains: 'Bar 18', mode: 'insensitive' },
+    });
   });
 });

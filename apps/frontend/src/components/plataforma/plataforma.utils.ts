@@ -195,16 +195,43 @@ export function etiquetaPlan(plan: string): string {
 /**
  * BL-405: lo que se anuncia al lector de pantalla después de cada carga del
  * listado, p. ej. «Página 2 de 3. 45 establecimientos».
+ *
+ * BL-406: con una búsqueda, dice qué se buscó («3 establecimientos coinciden
+ * con «uno»»).
  */
 export function resumirPagina(
   datos: { total: number; tamanoPagina: number },
   pagina: number,
+  busqueda = "",
 ): string {
-  if (datos.total === 0) return "Todavía no hay establecimientos";
+  const texto = busqueda.trim();
+  if (datos.total === 0) {
+    return texto
+      ? `Ningún establecimiento coincide con «${texto}»`
+      : "Todavía no hay establecimientos";
+  }
   const cantidad = `${datos.total} ${
     datos.total === 1 ? "establecimiento" : "establecimientos"
   }`;
-  return `Página ${pagina} de ${totalPaginas(datos.total, datos.tamanoPagina)}. ${cantidad}`;
+  const resultado = texto
+    ? `${cantidad} ${datos.total === 1 ? "coincide" : "coinciden"} con «${texto}»`
+    : cantidad;
+  return `Página ${pagina} de ${totalPaginas(datos.total, datos.tamanoPagina)}. ${resultado}`;
+}
+
+/** BL-406: largo máximo de la búsqueda (igual que MAX_LARGO_BUSQUEDA del backend). */
+export const MAX_LARGO_BUSQUEDA = 100;
+
+/**
+ * BL-406: ruta del listado con la página y la búsqueda. El texto va
+ * codificado (URLSearchParams) y sin espacios de más; si está vacío, no se
+ * manda `q`.
+ */
+export function rutaListado(pagina: number, busqueda = ""): string {
+  const params = new URLSearchParams({ pagina: String(pagina) });
+  const texto = busqueda.trim();
+  if (texto) params.set("q", texto);
+  return `/plataforma/establecimientos?${params.toString()}`;
 }
 
 /** Mensaje para un error de la API, con los casos que el usuario puede resolver. */

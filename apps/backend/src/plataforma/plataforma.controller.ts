@@ -17,7 +17,10 @@ import { UsuarioPlataforma } from '../auth/plataforma-jwt.strategy';
 import { AprovisionamientoService } from './aprovisionamiento.service';
 import { AprovisionarEstablecimientoDto } from './dto/aprovisionar-establecimiento.dto';
 import { PlataformaThrottlerGuard } from './plataforma-throttler.guard';
-import { EstablecimientosService } from './establecimientos.service';
+import {
+  EstablecimientosService,
+  MAX_LARGO_BUSQUEDA,
+} from './establecimientos.service';
 
 /** BL-163: altas por hora y por usuario de plataforma. */
 export const LIMITE_ALTAS_POR_HORA = 10;
@@ -49,16 +52,30 @@ export class PlataformaController {
   /**
    * Listado paginado, del alta más reciente a la más vieja. Sin contraseñas:
    * solo datos del tenant, su restaurante y quién lo dio de alta.
+   *
+   * BL-406: `q` opcional, por razón social o RUT. El ValidationPipe global no
+   * valida parámetros sueltos de tipo string, así que se controla acá: un
+   * solo valor (no `?q=a&q=b`) y como mucho MAX_LARGO_BUSQUEDA caracteres.
    */
   @Get()
   @Throttle({ default: { limit: LIMITE_LISTADOS_POR_MINUTO, ttl: 60_000 } })
   listar(
     @Query('pagina', new DefaultValuePipe(1), ParseIntPipe) pagina: number,
+    @Query('q') q?: unknown,
   ) {
     if (pagina < 1) {
       throw new BadRequestException('pagina tiene que ser 1 o más');
     }
-    return this.establecimientos.listar(pagina);
+    if (q !== undefined && typeof q !== 'string') {
+      throw new BadRequestException('q tiene que ser un solo texto');
+    }
+    const busqueda = typeof q === 'string' ? q.trim() : undefined;
+    if (busqueda && busqueda.length > MAX_LARGO_BUSQUEDA) {
+      throw new BadRequestException(
+        `q admite como mucho ${MAX_LARGO_BUSQUEDA} caracteres`,
+      );
+    }
+    return this.establecimientos.listar(pagina, busqueda || undefined);
   }
 
   @Post()
