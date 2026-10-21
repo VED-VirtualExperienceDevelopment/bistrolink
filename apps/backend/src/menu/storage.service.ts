@@ -76,7 +76,7 @@ export class StorageService {
       this.logger.error({
         message: 'No se pudo generar la URL firmada de una imagen',
         key,
-        error: error instanceof Error ? error.message : String(error),
+        error: error instanceof Error ? error.message : 'error sin detalle',
       });
       return null;
     }

@@ -83,6 +83,15 @@ function verificarEntorno(): void {
   }
 }
 
+function motivoDelFallo(error: unknown): string {
+  // leerDeCuarentena se usa para cualquier key; su mensaje de 404 está
+  // pensado para el formulario, acá se aclara.
+  if (error instanceof NotFoundException) {
+    return 'el archivo no existe en el bucket (el ítem queda como está)';
+  }
+  return error instanceof Error ? error.message : 'error sin detalle';
+}
+
 function kb(bytes: number): string {
   return `${(bytes / 1024).toFixed(0)} KB`;
 }
@@ -225,15 +234,7 @@ async function main(): Promise<void> {
           );
         } catch (error) {
           resumen.fallidos++;
-          // leerDeCuarentena se usa para cualquier key; su mensaje de 404
-          // está pensado para el formulario, acá se aclara.
-          const motivo =
-            error instanceof NotFoundException
-              ? 'el archivo no existe en el bucket (el ítem queda como está)'
-              : error instanceof Error
-                ? error.message
-                : String(error);
-          console.log(`${etiqueta}: FALLÓ, ${motivo}`);
+          console.log(`${etiqueta}: FALLÓ, ${motivoDelFallo(error)}`);
         }
       }
     }
