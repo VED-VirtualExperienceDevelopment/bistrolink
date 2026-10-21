@@ -7,6 +7,7 @@ import { MenuAdminService } from './menu-admin.service';
 import { MenuAdminController } from './menu-admin.controller';
 import { ProcesadorImagenService } from './procesador-imagen.service';
 import { ImagenesMenuService } from './imagenes-menu.service';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { QrMesaModule } from '../qr-mesa/qr-mesa.module';
 
@@ -20,6 +21,7 @@ import { QrMesaModule } from '../qr-mesa/qr-mesa.module';
     MenuGateway,
     ProcesadorImagenService,
     ImagenesMenuService,
+    AuditLogService,
   ],
   exports: [MenuService, MenuAdminService, StorageService, MenuGateway],
 })

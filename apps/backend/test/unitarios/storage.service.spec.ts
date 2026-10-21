@@ -2,7 +2,11 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { PayloadTooLargeException } from '@nestjs/common';
 import { StorageService } from '../../src/menu/storage.service';
 import { TipoImagenPermitido } from '../../src/menu/upload.constants';
-import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import {
+  GetObjectCommand,
+  HeadObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { createPresignedPost } from '@aws-sdk/s3-presigned-post';
 
@@ -69,6 +73,22 @@ describe('StorageService', () => {
       expect(GetObjectCommand).toHaveBeenCalledWith({
         Bucket: 'my-images-bucket',
         Key: 'test-key.jpg',
+        ResponseContentDisposition: 'inline',
+      });
+    });
+
+    // BL-387: el tipo de la respuesta lo fija la firma, no quien subió.
+    it('should force image/webp and inline for processed images', async () => {
+      process.env.S3_BUCKET_IMAGES = 'my-images-bucket';
+      (getSignedUrl as jest.Mock).mockResolvedValue('https://example.com');
+
+      await service.getSignedImageUrl('tenant-1/menu/abc.webp');
+
+      expect(GetObjectCommand).toHaveBeenCalledWith({
+        Bucket: 'my-images-bucket',
+        Key: 'tenant-1/menu/abc.webp',
+        ResponseContentDisposition: 'inline',
+        ResponseContentType: 'image/webp',
       });
     });
 
@@ -205,31 +225,62 @@ describe('StorageService', () => {
     });
   });
 
-  // BL-54: un tenant no puede guardar la key de una imagen de otro tenant.
+  // BL-54 y BL-387: solo imágenes publicadas del propio tenant.
   describe('esKeyDelTenant', () => {
-    it('should accept a key under the tenant prefix', () => {
-      expect(
-        service.esKeyDelTenant('tenant-123/menu/abc.jpg', 'tenant-123'),
-      ).toBe(true);
-    });
+    const UUID = '0b4f6a3e-1111-4c2d-9e8f-123456789abc';
 
-    it('should accept keys with the previous naming format', () => {
+    it('should accept a processed image of the tenant', () => {
       expect(
-        service.esKeyDelTenant(
-          'tenant-123/menu/abc-foto_pizza.jpg',
-          'tenant-123',
-        ),
+        service.esKeyDelTenant(`tenant-123/menu/${UUID}.webp`, 'tenant-123'),
       ).toBe(true);
     });
 
     it.each([
-      ['de otro tenant', 'otro-tenant/menu/abc.jpg'],
-      ['con un prefijo que empieza igual', 'tenant-1234/menu/abc.jpg'],
-      ['fuera de la carpeta menu', 'tenant-123/otra/abc.jpg'],
-      ['con path traversal', 'tenant-123/menu/../../otro-tenant/menu/x.jpg'],
+      ['de otro tenant', `otro-tenant/menu/${UUID}.webp`],
+      ['con un prefijo que empieza igual', `tenant-1234/menu/${UUID}.webp`],
+      ['fuera de la carpeta menu', `tenant-123/otra/${UUID}.webp`],
+      ['de la cuarentena', `incoming/tenant-123/${UUID}`],
+      ['sin procesar (jpg)', `tenant-123/menu/${UUID}.jpg`],
+      ['con el formato de nombre anterior', 'tenant-123/menu/abc-foto.webp'],
+      ['con barras extra', `tenant-123/menu/x/${UUID}.webp`],
+      ['con path traversal', `tenant-123/menu/../otro-tenant/${UUID}.webp`],
       ['vacía', ''],
     ])('should reject a key %s', (_caso, key) => {
       expect(service.esKeyDelTenant(key, 'tenant-123')).toBe(false);
+    });
+  });
+
+  // BL-387: la key tiene que existir en el bucket.
+  describe('existeImagen', () => {
+    beforeEach(() => {
+      process.env.S3_BUCKET_IMAGES = 'test-bucket';
+    });
+
+    it('should return true when the object exists', async () => {
+      mockS3Client.send.mockResolvedValue({ ContentLength: 100 });
+
+      await expect(service.existeImagen('k.webp')).resolves.toBe(true);
+      expect(HeadObjectCommand).toHaveBeenCalledWith({
+        Bucket: 'test-bucket',
+        Key: 'k.webp',
+      });
+    });
+
+    it('should return false when S3 answers 404', async () => {
+      mockS3Client.send.mockRejectedValue({
+        name: 'NotFound',
+        $metadata: { httpStatusCode: 404 },
+      });
+
+      await expect(service.existeImagen('k.webp')).resolves.toBe(false);
+    });
+
+    it('should rethrow other S3 errors', async () => {
+      mockS3Client.send.mockRejectedValue(new Error('AccessDenied'));
+
+      await expect(service.existeImagen('k.webp')).rejects.toThrow(
+        'AccessDenied',
+      );
     });
   });
 

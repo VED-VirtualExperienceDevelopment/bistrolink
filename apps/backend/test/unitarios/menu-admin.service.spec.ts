@@ -8,16 +8,18 @@ import { MenuAdminService } from '../../src/menu/menu-admin.service';
 import { TenantPrismaService } from '../../src/prisma/tenant-prisma.service';
 import { MenuGateway } from '../../src/menu/menu.gateway';
 import { StorageService } from '../../src/menu/storage.service';
+import { AuditLogService } from '../../src/audit-log/audit-log.service';
 import { CreateItemDto } from '../../src/menu/dto/create-item.dto';
 import { UpdateItemDto } from '../../src/menu/dto/update-item.dto';
 import { UpdateCategoriaDto } from '../../src/menu/dto/update-categoria.dto';
 
 const URL_FIRMADA = 'https://bucket.example/img.jpg?X-Amz-Signature=abc';
 
-// BL-54: keys de imagen propias y ajenas para los controles de tenant.
+// BL-54 y BL-387: keys de imagen propias y ajenas para los controles de
+// tenant. Las publicadas son {tenant}/menu/{uuid}.webp.
 const KEY_PROPIA =
-  'test-tenant-id/menu/0b4f6a3e-1111-4c2d-9e8f-123456789abc.jpg';
-const KEY_AJENA = 'otro-tenant/menu/0b4f6a3e-2222-4c2d-9e8f-123456789abc.jpg';
+  'test-tenant-id/menu/0b4f6a3e-1111-4c2d-9e8f-123456789abc.webp';
+const KEY_AJENA = 'otro-tenant/menu/0b4f6a3e-2222-4c2d-9e8f-123456789abc.webp';
 const MENSAJE_IMAGEN_AJENA =
   'La imagen indicada no pertenece a este restaurante';
 
@@ -56,6 +58,11 @@ describe('MenuAdminService', () => {
   const mockStorage = {
     getSignedImageUrl: jest.fn(),
     esKeyDelTenant: jest.fn(),
+    existeImagen: jest.fn(),
+  };
+
+  const mockAuditLog = {
+    registrar: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -74,6 +81,10 @@ describe('MenuAdminService', () => {
           provide: StorageService,
           useValue: mockStorage,
         },
+        {
+          provide: AuditLogService,
+          useValue: mockAuditLog,
+        },
       ],
     }).compile();
 
@@ -88,6 +99,8 @@ describe('MenuAdminService', () => {
     mockStorage.esKeyDelTenant.mockImplementation(
       (key: string, tenantId: string) => key.startsWith(`${tenantId}/menu/`),
     );
+    // BL-387: por defecto la imagen existe en el bucket.
+    mockStorage.existeImagen.mockResolvedValue(true);
   });
 
   describe('createItem', () => {

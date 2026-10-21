@@ -50,9 +50,17 @@ export class StorageService {
    */
   async getSignedImageUrl(key: string): Promise<string | null> {
     try {
+      // BL-387: la respuesta de S3 la fija la firma, no lo que declaró quien
+      // subió el archivo. Las imágenes procesadas son WebP; las viejas (antes
+      // del reprocesamiento, BL-390) conservan su tipo, pero igual se entregan
+      // para mostrar, nunca como descarga.
       const command = new GetObjectCommand({
         Bucket: process.env.S3_BUCKET_IMAGES,
         Key: key,
+        ResponseContentDisposition: 'inline',
+        ...(key.endsWith('.webp')
+          ? { ResponseContentType: CONTENT_TYPE_IMAGEN_PUBLICADA }
+          : {}),
       });
       return await getSignedUrl(this.getClient(), command, {
         expiresIn: TTL_URL_LECTURA_SEGUNDOS,
@@ -178,12 +186,39 @@ export class StorageService {
   }
 
   /**
-   * Una key solo es válida si vive bajo el prefijo del tenant que la usa.
+   * Una key solo es válida si es una imagen PUBLICADA del tenant que la usa.
    * Evita que un tenant guarde la key de otro y obtenga una URL firmada
-   * para una imagen ajena.
+   * para una imagen ajena (BL-54).
+   *
+   * BL-387: formato exacto {tenant}/menu/{uuid}.webp, el que genera la
+   * confirmación (BL-386). Así se rechazan las keys de la cuarentena, las de
+   * otro tenant, las que tienen barras extra o "..", y cualquier archivo que
+   * no haya pasado por el procesador.
    */
   esKeyDelTenant(key: string, tenantId: string): boolean {
-    return key.startsWith(`${tenantId}/menu/`) && !key.includes('..');
+    const patron = new RegExp(
+      `^${escaparRegex(tenantId)}/menu/${PATRON_UUID}\\.webp$`,
+    );
+    return patron.test(key);
+  }
+
+  /**
+   * BL-387: el objeto existe en el bucket (HeadObject, sin descargarlo).
+   * Evita asociar a un ítem una key bien formada pero que nunca se publicó.
+   */
+  async existeImagen(key: string): Promise<boolean> {
+    try {
+      await this.getClient().send(
+        new HeadObjectCommand({
+          Bucket: process.env.S3_BUCKET_IMAGES,
+          Key: key,
+        }),
+      );
+      return true;
+    } catch (error) {
+      if (esNoEncontrado(error)) return false;
+      throw error;
+    }
   }
 }
 
