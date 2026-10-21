@@ -111,19 +111,15 @@ describe('StorageService', () => {
 
       expect(result.url).toBe(mockPresignedData.url);
       expect(result.fields).toEqual(mockPresignedData.fields);
-      expect(result.key).toContain('tenant-123/menu/');
+      expect(result.key).toContain('incoming/tenant-123/');
       expect(createPresignedPost).toHaveBeenCalled();
     });
 
-    // BL-54: la key no usa el nombre del archivo del cliente; es
-    // tenant/menu/<uuid>.<extensión derivada del MIME>.
-    it.each<[TipoImagenPermitido, string]>([
-      ['image/jpeg', 'jpg'],
-      ['image/png', 'png'],
-      ['image/webp', 'webp'],
-    ])(
-      'should build the key as tenant/menu/uuid.ext for %s',
-      async (contentType, extension) => {
+    // BL-54 y BL-385: la key no usa el nombre del archivo del cliente; va a
+    // la cuarentena como incoming/<tenant>/<uuid>, sin extensión.
+    it.each<TipoImagenPermitido>(['image/jpeg', 'image/png', 'image/webp'])(
+      'should build the quarantine key as incoming/tenant/uuid for %s',
+      async (contentType) => {
         const result = await service.getPresignedPostUrl(
           contentType,
           UN_KB,
@@ -131,7 +127,7 @@ describe('StorageService', () => {
         );
 
         expect(result.key).toMatch(
-          new RegExp(`^tenant-123/menu/[0-9a-f-]{36}\\.${extension}$`),
+          /^incoming\/tenant-123\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
         );
       },
     );
