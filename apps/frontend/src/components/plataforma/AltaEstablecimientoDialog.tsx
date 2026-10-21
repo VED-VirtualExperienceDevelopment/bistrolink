@@ -1,14 +1,17 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Dialog } from "@/components/ui/Dialog";
 import { apiFetch, ApiError } from "@/lib/api-client";
 import type {
   EstablecimientoListado,
   FormularioAlta,
   ResultadoAlta,
+  UsuarioAprovisionado,
 } from "@/types/plataforma";
 import {
+  avisoDeCopia,
   construirPedidoAlta,
+  contrasenasSinCopiar,
   credencialesAMostrar,
   ETIQUETA_ROL,
   FORMULARIO_VACIO,
@@ -171,6 +174,10 @@ function Seccion({
  * falta. La razón social y el RUT quedan fijos (otro RUT sería otro
  * establecimiento).
  *
+ * BL-408 (contraseñas): cerrar con contraseñas sin copiar pide confirmación,
+ * y cada copia se anuncia; si el portapapeles falla, la contraseña queda
+ * seleccionada para copiarla a mano.
+ *
  * BL-408: diálogo ancho (tamano="lg") y sin caja con scroll propia (había
  * dos barras de desplazamiento). Las cuatro partes van en tarjetas: en PC,
  * de a dos por fila; en el celular, una debajo de la otra. Los rótulos dicen
@@ -188,7 +195,12 @@ export function AltaEstablecimientoDialog({
   const [enviando, setEnviando] = useState(false);
   const [errorApi, setErrorApi] = useState<string | null>(null);
   const [resultado, setResultado] = useState<ResultadoAlta | null>(null);
-  const [copiado, setCopiado] = useState<string | null>(null);
+  // BL-408: qué contraseñas se copiaron (usernames), el aviso para el lector
+  // de pantalla y si se está pidiendo confirmación para cerrar sin copiar.
+  const [copiadas, setCopiadas] = useState<ReadonlySet<string>>(new Set());
+  const [avisoCopia, setAvisoCopia] = useState("");
+  const [confirmandoCierre, setConfirmandoCierre] = useState(false);
+  const botonVolver = useRef<HTMLButtonElement>(null);
   const completando = completar !== null;
   let textoBoton = completando ? "Completar alta" : "Dar de alta";
   if (enviando) textoBoton = completando ? "Completando…" : "Dando de alta…";
@@ -208,8 +220,40 @@ export function AltaEstablecimientoDialog({
     setErrores({});
     setErrorApi(null);
     setResultado(null);
-    setCopiado(null);
+    setCopiadas(new Set());
+    setAvisoCopia("");
+    setConfirmandoCierre(false);
     onClose();
+  };
+
+  // BL-408: con contraseñas sin copiar, Esc, la X, el clic afuera y «Listo»
+  // no cierran de una: piden confirmación (no se pueden volver a ver).
+  const sinCopiar = resultado
+    ? contrasenasSinCopiar(credencialesAMostrar(resultado), copiadas)
+    : [];
+  const intentarCerrar = () => {
+    if (sinCopiar.length > 0 && !confirmandoCierre) {
+      setConfirmandoCierre(true);
+      return;
+    }
+    cerrar();
+  };
+
+  // Al pedir confirmación, el foco va a «Volver a las contraseñas», la opción
+  // que no pierde nada.
+  useEffect(() => {
+    if (confirmandoCierre) botonVolver.current?.focus();
+  }, [confirmandoCierre]);
+
+  const volverALasContrasenas = () => {
+    setConfirmandoCierre(false);
+    // El foco vuelve al primer «Copiar» que falta.
+    const pendiente = sinCopiar[0];
+    if (pendiente) {
+      requestAnimationFrame(() =>
+        document.getElementById(`copiar-${pendiente}`)?.focus(),
+      );
+    }
   };
 
   const cambiar = (id: keyof FormularioAlta, valor: string) => {
@@ -247,9 +291,21 @@ export function AltaEstablecimientoDialog({
     }
   };
 
-  const copiar = async (username: string, password: string) => {
-    await navigator.clipboard.writeText(password);
-    setCopiado(username);
+  /**
+   * BL-408: copia la contraseña y lo anuncia. Si el navegador no deja usar el
+   * portapapeles (permiso denegado, página sin HTTPS), la deja seleccionada
+   * para copiarla con Ctrl+C y lo avisa, en lugar de fallar en silencio.
+   */
+  const copiar = async (usuario: UsuarioAprovisionado) => {
+    try {
+      await navigator.clipboard.writeText(usuario.passwordGenerada ?? "");
+      setCopiadas((prev) => new Set(prev).add(usuario.username));
+      setAvisoCopia(avisoDeCopia(usuario.rol, true));
+    } catch {
+      const codigo = document.getElementById(`contrasena-${usuario.username}`);
+      if (codigo) globalThis.getSelection()?.selectAllChildren(codigo);
+      setAvisoCopia(avisoDeCopia(usuario.rol, false));
+    }
   };
 
   if (resultado) {
@@ -257,7 +313,7 @@ export function AltaEstablecimientoDialog({
     return (
       <Dialog
         open={open}
-        onClose={cerrar}
+        onClose={intentarCerrar}
         title="Establecimiento listo"
         tamano="lg"
       >
@@ -275,44 +331,99 @@ export function AltaEstablecimientoDialog({
                 pide cambiarlas en el primer ingreso.
               </p>
               <ul className="space-y-2">
-                {credenciales.map((u) => (
-                  <li
-                    key={u.username}
-                    className="rounded-lg border border-outline-variant bg-surface-container-low px-3 py-2"
-                  >
-                    <p className="text-label-md text-on-surface-variant">
-                      {ETIQUETA_ROL[u.rol]} ·{" "}
-                      <span className="font-semibold text-on-surface">
-                        {u.username}
-                      </span>
-                    </p>
-                    <div className="mt-1 flex items-center justify-between gap-2">
-                      <code className="break-all text-body-md text-on-surface">
-                        {u.passwordGenerada}
-                      </code>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          copiar(u.username, u.passwordGenerada as string)
-                        }
-                        className="flex min-h-12 shrink-0 items-center rounded-lg px-3 text-body-md font-semibold text-primary hover:bg-surface-container-high"
-                      >
-                        {copiado === u.username ? "Copiada" : "Copiar"}
-                      </button>
-                    </div>
-                  </li>
-                ))}
+                {credenciales.map((u) => {
+                  const copiada = copiadas.has(u.username);
+                  return (
+                    <li
+                      key={u.username}
+                      className="rounded-lg border border-outline-variant bg-surface-container-low px-3 py-2"
+                    >
+                      <p className="text-body-md text-on-surface-variant">
+                        {ETIQUETA_ROL[u.rol]} ·{" "}
+                        <span className="font-semibold text-on-surface">
+                          {u.username}
+                        </span>
+                      </p>
+                      <div className="mt-1 flex items-center justify-between gap-2">
+                        <code
+                          id={`contrasena-${u.username}`}
+                          className="break-all text-body-md text-on-surface"
+                        >
+                          {u.passwordGenerada}
+                        </code>
+                        {/* El nombre accesible empieza con el texto visible
+                            y dice de quién es la contraseña. */}
+                        <button
+                          id={`copiar-${u.username}`}
+                          type="button"
+                          onClick={() => copiar(u)}
+                          aria-label={`${copiada ? "Copiada" : "Copiar"}: contraseña de ${ETIQUETA_ROL[u.rol]}`}
+                          className="flex min-h-12 shrink-0 items-center gap-1 rounded-lg px-3 text-body-md font-semibold text-primary hover:bg-surface-container-high"
+                        >
+                          <span
+                            className="material-symbols-outlined text-[20px]"
+                            aria-hidden="true"
+                          >
+                            {copiada ? "check" : "content_copy"}
+                          </span>
+                          <span aria-hidden="true">
+                            {copiada ? "Copiada" : "Copiar"}
+                          </span>
+                        </button>
+                      </div>
+                    </li>
+                  );
+                })}
               </ul>
             </>
           )}
 
-          <button
-            type="button"
-            onClick={cerrar}
-            className={`${CLASE_BOTON_PRIMARIO} w-full`}
-          >
-            Listo
-          </button>
+          {/* BL-408: resultado de cada copia, para el lector de pantalla.
+              Siempre en el DOM para que el cambio se anuncie. */}
+          <p className="sr-only" aria-live="polite" aria-atomic="true">
+            {avisoCopia}
+          </p>
+
+          {confirmandoCierre ? (
+            <div
+              role="alert"
+              className="space-y-3 rounded-lg border border-error bg-error-container px-4 py-3 text-on-error-container"
+            >
+              <p className="text-body-md">
+                <strong>
+                  {sinCopiar.length === 1
+                    ? "Hay una contraseña sin copiar."
+                    : `Hay ${sinCopiar.length} contraseñas sin copiar.`}
+                </strong>{" "}
+                Si cerrás, no se pueden volver a ver: habría que restablecerlas.
+              </p>
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <button
+                  type="button"
+                  onClick={cerrar}
+                  className={CLASE_BOTON_SECUNDARIO}
+                >
+                  Cerrar igual
+                </button>
+                <button
+                  ref={botonVolver}
+                  type="button"
+                  onClick={volverALasContrasenas}
+                  className={CLASE_BOTON_PRIMARIO}
+                >
+                  Volver a las contraseñas
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={intentarCerrar}
+              className={`${CLASE_BOTON_PRIMARIO} w-full`}
+            >
+              Listo
+            </button>
+          )}
         </div>
       </Dialog>
     );

@@ -1,5 +1,7 @@
 import {
+  avisoDeCopia,
   construirPedidoAlta,
+  contrasenasSinCopiar,
   credencialesAMostrar,
   describirCreadoPor,
   esAltaIncompleta,
@@ -372,5 +374,47 @@ describe("alta incompleta (BL-407)", () => {
       razonSocial: "Uno SRL",
       rut: "210000000001",
     });
+  });
+});
+
+describe("contraseñas temporales (BL-408)", () => {
+  const credenciales = [
+    {
+      rol: "ADMIN" as const,
+      username: "uno-admin",
+      keycloakId: "k1",
+      creado: true,
+      passwordGenerada: "x",
+    },
+    {
+      rol: "COCINA" as const,
+      username: "uno-cocina",
+      keycloakId: "k2",
+      creado: true,
+      passwordGenerada: "y",
+    },
+  ];
+
+  it("lista las que todavía no se copiaron", () => {
+    expect(contrasenasSinCopiar(credenciales, new Set())).toEqual([
+      "uno-admin",
+      "uno-cocina",
+    ]);
+    expect(contrasenasSinCopiar(credenciales, new Set(["uno-admin"]))).toEqual([
+      "uno-cocina",
+    ]);
+  });
+
+  it("no queda ninguna cuando se copiaron todas", () => {
+    expect(
+      contrasenasSinCopiar(credenciales, new Set(["uno-admin", "uno-cocina"])),
+    ).toEqual([]);
+  });
+
+  it("avisa con el rol si se copió o si falló", () => {
+    expect(avisoDeCopia("COCINA", true)).toBe("Contraseña de Cocina copiada");
+    expect(avisoDeCopia("ADMIN", false)).toBe(
+      "No se pudo copiar la contraseña de Administrador. Quedó seleccionada: copiala con Ctrl+C.",
+    );
   });
 });

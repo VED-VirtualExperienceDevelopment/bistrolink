@@ -146,6 +146,34 @@ export function credencialesAMostrar(
   return resultado.usuarios.filter((u) => u.passwordGenerada);
 }
 
+/**
+ * BL-408: usernames cuyas contraseñas temporales todavía no se copiaron. Si
+ * queda alguno, cerrar el diálogo pide confirmación: esas contraseñas no se
+ * pueden volver a ver.
+ */
+export function contrasenasSinCopiar(
+  credenciales: UsuarioAprovisionado[],
+  copiadas: ReadonlySet<string>,
+): string[] {
+  return credenciales
+    .map((u) => u.username)
+    .filter((username) => !copiadas.has(username));
+}
+
+/**
+ * BL-408: aviso para el lector de pantalla después de intentar copiar una
+ * contraseña («Contraseña de Cocina copiada»).
+ */
+export function avisoDeCopia(
+  rol: UsuarioAprovisionado["rol"],
+  copiada: boolean,
+): string {
+  const deQuien = `de ${ETIQUETA_ROL[rol]}`;
+  return copiada
+    ? `Contraseña ${deQuien} copiada`
+    : `No se pudo copiar la contraseña ${deQuien}. Quedó seleccionada: copiala con Ctrl+C.`;
+}
+
 /** Resumen del alta para el usuario: qué se creó y qué ya existía. */
 export function resumirAlta(resultado: ResultadoAlta): string {
   const algoCreado =
