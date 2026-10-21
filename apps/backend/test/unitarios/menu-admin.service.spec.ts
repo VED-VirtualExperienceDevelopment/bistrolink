@@ -228,6 +228,41 @@ describe('MenuAdminService', () => {
         expect(mockStorage.esKeyDelTenant).not.toHaveBeenCalled();
         expect(mockTx.itemCarta.create).toHaveBeenCalled();
       });
+
+      // BL-391 (BL-387)
+      it('rechaza una key bien formada que no existe en el bucket, sin abrir la transacción', async () => {
+        mockStorage.existeImagen.mockResolvedValue(false);
+        const dto = { ...createItemDto, imagenKey: KEY_PROPIA };
+
+        await expect(service.createItem(tenantId, dto)).rejects.toThrow(
+          'La imagen indicada no existe. Volvé a subirla.',
+        );
+        expect(mockPrismaService.runInTenantContext).not.toHaveBeenCalled();
+        expect(mockAuditLog.registrar).not.toHaveBeenCalled();
+      });
+
+      it('audita el alta de un ítem con imagen, con el actor del token', async () => {
+        const dto = { ...createItemDto, imagenKey: KEY_PROPIA };
+
+        await service.createItem(tenantId, dto, 'sub-del-admin');
+
+        expect(mockAuditLog.registrar).toHaveBeenCalledWith({
+          action: 'CARTA_ITEM_IMAGEN_CAMBIADA',
+          tenantId,
+          actorKeycloakId: 'sub-del-admin',
+          detalle: {
+            itemId: 'item-123',
+            imagenKeyAnterior: null,
+            imagenKeyNueva: KEY_PROPIA,
+          },
+        });
+      });
+
+      it('no audita el alta de un ítem sin imagen', async () => {
+        await service.createItem(tenantId, createItemDto, 'sub-del-admin');
+
+        expect(mockAuditLog.registrar).not.toHaveBeenCalled();
+      });
     });
   });
 
@@ -383,6 +418,63 @@ describe('MenuAdminService', () => {
         await service.updateItem(tenantId, itemId, updateItemDto);
 
         expect(mockStorage.esKeyDelTenant).not.toHaveBeenCalled();
+      });
+
+      // BL-391 (BL-387): las imágenes anteriores al reprocesamiento siguen
+      // sirviendo mientras no se reemplacen.
+      it('no valida ni audita si el formulario reenvía la misma imagen', async () => {
+        const keyVieja = 'test-tenant-id/menu/abc-foto.jpg';
+        mockTx.itemCarta.findFirst.mockResolvedValue({
+          ...mockExisting,
+          imagenKey: keyVieja,
+        });
+
+        await service.updateItem(
+          tenantId,
+          itemId,
+          { nombre: 'Pizza grande', imagenKey: keyVieja },
+          'sub-del-admin',
+        );
+
+        expect(mockStorage.esKeyDelTenant).not.toHaveBeenCalled();
+        expect(mockStorage.existeImagen).not.toHaveBeenCalled();
+        expect(mockAuditLog.registrar).not.toHaveBeenCalled();
+        expect(mockTx.itemCarta.update).toHaveBeenCalled();
+      });
+
+      it('audita el cambio de imagen con la key anterior y la nueva', async () => {
+        const keyVieja = 'test-tenant-id/menu/abc-foto.jpg';
+        mockTx.itemCarta.findFirst.mockResolvedValue({
+          ...mockExisting,
+          imagenKey: keyVieja,
+        });
+
+        await service.updateItem(
+          tenantId,
+          itemId,
+          { imagenKey: KEY_PROPIA },
+          'sub-del-admin',
+        );
+
+        expect(mockAuditLog.registrar).toHaveBeenCalledWith({
+          action: 'CARTA_ITEM_IMAGEN_CAMBIADA',
+          tenantId,
+          actorKeycloakId: 'sub-del-admin',
+          detalle: {
+            itemId,
+            imagenKeyAnterior: keyVieja,
+            imagenKeyNueva: KEY_PROPIA,
+          },
+        });
+      });
+
+      it('rechaza una imagen nueva que no existe en el bucket', async () => {
+        mockStorage.existeImagen.mockResolvedValue(false);
+
+        await expect(
+          service.updateItem(tenantId, itemId, { imagenKey: KEY_PROPIA }),
+        ).rejects.toThrow('La imagen indicada no existe. Volvé a subirla.');
+        expect(mockTx.itemCarta.update).not.toHaveBeenCalled();
       });
     });
   });

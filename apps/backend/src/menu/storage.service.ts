@@ -69,7 +69,15 @@ export class StorageService {
       // No dejamos que un problema de S3 (bucket mal configurado, credenciales
       // vencidas, etc.) tire abajo el menú entero — el comensal sigue viendo
       // nombre/descripción/precio, solo sin imagen para ese ítem puntual.
-      console.error(`No se pudo generar la URL firmada para "${key}":`, error);
+      //
+      // El mensaje es fijo y los datos van como campos: la key puede venir
+      // del cliente y no se mezcla en el texto del log (CodeQL: format string
+      // controlado externamente; también evita inyectar líneas en los logs).
+      this.logger.error({
+        message: 'No se pudo generar la URL firmada de una imagen',
+        key,
+        error: error instanceof Error ? error.message : String(error),
+      });
       return null;
     }
   }
@@ -197,7 +205,7 @@ export class StorageService {
    */
   esKeyDelTenant(key: string, tenantId: string): boolean {
     const patron = new RegExp(
-      `^${escaparRegex(tenantId)}/menu/${PATRON_UUID}\\.webp$`,
+      String.raw`^${escaparRegex(tenantId)}/menu/${PATRON_UUID}\.webp$`,
     );
     return patron.test(key);
   }
@@ -223,7 +231,7 @@ export class StorageService {
 }
 
 function escaparRegex(texto: string): string {
-  return texto.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return texto.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
 }
 
 function esNoEncontrado(error: unknown): boolean {

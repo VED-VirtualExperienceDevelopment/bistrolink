@@ -1,10 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { PayloadTooLargeException } from '@nestjs/common';
+import { NotFoundException, PayloadTooLargeException } from '@nestjs/common';
 import { StorageService } from '../../src/menu/storage.service';
 import { TipoImagenPermitido } from '../../src/menu/upload.constants';
 import {
   GetObjectCommand,
   HeadObjectCommand,
+  PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
@@ -251,6 +252,133 @@ describe('StorageService', () => {
   });
 
   // BL-387: la key tiene que existir en el bucket.
+  // BL-391 (BL-386): la key de cuarentena se valida con el formato exacto.
+  describe('uuidDeKeyDeCuarentena', () => {
+    const TENANT = '11111111-1111-4111-8111-111111111111';
+    const UUID = '0b4f6a3e-1111-4c2d-9e8f-123456789abc';
+
+    it('devuelve el uuid de una key de cuarentena del tenant', () => {
+      expect(
+        service.uuidDeKeyDeCuarentena(`incoming/${TENANT}/${UUID}`, TENANT),
+      ).toBe(UUID);
+    });
+
+    it.each([
+      [
+        'de otro tenant',
+        `incoming/22222222-2222-4222-8222-222222222222/${UUID}`,
+      ],
+      ['publicada (no de cuarentena)', `${TENANT}/menu/${UUID}.webp`],
+      ['con extensión', `incoming/${TENANT}/${UUID}.jpg`],
+      ['con barras extra', `incoming/${TENANT}/x/${UUID}`],
+      ['con path traversal', `incoming/${TENANT}/../${UUID}`],
+      ['con mayúsculas en el uuid', `incoming/${TENANT}/${UUID.toUpperCase()}`],
+      ['vacía', ''],
+    ])('rechaza una key %s', (_caso, key) => {
+      expect(service.uuidDeKeyDeCuarentena(key, TENANT)).toBeNull();
+    });
+
+    it('un tenant con caracteres especiales no rompe la expresión regular', () => {
+      expect(service.uuidDeKeyDeCuarentena(`incoming/a.b/${UUID}`, 'a.b')).toBe(
+        UUID,
+      );
+      expect(
+        service.uuidDeKeyDeCuarentena(`incoming/aXb/${UUID}`, 'a.b'),
+      ).toBeNull();
+    });
+  });
+
+  // BL-391 (BL-386): el tamaño real se consulta antes de descargar.
+  describe('leerDeCuarentena', () => {
+    beforeEach(() => {
+      process.env.S3_BUCKET_IMAGES = 'test-bucket';
+    });
+
+    it('lee el archivo si existe y pesa hasta 5 MB', async () => {
+      mockS3Client.send
+        .mockResolvedValueOnce({ ContentLength: UN_KB })
+        .mockResolvedValueOnce({
+          Body: {
+            transformToByteArray: () => Promise.resolve(Buffer.from('imagen')),
+          },
+        });
+
+      const contenido = await service.leerDeCuarentena('incoming/t/u');
+
+      expect(contenido.toString()).toBe('imagen');
+      expect(HeadObjectCommand).toHaveBeenCalledWith({
+        Bucket: 'test-bucket',
+        Key: 'incoming/t/u',
+      });
+    });
+
+    it('413 sin descargar si el tamaño real pasa de 5 MB', async () => {
+      mockS3Client.send.mockResolvedValueOnce({ ContentLength: CINCO_MB + 1 });
+
+      await expect(service.leerDeCuarentena('incoming/t/u')).rejects.toThrow(
+        PayloadTooLargeException,
+      );
+      expect(mockS3Client.send).toHaveBeenCalledTimes(1);
+      expect(GetObjectCommand).not.toHaveBeenCalled();
+    });
+
+    it('404 si S3 responde sin contenido', async () => {
+      mockS3Client.send
+        .mockResolvedValueOnce({ ContentLength: UN_KB })
+        .mockResolvedValueOnce({ Body: undefined });
+
+      await expect(service.leerDeCuarentena('incoming/t/u')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('413 si S3 no informa el tamaño', async () => {
+      mockS3Client.send.mockResolvedValueOnce({});
+
+      await expect(service.leerDeCuarentena('incoming/t/u')).rejects.toThrow(
+        PayloadTooLargeException,
+      );
+    });
+
+    it('404 si el archivo no existe (no se subió o venció)', async () => {
+      mockS3Client.send.mockRejectedValueOnce({
+        name: 'NotFound',
+        $metadata: { httpStatusCode: 404 },
+      });
+
+      await expect(service.leerDeCuarentena('incoming/t/u')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('propaga otros errores de S3', async () => {
+      mockS3Client.send.mockRejectedValueOnce(new Error('AccessDenied'));
+
+      await expect(service.leerDeCuarentena('incoming/t/u')).rejects.toThrow(
+        'AccessDenied',
+      );
+    });
+  });
+
+  // BL-391 (BL-386): el tipo y la caché los fija el servidor.
+  describe('guardarImagenPublicada', () => {
+    it('guarda con Content-Type image/webp y Cache-Control fijados por la API', async () => {
+      process.env.S3_BUCKET_IMAGES = 'test-bucket';
+      mockS3Client.send.mockResolvedValueOnce({});
+      const contenido = Buffer.from('webp');
+
+      await service.guardarImagenPublicada('t/menu/u.webp', contenido);
+
+      expect(PutObjectCommand).toHaveBeenCalledWith({
+        Bucket: 'test-bucket',
+        Key: 't/menu/u.webp',
+        Body: contenido,
+        ContentType: 'image/webp',
+        CacheControl: 'private, max-age=3600',
+      });
+    });
+  });
+
   describe('existeImagen', () => {
     beforeEach(() => {
       process.env.S3_BUCKET_IMAGES = 'test-bucket';

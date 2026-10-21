@@ -54,12 +54,11 @@ export class ProcesadorImagenService {
       );
     }
 
-    const ancho = metadatos.width ?? 0;
-    const alto = metadatos.height ?? 0;
-    if (ancho < 1 || alto < 1) {
-      throw new BadRequestException(MENSAJE_NO_ES_IMAGEN);
-    }
-    if (ancho * alto > MAXIMO_PIXELES_ENTRADA) {
+    // sharp siempre informa las dimensiones de JPEG, PNG y WEBP. Si faltaran,
+    // el cálculo da 0 y la decodificación de abajo (con limitInputPixels)
+    // hace de control.
+    const pixeles = (metadatos.width ?? 0) * (metadatos.height ?? 0);
+    if (pixeles > MAXIMO_PIXELES_ENTRADA) {
       throw new BadRequestException(
         'La imagen es demasiado grande (máximo 25 megapíxeles)',
       );
