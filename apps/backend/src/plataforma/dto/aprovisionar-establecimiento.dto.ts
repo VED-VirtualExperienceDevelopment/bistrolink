@@ -10,6 +10,7 @@ import {
   Matches,
   ValidateNested,
 } from 'class-validator';
+import { EsRutUruguayo } from '../rut';
 
 /**
  * BL-163 (HU-027): datos de un establecimiento nuevo. Los usa el script de
@@ -94,8 +95,11 @@ export class AprovisionarEstablecimientoDto {
   @Length(1, 200)
   razonSocial: string;
 
-  /** RUT de Uruguay: 12 dígitos. Es único por tenant (idempotencia del alta). */
-  @Matches(/^\d{12}$/, { message: 'rut debe tener 12 dígitos' })
+  /**
+   * RUT de Uruguay: 12 dígitos con el dígito verificador (BL-409). Es único
+   * por tenant (idempotencia del alta).
+   */
+  @EsRutUruguayo()
   rut: string;
 
   /** Por defecto BASICO. */

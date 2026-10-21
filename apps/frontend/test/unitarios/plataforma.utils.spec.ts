@@ -1,5 +1,7 @@
 import {
   avisoDeCopia,
+  errorDeRut,
+  normalizarRut,
   construirPedidoAlta,
   contrasenasSinCopiar,
   credencialesAMostrar,
@@ -27,7 +29,7 @@ import type {
 
 const VALIDO: FormularioAlta = {
   razonSocial: "Restaurante de Prueba SRL",
-  rut: "219999999901",
+  rut: "219999990016",
   restauranteNombre: "Restaurante de Prueba",
   restauranteDireccion: "Calle 123",
   adminUsername: "prueba-admin",
@@ -92,12 +94,16 @@ describe("validarFormulario", () => {
     );
   });
 
-  it.each(["21999999990", "2199999999011", "21.999.999.9901", "abcdefghijkl"])(
-    "rechaza el RUT %p",
-    (rut) => {
-      expect(validarFormulario({ ...VALIDO, rut }).rut).toBeDefined();
-    },
-  );
+  it.each([
+    "21999999001",
+    "2199999900166",
+    "abcdefghijkl",
+    "219999999901", // sin «001» (el RUT de prueba anterior a BL-409)
+    "219999990017", // dígito verificador equivocado
+    "211000060010", // los 11 primeros no admiten verificador
+  ])("rechaza el RUT %p", (rut) => {
+    expect(validarFormulario({ ...VALIDO, rut }).rut).toBeDefined();
+  });
 
   it.each(["Prueba-Admin", "ab", "con espacio", "-admin"])(
     "rechaza el username %p",
@@ -151,7 +157,7 @@ describe("construirPedidoAlta", () => {
 
     expect(pedido).toEqual({
       razonSocial: "Restaurante de Prueba SRL",
-      rut: "219999999901",
+      rut: "219999990016",
       restaurante: { nombre: "Restaurante de Prueba", direccion: "Calle 123" },
       admin: {
         username: "prueba-admin",
@@ -415,6 +421,33 @@ describe("contraseñas temporales (BL-408)", () => {
     expect(avisoDeCopia("COCINA", true)).toBe("Contraseña de Cocina copiada");
     expect(avisoDeCopia("ADMIN", false)).toBe(
       "No se pudo copiar la contraseña de Administrador. Quedó seleccionada: copiala con Ctrl+C.",
+    );
+  });
+});
+
+describe("RUT (BL-409)", () => {
+  it("saca espacios, puntos y guiones", () => {
+    expect(normalizarRut(" 21.999999-001-6 ")).toBe("219999990016");
+  });
+
+  it.each(["219999990016", "21.999999-001-6", "219999980010", "019999990013"])(
+    "acepta %p",
+    (rut) => {
+      expect(errorDeRut(rut)).toBeUndefined();
+    },
+  );
+
+  it("dice qué está mal", () => {
+    expect(errorDeRut("2199")).toMatch(/12 dígitos/);
+    expect(errorDeRut("239999990013")).toMatch(/primeros 8/);
+    expect(errorDeRut("210000000019")).toMatch(/primeros 8/);
+    expect(errorDeRut("219999999901")).toMatch(/001/);
+    expect(errorDeRut("219999990017")).toMatch(/verificador/);
+  });
+
+  it("el pedido de alta lleva el RUT sin separadores", () => {
+    expect(construirPedidoAlta({ ...VALIDO, rut: "21.999999-001-6" }).rut).toBe(
+      "219999990016",
     );
   });
 });

@@ -26,7 +26,45 @@ export const FORMULARIO_VACIO: FormularioAlta = {
   cocinaEmail: "",
 };
 
-const FORMATO_RUT = /^\d{12}$/;
+/**
+ * BL-409: RUT de Uruguay. Copia de apps/backend/src/plataforma/rut.ts (el
+ * backend es quien decide; esto da el error antes y más claro). Si cambia
+ * allá, cambia acá.
+ *
+ * 12 dígitos: registro 01–22, número de seis dígitos (no todos cero), «001»
+ * y un dígito verificador: pesos 4,3,2,9,8,7,6,5,4,3,2 sobre los 11
+ * primeros, (−suma) mod 11; si da 10, no hay verificador posible.
+ */
+const PESOS_RUT = [4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+
+/** BL-409: el RUT sin espacios, puntos ni guiones («21.999999-001-6» → «219999990016»). */
+export function normalizarRut(rut: string): string {
+  return rut.replaceAll(/[\s.-]/g, "");
+}
+
+/** BL-409: por qué el RUT no es válido, o undefined si lo es. */
+export function errorDeRut(rut: string): string | undefined {
+  const r = normalizarRut(rut);
+  if (!/^\d{12}$/.test(r)) {
+    return "Tienen que ser 12 dígitos (podés escribirlo con puntos o guiones)";
+  }
+  const registro = Number(r.slice(0, 2));
+  if (registro < 1 || registro > 22 || r.slice(2, 8) === "000000") {
+    return "No es un RUT válido: revisá los primeros 8 dígitos";
+  }
+  if (r.slice(8, 11) !== "001") {
+    return "No es un RUT válido: los dígitos 9 a 11 son siempre 001";
+  }
+  let suma = 0;
+  for (let i = 0; i < PESOS_RUT.length; i++) {
+    suma += Number(r[i]) * PESOS_RUT[i];
+  }
+  const digito = (11 - (suma % 11)) % 11;
+  if (digito === 10 || digito !== Number(r[11])) {
+    return "No es un RUT válido: el último dígito (verificador) no corresponde";
+  }
+  return undefined;
+}
 const FORMATO_USERNAME = /^[a-z0-9][a-z0-9._-]{2,49}$/;
 
 /**
@@ -59,9 +97,8 @@ export function validarFormulario(f: FormularioAlta): ErroresFormulario {
   };
 
   requerido("razonSocial", 200);
-  if (!FORMATO_RUT.test(f.rut.trim())) {
-    errores.rut = "Tienen que ser 12 dígitos, sin puntos ni guiones";
-  }
+  const errorRut = errorDeRut(f.rut);
+  if (errorRut) errores.rut = errorRut;
   requerido("restauranteNombre", 120);
   requerido("restauranteDireccion", 200);
 
@@ -93,6 +130,7 @@ export function validarFormulario(f: FormularioAlta): ErroresFormulario {
 
 /**
  * Body de POST /plataforma/establecimientos. Sin tenantId, plan ni timezone:
+ * (BL-409: el RUT va sin separadores.)
  * el backend usa los valores por defecto (BASICO, America/Montevideo) y busca
  * el tenant por RUT. Sin contraseñas: el backend las genera.
  */
@@ -100,7 +138,7 @@ export function construirPedidoAlta(f: FormularioAlta) {
   const cocinaEmail = f.cocinaEmail.trim();
   return {
     razonSocial: f.razonSocial.trim(),
-    rut: f.rut.trim(),
+    rut: normalizarRut(f.rut),
     restaurante: {
       nombre: f.restauranteNombre.trim(),
       direccion: f.restauranteDireccion.trim(),

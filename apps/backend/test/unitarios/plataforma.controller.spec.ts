@@ -36,7 +36,7 @@ class AuthFalsa implements CanActivate {
 
 const ALTA = {
   razonSocial: 'Restaurante de Prueba SRL',
-  rut: '219999999901',
+  rut: '219999990016',
   restaurante: { nombre: 'Restaurante de Prueba', direccion: 'Calle 123' },
   admin: {
     username: 'prueba-admin',
@@ -101,7 +101,7 @@ describe('PlataformaController (BL-163)', () => {
 
     expect(res.body).toEqual({ tenantId: 'tenant-nuevo', usuarios: [] });
     expect(aprovisionamiento.aprovisionar).toHaveBeenCalledWith(
-      expect.objectContaining({ rut: '219999999901' }),
+      expect.objectContaining({ rut: '219999990016' }),
       {},
       { id: 'kc-plataforma-1' },
     );

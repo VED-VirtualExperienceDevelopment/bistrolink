@@ -468,7 +468,7 @@ export function AltaEstablecimientoDialog({
               ayuda={
                 completando
                   ? "Datos del establecimiento existente: no se cambian al completar el alta."
-                  : "12 dígitos, sin puntos ni guiones."
+                  : "12 dígitos, con o sin puntos y guiones. Se controla el dígito verificador."
               }
               inputMode="numeric"
               soloLectura={completando}
