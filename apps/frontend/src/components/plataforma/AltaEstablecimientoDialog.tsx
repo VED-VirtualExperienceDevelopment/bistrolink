@@ -1,13 +1,18 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Dialog } from "@/components/ui/Dialog";
 import { apiFetch, ApiError } from "@/lib/api-client";
-import type { FormularioAlta, ResultadoAlta } from "@/types/plataforma";
+import type {
+  EstablecimientoListado,
+  FormularioAlta,
+  ResultadoAlta,
+} from "@/types/plataforma";
 import {
   construirPedidoAlta,
   credencialesAMostrar,
   ETIQUETA_ROL,
   FORMULARIO_VACIO,
+  formularioParaCompletar,
   mensajeDeError,
   resumirAlta,
   validarFormulario,
@@ -20,6 +25,12 @@ interface Props {
   token: string | undefined;
   /** Se llama después de un alta exitosa (para refrescar el listado). */
   onCreado: (resultado: ResultadoAlta) => void;
+  /**
+   * BL-407: establecimiento con el alta incompleta. Si viene, el diálogo
+   * abre en modo «Completar alta», con la razón social y el RUT del tenant
+   * fijos.
+   */
+  completar?: EstablecimientoListado | null;
 }
 
 const CLASE_INPUT =
@@ -33,6 +44,10 @@ interface CampoProps {
   ayuda?: string;
   tipo?: "text" | "email";
   inputMode?: "numeric";
+  /** BL-407: dato del tenant existente, que no se cambia al completar el alta. */
+  soloLectura?: boolean;
+  /** BL-407: el diálogo pone el foco acá al abrir (data-autofocus de Dialog). */
+  enfocar?: boolean;
   onChange: (id: keyof FormularioAlta, valor: string) => void;
 }
 
@@ -44,6 +59,8 @@ function Campo({
   ayuda,
   tipo = "text",
   inputMode,
+  soloLectura = false,
+  enfocar = false,
   onChange,
 }: Readonly<CampoProps>) {
   const idAyuda = `${id}-ayuda`;
@@ -61,6 +78,8 @@ function Campo({
         inputMode={inputMode}
         autoComplete="off"
         value={valor}
+        readOnly={soloLectura}
+        data-autofocus={enfocar ? true : undefined}
         aria-invalid={error ? true : undefined}
         aria-describedby={error || ayuda ? idAyuda : undefined}
         onChange={(e) => onChange(id, e.target.value)}
@@ -68,7 +87,7 @@ function Campo({
           error
             ? "border-error focus:border-error focus:ring-error/20"
             : "border-outline-variant focus:border-primary focus:ring-primary/20"
-        }`}
+        } ${soloLectura ? "bg-surface-container text-on-surface-variant" : ""}`}
       />
       {(error || ayuda) && (
         <p
@@ -89,12 +108,18 @@ function Campo({
  * Las contraseñas del Administrador y de Cocina las genera el backend como
  * temporales y vuelven UNA sola vez en la respuesta (mismo criterio que
  * CrearUsuarioDialog): se muestran acá y no se guardan en ningún lado.
+ *
+ * BL-407: con `completar`, el mismo formulario completa un alta incompleta.
+ * El backend es idempotente por RUT: no duplica el tenant y crea lo que
+ * falta. La razón social y el RUT quedan fijos (otro RUT sería otro
+ * establecimiento).
  */
 export function AltaEstablecimientoDialog({
   open,
   onClose,
   token,
   onCreado,
+  completar = null,
 }: Readonly<Props>) {
   const [form, setForm] = useState<FormularioAlta>(FORMULARIO_VACIO);
   const [errores, setErrores] = useState<ErroresFormulario>({});
@@ -102,6 +127,18 @@ export function AltaEstablecimientoDialog({
   const [errorApi, setErrorApi] = useState<string | null>(null);
   const [resultado, setResultado] = useState<ResultadoAlta | null>(null);
   const [copiado, setCopiado] = useState<string | null>(null);
+  const completando = completar !== null;
+  let textoBoton = completando ? "Completar alta" : "Dar de alta";
+  if (enviando) textoBoton = completando ? "Completando…" : "Dando de alta…";
+
+  // BL-407: al abrir, el formulario arranca vacío o con los datos del
+  // establecimiento a completar.
+  useEffect(() => {
+    if (!open) return;
+    setForm(completar ? formularioParaCompletar(completar) : FORMULARIO_VACIO);
+    setErrores({});
+    setErrorApi(null);
+  }, [open, completar]);
 
   const cerrar = () => {
     // Al cerrar se descartan el formulario y las contraseñas mostradas.
@@ -215,12 +252,24 @@ export function AltaEstablecimientoDialog({
   }
 
   return (
-    <Dialog open={open} onClose={cerrar} title="Nuevo establecimiento">
+    <Dialog
+      open={open}
+      onClose={cerrar}
+      title={completando ? "Completar alta" : "Nuevo establecimiento"}
+    >
       <form
         onSubmit={enviar}
         noValidate
         className="max-h-[70vh] space-y-5 overflow-y-auto pr-1"
       >
+        {completando && (
+          <p className="rounded-lg bg-surface-container-low px-3 py-2 text-body-md text-on-surface">
+            A este establecimiento le falta el restaurante. Cargá lo que
+            falta: no se duplica nada. Si el Administrador o la Cocina ya
+            existen, usá los mismos usuarios; no se les cambia la contraseña.
+          </p>
+        )}
+
         <fieldset className="space-y-3">
           <legend className="mb-1 text-label-md font-semibold text-on-surface">
             Empresa
@@ -230,6 +279,7 @@ export function AltaEstablecimientoDialog({
             label="Razón social"
             valor={form.razonSocial}
             error={errores.razonSocial}
+            soloLectura={completando}
             onChange={cambiar}
           />
           <Campo
@@ -237,8 +287,13 @@ export function AltaEstablecimientoDialog({
             label="RUT"
             valor={form.rut}
             error={errores.rut}
-            ayuda="12 dígitos, sin puntos ni guiones. Si el RUT ya existe, se completa ese establecimiento."
+            ayuda={
+              completando
+                ? "Datos del establecimiento existente: no se cambian al completar el alta."
+                : "12 dígitos, sin puntos ni guiones. Si el RUT ya existe, se completa ese establecimiento."
+            }
             inputMode="numeric"
+            soloLectura={completando}
             onChange={cambiar}
           />
         </fieldset>
@@ -252,6 +307,7 @@ export function AltaEstablecimientoDialog({
             label="Nombre"
             valor={form.restauranteNombre}
             error={errores.restauranteNombre}
+            enfocar={completando}
             onChange={cambiar}
           />
           <Campo
@@ -349,7 +405,7 @@ export function AltaEstablecimientoDialog({
             disabled={enviando}
             className="rounded-lg bg-primary px-4 py-2 text-body-md font-medium text-on-primary hover:opacity-90 disabled:opacity-50"
           >
-            {enviando ? "Dando de alta…" : "Dar de alta"}
+            {textoBoton}
           </button>
         </div>
       </form>

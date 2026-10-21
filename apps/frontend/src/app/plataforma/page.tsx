@@ -12,7 +12,10 @@ import {
   rutaListado,
   totalPaginas,
 } from "@/components/plataforma/plataforma.utils";
-import type { PaginaEstablecimientos } from "@/types/plataforma";
+import type {
+  EstablecimientoListado,
+  PaginaEstablecimientos,
+} from "@/types/plataforma";
 
 // BL-405: botones de 48 px (como Usuarios, BL-364, y el mapa, BL-335).
 const CLASE_BOTON_PAGINA =
@@ -35,6 +38,9 @@ const ESPERA_BUSQUEDA_MS = 350;
  * BL-406: búsqueda por razón social o RUT, en el servidor (el listado está
  * paginado). El buscador queda siempre en pantalla, también mientras carga,
  * para no perder el foco ni lo escrito.
+ *
+ * BL-407: «Completar alta» abre el mismo diálogo de alta con los datos del
+ * establecimiento incompleto.
  */
 export default function PlataformaPage() {
   const { token } = useKeycloakAuth();
@@ -47,6 +53,9 @@ export default function PlataformaPage() {
   const [cargando, setCargando] = useState(true);
   const [errorCarga, setErrorCarga] = useState<string | null>(null);
   const [altaAbierta, setAltaAbierta] = useState(false);
+  // BL-407: establecimiento cuya alta se completa (null = alta nueva).
+  const [aCompletar, setACompletar] =
+    useState<EstablecimientoListado | null>(null);
   const inputBusqueda = useRef<HTMLInputElement>(null);
   // BL-406: número del último pedido. Si una respuesta vieja llega después
   // de una nueva (escribiendo rápido), se descarta.
@@ -113,7 +122,10 @@ export default function PlataformaPage() {
         </div>
         <button
           type="button"
-          onClick={() => setAltaAbierta(true)}
+          onClick={() => {
+            setACompletar(null);
+            setAltaAbierta(true);
+          }}
           className="flex min-h-12 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-body-md font-medium text-on-primary hover:opacity-90"
         >
           <span
@@ -189,7 +201,13 @@ export default function PlataformaPage() {
 
       {!cargando && !errorCarga && datos && !sinCoincidencias && (
         <>
-          <EstablecimientosTable establecimientos={datos.items} />
+          <EstablecimientosTable
+            establecimientos={datos.items}
+            onCompletarAlta={(e) => {
+              setACompletar(e);
+              setAltaAbierta(true);
+            }}
+          />
 
           {datos.total > 0 && (
             <nav
@@ -242,11 +260,17 @@ export default function PlataformaPage() {
 
       <AltaEstablecimientoDialog
         open={altaAbierta}
-        onClose={() => setAltaAbierta(false)}
+        onClose={() => {
+          setAltaAbierta(false);
+          setACompletar(null);
+        }}
         token={token}
+        completar={aCompletar}
         onCreado={() => {
           // El alta nueva aparece primera: volver a la página 1 y recargar.
-          if (pagina === 1) cargar();
+          // BL-407: al completar un alta, el establecimiento sigue en su
+          // página; se recarga la actual para que deje de figurar incompleto.
+          if (aCompletar || pagina === 1) cargar();
           else setPagina(1);
         }}
       />

@@ -2,10 +2,12 @@ import {
   construirPedidoAlta,
   credencialesAMostrar,
   describirCreadoPor,
+  esAltaIncompleta,
   esEmailValido,
   etiquetaPlan,
   formatearFechaAlta,
   FORMULARIO_VACIO,
+  formularioParaCompletar,
   mensajeDeError,
   resumirAlta,
   resumirPagina,
@@ -13,7 +15,11 @@ import {
   totalPaginas,
   validarFormulario,
 } from "@/components/plataforma/plataforma.utils";
-import type { FormularioAlta, ResultadoAlta } from "@/types/plataforma";
+import type {
+  EstablecimientoListado,
+  FormularioAlta,
+  ResultadoAlta,
+} from "@/types/plataforma";
 
 /** BL-163 (HU-027): lógica pura de la pantalla /plataforma. */
 
@@ -336,5 +342,35 @@ describe("rutaListado (BL-406)", () => {
     expect(rutaListado(1, " Bar & Co ")).toBe(
       "/plataforma/establecimientos?pagina=1&q=Bar+%26+Co",
     );
+  });
+});
+
+describe("alta incompleta (BL-407)", () => {
+  const establecimiento: EstablecimientoListado = {
+    tenantId: "aaaaaaaa-1111-4111-8111-111111111111",
+    razonSocial: "Uno SRL",
+    rut: "210000000001",
+    plan: "BASICO",
+    creadoPor: null,
+    creadoEl: "2026-10-09T12:00:00Z",
+    restaurante: null,
+  };
+
+  it("es incompleta si el tenant no tiene restaurante", () => {
+    expect(esAltaIncompleta(establecimiento)).toBe(true);
+    expect(
+      esAltaIncompleta({
+        ...establecimiento,
+        restaurante: { id: "r-1", nombre: "Uno" },
+      }),
+    ).toBe(false);
+  });
+
+  it("el formulario para completar trae la razón social y el RUT del tenant, y el resto vacío", () => {
+    expect(formularioParaCompletar(establecimiento)).toEqual({
+      ...FORMULARIO_VACIO,
+      razonSocial: "Uno SRL",
+      rut: "210000000001",
+    });
   });
 });

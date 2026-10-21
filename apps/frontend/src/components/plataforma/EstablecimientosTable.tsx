@@ -3,12 +3,15 @@
 import type { EstablecimientoListado } from "@/types/plataforma";
 import {
   describirCreadoPor,
+  esAltaIncompleta,
   etiquetaPlan,
   formatearFechaAlta,
 } from "./plataforma.utils";
 
 interface Props {
   establecimientos: EstablecimientoListado[];
+  /** BL-407: abre el alta con los datos del establecimiento para completarla. */
+  onCompletarAlta: (establecimiento: EstablecimientoListado) => void;
 }
 
 // BL-405: en PC y tablet, columnas alineadas (establecimiento, restaurante,
@@ -28,7 +31,10 @@ const COLUMNAS =
  * pantalla (el encabezado de columnas es decorativo), así cada dato se
  * entiende solo en cualquier ancho.
  */
-export function EstablecimientosTable({ establecimientos }: Readonly<Props>) {
+export function EstablecimientosTable({
+  establecimientos,
+  onCompletarAlta,
+}: Readonly<Props>) {
   if (establecimientos.length === 0) {
     return (
       <div className="rounded-xl border border-outline-variant bg-surface-container-lowest p-12 text-center">
@@ -88,23 +94,52 @@ export function EstablecimientosTable({ establecimientos }: Readonly<Props>) {
               </div>
             </div>
 
-            {/* Restaurante. «Sin restaurante» se mejora en BL-407 (texto e
-                ícono, y la acción para completar el alta). */}
-            <p className="min-w-0 break-words text-body-md text-on-surface">
-              <span className="text-on-surface-variant md:sr-only">
-                Restaurante:{" "}
-              </span>
-              {e.restaurante ? (
-                e.restaurante.nombre
-              ) : (
-                <span
-                  className="text-error"
-                  title="El alta quedó a medias: volver a darlo de alta completa lo que falta"
+            {/* Restaurante. BL-407: si falta, «Alta incompleta» con ícono y
+                texto (no solo color) y la acción para completarla, a la vista
+                y con teclado (antes era un `title`, que no se ve ni con
+                teclado ni en pantallas táctiles). */}
+            {esAltaIncompleta(e) ? (
+              <div className="flex min-w-0 flex-col items-start gap-2">
+                <p className="text-body-md">
+                  <span className="text-on-surface-variant md:sr-only">
+                    Restaurante:{" "}
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-error-container px-3 py-1 text-body-md text-on-error-container">
+                    <span
+                      className="material-symbols-outlined text-[18px]"
+                      aria-hidden="true"
+                    >
+                      warning
+                    </span>
+                    Alta incompleta
+                  </span>
+                </p>
+                <p className="text-body-md text-on-surface-variant">
+                  Falta el restaurante.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => onCompletarAlta(e)}
+                  aria-label={`Completar alta de ${e.razonSocial}`}
+                  className="flex min-h-12 items-center gap-2 rounded-lg px-3 text-body-md font-medium text-primary hover:bg-surface-container-high focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                 >
-                  Sin restaurante
+                  <span
+                    className="material-symbols-outlined text-[20px]"
+                    aria-hidden="true"
+                  >
+                    build
+                  </span>
+                  <span aria-hidden="true">Completar alta</span>
+                </button>
+              </div>
+            ) : (
+              <p className="min-w-0 break-words text-body-md text-on-surface">
+                <span className="text-on-surface-variant md:sr-only">
+                  Restaurante:{" "}
                 </span>
-              )}
-            </p>
+                {e.restaurante?.nombre}
+              </p>
+            )}
 
             {/* Plan, con su nombre para personas («Básico», no «BASICO»). */}
             <p className="text-body-md">

@@ -118,6 +118,27 @@ export function construirPedidoAlta(f: FormularioAlta) {
   };
 }
 
+/**
+ * BL-407: el alta de un establecimiento quedó incompleta si el tenant no
+ * tiene restaurante.
+ */
+export function esAltaIncompleta(e: EstablecimientoListado): boolean {
+  return e.restaurante === null;
+}
+
+/**
+ * BL-407: formulario para completar un alta incompleta. La razón social y el
+ * RUT son los del tenant que ya existe y no se cambian acá: el alta busca el
+ * tenant por RUT, así que otro RUT daría de alta OTRO establecimiento. El
+ * resto se completa a mano (el listado no trae datos del restaurante ni de
+ * las cuentas).
+ */
+export function formularioParaCompletar(
+  e: EstablecimientoListado,
+): FormularioAlta {
+  return { ...FORMULARIO_VACIO, razonSocial: e.razonSocial, rut: e.rut };
+}
+
 /** Usuarios con contraseña temporal para mostrar (una sola vez). */
 export function credencialesAMostrar(
   resultado: ResultadoAlta,
