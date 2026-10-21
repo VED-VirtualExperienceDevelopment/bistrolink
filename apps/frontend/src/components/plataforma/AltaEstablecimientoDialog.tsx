@@ -33,8 +33,15 @@ interface Props {
   completar?: EstablecimientoListado | null;
 }
 
+// BL-408: campos de 48 px (como Usuarios, BL-364).
 const CLASE_INPUT =
-  "w-full rounded-lg border px-3 py-2 text-body-md text-on-surface focus:outline-none focus:ring-2";
+  "min-h-12 w-full rounded-lg border px-3 text-body-md text-on-surface focus:outline-none focus:ring-2";
+
+// BL-408: botones de 48 px.
+const CLASE_BOTON_PRIMARIO =
+  "flex min-h-12 items-center justify-center rounded-lg bg-primary px-4 text-body-md font-medium text-on-primary hover:opacity-90 disabled:opacity-50";
+const CLASE_BOTON_SECUNDARIO =
+  "flex min-h-12 items-center justify-center rounded-lg px-4 text-body-md text-on-surface-variant hover:bg-surface-container";
 
 interface CampoProps {
   id: keyof FormularioAlta;
@@ -92,12 +99,62 @@ function Campo({
       {(error || ayuda) && (
         <p
           id={idAyuda}
-          className={`mt-1 text-body-sm ${error ? "text-error" : "text-on-surface-variant"}`}
+          className={`mt-1 text-body-md ${error ? "text-error" : "text-on-surface-variant"}`}
         >
           {error ?? ayuda}
         </p>
       )}
     </div>
+  );
+}
+
+interface SeccionProps {
+  id: string;
+  icono: string;
+  titulo: string;
+  descripcion: string;
+  children: React.ReactNode;
+}
+
+/**
+ * BL-408: cada parte del alta en su propia tarjeta, con ícono, título y una
+ * frase que dice para qué es. Es un <fieldset>: el lector de pantalla anuncia
+ * el título del grupo al entrar a cualquiera de sus campos, y la descripción
+ * queda asociada al grupo con aria-describedby.
+ *
+ * El <legend> va flotado (float-left w-full): así se dibuja dentro de la
+ * tarjeta como un título común, en lugar de cortar el borde del fieldset.
+ */
+function Seccion({
+  id,
+  icono,
+  titulo,
+  descripcion,
+  children,
+}: Readonly<SeccionProps>) {
+  const idDescripcion = `${id}-descripcion`;
+  return (
+    <fieldset
+      aria-describedby={idDescripcion}
+      className="min-w-0 rounded-xl border border-outline-variant bg-surface-container-low p-4"
+    >
+      <legend className="float-left flex w-full items-center gap-2 text-body-lg font-semibold text-on-surface">
+        <span
+          className="material-symbols-outlined text-[22px] text-primary"
+          aria-hidden="true"
+        >
+          {icono}
+        </span>
+        {titulo}
+      </legend>
+      <p
+        id={idDescripcion}
+        className="clear-both pt-1 text-body-md text-on-surface-variant"
+      >
+        {descripcion}
+      </p>
+      <div className="mt-4 space-y-3">{children}</div>
+    </fieldset>
   );
 }
 
@@ -113,6 +170,11 @@ function Campo({
  * El backend es idempotente por RUT: no duplica el tenant y crea lo que
  * falta. La razón social y el RUT quedan fijos (otro RUT sería otro
  * establecimiento).
+ *
+ * BL-408: diálogo ancho (tamano="lg") y sin caja con scroll propia (había
+ * dos barras de desplazamiento). Las cuatro partes van en tarjetas: en PC,
+ * de a dos por fila; en el celular, una debajo de la otra. Los rótulos dicen
+ * de qué es cada dato («Nombre del restaurante», «Usuario para ingresar»).
  */
 export function AltaEstablecimientoDialog({
   open,
@@ -193,15 +255,20 @@ export function AltaEstablecimientoDialog({
   if (resultado) {
     const credenciales = credencialesAMostrar(resultado);
     return (
-      <Dialog open={open} onClose={cerrar} title="Establecimiento listo">
-        <div className="max-h-[70vh] space-y-4 overflow-y-auto pr-1">
+      <Dialog
+        open={open}
+        onClose={cerrar}
+        title="Establecimiento listo"
+        tamano="lg"
+      >
+        <div className="space-y-4">
           <p className="text-body-md text-on-surface">
             {resumirAlta(resultado)}
           </p>
 
           {credenciales.length > 0 && (
             <>
-              <p className="rounded-lg bg-tertiary-fixed px-3 py-2 text-body-sm text-on-tertiary-fixed">
+              <p className="rounded-lg bg-tertiary-fixed px-3 py-2 text-body-md text-on-tertiary-fixed">
                 Estas contraseñas temporales{" "}
                 <strong>solo se muestran ahora</strong>. Copialas y pasalas por
                 la base KeePass del equipo, nunca por chat ni mail. Keycloak
@@ -228,7 +295,7 @@ export function AltaEstablecimientoDialog({
                         onClick={() =>
                           copiar(u.username, u.passwordGenerada as string)
                         }
-                        className="shrink-0 text-label-md font-semibold text-primary hover:underline"
+                        className="flex min-h-12 shrink-0 items-center rounded-lg px-3 text-body-md font-semibold text-primary hover:bg-surface-container-high"
                       >
                         {copiado === u.username ? "Copiada" : "Copiar"}
                       </button>
@@ -242,7 +309,7 @@ export function AltaEstablecimientoDialog({
           <button
             type="button"
             onClick={cerrar}
-            className="w-full rounded-lg bg-primary px-4 py-2 text-body-md font-medium text-on-primary hover:opacity-90"
+            className={`${CLASE_BOTON_PRIMARIO} w-full`}
           >
             Listo
           </button>
@@ -256,154 +323,163 @@ export function AltaEstablecimientoDialog({
       open={open}
       onClose={cerrar}
       title={completando ? "Completar alta" : "Nuevo establecimiento"}
+      tamano="lg"
     >
-      <form
-        onSubmit={enviar}
-        noValidate
-        className="max-h-[70vh] space-y-5 overflow-y-auto pr-1"
-      >
+      <form onSubmit={enviar} noValidate className="space-y-5">
         {completando && (
-          <p className="rounded-lg bg-surface-container-low px-3 py-2 text-body-md text-on-surface">
+          <p className="rounded-lg bg-surface-container px-3 py-2 text-body-md text-on-surface">
             A este establecimiento le falta el restaurante. Cargá lo que
             falta: no se duplica nada. Si el Administrador o la Cocina ya
             existen, usá los mismos usuarios; no se les cambia la contraseña.
           </p>
         )}
 
-        <fieldset className="space-y-3">
-          <legend className="mb-1 text-label-md font-semibold text-on-surface">
-            Empresa
-          </legend>
-          <Campo
-            id="razonSocial"
-            label="Razón social"
-            valor={form.razonSocial}
-            error={errores.razonSocial}
-            soloLectura={completando}
-            onChange={cambiar}
-          />
-          <Campo
-            id="rut"
-            label="RUT"
-            valor={form.rut}
-            error={errores.rut}
-            ayuda={
-              completando
-                ? "Datos del establecimiento existente: no se cambian al completar el alta."
-                : "12 dígitos, sin puntos ni guiones. Si el RUT ya existe, se completa ese establecimiento."
-            }
-            inputMode="numeric"
-            soloLectura={completando}
-            onChange={cambiar}
-          />
-        </fieldset>
-
-        <fieldset className="space-y-3">
-          <legend className="mb-1 text-label-md font-semibold text-on-surface">
-            Restaurante
-          </legend>
-          <Campo
-            id="restauranteNombre"
-            label="Nombre"
-            valor={form.restauranteNombre}
-            error={errores.restauranteNombre}
-            enfocar={completando}
-            onChange={cambiar}
-          />
-          <Campo
-            id="restauranteDireccion"
-            label="Dirección"
-            valor={form.restauranteDireccion}
-            error={errores.restauranteDireccion}
-            onChange={cambiar}
-          />
-        </fieldset>
-
-        <fieldset className="space-y-3">
-          <legend className="mb-1 text-label-md font-semibold text-on-surface">
-            Administrador
-          </legend>
-          <Campo
-            id="adminUsername"
-            label="Usuario"
-            valor={form.adminUsername}
-            error={errores.adminUsername}
-            onChange={cambiar}
-          />
-          <Campo
-            id="adminEmail"
-            label="Email"
-            tipo="email"
-            valor={form.adminEmail}
-            error={errores.adminEmail}
-            onChange={cambiar}
-          />
-          <div className="grid grid-cols-2 gap-3">
+        <div className="grid gap-4 md:grid-cols-2">
+          <Seccion
+            id="seccion-empresa"
+            icono="domain"
+            titulo="Empresa"
+            descripcion="Datos fiscales del establecimiento: con estos se emiten los comprobantes."
+          >
             <Campo
-              id="adminNombre"
-              label="Nombre"
-              valor={form.adminNombre}
-              error={errores.adminNombre}
+              id="razonSocial"
+              label="Razón social"
+              valor={form.razonSocial}
+              error={errores.razonSocial}
+              soloLectura={completando}
               onChange={cambiar}
             />
             <Campo
-              id="adminApellido"
-              label="Apellido"
-              valor={form.adminApellido}
-              error={errores.adminApellido}
+              id="rut"
+              label="RUT"
+              valor={form.rut}
+              error={errores.rut}
+              ayuda={
+                completando
+                  ? "Datos del establecimiento existente: no se cambian al completar el alta."
+                  : "12 dígitos, sin puntos ni guiones."
+              }
+              inputMode="numeric"
+              soloLectura={completando}
               onChange={cambiar}
             />
-          </div>
-        </fieldset>
+          </Seccion>
 
-        <fieldset className="space-y-3">
-          <legend className="mb-1 text-label-md font-semibold text-on-surface">
-            Cocina (monitor de pedidos)
-          </legend>
-          <Campo
-            id="cocinaUsername"
-            label="Usuario"
-            valor={form.cocinaUsername}
-            error={errores.cocinaUsername}
-            onChange={cambiar}
-          />
-          <Campo
-            id="cocinaEmail"
-            label="Email (opcional)"
-            tipo="email"
-            valor={form.cocinaEmail}
-            error={errores.cocinaEmail}
-            ayuda="Si lo dejás vacío, se usa uno técnico."
-            onChange={cambiar}
-          />
-        </fieldset>
+          <Seccion
+            id="seccion-restaurante"
+            icono="storefront"
+            titulo="Restaurante"
+            descripcion="El local que ven los comensales en la carta y en el QR de las mesas."
+          >
+            <Campo
+              id="restauranteNombre"
+              label="Nombre del restaurante"
+              valor={form.restauranteNombre}
+              error={errores.restauranteNombre}
+              enfocar={completando}
+              onChange={cambiar}
+            />
+            <Campo
+              id="restauranteDireccion"
+              label="Dirección"
+              valor={form.restauranteDireccion}
+              error={errores.restauranteDireccion}
+              onChange={cambiar}
+            />
+          </Seccion>
 
-        <p className="text-body-sm text-on-surface-variant">
-          Las contraseñas del Administrador y de Cocina las genera el sistema.
-          El comensal técnico y la mesa virtual se crean solos.
+          <Seccion
+            id="seccion-admin"
+            icono="shield_person"
+            titulo="Administrador"
+            descripcion="La persona que gestiona el restaurante: carta, mesas y personal."
+          >
+            <Campo
+              id="adminUsername"
+              label="Usuario para ingresar"
+              valor={form.adminUsername}
+              error={errores.adminUsername}
+              onChange={cambiar}
+            />
+            <Campo
+              id="adminEmail"
+              label="Correo"
+              tipo="email"
+              valor={form.adminEmail}
+              error={errores.adminEmail}
+              onChange={cambiar}
+            />
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Campo
+                id="adminNombre"
+                label="Nombre"
+                valor={form.adminNombre}
+                error={errores.adminNombre}
+                onChange={cambiar}
+              />
+              <Campo
+                id="adminApellido"
+                label="Apellido"
+                valor={form.adminApellido}
+                error={errores.adminApellido}
+                onChange={cambiar}
+              />
+            </div>
+          </Seccion>
+
+          <Seccion
+            id="seccion-cocina"
+            icono="soup_kitchen"
+            titulo="Cocina"
+            descripcion="Cuenta compartida del monitor de pedidos: la usan todas las pantallas de la cocina."
+          >
+            <Campo
+              id="cocinaUsername"
+              label="Usuario para ingresar"
+              valor={form.cocinaUsername}
+              error={errores.cocinaUsername}
+              onChange={cambiar}
+            />
+            <Campo
+              id="cocinaEmail"
+              label="Correo (opcional)"
+              tipo="email"
+              valor={form.cocinaEmail}
+              error={errores.cocinaEmail}
+              ayuda="Si lo dejás vacío, se usa uno técnico."
+              onChange={cambiar}
+            />
+          </Seccion>
+        </div>
+
+        <p className="text-body-md text-on-surface-variant">
+          Las contraseñas del Administrador y de Cocina las genera el sistema y
+          se muestran una sola vez al terminar. El comensal técnico y la mesa
+          virtual se crean solos.
         </p>
 
         {errorApi && (
           <p
             role="alert"
-            className="rounded-lg bg-error-container px-3 py-2 text-body-sm text-on-error-container"
+            className="rounded-lg bg-error-container px-3 py-2 text-body-md text-on-error-container"
           >
             {errorApi}
           </p>
         )}
 
-        <div className="flex justify-end gap-2 pt-1">
+        {/* En el celular, el botón principal queda arriba y a todo el ancho. */}
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <button
             type="button"
             onClick={cerrar}
-            className="rounded-lg px-4 py-2 text-body-md text-on-surface-variant hover:bg-surface-container"
+            className={CLASE_BOTON_SECUNDARIO}
           >
             Cancelar
           </button>
           <button
             type="submit"
             disabled={enviando}
-            className="rounded-lg bg-primary px-4 py-2 text-body-md font-medium text-on-primary hover:opacity-90 disabled:opacity-50"
+            className={CLASE_BOTON_PRIMARIO}
           >
             {textoBoton}
           </button>
