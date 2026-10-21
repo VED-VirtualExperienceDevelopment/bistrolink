@@ -15,12 +15,15 @@ const BODY = {
 };
 
 describe('PagosController (BL-311)', () => {
-  let pagosService: { crear: jest.Mock };
+  let pagosService: { crear: jest.Mock; consultar: jest.Mock };
   let controller: PagosController;
   const req = { user: { sub: 'c', tenantId: TENANT_ID, roles: ['COMENSAL'] } };
 
   beforeEach(() => {
-    pagosService = { crear: jest.fn().mockResolvedValue({ id: 'pago' }) };
+    pagosService = {
+      crear: jest.fn().mockResolvedValue({ id: 'pago' }),
+      consultar: jest.fn().mockResolvedValue({ pedidoId: PEDIDO_ID }),
+    };
     controller = new PagosController(pagosService as any);
   });
 
@@ -55,5 +58,16 @@ describe('PagosController (BL-311)', () => {
       } as any),
     ).toThrow(BadRequestException);
     expect(pagosService.crear).not.toHaveBeenCalled();
+  });
+
+  it('GET pasa por los mismos guards que el pago: sin endpoint público de datos fiscales (RD.05)', () => {
+    const guards = Reflect.getMetadata(GUARDS_METADATA, controller.consultar);
+    expect(guards).toEqual([MesaQrGuard, PedidoAccesoGuard]);
+  });
+
+  it('GET consulta el pedido de la ruta en el tenant del JWT', async () => {
+    await controller.consultar(req, PEDIDO_ID);
+
+    expect(pagosService.consultar).toHaveBeenCalledWith(TENANT_ID, PEDIDO_ID);
   });
 });

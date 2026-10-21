@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Get,
   Param,
   ParseUUIDPipe,
   Post,
@@ -39,5 +40,18 @@ export class PagosController {
       );
     }
     return this.pagosService.crear(req.user.tenantId, { ...dto, pedidoId });
+  }
+
+  // BL-311: estado del pago y comprobante (serie, número y enlace de DGI)
+  // para la pantalla del comensal, que lo consulta hasta que aparece el CFE.
+  // Mismo control de acceso que el pago: sin endpoint público de datos
+  // fiscales (RD.05).
+  @Get()
+  @UseGuards(MesaQrGuard, PedidoAccesoGuard)
+  consultar(
+    @Req() req: { user: AuthenticatedUser },
+    @Param('pedidoId', ParseUUIDPipe) pedidoId: string,
+  ) {
+    return this.pagosService.consultar(req.user.tenantId, pedidoId);
   }
 }
