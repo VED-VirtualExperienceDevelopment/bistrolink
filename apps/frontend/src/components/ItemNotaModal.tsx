@@ -1,146 +1,178 @@
-'use client';
+"use client";
 
-import { useState, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useState } from "react";
+import { useKeycloakAuth } from "@/components/providers/KeycloakProvider";
+import { apiFetch, ApiError } from "@/lib/api-client";
+import { EstablecimientosTable } from "@/components/plataforma/EstablecimientosTable";
+import { AltaEstablecimientoDialog } from "@/components/plataforma/AltaEstablecimientoDialog";
+import {
+  mensajeDeError,
+  resumirPagina,
+  totalPaginas,
+} from "@/components/plataforma/plataforma.utils";
+import type { PaginaEstablecimientos } from "@/types/plataforma";
 
+// BL-405: botones de 48 px (como Usuarios, BL-364, y el mapa, BL-335).
+const CLASE_BOTON_PAGINA =
+  "flex min-h-12 items-center gap-1 rounded-lg px-3 text-body-md hover:bg-surface-container focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-40";
 
-interface ItemNotaModalProps {
-  readonly isOpen: boolean;
-  readonly onClose: () => void;
-  readonly itemName: string;
-  readonly currentNote: string;
-  readonly onSave: (note: string) => void;
-}
+/**
+ * BL-163 (HU-027): listado de establecimientos y alta de uno nuevo, para el
+ * rol PLATAFORMA (el guard está en PlataformaShell).
+ *
+ * BL-405: a todo el ancho (como Usuarios y el mapa de mesas, BL-339),
+ * botones de 48 px, carga anunciada al lector de pantalla y paginación con
+ * la página actual marcada y anunciada al cambiar.
+ */
+export default function PlataformaPage() {
+  const { token } = useKeycloakAuth();
+  const [pagina, setPagina] = useState(1);
+  const [datos, setDatos] = useState<PaginaEstablecimientos | null>(null);
+  const [cargando, setCargando] = useState(true);
+  const [errorCarga, setErrorCarga] = useState<string | null>(null);
+  const [altaAbierta, setAltaAbierta] = useState(false);
 
-const MAX_CHARS = 300;
-const WARNING_THRESHOLD = 0.9;
-
-export default function ItemNotaModal({
-  isOpen,
-  onClose,
-  itemName,
-  currentNote,
-  onSave,
-}: ItemNotaModalProps) {
-  const [note, setNote] = useState(currentNote);
-  const dialogRef = useRef<HTMLDialogElement>(null);
+  const cargar = useCallback(async () => {
+    if (!token) return;
+    setCargando(true);
+    setErrorCarga(null);
+    try {
+      setDatos(
+        await apiFetch<PaginaEstablecimientos>(
+          `/plataforma/establecimientos?pagina=${pagina}`,
+          token,
+        ),
+      );
+    } catch (err) {
+      setErrorCarga(
+        err instanceof ApiError
+          ? mensajeDeError(err.status, err.message)
+          : "No se pudo cargar el listado",
+      );
+    } finally {
+      setCargando(false);
+    }
+  }, [token, pagina]);
 
   useEffect(() => {
-    if (isOpen) {
-      setNote(currentNote);
-      dialogRef.current?.showModal();
-    } else {
-      dialogRef.current?.close();
-    }
-  }, [isOpen, currentNote]);
+    cargar();
+  }, [cargar]);
 
-  const charCount = note.length;
-  const isOverLimit = charCount > MAX_CHARS;
-  const isNearLimit = charCount >= MAX_CHARS * WARNING_THRESHOLD && !isOverLimit;
-
-  const handleSave = () => {
-    if (!isOverLimit) {
-      onSave(note.trim() || '');
-      onClose();
-    }
-  };
-
-  const handleDialogClick = (e: React.MouseEvent<HTMLDialogElement>) => {
-    if (e.target === dialogRef.current) {
-      onClose();
-    }
-  };
-
-  const getCounterColor = () => {
-    if (isOverLimit) return 'text-[#BA1A1A]';
-    if (isNearLimit) return 'text-[#755b00]';
-    return 'text-[#494551]';
-  };
-
-  const getBorderClasses = () => {
-    if (isOverLimit) return 'border-2 border-[#BA1A1A] bg-[#FFDAD6] focus:border-[#BA1A1A] focus:ring-2 focus:ring-[#BA1A1A]/20';
-    if (isNearLimit) return 'border-2 border-[#755b00] bg-[#F1ECF4] focus:border-[#755b00] focus:ring-2 focus:ring-[#755b00]/20';
-    return 'border-2 border-[#cac4d2] bg-[#F1ECF4] focus:border-[#644da1] focus:ring-2 focus:ring-[#644da1]/20';
-  };
-
-  if (!isOpen) return null;
+  const paginas = datos ? totalPaginas(datos.total, datos.tamanoPagina) : 1;
 
   return (
-    // FIX SONARQUBE: Agregamos onKeyDown explícito para satisfacer la regla 
-    // de "click handlers must have at least one keyboard listener"
-    <dialog
-      ref={dialogRef}
-      onClick={handleDialogClick}
-      onKeyDown={(e) => {
-        if (e.key === 'Escape') {
-          onClose();
-        }
-      }}
-      className="fixed inset-0 z-50 m-0 p-0 w-full h-full bg-black/40 backdrop-blur-sm open:flex hidden items-end sm:items-center justify-center"
-    >
-      <div className="bg-white w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl p-6 shadow-2xl">
-        <div className="flex items-center justify-between mb-4">
-          <h3
-            id="item-note-title"
-            className="text-xl font-semibold text-[#1C1B20]"
-          >
-            Nota para: {itemName}
-          </h3>
-          <button
-            onClick={onClose}
-            className="text-[#494551] hover:text-[#1C1B20] transition-colors"
-            aria-label="Cerrar modal"
-            type="button"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
+    <div className="w-full space-y-6 p-4 md:p-6">
+      <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
+        <div>
+          <h1 className="text-headline-lg text-primary">Establecimientos</h1>
+          <p className="text-body-md text-on-surface-variant">
+            Restaurantes dados de alta en BistroLink y quién hizo cada alta.
+          </p>
         </div>
-
-        <textarea
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          placeholder="Ej: Sin cebolla, poca sal, bien cocido..."
-          className={`w-full h-32 p-3 rounded-lg text-base resize-none outline-none transition-all duration-200 text-[#1C1B20] placeholder:text-[#7a7582] ${getBorderClasses()}`}
-          maxLength={MAX_CHARS + 20}
-          autoFocus
-        />
-
-        <div className="flex justify-end mt-2">
-          <span className={`text-sm font-semibold ${getCounterColor()}`}>
-            {charCount}/{MAX_CHARS}
+        <button
+          type="button"
+          onClick={() => setAltaAbierta(true)}
+          className="flex min-h-12 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-body-md font-medium text-on-primary hover:opacity-90"
+        >
+          <span
+            className="material-symbols-outlined text-[20px]"
+            aria-hidden="true"
+          >
+            add_business
           </span>
-        </div>
-
-        <div className="flex gap-3 mt-6">
-          <button
-            onClick={onClose}
-            className="flex-1 px-4 py-3 rounded-lg font-semibold transition-colors bg-[#F1ECF4] text-[#644da1] hover:bg-[#ebe6ee]"
-            type="button"
-          >
-            Cancelar
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={isOverLimit}
-            className={`flex-1 px-4 py-3 rounded-lg font-semibold text-white transition-all ${isOverLimit ? 'bg-[#cac4d2] cursor-not-allowed opacity-50' : 'bg-[#644da1] hover:opacity-90'}`}
-            type="button"
-          >
-            Guardar nota
-          </button>
-        </div>
+          <span>Nuevo establecimiento</span>
+        </button>
       </div>
-    </dialog>
+
+      {/* BL-405: resultado de cada carga, para el lector de pantalla. Está
+          siempre en el DOM (una región aria-live que aparece junto con su
+          texto no siempre se anuncia). */}
+      <p className="sr-only" aria-live="polite" aria-atomic="true">
+        {!cargando && !errorCarga && datos ? resumirPagina(datos, pagina) : ""}
+      </p>
+
+      {cargando && (
+        <div role="status" className="flex justify-center py-12">
+          <span
+            className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent"
+            aria-hidden="true"
+          />
+          <span className="sr-only">Cargando establecimientos…</span>
+        </div>
+      )}
+
+      {!cargando && errorCarga && (
+        <div
+          role="alert"
+          className="rounded-xl bg-error-container px-4 py-3 text-body-md text-on-error-container"
+        >
+          {errorCarga}
+        </div>
+      )}
+
+      {!cargando && !errorCarga && datos && (
+        <>
+          <EstablecimientosTable establecimientos={datos.items} />
+
+          {datos.total > 0 && (
+            <nav
+              aria-label="Páginas de establecimientos"
+              className="flex flex-col gap-2 text-body-md text-on-surface-variant sm:flex-row sm:items-center sm:justify-between"
+            >
+              <span>
+                {datos.total}{" "}
+                {datos.total === 1 ? "establecimiento" : "establecimientos"}
+              </span>
+              <div className="flex items-center justify-between gap-2 sm:justify-end">
+                <button
+                  type="button"
+                  onClick={() => setPagina((p) => p - 1)}
+                  disabled={pagina <= 1}
+                  aria-label="Página anterior"
+                  className={CLASE_BOTON_PAGINA}
+                >
+                  <span
+                    className="material-symbols-outlined text-[20px]"
+                    aria-hidden="true"
+                  >
+                    chevron_left
+                  </span>
+                  <span aria-hidden="true">Anterior</span>
+                </button>
+                <span aria-current="page">
+                  Página {pagina} de {paginas}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPagina((p) => p + 1)}
+                  disabled={pagina >= paginas}
+                  aria-label="Página siguiente"
+                  className={CLASE_BOTON_PAGINA}
+                >
+                  <span aria-hidden="true">Siguiente</span>
+                  <span
+                    className="material-symbols-outlined text-[20px]"
+                    aria-hidden="true"
+                  >
+                    chevron_right
+                  </span>
+                </button>
+              </div>
+            </nav>
+          )}
+        </>
+      )}
+
+      <AltaEstablecimientoDialog
+        open={altaAbierta}
+        onClose={() => setAltaAbierta(false)}
+        token={token}
+        onCreado={() => {
+          // El alta nueva aparece primera: volver a la página 1 y recargar.
+          if (pagina === 1) cargar();
+          else setPagina(1);
+        }}
+      />
+    </div>
   );
 }

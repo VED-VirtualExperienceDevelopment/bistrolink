@@ -3,10 +3,12 @@ import {
   credencialesAMostrar,
   describirCreadoPor,
   esEmailValido,
+  etiquetaPlan,
   formatearFechaAlta,
   FORMULARIO_VACIO,
   mensajeDeError,
   resumirAlta,
+  resumirPagina,
   totalPaginas,
   validarFormulario,
 } from "@/components/plataforma/plataforma.utils";
@@ -267,5 +269,41 @@ describe("esEmailValido", () => {
     const inicio = Date.now();
     expect(esEmailValido("a@" + ".".repeat(50_000))).toBe(false);
     expect(Date.now() - inicio).toBeLessThan(100);
+  });
+});
+
+describe("etiquetaPlan (BL-405)", () => {
+  it("muestra el nombre de los planes conocidos", () => {
+    expect(etiquetaPlan("BASICO")).toBe("Básico");
+    expect(etiquetaPlan("basico")).toBe("Básico");
+  });
+
+  it("vuelve legible un plan que no está en la lista", () => {
+    expect(etiquetaPlan("PRO_ANUAL")).toBe("Pro anual");
+    expect(etiquetaPlan("PREMIUM")).toBe("Premium");
+  });
+
+  it("no rompe con un plan vacío", () => {
+    expect(etiquetaPlan("")).toBe("");
+  });
+});
+
+describe("resumirPagina (BL-405)", () => {
+  it("anuncia la página y el total", () => {
+    expect(resumirPagina({ total: 45, tamanoPagina: 20 }, 2)).toBe(
+      "Página 2 de 3. 45 establecimientos",
+    );
+  });
+
+  it("usa el singular con un solo establecimiento", () => {
+    expect(resumirPagina({ total: 1, tamanoPagina: 20 }, 1)).toBe(
+      "Página 1 de 1. 1 establecimiento",
+    );
+  });
+
+  it("avisa cuando no hay establecimientos", () => {
+    expect(resumirPagina({ total: 0, tamanoPagina: 20 }, 1)).toBe(
+      "Todavía no hay establecimientos",
+    );
   });
 });

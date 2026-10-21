@@ -176,6 +176,37 @@ export function totalPaginas(total: number, tamanoPagina: number): number {
   return Math.max(1, Math.ceil(total / tamanoPagina));
 }
 
+/**
+ * BL-405: nombre del plan para mostrar. El backend guarda el valor interno
+ * («BASICO»); a la persona se le muestra «Básico». Un plan que todavía no
+ * está en la lista se muestra legible igual («PRO_ANUAL» → «Pro anual»).
+ */
+const NOMBRE_PLAN: Record<string, string> = {
+  BASICO: "Básico",
+};
+
+export function etiquetaPlan(plan: string): string {
+  const conocido = NOMBRE_PLAN[plan.toUpperCase()];
+  if (conocido) return conocido;
+  const texto = plan.replaceAll("_", " ").trim().toLowerCase();
+  return texto ? texto.charAt(0).toUpperCase() + texto.slice(1) : plan;
+}
+
+/**
+ * BL-405: lo que se anuncia al lector de pantalla después de cada carga del
+ * listado, p. ej. «Página 2 de 3. 45 establecimientos».
+ */
+export function resumirPagina(
+  datos: { total: number; tamanoPagina: number },
+  pagina: number,
+): string {
+  if (datos.total === 0) return "Todavía no hay establecimientos";
+  const cantidad = `${datos.total} ${
+    datos.total === 1 ? "establecimiento" : "establecimientos"
+  }`;
+  return `Página ${pagina} de ${totalPaginas(datos.total, datos.tamanoPagina)}. ${cantidad}`;
+}
+
 /** Mensaje para un error de la API, con los casos que el usuario puede resolver. */
 export function mensajeDeError(status: number, mensaje: string): string {
   if (status === 429) {
