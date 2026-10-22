@@ -14,8 +14,15 @@ import {
   type OrigenMenu,
 } from '@/components/menu-digital.utils';
 import type { PedidoConfirmado } from '@/types/menu';
+import { firmaCarrito, formatearPrecio } from '@/components/pago/pago.utils';
 
 const ItemNotaModal = dynamic(() => import('@/components/ItemNotaModal'), { ssr: false });
+// BL-311: el formulario de Mercado Pago (SDK + iframes) se carga recién al
+// ir a pagar, no con la carta.
+const PagoPedido = dynamic(
+  () => import('@/components/pago/PagoPedido').then((mod) => ({ default: mod.PagoPedido })),
+  { ssr: false, loading: () => null },
+);
 const SeguimientoPedido = dynamic(
   () => import('@/components/SeguimientoPedido').then(mod => ({ default: mod.SeguimientoPedido })),
   { ssr: false, loading: () => null }
@@ -75,12 +82,22 @@ export default function MenuDigital({
   const [tokenComensal, setTokenComensal] = useState<string | null>(null);
   const [errorPedido, setErrorPedido] = useState<string | null>(null);
 
+  // BL-311 (prepago, RD.03): el pedido creado espera el pago en la pantalla
+  // «Pagar». Si el comensal vuelve a la carta y no cambia nada, se reusa el
+  // mismo pedido (misma firma de carrito) en lugar de crear otro.
+  const [vista, setVista] = useState<'carta' | 'pago'>('carta');
+  const [pedidoPorPagar, setPedidoPorPagar] = useState<{
+    pedido: PedidoConfirmado;
+    accessToken: string;
+    firma: string;
+  } | null>(null);
+
   // BL-320: el panel "Tu pedido" es fijo y tapaba los botones "Agregar" de
   // los platos que quedaban debajo. Se mide su alto para reservar ese espacio
   // al final de la página y en el scroll (ver el efecto de abajo).
   const panelPedidoRef = useRef<HTMLDivElement>(null);
   const [altoPanelPedido, setAltoPanelPedido] = useState(0);
-  const hayCarrito = carrito.length > 0;
+  const hayCarrito = carrito.length > 0 && vista === 'carta';
 
   const generalCharCount = observacionGeneral.length;
   const isGeneralOverLimit = generalCharCount > MAX_CHARS_GENERAL;
@@ -152,14 +169,7 @@ export default function MenuDigital({
     [carrito]
   );
 
-  const formatearPrecio = (valor: number | string) =>
-    new Intl.NumberFormat('es-UY', {
-      style: 'currency',
-      currency: 'UYU',
-      minimumFractionDigits: 0,
-    }).format(Number(valor));
-
-  const realizarPedido = async () => {
+  const continuarAlPago = async () => {
     if (isGeneralOverLimit) {
       setErrorPedido('La nota general no puede exceder 500 caracteres');
       return;
@@ -170,6 +180,13 @@ export default function MenuDigital({
     );
     if (tieneNotasInvalidas) {
       setErrorPedido('Las notas de los ítems no pueden exceder 300 caracteres');
+      return;
+    }
+
+    const firma = firmaCarrito(carrito, observacionGeneral);
+    if (pedidoPorPagar?.firma === firma) {
+      setVista('pago');
+      window.scrollTo({ top: 0 });
       return;
     }
 
@@ -221,11 +238,12 @@ export default function MenuDigital({
         body: JSON.stringify(pedidoBody),
       });
 
-      setPedidoConfirmado(pedido);
-      setTokenComensal(accessToken);
-      setEstadoPedido('confirmado');
-      setCarrito([]);
-      setObservacionGeneral('');
+      // BL-311: el pedido queda en PENDIENTE_PAGO; el carrito se conserva
+      // hasta que el pago se apruebe.
+      setPedidoPorPagar({ pedido, accessToken, firma });
+      setEstadoPedido('idle');
+      setVista('pago');
+      window.scrollTo({ top: 0 });
     } catch (err) {
       setErrorPedido(
         err instanceof ApiError
@@ -235,6 +253,20 @@ export default function MenuDigital({
       setEstadoPedido('error');
     }
   };
+
+  // BL-311: pago aprobado. El backend ya pasó el pedido a RECIBIDO y lo
+  // mandó a cocina; acá se vacía el carrito y se muestra el seguimiento.
+  const alAprobarPago = useCallback(() => {
+    if (!pedidoPorPagar) return;
+    setPedidoConfirmado({ ...pedidoPorPagar.pedido, estado: 'RECIBIDO' });
+    setTokenComensal(pedidoPorPagar.accessToken);
+    setEstadoPedido('confirmado');
+    setPedidoPorPagar(null);
+    setCarrito([]);
+    setObservacionGeneral('');
+    setVista('carta');
+    window.scrollTo({ top: 0 });
+  }, [pedidoPorPagar]);
 
   // BL-320: mide el panel "Tu pedido" mientras está visible.
   useEffect(() => {
@@ -286,6 +318,20 @@ export default function MenuDigital({
         </div>
       </nav>
 
+      {vista === 'pago' && pedidoPorPagar ? (
+        <PagoPedido
+          origen={origen}
+          pedidoId={pedidoPorPagar.pedido.id}
+          tokenAcceso={pedidoPorPagar.pedido.tokenAcceso}
+          accessToken={pedidoPorPagar.accessToken}
+          lineas={carrito}
+          total={totalCarrito}
+          numeroMesa={numeroMesa}
+          onVolver={() => setVista('carta')}
+          onAprobado={alAprobarPago}
+        />
+      ) : (
+      <>
       {/* BL-320: en pantallas anchas (lg) el panel del pedido va a la
           derecha; con el carrito abierto se le reserva ese espacio para que
           la grilla del menú no quede debajo del panel. */}
@@ -317,7 +363,7 @@ export default function MenuDigital({
               <div className="flex items-start gap-3">
                 <span className="text-2xl" role="img" aria-label="Confirmado">✅</span>
                 <p className="font-semibold text-foreground text-lg">
-                  {tipo === 'mesa' ? '¡Pedido enviado a cocina!' : '¡Pedido enviado! Cocina ya lo recibió.'}
+                  ¡Pago aprobado! Tu pedido ya está en cocina.
                 </p>
               </div>
               <SeguimientoPedido
@@ -507,14 +553,17 @@ export default function MenuDigital({
 
             <button
               type="button"
-              onClick={realizarPedido}
+              onClick={continuarAlPago}
               disabled={estadoPedido === 'enviando' || isGeneralOverLimit}
               className="w-full px-4 py-3.5 bg-[#6e54ad] text-white font-bold rounded-[0.5rem] hover:bg-[#5b468f] focus:outline-none focus:ring-4 focus:ring-[#6e54ad]/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed text-lg shadow-[0px_4px_20px_rgba(121,118,125,0.15)]"
             >
-              {estadoPedido === 'enviando' ? 'Enviando...' : 'Realizar pedido'}
+              {estadoPedido === 'enviando' ? 'Preparando tu pedido…' : 'Continuar al pago'}
             </button>
           </div>
         </div>
+      )}
+
+      </>
       )}
 
       <ItemNotaModal

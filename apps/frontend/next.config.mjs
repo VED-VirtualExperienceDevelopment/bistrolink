@@ -16,6 +16,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
  * fonts.gstatic.com (Material Symbols) — sin esto, la CSP bloquea la hoja
  * de estilos de Google Fonts (visto en consola de staging).
  *
+ * script-src incluye https://sdk.mercadopago.com (BL-311): el SDK de
+ * Mercado Pago (Secure Fields) se carga desde ahí. Los campos de la tarjeta
+ * son iframes de Mercado Pago, que ya entran en "frame-src https:", y la
+ * tokenización usa "connect-src https:".
+ *
  * devFrameSrc / devConnectSrc (HU-004 y silent-check-sso de Keycloak): en
  * local, Keycloak (:8080) y la API (:3001) corren por HTTP plano, sin TLS.
  * "frame-src https:" no cubre "http://localhost:8080", así que sin esta
@@ -59,7 +64,7 @@ const baseSecurityHeaders = [
   {
     key: "Content-Security-Policy",
     value:
-      `default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https: wss:${devConnectSrc}; frame-src 'self' https:${devFrameSrc}; object-src 'none'; base-uri 'self'; form-action 'self'`,
+      `default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://sdk.mercadopago.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https: wss:${devConnectSrc}; frame-src 'self' https:${devFrameSrc}; object-src 'none'; base-uri 'self'; form-action 'self'`,
   },
 ];
 
