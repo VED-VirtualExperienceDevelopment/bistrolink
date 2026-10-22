@@ -1,6 +1,16 @@
 // BL-163 (HU-027): tipos de /plataforma/establecimientos. Calcan las
 // respuestas del backend (EstablecimientosService y AprovisionamientoService).
 
+/**
+ * BL-410: estado de cada establecimiento en el listado (lo calcula el
+ * backend: SUSPENDIDO primero; si no, ALTA_INCOMPLETA mientras el alta no
+ * terminó; si no, ACTIVO).
+ */
+export type EstadoEstablecimiento = "ACTIVO" | "SUSPENDIDO" | "ALTA_INCOMPLETA";
+
+/** BL-410: valores del filtro `estado` de GET /plataforma/establecimientos. */
+export type FiltroEstado = "ACTIVOS" | "SUSPENDIDOS" | "ALTA_INCOMPLETA";
+
 export interface EstablecimientoListado {
   tenantId: string;
   razonSocial: string;
@@ -10,8 +20,10 @@ export interface EstablecimientoListado {
   creadoPor: string | null;
   /** ISO 8601 (llega como string en el JSON). */
   creadoEl: string;
-  /** null si el alta quedó a medias (tenant sin restaurante). */
+  /** null si el tenant todavía no tiene restaurante. */
   restaurante: { id: string; nombre: string } | null;
+  /** BL-410 */
+  estado: EstadoEstablecimiento;
 }
 
 export interface PaginaEstablecimientos {

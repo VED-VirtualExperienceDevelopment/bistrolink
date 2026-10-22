@@ -1,5 +1,9 @@
 import {
+  combinarCondiciones,
   condicionBusqueda,
+  condicionEstado,
+  esFiltroEstado,
+  estadoDelEstablecimiento,
   EstablecimientosService,
 } from '../../src/plataforma/establecimientos.service';
 import { TenantPrismaService } from '../../src/prisma/tenant-prisma.service';
@@ -33,6 +37,8 @@ describe('EstablecimientosService (BL-163)', () => {
             plan: 'BASICO',
             creadoPor: 'dev-daiana-plataforma',
             createdAt: CREADO,
+            estado: 'ACTIVO',
+            altaCompletadaEn: CREADO,
           },
           {
             id: T2,
@@ -41,6 +47,8 @@ describe('EstablecimientosService (BL-163)', () => {
             plan: 'BASICO',
             creadoPor: null,
             createdAt: CREADO,
+            estado: 'ACTIVO',
+            altaCompletadaEn: null,
           },
         ]),
       },
@@ -93,6 +101,7 @@ describe('EstablecimientosService (BL-163)', () => {
           creadoPor: 'dev-daiana-plataforma',
           creadoEl: CREADO,
           restaurante: { id: 'r-1', nombre: 'Restaurante Uno' },
+          estado: 'ACTIVO',
         },
         {
           tenantId: T2,
@@ -102,6 +111,7 @@ describe('EstablecimientosService (BL-163)', () => {
           creadoPor: null,
           creadoEl: CREADO,
           restaurante: null,
+          estado: 'ALTA_INCOMPLETA',
         },
       ],
     });
@@ -146,6 +156,117 @@ describe('EstablecimientosService (BL-163)', () => {
     expect(tx.tenant.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where }),
     );
+  });
+
+  it('BL-410: lee el estado y el fin del alta del tenant', async () => {
+    await service.listar(1);
+
+    expect(tx.tenant.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: expect.objectContaining({
+          estado: true,
+          altaCompletadaEn: true,
+        }),
+      }),
+    );
+  });
+
+  it('BL-410: con filtro por estado, el total y la página usan la misma condición', async () => {
+    await service.listar(1, undefined, 'SUSPENDIDOS');
+
+    const where = { estado: 'SUSPENDIDO' };
+    expect(tx.tenant.count).toHaveBeenCalledWith({ where });
+    expect(tx.tenant.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where }),
+    );
+  });
+
+  it('BL-410: combina la búsqueda y el estado', async () => {
+    await service.listar(1, 'uno', 'ALTA_INCOMPLETA');
+
+    const where = {
+      AND: [
+        { razonSocial: { contains: 'uno', mode: 'insensitive' } },
+        { estado: 'ACTIVO', altaCompletadaEn: null },
+      ],
+    };
+    expect(tx.tenant.count).toHaveBeenCalledWith({ where });
+    expect(tx.tenant.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where }),
+    );
+  });
+});
+
+describe('estado del establecimiento (BL-410)', () => {
+  const COMPLETA = new Date('2026-10-09T12:00:00Z');
+
+  it('activo con el alta completa: ACTIVO', () => {
+    expect(
+      estadoDelEstablecimiento({
+        estado: 'ACTIVO',
+        altaCompletadaEn: COMPLETA,
+      }),
+    ).toBe('ACTIVO');
+  });
+
+  it('activo sin el alta completa: ALTA_INCOMPLETA', () => {
+    expect(
+      estadoDelEstablecimiento({ estado: 'ACTIVO', altaCompletadaEn: null }),
+    ).toBe('ALTA_INCOMPLETA');
+  });
+
+  it('suspendido: SUSPENDIDO, aunque el alta esté a medias', () => {
+    expect(
+      estadoDelEstablecimiento({
+        estado: 'SUSPENDIDO',
+        altaCompletadaEn: COMPLETA,
+      }),
+    ).toBe('SUSPENDIDO');
+    expect(
+      estadoDelEstablecimiento({
+        estado: 'SUSPENDIDO',
+        altaCompletadaEn: null,
+      }),
+    ).toBe('SUSPENDIDO');
+  });
+
+  it('cada filtro pide exactamente lo que el listado muestra con ese estado', () => {
+    expect(condicionEstado('ACTIVOS')).toEqual({
+      estado: 'ACTIVO',
+      altaCompletadaEn: { not: null },
+    });
+    expect(condicionEstado('SUSPENDIDOS')).toEqual({ estado: 'SUSPENDIDO' });
+    expect(condicionEstado('ALTA_INCOMPLETA')).toEqual({
+      estado: 'ACTIVO',
+      altaCompletadaEn: null,
+    });
+    expect(condicionEstado()).toBeUndefined();
+  });
+
+  it('solo acepta los filtros de la lista', () => {
+    expect(esFiltroEstado('ACTIVOS')).toBe(true);
+    expect(esFiltroEstado('ALTA_INCOMPLETA')).toBe(true);
+    expect(esFiltroEstado('activos')).toBe(false);
+    expect(esFiltroEstado('SUSPENDIDO')).toBe(false);
+    expect(esFiltroEstado(['ACTIVOS'])).toBe(false);
+    expect(esFiltroEstado(undefined)).toBe(false);
+  });
+});
+
+describe('combinarCondiciones (BL-410)', () => {
+  const A = { estado: 'SUSPENDIDO' as const };
+  const B = { rut: { startsWith: '21' } };
+
+  it('sin condiciones, no filtra', () => {
+    expect(combinarCondiciones(undefined, undefined)).toBeUndefined();
+  });
+
+  it('con una sola, la devuelve tal cual', () => {
+    expect(combinarCondiciones(undefined, A)).toBe(A);
+  });
+
+  it('con dos, las junta con AND', () => {
+    expect(combinarCondiciones(B, A)).toEqual({ AND: [B, A] });
   });
 });
 

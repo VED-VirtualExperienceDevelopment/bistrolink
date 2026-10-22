@@ -7,6 +7,7 @@ import { EstablecimientosTable } from "@/components/plataforma/EstablecimientosT
 import { AltaEstablecimientoDialog } from "@/components/plataforma/AltaEstablecimientoDialog";
 import { BuscarEstablecimientos } from "@/components/plataforma/BuscarEstablecimientos";
 import {
+  describirCriterio,
   mensajeDeError,
   resumirPagina,
   rutaListado,
@@ -14,6 +15,7 @@ import {
 } from "@/components/plataforma/plataforma.utils";
 import type {
   EstablecimientoListado,
+  FiltroEstado,
   PaginaEstablecimientos,
 } from "@/types/plataforma";
 
@@ -41,6 +43,9 @@ const ESPERA_BUSQUEDA_MS = 350;
  *
  * BL-407: «Completar alta» abre el mismo diálogo de alta con los datos del
  * establecimiento incompleto.
+ *
+ * BL-410: filtro por estado, también en el servidor. Se aplica apenas se
+ * elige (sin la espera de la búsqueda) y vuelve a la primera página.
  */
 export default function PlataformaPage() {
   const { token } = useKeycloakAuth();
@@ -49,6 +54,8 @@ export default function PlataformaPage() {
   // servidor (después de la espera).
   const [texto, setTexto] = useState("");
   const [busqueda, setBusqueda] = useState("");
+  // BL-410: undefined = todos los estados.
+  const [estado, setEstado] = useState<FiltroEstado | undefined>();
   const [datos, setDatos] = useState<PaginaEstablecimientos | null>(null);
   const [cargando, setCargando] = useState(true);
   const [errorCarga, setErrorCarga] = useState<string | null>(null);
@@ -80,7 +87,7 @@ export default function PlataformaPage() {
     setErrorCarga(null);
     try {
       const respuesta = await apiFetch<PaginaEstablecimientos>(
-        rutaListado(pagina, busqueda),
+        rutaListado(pagina, busqueda, estado),
         token,
       );
       if (pedido === ultimoPedido.current) setDatos(respuesta);
@@ -94,22 +101,34 @@ export default function PlataformaPage() {
     } finally {
       if (pedido === ultimoPedido.current) setCargando(false);
     }
-  }, [token, pagina, busqueda]);
+  }, [token, pagina, busqueda, estado]);
 
   useEffect(() => {
     cargar();
   }, [cargar]);
 
+  const cambiarEstado = (nuevo: FiltroEstado | undefined) => {
+    setEstado(nuevo);
+    setPagina(1);
+  };
+
+  // BL-410: limpia la búsqueda y el filtro (el estado vacío puede venir de
+  // cualquiera de los dos).
   const limpiarBusqueda = () => {
     setTexto("");
     setBusqueda("");
+    setEstado(undefined);
     setPagina(1);
     inputBusqueda.current?.focus();
   };
 
   const paginas = datos ? totalPaginas(datos.total, datos.tamanoPagina) : 1;
-  const sinCoincidencias =
-    !!datos && datos.total === 0 && busqueda.length > 0;
+  const criterio = describirCriterio(busqueda, estado);
+  const sinCoincidencias = !!datos && datos.total === 0 && criterio !== "";
+  let textoLimpiar = "Ver todos los estados";
+  if (busqueda) {
+    textoLimpiar = estado ? "Limpiar búsqueda y filtro" : "Limpiar búsqueda";
+  }
 
   return (
     <div className="w-full space-y-6 p-4 md:p-6">
@@ -141,15 +160,18 @@ export default function PlataformaPage() {
       <BuscarEstablecimientos
         valor={texto}
         onChange={setTexto}
+        estado={estado}
+        onEstadoChange={cambiarEstado}
         inputRef={inputBusqueda}
       />
 
       {/* BL-405: resultado de cada carga, para el lector de pantalla. Está
           siempre en el DOM (una región aria-live que aparece junto con su
-          texto no siempre se anuncia). BL-406: incluye lo que se buscó. */}
+          texto no siempre se anuncia). BL-406 y BL-410: incluye lo que se
+          buscó y el filtro. */}
       <p className="sr-only" aria-live="polite" aria-atomic="true">
         {!cargando && !errorCarga && datos
-          ? resumirPagina(datos, pagina, busqueda)
+          ? resumirPagina(datos, pagina, busqueda, estado)
           : ""}
       </p>
 
@@ -173,7 +195,8 @@ export default function PlataformaPage() {
       )}
 
       {/* BL-406: estado vacío propio cuando la búsqueda no encuentra nada
-          (distinto del de «todavía no hay establecimientos»). */}
+          (distinto del de «todavía no hay establecimientos»). BL-410: también
+          con el filtro por estado. */}
       {!cargando && !errorCarga && sinCoincidencias && (
         <div className="rounded-xl border border-outline-variant bg-surface-container-lowest p-12 text-center">
           <span
@@ -183,18 +206,20 @@ export default function PlataformaPage() {
             search_off
           </span>
           <p className="mt-2 text-body-lg text-on-surface">
-            Ningún establecimiento coincide con «{busqueda}»
+            Ningún establecimiento coincide con {criterio}
           </p>
-          <p className="mt-1 text-body-md text-on-surface-variant">
-            Se busca por razón social o RUT. El nombre del restaurante todavía
-            no se puede buscar.
-          </p>
+          {busqueda && (
+            <p className="mt-1 text-body-md text-on-surface-variant">
+              Se busca por razón social o RUT. El nombre del restaurante todavía
+              no se puede buscar.
+            </p>
+          )}
           <button
             type="button"
             onClick={limpiarBusqueda}
             className="mt-4 min-h-12 rounded-lg px-4 text-body-md font-medium text-primary hover:bg-surface-container"
           >
-            Limpiar búsqueda
+            {textoLimpiar}
           </button>
         </div>
       )}

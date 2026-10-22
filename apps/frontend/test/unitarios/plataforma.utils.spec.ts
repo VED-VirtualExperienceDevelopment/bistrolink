@@ -6,13 +6,16 @@ import {
   contrasenasSinCopiar,
   credencialesAMostrar,
   describirCreadoPor,
+  describirCriterio,
   esAltaIncompleta,
   esEmailValido,
   etiquetaPlan,
+  filtroEstadoDesde,
   formatearFechaAlta,
   FORMULARIO_VACIO,
   formularioParaCompletar,
   mensajeDeError,
+  OPCIONES_FILTRO_ESTADO,
   resumirAlta,
   resumirPagina,
   rutaListado,
@@ -340,6 +343,53 @@ describe("resumirPagina con búsqueda (BL-406)", () => {
   });
 });
 
+describe("filtro por estado (BL-410)", () => {
+  it("las opciones van en el orden de la pantalla, con texto para personas", () => {
+    expect(OPCIONES_FILTRO_ESTADO).toEqual([
+      { valor: "ACTIVOS", etiqueta: "Activos" },
+      { valor: "SUSPENDIDOS", etiqueta: "Suspendidos" },
+      { valor: "ALTA_INCOMPLETA", etiqueta: "Alta incompleta" },
+    ]);
+  });
+
+  it("toma el valor del select; vacío o desconocido es «todos»", () => {
+    expect(filtroEstadoDesde("SUSPENDIDOS")).toBe("SUSPENDIDOS");
+    expect(filtroEstadoDesde("")).toBeUndefined();
+    expect(filtroEstadoDesde("OTRO")).toBeUndefined();
+  });
+
+  it("describe la búsqueda, el filtro o los dos", () => {
+    expect(describirCriterio()).toBe("");
+    expect(describirCriterio(" uno ")).toBe("«uno»");
+    expect(describirCriterio("", "SUSPENDIDOS")).toBe(
+      "el filtro «Suspendidos»",
+    );
+    expect(describirCriterio("uno", "ALTA_INCOMPLETA")).toBe(
+      "«uno» y el filtro «Alta incompleta»",
+    );
+  });
+
+  it("el resumen de la página incluye el filtro", () => {
+    expect(
+      resumirPagina({ total: 2, tamanoPagina: 20 }, 1, "", "SUSPENDIDOS"),
+    ).toBe(
+      "Página 1 de 1. 2 establecimientos coinciden con el filtro «Suspendidos»",
+    );
+    expect(
+      resumirPagina({ total: 0, tamanoPagina: 20 }, 1, "uno", "ACTIVOS"),
+    ).toBe("Ningún establecimiento coincide con «uno» y el filtro «Activos»");
+  });
+
+  it("la ruta lleva el estado, junto con la búsqueda", () => {
+    expect(rutaListado(1, "", "ALTA_INCOMPLETA")).toBe(
+      "/plataforma/establecimientos?pagina=1&estado=ALTA_INCOMPLETA",
+    );
+    expect(rutaListado(2, "uno", "SUSPENDIDOS")).toBe(
+      "/plataforma/establecimientos?pagina=2&q=uno&estado=SUSPENDIDOS",
+    );
+  });
+});
+
 describe("rutaListado (BL-406)", () => {
   it("sin búsqueda, solo la página", () => {
     expect(rutaListado(2)).toBe("/plataforma/establecimientos?pagina=2");
@@ -362,16 +412,28 @@ describe("alta incompleta (BL-407)", () => {
     creadoPor: null,
     creadoEl: "2026-10-09T12:00:00Z",
     restaurante: null,
+    estado: "ALTA_INCOMPLETA",
   };
 
-  it("es incompleta si el tenant no tiene restaurante", () => {
+  it("BL-410: es incompleta según el estado que manda el backend", () => {
     expect(esAltaIncompleta(establecimiento)).toBe(true);
+    // Alta cortada en Keycloak: ya tiene restaurante y sigue incompleta.
     expect(
       esAltaIncompleta({
         ...establecimiento,
         restaurante: { id: "r-1", nombre: "Uno" },
       }),
+    ).toBe(true);
+    expect(
+      esAltaIncompleta({
+        ...establecimiento,
+        restaurante: { id: "r-1", nombre: "Uno" },
+        estado: "ACTIVO",
+      }),
     ).toBe(false);
+    expect(esAltaIncompleta({ ...establecimiento, estado: "SUSPENDIDO" })).toBe(
+      false,
+    );
   });
 
   it("el formulario para completar trae la razón social y el RUT del tenant, y el resto vacío", () => {

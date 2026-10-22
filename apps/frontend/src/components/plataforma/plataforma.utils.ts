@@ -8,6 +8,7 @@
 
 import type {
   EstablecimientoListado,
+  FiltroEstado,
   FormularioAlta,
   ResultadoAlta,
   UsuarioAprovisionado,
@@ -157,11 +158,51 @@ export function construirPedidoAlta(f: FormularioAlta) {
 }
 
 /**
- * BL-407: el alta de un establecimiento quedó incompleta si el tenant no
- * tiene restaurante.
+ * BL-407: el alta de un establecimiento quedó incompleta.
+ *
+ * BL-410: lo decide el backend con `tenant.alta_completada_en` (se completa
+ * al terminar el kit mínimo), no la falta de restaurante: un alta que se
+ * cortó en Keycloak tiene restaurante y le faltan las cuentas. Así el
+ * listado muestra lo mismo que devuelve el filtro «Alta incompleta».
  */
 export function esAltaIncompleta(e: EstablecimientoListado): boolean {
-  return e.restaurante === null;
+  return e.estado === "ALTA_INCOMPLETA";
+}
+
+/** BL-410: opciones del filtro por estado, en el orden en que se muestran. */
+export const OPCIONES_FILTRO_ESTADO: {
+  valor: FiltroEstado;
+  etiqueta: string;
+}[] = [
+  { valor: "ACTIVOS", etiqueta: "Activos" },
+  { valor: "SUSPENDIDOS", etiqueta: "Suspendidos" },
+  { valor: "ALTA_INCOMPLETA", etiqueta: "Alta incompleta" },
+];
+
+/** BL-410: el valor del `select` como filtro («» = todos). */
+export function filtroEstadoDesde(valor: string): FiltroEstado | undefined {
+  return OPCIONES_FILTRO_ESTADO.find((o) => o.valor === valor)?.valor;
+}
+
+function etiquetaFiltroEstado(estado: FiltroEstado): string {
+  return (
+    OPCIONES_FILTRO_ESTADO.find((o) => o.valor === estado)?.etiqueta ?? estado
+  );
+}
+
+/**
+ * BL-410: qué se pidió, para los avisos («con «uno» y el filtro
+ * «Suspendidos»»). Vacío si no hay búsqueda ni filtro.
+ */
+export function describirCriterio(
+  busqueda = "",
+  estado?: FiltroEstado,
+): string {
+  const texto = busqueda.trim();
+  const partes: string[] = [];
+  if (texto) partes.push(`«${texto}»`);
+  if (estado) partes.push(`el filtro «${etiquetaFiltroEstado(estado)}»`);
+  return partes.join(" y ");
 }
 
 /**
@@ -285,23 +326,27 @@ export function etiquetaPlan(plan: string): string {
  *
  * BL-406: con una búsqueda, dice qué se buscó («3 establecimientos coinciden
  * con «uno»»).
+ *
+ * BL-410: también con el filtro por estado («2 establecimientos coinciden con
+ * el filtro «Suspendidos»»).
  */
 export function resumirPagina(
   datos: { total: number; tamanoPagina: number },
   pagina: number,
   busqueda = "",
+  estado?: FiltroEstado,
 ): string {
-  const texto = busqueda.trim();
+  const criterio = describirCriterio(busqueda, estado);
   if (datos.total === 0) {
-    return texto
-      ? `Ningún establecimiento coincide con «${texto}»`
+    return criterio
+      ? `Ningún establecimiento coincide con ${criterio}`
       : "Todavía no hay establecimientos";
   }
   const cantidad = `${datos.total} ${
     datos.total === 1 ? "establecimiento" : "establecimientos"
   }`;
-  const resultado = texto
-    ? `${cantidad} ${datos.total === 1 ? "coincide" : "coinciden"} con «${texto}»`
+  const resultado = criterio
+    ? `${cantidad} ${datos.total === 1 ? "coincide" : "coinciden"} con ${criterio}`
     : cantidad;
   return `Página ${pagina} de ${totalPaginas(datos.total, datos.tamanoPagina)}. ${resultado}`;
 }
@@ -313,11 +358,18 @@ export const MAX_LARGO_BUSQUEDA = 100;
  * BL-406: ruta del listado con la página y la búsqueda. El texto va
  * codificado (URLSearchParams) y sin espacios de más; si está vacío, no se
  * manda `q`.
+ *
+ * BL-410: con el filtro por estado, se manda `estado`.
  */
-export function rutaListado(pagina: number, busqueda = ""): string {
+export function rutaListado(
+  pagina: number,
+  busqueda = "",
+  estado?: FiltroEstado,
+): string {
   const params = new URLSearchParams({ pagina: String(pagina) });
   const texto = busqueda.trim();
   if (texto) params.set("q", texto);
+  if (estado) params.set("estado", estado);
   return `/plataforma/establecimientos?${params.toString()}`;
 }
 

@@ -149,22 +149,38 @@ describe('PlataformaController (BL-163)', () => {
       total: 0,
       items: [],
     });
-    expect(establecimientos.listar).toHaveBeenCalledWith(1, undefined);
+    expect(establecimientos.listar).toHaveBeenCalledWith(
+      1,
+      undefined,
+      undefined,
+    );
   });
 
   it('pasa la página pedida', async () => {
     await listado('?pagina=3').expect(200);
-    expect(establecimientos.listar).toHaveBeenCalledWith(3, undefined);
+    expect(establecimientos.listar).toHaveBeenCalledWith(
+      3,
+      undefined,
+      undefined,
+    );
   });
 
   it('BL-406: pasa la búsqueda sin espacios de más', async () => {
     await listado('?pagina=2&q=%20Uno%20SRL%20').expect(200);
-    expect(establecimientos.listar).toHaveBeenCalledWith(2, 'Uno SRL');
+    expect(establecimientos.listar).toHaveBeenCalledWith(
+      2,
+      'Uno SRL',
+      undefined,
+    );
   });
 
   it('BL-406: una búsqueda vacía o solo con espacios no filtra', async () => {
     await listado('?q=%20%20').expect(200);
-    expect(establecimientos.listar).toHaveBeenCalledWith(1, undefined);
+    expect(establecimientos.listar).toHaveBeenCalledWith(
+      1,
+      undefined,
+      undefined,
+    );
   });
 
   it('BL-406: rechaza con 400 una búsqueda de más de 100 caracteres', async () => {
@@ -174,6 +190,40 @@ describe('PlataformaController (BL-163)', () => {
 
   it('BL-406: rechaza con 400 la búsqueda repetida (q=a&q=b)', async () => {
     await listado('?q=a&q=b').expect(400);
+    expect(establecimientos.listar).not.toHaveBeenCalled();
+  });
+
+  it.each(['ACTIVOS', 'SUSPENDIDOS', 'ALTA_INCOMPLETA'])(
+    'BL-410: pasa el filtro por estado %p',
+    async (estado) => {
+      await listado(`?estado=${estado}`).expect(200);
+      expect(establecimientos.listar).toHaveBeenCalledWith(
+        1,
+        undefined,
+        estado,
+      );
+    },
+  );
+
+  it('BL-410: combina el filtro por estado con la búsqueda', async () => {
+    await listado('?pagina=2&q=uno&estado=SUSPENDIDOS').expect(200);
+    expect(establecimientos.listar).toHaveBeenCalledWith(
+      2,
+      'uno',
+      'SUSPENDIDOS',
+    );
+  });
+
+  it.each(['activos', 'TODOS', '', 'SUSPENDIDO'])(
+    'BL-410: rechaza con 400 el estado %p sin consultar',
+    async (estado) => {
+      await listado(`?estado=${estado}`).expect(400);
+      expect(establecimientos.listar).not.toHaveBeenCalled();
+    },
+  );
+
+  it('BL-410: rechaza con 400 el estado repetido', async () => {
+    await listado('?estado=ACTIVOS&estado=SUSPENDIDOS').expect(400);
     expect(establecimientos.listar).not.toHaveBeenCalled();
   });
 

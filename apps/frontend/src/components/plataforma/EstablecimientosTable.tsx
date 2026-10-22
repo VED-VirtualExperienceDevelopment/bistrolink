@@ -91,13 +91,29 @@ export function EstablecimientosTable({
                 <p className="break-all text-body-md text-on-surface-variant">
                   RUT {e.rut}
                 </p>
+                {/* BL-410: suspendido, con ícono y texto (no solo color). */}
+                {e.estado === "SUSPENDIDO" && (
+                  <p className="mt-1">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-error-container px-3 py-1 text-body-md text-on-error-container">
+                      <span
+                        className="material-symbols-outlined text-[18px]"
+                        aria-hidden="true"
+                      >
+                        block
+                      </span>
+                      Suspendido
+                    </span>
+                  </p>
+                )}
               </div>
             </div>
 
-            {/* Restaurante. BL-407: si falta, «Alta incompleta» con ícono y
-                texto (no solo color) y la acción para completarla, a la vista
-                y con teclado (antes era un `title`, que no se ve ni con
-                teclado ni en pantallas táctiles). */}
+            {/* Restaurante. BL-407: si el alta no terminó, «Alta
+                incompleta» con ícono y texto (no solo color) y la acción para
+                completarla, a la vista y con teclado (antes era un `title`,
+                que no se ve ni con teclado ni en pantallas táctiles).
+                BL-410: puede faltar el restaurante o, si el alta se cortó en
+                Keycloak, solo las cuentas. */}
             {esAltaIncompleta(e) ? (
               <div className="flex min-w-0 flex-col items-start gap-2">
                 <p className="text-body-md">
@@ -115,7 +131,9 @@ export function EstablecimientosTable({
                   </span>
                 </p>
                 <p className="text-body-md text-on-surface-variant">
-                  Falta el restaurante.
+                  {e.restaurante
+                    ? `${e.restaurante.nombre}: faltan las cuentas del alta.`
+                    : "Falta el restaurante."}
                 </p>
                 <button
                   type="button"
@@ -137,7 +155,7 @@ export function EstablecimientosTable({
                 <span className="text-on-surface-variant md:sr-only">
                   Restaurante:{" "}
                 </span>
-                {e.restaurante?.nombre}
+                {e.restaurante?.nombre ?? "Sin restaurante"}
               </p>
             )}
 

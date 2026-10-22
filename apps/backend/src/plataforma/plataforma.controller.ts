@@ -18,7 +18,10 @@ import { AprovisionamientoService } from './aprovisionamiento.service';
 import { AprovisionarEstablecimientoDto } from './dto/aprovisionar-establecimiento.dto';
 import { PlataformaThrottlerGuard } from './plataforma-throttler.guard';
 import {
+  esFiltroEstado,
   EstablecimientosService,
+  FILTROS_ESTADO,
+  FiltroEstado,
   MAX_LARGO_BUSQUEDA,
 } from './establecimientos.service';
 
@@ -56,12 +59,16 @@ export class PlataformaController {
    * BL-406: `q` opcional, por razón social o RUT. El ValidationPipe global no
    * valida parámetros sueltos de tipo string, así que se controla acá: un
    * solo valor (no `?q=a&q=b`) y como mucho MAX_LARGO_BUSQUEDA caracteres.
+   *
+   * BL-410: `estado` opcional (ACTIVOS, SUSPENDIDOS o ALTA_INCOMPLETA), con el
+   * mismo control: un solo valor y de la lista.
    */
   @Get()
   @Throttle({ default: { limit: LIMITE_LISTADOS_POR_MINUTO, ttl: 60_000 } })
   listar(
     @Query('pagina', new DefaultValuePipe(1), ParseIntPipe) pagina: number,
     @Query('q') q?: unknown,
+    @Query('estado') estado?: unknown,
   ) {
     if (pagina < 1) {
       throw new BadRequestException('pagina tiene que ser 1 o más');
@@ -75,7 +82,18 @@ export class PlataformaController {
         `q admite como mucho ${MAX_LARGO_BUSQUEDA} caracteres`,
       );
     }
-    return this.establecimientos.listar(pagina, busqueda || undefined);
+    // BL-410: el filtro ya validado, con su tipo (el guard no acota
+    // `unknown` después de un throw).
+    let filtro: FiltroEstado | undefined;
+    if (estado !== undefined) {
+      if (!esFiltroEstado(estado)) {
+        throw new BadRequestException(
+          `estado tiene que ser uno de: ${FILTROS_ESTADO.join(', ')}`,
+        );
+      }
+      filtro = estado;
+    }
+    return this.establecimientos.listar(pagina, busqueda || undefined, filtro);
   }
 
   @Post()
