@@ -19,6 +19,7 @@ import {
   tipoTarjeta,
   type TipoDocumento,
 } from './pago.utils';
+import { cargarSdkMercadoPago } from './cargar-sdk-mercadopago';
 
 /** Lo que necesita POST /pedidos/:id/pagos en `datosPasarela` (MercadoPagoGateway). */
 export interface DatosTarjeta {
@@ -99,7 +100,10 @@ export function FormularioTarjeta({
   onPagar,
 }: FormularioTarjetaProps) {
   const id = useId();
-  const [sdkDisponible, setSdkDisponible] = useState(true);
+  // sin-clave: falta NEXT_PUBLIC_MP_PUBLIC_KEY. error: no se pudo descargar
+  // el script de Mercado Pago (se puede reintentar sin perder el pedido).
+  const [sdk, setSdk] = useState<'cargando' | 'listo' | 'error' | 'sin-clave'>('cargando');
+  const [intentoSdk, setIntentoSdk] = useState(0);
   const [marca, setMarca] = useState<string | null>(null);
   const [metodo, setMetodo] = useState<{ id: string; tipo: string } | null>(null);
   const [foco, setFoco] = useState<CampoSeguro | null>(null);
@@ -116,16 +120,27 @@ export function FormularioTarjeta({
   const [camposDemorados, setCamposDemorados] = useState(false);
 
   useEffect(() => {
-    setSdkDisponible(iniciarSdk());
-  }, []);
+    if (!iniciarSdk()) {
+      setSdk('sin-clave');
+      return;
+    }
+    let cancelado = false;
+    setSdk('cargando');
+    cargarSdkMercadoPago()
+      .then(() => !cancelado && setSdk('listo'))
+      .catch(() => !cancelado && setSdk('error'));
+    return () => {
+      cancelado = true;
+    };
+  }, [intentoSdk]);
 
   // El SDK se descarga de Mercado Pago: un bloqueador de anuncios o mala
   // señal lo pueden frenar y los campos quedarían vacíos sin explicación.
   useEffect(() => {
-    if (camposListos) return;
+    if (sdk !== 'listo' || camposListos) return;
     const timer = setTimeout(() => setCamposDemorados(true), ESPERA_CAMPOS_MS);
     return () => clearTimeout(timer);
-  }, [camposListos]);
+  }, [sdk, camposListos]);
 
   const errores = {
     titular: errorTitular(titular),
@@ -238,7 +253,7 @@ export function FormularioTarjeta({
 
   const ocupado = procesando || tokenizando;
 
-  if (!sdkDisponible) {
+  if (sdk === 'sin-clave') {
     return (
       <p role="alert" className="p-4 rounded-[0.75rem] bg-[#FFDAD6] text-[#93000a] text-sm font-medium">
         El pago con tarjeta no está disponible en este momento. Pedile ayuda al
@@ -254,16 +269,28 @@ export function FormularioTarjeta({
 
   return (
     <form onSubmit={enviar} noValidate className="flex flex-col gap-5" aria-busy={ocupado}>
-      {camposDemorados && !camposListos && (
-        <p role="alert" className="p-3 rounded-lg bg-[#FFDAD6]/60 text-[#93000a] text-sm font-medium">
-          No pudimos cargar el formulario de la tarjeta. Revisá tu conexión,
-          desactivá el bloqueador de anuncios si tenés uno y recargá la página.
-        </p>
+      {(sdk === 'error' || (camposDemorados && !camposListos)) && (
+        <div role="alert" className="p-3 rounded-lg bg-[#FFDAD6]/60 text-[#93000a] text-sm font-medium flex flex-col gap-2">
+          <p>
+            No pudimos cargar el formulario de la tarjeta de Mercado Pago.
+            Revisá tu conexión y, si tenés un bloqueador de anuncios,
+            desactivalo para este sitio.
+          </p>
+          {sdk === 'error' && (
+            <button
+              type="button"
+              onClick={() => setIntentoSdk((n) => n + 1)}
+              className="self-start px-3 py-1.5 rounded-md bg-white text-[#6e54ad] font-semibold border border-[#6e54ad]/30 hover:bg-[#6e54ad] hover:text-white transition-colors"
+            >
+              Reintentar
+            </button>
+          )}
+        </div>
       )}
       <Campo etiqueta="Número de tarjeta" htmlFor={`${id}-numero`}>
         <div className={`${claseCampoSeguro('cardNumber')} gap-3 !pr-3`}>
           <div id={`${id}-numero`} className="campo-seguro flex-1 min-w-0">
-            {camposSeguros.numero}
+            {sdk === 'listo' && camposSeguros.numero}
           </div>
           {marca && (
             <span className="self-center shrink-0 px-2 py-0.5 rounded-md bg-[#6e54ad]/10 text-[#6e54ad] text-xs font-bold tracking-wide">
@@ -277,14 +304,14 @@ export function FormularioTarjeta({
         <Campo etiqueta="Vencimiento" htmlFor={`${id}-vence`}>
           <div className={claseCampoSeguro('expirationDate')}>
             <div id={`${id}-vence`} className="campo-seguro flex-1 min-w-0">
-              {camposSeguros.vencimiento}
+              {sdk === 'listo' && camposSeguros.vencimiento}
             </div>
           </div>
         </Campo>
         <Campo etiqueta="Código de seguridad" htmlFor={`${id}-cvv`}>
           <div className={claseCampoSeguro('securityCode')}>
             <div id={`${id}-cvv`} className="campo-seguro flex-1 min-w-0">
-              {camposSeguros.cvv}
+              {sdk === 'listo' && camposSeguros.cvv}
             </div>
           </div>
         </Campo>
@@ -359,7 +386,7 @@ export function FormularioTarjeta({
 
       <button
         type="submit"
-        disabled={ocupado}
+        disabled={ocupado || sdk !== 'listo'}
         className="w-full flex items-center justify-center gap-2 px-4 py-3.5 bg-[#6e54ad] text-white font-bold rounded-[0.75rem] hover:bg-[#5b468f] focus:outline-none focus:ring-4 focus:ring-[#6e54ad]/30 transition-all disabled:opacity-60 disabled:cursor-not-allowed text-lg shadow-[0px_4px_20px_rgba(121,118,125,0.15)]"
       >
         {ocupado ? (

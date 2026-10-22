@@ -23,9 +23,9 @@ const PagoPedido = dynamic(
   () => import('@/components/pago/PagoPedido').then((mod) => ({ default: mod.PagoPedido })),
   { ssr: false, loading: () => null },
 );
-const SeguimientoPedido = dynamic(
-  () => import('@/components/SeguimientoPedido').then(mod => ({ default: mod.SeguimientoPedido })),
-  { ssr: false, loading: () => null }
+const PagoAprobado = dynamic(
+  () => import('@/components/pago/PagoAprobado').then((mod) => ({ default: mod.PagoAprobado })),
+  { ssr: false, loading: () => null },
 );
 
 export type ItemMenu = {
@@ -77,19 +77,25 @@ export default function MenuDigital({
   const [itemNotaAbierto, setItemNotaAbierto] = useState<ItemCarrito | null>(null);
   const [notaTemporal, setNotaTemporal] = useState('');
 
-  const [estadoPedido, setEstadoPedido] = useState<'idle' | 'enviando' | 'confirmado' | 'error'>('idle');
-  const [pedidoConfirmado, setPedidoConfirmado] = useState<PedidoConfirmado | null>(null);
-  const [tokenComensal, setTokenComensal] = useState<string | null>(null);
+  const [estadoPedido, setEstadoPedido] = useState<'idle' | 'enviando' | 'error'>('idle');
   const [errorPedido, setErrorPedido] = useState<string | null>(null);
 
   // BL-311 (prepago, RD.03): el pedido creado espera el pago en la pantalla
   // «Pagar». Si el comensal vuelve a la carta y no cambia nada, se reusa el
   // mismo pedido (misma firma de carrito) en lugar de crear otro.
-  const [vista, setVista] = useState<'carta' | 'pago'>('carta');
+  const [vista, setVista] = useState<'carta' | 'pago' | 'aprobado'>('carta');
   const [pedidoPorPagar, setPedidoPorPagar] = useState<{
     pedido: PedidoConfirmado;
     accessToken: string;
     firma: string;
+  } | null>(null);
+  // BL-311: lo que se pagó, para la pantalla de pago aprobado (el carrito ya
+  // se vació).
+  const [pagoAprobado, setPagoAprobado] = useState<{
+    pedido: PedidoConfirmado;
+    accessToken: string;
+    lineas: ItemCarrito[];
+    total: number;
   } | null>(null);
 
   // BL-320: el panel "Tu pedido" es fijo y tapaba los botones "Agregar" de
@@ -255,18 +261,28 @@ export default function MenuDigital({
   };
 
   // BL-311: pago aprobado. El backend ya pasó el pedido a RECIBIDO y lo
-  // mandó a cocina; acá se vacía el carrito y se muestra el seguimiento.
+  // mandó a cocina; se vacía el carrito y se muestra la pantalla de pago
+  // aprobado (código, estado en vivo y comprobante).
   const alAprobarPago = useCallback(() => {
     if (!pedidoPorPagar) return;
-    setPedidoConfirmado({ ...pedidoPorPagar.pedido, estado: 'RECIBIDO' });
-    setTokenComensal(pedidoPorPagar.accessToken);
-    setEstadoPedido('confirmado');
+    setPagoAprobado({
+      pedido: pedidoPorPagar.pedido,
+      accessToken: pedidoPorPagar.accessToken,
+      lineas: carrito,
+      total: totalCarrito,
+    });
     setPedidoPorPagar(null);
     setCarrito([]);
     setObservacionGeneral('');
+    setVista('aprobado');
+    window.scrollTo({ top: 0 });
+  }, [pedidoPorPagar, carrito, totalCarrito]);
+
+  const hacerOtroPedido = useCallback(() => {
+    setPagoAprobado(null);
     setVista('carta');
     window.scrollTo({ top: 0 });
-  }, [pedidoPorPagar]);
+  }, []);
 
   // BL-320: mide el panel "Tu pedido" mientras está visible.
   useEffect(() => {
@@ -318,7 +334,18 @@ export default function MenuDigital({
         </div>
       </nav>
 
-      {vista === 'pago' && pedidoPorPagar ? (
+      {vista === 'aprobado' && pagoAprobado ? (
+        <PagoAprobado
+          origen={origen}
+          pedidoId={pagoAprobado.pedido.id}
+          tokenAcceso={pagoAprobado.pedido.tokenAcceso}
+          accessToken={pagoAprobado.accessToken}
+          lineas={pagoAprobado.lineas}
+          total={pagoAprobado.total}
+          numeroMesa={numeroMesa}
+          onOtroPedido={hacerOtroPedido}
+        />
+      ) : vista === 'pago' && pedidoPorPagar ? (
         <PagoPedido
           origen={origen}
           pedidoId={pedidoPorPagar.pedido.id}
@@ -357,23 +384,6 @@ export default function MenuDigital({
           </div>
         </section>
 
-        {estadoPedido === 'confirmado' && pedidoConfirmado && tokenComensal && (
-          <section className="w-full">
-            <div className="bg-white border border-culinary-neutral/15 rounded-[1rem] p-5 shadow-[0px_4px_20px_rgba(121,118,125,0.08)]">
-              <div className="flex items-start gap-3">
-                <span className="text-2xl" role="img" aria-label="Confirmado">✅</span>
-                <p className="font-semibold text-foreground text-lg">
-                  ¡Pago aprobado! Tu pedido ya está en cocina.
-                </p>
-              </div>
-              <SeguimientoPedido
-                pedidoId={pedidoConfirmado.id}
-                token={tokenComensal}
-                estadoInicial={pedidoConfirmado.estado}
-              />
-            </div>
-          </section>
-        )}
 
         {categorias.length === 0 ? (
           <div className="text-center py-16 bg-white rounded-[1rem] border border-culinary-neutral/15">

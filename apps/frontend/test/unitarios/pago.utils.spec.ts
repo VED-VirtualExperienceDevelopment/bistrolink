@@ -5,7 +5,10 @@ import {
   errorDocumento,
   errorEmail,
   errorTitular,
+  estadoComprobante,
   etiquetaMarca,
+  numeroComprobante,
+  urlConsultaSegura,
   firmaCarrito,
   formatearPrecio,
   HEADER_PEDIDO_TOKEN,
@@ -201,5 +204,48 @@ describe("resultado del pago", () => {
   it("la consulta periódica se corta al llegar al tope", () => {
     expect(seguirConsultando(0, TOPE_CONSULTA_MS - 1)).toBe(true);
     expect(seguirConsultando(0, TOPE_CONSULTA_MS)).toBe(false);
+  });
+});
+
+describe("comprobante en la pantalla de pago aprobado", () => {
+  it("número del e-Ticket: serie y número con 7 dígitos", () => {
+    expect(numeroComprobante("A", 1234)).toBe("A-0001234");
+    expect(numeroComprobante("B", 12345678)).toBe("B-12345678");
+  });
+
+  it("sin comprobante todavía: emitiendo", () => {
+    expect(estadoComprobante({ comprobante: null })).toEqual({ tipo: "emitiendo" });
+    expect(estadoComprobante(null)).toEqual({ tipo: "emitiendo" });
+  });
+
+  it("con comprobante: texto y enlace de consulta", () => {
+    expect(
+      estadoComprobante({
+        comprobante: {
+          serie: "A",
+          numero: 1234,
+          urlConsulta: "https://www.efactura.dgi.gub.uy/consultaQR/cfe?x",
+        },
+      }),
+    ).toEqual({
+      tipo: "emitido",
+      texto: "e-Ticket A-0001234",
+      urlConsulta: "https://www.efactura.dgi.gub.uy/consultaQR/cfe?x",
+    });
+  });
+
+  it("comprobante sin enlace: se muestra igual, sin botón", () => {
+    expect(
+      estadoComprobante({ comprobante: { serie: "A", numero: 1, urlConsulta: null } }),
+    ).toEqual({ tipo: "emitido", texto: "e-Ticket A-0000001", urlConsulta: null });
+  });
+
+  it.each([
+    ["javascript:alert(1)"],
+    ["http://sin-tls.example"],
+    ["no es una url"],
+    [""],
+  ])("enlace inseguro o inválido (%s): no se muestra", (url) => {
+    expect(urlConsultaSegura(url)).toBeNull();
   });
 });

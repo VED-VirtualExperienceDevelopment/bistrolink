@@ -245,3 +245,43 @@ export function etiquetaMarca(nombre: string | undefined): string | null {
   if (!nombre) return null;
   return nombre.trim().toUpperCase();
 }
+
+// ── Comprobante (CFE) en la pantalla de pago aprobado ────────────────────
+
+export type EstadoComprobante =
+  | { tipo: "emitido"; texto: string; urlConsulta: string | null }
+  | { tipo: "emitiendo" };
+
+/**
+ * Número del e-Ticket para mostrar: serie y número con 7 dígitos, como
+ * figura en el CFE impreso («A-0001234»).
+ */
+export function numeroComprobante(serie: string, numero: number): string {
+  return `${serie}-${String(numero).padStart(7, "0")}`;
+}
+
+/**
+ * Solo enlaces https: la URL de consulta la manda el proveedor de CFE y se
+ * pone en un <a href>; un «javascript:» o un «http:» no se muestra.
+ */
+export function urlConsultaSegura(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    return new URL(url).protocol === "https:" ? url : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Qué mostrar del comprobante según GET /pedidos/:id/pagos. */
+export function estadoComprobante(
+  estado: Pick<EstadoPagoDelPedido, "comprobante"> | null,
+): EstadoComprobante {
+  const c = estado?.comprobante;
+  if (!c) return { tipo: "emitiendo" };
+  return {
+    tipo: "emitido",
+    texto: `e-Ticket ${numeroComprobante(c.serie, c.numero)}`,
+    urlConsulta: urlConsultaSegura(c.urlConsulta),
+  };
+}
