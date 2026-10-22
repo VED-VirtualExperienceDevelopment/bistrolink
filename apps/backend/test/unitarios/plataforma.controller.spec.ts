@@ -2,6 +2,7 @@ import {
   CanActivate,
   ExecutionContext,
   INestApplication,
+  NotFoundException,
   ValidationPipe,
 } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -16,6 +17,7 @@ import {
 import { PlataformaThrottlerGuard } from '../../src/plataforma/plataforma-throttler.guard';
 import { AprovisionamientoService } from '../../src/plataforma/aprovisionamiento.service';
 import { EstablecimientosService } from '../../src/plataforma/establecimientos.service';
+import { FichaEstablecimientoService } from '../../src/plataforma/ficha-establecimiento.service';
 
 /**
  * BL-163 (HU-027), entrega 2: POST /plataforma/establecimientos.
@@ -34,6 +36,9 @@ class AuthFalsa implements CanActivate {
   }
 }
 
+// BL-411: id fijo con formato del seed (no es un UUID v4).
+const TENANT_ID = '11111111-1111-1111-1111-111111111111';
+
 const ALTA = {
   razonSocial: 'Restaurante de Prueba SRL',
   rut: '219999990016',
@@ -51,6 +56,7 @@ describe('PlataformaController (BL-163)', () => {
   let app: INestApplication;
   const aprovisionamiento = { aprovisionar: jest.fn() };
   const establecimientos = { listar: jest.fn() };
+  const ficha = { obtener: jest.fn() };
 
   beforeEach(async () => {
     establecimientos.listar.mockReset().mockResolvedValue({
@@ -59,6 +65,9 @@ describe('PlataformaController (BL-163)', () => {
       total: 0,
       items: [],
     });
+    ficha.obtener
+      .mockReset()
+      .mockResolvedValue({ tenantId: TENANT_ID, razonSocial: 'Uno SRL' });
     aprovisionamiento.aprovisionar.mockReset().mockResolvedValue({
       tenantId: 'tenant-nuevo',
       usuarios: [],
@@ -73,6 +82,7 @@ describe('PlataformaController (BL-163)', () => {
         PlataformaThrottlerGuard,
         { provide: AprovisionamientoService, useValue: aprovisionamiento },
         { provide: EstablecimientosService, useValue: establecimientos },
+        { provide: FichaEstablecimientoService, useValue: ficha },
       ],
     })
       .overrideGuard(AuthGuard('jwt-plataforma'))
@@ -234,6 +244,25 @@ describe('PlataformaController (BL-163)', () => {
       expect(establecimientos.listar).not.toHaveBeenCalled();
     },
   );
+
+  it('BL-411: devuelve la ficha del establecimiento', async () => {
+    const res = await listado(`/${TENANT_ID}`).expect(200);
+
+    expect(res.body).toEqual({ tenantId: TENANT_ID, razonSocial: 'Uno SRL' });
+    expect(ficha.obtener).toHaveBeenCalledWith(TENANT_ID);
+  });
+
+  it('BL-411: rechaza con 400 un id que no es UUID, sin consultar', async () => {
+    await listado('/no-es-un-uuid').expect(400);
+    expect(ficha.obtener).not.toHaveBeenCalled();
+  });
+
+  it('BL-411: un establecimiento inexistente da 404', async () => {
+    ficha.obtener.mockRejectedValue(
+      new NotFoundException('No existe un establecimiento con ese id'),
+    );
+    await listado(`/${TENANT_ID}`).expect(404);
+  });
 
   it('el listado no consume el límite de altas', async () => {
     for (let i = 0; i < LIMITE_ALTAS_POR_HORA; i++) {

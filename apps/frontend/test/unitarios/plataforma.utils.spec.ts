@@ -7,6 +7,7 @@ import {
   credencialesAMostrar,
   describirCreadoPor,
   describirCriterio,
+  ETIQUETA_ESTADO,
   esAltaIncompleta,
   esEmailValido,
   etiquetaPlan,
@@ -15,9 +16,12 @@ import {
   FORMULARIO_VACIO,
   formularioParaCompletar,
   mensajeDeError,
+  mensajeErrorFicha,
+  nombreDeCuenta,
   OPCIONES_FILTRO_ESTADO,
   resumirAlta,
   resumirPagina,
+  rutaFicha,
   rutaListado,
   totalPaginas,
   validarFormulario,
@@ -511,5 +515,54 @@ describe("RUT (BL-409)", () => {
     expect(construirPedidoAlta({ ...VALIDO, rut: "21.999999-001-6" }).rut).toBe(
       "219999990016",
     );
+  });
+});
+
+describe("ficha del establecimiento (BL-411)", () => {
+  it("la ruta de la ficha lleva el id codificado", () => {
+    expect(rutaFicha("11111111-1111-1111-1111-111111111111")).toBe(
+      "/plataforma/establecimientos/11111111-1111-1111-1111-111111111111",
+    );
+    expect(rutaFicha("a/b")).toBe("/plataforma/establecimientos/a%2Fb");
+  });
+
+  it("cada estado tiene su nombre para personas", () => {
+    expect(ETIQUETA_ESTADO).toEqual({
+      ACTIVO: "Activo",
+      SUSPENDIDO: "Suspendido",
+      ALTA_INCOMPLETA: "Alta incompleta",
+    });
+  });
+
+  it("muestra el nombre y apellido de la cuenta, o el usuario si no tiene", () => {
+    const cuenta = {
+      username: "uno-admin",
+      nombre: "Ana",
+      apellido: "Gómez",
+      activo: true,
+    };
+    expect(nombreDeCuenta(cuenta)).toBe("Ana Gómez");
+    expect(nombreDeCuenta({ ...cuenta, apellido: null })).toBe("Ana");
+    expect(nombreDeCuenta({ ...cuenta, nombre: " ", apellido: null })).toBe(
+      "uno-admin",
+    );
+    expect(
+      nombreDeCuenta({
+        ...cuenta,
+        nombre: null,
+        apellido: null,
+        username: null,
+      }),
+    ).toBe("Sin nombre");
+  });
+
+  it("explica el 404 y el 400 de la ficha", () => {
+    expect(mensajeErrorFicha(404, "Not Found")).toMatch(
+      /No existe un establecimiento/,
+    );
+    expect(mensajeErrorFicha(400, "Bad Request")).toBe(
+      "El enlace de la ficha no es válido.",
+    );
+    expect(mensajeErrorFicha(500, "Error interno")).toBe("Error interno");
   });
 });

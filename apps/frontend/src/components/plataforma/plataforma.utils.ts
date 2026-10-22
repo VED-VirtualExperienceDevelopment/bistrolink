@@ -7,7 +7,9 @@
 // solo evita un viaje de ida y vuelta para errores obvios.
 
 import type {
+  CuentaFicha,
   EstablecimientoListado,
+  EstadoEstablecimiento,
   FiltroEstado,
   FormularioAlta,
   ResultadoAlta,
@@ -371,6 +373,53 @@ export function rutaListado(
   if (texto) params.set("q", texto);
   if (estado) params.set("estado", estado);
   return `/plataforma/establecimientos?${params.toString()}`;
+}
+
+// ── BL-411: ficha del establecimiento ───────────────────────────────────────
+
+/**
+ * BL-411: ruta de la ficha. Es la misma en la pantalla y en la API
+ * (GET /plataforma/establecimientos/:tenantId). El id va codificado por si
+ * llega algo raro desde la URL; la API igual lo valida.
+ */
+export function rutaFicha(tenantId: string): string {
+  return `/plataforma/establecimientos/${encodeURIComponent(tenantId)}`;
+}
+
+/** BL-411: nombre del estado para personas. */
+export const ETIQUETA_ESTADO: Record<EstadoEstablecimiento, string> = {
+  ACTIVO: "Activo",
+  SUSPENDIDO: "Suspendido",
+  ALTA_INCOMPLETA: "Alta incompleta",
+};
+
+/** BL-411: «Ana Gómez»; si no tiene nombre cargado, el usuario. */
+export function nombreDeCuenta(cuenta: CuentaFicha): string {
+  const nombre = [cuenta.nombre, cuenta.apellido]
+    .filter((parte) => parte?.trim())
+    .join(" ")
+    .trim();
+  return nombre || cuenta.username || "Sin nombre";
+}
+
+/** BL-411: mensaje si la ficha no se pudo cargar. */
+export function mensajeErrorFicha(status: number, mensaje: string): string {
+  if (status === 404) {
+    return "No existe un establecimiento con ese id. Puede que se haya eliminado o que el enlace esté mal copiado.";
+  }
+  if (status === 400) {
+    return "El enlace de la ficha no es válido.";
+  }
+  if (status === 429) {
+    return "Hiciste muchas consultas seguidas. Esperá un minuto y volvé a intentar.";
+  }
+  if (status === 401) {
+    return "Tu sesión venció. Volvé a ingresar.";
+  }
+  if (status === 403) {
+    return "Tu usuario no tiene permiso para ver establecimientos.";
+  }
+  return mensaje;
 }
 
 /** Mensaje para un error de la API, con los casos que el usuario puede resolver. */

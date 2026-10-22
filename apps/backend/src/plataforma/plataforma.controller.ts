@@ -5,7 +5,9 @@ import {
   DefaultValuePipe,
   Get,
   Header,
+  Param,
   ParseIntPipe,
+  ParseUUIDPipe,
   Post,
   Query,
   Req,
@@ -17,6 +19,7 @@ import { UsuarioPlataforma } from '../auth/plataforma-jwt.strategy';
 import { AprovisionamientoService } from './aprovisionamiento.service';
 import { AprovisionarEstablecimientoDto } from './dto/aprovisionar-establecimiento.dto';
 import { PlataformaThrottlerGuard } from './plataforma-throttler.guard';
+import { FichaEstablecimientoService } from './ficha-establecimiento.service';
 import {
   esFiltroEstado,
   EstablecimientosService,
@@ -50,6 +53,7 @@ export class PlataformaController {
   constructor(
     private readonly aprovisionamiento: AprovisionamientoService,
     private readonly establecimientos: EstablecimientosService,
+    private readonly ficha: FichaEstablecimientoService,
   ) {}
 
   /**
@@ -94,6 +98,17 @@ export class PlataformaController {
       filtro = estado;
     }
     return this.establecimientos.listar(pagina, busqueda || undefined, filtro);
+  }
+
+  /**
+   * BL-411: ficha de un establecimiento. Mismo límite que el listado. 400 si
+   * el id no tiene formato de UUID (ParseUUIDPipe, que acepta los ids fijos
+   * del seed) y 404 si no existe. Sin contraseñas ni datos de comensales.
+   */
+  @Get(':tenantId')
+  @Throttle({ default: { limit: LIMITE_LISTADOS_POR_MINUTO, ttl: 60_000 } })
+  obtener(@Param('tenantId', ParseUUIDPipe) tenantId: string) {
+    return this.ficha.obtener(tenantId);
   }
 
   @Post()

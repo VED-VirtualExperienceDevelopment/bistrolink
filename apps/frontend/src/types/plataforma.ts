@@ -26,6 +26,46 @@ export interface EstablecimientoListado {
   estado: EstadoEstablecimiento;
 }
 
+/**
+ * BL-411: una cuenta del establecimiento en la ficha (sin contraseñas,
+ * email ni ids). `ultimoIngreso`: ISO, null si no ingresó en los últimos 90
+ * días, o ausente si Keycloak no pudo dar el dato.
+ */
+export interface CuentaFicha {
+  username: string | null;
+  nombre: string | null;
+  apellido: string | null;
+  activo: boolean;
+  ultimoIngreso?: string | null;
+}
+
+/** BL-411: GET /plataforma/establecimientos/:tenantId (fechas en ISO). */
+export interface FichaEstablecimiento {
+  tenantId: string;
+  razonSocial: string;
+  rut: string;
+  plan: string;
+  creadoPor: string | null;
+  creadoEl: string;
+  estado: EstadoEstablecimiento;
+  altaCompletadaEn: string | null;
+  suspension: { desde: string | null; motivo: string | null } | null;
+  restaurante: {
+    id: string;
+    nombre: string;
+    direccion: string;
+    timezone: string;
+  } | null;
+  administradores: CuentaFicha[];
+  cocina: CuentaFicha[];
+  resumen: {
+    mesas: number;
+    itemsCarta: number;
+    pedidosRecientes: number;
+    diasPedidos: number;
+  } | null;
+}
+
 export interface PaginaEstablecimientos {
   pagina: number;
   tamanoPagina: number;

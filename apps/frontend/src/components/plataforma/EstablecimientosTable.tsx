@@ -1,11 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import type { EstablecimientoListado } from "@/types/plataforma";
 import {
   describirCreadoPor,
   esAltaIncompleta,
   etiquetaPlan,
   formatearFechaAlta,
+  rutaFicha,
 } from "./plataforma.utils";
 
 interface Props {
@@ -18,8 +20,9 @@ interface Props {
 // plan, alta); en el celular, cada establecimiento es una tarjeta de una sola
 // columna, sin desplazamiento horizontal. Mismo patrón que UsuariosTable
 // (BL-364): cada fila es su propia grilla con las mismas columnas.
+// BL-411: última columna con «Ver», que abre la ficha.
 const COLUMNAS =
-  "md:grid md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_8rem_minmax(0,1fr)] md:items-center md:gap-4";
+  "md:grid md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_8rem_minmax(0,1fr)_auto] md:items-center md:gap-4";
 
 /**
  * BL-163 (HU-027): establecimientos dados de alta, del más reciente al más
@@ -66,6 +69,7 @@ export function EstablecimientosTable({
         <span>Restaurante</span>
         <span>Plan</span>
         <span>Alta</span>
+        <span />
       </div>
 
       <ul aria-label="Establecimientos" className="divide-y divide-outline-variant">
@@ -180,6 +184,21 @@ export function EstablecimientosTable({
                 {describirCreadoPor(e.creadoPor)}
               </p>
             </div>
+
+            {/* BL-411: abre la ficha. El nombre accesible dice de quién es. */}
+            <Link
+              href={rutaFicha(e.tenantId)}
+              aria-label={`Ver ficha de ${e.razonSocial}`}
+              className="flex min-h-12 items-center justify-center gap-1 self-start rounded-lg border border-outline-variant px-4 text-body-md font-medium text-primary hover:bg-surface-container-high focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary md:self-center"
+            >
+              <span aria-hidden="true">Ver</span>
+              <span
+                className="material-symbols-outlined text-[20px]"
+                aria-hidden="true"
+              >
+                chevron_right
+              </span>
+            </Link>
           </li>
         ))}
       </ul>
