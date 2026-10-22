@@ -66,6 +66,27 @@ export interface FichaEstablecimiento {
   } | null;
 }
 
+/**
+ * BL-412: body de PATCH /plataforma/establecimientos/:tenantId. Solo lo que
+ * cambió; el RUT sin separadores.
+ */
+export interface CambiosEstablecimiento {
+  razonSocial?: string;
+  rut?: string;
+  plan?: string;
+  restauranteNombre?: string;
+  restauranteDireccion?: string;
+}
+
+/** BL-412: lo que se escribe en el formulario «Editar» (todo string). */
+export interface FormularioEdicion {
+  razonSocial: string;
+  rut: string;
+  plan: string;
+  restauranteNombre: string;
+  restauranteDireccion: string;
+}
+
 export interface PaginaEstablecimientos {
   pagina: number;
   tamanoPagina: number;

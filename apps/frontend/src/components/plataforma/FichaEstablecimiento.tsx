@@ -168,25 +168,46 @@ function Indicador({
 }
 
 /**
- * BL-411: ficha de un establecimiento para el rol PLATAFORMA. Solo muestra:
- * las acciones (editar, suspender, recuperar el acceso) llegan con BL-412,
- * BL-413 y BL-414.
+ * BL-411: ficha de un establecimiento para el rol PLATAFORMA. Las acciones
+ * llegan de a una: «Editar datos» (BL-412); suspender (BL-413) y recuperar el
+ * acceso (BL-414) vienen después.
  *
  * Una columna en el celular y la tablet; dos desde `lg:`. Cada bloque es una
  * sección con su encabezado (h2) para navegar con el lector de pantalla, y
  * los datos van en listas de definición (rótulo y dato).
  */
-export function FichaEstablecimiento({ ficha }: Readonly<{ ficha: Ficha }>) {
+export function FichaEstablecimiento({
+  ficha,
+  onEditar,
+}: Readonly<{ ficha: Ficha; onEditar?: () => void }>) {
   return (
     <div className="space-y-6">
-      <div className="space-y-2">
-        <h1 className="break-words text-headline-lg text-primary">
-          {ficha.razonSocial}
-        </h1>
-        <div className="flex flex-wrap items-center gap-3 text-body-md text-on-surface-variant">
-          <span className="break-all">RUT {ficha.rut}</span>
-          <EstadoBadge estado={ficha.estado} />
+      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+        <div className="min-w-0 space-y-2">
+          <h1 className="break-words text-headline-lg text-primary">
+            {ficha.razonSocial}
+          </h1>
+          <div className="flex flex-wrap items-center gap-3 text-body-md text-on-surface-variant">
+            <span className="break-all">RUT {ficha.rut}</span>
+            <EstadoBadge estado={ficha.estado} />
+          </div>
         </div>
+        {/* BL-412: corregir los datos del establecimiento. */}
+        {onEditar && (
+          <button
+            type="button"
+            onClick={onEditar}
+            className="flex min-h-12 shrink-0 items-center justify-center gap-2 self-start rounded-lg border border-outline-variant px-4 text-body-md font-medium text-primary hover:bg-surface-container-high focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          >
+            <span
+              className="material-symbols-outlined text-[20px]"
+              aria-hidden="true"
+            >
+              edit
+            </span>
+            Editar datos
+          </button>
+        )}
       </div>
 
       {ficha.estado === "SUSPENDIDO" && ficha.suspension && (

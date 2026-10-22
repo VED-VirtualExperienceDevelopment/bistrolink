@@ -7,11 +7,14 @@
 // solo evita un viaje de ida y vuelta para errores obvios.
 
 import type {
+  CambiosEstablecimiento,
   CuentaFicha,
   EstablecimientoListado,
   EstadoEstablecimiento,
+  FichaEstablecimiento,
   FiltroEstado,
   FormularioAlta,
+  FormularioEdicion,
   ResultadoAlta,
   UsuarioAprovisionado,
 } from "@/types/plataforma";
@@ -419,6 +422,111 @@ export function mensajeErrorFicha(status: number, mensaje: string): string {
   if (status === 403) {
     return "Tu usuario no tiene permiso para ver establecimientos.";
   }
+  return mensaje;
+}
+
+// ── BL-412: corregir los datos del establecimiento ──────────────────────────
+
+/** BL-412: espacios de más afuera (como limpiarEspacios del backend). */
+function limpiar(texto: string): string {
+  return texto.trim().replaceAll(/\s+/g, " ");
+}
+
+/** BL-412: el formulario «Editar» con los datos actuales de la ficha. */
+export function formularioEdicionDesde(
+  ficha: FichaEstablecimiento,
+): FormularioEdicion {
+  return {
+    razonSocial: ficha.razonSocial,
+    rut: ficha.rut,
+    plan: ficha.plan,
+    restauranteNombre: ficha.restaurante?.nombre ?? "",
+    restauranteDireccion: ficha.restaurante?.direccion ?? "",
+  };
+}
+
+/**
+ * BL-412: planes que se ofrecen en el formulario. Si el establecimiento
+ * tiene un plan que no está en la lista, se agrega para no perderlo.
+ */
+export function opcionesPlan(
+  planActual: string,
+): { valor: string; etiqueta: string }[] {
+  const opciones = Object.keys(NOMBRE_PLAN).map((valor) => ({
+    valor,
+    etiqueta: etiquetaPlan(valor),
+  }));
+  if (planActual && !opciones.some((o) => o.valor === planActual)) {
+    opciones.push({ valor: planActual, etiqueta: etiquetaPlan(planActual) });
+  }
+  return opciones;
+}
+
+export type ErroresEdicion = Partial<Record<keyof FormularioEdicion, string>>;
+
+/**
+ * BL-412: errores por campo (vacío = válido). Mismas reglas que
+ * EditarEstablecimientoDto. Los datos del restaurante se validan solo si
+ * tiene restaurante (si no, el formulario no los muestra).
+ */
+export function validarEdicion(
+  f: FormularioEdicion,
+  tieneRestaurante: boolean,
+): ErroresEdicion {
+  const errores: ErroresEdicion = {};
+  const requerido = (campo: keyof FormularioEdicion, max: number) => {
+    const valor = limpiar(f[campo]);
+    if (!valor) errores[campo] = "Obligatorio";
+    else if (valor.length > max) errores[campo] = `Máximo ${max} caracteres`;
+  };
+  requerido("razonSocial", 200);
+  const errorRut = errorDeRut(f.rut);
+  if (errorRut) errores.rut = errorRut;
+  if (tieneRestaurante) {
+    requerido("restauranteNombre", 120);
+    requerido("restauranteDireccion", 200);
+  }
+  return errores;
+}
+
+/**
+ * BL-412: body del PATCH, solo con lo que cambió (mismo criterio que
+ * Usuarios, BL-366). El RUT se compara y se manda sin separadores.
+ */
+export function cambiosDeEdicion(
+  ficha: FichaEstablecimiento,
+  f: FormularioEdicion,
+): CambiosEstablecimiento {
+  const cambios: CambiosEstablecimiento = {};
+  const razonSocial = limpiar(f.razonSocial);
+  if (razonSocial !== ficha.razonSocial) cambios.razonSocial = razonSocial;
+  const rut = normalizarRut(f.rut);
+  if (rut !== ficha.rut) cambios.rut = rut;
+  if (f.plan !== ficha.plan) cambios.plan = f.plan;
+  if (ficha.restaurante) {
+    const nombre = limpiar(f.restauranteNombre);
+    if (nombre !== ficha.restaurante.nombre) cambios.restauranteNombre = nombre;
+    const direccion = limpiar(f.restauranteDireccion);
+    if (direccion !== ficha.restaurante.direccion) {
+      cambios.restauranteDireccion = direccion;
+    }
+  }
+  return cambios;
+}
+
+/** BL-412: mensaje si no se pudieron guardar los datos. */
+export function mensajeErrorEdicion(status: number, mensaje: string): string {
+  if (status === 429) {
+    return "Llegaste al límite de ediciones por hora. Probá de nuevo más tarde.";
+  }
+  if (status === 401) {
+    return "Tu sesión venció. Volvé a ingresar.";
+  }
+  if (status === 403) {
+    return "Tu usuario no tiene permiso para editar establecimientos.";
+  }
+  // 409 (RUT de otro establecimiento, alta sin restaurante) y 400 llegan
+  // con el mensaje del backend.
   return mensaje;
 }
 

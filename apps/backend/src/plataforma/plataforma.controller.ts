@@ -8,6 +8,7 @@ import {
   Param,
   ParseIntPipe,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
   Req,
@@ -20,6 +21,8 @@ import { AprovisionamientoService } from './aprovisionamiento.service';
 import { AprovisionarEstablecimientoDto } from './dto/aprovisionar-establecimiento.dto';
 import { PlataformaThrottlerGuard } from './plataforma-throttler.guard';
 import { FichaEstablecimientoService } from './ficha-establecimiento.service';
+import { DatosEstablecimientoService } from './datos-establecimiento.service';
+import { EditarEstablecimientoDto } from './dto/editar-establecimiento.dto';
 import {
   esFiltroEstado,
   EstablecimientosService,
@@ -32,6 +35,8 @@ import {
 export const LIMITE_ALTAS_POR_HORA = 10;
 /** BL-163: consultas del listado por minuto y por usuario de plataforma. */
 export const LIMITE_LISTADOS_POR_MINUTO = 60;
+/** BL-412: ediciones de datos por hora y por usuario de plataforma. */
+export const LIMITE_EDICIONES_POR_HORA = 30;
 
 /**
  * BL-163 (HU-027), entrega 2: alta de establecimientos para el rol
@@ -54,6 +59,7 @@ export class PlataformaController {
     private readonly aprovisionamiento: AprovisionamientoService,
     private readonly establecimientos: EstablecimientosService,
     private readonly ficha: FichaEstablecimientoService,
+    private readonly datos: DatosEstablecimientoService,
   ) {}
 
   /**
@@ -108,6 +114,30 @@ export class PlataformaController {
   @Get(':tenantId')
   @Throttle({ default: { limit: LIMITE_LISTADOS_POR_MINUTO, ttl: 60_000 } })
   obtener(@Param('tenantId', ParseUUIDPipe) tenantId: string) {
+    return this.ficha.obtener(tenantId);
+  }
+
+  /**
+   * BL-412: corregir los datos del establecimiento. Se cambia lo que viene
+   * (400 si no viene nada). RUT inválido: 400 (DTO); RUT de otro
+   * establecimiento: 409; inexistente: 404. Devuelve la ficha actualizada.
+   * Actor: el sub del token, para la auditoría.
+   */
+  @Patch(':tenantId')
+  @Throttle({
+    default: { limit: LIMITE_EDICIONES_POR_HORA, ttl: 60 * 60_000 },
+  })
+  async editar(
+    @Req() req: { user: UsuarioPlataforma },
+    @Param('tenantId', ParseUUIDPipe) tenantId: string,
+    @Body() dto: EditarEstablecimientoDto,
+  ) {
+    await this.datos.actualizar(
+      tenantId,
+      dto,
+      { id: req.user.sub },
+      'PLATAFORMA',
+    );
     return this.ficha.obtener(tenantId);
   }
 

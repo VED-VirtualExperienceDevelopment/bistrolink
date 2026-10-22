@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { useKeycloakAuth } from "@/components/providers/KeycloakProvider";
 import { apiFetch, ApiError } from "@/lib/api-client";
 import { FichaEstablecimiento } from "@/components/plataforma/FichaEstablecimiento";
+import { EditarEstablecimientoDialog } from "@/components/plataforma/EditarEstablecimientoDialog";
 import {
   mensajeErrorFicha,
   rutaFicha,
@@ -20,6 +21,9 @@ import type { FichaEstablecimiento as Ficha } from "@/types/plataforma";
  * Página de cliente, como el listado: el token está en el navegador. El id
  * se lee con useParams; la API lo valida (400 si no es un UUID, 404 si no
  * existe).
+ *
+ * BL-412: «Editar datos» abre el diálogo; al guardar, la ficha se reemplaza
+ * por la que devuelve el PATCH y se anuncia «Datos guardados».
  */
 export default function FichaEstablecimientoPage() {
   const { tenantId } = useParams<{ tenantId: string }>();
@@ -27,6 +31,11 @@ export default function FichaEstablecimientoPage() {
   const [ficha, setFicha] = useState<Ficha | null>(null);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [editando, setEditando] = useState(false);
+  // BL-412: se suma 1 cada vez que se abre, para montar el diálogo de nuevo
+  // con los datos actuales.
+  const [aperturas, setAperturas] = useState(0);
+  const [aviso, setAviso] = useState("");
 
   const cargar = useCallback(async () => {
     if (!token || !tenantId) return;
@@ -91,7 +100,42 @@ export default function FichaEstablecimientoPage() {
         </div>
       )}
 
-      {!cargando && !error && ficha && <FichaEstablecimiento ficha={ficha} />}
+      {/* BL-412: resultado de la edición, para el lector de pantalla (y a
+          la vista). Siempre en el DOM para que se anuncie. */}
+      <p
+        aria-live="polite"
+        className={
+          aviso
+            ? "rounded-lg bg-secondary-container px-3 py-2 text-body-md text-on-secondary-container"
+            : "sr-only"
+        }
+      >
+        {aviso}
+      </p>
+
+      {!cargando && !error && ficha && (
+        <>
+          <FichaEstablecimiento
+            ficha={ficha}
+            onEditar={() => {
+              setAviso("");
+              setAperturas((n) => n + 1);
+              setEditando(true);
+            }}
+          />
+          <EditarEstablecimientoDialog
+            key={aperturas}
+            open={editando}
+            onClose={() => setEditando(false)}
+            token={token}
+            ficha={ficha}
+            onActualizado={(actualizada) => {
+              setFicha(actualizada);
+              setAviso("Datos guardados.");
+            }}
+          />
+        </>
+      )}
     </div>
   );
 }

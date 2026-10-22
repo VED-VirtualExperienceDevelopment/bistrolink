@@ -1,5 +1,6 @@
 import {
   CanActivate,
+  ConflictException,
   ExecutionContext,
   INestApplication,
   NotFoundException,
@@ -18,6 +19,7 @@ import { PlataformaThrottlerGuard } from '../../src/plataforma/plataforma-thrott
 import { AprovisionamientoService } from '../../src/plataforma/aprovisionamiento.service';
 import { EstablecimientosService } from '../../src/plataforma/establecimientos.service';
 import { FichaEstablecimientoService } from '../../src/plataforma/ficha-establecimiento.service';
+import { DatosEstablecimientoService } from '../../src/plataforma/datos-establecimiento.service';
 
 /**
  * BL-163 (HU-027), entrega 2: POST /plataforma/establecimientos.
@@ -57,6 +59,7 @@ describe('PlataformaController (BL-163)', () => {
   const aprovisionamiento = { aprovisionar: jest.fn() };
   const establecimientos = { listar: jest.fn() };
   const ficha = { obtener: jest.fn() };
+  const datos = { actualizar: jest.fn() };
 
   beforeEach(async () => {
     establecimientos.listar.mockReset().mockResolvedValue({
@@ -65,6 +68,7 @@ describe('PlataformaController (BL-163)', () => {
       total: 0,
       items: [],
     });
+    datos.actualizar.mockReset().mockResolvedValue(['razonSocial']);
     ficha.obtener
       .mockReset()
       .mockResolvedValue({ tenantId: TENANT_ID, razonSocial: 'Uno SRL' });
@@ -83,6 +87,7 @@ describe('PlataformaController (BL-163)', () => {
         { provide: AprovisionamientoService, useValue: aprovisionamiento },
         { provide: EstablecimientosService, useValue: establecimientos },
         { provide: FichaEstablecimientoService, useValue: ficha },
+        { provide: DatosEstablecimientoService, useValue: datos },
       ],
     })
       .overrideGuard(AuthGuard('jwt-plataforma'))
@@ -262,6 +267,49 @@ describe('PlataformaController (BL-163)', () => {
       new NotFoundException('No existe un establecimiento con ese id'),
     );
     await listado(`/${TENANT_ID}`).expect(404);
+  });
+
+  const editar = (body: object, id = TENANT_ID) =>
+    request(app.getHttpServer())
+      .patch(`/plataforma/establecimientos/${id}`)
+      .set('x-test-sub', 'kc-plataforma-1')
+      .send(body);
+
+  it('BL-412: edita con el sub del token como actor y devuelve la ficha actualizada', async () => {
+    const res = await editar({ razonSocial: 'Uno y Cía SRL' }).expect(200);
+
+    expect(datos.actualizar).toHaveBeenCalledWith(
+      TENANT_ID,
+      expect.objectContaining({ razonSocial: 'Uno y Cía SRL' }),
+      { id: 'kc-plataforma-1' },
+      'PLATAFORMA',
+    );
+    expect(ficha.obtener).toHaveBeenCalledWith(TENANT_ID);
+    expect(res.body).toEqual({ tenantId: TENANT_ID, razonSocial: 'Uno SRL' });
+  });
+
+  it('BL-412: RUT inválido da 400 sin llamar al servicio', async () => {
+    await editar({ rut: '219999990017' }).expect(400);
+    expect(datos.actualizar).not.toHaveBeenCalled();
+  });
+
+  it('BL-412: rechaza con 400 campos que no se pueden editar', async () => {
+    await editar({ estado: 'SUSPENDIDO' }).expect(400);
+    await editar({ creadoPor: 'otro' }).expect(400);
+    expect(datos.actualizar).not.toHaveBeenCalled();
+  });
+
+  it('BL-412: RUT de otro establecimiento da 409', async () => {
+    datos.actualizar.mockRejectedValue(
+      new ConflictException('El RUT ya pertenece a otro establecimiento'),
+    );
+    await editar({ rut: '219999990016' }).expect(409);
+    expect(ficha.obtener).not.toHaveBeenCalled();
+  });
+
+  it('BL-412: rechaza con 400 un id que no es UUID', async () => {
+    await editar({ razonSocial: 'Uno' }, 'no-es-un-uuid').expect(400);
+    expect(datos.actualizar).not.toHaveBeenCalled();
   });
 
   it('el listado no consume el límite de altas', async () => {

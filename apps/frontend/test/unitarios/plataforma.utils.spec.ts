@@ -1,5 +1,6 @@
 import {
   avisoDeCopia,
+  cambiosDeEdicion,
   errorDeRut,
   normalizarRut,
   construirPedidoAlta,
@@ -13,21 +14,26 @@ import {
   etiquetaPlan,
   filtroEstadoDesde,
   formatearFechaAlta,
+  formularioEdicionDesde,
   FORMULARIO_VACIO,
   formularioParaCompletar,
   mensajeDeError,
+  mensajeErrorEdicion,
   mensajeErrorFicha,
   nombreDeCuenta,
   OPCIONES_FILTRO_ESTADO,
+  opcionesPlan,
   resumirAlta,
   resumirPagina,
   rutaFicha,
   rutaListado,
   totalPaginas,
+  validarEdicion,
   validarFormulario,
 } from "@/components/plataforma/plataforma.utils";
 import type {
   EstablecimientoListado,
+  FichaEstablecimiento,
   FormularioAlta,
   ResultadoAlta,
 } from "@/types/plataforma";
@@ -564,5 +570,117 @@ describe("ficha del establecimiento (BL-411)", () => {
       "El enlace de la ficha no es válido.",
     );
     expect(mensajeErrorFicha(500, "Error interno")).toBe("Error interno");
+  });
+});
+
+describe("editar los datos del establecimiento (BL-412)", () => {
+  const ficha: FichaEstablecimiento = {
+    tenantId: "aaaaaaaa-1111-4111-8111-111111111111",
+    razonSocial: "Uno SRL",
+    rut: "219999990016",
+    plan: "BASICO",
+    creadoPor: null,
+    creadoEl: "2026-10-09T12:00:00Z",
+    estado: "ACTIVO",
+    altaCompletadaEn: "2026-10-09T12:05:00Z",
+    suspension: null,
+    restaurante: {
+      id: "r-1",
+      nombre: "Restaurante Uno",
+      direccion: "Calle 1",
+      timezone: "America/Montevideo",
+    },
+    administradores: [],
+    cocina: [],
+    resumen: null,
+  };
+
+  it("el formulario arranca con los datos de la ficha", () => {
+    expect(formularioEdicionDesde(ficha)).toEqual({
+      razonSocial: "Uno SRL",
+      rut: "219999990016",
+      plan: "BASICO",
+      restauranteNombre: "Restaurante Uno",
+      restauranteDireccion: "Calle 1",
+    });
+    expect(
+      formularioEdicionDesde({ ...ficha, restaurante: null }),
+    ).toMatchObject({ restauranteNombre: "", restauranteDireccion: "" });
+  });
+
+  it("sin cambios, el body queda vacío", () => {
+    expect(cambiosDeEdicion(ficha, formularioEdicionDesde(ficha))).toEqual({});
+  });
+
+  it("manda solo lo que cambió, sin espacios de más y el RUT sin separadores", () => {
+    expect(
+      cambiosDeEdicion(ficha, {
+        ...formularioEdicionDesde(ficha),
+        razonSocial: "  Uno   y Cía SRL ",
+        rut: "21.123456.001-9",
+        restauranteDireccion: " Calle 2 ",
+      }),
+    ).toEqual({
+      razonSocial: "Uno y Cía SRL",
+      rut: "211234560019",
+      restauranteDireccion: "Calle 2",
+    });
+  });
+
+  it("el mismo RUT escrito con separadores no cuenta como cambio", () => {
+    expect(
+      cambiosDeEdicion(ficha, {
+        ...formularioEdicionDesde(ficha),
+        rut: "21.999999.001-6",
+      }),
+    ).toEqual({});
+  });
+
+  it("sin restaurante, no manda sus datos", () => {
+    const sinRestaurante = { ...ficha, restaurante: null };
+    expect(
+      cambiosDeEdicion(sinRestaurante, {
+        ...formularioEdicionDesde(sinRestaurante),
+        restauranteNombre: "Algo",
+      }),
+    ).toEqual({});
+  });
+
+  it("valida razón social, RUT y, si tiene restaurante, sus datos", () => {
+    const vacio = {
+      razonSocial: " ",
+      rut: "219999990017",
+      plan: "BASICO",
+      restauranteNombre: "",
+      restauranteDireccion: "a".repeat(201),
+    };
+    expect(validarEdicion(vacio, true)).toEqual({
+      razonSocial: "Obligatorio",
+      rut: "No es un RUT válido: el último dígito (verificador) no corresponde",
+      restauranteNombre: "Obligatorio",
+      restauranteDireccion: "Máximo 200 caracteres",
+    });
+    expect(Object.keys(validarEdicion(vacio, false)).sort()).toEqual([
+      "razonSocial",
+      "rut",
+    ]);
+    expect(validarEdicion(formularioEdicionDesde(ficha), true)).toEqual({});
+  });
+
+  it("los planes incluyen el actual aunque no esté en la lista", () => {
+    expect(opcionesPlan("BASICO")).toEqual([
+      { valor: "BASICO", etiqueta: "Básico" },
+    ]);
+    expect(opcionesPlan("PRO_ANUAL")).toEqual([
+      { valor: "BASICO", etiqueta: "Básico" },
+      { valor: "PRO_ANUAL", etiqueta: "Pro anual" },
+    ]);
+  });
+
+  it("los 409 y 400 se muestran con el mensaje del backend", () => {
+    expect(
+      mensajeErrorEdicion(409, "El RUT ya pertenece a otro establecimiento"),
+    ).toBe("El RUT ya pertenece a otro establecimiento");
+    expect(mensajeErrorEdicion(429, "Too Many Requests")).toMatch(/límite/);
   });
 });
