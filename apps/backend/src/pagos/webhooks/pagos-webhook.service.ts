@@ -98,9 +98,10 @@ export class PagosWebhookService {
       );
     }
 
-    // Pago aprobado: se emite el CFE. En segundo plano (con reintentos
-    // acotados), para no demorar el 200 (Mercado Pago reintenta si tarda). También en 'sin_cambios': si la
-    // emisión falló antes, el reintento de la notificación la completa.
+    // Pago aprobado: se emite el CFE en segundo plano (con reintentos
+    // acotados), para no demorar el 200 (Mercado Pago reintenta si tarda).
+    // También en 'sin_cambios': si la emisión falló antes, el reintento de
+    // la notificación la completa.
     if (
       estado === 'APROBADO' &&
       pagoId &&
