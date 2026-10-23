@@ -39,6 +39,12 @@ updates:
       # (mcr.microsoft.com/playwright:vX.Y.Z-noble, BL-280): se actualizan a
       # mano y en el mismo PR, o el paso "Verificar imagen de Playwright" falla.
       - dependency-name: "@playwright/test"
+      # react-konva 19.3.x exige React 19.3, pero Next.js 15 usa en el App
+      # Router su propia copia de React (19.2): con 19.3.x la web falla al
+      # cargar en el navegador (BL-315, PR #355). Se actualiza a mano cuando
+      # la versión de Next que usemos traiga React 19.3.
+      - dependency-name: "react-konva"
+        versions: [">=19.3.0"]
 
   # Versiones de las actions de los workflows de .github/workflows.
   - package-ecosystem: "github-actions"
