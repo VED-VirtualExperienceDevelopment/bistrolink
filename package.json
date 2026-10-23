@@ -24,12 +24,12 @@
     "test:e2e:update-snapshots": "bash scripts/e2e-update-snapshots.sh"
   },
   "devDependencies": {
-    "@axe-core/playwright": "^4.10.0",
-    "@commitlint/cli": "19.5.0",
-    "@commitlint/config-conventional": "19.5.0",
+    "@axe-core/playwright": "^4.14.0",
+    "@commitlint/cli": "19.8.1",
+    "@commitlint/config-conventional": "19.8.1",
     "@playwright/test": "^1.47.0",
     "concurrently": "8.2.2",
-    "husky": "9.1.6",
+    "husky": "9.1.7",
     "jest-junit": "^17.0.0",
     "tmp": "^0.2.7"
   },
@@ -42,8 +42,8 @@
     },
     "adm-zip": "0.6.1",
     "engine.io": "6.6.11",
-    "lodash": "4.18.0",
-    "postcss": "8.5.23",
+    "lodash": "4.18.1",
+    "postcss": "8.5.31",
     "sharp": "0.35.5",
     "deepmerge-ts": "8.0.0",
     "ws": "8.21.0",
@@ -52,8 +52,8 @@
     "@nestjs/cli@10.4.9": {
       "glob": "10.5.0"
     },
-    "react": "^19.3.0",
-    "react-dom": "^19.3.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
     "basic-ftp": "6.2.1",
     "handlebars": "4.7.10"
   }
