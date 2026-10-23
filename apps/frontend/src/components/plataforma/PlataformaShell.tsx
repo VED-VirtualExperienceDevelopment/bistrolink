@@ -13,12 +13,14 @@ import UsuarioSesion from "@/components/sesion/UsuarioSesion";
  * Este guard solo ordena la navegación: quien decide es el backend. Los
  * endpoints /plataforma/* aceptan únicamente tokens con rol PLATAFORMA y sin
  * tenant_id (PlataformaJwtStrategy), y un token PLATAFORMA no sirve en
-    * ninguna ruta de un restaurante.
-   *
-   * BL-224: antes era app/plataforma/layout.tsx; pasó a componente porque un
-   * layout con 'use client' no puede exportar `metadata`.
-   */
-  export default function PlataformaShell({
+ * ninguna ruta de un restaurante.
+ *
+ * BL-224: antes era app/plataforma/layout.tsx; pasó a componente porque un
+ * layout con 'use client' no puede exportar `metadata`.
+ *
+ * BL-405: la carga inicial se anuncia al lector de pantalla.
+ */
+export default function PlataformaShell({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   const { initializing, authenticated, hasRole } = useKeycloakAuth();
@@ -39,9 +41,13 @@ import UsuarioSesion from "@/components/sesion/UsuarioSesion";
 
   if (initializing) {
     return (
-      <div className="flex h-screen items-center justify-center bg-background">
-        <span className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-      </div>
+      <output className="flex h-screen items-center justify-center bg-background">
+        <span
+          className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent"
+          aria-hidden="true"
+        />
+        <span className="sr-only">Cargando…</span>
+      </output>
     );
   }
 

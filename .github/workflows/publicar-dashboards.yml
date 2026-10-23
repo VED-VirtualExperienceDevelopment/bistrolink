@@ -58,6 +58,9 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: "22"
+          # Fuerza la última 22.x publicada: la caché del runner puede ir atrasada
+          # y quedarse con una versión sin los parches de seguridad.
+          check-latest: true
 
       # Los scripts actualizan los bloques AUTO de los .md de docs/ en la
       # copia del runner; no se commitea nada.
@@ -118,6 +121,9 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: "22"
+          # Fuerza la última 22.x publicada: la caché del runner puede ir atrasada
+          # y quedarse con una versión sin los parches de seguridad.
+          check-latest: true
 
       - name: Generar email de estado (avance + calidad)
         id: status-email

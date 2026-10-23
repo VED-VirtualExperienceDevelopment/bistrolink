@@ -163,6 +163,9 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: "22"
+          # Fuerza la última 22.x publicada: la caché del runner puede ir atrasada
+          # y quedarse con una versión sin los parches de seguridad.
+          check-latest: true
           cache: npm
 
       - name: Instalar dependencias
@@ -182,6 +185,9 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: "22"
+          # Fuerza la última 22.x publicada: la caché del runner puede ir atrasada
+          # y quedarse con una versión sin los parches de seguridad.
+          check-latest: true
           cache: npm
 
       - name: Instalar dependencias
@@ -292,6 +298,9 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: "22"
+          # Fuerza la última 22.x publicada: la caché del runner puede ir atrasada
+          # y quedarse con una versión sin los parches de seguridad.
+          check-latest: true
           cache: npm
 
       - name: Instalar dependencias
@@ -1021,6 +1030,9 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: "22"
+          # Fuerza la última 22.x publicada: la caché del runner puede ir atrasada
+          # y quedarse con una versión sin los parches de seguridad.
+          check-latest: true
 
       - name: Lighthouse CI — menú digital (HU-001)
         run: npx @lhci/cli@0.14.x autorun
@@ -1081,6 +1093,9 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: "22"
+          # Fuerza la última 22.x publicada: la caché del runner puede ir atrasada
+          # y quedarse con una versión sin los parches de seguridad.
+          check-latest: true
           cache: npm
 
       - name: Instalar dependencias
@@ -1408,3 +1423,4 @@ jobs:
   #           check https://bistrolink-api-production.up.railway.app/health/ready
   #           check https://bistrolink-web-production.up.railway.app
   #           check https://bistrolink-auth-production.up.railway.app/realms/bistrolink/.well-known/openid-configuration
+  
