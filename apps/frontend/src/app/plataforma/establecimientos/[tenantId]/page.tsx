@@ -71,17 +71,17 @@ export default function FichaEstablecimientoPage() {
         >
           arrow_back
         </span>
-        Establecimientos
+        <span>Establecimientos</span>
       </Link>
 
       {cargando && (
-        <div role="status" className="flex justify-center py-12">
+        <output className="flex justify-center py-12">
           <span
             className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent"
             aria-hidden="true"
           />
           <span className="sr-only">Cargando la ficha…</span>
-        </div>
+        </output>
       )}
 
       {!cargando && error && (

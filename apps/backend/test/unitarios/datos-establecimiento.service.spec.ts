@@ -195,6 +195,32 @@ describe('DatosEstablecimientoService (BL-412)', () => {
     expect(tx.restaurante.update).not.toHaveBeenCalled();
   });
 
+  it('cambia el plan', async () => {
+    const campos = await service.actualizar(
+      TENANT_ID,
+      { plan: 'PRO' },
+      ACTOR,
+      'PLATAFORMA',
+    );
+
+    expect(campos).toEqual(['plan']);
+    expect(tx.tenant.update).toHaveBeenCalledWith({
+      where: { id: TENANT_ID },
+      data: { plan: 'PRO' },
+    });
+    expect(tx.restaurante.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('un error de la base que no es de RUT duplicado se propaga tal cual', async () => {
+    const error = new Error('conexión perdida');
+    tx.tenant.update.mockRejectedValue(error);
+
+    await expect(
+      service.actualizar(TENANT_ID, { plan: 'PRO' }, ACTOR, 'PLATAFORMA'),
+    ).rejects.toBe(error);
+    expect(auditLog.registrar).not.toHaveBeenCalled();
+  });
+
   it('HU-020: el ADMIN no puede cambiar el RUT ni el plan (403)', async () => {
     await expect(
       service.actualizar(TENANT_ID, { rut: RUT_NUEVO }, ACTOR, 'ADMIN'),

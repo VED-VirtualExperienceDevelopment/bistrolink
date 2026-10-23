@@ -46,7 +46,7 @@ export function Dialog({
   title,
   children,
   tamano = 'md',
-}: DialogProps) {
+}: Readonly<DialogProps>) {
   const panelRef = useRef<HTMLDivElement>(null);
   const idTitulo = useId();
 

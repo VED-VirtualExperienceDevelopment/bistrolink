@@ -20,11 +20,28 @@ export type OrigenEdicion = 'PLATAFORMA' | 'ADMIN';
 /** Campos que cambiaron, con el nombre del DTO (para la auditoría). */
 export type CampoEstablecimiento = keyof EditarEstablecimientoDto;
 
-const SOLO_PLATAFORMA: CampoEstablecimiento[] = ['rut', 'plan'];
-const DEL_RESTAURANTE: CampoEstablecimiento[] = [
+const SOLO_PLATAFORMA: ReadonlySet<CampoEstablecimiento> = new Set([
+  'rut',
+  'plan',
+]);
+const DEL_RESTAURANTE: ReadonlySet<CampoEstablecimiento> = new Set([
   'restauranteNombre',
   'restauranteDireccion',
-];
+]);
+
+type TenantActual = { razonSocial: string; rut: string; plan: string };
+type RestauranteActual = { nombre: string; direccion: string };
+
+/** Lo que hay que escribir en una tabla y qué campos del DTO lo pidieron. */
+type Cambios<T> = { datos: T; campos: CampoEstablecimiento[] };
+
+/** Un valor del DTO cuenta como cambio si vino y es distinto del actual. */
+function cambia(
+  nuevo: string | undefined,
+  actual: string | undefined,
+): nuevo is string {
+  return nuevo !== undefined && nuevo !== actual;
+}
 
 /**
  * BL-412: corrige los datos de un establecimiento. Es el mismo servicio para
@@ -63,7 +80,7 @@ export class DatosEstablecimientoService {
     }
     if (
       origen === 'ADMIN' &&
-      pedidos.some((campo) => SOLO_PLATAFORMA.includes(campo))
+      pedidos.some((campo) => SOLO_PLATAFORMA.has(campo))
     ) {
       throw new ForbiddenException(
         'El RUT y el plan solo los cambia el equipo de BistroLink',
@@ -89,12 +106,41 @@ export class DatosEstablecimientoService {
     return campos;
   }
 
+  /**
+   * Lee lo actual, arma los cambios de cada tabla y los escribe. Los
+   * controles (404, 409) van antes de escribir nada.
+   */
   private async aplicarCambios(
     tx: PrismaClient,
     tenantId: string,
     dto: EditarEstablecimientoDto,
     pedidos: CampoEstablecimiento[],
   ): Promise<CampoEstablecimiento[]> {
+    const tenant = await this.leerTenant(tx, tenantId);
+    const restaurante = await this.leerRestaurante(tx, tenantId, pedidos);
+
+    const delTenant = await this.cambiosDelTenant(tx, tenantId, dto, tenant);
+    const delRestaurante = this.cambiosDelRestaurante(dto, restaurante);
+
+    if (delTenant.campos.length > 0) {
+      await tx.tenant.update({
+        where: { id: tenantId },
+        data: delTenant.datos,
+      });
+    }
+    if (delRestaurante.campos.length > 0) {
+      await tx.restaurante.update({
+        where: { tenantId },
+        data: delRestaurante.datos,
+      });
+    }
+    return [...delTenant.campos, ...delRestaurante.campos];
+  }
+
+  private async leerTenant(
+    tx: PrismaClient,
+    tenantId: string,
+  ): Promise<TenantActual> {
     const tenant = await tx.tenant.findUnique({
       where: { id: tenantId },
       select: { razonSocial: true, rut: true, plan: true },
@@ -102,73 +148,86 @@ export class DatosEstablecimientoService {
     if (!tenant) {
       throw new NotFoundException('No existe un establecimiento con ese id');
     }
+    return tenant;
+  }
 
-    const tocaRestaurante = pedidos.some((c) => DEL_RESTAURANTE.includes(c));
-    const restaurante = tocaRestaurante
-      ? await tx.restaurante.findUnique({
-          where: { tenantId },
-          select: { nombre: true, direccion: true },
-        })
-      : null;
-    if (tocaRestaurante && !restaurante) {
+  /** Solo se lee si se piden datos del restaurante; sin restaurante: 409. */
+  private async leerRestaurante(
+    tx: PrismaClient,
+    tenantId: string,
+    pedidos: CampoEstablecimiento[],
+  ): Promise<RestauranteActual | null> {
+    if (!pedidos.some((c) => DEL_RESTAURANTE.has(c))) {
+      return null;
+    }
+    const restaurante = await tx.restaurante.findUnique({
+      where: { tenantId },
+      select: { nombre: true, direccion: true },
+    });
+    if (!restaurante) {
       throw new ConflictException(
         'El establecimiento todavía no tiene restaurante: completá el alta antes de editar su nombre o dirección',
       );
     }
+    return restaurante;
+  }
 
+  private async cambiosDelTenant(
+    tx: PrismaClient,
+    tenantId: string,
+    dto: EditarEstablecimientoDto,
+    tenant: TenantActual,
+  ): Promise<Cambios<Prisma.TenantUpdateInput>> {
+    const datos: Prisma.TenantUpdateInput = {};
     const campos: CampoEstablecimiento[] = [];
-    const datosTenant: Prisma.TenantUpdateInput = {};
-    const datosRestaurante: Prisma.RestauranteUpdateInput = {};
 
-    if (
-      dto.razonSocial !== undefined &&
-      dto.razonSocial !== tenant.razonSocial
-    ) {
-      datosTenant.razonSocial = dto.razonSocial;
+    if (cambia(dto.razonSocial, tenant.razonSocial)) {
+      datos.razonSocial = dto.razonSocial;
       campos.push('razonSocial');
     }
-    if (dto.rut !== undefined && dto.rut !== tenant.rut) {
-      const otro = await tx.tenant.findUnique({
-        where: { rut: dto.rut },
-        select: { id: true },
-      });
-      if (otro && otro.id !== tenantId) {
-        throw new ConflictException(
-          'El RUT ya pertenece a otro establecimiento',
-        );
-      }
-      datosTenant.rut = dto.rut;
+    if (cambia(dto.rut, tenant.rut)) {
+      await this.validarRutLibre(tx, tenantId, dto.rut);
+      datos.rut = dto.rut;
       campos.push('rut');
     }
-    if (dto.plan !== undefined && dto.plan !== tenant.plan) {
-      datosTenant.plan = dto.plan;
+    if (cambia(dto.plan, tenant.plan)) {
+      datos.plan = dto.plan;
       campos.push('plan');
     }
-    if (
-      dto.restauranteNombre !== undefined &&
-      dto.restauranteNombre !== restaurante?.nombre
-    ) {
-      datosRestaurante.nombre = dto.restauranteNombre;
+    return { datos, campos };
+  }
+
+  private cambiosDelRestaurante(
+    dto: EditarEstablecimientoDto,
+    restaurante: RestauranteActual | null,
+  ): Cambios<Prisma.RestauranteUpdateInput> {
+    const datos: Prisma.RestauranteUpdateInput = {};
+    const campos: CampoEstablecimiento[] = [];
+
+    if (cambia(dto.restauranteNombre, restaurante?.nombre)) {
+      datos.nombre = dto.restauranteNombre;
       campos.push('restauranteNombre');
     }
-    if (
-      dto.restauranteDireccion !== undefined &&
-      dto.restauranteDireccion !== restaurante?.direccion
-    ) {
-      datosRestaurante.direccion = dto.restauranteDireccion;
+    if (cambia(dto.restauranteDireccion, restaurante?.direccion)) {
+      datos.direccion = dto.restauranteDireccion;
       campos.push('restauranteDireccion');
     }
+    return { datos, campos };
+  }
 
-    if (Object.keys(datosTenant).length > 0) {
-      await tx.tenant.update({ where: { id: tenantId }, data: datosTenant });
+  /** RUT de otro establecimiento: 409 antes de escribir. */
+  private async validarRutLibre(
+    tx: PrismaClient,
+    tenantId: string,
+    rut: string,
+  ): Promise<void> {
+    const otro = await tx.tenant.findUnique({
+      where: { rut },
+      select: { id: true },
+    });
+    if (otro && otro.id !== tenantId) {
+      throw new ConflictException('El RUT ya pertenece a otro establecimiento');
     }
-    if (Object.keys(datosRestaurante).length > 0) {
-      await tx.restaurante.update({
-        where: { tenantId },
-        data: datosRestaurante,
-      });
-    }
-    return campos;
   }
 
   /** Dos ediciones con el mismo RUT a la vez: el índice único avisa (P2002). */

@@ -176,13 +176,13 @@ export default function PlataformaPage() {
       </p>
 
       {cargando && (
-        <div role="status" className="flex justify-center py-12">
+        <output className="flex justify-center py-12">
           <span
             className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent"
             aria-hidden="true"
           />
           <span className="sr-only">Cargando establecimientos…</span>
-        </div>
+        </output>
       )}
 
       {!cargando && errorCarga && (

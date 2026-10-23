@@ -41,16 +41,13 @@ export default function PlataformaShell({
 
   if (initializing) {
     return (
-      <div
-        role="status"
-        className="flex h-screen items-center justify-center bg-background"
-      >
+      <output className="flex h-screen items-center justify-center bg-background">
         <span
           className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent"
           aria-hidden="true"
         />
         <span className="sr-only">Cargando…</span>
-      </div>
+      </output>
     );
   }
 

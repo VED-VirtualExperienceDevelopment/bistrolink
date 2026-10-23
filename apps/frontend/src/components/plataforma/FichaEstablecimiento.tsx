@@ -128,7 +128,7 @@ function ListaCuentas({
                   >
                     person_off
                   </span>
-                  Desactivada
+                  <span>Desactivada</span>
                 </span>
               )}
             </p>
@@ -205,7 +205,7 @@ export function FichaEstablecimiento({
             >
               edit
             </span>
-            Editar datos
+            <span>Editar datos</span>
           </button>
         )}
       </div>

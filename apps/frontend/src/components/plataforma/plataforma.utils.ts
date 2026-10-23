@@ -350,8 +350,9 @@ export function resumirPagina(
   const cantidad = `${datos.total} ${
     datos.total === 1 ? "establecimiento" : "establecimientos"
   }`;
+  const verbo = datos.total === 1 ? "coincide" : "coinciden";
   const resultado = criterio
-    ? `${cantidad} ${datos.total === 1 ? "coincide" : "coinciden"} con ${criterio}`
+    ? `${cantidad} ${verbo} con ${criterio}`
     : cantidad;
   return `Página ${pagina} de ${totalPaginas(datos.total, datos.tamanoPagina)}. ${resultado}`;
 }

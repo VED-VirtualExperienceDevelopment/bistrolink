@@ -105,7 +105,7 @@ export function EstablecimientosTable({
                       >
                         block
                       </span>
-                      Suspendido
+                      <span>Suspendido</span>
                     </span>
                   </p>
                 )}
@@ -131,7 +131,7 @@ export function EstablecimientosTable({
                     >
                       warning
                     </span>
-                    Alta incompleta
+                    <span>Alta incompleta</span>
                   </span>
                 </p>
                 <p className="text-body-md text-on-surface-variant">
