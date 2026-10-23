@@ -98,15 +98,15 @@ export class PagosWebhookService {
       );
     }
 
-    // Pago aprobado: se emite el CFE. En segundo plano, para no demorar el
-    // 200 (Mercado Pago reintenta si tarda). También en 'sin_cambios': si la
+    // Pago aprobado: se emite el CFE. En segundo plano (con reintentos
+    // acotados), para no demorar el 200 (Mercado Pago reintenta si tarda). También en 'sin_cambios': si la
     // emisión falló antes, el reintento de la notificación la completa.
     if (
       estado === 'APROBADO' &&
       pagoId &&
       (resultado === 'actualizado' || resultado === 'sin_cambios')
     ) {
-      void this.cfe.intentarEmitir(referencia.tenantId, pagoId);
+      this.cfe.emitirEnSegundoPlano(referencia.tenantId, pagoId);
     }
     return resultado;
   }

@@ -82,7 +82,7 @@ describe('PagosService.crear', () => {
   let tenantPrisma: { runInTenantContext: jest.Mock };
   let gateway: { cobrar: jest.Mock };
   let gatewayFactory: { obtener: jest.Mock };
-  let cfe: { intentarEmitir: jest.Mock };
+  let cfe: { emitirEnSegundoPlano: jest.Mock };
   let pedidos: {
     confirmarPagoEnTx: jest.Mock;
     notificarPedidoConfirmado: jest.Mock;
@@ -100,7 +100,7 @@ describe('PagosService.crear', () => {
         .mockResolvedValue({ aprobado: true, pasarelaReferencia: 'ORD1' }),
     };
     gatewayFactory = { obtener: jest.fn().mockReturnValue(gateway) };
-    cfe = { intentarEmitir: jest.fn().mockResolvedValue(null) };
+    cfe = { emitirEnSegundoPlano: jest.fn() };
     pedidos = {
       confirmarPagoEnTx: jest.fn().mockResolvedValue(PEDIDO_CONFIRMADO),
       notificarPedidoConfirmado: jest.fn(),
@@ -616,28 +616,12 @@ describe('PagosService.crear', () => {
   });
 
   describe('emisión del CFE', () => {
-    it('pago aprobado => emite el comprobante y lo incluye en la respuesta', async () => {
-      cfe.intentarEmitir.mockResolvedValue({
-        serie: 'A',
-        numero: 49,
-        urlConsulta: 'https://www.efactura.dgi.gub.uy/consultaQR/cfe?x',
-      });
-
+    it('pago aprobado => responde sin esperar a Surtec y emite en segundo plano', async () => {
       const pago = await service.crear(TENANT_ID, DTO);
 
-      expect(cfe.intentarEmitir).toHaveBeenCalledWith(TENANT_ID, PAGO_ID);
-      expect(pago).toMatchObject({
-        estado: 'APROBADO',
-        comprobante: { serie: 'A', numero: 49 },
-      });
-    });
-
-    it('si la emisión falla, el pago igual queda APROBADO (comprobante null)', async () => {
-      cfe.intentarEmitir.mockResolvedValue(null);
-
-      const pago = await service.crear(TENANT_ID, DTO);
-
-      expect(pago).toMatchObject({ estado: 'APROBADO', comprobante: null });
+      expect(cfe.emitirEnSegundoPlano).toHaveBeenCalledWith(TENANT_ID, PAGO_ID);
+      expect(pago).toMatchObject({ estado: 'APROBADO' });
+      expect(pago).not.toHaveProperty('comprobante');
     });
 
     it('pago PENDIENTE (ej. Plexo) => todavía no se emite', async () => {
@@ -649,7 +633,7 @@ describe('PagosService.crear', () => {
 
       await service.crear(TENANT_ID, DTO);
 
-      expect(cfe.intentarEmitir).not.toHaveBeenCalled();
+      expect(cfe.emitirEnSegundoPlano).not.toHaveBeenCalled();
     });
 
     it('pago rechazado => no se emite', async () => {
@@ -661,7 +645,7 @@ describe('PagosService.crear', () => {
 
       await expect(service.crear(TENANT_ID, DTO)).rejects.toThrow();
 
-      expect(cfe.intentarEmitir).not.toHaveBeenCalled();
+      expect(cfe.emitirEnSegundoPlano).not.toHaveBeenCalled();
     });
   });
 });

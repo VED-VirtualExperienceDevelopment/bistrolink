@@ -72,7 +72,7 @@ describe('PagosWebhookService.procesarOrden (BL-78)', () => {
   };
   let tenantPrisma: { runInTenantContext: jest.Mock };
   let mercadoPago: { consultarOrden: jest.Mock };
-  let cfe: { intentarEmitir: jest.Mock };
+  let cfe: { emitirEnSegundoPlano: jest.Mock };
   let pedidos: {
     confirmarPagoEnTx: jest.Mock;
     notificarPedidoConfirmado: jest.Mock;
@@ -94,7 +94,7 @@ describe('PagosWebhookService.procesarOrden (BL-78)', () => {
       runInTenantContext: jest.fn((_tenantId, callback) => callback(tx)),
     };
     mercadoPago = { consultarOrden: jest.fn().mockResolvedValue(orden()) };
-    cfe = { intentarEmitir: jest.fn().mockResolvedValue(null) };
+    cfe = { emitirEnSegundoPlano: jest.fn() };
     pedidos = {
       confirmarPagoEnTx: jest.fn().mockResolvedValue(PEDIDO_CONFIRMADO),
       notificarPedidoConfirmado: jest.fn(),
@@ -395,7 +395,10 @@ describe('PagosWebhookService.procesarOrden (BL-78)', () => {
     it('order procesada => emite el comprobante del pago', async () => {
       await service.procesarOrden(ORDER_ID);
 
-      expect(cfe.intentarEmitir).toHaveBeenCalledWith(TENANT_ID, 'pago-1');
+      expect(cfe.emitirEnSegundoPlano).toHaveBeenCalledWith(
+        TENANT_ID,
+        'pago-1',
+      );
     });
 
     it('notificación repetida (sin_cambios) => reintenta la emisión, por si falló antes', async () => {
@@ -406,7 +409,10 @@ describe('PagosWebhookService.procesarOrden (BL-78)', () => {
       const resultado = await service.procesarOrden(ORDER_ID);
 
       expect(resultado).toBe('sin_cambios');
-      expect(cfe.intentarEmitir).toHaveBeenCalledWith(TENANT_ID, 'pago-1');
+      expect(cfe.emitirEnSegundoPlano).toHaveBeenCalledWith(
+        TENANT_ID,
+        'pago-1',
+      );
     });
 
     it('order fallida => no emite nada', async () => {
@@ -416,7 +422,7 @@ describe('PagosWebhookService.procesarOrden (BL-78)', () => {
 
       await service.procesarOrden(ORDER_ID);
 
-      expect(cfe.intentarEmitir).not.toHaveBeenCalled();
+      expect(cfe.emitirEnSegundoPlano).not.toHaveBeenCalled();
     });
   });
 });

@@ -136,11 +136,13 @@ export class PagosService {
       throw new PagoRechazadoException(resultado.motivoRechazo);
     }
 
-    // Pago aprobado: se emite el eTicket. Si Surtec falla, el cobro no se
-    // pierde: el comprobante queda pendiente de reintento (ver CfeService).
+    // Pago aprobado: el eTicket se emite en segundo plano, para responder
+    // al comensal sin esperar a Surtec (puede tardar varios segundos). La
+    // pantalla de pago aprobado consulta GET /pedidos/:id/pagos hasta que
+    // aparece. Si Surtec falla, el cobro no se pierde (ver CfeService).
     if (pagoFinal.estado === 'APROBADO') {
-      const comprobante = await this.cfe.intentarEmitir(tenantId, pagoFinal.id);
-      return { ...pagoFinal, comprobante };
+      this.cfe.emitirEnSegundoPlano(tenantId, pagoFinal.id);
+      return pagoFinal;
     }
 
     // Checkout embebido (Plexo): esto nunca se persiste — es una URL de un
