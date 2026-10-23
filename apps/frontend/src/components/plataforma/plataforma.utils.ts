@@ -71,7 +71,11 @@ export function errorDeRut(rut: string): string | undefined {
   }
   return undefined;
 }
-const FORMATO_USERNAME = /^[a-z0-9][a-z0-9._-]{2,49}$/;
+// BL-356 (H-02): empieza con una letra, igual que el backend
+// (aprovisionar-establecimiento.dto.ts).
+const FORMATO_USERNAME = /^[a-z][a-z0-9._-]{2,49}$/;
+/** BL-356: mismo tope que el backend (RFC 5321). */
+const LARGO_MAXIMO_EMAIL = 254;
 
 /**
  * Control básico de email (algo@dominio.tld), sin expresión regular: la
@@ -80,6 +84,7 @@ const FORMATO_USERNAME = /^[a-z0-9][a-z0-9._-]{2,49}$/;
  * recibir el alta.
  */
 export function esEmailValido(email: string): boolean {
+  if (email.length > LARGO_MAXIMO_EMAIL) return false;
   if (/\s/.test(email)) return false;
   const partes = email.split("@");
   if (partes.length !== 2) return false;
@@ -89,7 +94,7 @@ export function esEmailValido(email: string): boolean {
 }
 
 const MENSAJE_USERNAME =
-  "De 3 a 50 caracteres, en minúsculas: letras, números, punto, guion o guion bajo";
+  "De 3 a 50 caracteres, empezando con una letra; en minúsculas: letras, números, punto, guion o guion bajo";
 
 /** Errores por campo; un objeto vacío quiere decir que el formulario es válido. */
 export type ErroresFormulario = Partial<Record<keyof FormularioAlta, string>>;

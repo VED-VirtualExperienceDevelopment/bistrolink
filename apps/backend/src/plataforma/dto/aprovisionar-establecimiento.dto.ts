@@ -8,8 +8,13 @@ import {
   IsUUID,
   Length,
   Matches,
+  MaxLength,
   ValidateNested,
 } from 'class-validator';
+import {
+  LARGO_MAXIMO_EMAIL,
+  MENSAJE_EMAIL_LARGO,
+} from '../../usuarios/dto/create-usuario.dto';
 import { EsRutUruguayo } from '../rut';
 
 /**
@@ -23,9 +28,13 @@ import { EsRutUruguayo } from '../rut';
 
 // Keycloak guarda los username en minúsculas; se exige el formato desde la
 // entrada para que la búsqueda exacta (findUserByUsername) sea confiable.
-const FORMATO_USERNAME = /^[a-z0-9][a-z0-9._-]{2,49}$/;
+// BL-356 (H-02): empieza con una letra, igual que el alta de usuarios
+// (FORMATO_USERNAME en create-usuario.dto.ts), para que no se pueda crear un
+// Administrador o una Cocina solo numéricos. El tope sigue en 50 (no 30)
+// para que el alta, que es idempotente, siga aceptando las cuentas ya creadas.
+const FORMATO_USERNAME = /^[a-z][a-z0-9._-]{2,49}$/;
 const MENSAJE_USERNAME =
-  'username: de 3 a 50 caracteres, en minúsculas, con letras, números, punto, guion o guion bajo';
+  'username: de 3 a 50 caracteres, empezando con una letra; en minúsculas, con letras, números, punto, guion o guion bajo';
 
 export class RestauranteAltaDto {
   /** Opcional: los tenants de testing usan ids fijos (los tests los tienen hardcodeados). */
@@ -58,6 +67,7 @@ export class UsuarioAltaDto {
 
   @IsOptional()
   @IsEmail()
+  @MaxLength(LARGO_MAXIMO_EMAIL, { message: MENSAJE_EMAIL_LARGO })
   email?: string;
 }
 
@@ -71,6 +81,7 @@ export class AdminAltaDto {
   username: string;
 
   @IsEmail()
+  @MaxLength(LARGO_MAXIMO_EMAIL, { message: MENSAJE_EMAIL_LARGO })
   email: string;
 
   @IsString()

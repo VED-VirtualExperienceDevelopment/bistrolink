@@ -75,3 +75,58 @@ describe('CreateUsuarioDto: nombre y apellido (BL-361)', () => {
     expect(dto.apellido).toBe('Pérez');
   });
 });
+
+describe('CreateUsuarioDto: nombre de usuario (BL-356, H-02)', () => {
+  it.each(['mozo-nuevo', 'ana.perez', 'juan_2', 'abc', 'a'.repeat(30)])(
+    '[TC-U-103] acepta el usuario %p',
+    async (username) => {
+      expect(await errores({ ...VALIDO, username })).toEqual([]);
+    },
+  );
+
+  it.each([
+    '12345678',
+    '1ana',
+    '-ana',
+    '.ana',
+    'ab',
+    'a'.repeat(31),
+    'ana perez',
+    'ana@perez',
+    'añil',
+    '',
+  ])('[TC-U-104] rechaza el usuario %p', async (username) => {
+    expect(await errores({ ...VALIDO, username })).toEqual(['username']);
+  });
+
+  it('[TC-U-105] pasa el usuario a minúsculas y saca los espacios antes de validar', async () => {
+    const dto = plainToInstance(CreateUsuarioDto, {
+      ...VALIDO,
+      username: '  Ana.Perez ',
+    });
+
+    expect(await validate(dto)).toEqual([]);
+    expect(dto.username).toBe('ana.perez');
+  });
+});
+
+describe('CreateUsuarioDto: largo del correo (BL-356)', () => {
+  // Correo válido del largo pedido: usuario de 64 caracteres (el máximo que
+  // admite IsEmail) y un dominio con etiquetas de hasta 63.
+  const correo = (largo: number) => {
+    const usuario = 'a'.repeat(64);
+    const resto = largo - usuario.length - 1 - '.uy'.length;
+    const etiquetas: string[] = [];
+    for (let quedan = resto; quedan > 0; quedan -= 64) {
+      etiquetas.push('b'.repeat(Math.min(63, quedan - (quedan > 63 ? 1 : 0))));
+    }
+    return `${usuario}@${etiquetas.join('.')}.uy`;
+  };
+
+  it('[TC-U-106] acepta un correo de 254 caracteres y rechaza uno de 255', async () => {
+    expect(correo(254)).toHaveLength(254);
+    expect(correo(255)).toHaveLength(255);
+    expect(await errores({ ...VALIDO, email: correo(254) })).toEqual([]);
+    expect(await errores({ ...VALIDO, email: correo(255) })).toEqual(['email']);
+  });
+});

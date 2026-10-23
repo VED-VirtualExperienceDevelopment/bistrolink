@@ -5,7 +5,16 @@ import { Dialog } from '@/components/ui/Dialog';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import type { CrearUsuarioResponse, UsuarioRol } from '@/types/usuario';
 import { CampoNombrePersona } from './CampoNombrePersona';
-import { errorNombrePersona, nombreParaMostrar, primerCampoConError } from './Usuarios.utils';
+import {
+  AYUDA_USERNAME,
+  errorNombrePersona,
+  errorUsername,
+  LARGO_MAXIMO_EMAIL,
+  LARGO_MAXIMO_USERNAME,
+  nombreParaMostrar,
+  normalizarUsername,
+  primerCampoConError,
+} from './Usuarios.utils';
 
 interface Props {
   open: boolean;
@@ -48,6 +57,8 @@ export function CrearUsuarioDialog({
 
   const errorNombre = intentoGuardar ? errorNombrePersona(nombre, 'nombre') : null;
   const errorApellido = intentoGuardar ? errorNombrePersona(apellido, 'apellido') : null;
+  // BL-356: misma regla que el backend (FORMATO_USERNAME).
+  const errorUsuario = intentoGuardar ? errorUsername(username) : null;
 
   const resetAndClose = () => {
     setNombre('');
@@ -67,6 +78,7 @@ export function CrearUsuarioDialog({
     const primerError = primerCampoConError([
       ['nombre', errorNombrePersona(nombre, 'nombre')],
       ['apellido', errorNombrePersona(apellido, 'apellido')],
+      ['username', errorUsername(username)],
     ]);
     if (primerError) {
       // El foco va al primer campo con error, así el lector de pantalla lo
@@ -81,7 +93,7 @@ export function CrearUsuarioDialog({
       const usuario = await apiFetch<CrearUsuarioResponse>('/usuarios', token, {
         method: 'POST',
         body: JSON.stringify({
-          username,
+          username: normalizarUsername(username),
           email: email || undefined,
           nombre: nombre.trim(),
           apellido: apellido.trim(),
@@ -152,15 +164,32 @@ export function CrearUsuarioDialog({
             <label htmlFor="username" className="mb-1 block text-label-md text-on-surface-variant">
               Nombre de usuario
             </label>
+            {/* BL-356: la regla se ve antes de escribir (ayuda) y el error, si
+                lo hay, va debajo; los dos asociados con aria-describedby. Sin
+                `required` del navegador, igual que nombre y apellido: el
+                mensaje es siempre el nuestro. Se escribe en minúsculas porque
+                Keycloak guarda así el usuario. */}
             <input
               id="username"
-              required
-              minLength={3}
+              aria-required
+              maxLength={LARGO_MAXIMO_USERNAME}
               autoComplete="off"
+              autoCapitalize="none"
+              spellCheck={false}
               value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              className={`${CLASE_INPUT} border-outline-variant`}
+              onChange={(e) => setUsername(e.target.value.toLowerCase())}
+              aria-invalid={errorUsuario ? true : undefined}
+              aria-describedby={errorUsuario ? 'username-ayuda username-error' : 'username-ayuda'}
+              className={`${CLASE_INPUT} ${errorUsuario ? 'border-error' : 'border-outline-variant'}`}
             />
+            <p id="username-ayuda" className="mt-1 text-body-sm text-on-surface-variant">
+              {AYUDA_USERNAME}
+            </p>
+            {errorUsuario && (
+              <p id="username-error" className="mt-1 text-body-sm text-error">
+                {errorUsuario}
+              </p>
+            )}
           </div>
 
           <div>
@@ -170,6 +199,7 @@ export function CrearUsuarioDialog({
             <input
               id="email"
               type="email"
+              maxLength={LARGO_MAXIMO_EMAIL}
               autoComplete="off"
               value={email}
               onChange={(e) => setEmail(e.target.value)}

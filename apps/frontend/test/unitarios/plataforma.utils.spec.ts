@@ -118,14 +118,18 @@ describe("validarFormulario", () => {
     expect(validarFormulario({ ...VALIDO, rut }).rut).toBeDefined();
   });
 
-  it.each(["Prueba-Admin", "ab", "con espacio", "-admin"])(
-    "rechaza el username %p",
-    (adminUsername) => {
-      expect(
-        validarFormulario({ ...VALIDO, adminUsername }).adminUsername,
-      ).toBeDefined();
-    },
-  );
+  it.each([
+    "Prueba-Admin",
+    "ab",
+    "con espacio",
+    "-admin",
+    "12345678",
+    "1admin",
+  ])("rechaza el username %p", (adminUsername) => {
+    expect(
+      validarFormulario({ ...VALIDO, adminUsername }).adminUsername,
+    ).toBeDefined();
+  });
 
   it("rechaza usernames reservados para el comensal técnico", () => {
     expect(
@@ -284,6 +288,15 @@ describe("esEmailValido", () => {
     expect(esEmailValido("no-es-email")).toBe(false);
     expect(esEmailValido("a@b@prueba.uy")).toBe(false);
     expect(esEmailValido("ana perez@prueba.uy")).toBe(false);
+  });
+
+  it("BL-356: acepta un email de 254 caracteres y rechaza uno de 255", () => {
+    // "@prueba.uy" tiene 10 caracteres.
+    const email = (largo: number) => `${"a".repeat(largo - 10)}@prueba.uy`;
+    expect(email(254)).toHaveLength(254);
+    expect(email(255)).toHaveLength(255);
+    expect(esEmailValido(email(254))).toBe(true);
+    expect(esEmailValido(email(255))).toBe(false);
   });
 
   it("rechaza emails sin usuario o sin un punto dentro del dominio", () => {

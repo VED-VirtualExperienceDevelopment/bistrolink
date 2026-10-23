@@ -6,10 +6,13 @@ import {
   IsString,
   Length,
   Matches,
+  MaxLength,
 } from 'class-validator';
 import {
   FORMATO_NOMBRE_PERSONA,
+  LARGO_MAXIMO_EMAIL,
   limpiarEspacios,
+  MENSAJE_EMAIL_LARGO,
   MENSAJE_NOMBRE,
   ROLES_VALIDOS,
 } from './create-usuario.dto';
@@ -46,5 +49,6 @@ export class UpdateUsuarioDto {
     typeof value === 'string' ? value.trim() : value,
   )
   @IsEmail({}, { message: 'email: tiene que ser un correo válido' })
+  @MaxLength(LARGO_MAXIMO_EMAIL, { message: MENSAJE_EMAIL_LARGO })
   email?: string;
 }

@@ -2,6 +2,7 @@ import {
   cambiosDeUsuario,
   errorNombreEditado,
   errorNombrePersona,
+  errorUsername,
   esCuentaCocina,
   esUsuarioPropio,
   FILTROS_INICIALES,
@@ -9,6 +10,7 @@ import {
   hayFiltrosActivos,
   nombreCompleto,
   nombreParaMostrar,
+  normalizarUsername,
   normalizarParaBuscar,
   primerCampoConError,
   puedeEliminarse,
@@ -417,5 +419,52 @@ describe("puedeEliminarse (BL-382)", () => {
         "kc-ana",
       ),
     ).toBe(false);
+  });
+});
+
+/** BL-356 (H-02): nombre de usuario en «Nuevo usuario». */
+describe("errorUsername", () => {
+  it.each(["mozo-nuevo", "ana.perez", "juan_2", "abc", "  Ana.Perez  "])(
+    "acepta %p",
+    (valor) => {
+      expect(errorUsername(valor)).toBeNull();
+    },
+  );
+
+  it("solo números: pide al menos una letra", () => {
+    expect(errorUsername("12345678")).toBe(
+      "El nombre de usuario tiene que tener al menos una letra.",
+    );
+  });
+
+  it("vacío: pide el dato", () => {
+    expect(errorUsername("   ")).toBe("Ingresá el nombre de usuario.");
+  });
+
+  it("menos de 3 o más de 30 caracteres: avisa el límite", () => {
+    expect(errorUsername("ab")).toBe("Tiene que tener al menos 3 caracteres.");
+    expect(errorUsername("a".repeat(31))).toBe(
+      "Puede tener hasta 30 caracteres.",
+    );
+  });
+
+  it.each(["1ana", "-ana", ".ana"])(
+    "%p: tiene que empezar con una letra",
+    (valor) => {
+      expect(errorUsername(valor)).toBe("Tiene que empezar con una letra.");
+    },
+  );
+
+  it.each(["ana perez", "ana@perez", "añil", "josé"])(
+    "%p: caracteres no permitidos",
+    (valor) => {
+      expect(errorUsername(valor)).toMatch(/^Usá solo minúsculas/);
+    },
+  );
+});
+
+describe("normalizarUsername", () => {
+  it("saca los espacios y pasa a minúsculas", () => {
+    expect(normalizarUsername("  Ana.Perez ")).toBe("ana.perez");
   });
 });

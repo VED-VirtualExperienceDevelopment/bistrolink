@@ -76,16 +76,55 @@ describe('AprovisionarEstablecimientoDto (BL-163)', () => {
     },
   );
 
-  it.each(['Prueba-Admin', 'ab', 'admin con espacio', '-admin'])(
-    'rechaza el username %p',
-    async (username) => {
-      expect(
-        rutas(
-          await validar({ ...VALIDO, admin: { ...VALIDO.admin, username } }),
-        ),
-      ).toEqual(['admin.username']);
-    },
-  );
+  it.each([
+    'Prueba-Admin',
+    'ab',
+    'admin con espacio',
+    '-admin',
+    // BL-356 (H-02): tiene que empezar con una letra.
+    '12345678',
+    '1admin',
+  ])('rechaza el username %p', async (username) => {
+    expect(
+      rutas(await validar({ ...VALIDO, admin: { ...VALIDO.admin, username } })),
+    ).toEqual(['admin.username']);
+  });
+
+  it('[TC-U-107] BL-356: acepta un correo de 254 caracteres y rechaza uno de 255', async () => {
+    // Correo válido del largo pedido: usuario de 64 caracteres (el máximo que
+    // admite IsEmail) y un dominio con etiquetas de hasta 63. Así el rechazo
+    // de 255 es por el tope de largo y no por un formato inválido.
+    const correo = (largo: number) => {
+      const usuario = 'a'.repeat(64);
+      const resto = largo - usuario.length - 1 - '.uy'.length;
+      const etiquetas: string[] = [];
+      for (let quedan = resto; quedan > 0; quedan -= 64) {
+        etiquetas.push(
+          'b'.repeat(Math.min(63, quedan - (quedan > 63 ? 1 : 0))),
+        );
+      }
+      return `${usuario}@${etiquetas.join('.')}.uy`;
+    };
+    expect(correo(254)).toHaveLength(254);
+    expect(correo(255)).toHaveLength(255);
+
+    expect(
+      rutas(
+        await validar({
+          ...VALIDO,
+          admin: { ...VALIDO.admin, email: correo(254) },
+        }),
+      ),
+    ).toEqual([]);
+    expect(
+      rutas(
+        await validar({
+          ...VALIDO,
+          admin: { ...VALIDO.admin, email: correo(255) },
+        }),
+      ),
+    ).toEqual(['admin.email']);
+  });
 
   it('rechaza un email inválido', async () => {
     expect(
