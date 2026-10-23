@@ -205,3 +205,33 @@ CVE-2026-13506
 
 CVE-2026-89407
 CVE-2026-89425
+
+# CVE-2026-114406 (CRITICAL) — ca-certificates 2025.2.80_v9.0.305-91.el9 de la imagen
+
+# base de Keycloak (quay.io/keycloak/keycloak:26.7.2, Red Hat UBI 9.8). Red Hat todavía
+
+# no publicó la versión corregida (estado "affected"). Es el retiro de confianza de CAs
+
+# intermedias de eMudhra; Keycloak no hace conexiones TLS salientes a sitios externos
+
+# en este proyecto. No es código propio ni una dependencia que gestionemos.
+
+# Agregada el 23/10/2026. Pendiente (BL-137): quitar cuando Keycloak publique una imagen
+
+# con ca-certificates corregido.
+
+CVE-2026-114406
+
+# CVE-2026-91415 (HIGH) — java-21-openjdk-headless 1:21.0.12.1.1-1.2.el9 de la imagen
+
+# base de Keycloak (Oracle Critical Patch Update de octubre de 2026, renderizado de
+
+# fuentes). Sin versión corregida de Red Hat todavía. Keycloak no renderiza fuentes de
+
+# terceros. No es código propio ni una dependencia que gestionemos.
+
+# Agregada el 23/10/2026. Pendiente (BL-137): quitar cuando Keycloak publique una imagen
+
+# con el JDK actualizado.
+
+CVE-2026-91415
