@@ -1,5 +1,7 @@
 import {
+  ErrorConfirmacionImagen,
   ErrorSubidaAlmacenamiento,
+  MENSAJE_DEMASIADOS_INTENTOS,
   MENSAJE_FORMATO_NO_PERMITIDO,
   MENSAJE_TAMANIO_EXCEDIDO,
   mensajeErrorSubida,
@@ -112,4 +114,52 @@ describe("mensajeErrorSubida", () => {
       );
     },
   );
+});
+
+// BL-388: la confirmación (la API verifica y reprocesa la imagen) muestra el
+// motivo que redacta la API, y el límite de pedidos tiene su propio mensaje.
+describe("mensajeErrorSubida: confirmación de la imagen", () => {
+  const confirmacion = (status: number, message = "Motivo de la API") =>
+    new ErrorConfirmacionImagen({ status, message });
+
+  it.each([400, 404, 413])(
+    "la API rechaza la imagen con %p: muestra el motivo de la API",
+    (status) => {
+      expect(
+        mensajeErrorSubida(
+          confirmacion(status, "El archivo no es una imagen válida"),
+        ),
+      ).toBe("El archivo no es una imagen válida");
+    },
+  );
+
+  it("la API responde 429 al confirmar", () => {
+    expect(mensajeErrorSubida(confirmacion(429))).toBe(
+      MENSAJE_DEMASIADOS_INTENTOS,
+    );
+  });
+
+  it.each([401, 403])("la API responde %p al confirmar", (status) => {
+    expect(mensajeErrorSubida(confirmacion(status))).toBe(
+      "Tu sesión expiró o no tenés permisos para subir imágenes. Volvé a iniciar sesión.",
+    );
+  });
+
+  it("la API falla al confirmar (500)", () => {
+    expect(mensajeErrorSubida(confirmacion(500))).toBe(
+      "No pudimos procesar la imagen. Probá de nuevo.",
+    );
+  });
+
+  it("falla sin respuesta al confirmar (sin status)", () => {
+    expect(
+      mensajeErrorSubida(new ErrorConfirmacionImagen(new TypeError("red"))),
+    ).toBe("No pudimos procesar la imagen. Probá de nuevo.");
+  });
+
+  it("la API responde 429 al pedir la URL firmada", () => {
+    expect(mensajeErrorSubida({ status: 429, message: "x" })).toBe(
+      MENSAJE_DEMASIADOS_INTENTOS,
+    );
+  });
 });

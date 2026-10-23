@@ -22,7 +22,8 @@
     "test:pact": "node -e \"require('fs').rmSync('pacts',{recursive:true,force:true})\" && jest --config ./test/contract/jest-contract.json --runInBand",
     "generate:qr": "ts-node scripts/generate-qr.ts",
     "aprovisionar": "ts-node scripts/aprovisionar-establecimiento.ts",
-    "crear-usuario-plataforma": "ts-node scripts/crear-usuario-plataforma.ts"
+    "crear-usuario-plataforma": "ts-node scripts/crear-usuario-plataforma.ts",
+    "reprocesar-imagenes": "ts-node scripts/reprocesar-imagenes-carta.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.637.0",
@@ -59,6 +60,7 @@
     "qrcode": "^1.5.4",
     "reflect-metadata": "^0.2.0",
     "rxjs": "^7.8.1",
+    "sharp": "0.35.5",
     "socket.io": "4.7.5",
     "zod": "^3.23.8"
   },
