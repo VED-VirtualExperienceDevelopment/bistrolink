@@ -8,7 +8,11 @@ export interface AuditLogEntry {
   tenantId: string;
   /** sub del JWT del actor (Keycloak ID) — nunca el body del request. */
   actorKeycloakId: string;
-  targetUsuarioId: string;
+  /**
+   * Usuario afectado. Opcional desde BL-387: las acciones sobre la carta no
+   * afectan a un usuario y llevan su objetivo en `detalle` (por ej. itemId).
+   */
+  targetUsuarioId?: string;
   detalle?: Record<string, unknown>;
 }
 

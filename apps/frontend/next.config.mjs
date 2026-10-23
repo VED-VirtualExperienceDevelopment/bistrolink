@@ -16,6 +16,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
  * fonts.gstatic.com (Material Symbols) — sin esto, la CSP bloquea la hoja
  * de estilos de Google Fonts (visto en consola de staging).
  *
+ * img-src incluye blob: para la vista previa de la imagen del ítem antes de
+ * subirla (ImageUploader usa URL.createObjectURL). Sin blob:, el navegador
+ * bloquea la vista previa y la imagen recién se ve al guardar el ítem, cuando
+ * llega la URL firmada de S3 (https:). blob: solo admite URLs que crea la
+ * propia página en el navegador, así que no abre la carga de imágenes de
+ * terceros.
+ *
  * devFrameSrc / devConnectSrc (HU-004 y silent-check-sso de Keycloak): en
  * local, Keycloak (:8080) y la API (:3001) corren por HTTP plano, sin TLS.
  * "frame-src https:" no cubre "http://localhost:8080", así que sin esta
@@ -59,7 +66,7 @@ const baseSecurityHeaders = [
   {
     key: "Content-Security-Policy",
     value:
-      `default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https: wss:${devConnectSrc}; frame-src 'self' https:${devFrameSrc}; object-src 'none'; base-uri 'self'; form-action 'self'`,
+      `default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https: wss:${devConnectSrc}; frame-src 'self' https:${devFrameSrc}; object-src 'none'; base-uri 'self'; form-action 'self'`,
   },
 ];
 

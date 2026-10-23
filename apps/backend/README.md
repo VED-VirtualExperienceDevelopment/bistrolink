@@ -18,7 +18,7 @@ API en **NestJS** con **Prisma** sobre PostgreSQL. Es **multi-tenant**: cada res
 
 ```
 src/
-├── menu/             → Menú público del comensal (QR y enlace directo)
+├── menu/             → Menú público del comensal (QR y enlace directo), gestión de la carta e imágenes
 ├── pedidos/          → Pedidos, estados y eventos en tiempo real para el KDS
 ├── mesas/            → Mesas, layout del salón y llamado al mozo
 ├── pagos/            → Pago electrónico
@@ -33,7 +33,7 @@ src/
 ├── logger/           → Logs estructurados
 └── health.controller → /health, /health/ready y /health/version
 prisma/               → schema.prisma, migraciones y seed de datos de prueba
-scripts/              → Utilidades (aprovisionar un restaurante, generar QR)
+scripts/              → Utilidades (aprovisionar un restaurante, generar QR, reprocesar imágenes)
 test/unitarios/       → Tests unitarios (Jest)
 test/integration/     → Tests de integración (*.e2e-spec.ts), incluido el aislamiento entre tenants
 ```
@@ -52,7 +52,7 @@ La API queda en `http://localhost:3001`. Las variables se leen de `apps/backend/
 ### Base de datos
 
 ```bash
-cd apps/backen
+cd apps/backend
 npx prisma migrate deploy   # aplica las migraciones del repositorio
 npx prisma migrate dev      # crea una migración nueva después de cambiar schema.prisma
 npx prisma db seed          # datos de prueba (idempotente)
@@ -60,6 +60,22 @@ npx prisma studio           # explorar las tablas en el navegador
 ```
 
 En staging y producción las migraciones las aplica Railway antes de arrancar cada versión de la API. Nunca se corre `migrate dev` ni `migrate reset` contra esas bases ([runbook](../../docs/runbooks/migraciones-y-seed.md)).
+
+### Imágenes de la carta
+
+Las imágenes de los ítems se guardan en un bucket privado y se muestran con URLs firmadas que vencen. La carga no confía en lo que declara el navegador:
+
+1. `POST /admin/menu/presigned-url` (solo administradores, con límite por usuario) firma una subida a una carpeta de **cuarentena**.
+2. El navegador sube el archivo directo al bucket.
+3. `POST /admin/menu/imagenes/confirmar` verifica el archivo y genera una imagen **nueva**: solo acepta JPEG, PNG o WEBP reales (por su contenido, no por la extensión), hasta 5 MB y 25 megapíxeles, no animadas. El resultado es un WebP de hasta 1600 px **sin metadatos** (se descartan, por ejemplo, la ubicación GPS y el modelo del teléfono).
+4. El ítem solo acepta imágenes publicadas por ese paso. Lo que queda en la cuarentena se borra solo.
+
+Para reprocesar las imágenes cargadas antes de este flujo (una vez por entorno):
+
+```bash
+npm run reprocesar-imagenes -w apps/backend               # simula, no escribe
+npm run reprocesar-imagenes -w apps/backend -- --aplicar  # aplica
+```
 
 ## Tests
 
