@@ -89,6 +89,9 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: "22"
+          # Fuerza la última 22.x publicada: la caché del runner puede ir atrasada
+          # y quedarse con una versión sin los parches de seguridad.
+          check-latest: true
 
       # ── k6 ──────────────────────────────────────────────────────────────
       - name: Instalar k6
