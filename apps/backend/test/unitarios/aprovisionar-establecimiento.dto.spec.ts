@@ -12,7 +12,7 @@ const OPCIONES = { whitelist: true, forbidNonWhitelisted: true };
 
 const VALIDO = {
   razonSocial: 'Restaurante de Prueba SRL',
-  rut: '219999999901',
+  rut: '219999990016',
   restaurante: { nombre: 'Restaurante de Prueba', direccion: 'Calle 123' },
   admin: {
     username: 'prueba-admin',
@@ -55,10 +55,24 @@ describe('AprovisionarEstablecimientoDto (BL-163)', () => {
     ).toHaveLength(0);
   });
 
-  it.each(['21999999990', '2199999999011', '21999999990A'])(
-    'rechaza el RUT %p (tienen que ser 12 dígitos)',
+  it.each([
+    '21999999001', // 11 dígitos
+    '2199999900166', // 13 dígitos
+    '21999999001A',
+    '21.999999-001-6', // con separadores: el frontend los saca antes
+    '219999990017', // dígito verificador equivocado
+    '219999999901', // sin «001» (el RUT de prueba anterior a BL-409)
+    '210000000019', // número 000000
+    '239999990013', // registro fuera de 01–22
+    '211000060010', // los 11 primeros no admiten verificador (da 10)
+  ])('BL-409: rechaza el RUT %p', async (rut) => {
+    expect(rutas(await validar({ ...VALIDO, rut }))).toEqual(['rut']);
+  });
+
+  it.each(['219999990016', '219999980010', '019999990013', '229999990013'])(
+    'BL-409: acepta el RUT %p',
     async (rut) => {
-      expect(rutas(await validar({ ...VALIDO, rut }))).toEqual(['rut']);
+      expect(await validar({ ...VALIDO, rut })).toHaveLength(0);
     },
   );
 

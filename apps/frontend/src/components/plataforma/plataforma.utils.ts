@@ -7,8 +7,14 @@
 // solo evita un viaje de ida y vuelta para errores obvios.
 
 import type {
+  CambiosEstablecimiento,
+  CuentaFicha,
   EstablecimientoListado,
+  EstadoEstablecimiento,
+  FichaEstablecimiento,
+  FiltroEstado,
   FormularioAlta,
+  FormularioEdicion,
   ResultadoAlta,
   UsuarioAprovisionado,
 } from "@/types/plataforma";
@@ -26,7 +32,45 @@ export const FORMULARIO_VACIO: FormularioAlta = {
   cocinaEmail: "",
 };
 
-const FORMATO_RUT = /^\d{12}$/;
+/**
+ * BL-409: RUT de Uruguay. Copia de apps/backend/src/plataforma/rut.ts (el
+ * backend es quien decide; esto da el error antes y más claro). Si cambia
+ * allá, cambia acá.
+ *
+ * 12 dígitos: registro 01–22, número de seis dígitos (no todos cero), «001»
+ * y un dígito verificador: pesos 4,3,2,9,8,7,6,5,4,3,2 sobre los 11
+ * primeros, (−suma) mod 11; si da 10, no hay verificador posible.
+ */
+const PESOS_RUT = [4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+
+/** BL-409: el RUT sin espacios, puntos ni guiones («21.999999-001-6» → «219999990016»). */
+export function normalizarRut(rut: string): string {
+  return rut.replaceAll(/[\s.-]/g, "");
+}
+
+/** BL-409: por qué el RUT no es válido, o undefined si lo es. */
+export function errorDeRut(rut: string): string | undefined {
+  const r = normalizarRut(rut);
+  if (!/^\d{12}$/.test(r)) {
+    return "Tienen que ser 12 dígitos (podés escribirlo con puntos o guiones)";
+  }
+  const registro = Number(r.slice(0, 2));
+  if (registro < 1 || registro > 22 || r.slice(2, 8) === "000000") {
+    return "No es un RUT válido: revisá los primeros 8 dígitos";
+  }
+  if (r.slice(8, 11) !== "001") {
+    return "No es un RUT válido: los dígitos 9 a 11 son siempre 001";
+  }
+  let suma = 0;
+  for (let i = 0; i < PESOS_RUT.length; i++) {
+    suma += Number(r[i]) * PESOS_RUT[i];
+  }
+  const digito = (11 - (suma % 11)) % 11;
+  if (digito === 10 || digito !== Number(r[11])) {
+    return "No es un RUT válido: el último dígito (verificador) no corresponde";
+  }
+  return undefined;
+}
 const FORMATO_USERNAME = /^[a-z0-9][a-z0-9._-]{2,49}$/;
 
 /**
@@ -59,9 +103,8 @@ export function validarFormulario(f: FormularioAlta): ErroresFormulario {
   };
 
   requerido("razonSocial", 200);
-  if (!FORMATO_RUT.test(f.rut.trim())) {
-    errores.rut = "Tienen que ser 12 dígitos, sin puntos ni guiones";
-  }
+  const errorRut = errorDeRut(f.rut);
+  if (errorRut) errores.rut = errorRut;
   requerido("restauranteNombre", 120);
   requerido("restauranteDireccion", 200);
 
@@ -93,6 +136,7 @@ export function validarFormulario(f: FormularioAlta): ErroresFormulario {
 
 /**
  * Body de POST /plataforma/establecimientos. Sin tenantId, plan ni timezone:
+ * (BL-409: el RUT va sin separadores.)
  * el backend usa los valores por defecto (BASICO, America/Montevideo) y busca
  * el tenant por RUT. Sin contraseñas: el backend las genera.
  */
@@ -100,7 +144,7 @@ export function construirPedidoAlta(f: FormularioAlta) {
   const cocinaEmail = f.cocinaEmail.trim();
   return {
     razonSocial: f.razonSocial.trim(),
-    rut: f.rut.trim(),
+    rut: normalizarRut(f.rut),
     restaurante: {
       nombre: f.restauranteNombre.trim(),
       direccion: f.restauranteDireccion.trim(),
@@ -118,11 +162,100 @@ export function construirPedidoAlta(f: FormularioAlta) {
   };
 }
 
+/**
+ * BL-407: el alta de un establecimiento quedó incompleta.
+ *
+ * BL-410: lo decide el backend con `tenant.alta_completada_en` (se completa
+ * al terminar el kit mínimo), no la falta de restaurante: un alta que se
+ * cortó en Keycloak tiene restaurante y le faltan las cuentas. Así el
+ * listado muestra lo mismo que devuelve el filtro «Alta incompleta».
+ */
+export function esAltaIncompleta(e: EstablecimientoListado): boolean {
+  return e.estado === "ALTA_INCOMPLETA";
+}
+
+/** BL-410: opciones del filtro por estado, en el orden en que se muestran. */
+export const OPCIONES_FILTRO_ESTADO: {
+  valor: FiltroEstado;
+  etiqueta: string;
+}[] = [
+  { valor: "ACTIVOS", etiqueta: "Activos" },
+  { valor: "SUSPENDIDOS", etiqueta: "Suspendidos" },
+  { valor: "ALTA_INCOMPLETA", etiqueta: "Alta incompleta" },
+];
+
+/** BL-410: el valor del `select` como filtro («» = todos). */
+export function filtroEstadoDesde(valor: string): FiltroEstado | undefined {
+  return OPCIONES_FILTRO_ESTADO.find((o) => o.valor === valor)?.valor;
+}
+
+function etiquetaFiltroEstado(estado: FiltroEstado): string {
+  return (
+    OPCIONES_FILTRO_ESTADO.find((o) => o.valor === estado)?.etiqueta ?? estado
+  );
+}
+
+/**
+ * BL-410: qué se pidió, para los avisos («con «uno» y el filtro
+ * «Suspendidos»»). Vacío si no hay búsqueda ni filtro.
+ */
+export function describirCriterio(
+  busqueda = "",
+  estado?: FiltroEstado,
+): string {
+  const texto = busqueda.trim();
+  const partes: string[] = [];
+  if (texto) partes.push(`«${texto}»`);
+  if (estado) partes.push(`el filtro «${etiquetaFiltroEstado(estado)}»`);
+  return partes.join(" y ");
+}
+
+/**
+ * BL-407: formulario para completar un alta incompleta. La razón social y el
+ * RUT son los del tenant que ya existe y no se cambian acá: el alta busca el
+ * tenant por RUT, así que otro RUT daría de alta OTRO establecimiento. El
+ * resto se completa a mano (el listado no trae datos del restaurante ni de
+ * las cuentas).
+ */
+export function formularioParaCompletar(
+  e: EstablecimientoListado,
+): FormularioAlta {
+  return { ...FORMULARIO_VACIO, razonSocial: e.razonSocial, rut: e.rut };
+}
+
 /** Usuarios con contraseña temporal para mostrar (una sola vez). */
 export function credencialesAMostrar(
   resultado: ResultadoAlta,
 ): UsuarioAprovisionado[] {
   return resultado.usuarios.filter((u) => u.passwordGenerada);
+}
+
+/**
+ * BL-408: usernames cuyas contraseñas temporales todavía no se copiaron. Si
+ * queda alguno, cerrar el diálogo pide confirmación: esas contraseñas no se
+ * pueden volver a ver.
+ */
+export function contrasenasSinCopiar(
+  credenciales: UsuarioAprovisionado[],
+  copiadas: ReadonlySet<string>,
+): string[] {
+  return credenciales
+    .map((u) => u.username)
+    .filter((username) => !copiadas.has(username));
+}
+
+/**
+ * BL-408: aviso para el lector de pantalla después de intentar copiar una
+ * contraseña («Contraseña de Cocina copiada»).
+ */
+export function avisoDeCopia(
+  rol: UsuarioAprovisionado["rol"],
+  copiada: boolean,
+): string {
+  const deQuien = `de ${ETIQUETA_ROL[rol]}`;
+  return copiada
+    ? `Contraseña ${deQuien} copiada`
+    : `No se pudo copiar la contraseña ${deQuien}. Quedó seleccionada: copiala con Ctrl+C.`;
 }
 
 /** Resumen del alta para el usuario: qué se creó y qué ya existía. */
@@ -174,6 +307,228 @@ export function formatearFechaAlta(iso: string): string {
 
 export function totalPaginas(total: number, tamanoPagina: number): number {
   return Math.max(1, Math.ceil(total / tamanoPagina));
+}
+
+/**
+ * BL-405: nombre del plan para mostrar. El backend guarda el valor interno
+ * («BASICO»); a la persona se le muestra «Básico». Un plan que todavía no
+ * está en la lista se muestra legible igual («PRO_ANUAL» → «Pro anual»).
+ */
+const NOMBRE_PLAN: Record<string, string> = {
+  BASICO: "Básico",
+};
+
+export function etiquetaPlan(plan: string): string {
+  const conocido = NOMBRE_PLAN[plan.toUpperCase()];
+  if (conocido) return conocido;
+  const texto = plan.replaceAll("_", " ").trim().toLowerCase();
+  return texto ? texto.charAt(0).toUpperCase() + texto.slice(1) : plan;
+}
+
+/**
+ * BL-405: lo que se anuncia al lector de pantalla después de cada carga del
+ * listado, p. ej. «Página 2 de 3. 45 establecimientos».
+ *
+ * BL-406: con una búsqueda, dice qué se buscó («3 establecimientos coinciden
+ * con «uno»»).
+ *
+ * BL-410: también con el filtro por estado («2 establecimientos coinciden con
+ * el filtro «Suspendidos»»).
+ */
+export function resumirPagina(
+  datos: { total: number; tamanoPagina: number },
+  pagina: number,
+  busqueda = "",
+  estado?: FiltroEstado,
+): string {
+  const criterio = describirCriterio(busqueda, estado);
+  if (datos.total === 0) {
+    return criterio
+      ? `Ningún establecimiento coincide con ${criterio}`
+      : "Todavía no hay establecimientos";
+  }
+  const cantidad = `${datos.total} ${
+    datos.total === 1 ? "establecimiento" : "establecimientos"
+  }`;
+  const verbo = datos.total === 1 ? "coincide" : "coinciden";
+  const resultado = criterio
+    ? `${cantidad} ${verbo} con ${criterio}`
+    : cantidad;
+  return `Página ${pagina} de ${totalPaginas(datos.total, datos.tamanoPagina)}. ${resultado}`;
+}
+
+/** BL-406: largo máximo de la búsqueda (igual que MAX_LARGO_BUSQUEDA del backend). */
+export const MAX_LARGO_BUSQUEDA = 100;
+
+/**
+ * BL-406: ruta del listado con la página y la búsqueda. El texto va
+ * codificado (URLSearchParams) y sin espacios de más; si está vacío, no se
+ * manda `q`.
+ *
+ * BL-410: con el filtro por estado, se manda `estado`.
+ */
+export function rutaListado(
+  pagina: number,
+  busqueda = "",
+  estado?: FiltroEstado,
+): string {
+  const params = new URLSearchParams({ pagina: String(pagina) });
+  const texto = busqueda.trim();
+  if (texto) params.set("q", texto);
+  if (estado) params.set("estado", estado);
+  return `/plataforma/establecimientos?${params.toString()}`;
+}
+
+// ── BL-411: ficha del establecimiento ───────────────────────────────────────
+
+/**
+ * BL-411: ruta de la ficha. Es la misma en la pantalla y en la API
+ * (GET /plataforma/establecimientos/:tenantId). El id va codificado por si
+ * llega algo raro desde la URL; la API igual lo valida.
+ */
+export function rutaFicha(tenantId: string): string {
+  return `/plataforma/establecimientos/${encodeURIComponent(tenantId)}`;
+}
+
+/** BL-411: nombre del estado para personas. */
+export const ETIQUETA_ESTADO: Record<EstadoEstablecimiento, string> = {
+  ACTIVO: "Activo",
+  SUSPENDIDO: "Suspendido",
+  ALTA_INCOMPLETA: "Alta incompleta",
+};
+
+/** BL-411: «Ana Gómez»; si no tiene nombre cargado, el usuario. */
+export function nombreDeCuenta(cuenta: CuentaFicha): string {
+  const nombre = [cuenta.nombre, cuenta.apellido]
+    .filter((parte) => parte?.trim())
+    .join(" ")
+    .trim();
+  return nombre || cuenta.username || "Sin nombre";
+}
+
+/** BL-411: mensaje si la ficha no se pudo cargar. */
+export function mensajeErrorFicha(status: number, mensaje: string): string {
+  if (status === 404) {
+    return "No existe un establecimiento con ese id. Puede que se haya eliminado o que el enlace esté mal copiado.";
+  }
+  if (status === 400) {
+    return "El enlace de la ficha no es válido.";
+  }
+  if (status === 429) {
+    return "Hiciste muchas consultas seguidas. Esperá un minuto y volvé a intentar.";
+  }
+  if (status === 401) {
+    return "Tu sesión venció. Volvé a ingresar.";
+  }
+  if (status === 403) {
+    return "Tu usuario no tiene permiso para ver establecimientos.";
+  }
+  return mensaje;
+}
+
+// ── BL-412: corregir los datos del establecimiento ──────────────────────────
+
+/** BL-412: espacios de más afuera (como limpiarEspacios del backend). */
+function limpiar(texto: string): string {
+  return texto.trim().replaceAll(/\s+/g, " ");
+}
+
+/** BL-412: el formulario «Editar» con los datos actuales de la ficha. */
+export function formularioEdicionDesde(
+  ficha: FichaEstablecimiento,
+): FormularioEdicion {
+  return {
+    razonSocial: ficha.razonSocial,
+    rut: ficha.rut,
+    plan: ficha.plan,
+    restauranteNombre: ficha.restaurante?.nombre ?? "",
+    restauranteDireccion: ficha.restaurante?.direccion ?? "",
+  };
+}
+
+/**
+ * BL-412: planes que se ofrecen en el formulario. Si el establecimiento
+ * tiene un plan que no está en la lista, se agrega para no perderlo.
+ */
+export function opcionesPlan(
+  planActual: string,
+): { valor: string; etiqueta: string }[] {
+  const opciones = Object.keys(NOMBRE_PLAN).map((valor) => ({
+    valor,
+    etiqueta: etiquetaPlan(valor),
+  }));
+  if (planActual && !opciones.some((o) => o.valor === planActual)) {
+    opciones.push({ valor: planActual, etiqueta: etiquetaPlan(planActual) });
+  }
+  return opciones;
+}
+
+export type ErroresEdicion = Partial<Record<keyof FormularioEdicion, string>>;
+
+/**
+ * BL-412: errores por campo (vacío = válido). Mismas reglas que
+ * EditarEstablecimientoDto. Los datos del restaurante se validan solo si
+ * tiene restaurante (si no, el formulario no los muestra).
+ */
+export function validarEdicion(
+  f: FormularioEdicion,
+  tieneRestaurante: boolean,
+): ErroresEdicion {
+  const errores: ErroresEdicion = {};
+  const requerido = (campo: keyof FormularioEdicion, max: number) => {
+    const valor = limpiar(f[campo]);
+    if (!valor) errores[campo] = "Obligatorio";
+    else if (valor.length > max) errores[campo] = `Máximo ${max} caracteres`;
+  };
+  requerido("razonSocial", 200);
+  const errorRut = errorDeRut(f.rut);
+  if (errorRut) errores.rut = errorRut;
+  if (tieneRestaurante) {
+    requerido("restauranteNombre", 120);
+    requerido("restauranteDireccion", 200);
+  }
+  return errores;
+}
+
+/**
+ * BL-412: body del PATCH, solo con lo que cambió (mismo criterio que
+ * Usuarios, BL-366). El RUT se compara y se manda sin separadores.
+ */
+export function cambiosDeEdicion(
+  ficha: FichaEstablecimiento,
+  f: FormularioEdicion,
+): CambiosEstablecimiento {
+  const cambios: CambiosEstablecimiento = {};
+  const razonSocial = limpiar(f.razonSocial);
+  if (razonSocial !== ficha.razonSocial) cambios.razonSocial = razonSocial;
+  const rut = normalizarRut(f.rut);
+  if (rut !== ficha.rut) cambios.rut = rut;
+  if (f.plan !== ficha.plan) cambios.plan = f.plan;
+  if (ficha.restaurante) {
+    const nombre = limpiar(f.restauranteNombre);
+    if (nombre !== ficha.restaurante.nombre) cambios.restauranteNombre = nombre;
+    const direccion = limpiar(f.restauranteDireccion);
+    if (direccion !== ficha.restaurante.direccion) {
+      cambios.restauranteDireccion = direccion;
+    }
+  }
+  return cambios;
+}
+
+/** BL-412: mensaje si no se pudieron guardar los datos. */
+export function mensajeErrorEdicion(status: number, mensaje: string): string {
+  if (status === 429) {
+    return "Llegaste al límite de ediciones por hora. Probá de nuevo más tarde.";
+  }
+  if (status === 401) {
+    return "Tu sesión venció. Volvé a ingresar.";
+  }
+  if (status === 403) {
+    return "Tu usuario no tiene permiso para editar establecimientos.";
+  }
+  // 409 (RUT de otro establecimiento, alta sin restaurante) y 400 llegan
+  // con el mensaje del backend.
+  return mensaje;
 }
 
 /** Mensaje para un error de la API, con los casos que el usuario puede resolver. */

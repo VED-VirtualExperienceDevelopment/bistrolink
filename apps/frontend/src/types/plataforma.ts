@@ -1,6 +1,16 @@
 // BL-163 (HU-027): tipos de /plataforma/establecimientos. Calcan las
 // respuestas del backend (EstablecimientosService y AprovisionamientoService).
 
+/**
+ * BL-410: estado de cada establecimiento en el listado (lo calcula el
+ * backend: SUSPENDIDO primero; si no, ALTA_INCOMPLETA mientras el alta no
+ * terminó; si no, ACTIVO).
+ */
+export type EstadoEstablecimiento = "ACTIVO" | "SUSPENDIDO" | "ALTA_INCOMPLETA";
+
+/** BL-410: valores del filtro `estado` de GET /plataforma/establecimientos. */
+export type FiltroEstado = "ACTIVOS" | "SUSPENDIDOS" | "ALTA_INCOMPLETA";
+
 export interface EstablecimientoListado {
   tenantId: string;
   razonSocial: string;
@@ -10,8 +20,71 @@ export interface EstablecimientoListado {
   creadoPor: string | null;
   /** ISO 8601 (llega como string en el JSON). */
   creadoEl: string;
-  /** null si el alta quedó a medias (tenant sin restaurante). */
+  /** null si el tenant todavía no tiene restaurante. */
   restaurante: { id: string; nombre: string } | null;
+  /** BL-410 */
+  estado: EstadoEstablecimiento;
+}
+
+/**
+ * BL-411: una cuenta del establecimiento en la ficha (sin contraseñas,
+ * email ni ids). `ultimoIngreso`: ISO, null si no ingresó en los últimos 90
+ * días, o ausente si Keycloak no pudo dar el dato.
+ */
+export interface CuentaFicha {
+  username: string | null;
+  nombre: string | null;
+  apellido: string | null;
+  activo: boolean;
+  ultimoIngreso?: string | null;
+}
+
+/** BL-411: GET /plataforma/establecimientos/:tenantId (fechas en ISO). */
+export interface FichaEstablecimiento {
+  tenantId: string;
+  razonSocial: string;
+  rut: string;
+  plan: string;
+  creadoPor: string | null;
+  creadoEl: string;
+  estado: EstadoEstablecimiento;
+  altaCompletadaEn: string | null;
+  suspension: { desde: string | null; motivo: string | null } | null;
+  restaurante: {
+    id: string;
+    nombre: string;
+    direccion: string;
+    timezone: string;
+  } | null;
+  administradores: CuentaFicha[];
+  cocina: CuentaFicha[];
+  resumen: {
+    mesas: number;
+    itemsCarta: number;
+    pedidosRecientes: number;
+    diasPedidos: number;
+  } | null;
+}
+
+/**
+ * BL-412: body de PATCH /plataforma/establecimientos/:tenantId. Solo lo que
+ * cambió; el RUT sin separadores.
+ */
+export interface CambiosEstablecimiento {
+  razonSocial?: string;
+  rut?: string;
+  plan?: string;
+  restauranteNombre?: string;
+  restauranteDireccion?: string;
+}
+
+/** BL-412: lo que se escribe en el formulario «Editar» (todo string). */
+export interface FormularioEdicion {
+  razonSocial: string;
+  rut: string;
+  plan: string;
+  restauranteNombre: string;
+  restauranteDireccion: string;
 }
 
 export interface PaginaEstablecimientos {

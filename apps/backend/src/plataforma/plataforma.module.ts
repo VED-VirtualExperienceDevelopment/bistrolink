@@ -5,6 +5,9 @@ import { AuditLogService } from '../audit-log/audit-log.service';
 import { AprovisionamientoService } from './aprovisionamiento.service';
 import { UsuarioPlataformaService } from './usuario-plataforma.service';
 import { EstablecimientosService } from './establecimientos.service';
+import { FichaEstablecimientoService } from './ficha-establecimiento.service';
+import { DatosEstablecimientoService } from './datos-establecimiento.service';
+import { UsuariosService } from '../usuarios/usuarios.service';
 
 /**
  * BL-163 (HU-027): servicios de plataforma, fuera de cualquier tenant.
@@ -14,6 +17,11 @@ import { EstablecimientosService } from './establecimientos.service';
  * - UsuarioPlataformaService: alta de usuarios con rol PLATAFORMA (script
  *   crear-usuario-plataforma.ts).
  * - EstablecimientosService: listado para la pantalla de plataforma.
+ * - FichaEstablecimientoService (BL-411): ficha de un establecimiento. Usa
+ *   UsuariosService (sin su controller) para las cuentas y el último
+ *   ingreso, con la misma lógica que la pantalla de Usuarios.
+ * - DatosEstablecimientoService (BL-412): corregir los datos. Se exporta
+ *   para que HU-020 (BL-72) lo use desde la configuración del restaurante.
  *
  * Sin controllers a propósito: los scripts levantan solo este módulo
  * (NestFactory.createApplicationContext) y no tienen ThrottlerModule ni
@@ -28,6 +36,9 @@ import { EstablecimientosService } from './establecimientos.service';
     AprovisionamientoService,
     UsuarioPlataformaService,
     EstablecimientosService,
+    FichaEstablecimientoService,
+    DatosEstablecimientoService,
+    UsuariosService,
     KeycloakAdminService,
     AuditLogService,
   ],
@@ -35,6 +46,8 @@ import { EstablecimientosService } from './establecimientos.service';
     AprovisionamientoService,
     UsuarioPlataformaService,
     EstablecimientosService,
+    FichaEstablecimientoService,
+    DatosEstablecimientoService,
   ],
 })
 export class PlataformaModule {}
