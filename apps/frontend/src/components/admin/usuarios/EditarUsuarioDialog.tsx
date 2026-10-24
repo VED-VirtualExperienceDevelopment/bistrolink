@@ -8,6 +8,7 @@ import { CampoNombrePersona } from './CampoNombrePersona';
 import {
   cambiosDeUsuario,
   errorNombreEditado,
+  LARGO_MAXIMO_EMAIL,
   nombreParaMostrar,
   primerCampoConError,
 } from './Usuarios.utils';
@@ -125,6 +126,7 @@ export function EditarUsuarioDialog({
           <input
             id="editar-email"
             type="email"
+            maxLength={LARGO_MAXIMO_EMAIL}
             autoComplete="off"
             value={email}
             onChange={(e) => setEmail(e.target.value)}

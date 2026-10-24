@@ -97,11 +97,15 @@ export class UsuariosController {
     );
   }
 
+  // BL-356: todas las rutas /usuarios/:id validan el formato del id con
+  // ParseUUIDPipe (acepta cualquier UUID, incluidos los ids fijos del seed),
+  // igual que las de keycloakId: un id inválido es un 400 y no un 500.
+
   // Rol y, desde BL-366, nombre, apellido y correo (lo que venga en el body).
   @Patch(':id')
   actualizar(
     @Req() req: { user: AuthenticatedUser },
-    @Param('id') id: string,
+    @Param('id', new ParseUUIDPipe()) id: string,
     @Body() dto: UpdateUsuarioDto,
   ) {
     return this.usuariosService.actualizar(
@@ -116,7 +120,10 @@ export class UsuariosController {
   // un campo `activo` en PATCH /usuarios/:id) para que reactivar sea una
   // acción explícita, con su propio registro en la auditoría.
   @Patch(':id/activar')
-  reactivar(@Req() req: { user: AuthenticatedUser }, @Param('id') id: string) {
+  reactivar(
+    @Req() req: { user: AuthenticatedUser },
+    @Param('id', new ParseUUIDPipe()) id: string,
+  ) {
     return this.usuariosService.reactivar(req.user.tenantId, req.user.sub, id);
   }
 
@@ -128,7 +135,7 @@ export class UsuariosController {
   @Header('Cache-Control', 'no-store')
   restablecerContrasena(
     @Req() req: { user: AuthenticatedUser },
-    @Param('id') id: string,
+    @Param('id', new ParseUUIDPipe()) id: string,
   ) {
     return this.usuariosService.restablecerContrasena(
       req.user.tenantId,
@@ -143,7 +150,7 @@ export class UsuariosController {
   @HttpCode(HttpStatus.OK)
   cerrarSesiones(
     @Req() req: { user: AuthenticatedUser },
-    @Param('id') id: string,
+    @Param('id', new ParseUUIDPipe()) id: string,
   ) {
     return this.usuariosService.cerrarSesiones(
       req.user.tenantId,
@@ -155,12 +162,18 @@ export class UsuariosController {
   // BL-382: eliminar definitivamente (solo usuarios sin historial). Ruta
   // propia: DELETE /usuarios/:id sigue siendo desactivar.
   @Delete(':id/permanente')
-  eliminar(@Req() req: { user: AuthenticatedUser }, @Param('id') id: string) {
+  eliminar(
+    @Req() req: { user: AuthenticatedUser },
+    @Param('id', new ParseUUIDPipe()) id: string,
+  ) {
     return this.usuariosService.eliminar(req.user.tenantId, req.user.sub, id);
   }
 
   @Delete(':id')
-  desactivar(@Req() req: { user: AuthenticatedUser }, @Param('id') id: string) {
+  desactivar(
+    @Req() req: { user: AuthenticatedUser },
+    @Param('id', new ParseUUIDPipe()) id: string,
+  ) {
     return this.usuariosService.desactivar(req.user.tenantId, req.user.sub, id);
   }
 }
