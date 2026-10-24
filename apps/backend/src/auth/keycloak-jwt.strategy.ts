@@ -3,6 +3,10 @@ import { PassportStrategy } from '@nestjs/passport';
 import { Strategy, StrategyOptionsWithoutRequest } from 'passport-jwt';
 import { passportJwtSecret } from 'jwks-rsa';
 import { ROL_PLATAFORMA } from './rol-plataforma';
+import {
+  mensajeSuspendidoPara,
+  TenantEstadoService,
+} from '../tenant-estado/tenant-estado.service';
 
 export interface AuthenticatedUser {
   sub: string; // ID de usuario en Keycloak (mapea a Usuario.keycloak_id)
@@ -45,7 +49,7 @@ export function opcionesJwtKeycloak(): StrategyOptionsWithoutRequest {
 
 @Injectable()
 export class KeycloakJwtStrategy extends PassportStrategy(Strategy, 'jwt') {
-  constructor() {
+  constructor(private readonly tenantEstado: TenantEstadoService) {
     super(opcionesJwtKeycloak());
   }
 
@@ -66,6 +70,15 @@ export class KeycloakJwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       // nunca se asume alcance global.
       throw new UnauthorizedException('Token sin tenant_id asociado');
     }
+
+    // BL-413: con el establecimiento suspendido, ningún token de ese tenant
+    // sirve (Admin, Mozo, Cocina ni comensal): 403 con el código
+    // ESTABLECIMIENTO_SUSPENDIDO. Va acá porque todos los endpoints de
+    // tenant pasan por esta estrategia. El estado se consulta con caché.
+    await this.tenantEstado.asegurarActivo(
+      tenantId,
+      mensajeSuspendidoPara(roles),
+    );
 
     return {
       sub: payload.sub,

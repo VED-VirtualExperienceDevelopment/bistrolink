@@ -5,6 +5,10 @@ import {
 } from '@nestjs/common';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { QrMesaAccesoService } from '../qr-mesa/qr-mesa-acceso.service';
+import {
+  MENSAJE_SUSPENDIDO_COMENSAL,
+  TenantEstadoService,
+} from '../tenant-estado/tenant-estado.service';
 
 export interface TokenComensal {
   accessToken: string;
@@ -16,6 +20,7 @@ export class AuthComensalService {
   constructor(
     private readonly tenantPrisma: TenantPrismaService,
     private readonly qrMesaAcceso: QrMesaAccesoService,
+    private readonly tenantEstado: TenantEstadoService,
   ) {}
 
   private get keycloakUrl(): string {
@@ -49,6 +54,7 @@ export class AuthComensalService {
   /**
    * Token del comensal para el pedido para retirar (link web del local).
    * El restaurante tiene que existir en el tenant (RLS); si no, 404.
+   * BL-413: con el establecimiento suspendido, 403 (no se emite el token).
    */
   async emitirToken(
     tenantId: string,
@@ -65,16 +71,25 @@ export class AuthComensalService {
       throw new NotFoundException('Restaurante no encontrado');
     }
 
+    await this.tenantEstado.asegurarActivo(
+      tenantId,
+      MENSAJE_SUSPENDIDO_COMENSAL,
+    );
     return this.pedirTokenKeycloak(tenantId);
   }
 
   /**
    * HU-034 (BL-204): token del comensal en una mesa. El tenant sale del QR
    * (validado y vigente), nunca del cliente. QrMesaAccesoService responde
-   * 404 si el QR no es válido y 410 si fue reemplazado.
+   * 404 si el QR no es válido y 410 si fue reemplazado. BL-413: 403 si el
+   * establecimiento está suspendido.
    */
   async emitirTokenPorQr(qrToken: string): Promise<TokenComensal> {
     const mesa = await this.qrMesaAcceso.resolver(qrToken);
+    await this.tenantEstado.asegurarActivo(
+      mesa.tenantId,
+      MENSAJE_SUSPENDIDO_COMENSAL,
+    );
     return this.pedirTokenKeycloak(mesa.tenantId);
   }
 

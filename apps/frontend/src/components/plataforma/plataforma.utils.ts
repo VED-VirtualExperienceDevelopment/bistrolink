@@ -549,3 +549,90 @@ export function mensajeDeError(status: number, mensaje: string): string {
   }
   return mensaje;
 }
+
+// ── BL-413: suspender y reactivar ───────────────────────────────────────────
+
+/** BL-413: rutas de la API para cambiar el estado. */
+export function rutaSuspender(tenantId: string): string {
+  return `${rutaFicha(tenantId)}/suspender`;
+}
+
+export function rutaReactivar(tenantId: string): string {
+  return `${rutaFicha(tenantId)}/reactivar`;
+}
+
+/**
+ * BL-413: ruta y opciones del POST para suspender (con el motivo limpio) o
+ * reactivar (sin body).
+ */
+export function solicitudCambioEstado(
+  accion: "suspender" | "reactivar",
+  tenantId: string,
+  motivo: string,
+): { ruta: string; init: RequestInit } {
+  if (accion === "reactivar") {
+    return { ruta: rutaReactivar(tenantId), init: { method: "POST" } };
+  }
+  return {
+    ruta: rutaSuspender(tenantId),
+    init: {
+      method: "POST",
+      body: JSON.stringify({ motivo: motivoLimpio(motivo) }),
+    },
+  };
+}
+
+/** BL-413: largo del motivo, el mismo que SuspenderEstablecimientoDto. */
+export const LARGO_MINIMO_MOTIVO = 3;
+export const LARGO_MAXIMO_MOTIVO = 200;
+
+/** BL-413: el motivo tal como se manda (espacios de más afuera). */
+export function motivoLimpio(motivo: string): string {
+  return limpiar(motivo);
+}
+
+/** BL-413: error del motivo, o undefined si es válido. */
+export function errorDeMotivo(motivo: string): string | undefined {
+  const largo = motivoLimpio(motivo).length;
+  if (largo === 0) return "Escribí el motivo de la suspensión";
+  if (largo < LARGO_MINIMO_MOTIVO) {
+    return `Al menos ${LARGO_MINIMO_MOTIVO} caracteres`;
+  }
+  if (largo > LARGO_MAXIMO_MOTIVO) {
+    return `Máximo ${LARGO_MAXIMO_MOTIVO} caracteres`;
+  }
+  return undefined;
+}
+
+/**
+ * BL-413: aviso de pedidos abiertos antes de suspender. null si no hay (o si
+ * el establecimiento no tiene restaurante todavía).
+ */
+export function avisoPedidosAbiertos(
+  pedidosAbiertos: number | undefined,
+): string | null {
+  if (!pedidosAbiertos) return null;
+  if (pedidosAbiertos === 1) {
+    return "Hay 1 pedido abierto. No se cancela, pero el restaurante no lo va a poder mover hasta que se reactive.";
+  }
+  return `Hay ${pedidosAbiertos} pedidos abiertos. No se cancelan, pero el restaurante no los va a poder mover hasta que se reactive.`;
+}
+
+/** BL-413: mensaje si no se pudo suspender o reactivar. */
+export function mensajeErrorCambioEstado(
+  status: number,
+  mensaje: string,
+): string {
+  if (status === 429) {
+    return "Llegaste al límite de cambios de estado por hora. Probá de nuevo más tarde.";
+  }
+  if (status === 401) {
+    return "Tu sesión venció. Volvé a ingresar.";
+  }
+  if (status === 403) {
+    return "Tu usuario no tiene permiso para suspender ni reactivar establecimientos.";
+  }
+  // 409 (ya estaba suspendido o activo), 404 y 400 llegan con el mensaje del
+  // backend.
+  return mensaje;
+}

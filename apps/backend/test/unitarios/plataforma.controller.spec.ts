@@ -20,6 +20,7 @@ import { AprovisionamientoService } from '../../src/plataforma/aprovisionamiento
 import { EstablecimientosService } from '../../src/plataforma/establecimientos.service';
 import { FichaEstablecimientoService } from '../../src/plataforma/ficha-establecimiento.service';
 import { DatosEstablecimientoService } from '../../src/plataforma/datos-establecimiento.service';
+import { SuspensionEstablecimientoService } from '../../src/plataforma/suspension-establecimiento.service';
 
 /**
  * BL-163 (HU-027), entrega 2: POST /plataforma/establecimientos.
@@ -60,6 +61,7 @@ describe('PlataformaController (BL-163)', () => {
   const establecimientos = { listar: jest.fn() };
   const ficha = { obtener: jest.fn() };
   const datos = { actualizar: jest.fn() };
+  const suspension = { suspender: jest.fn(), reactivar: jest.fn() };
 
   beforeEach(async () => {
     establecimientos.listar.mockReset().mockResolvedValue({
@@ -69,6 +71,8 @@ describe('PlataformaController (BL-163)', () => {
       items: [],
     });
     datos.actualizar.mockReset().mockResolvedValue(['razonSocial']);
+    suspension.suspender.mockReset().mockResolvedValue(undefined);
+    suspension.reactivar.mockReset().mockResolvedValue(undefined);
     ficha.obtener
       .mockReset()
       .mockResolvedValue({ tenantId: TENANT_ID, razonSocial: 'Uno SRL' });
@@ -88,6 +92,7 @@ describe('PlataformaController (BL-163)', () => {
         { provide: EstablecimientosService, useValue: establecimientos },
         { provide: FichaEstablecimientoService, useValue: ficha },
         { provide: DatosEstablecimientoService, useValue: datos },
+        { provide: SuspensionEstablecimientoService, useValue: suspension },
       ],
     })
       .overrideGuard(AuthGuard('jwt-plataforma'))
@@ -310,6 +315,84 @@ describe('PlataformaController (BL-163)', () => {
   it('BL-412: rechaza con 400 un id que no es UUID', async () => {
     await editar({ razonSocial: 'Uno' }, 'no-es-un-uuid').expect(400);
     expect(datos.actualizar).not.toHaveBeenCalled();
+  });
+
+  const suspender = (body: object, id = TENANT_ID) =>
+    request(app.getHttpServer())
+      .post(`/plataforma/establecimientos/${id}/suspender`)
+      .set('x-test-sub', 'kc-plataforma-1')
+      .send(body);
+
+  const reactivar = (id = TENANT_ID) =>
+    request(app.getHttpServer())
+      .post(`/plataforma/establecimientos/${id}/reactivar`)
+      .set('x-test-sub', 'kc-plataforma-1');
+
+  it('[TC-U-125] BL-413: suspende con el motivo sin espacios de más y el sub del token, y devuelve la ficha (200)', async () => {
+    const res = await suspender({ motivo: '  Falta   de pago  ' }).expect(200);
+
+    expect(suspension.suspender).toHaveBeenCalledWith(
+      TENANT_ID,
+      'Falta de pago',
+      { id: 'kc-plataforma-1' },
+    );
+    expect(ficha.obtener).toHaveBeenCalledWith(TENANT_ID);
+    expect(res.body).toEqual({ tenantId: TENANT_ID, razonSocial: 'Uno SRL' });
+  });
+
+  it.each([
+    ['sin motivo', {}],
+    ['motivo vacío', { motivo: '   ' }],
+    ['motivo de 2 caracteres', { motivo: 'ab' }],
+    ['motivo de 201 caracteres', { motivo: 'a'.repeat(201) }],
+    ['motivo que no es texto', { motivo: 123 }],
+    ['campos de más', { motivo: 'Falta de pago', estado: 'ACTIVO' }],
+  ])(
+    '[TC-U-126] BL-413: rechaza con 400 (%s) sin suspender',
+    async (_caso, body) => {
+      await suspender(body).expect(400);
+      expect(suspension.suspender).not.toHaveBeenCalled();
+    },
+  );
+
+  it('BL-413: acepta un motivo de 200 caracteres', async () => {
+    await suspender({ motivo: 'a'.repeat(200) }).expect(200);
+  });
+
+  it('BL-413: suspender un establecimiento ya suspendido da 409', async () => {
+    suspension.suspender.mockRejectedValue(
+      new ConflictException('El establecimiento ya está suspendido'),
+    );
+    await suspender({ motivo: 'Falta de pago' }).expect(409);
+    expect(ficha.obtener).not.toHaveBeenCalled();
+  });
+
+  it('[TC-U-127] BL-413: reactiva con el sub del token y devuelve la ficha (200)', async () => {
+    const res = await reactivar().expect(200);
+
+    expect(suspension.reactivar).toHaveBeenCalledWith(TENANT_ID, {
+      id: 'kc-plataforma-1',
+    });
+    expect(res.body).toEqual({ tenantId: TENANT_ID, razonSocial: 'Uno SRL' });
+  });
+
+  it('BL-413: reactivar uno que no está suspendido da 409 y uno inexistente 404', async () => {
+    suspension.reactivar.mockRejectedValueOnce(
+      new ConflictException('El establecimiento no está suspendido'),
+    );
+    await reactivar().expect(409);
+
+    suspension.reactivar.mockRejectedValueOnce(
+      new NotFoundException('No existe un establecimiento con ese id'),
+    );
+    await reactivar().expect(404);
+  });
+
+  it('BL-413: rechaza con 400 un id que no es UUID al suspender y al reactivar', async () => {
+    await suspender({ motivo: 'Falta de pago' }, 'no-es-un-uuid').expect(400);
+    await reactivar('no-es-un-uuid').expect(400);
+    expect(suspension.suspender).not.toHaveBeenCalled();
+    expect(suspension.reactivar).not.toHaveBeenCalled();
   });
 
   it('el listado no consume el límite de altas', async () => {

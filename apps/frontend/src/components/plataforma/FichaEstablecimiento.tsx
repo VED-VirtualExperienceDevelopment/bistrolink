@@ -167,10 +167,42 @@ function Indicador({
   );
 }
 
+const CLASE_ACCION =
+  "flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-lg border border-outline-variant px-4 text-body-md font-medium hover:bg-surface-container-high focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary";
+
+/** Botón de acción de la ficha, con ícono y texto. */
+function BotonAccion({
+  icono,
+  texto,
+  onClick,
+  peligro = false,
+}: Readonly<{
+  icono: string;
+  texto: string;
+  onClick: () => void;
+  peligro?: boolean;
+}>) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`${CLASE_ACCION} ${peligro ? "text-error" : "text-primary"}`}
+    >
+      <span
+        className="material-symbols-outlined text-[20px]"
+        aria-hidden="true"
+      >
+        {icono}
+      </span>
+      <span>{texto}</span>
+    </button>
+  );
+}
+
 /**
  * BL-411: ficha de un establecimiento para el rol PLATAFORMA. Las acciones
- * llegan de a una: «Editar datos» (BL-412); suspender (BL-413) y recuperar el
- * acceso (BL-414) vienen después.
+ * llegan de a una: «Editar datos» (BL-412), «Suspender» o «Reactivar»
+ * (BL-413, según el estado); recuperar el acceso (BL-414) viene después.
  *
  * Una columna en el celular y la tablet; dos desde `lg:`. Cada bloque es una
  * sección con su encabezado (h2) para navegar con el lector de pantalla, y
@@ -179,7 +211,15 @@ function Indicador({
 export function FichaEstablecimiento({
   ficha,
   onEditar,
-}: Readonly<{ ficha: Ficha; onEditar?: () => void }>) {
+  onSuspender,
+  onReactivar,
+}: Readonly<{
+  ficha: Ficha;
+  onEditar?: () => void;
+  onSuspender?: () => void;
+  onReactivar?: () => void;
+}>) {
+  const suspendido = ficha.estado === "SUSPENDIDO";
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
@@ -192,25 +232,31 @@ export function FichaEstablecimiento({
             <EstadoBadge estado={ficha.estado} />
           </div>
         </div>
-        {/* BL-412: corregir los datos del establecimiento. */}
-        {onEditar && (
-          <button
-            type="button"
-            onClick={onEditar}
-            className="flex min-h-12 shrink-0 items-center justify-center gap-2 self-start rounded-lg border border-outline-variant px-4 text-body-md font-medium text-primary hover:bg-surface-container-high focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-          >
-            <span
-              className="material-symbols-outlined text-[20px]"
-              aria-hidden="true"
-            >
-              edit
-            </span>
-            <span>Editar datos</span>
-          </button>
-        )}
+        {/* BL-412: corregir los datos. BL-413: suspender o reactivar, según
+            el estado. En el celular van una debajo de la otra. */}
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap md:justify-end">
+          {onEditar && (
+            <BotonAccion icono="edit" texto="Editar datos" onClick={onEditar} />
+          )}
+          {suspendido && onReactivar && (
+            <BotonAccion
+              icono="play_circle"
+              texto="Reactivar"
+              onClick={onReactivar}
+            />
+          )}
+          {!suspendido && onSuspender && (
+            <BotonAccion
+              icono="block"
+              texto="Suspender"
+              onClick={onSuspender}
+              peligro
+            />
+          )}
+        </div>
       </div>
 
-      {ficha.estado === "SUSPENDIDO" && ficha.suspension && (
+      {suspendido && ficha.suspension && (
         <div className="rounded-xl bg-error-container px-4 py-3 text-body-md text-on-error-container">
           <p className="font-semibold">
             Suspendido
@@ -302,7 +348,7 @@ export function FichaEstablecimiento({
 
         <Seccion id="ficha-resumen" titulo="Resumen">
           {ficha.resumen ? (
-            <dl className="grid gap-3 sm:grid-cols-3">
+            <dl className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <Indicador valor={ficha.resumen.mesas} rotulo="Mesas del salón" />
               <Indicador
                 valor={ficha.resumen.itemsCarta}
@@ -311,6 +357,10 @@ export function FichaEstablecimiento({
               <Indicador
                 valor={ficha.resumen.pedidosRecientes}
                 rotulo={`Pedidos (últimos ${ficha.resumen.diasPedidos} días)`}
+              />
+              <Indicador
+                valor={ficha.resumen.pedidosAbiertos}
+                rotulo="Pedidos abiertos"
               />
             </dl>
           ) : (

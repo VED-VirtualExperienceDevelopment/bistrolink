@@ -2,6 +2,11 @@ import { cache } from 'react';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import MenuPublico from '@/components/MenuPublico';
+import AvisoMesaQr from '@/components/AvisoMesaQr';
+import {
+  esEstablecimientoSuspendido,
+  MENSAJE_RESTAURANTE_NO_DISPONIBLE,
+} from '@/components/menu-digital.utils';
 import type { MenuPublicoResponse } from '@/types/menu';
 
 interface PageProps {
@@ -10,6 +15,9 @@ interface PageProps {
     readonly restauranteId: string;
   }>;
 }
+
+/** BL-413: el establecimiento está suspendido (403 con su código). */
+const NO_DISPONIBLE = 'no-disponible' as const;
 
 /**
  * BL-224: `cache` hace que generateMetadata y la página compartan una sola
@@ -23,12 +31,13 @@ interface PageProps {
  * - Cualquier otro error (500, API caída, error de red) se lanza, para que
  *   se loguee y se muestre la página de error en vez de un 404 engañoso.
  *   Mismo criterio que getMenu() de HU-001 en m/[tenantId]/[mesaId]/page.tsx.
+ * - BL-413: 403 con el código ESTABLECIMIENTO_SUSPENDIDO → NO_DISPONIBLE.
  */
 const obtenerMenuPublico = cache(
   async (
     tenantId: string,
     restauranteId: string,
-  ): Promise<MenuPublicoResponse | null> => {
+  ): Promise<MenuPublicoResponse | typeof NO_DISPONIBLE | null> => {
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
     const response = await fetch(
       `${apiUrl}/menu/tenant/${tenantId}/restaurante/${restauranteId}`,
@@ -36,6 +45,15 @@ const obtenerMenuPublico = cache(
     );
     if (response.status === 404 || response.status === 400) {
       return null;
+    }
+    if (
+      response.status === 403 &&
+      esEstablecimientoSuspendido(
+        response.status,
+        await response.json().catch(() => null),
+      )
+    ) {
+      return NO_DISPONIBLE;
     }
     if (!response.ok) {
       throw new Error(`Error al cargar el menú público: ${response.status}`);
@@ -52,7 +70,8 @@ export async function generateMetadata({
   const { tenantId, restauranteId } = await params;
   try {
     const data = await obtenerMenuPublico(tenantId, restauranteId);
-    return { title: data?.restaurante.nombre ?? 'Menú' };
+    if (!data || data === NO_DISPONIBLE) return { title: 'Menú' };
+    return { title: data.restaurante.nombre };
   } catch {
     return { title: 'Menú' };
   }
@@ -73,7 +92,7 @@ export async function generateMetadata({
 export default async function MenuPublicoPage({ params }: PageProps) {
   const { tenantId, restauranteId } = await params;
 
-  let data: MenuPublicoResponse | null;
+  let data: MenuPublicoResponse | typeof NO_DISPONIBLE | null;
   try {
     data = await obtenerMenuPublico(tenantId, restauranteId);
   } catch (error) {
@@ -83,6 +102,16 @@ export default async function MenuPublicoPage({ params }: PageProps) {
 
   if (!data) {
     notFound();
+  }
+
+  if (data === NO_DISPONIBLE) {
+    return (
+      <AvisoMesaQr
+        icono="🕒"
+        titulo={MENSAJE_RESTAURANTE_NO_DISPONIBLE}
+        detalle="Probá de nuevo más tarde."
+      />
+    );
   }
 
   return (

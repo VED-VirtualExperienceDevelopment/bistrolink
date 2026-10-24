@@ -8,6 +8,8 @@ import { EstablecimientosService } from './establecimientos.service';
 import { FichaEstablecimientoService } from './ficha-establecimiento.service';
 import { DatosEstablecimientoService } from './datos-establecimiento.service';
 import { UsuariosService } from '../usuarios/usuarios.service';
+import { TenantEstadoModule } from '../tenant-estado/tenant-estado.module';
+import { SuspensionEstablecimientoService } from './suspension-establecimiento.service';
 
 /**
  * BL-163 (HU-027): servicios de plataforma, fuera de cualquier tenant.
@@ -22,6 +24,8 @@ import { UsuariosService } from '../usuarios/usuarios.service';
  *   ingreso, con la misma lógica que la pantalla de Usuarios.
  * - DatosEstablecimientoService (BL-412): corregir los datos. Se exporta
  *   para que HU-020 (BL-72) lo use desde la configuración del restaurante.
+ * - SuspensionEstablecimientoService (BL-413): suspender y reactivar. Usa
+ *   TenantEstadoModule para invalidar la caché del estado.
  *
  * Sin controllers a propósito: los scripts levantan solo este módulo
  * (NestFactory.createApplicationContext) y no tienen ThrottlerModule ni
@@ -31,13 +35,14 @@ import { UsuariosService } from '../usuarios/usuarios.service';
  * UsuariosModule (no tienen módulo propio).
  */
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, TenantEstadoModule],
   providers: [
     AprovisionamientoService,
     UsuarioPlataformaService,
     EstablecimientosService,
     FichaEstablecimientoService,
     DatosEstablecimientoService,
+    SuspensionEstablecimientoService,
     UsuariosService,
     KeycloakAdminService,
     AuditLogService,
@@ -48,6 +53,7 @@ import { UsuariosService } from '../usuarios/usuarios.service';
     EstablecimientosService,
     FichaEstablecimientoService,
     DatosEstablecimientoService,
+    SuspensionEstablecimientoService,
   ],
 })
 export class PlataformaModule {}
