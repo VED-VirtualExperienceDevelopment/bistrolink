@@ -6,6 +6,7 @@ import request = require('supertest');
 import { io, Socket } from 'socket.io-client';
 import { AppModule } from '../../src/app.module';
 import { asegurarClaveQr, tokenQrDeMesa } from './support/qr-mesa';
+import { conPagoFalso, pagarPedidoDeMesa } from './support/pago-falso';
 
 // ── Config de Keycloak para pedir tokens reales (password grant) ───────────
 // Mismo patron que tenant-isolation.e2e-spec.ts / usuarios.e2e-spec.ts.
@@ -83,9 +84,10 @@ describe('WebSocket KDS (HU-003 + HU-004) - emision de pedido:nuevo', () => {
 
   beforeAll(async () => {
     asegurarClaveQr();
-    const moduleRef: TestingModule = await Test.createTestingModule({
-      imports: [AppModule],
-    }).compile();
+    // BL-311: pasarela falsa (ver support/pago-falso.ts).
+    const moduleRef: TestingModule = await conPagoFalso(
+      Test.createTestingModule({ imports: [AppModule] }),
+    ).compile();
     app = moduleRef.createNestApplication();
     await app.init();
     await app.listen(0);
@@ -107,7 +109,7 @@ describe('WebSocket KDS (HU-003 + HU-004) - emision de pedido:nuevo', () => {
   }, 30000);
 
   itConMozo(
-    '[TC-I-024] KDS: emite pedido nuevo al KDS en menos de 500ms tras confirmar',
+    '[TC-I-024] KDS: emite pedido nuevo al KDS en menos de 500ms tras confirmar el pago',
     async () => {
       const tokenMozo = await getToken(
         MOZO_USER as string,
@@ -129,7 +131,10 @@ describe('WebSocket KDS (HU-003 + HU-004) - emision de pedido:nuevo', () => {
           idempotencyKey: `warmup-${Date.now()}`,
           items: [{ itemCartaId: ITEM_ID, cantidad: 1 }],
         })
-        .expect(201);
+        .expect(201)
+        .then((res) =>
+          pagarPedidoDeMesa(app, res.body.id, tokenComensalDemo, qrToken),
+        );
 
       await new Promise<void>((resolve, reject) => {
         // El socket que OBSERVA pedido:nuevo es de MOZO (personal de
@@ -145,12 +150,15 @@ describe('WebSocket KDS (HU-003 + HU-004) - emision de pedido:nuevo', () => {
         // El snapshot inicial confirma que la conexion ya quedo autenticada
         // y unida a la sala del tenant — recien ahi tiene sentido esperar
         // el pedido:nuevo, igual que hace un cliente real.
+        // BL-311 (prepago): pedido:nuevo sale cuando se aprueba el pago, no
+        // al crear el pedido. Se cronometra desde el pago.
+        let pedidoId: string | undefined;
         socket.on('pedidos:snapshot', () => {
           socket.on('pedido:nuevo', (pedido: { id: string }) => {
+            if (!pedidoId || pedido.id !== pedidoId) return;
             try {
               const duracionMs = Date.now() - inicio;
               expect(duracionMs).toBeLessThan(500);
-              expect(pedido.id).toBeDefined();
               socket.disconnect();
               resolve();
             } catch (err) {
@@ -161,8 +169,7 @@ describe('WebSocket KDS (HU-003 + HU-004) - emision de pedido:nuevo', () => {
 
           setTimeout(async () => {
             try {
-              inicio = Date.now();
-              await request(app.getHttpServer())
+              const pedidoRes = await request(app.getHttpServer())
                 .post('/pedidos')
                 .set('Authorization', `Bearer ${tokenComensalDemo}`)
                 .set('X-Mesa-Token', qrToken)
@@ -172,6 +179,14 @@ describe('WebSocket KDS (HU-003 + HU-004) - emision de pedido:nuevo', () => {
                   items: [{ itemCartaId: ITEM_ID, cantidad: 1 }],
                 })
                 .expect(201);
+              pedidoId = pedidoRes.body.id as string;
+              inicio = Date.now();
+              await pagarPedidoDeMesa(
+                app,
+                pedidoId,
+                tokenComensalDemo,
+                qrToken,
+              );
             } catch (err) {
               reject(err);
             }
@@ -201,7 +216,7 @@ describe('WebSocket KDS (HU-003 + HU-004) - emision de pedido:nuevo', () => {
 
             setTimeout(async () => {
               try {
-                await request(app.getHttpServer())
+                const pedidoRes = await request(app.getHttpServer())
                   .post('/pedidos')
                   .set('Authorization', `Bearer ${tokenComensalDemo}`)
                   .set('X-Mesa-Token', qrToken)
@@ -211,6 +226,14 @@ describe('WebSocket KDS (HU-003 + HU-004) - emision de pedido:nuevo', () => {
                     items: [{ itemCartaId: ITEM_ID, cantidad: 1 }],
                   })
                   .expect(201);
+                // BL-311: sin pagar no se emite nada a nadie; se paga para
+                // que el aislamiento se pruebe con un pedido:nuevo real.
+                await pagarPedidoDeMesa(
+                  app,
+                  pedidoRes.body.id as string,
+                  tokenComensalDemo,
+                  qrToken,
+                );
 
                 setTimeout(() => {
                   expect(recibioAlgo).toBe(false);

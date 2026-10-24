@@ -6,6 +6,7 @@ import request = require('supertest');
 import { io, Socket } from 'socket.io-client';
 import { AppModule } from '../../src/app.module';
 import { asegurarClaveQr, tokenQrDeMesa } from './support/qr-mesa';
+import { conPagoFalso, pagarPedidoDeMesa } from './support/pago-falso';
 
 const KEYCLOAK_URL = process.env.KEYCLOAK_URL ?? 'http://localhost:8080';
 const REALM = process.env.KEYCLOAK_REALM ?? 'bistrolink';
@@ -60,9 +61,10 @@ describe('WebSocket KDS (HU-018/BL-65) - reconexion no pierde notificaciones', (
 
   beforeAll(async () => {
     asegurarClaveQr();
-    const moduleRef: TestingModule = await Test.createTestingModule({
-      imports: [AppModule],
-    }).compile();
+    // BL-311: pasarela falsa (ver support/pago-falso.ts).
+    const moduleRef: TestingModule = await conPagoFalso(
+      Test.createTestingModule({ imports: [AppModule] }),
+    ).compile();
     app = moduleRef.createNestApplication();
     await app.init();
     await app.listen(0);
@@ -101,6 +103,9 @@ describe('WebSocket KDS (HU-018/BL-65) - reconexion no pierde notificaciones', (
         })
         .expect(201);
       pedidoId = pedidoRes.body.id;
+
+      // BL-311 (prepago): el pedido llega al KDS recién con el pago aprobado.
+      await pagarPedidoDeMesa(app, pedidoId, tokenComensal, qrToken);
 
       // Llevar el pedido hasta LISTO_PARA_ENTREGAR con un primer socket,
       // que despues se desconecta (simulando al mozo perdiendo conexion).
