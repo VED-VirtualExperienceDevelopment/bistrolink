@@ -6,12 +6,14 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { Logger } from '@nestjs/common';
+import { origenesPermitidos } from '../seguridad-http';
 
 // Gateway WebSocket para emitir cambios en tiempo real del menú
 // a todos los clientes conectados del mismo tenant.
 @WebSocketGateway({
+  // BL-426: la misma lista de orígenes que la API (seguridad-http.ts).
   cors: {
-    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    origin: origenesPermitidos(),
     credentials: true,
   },
   namespace: '/menu',
