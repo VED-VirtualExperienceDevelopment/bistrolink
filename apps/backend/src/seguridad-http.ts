@@ -13,9 +13,15 @@ import type { NextFunction, Request, Response } from 'express';
 /** Frontend local (`npm run dev`), si no hay FRONTEND_URL. */
 const FRONTEND_LOCAL = 'http://localhost:3000';
 
-/** Sin espacios ni barra final: el navegador manda el Origin sin barra. */
+/**
+ * Sin espacios ni barra final: el navegador manda el Origin sin barra. Se
+ * recorre con un bucle y no con una expresión regular (/\/+$/), que
+ * SonarCloud marca por backtracking superlineal (S5852).
+ */
 function normalizarOrigen(url: string): string {
-  return url.trim().replace(/\/+$/, '');
+  let origen = url.trim();
+  while (origen.endsWith('/')) origen = origen.slice(0, -1);
+  return origen;
 }
 
 /**
@@ -56,7 +62,7 @@ export function decidirRedireccionHttps(
   rutaOriginal: string,
   env: NodeJS.ProcessEnv = process.env,
 ): DecisionHttps {
-  const protocolo = proto?.split(',')[0]?.trim().toLowerCase();
+  const protocolo = proto?.split(',')[0].trim().toLowerCase();
   if (!protocolo || protocolo === 'https') return { tipo: 'seguir' };
 
   const dominio = (env.API_PUBLIC_HOST || env.RAILWAY_PUBLIC_DOMAIN)
