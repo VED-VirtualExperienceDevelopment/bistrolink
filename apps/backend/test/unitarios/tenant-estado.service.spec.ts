@@ -98,4 +98,34 @@ describe('TenantEstadoService (BL-413)', () => {
     expect(mensajeSuspendidoPara(['ADMIN'])).toBe(MENSAJE_SUSPENDIDO_PERSONAL);
     expect(mensajeSuspendidoPara([])).toBe(MENSAJE_SUSPENDIDO_PERSONAL);
   });
+
+  it('sin reemplazar el reloj usa la hora actual: guarda en caché y vence', async () => {
+    jest.useFakeTimers();
+    try {
+      const real = new TenantEstadoService();
+      const buscar = jest.fn().mockResolvedValue({ estado: 'ACTIVO' });
+      (real as unknown as { prisma: unknown }).prisma = {
+        tenant: { findUnique: buscar },
+      };
+
+      await real.estaSuspendido(TENANT_ID);
+      await real.estaSuspendido(TENANT_ID);
+      expect(buscar).toHaveBeenCalledTimes(1);
+
+      jest.advanceTimersByTime(TTL_CACHE_ESTADO_MS);
+      await real.estaSuspendido(TENANT_ID);
+      expect(buscar).toHaveBeenCalledTimes(2);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('al cerrar la aplicación desconecta su cliente de Prisma', async () => {
+    const $disconnect = jest.fn().mockResolvedValue(undefined);
+    (service as unknown as { prisma: unknown }).prisma = { $disconnect };
+
+    await service.onModuleDestroy();
+
+    expect($disconnect).toHaveBeenCalledTimes(1);
+  });
 });

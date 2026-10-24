@@ -561,6 +561,27 @@ export function rutaReactivar(tenantId: string): string {
   return `${rutaFicha(tenantId)}/reactivar`;
 }
 
+/**
+ * BL-413: ruta y opciones del POST para suspender (con el motivo limpio) o
+ * reactivar (sin body).
+ */
+export function solicitudCambioEstado(
+  accion: "suspender" | "reactivar",
+  tenantId: string,
+  motivo: string,
+): { ruta: string; init: RequestInit } {
+  if (accion === "reactivar") {
+    return { ruta: rutaReactivar(tenantId), init: { method: "POST" } };
+  }
+  return {
+    ruta: rutaSuspender(tenantId),
+    init: {
+      method: "POST",
+      body: JSON.stringify({ motivo: motivoLimpio(motivo) }),
+    },
+  };
+}
+
 /** BL-413: largo del motivo, el mismo que SuspenderEstablecimientoDto. */
 export const LARGO_MINIMO_MOTIVO = 3;
 export const LARGO_MAXIMO_MOTIVO = 200;

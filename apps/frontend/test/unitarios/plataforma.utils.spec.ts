@@ -8,6 +8,7 @@ import {
   motivoLimpio,
   rutaReactivar,
   rutaSuspender,
+  solicitudCambioEstado,
   errorDeRut,
   normalizarRut,
   construirPedidoAlta,
@@ -718,6 +719,22 @@ describe("BL-413: suspender y reactivar", () => {
     expect(rutaSuspender("a/b")).toBe(
       "/plataforma/establecimientos/a%2Fb/suspender",
     );
+  });
+
+  it("suspender manda el motivo sin espacios de más; reactivar, un POST sin body", () => {
+    expect(
+      solicitudCambioEstado("suspender", ID, "  Falta   de pago "),
+    ).toEqual({
+      ruta: `/plataforma/establecimientos/${ID}/suspender`,
+      init: {
+        method: "POST",
+        body: JSON.stringify({ motivo: "Falta de pago" }),
+      },
+    });
+    expect(solicitudCambioEstado("reactivar", ID, "lo que sea")).toEqual({
+      ruta: `/plataforma/establecimientos/${ID}/reactivar`,
+      init: { method: "POST" },
+    });
   });
 
   it("[TC-U-140] el motivo es obligatorio, de 3 a 200 caracteres sin contar espacios de más", () => {

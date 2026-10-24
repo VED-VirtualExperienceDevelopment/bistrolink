@@ -34,7 +34,7 @@ const MENSAJE_NO_EXISTE = 'No existe un establecimiento con ese id';
  *   están (se cuentan para la auditoría); los usuarios no se desactivan,
  *   así reactivar no tiene que recordar quién estaba desactivado antes.
  * - Invalida la caché de TenantEstadoService: desde el próximo request,
- *   todo token del tenant recibe 403 (estrategia JWT, WebSocket, token del
+ *   cualquier token del tenant recibe 403 (estrategia JWT, WebSocket, token del
  *   comensal y menú público).
  * - Cierra las sesiones de Keycloak de todos los usuarios del tenant
  *   (también Cocina y el comensal técnico), para que no puedan renovar el
@@ -153,8 +153,10 @@ export class SuspensionEstablecimientoService {
         .filter((u) => u.attributes?.tenant_id?.includes(tenantId))
         .map((u) => u.id);
     } catch (error) {
+      const detalle =
+        error instanceof Error ? error.message : 'error desconocido';
       this.logger.warn(
-        `Establecimiento ${tenantId} suspendido, pero no se pudieron listar sus usuarios en Keycloak para cerrar las sesiones: ${error instanceof Error ? error.message : String(error)}`,
+        `Establecimiento ${tenantId} suspendido, pero no se pudieron listar sus usuarios en Keycloak para cerrar las sesiones: ${detalle}`,
       );
       return { cerradas: 0, sinCerrar: null };
     }

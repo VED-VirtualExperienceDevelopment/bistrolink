@@ -150,7 +150,7 @@ export class PlataformaController {
   /**
    * BL-413: suspender el establecimiento, con un motivo obligatorio. 404 si
    * no existe, 409 si ya estaba suspendido. No borra datos ni cancela
-   * pedidos: desde ahí todo token del tenant recibe 403 y se cierran sus
+   * pedidos: desde ahí cualquier token del tenant recibe 403 y se cierran sus
    * sesiones en Keycloak. Devuelve la ficha actualizada.
    */
   @Post(':tenantId/suspender')

@@ -9,9 +9,7 @@ import {
   errorDeMotivo,
   LARGO_MAXIMO_MOTIVO,
   mensajeErrorCambioEstado,
-  motivoLimpio,
-  rutaReactivar,
-  rutaSuspender,
+  solicitudCambioEstado,
 } from "./plataforma.utils";
 
 export type AccionEstado = "suspender" | "reactivar";
@@ -28,8 +26,100 @@ interface Props {
 
 const ID_MOTIVO = "suspender-motivo";
 
-const CLASE_BOTON_SECUNDARIO =
-  "min-h-12 rounded-lg px-4 text-body-md text-on-surface-variant hover:bg-surface-container";
+/** Textos y estilo del botón de cada acción. */
+const TEXTOS: Record<
+  AccionEstado,
+  { titulo: string; boton: string; enviando: string; claseBoton: string }
+> = {
+  suspender: {
+    titulo: "¿Suspender",
+    boton: "Suspender establecimiento",
+    enviando: "Suspendiendo…",
+    claseBoton: "bg-error text-on-error",
+  },
+  reactivar: {
+    titulo: "¿Reactivar",
+    boton: "Reactivar",
+    enviando: "Reactivando…",
+    claseBoton: "bg-primary text-on-primary",
+  },
+};
+
+/**
+ * BL-413: qué pasa al suspender, el aviso de pedidos abiertos y el campo
+ * del motivo (con su ayuda y su error, enlazados con aria-describedby).
+ */
+function CamposSuspension({
+  motivo,
+  onMotivo,
+  errorMotivo,
+  pedidosAbiertos,
+}: Readonly<{
+  motivo: string;
+  onMotivo: (valor: string) => void;
+  errorMotivo?: string;
+  pedidosAbiertos?: number;
+}>) {
+  const aviso = avisoPedidosAbiertos(pedidosAbiertos);
+  const descripcion = errorMotivo
+    ? `${ID_MOTIVO}-ayuda ${ID_MOTIVO}-error`
+    : `${ID_MOTIVO}-ayuda`;
+
+  return (
+    <>
+      <p>Mientras esté suspendido:</p>
+      <ul className="list-disc space-y-1 pl-5">
+        <li>
+          El Administrador, los mozos y la cocina no pueden operar, y se cierran
+          sus sesiones abiertas.
+        </li>
+        <li>
+          El menú y el QR de las mesas muestran «Este restaurante no está
+          disponible por el momento» y no se pueden hacer pedidos.
+        </li>
+        <li>No se borra ningún dato: al reactivarlo queda como estaba.</li>
+      </ul>
+
+      {aviso && (
+        <p className="rounded-lg bg-tertiary-fixed px-3 py-2 text-on-tertiary-fixed">
+          {aviso}
+        </p>
+      )}
+
+      <div>
+        <label
+          htmlFor={ID_MOTIVO}
+          className="mb-1 block text-label-md text-on-surface-variant"
+        >
+          Motivo
+        </label>
+        <textarea
+          id={ID_MOTIVO}
+          data-autofocus
+          rows={3}
+          maxLength={LARGO_MAXIMO_MOTIVO}
+          value={motivo}
+          onChange={(e) => onMotivo(e.target.value)}
+          aria-invalid={errorMotivo ? true : undefined}
+          aria-describedby={descripcion}
+          className={`min-h-12 w-full rounded-lg border bg-surface-container-lowest px-3 py-2 text-body-md text-on-surface focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 ${errorMotivo ? "border-error" : "border-outline-variant"}`}
+        />
+        <p
+          id={`${ID_MOTIVO}-ayuda`}
+          className="mt-1 text-body-sm text-on-surface-variant"
+        >
+          Queda en la ficha y en la auditoría. No lo ve el restaurante ni los
+          comensales.
+        </p>
+        {errorMotivo && (
+          <p id={`${ID_MOTIVO}-error`} className="mt-1 text-body-sm text-error">
+            {errorMotivo}
+          </p>
+        )}
+      </div>
+    </>
+  );
+}
 
 /**
  * BL-413: confirmar la suspensión o la reactivación de un establecimiento.
@@ -58,28 +148,19 @@ export function CambiarEstadoEstablecimientoDialog({
   const [error, setError] = useState<string | null>(null);
 
   const suspender = accion === "suspender";
-  const errorMotivo = suspender && intento ? errorDeMotivo(motivo) : undefined;
-  const aviso = suspender
-    ? avisoPedidosAbiertos(ficha.resumen?.pedidosAbiertos)
-    : null;
+  const textos = TEXTOS[accion];
+  const errorMotivo = intento ? errorDeMotivo(motivo) : undefined;
 
   const confirmar = async () => {
     setEnviando(true);
     setError(null);
+    const { ruta, init } = solicitudCambioEstado(
+      accion,
+      ficha.tenantId,
+      motivo,
+    );
     try {
-      const actualizada = await apiFetch<FichaEstablecimiento>(
-        suspender
-          ? rutaSuspender(ficha.tenantId)
-          : rutaReactivar(ficha.tenantId),
-        token,
-        suspender
-          ? {
-              method: "POST",
-              body: JSON.stringify({ motivo: motivoLimpio(motivo) }),
-            }
-          : { method: "POST" },
-      );
-      onActualizado(actualizada);
+      onActualizado(await apiFetch<FichaEstablecimiento>(ruta, token, init));
       onClose();
     } catch (err) {
       setError(
@@ -94,32 +175,19 @@ export function CambiarEstadoEstablecimientoDialog({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (suspender) {
-      setIntento(true);
-      if (errorDeMotivo(motivo)) {
-        document.getElementById(ID_MOTIVO)?.focus();
-        return;
-      }
+    setIntento(true);
+    if (suspender && errorDeMotivo(motivo)) {
+      document.getElementById(ID_MOTIVO)?.focus();
+      return;
     }
     void confirmar();
   };
-
-  const descripcionMotivo = [
-    `${ID_MOTIVO}-ayuda`,
-    errorMotivo && `${ID_MOTIVO}-error`,
-  ]
-    .filter(Boolean)
-    .join(" ");
 
   return (
     <Dialog
       open={open}
       onClose={onClose}
-      title={
-        suspender
-          ? `¿Suspender ${ficha.razonSocial}?`
-          : `¿Reactivar ${ficha.razonSocial}?`
-      }
+      title={`${textos.titulo} ${ficha.razonSocial}?`}
     >
       <form
         onSubmit={handleSubmit}
@@ -127,63 +195,12 @@ export function CambiarEstadoEstablecimientoDialog({
         noValidate
       >
         {suspender ? (
-          <>
-            <p>Mientras esté suspendido:</p>
-            <ul className="list-disc space-y-1 pl-5">
-              <li>
-                El Administrador, los mozos y la cocina no pueden operar, y se
-                cierran sus sesiones abiertas.
-              </li>
-              <li>
-                El menú y el QR de las mesas muestran «Este restaurante no está
-                disponible por el momento» y no se pueden hacer pedidos.
-              </li>
-              <li>
-                No se borra ningún dato: al reactivarlo queda como estaba.
-              </li>
-            </ul>
-
-            {aviso && (
-              <p className="rounded-lg bg-tertiary-fixed px-3 py-2 text-on-tertiary-fixed">
-                {aviso}
-              </p>
-            )}
-
-            <div>
-              <label
-                htmlFor={ID_MOTIVO}
-                className="mb-1 block text-label-md text-on-surface-variant"
-              >
-                Motivo
-              </label>
-              <textarea
-                id={ID_MOTIVO}
-                data-autofocus
-                rows={3}
-                maxLength={LARGO_MAXIMO_MOTIVO}
-                value={motivo}
-                onChange={(e) => setMotivo(e.target.value)}
-                aria-invalid={errorMotivo ? true : undefined}
-                aria-describedby={descripcionMotivo}
-                className={`min-h-12 w-full rounded-lg border bg-surface-container-lowest px-3 py-2 text-body-md text-on-surface focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 ${errorMotivo ? "border-error" : "border-outline-variant"}`}
-              />
-              <p
-                id={`${ID_MOTIVO}-ayuda`}
-                className="mt-1 text-body-sm text-on-surface-variant"
-              >
-                Queda en la ficha y en la auditoría. No lo ve el restaurante ni
-                los comensales.
-              </p>
-              {errorMotivo && (
-                <p
-                  id={`${ID_MOTIVO}-error`}
-                  className="mt-1 text-body-sm text-error"
-                >
-                  {errorMotivo}
-                </p>
-              )}
-            </div>
-          </>
+          <CamposSuspension
+            motivo={motivo}
+            onMotivo={setMotivo}
+            errorMotivo={errorMotivo}
+            pedidosAbiertos={ficha.resumen?.pedidosAbiertos}
+          />
         ) : (
           <p>
             El restaurante vuelve a operar como antes de la suspensión: el
@@ -205,23 +222,17 @@ export function CambiarEstadoEstablecimientoDialog({
           <button
             type="button"
             onClick={onClose}
-            className={CLASE_BOTON_SECUNDARIO}
+            className="min-h-12 rounded-lg px-4 text-body-md text-on-surface-variant hover:bg-surface-container"
           >
             Cancelar
           </button>
           <button
             type="submit"
             disabled={enviando}
-            {...(suspender ? {} : { "data-autofocus": true })}
-            className={
-              suspender
-                ? "min-h-12 rounded-lg bg-error px-4 text-body-md font-medium text-on-error hover:opacity-90 disabled:opacity-50"
-                : "min-h-12 rounded-lg bg-primary px-4 text-body-md font-medium text-on-primary hover:opacity-90 disabled:opacity-50"
-            }
+            data-autofocus={suspender ? undefined : true}
+            className={`min-h-12 rounded-lg px-4 text-body-md font-medium hover:opacity-90 disabled:opacity-50 ${textos.claseBoton}`}
           >
-            {enviando && (suspender ? "Suspendiendo…" : "Reactivando…")}
-            {!enviando &&
-              (suspender ? "Suspender establecimiento" : "Reactivar")}
+            {enviando ? textos.enviando : textos.boton}
           </button>
         </div>
       </form>
