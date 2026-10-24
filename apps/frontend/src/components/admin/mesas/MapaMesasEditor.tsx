@@ -63,8 +63,10 @@ import {
   mesasConLayoutAEdicion,
   normalizarRotacion,
   nuevaMesaEnEdicion,
+  NUMERO_MAXIMO_MESA,
   numerosDuplicados,
   parsearNumeroMesa,
+  puedeAgregarMesa,
   puedeEditarMapa,
   puedeEliminarMesa,
   quitarMesa,
@@ -580,6 +582,7 @@ export function MapaMesasEditor({
   }
 
   function handleAgregarMesa() {
+    if (!puedeAgregarMesa(mesas)) return;
     const clientId = `nueva-${crypto.randomUUID()}`;
     const numero = siguienteNumeroDisponible(mesas);
     setMesas((prev) => {
@@ -1019,7 +1022,14 @@ export function MapaMesasEditor({
             <button
               type="button"
               onClick={handleAgregarMesa}
-              className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-body-md font-medium text-on-primary hover:opacity-90 touch:min-h-12"
+              // BL-425: hasta NUMERO_MAXIMO_MESA mesas (mismo criterio que las zonas).
+              disabled={!puedeAgregarMesa(mesas)}
+              title={
+                puedeAgregarMesa(mesas)
+                  ? undefined
+                  : `Se pueden agregar hasta ${NUMERO_MAXIMO_MESA} mesas`
+              }
+              className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-body-md font-medium text-on-primary hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 touch:min-h-12"
             >
               <span
                 aria-hidden="true"
@@ -1578,6 +1588,7 @@ export function MapaMesasEditor({
             ref={inputNumeroRef}
             type="number"
             min={1}
+            max={NUMERO_MAXIMO_MESA}
             value={editandoNumero.valor}
             onChange={(e) =>
               setEditandoNumero({ ...editandoNumero, valor: e.target.value })

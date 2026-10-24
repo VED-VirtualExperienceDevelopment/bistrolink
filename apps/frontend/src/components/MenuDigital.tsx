@@ -6,11 +6,14 @@ import ItemImagen from '@/components/menu/ItemImagen';
 import { LlamarMozoButton } from '@/components/LlamarMozoButton';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import {
+  alcanzoCantidadMaxima,
+  CANTIDAD_MAXIMA_POR_ITEM,
   etiquetaMesa,
   headersMesaQr,
   mensajeErrorQr,
   origenPedido,
   solicitudAuthComensal,
+  sumarUnidad,
   type OrigenMenu,
 } from '@/components/menu-digital.utils';
 import type { PedidoConfirmado } from '@/types/menu';
@@ -98,12 +101,19 @@ export default function MenuDigital({
     return 'text-[#5a575e]';
   };
 
+  // BL-425: true si el ítem ya tiene en el carrito el máximo de unidades.
+  const llegoAlTope = (itemId: string) =>
+    alcanzoCantidadMaxima(
+      carrito.find((i) => i.itemCartaId === itemId)?.cantidad ?? 0,
+    );
+
   const agregarAlCarrito = (item: ItemMenu) => {
     setCarrito((prevCarrito) => {
       const itemExistente = prevCarrito.some((i) => i.itemCartaId === item.id);
       if (itemExistente) {
         return prevCarrito.map((i) =>
-          i.itemCartaId === item.id ? { ...i, cantidad: i.cantidad + 1 } : i,
+          // BL-425: no pasa del tope (el backend rechaza más de 99).
+          i.itemCartaId === item.id ? { ...i, cantidad: sumarUnidad(i.cantidad) } : i,
         );
       }
       return [
@@ -389,11 +399,20 @@ export default function MenuDigital({
                               <span role="img" aria-label="Agotado">🚫</span> No disponible
                             </span>
                           ) : (
+                            <>
                             <button
                               type="button"
                               onClick={() => agregarAlCarrito(item)}
+                              // BL-425: al llegar al tope el botón se deshabilita
+                              // y el aviso queda asociado con aria-describedby.
+                              disabled={llegoAlTope(item.id)}
+                              aria-describedby={
+                                llegoAlTope(item.id)
+                                  ? `tope-${item.id}`
+                                  : undefined
+                              }
                               aria-label={`Agregar ${item.nombre} al carrito`}
-                              className="w-full bg-[#6e54ad]/10 text-[#6e54ad] font-semibold py-2.5 rounded-[0.5rem] hover:bg-[#6e54ad] hover:text-white transition-colors flex items-center justify-center gap-2"
+                              className="w-full bg-[#6e54ad]/10 text-[#6e54ad] font-semibold py-2.5 rounded-[0.5rem] hover:bg-[#6e54ad] hover:text-white transition-colors flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-[#6e54ad]/10 disabled:hover:text-[#6e54ad]"
                             >
                               <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                                 <line x1="12" y1="5" x2="12" y2="19"></line>
@@ -401,6 +420,12 @@ export default function MenuDigital({
                               </svg>
                               Agregar
                             </button>
+                            {llegoAlTope(item.id) && (
+                              <p id={`tope-${item.id}`} className="text-xs text-[#5a575e] text-center">
+                                Máximo {CANTIDAD_MAXIMA_POR_ITEM} unidades por ítem.
+                              </p>
+                            )}
+                            </>
                           )}
                         </div>
                       </div>

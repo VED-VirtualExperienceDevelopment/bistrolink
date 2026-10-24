@@ -1,4 +1,6 @@
 import {
+  alcanzoCantidadMaxima,
+  CANTIDAD_MAXIMA_POR_ITEM,
   esTokenQrConFormatoValido,
   etiquetaMesa,
   HEADER_MESA_TOKEN,
@@ -11,6 +13,7 @@ import {
   RUTA_AUTH_COMENSAL_MESA,
   RUTA_LLAMAR_MOZO,
   solicitudAuthComensal,
+  sumarUnidad,
   type OrigenMenu,
 } from "@/components/menu-digital.utils";
 
@@ -120,5 +123,22 @@ describe("etiquetaMesa", () => {
 
   it("sin número, un texto genérico", () => {
     expect(etiquetaMesa()).toBe("Mesa asignada");
+  });
+});
+
+describe("Tope de unidades por ítem en el carrito (BL-425)", () => {
+  it("el tope es 99, igual que en el backend", () => {
+    expect(CANTIDAD_MAXIMA_POR_ITEM).toBe(99);
+  });
+
+  it("sumarUnidad suma de a una y no pasa del tope", () => {
+    expect(sumarUnidad(1)).toBe(2);
+    expect(sumarUnidad(98)).toBe(99);
+    expect(sumarUnidad(99)).toBe(99);
+  });
+
+  it("alcanzoCantidadMaxima es true recién en el tope", () => {
+    expect(alcanzoCantidadMaxima(98)).toBe(false);
+    expect(alcanzoCantidadMaxima(99)).toBe(true);
   });
 });

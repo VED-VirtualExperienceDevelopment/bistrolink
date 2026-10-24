@@ -6,6 +6,7 @@ import {
   IsInt,
   IsOptional,
   IsUUID,
+  Max,
   Min,
   Validate,
   ValidateNested,
@@ -24,6 +25,15 @@ import { PlanoDto } from './plano.dto';
  * - `id` ausente → crea una mesa nueva con ese `numero` y ese layout. Nace
  *   en estado LIBRE (mismo default que el alta manual de mesas).
  */
+/**
+ * BL-425: número de mesa más alto que se acepta. Sin tope se podía guardar,
+ * por ejemplo, la mesa 999999. Como el número es único por restaurante, el
+ * tope también limita la cantidad de mesas físicas a 99: alcanza para los
+ * locales chicos y medianos con los que trabajamos; se sube si hace falta.
+ * Mismo valor que NUMERO_MAXIMO_MESA en mapa-mesas.utils.ts (editor).
+ */
+export const NUMERO_MAXIMO_MESA = 99;
+
 export class MesaLayoutItemDto extends MesaLayoutDto {
   @IsOptional()
   @IsUUID('loose') // ver ListarLayoutQueryDto
@@ -33,6 +43,9 @@ export class MesaLayoutItemDto extends MesaLayoutDto {
   @Min(1, {
     message:
       'numero debe ser mayor a 0 (el 0 está reservado a la mesa virtual de HU-003)',
+  })
+  @Max(NUMERO_MAXIMO_MESA, {
+    message: `numero debe ser como máximo ${NUMERO_MAXIMO_MESA}`,
   })
   numero: number;
 }
@@ -63,8 +76,9 @@ export class GuardarLayoutDto {
 
   @IsArray()
   @Validate(MesasOEliminarConstraint)
-  @ArrayMaxSize(200, {
-    message: 'no se pueden guardar más de 200 mesas por vez',
+  // BL-425/BL-427: como mucho una vez cada número de mesa (1 a 99).
+  @ArrayMaxSize(NUMERO_MAXIMO_MESA, {
+    message: `no se pueden guardar más de ${NUMERO_MAXIMO_MESA} mesas por vez`,
   })
   @ValidateNested({ each: true })
   @Type(() => MesaLayoutItemDto)

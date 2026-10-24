@@ -106,3 +106,19 @@ export function mensajeErrorQr(
 export function etiquetaMesa(numeroMesa?: number): string {
   return numeroMesa ? `Mesa ${numeroMesa}` : "Mesa asignada";
 }
+
+/**
+ * BL-425: tope de unidades de un mismo ítem en el carrito. Mismo valor que
+ * CANTIDAD_MAXIMA_POR_ITEM en crear-pedido.dto.ts (backend).
+ */
+export const CANTIDAD_MAXIMA_POR_ITEM = 99;
+
+/** Cantidad después de sumar una unidad, sin pasar del tope. */
+export function sumarUnidad(cantidad: number): number {
+  return Math.min(cantidad + 1, CANTIDAD_MAXIMA_POR_ITEM);
+}
+
+/** true si el ítem ya llegó al tope de unidades y no se puede agregar otra. */
+export function alcanzoCantidadMaxima(cantidad: number): boolean {
+  return cantidad >= CANTIDAD_MAXIMA_POR_ITEM;
+}
