@@ -1,10 +1,10 @@
 import 'dotenv/config';
 import helmet from 'helmet';
 import { NestFactory } from '@nestjs/core';
-import type { NextFunction, Request, Response } from 'express';
 import { Logger } from 'nestjs-pino';
 import { AppModule } from './app.module';
 import { checkRequiredEnvVars } from './startup-env-check';
+import { origenesPermitidos, redireccionHttps } from './seguridad-http';
 import { ValidationPipe } from '@nestjs/common';
 
 async function bootstrap() {
@@ -26,18 +26,13 @@ async function bootstrap() {
   // por eso confiamos en x-forwarded-proto. Si el header no está (health
   // checks directos al contenedor, entorno local), NO se redirige — así no
   // rompemos health checks ni el desarrollo local.
-  app.use((req: Request, res: Response, next: NextFunction) => {
-    const proto = req.header('x-forwarded-proto');
-    if (proto && proto !== 'https') {
-      return res.redirect(
-        301,
-        `https://${req.header('host')}${req.originalUrl}`,
-      );
-    }
-    next();
-  });
+  // BL-426: el destino es el dominio público de la API, no el header Host
+  // que manda el cliente (ver seguridad-http.ts).
+  app.use(redireccionHttps());
 
-  app.enableCors();
+  // BL-426: solo el frontend (FRONTEND_URL y CORS_ORIGENES_EXTRA). Antes,
+  // enableCors() sin opciones aceptaba cualquier origen.
+  app.enableCors({ origin: origenesPermitidos() });
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,

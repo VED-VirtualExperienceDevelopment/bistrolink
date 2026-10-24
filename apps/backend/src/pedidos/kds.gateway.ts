@@ -13,10 +13,13 @@ import { Server, Socket } from 'socket.io';
 import { MesaEstado, PedidoEstado } from '@prisma/client';
 import { WsAuthService, WsAuthError } from './ws-auth.service';
 import { PedidosTransicionService } from './pedidos-transicion.service';
+import { origenesPermitidos } from '../seguridad-http';
 
 @Injectable()
+// BL-426: antes `origin: '*'`. Los dos gateways comparten el servidor de
+// socket.io, así que tienen que declarar la misma lista que la API.
 @WebSocketGateway({
-  cors: { origin: '*' },
+  cors: { origin: origenesPermitidos() },
 })
 export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private static readonly ROLES_CONEXION_KDS = ['ADMIN', 'MOZO', 'COCINA'];
