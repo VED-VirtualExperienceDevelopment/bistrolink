@@ -391,6 +391,12 @@ jobs:
       TEST_TENANT_B_USERNAME: "ci-admin-b-test"
       TEST_MOZO_USERNAME: "ci-mozo-test"
       TEST_COCINA_B_USERNAME: "ci-cocina-b-test"
+      # MercadoPagoGateway exige un access token al arrancar la app (el resto
+      # de las pasarelas lo piden recién al cobrar). Los tests de integración
+      # no cobran: va uno de mentira y la API de Mercado Pago apunta a un
+      # puerto cerrado, así ningún pedido sale del runner por error.
+      MP_ACCESS_TOKEN: "TEST-0000000000000000-000000-ci-integracion"
+      MP_API_BASE_URL: "http://localhost:9"
     steps:
       - uses: actions/checkout@v7
 
