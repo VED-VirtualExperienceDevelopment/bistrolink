@@ -301,13 +301,31 @@ export function puedeEditarMapa(hasRole: (rol: "ADMIN") => boolean): boolean {
 }
 
 /**
+ * BL-425: número de mesa más alto que se acepta. Como el número es único por
+ * restaurante, también limita a 99 las mesas del mapa (locales chicos y
+ * medianos; se sube si hace falta). Mismo valor que NUMERO_MAXIMO_MESA en
+ * guardar-layout.dto.ts (backend).
+ */
+export const NUMERO_MAXIMO_MESA = 99;
+
+/** BL-425: se puede agregar una mesa mientras quede un número libre hasta el tope. */
+export function puedeAgregarMesa(
+  mesas: Pick<MesaEnEdicion, "numero">[],
+): boolean {
+  return siguienteNumeroDisponible(mesas) <= NUMERO_MAXIMO_MESA;
+}
+
+/**
  * Valida el número tipeado en el input de edición (doble clic sobre una
- * mesa). Devuelve null si no es un entero mayor a 0 — el 0 está reservado a
- * la mesa virtual de HU-003 y el backend lo rechaza (@Min(1)).
+ * mesa). Devuelve null si no es un entero entre 1 y NUMERO_MAXIMO_MESA — el
+ * 0 está reservado a la mesa virtual de HU-003 y el backend rechaza los dos
+ * extremos (@Min(1) y @Max, BL-425).
  */
 export function parsearNumeroMesa(valor: string): number | null {
   const numero = Number.parseInt(valor, 10);
-  return Number.isFinite(numero) && numero > 0 ? numero : null;
+  return Number.isFinite(numero) && numero > 0 && numero <= NUMERO_MAXIMO_MESA
+    ? numero
+    : null;
 }
 
 /**
