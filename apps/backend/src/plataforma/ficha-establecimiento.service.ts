@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { PedidoEstado } from '@prisma/client';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { UsuariosService } from '../usuarios/usuarios.service';
 import {
@@ -9,6 +10,17 @@ import {
 /** BL-411: días que abarca el conteo de pedidos del resumen. */
 export const DIAS_RESUMEN_PEDIDOS = 30;
 const DIA_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * BL-413: pedidos que todavía no terminaron (ni entregados ni cancelados).
+ * La ficha los cuenta para avisar antes de suspender: suspender no los
+ * cancela, pero el restaurante ya no los puede mover.
+ */
+export const ESTADOS_PEDIDO_ABIERTO: PedidoEstado[] = [
+  'RECIBIDO',
+  'EN_PREPARACION',
+  'LISTO_PARA_ENTREGAR',
+];
 
 /**
  * BL-411: una cuenta del establecimiento, como la ve la plataforma. Sin
@@ -54,6 +66,8 @@ export interface FichaEstablecimiento {
     itemsCarta: number;
     pedidosRecientes: number;
     diasPedidos: number;
+    /** BL-413: pedidos sin terminar (ESTADOS_PEDIDO_ABIERTO). */
+    pedidosAbiertos: number;
   } | null;
 }
 
@@ -144,6 +158,9 @@ export class FichaEstablecimientoService {
                 where: { tenantId, createdAt: { gte: desde } },
               }),
               diasPedidos: DIAS_RESUMEN_PEDIDOS,
+              pedidosAbiertos: await tx.pedido.count({
+                where: { tenantId, estado: { in: ESTADOS_PEDIDO_ABIERTO } },
+              }),
             }
           : null;
         return { tenant, restaurante, resumen };

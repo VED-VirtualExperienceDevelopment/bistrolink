@@ -1,5 +1,10 @@
 import * as jwt from 'jsonwebtoken';
 import { WsAuthService, WsAuthError } from '../../src/pedidos/ws-auth.service';
+import {
+  MENSAJE_SUSPENDIDO_COMENSAL,
+  MENSAJE_SUSPENDIDO_PERSONAL,
+  TenantEstadoService,
+} from '../../src/tenant-estado/tenant-estado.service';
 
 // jwks-rsa y jsonwebtoken se mockean por completo: este test verifica la
 // LOGICA de WsAuthService (que rechace lo que debe rechazar, que arme bien
@@ -25,13 +30,17 @@ jest.mock('jwks-rsa', () => ({
 
 describe('WsAuthService', () => {
   let service: WsAuthService;
+  // BL-413: estado del establecimiento; activo salvo en los tests de
+  // suspensión.
+  const tenantEstado = { estaSuspendido: jest.fn() };
 
   beforeEach(() => {
     jest.clearAllMocks();
     mockGetSigningKey.mockResolvedValue({
       getPublicKey: () => 'fake-public-key',
     });
-    service = new WsAuthService();
+    tenantEstado.estaSuspendido.mockResolvedValue(false);
+    service = new WsAuthService(tenantEstado as unknown as TenantEstadoService);
   });
 
   describe('verify', () => {
@@ -111,6 +120,29 @@ describe('WsAuthService', () => {
       const resultado = await service.verify('token-sin-roles');
 
       expect(resultado.roles).toEqual([]);
+    });
+    it('[TC-U-122] WsAuthService.verify rechaza el token de un establecimiento suspendido (personal y comensal)', async () => {
+      (jwt.decode as jest.Mock).mockReturnValue({ header: { kid: 'kid-1' } });
+      tenantEstado.estaSuspendido.mockResolvedValue(true);
+
+      (jwt.verify as jest.Mock).mockReturnValue({
+        sub: 'usuario-1',
+        tenant_id: 'tenant-abc',
+        realm_access: { roles: ['COCINA'] },
+      });
+      await expect(service.verify('token-cocina')).rejects.toThrow(
+        new WsAuthError(MENSAJE_SUSPENDIDO_PERSONAL),
+      );
+
+      (jwt.verify as jest.Mock).mockReturnValue({
+        sub: 'comensal-tecnico',
+        tenant_id: 'tenant-abc',
+        realm_access: { roles: ['COMENSAL'] },
+      });
+      await expect(service.verify('token-comensal')).rejects.toThrow(
+        new WsAuthError(MENSAJE_SUSPENDIDO_COMENSAL),
+      );
+      expect(tenantEstado.estaSuspendido).toHaveBeenCalledWith('tenant-abc');
     });
   });
 });

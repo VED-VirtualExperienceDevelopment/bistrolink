@@ -5,6 +5,7 @@ import {
   DefaultValuePipe,
   Get,
   Header,
+  HttpCode,
   Param,
   ParseIntPipe,
   ParseUUIDPipe,
@@ -23,6 +24,8 @@ import { PlataformaThrottlerGuard } from './plataforma-throttler.guard';
 import { FichaEstablecimientoService } from './ficha-establecimiento.service';
 import { DatosEstablecimientoService } from './datos-establecimiento.service';
 import { EditarEstablecimientoDto } from './dto/editar-establecimiento.dto';
+import { SuspenderEstablecimientoDto } from './dto/suspender-establecimiento.dto';
+import { SuspensionEstablecimientoService } from './suspension-establecimiento.service';
 import {
   esFiltroEstado,
   EstablecimientosService,
@@ -37,6 +40,8 @@ export const LIMITE_ALTAS_POR_HORA = 10;
 export const LIMITE_LISTADOS_POR_MINUTO = 60;
 /** BL-412: ediciones de datos por hora y por usuario de plataforma. */
 export const LIMITE_EDICIONES_POR_HORA = 30;
+/** BL-413: suspensiones y reactivaciones por hora y por usuario de plataforma. */
+export const LIMITE_CAMBIOS_DE_ESTADO_POR_HORA = 30;
 
 /**
  * BL-163 (HU-027), entrega 2: alta de establecimientos para el rol
@@ -60,6 +65,7 @@ export class PlataformaController {
     private readonly establecimientos: EstablecimientosService,
     private readonly ficha: FichaEstablecimientoService,
     private readonly datos: DatosEstablecimientoService,
+    private readonly suspension: SuspensionEstablecimientoService,
   ) {}
 
   /**
@@ -138,6 +144,45 @@ export class PlataformaController {
       { id: req.user.sub },
       'PLATAFORMA',
     );
+    return this.ficha.obtener(tenantId);
+  }
+
+  /**
+   * BL-413: suspender el establecimiento, con un motivo obligatorio. 404 si
+   * no existe, 409 si ya estaba suspendido. No borra datos ni cancela
+   * pedidos: desde ahí todo token del tenant recibe 403 y se cierran sus
+   * sesiones en Keycloak. Devuelve la ficha actualizada.
+   */
+  @Post(':tenantId/suspender')
+  @HttpCode(200)
+  @Throttle({
+    default: { limit: LIMITE_CAMBIOS_DE_ESTADO_POR_HORA, ttl: 60 * 60_000 },
+  })
+  async suspender(
+    @Req() req: { user: UsuarioPlataforma },
+    @Param('tenantId', ParseUUIDPipe) tenantId: string,
+    @Body() dto: SuspenderEstablecimientoDto,
+  ) {
+    await this.suspension.suspender(tenantId, dto.motivo, {
+      id: req.user.sub,
+    });
+    return this.ficha.obtener(tenantId);
+  }
+
+  /**
+   * BL-413: reactivar un establecimiento suspendido. 404 si no existe, 409
+   * si no estaba suspendido. Devuelve la ficha actualizada.
+   */
+  @Post(':tenantId/reactivar')
+  @HttpCode(200)
+  @Throttle({
+    default: { limit: LIMITE_CAMBIOS_DE_ESTADO_POR_HORA, ttl: 60 * 60_000 },
+  })
+  async reactivar(
+    @Req() req: { user: UsuarioPlataforma },
+    @Param('tenantId', ParseUUIDPipe) tenantId: string,
+  ) {
+    await this.suspension.reactivar(tenantId, { id: req.user.sub });
     return this.ficha.obtener(tenantId);
   }
 

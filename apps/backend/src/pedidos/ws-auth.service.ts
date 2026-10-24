@@ -2,6 +2,10 @@ import { Injectable } from '@nestjs/common';
 import * as jwt from 'jsonwebtoken';
 import { JwksClient } from 'jwks-rsa';
 import { AuthenticatedUser } from '../auth/keycloak-jwt.strategy';
+import {
+  mensajeSuspendidoPara,
+  TenantEstadoService,
+} from '../tenant-estado/tenant-estado.service';
 
 // Mismo issuer/JWKS que KeycloakJwtStrategy (auth/keycloak-jwt.strategy.ts).
 // No se agrega KEYCLOAK_ISSUER_URL/KEYCLOAK_JWKS_URI como variables nuevas
@@ -33,6 +37,8 @@ export class WsAuthError extends Error {
 
 @Injectable()
 export class WsAuthService {
+  constructor(private readonly tenantEstado: TenantEstadoService) {}
+
   private readonly jwks = new JwksClient({
     jwksUri: JWKS_URI,
     cache: true,
@@ -75,10 +81,19 @@ export class WsAuthService {
       throw new WsAuthError('Token sin tenant_id asociado');
     }
 
+    const roles: string[] = (payload.realm_access as any)?.roles ?? [];
+
+    // BL-413: mismo control que KeycloakJwtStrategy. Cada evento del KDS
+    // vuelve a pasar por verify(), así que una conexión que ya estaba
+    // abierta tampoco puede operar después de la suspensión.
+    if (await this.tenantEstado.estaSuspendido(tenantId)) {
+      throw new WsAuthError(mensajeSuspendidoPara(roles));
+    }
+
     return {
       sub: payload.sub as string,
       tenantId,
-      roles: (payload.realm_access as any)?.roles ?? [],
+      roles,
     };
   }
 }

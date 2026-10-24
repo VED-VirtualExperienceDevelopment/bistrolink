@@ -25,8 +25,12 @@ const TENANT_ID = '11111111-1111-1111-1111-111111111111';
 
 // Sin pasar por el constructor (no hace falta el JWKS de Keycloak para
 // probar validate), mismo criterio que mesa-throttler.guard.spec.ts.
-const estrategiaTenant = Object.create(
-  KeycloakJwtStrategy.prototype,
+// BL-413: con el establecimiento activo (la suspensión se prueba en
+// keycloak-jwt.strategy.spec.ts).
+const tenantActivo = { asegurarActivo: jest.fn().mockResolvedValue(undefined) };
+const estrategiaTenant = Object.assign(
+  Object.create(KeycloakJwtStrategy.prototype),
+  { tenantEstado: tenantActivo },
 ) as KeycloakJwtStrategy;
 const estrategiaPlataforma = Object.create(
   PlataformaJwtStrategy.prototype,
@@ -133,7 +137,9 @@ describe('opcionesJwtKeycloak: validación compartida (BL-163)', () => {
   });
 
   it('las dos estrategias se construyen con esa misma validación', () => {
-    expect(new KeycloakJwtStrategy()).toBeInstanceOf(KeycloakJwtStrategy);
+    expect(new KeycloakJwtStrategy(tenantActivo as never)).toBeInstanceOf(
+      KeycloakJwtStrategy,
+    );
     expect(new PlataformaJwtStrategy()).toBeInstanceOf(PlataformaJwtStrategy);
   });
 });

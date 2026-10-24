@@ -7,9 +7,11 @@ import { AuthModule } from '../auth/auth.module';
 import { WsAuthService } from './ws-auth.service';
 import { PedidosTransicionService } from './pedidos-transicion.service';
 import { QrMesaModule } from '../qr-mesa/qr-mesa.module';
+import { TenantEstadoModule } from '../tenant-estado/tenant-estado.module';
 
 @Module({
-  imports: [PrismaModule, AuthModule, QrMesaModule],
+  // BL-413: TenantEstadoModule, para WsAuthService.
+  imports: [PrismaModule, AuthModule, QrMesaModule, TenantEstadoModule],
   controllers: [PedidosController],
   providers: [
     PedidosService,

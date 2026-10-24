@@ -149,6 +149,8 @@ describe('FichaEstablecimientoService (BL-411)', () => {
       itemsCarta: 24,
       pedidosRecientes: 57,
       diasPedidos: DIAS_RESUMEN_PEDIDOS,
+      // BL-413: el mock de count devuelve lo mismo para los dos conteos.
+      pedidosAbiertos: 57,
     });
     expect(tx.mesa.count).toHaveBeenCalledWith({
       where: { tenantId: TENANT_ID, esVirtual: false },
@@ -160,6 +162,13 @@ describe('FichaEstablecimientoService (BL-411)', () => {
       where: {
         tenantId: TENANT_ID,
         createdAt: { gte: new Date('2026-09-22T12:00:00Z') },
+      },
+    });
+    // BL-413: pedidos sin terminar, para el aviso al suspender.
+    expect(tx.pedido.count).toHaveBeenCalledWith({
+      where: {
+        tenantId: TENANT_ID,
+        estado: { in: ['RECIBIDO', 'EN_PREPARACION', 'LISTO_PARA_ENTREGAR'] },
       },
     });
   });
