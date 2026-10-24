@@ -9,6 +9,7 @@ import {
 import {
   GuardarLayoutDto,
   MesaLayoutItemDto,
+  NUMERO_MAXIMO_MESA,
 } from '../../src/mesas/dto/guardar-layout.dto';
 import { ListarLayoutQueryDto } from '../../src/mesas/dto/listar-layout-query.dto';
 
@@ -260,30 +261,31 @@ describe('GuardarLayoutDto (HU-016)', () => {
     expect(propiedadesConError(errores)).toEqual(['mesas']);
   });
 
-  describe('mesas — valor límite máximo 200 por guardado (BL-58)', () => {
+  // BL-427: el tope bajó de 200 a NUMERO_MAXIMO_MESA (99), uno por número.
+  describe('mesas — valor límite máximo por guardado (BL-58, BL-427)', () => {
     const mesas = (cantidad: number) =>
       Array.from({ length: cantidad }, (_, i) => ({
         numero: i + 1,
         ...LAYOUT_VALIDO,
       }));
 
-    it('acepta 200 mesas', async () => {
+    it(`acepta ${NUMERO_MAXIMO_MESA} mesas`, async () => {
       expect(
         await validar(GuardarLayoutDto, {
           restauranteId: RESTAURANTE_ID,
-          mesas: mesas(200),
+          mesas: mesas(NUMERO_MAXIMO_MESA),
         }),
       ).toHaveLength(0);
     });
 
-    it('rechaza 201 mesas con el mensaje del tope', async () => {
+    it(`rechaza ${NUMERO_MAXIMO_MESA + 1} mesas con el mensaje del tope`, async () => {
       const errores = await validar(GuardarLayoutDto, {
         restauranteId: RESTAURANTE_ID,
-        mesas: mesas(201),
+        mesas: mesas(NUMERO_MAXIMO_MESA + 1),
       });
       expect(propiedadesConError(errores)).toEqual(['mesas']);
       expect(Object.values(errores[0].constraints ?? {})).toContain(
-        'no se pueden guardar más de 200 mesas por vez',
+        `no se pueden guardar más de ${NUMERO_MAXIMO_MESA} mesas por vez`,
       );
     });
   });
@@ -421,4 +423,23 @@ describe('ListarLayoutQueryDto (HU-016)', () => {
       ),
     ).toEqual(['restauranteId']);
   });
+});
+
+describe('MesaLayoutItemDto: número de mesa (BL-425)', () => {
+  const mesa = (numero: number) => ({ id: MESA_ID, numero, ...LAYOUT_VALIDO });
+
+  it.each([1, 99])('[TC-U-110] acepta el número %p', async (numero) => {
+    expect(
+      propiedadesConError(await validar(MesaLayoutItemDto, mesa(numero))),
+    ).toEqual([]);
+  });
+
+  it.each([0, 100, 999_999])(
+    '[TC-U-111] rechaza el número %p',
+    async (numero) => {
+      expect(
+        propiedadesConError(await validar(MesaLayoutItemDto, mesa(numero))),
+      ).toEqual(['numero']);
+    },
+  );
 });

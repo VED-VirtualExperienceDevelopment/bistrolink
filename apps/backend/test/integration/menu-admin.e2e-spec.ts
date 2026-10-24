@@ -26,6 +26,8 @@ const ADMIN_USER = process.env.TEST_ADMIN_USERNAME;
 const ADMIN_PASS = process.env.TEST_ADMIN_PASSWORD;
 const COCINA_USER = process.env.TEST_COCINA_USERNAME;
 const COCINA_PASS = process.env.TEST_COCINA_PASSWORD;
+const MOZO_USER = process.env.TEST_MOZO_USERNAME;
+const MOZO_PASS = process.env.TEST_MOZO_PASSWORD;
 
 async function getToken(username: string, password: string): Promise<string> {
   const res = await fetch(
@@ -54,6 +56,7 @@ async function getToken(username: string, password: string): Promise<string> {
 // Condicionales para saltar tests si no hay fixtures configuradas
 const itConAdmin = ADMIN_USER && ADMIN_PASS ? it : it.skip;
 const itConCocina = COCINA_USER && COCINA_PASS ? it : it.skip;
+const itConMozo = MOZO_USER && MOZO_PASS ? it : it.skip;
 
 const CATEGORIA_ID = '22222222-2222-2222-2222-222222222222';
 const ITEM_ID = '33333333-3333-3333-3333-333333333333';
@@ -419,6 +422,109 @@ describe('Menu Admin (BL-52/BL-53) - CRUD Completo con Soft Delete', () => {
         console.log(`⏱️ Tiempo de emisión WebSocket: ${duracionMs}ms`);
       },
       10000,
+    );
+  });
+
+  // BL-391 (BL-385): subida y confirmación de imágenes solo para ADMIN, con
+  // límite por usuario. Ninguno de estos casos llega a S3: el rol, el formato
+  // de la key y el límite se controlan antes.
+  describe('Carga segura de imágenes (BL-385)', () => {
+    const UUID = '0b4f6a3e-1111-4c2d-9e8f-123456789abc';
+    const KEY_DE_OTRO_TENANT = `incoming/99999999-9999-4999-8999-999999999999/${UUID}`;
+
+    itConCocina(
+      '[TC-I-077] Menú: POST /admin/menu/presigned-url: devuelve 403 si el rol es COCINA',
+      async () => {
+        const token = await getToken(
+          COCINA_USER as string,
+          COCINA_PASS as string,
+        );
+
+        await request(app.getHttpServer())
+          .post('/admin/menu/presigned-url')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ contentType: 'image/png', fileSize: 1024 })
+          .expect(HttpStatus.FORBIDDEN);
+      },
+    );
+
+    itConMozo(
+      '[TC-I-078] Menú: POST /admin/menu/presigned-url: devuelve 403 si el rol es MOZO',
+      async () => {
+        const token = await getToken(MOZO_USER as string, MOZO_PASS as string);
+
+        await request(app.getHttpServer())
+          .post('/admin/menu/presigned-url')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ contentType: 'image/png', fileSize: 1024 })
+          .expect(HttpStatus.FORBIDDEN);
+      },
+    );
+
+    itConMozo(
+      '[TC-I-079] Menú: POST /admin/menu/imagenes/confirmar: devuelve 403 si el rol es MOZO',
+      async () => {
+        const token = await getToken(MOZO_USER as string, MOZO_PASS as string);
+
+        await request(app.getHttpServer())
+          .post('/admin/menu/imagenes/confirmar')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ key: KEY_DE_OTRO_TENANT })
+          .expect(HttpStatus.FORBIDDEN);
+      },
+    );
+
+    itConAdmin(
+      '[TC-I-080] Menú: POST /admin/menu/imagenes/confirmar: devuelve 400 con una key de otro tenant',
+      async () => {
+        const token = await getToken(
+          ADMIN_USER as string,
+          ADMIN_PASS as string,
+        );
+
+        await request(app.getHttpServer())
+          .post('/admin/menu/imagenes/confirmar')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ key: KEY_DE_OTRO_TENANT })
+          .expect(HttpStatus.BAD_REQUEST)
+          .expect((res) => {
+            expect(res.body.message).toBe(
+              'La imagen no es válida para este establecimiento',
+            );
+          });
+      },
+    );
+
+    itConAdmin(
+      '[TC-I-081] Menú: POST /admin/menu/imagenes/confirmar: devuelve 429 al pasar el límite por minuto',
+      async () => {
+        const token = await getToken(
+          ADMIN_USER as string,
+          ADMIN_PASS as string,
+        );
+
+        // Límite: 20 por minuto y por usuario. Con 21 pedidos seguidos al
+        // menos uno tiene que dar 429 (el contador puede traer pedidos de
+        // otros tests de este archivo).
+        const estados: number[] = [];
+        for (let i = 0; i < 21; i++) {
+          const res = await request(app.getHttpServer())
+            .post('/admin/menu/imagenes/confirmar')
+            .set('Authorization', `Bearer ${token}`)
+            .send({ key: KEY_DE_OTRO_TENANT });
+          estados.push(res.status);
+        }
+
+        expect(estados).toContain(HttpStatus.TOO_MANY_REQUESTS);
+        expect(
+          estados.every(
+            (e) =>
+              e === HttpStatus.BAD_REQUEST ||
+              e === HttpStatus.TOO_MANY_REQUESTS,
+          ),
+        ).toBe(true);
+      },
+      30000,
     );
   });
 });

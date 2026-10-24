@@ -95,6 +95,10 @@ const APELLIDO_CUENTA_TECNICA = 'BistroLink';
  * así las políticas RLS aceptan las filas), después Keycloak y al final la
  * fila del Administrador en `usuario`, que necesita su id de Keycloak.
  *
+ * BL-410: en ese último paso se completa `tenant.alta_completada_en`. Si el
+ * alta se corta antes (por ejemplo, en Keycloak), queda nula y el listado de
+ * la plataforma la muestra como «Alta incompleta» hasta que se repita.
+ *
  * Lo usa el script `scripts/aprovisionar-establecimiento.ts` y, en la
  * entrega 2, el endpoint de plataforma.
  */
@@ -175,8 +179,8 @@ export class AprovisionamientoService {
     });
 
     const filaAdmin = await this.tenantPrisma
-      .runInTenantContext(tenantId, (tx) =>
-        tx.usuario.upsert({
+      .runInTenantContext(tenantId, async (tx) => {
+        const fila = await tx.usuario.upsert({
           where: { keycloakId: admin.keycloakId },
           update: {},
           create: {
@@ -191,8 +195,16 @@ export class AprovisionamientoService {
             rol: 'ADMIN',
           },
           select: { id: true },
-        }),
-      )
+        });
+        // BL-410: con la fila del Admin, el kit mínimo está completo. Se
+        // marca en la misma transacción. updateMany con alta_completada_en
+        // nulo: un alta repetida no pisa la fecha original.
+        await tx.tenant.updateMany({
+          where: { id: tenantId, altaCompletadaEn: null },
+          data: { altaCompletadaEn: new Date() },
+        });
+        return fila;
+      })
       .catch((err) => this.traducirConflicto(err));
 
     const usuarios = [admin, cocina, comensal];

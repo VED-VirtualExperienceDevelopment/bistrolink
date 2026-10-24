@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import { PlataformaModule } from '../../src/plataforma/plataforma.module';
 import { UsuarioPlataformaService } from '../../src/plataforma/usuario-plataforma.service';
 import { AprovisionamientoService } from '../../src/plataforma/aprovisionamiento.service';
+import { FichaEstablecimientoService } from '../../src/plataforma/ficha-establecimiento.service';
 
 /**
  * BL-163: los scripts (aprovisionar-establecimiento, crear-usuario-plataforma)
@@ -21,6 +22,11 @@ describe('PlataformaModule (BL-163)', () => {
     await expect(
       moduleRef.resolve(AprovisionamientoService),
     ).resolves.toBeInstanceOf(AprovisionamientoService);
+    // BL-411: la ficha usa UsuariosService, que el módulo registra sin su
+    // controller.
+    await expect(
+      moduleRef.resolve(FichaEstablecimientoService),
+    ).resolves.toBeInstanceOf(FichaEstablecimientoService);
     await moduleRef.close();
   });
 });

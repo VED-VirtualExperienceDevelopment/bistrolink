@@ -66,6 +66,42 @@ export function errorNombrePersona(
 }
 
 /**
+ * BL-356 (H-02): mismo formato que valida el backend (FORMATO_USERNAME en
+ * create-usuario.dto.ts): de 3 a 30 caracteres, empieza con una letra y
+ * después minúsculas, números, punto, guion o guion bajo.
+ */
+const FORMATO_USERNAME = /^[a-z][a-z0-9._-]{2,29}$/;
+export const LARGO_MAXIMO_USERNAME = 30;
+/** BL-356: mismo tope que el backend (LARGO_MAXIMO_EMAIL, RFC 5321). */
+export const LARGO_MAXIMO_EMAIL = 254;
+/** Ayuda que se muestra debajo del campo antes de escribir. */
+export const AYUDA_USERNAME =
+  "De 3 a 30 caracteres. Empieza con una letra; después, minúsculas, números, punto, guion o guion bajo. Ejemplo: ana.perez";
+
+/** Keycloak guarda el usuario en minúsculas: se escribe directamente así. */
+export function normalizarUsername(valor: string): string {
+  return valor.trim().toLowerCase();
+}
+
+/** Error del nombre de usuario, o `null` si es válido. */
+export function errorUsername(valor: string): string | null {
+  const limpio = normalizarUsername(valor);
+  if (!limpio) return "Ingresá el nombre de usuario.";
+  if (/^\d+$/.test(limpio)) {
+    return "El nombre de usuario tiene que tener al menos una letra.";
+  }
+  if (limpio.length < 3) return "Tiene que tener al menos 3 caracteres.";
+  if (limpio.length > LARGO_MAXIMO_USERNAME) {
+    return `Puede tener hasta ${LARGO_MAXIMO_USERNAME} caracteres.`;
+  }
+  if (!/^[a-z]/.test(limpio)) return "Tiene que empezar con una letra.";
+  if (!FORMATO_USERNAME.test(limpio)) {
+    return "Usá solo minúsculas sin tildes ni ñ, números, punto, guion o guion bajo.";
+  }
+  return null;
+}
+
+/**
  * Id del primer campo con error (para llevarle el foco), o `null` si no hay.
  * Los campos van en el orden en que aparecen en el formulario.
  */

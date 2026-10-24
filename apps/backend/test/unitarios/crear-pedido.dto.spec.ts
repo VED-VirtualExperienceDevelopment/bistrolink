@@ -217,3 +217,36 @@ describe('CrearPedidoDto - origen del pedido (BL-309 / BL-204)', () => {
     ).toEqual(['restauranteId']);
   });
 });
+
+describe('CrearPedidoDto: cantidad por ítem (BL-425)', () => {
+  const base = {
+    restauranteId: '22222222-2222-2222-2222-222222222222',
+    idempotencyKey: 'test-key-cantidad',
+  };
+  const erroresDeCantidad = async (cantidad: unknown) => {
+    const dto = plainToInstance(CrearPedidoDto, {
+      ...base,
+      items: [
+        { itemCartaId: '55555555-5555-5555-5555-555555555555', cantidad },
+      ],
+    });
+    const errors = await validate(dto);
+    return (
+      errors
+        .find((e) => e.property === 'items')
+        ?.children?.[0]?.children?.filter((c) => c.property === 'cantidad') ??
+      []
+    );
+  };
+
+  it.each([1, 50, 99])('[TC-U-108] acepta cantidad %p', async (cantidad) => {
+    expect(await erroresDeCantidad(cantidad)).toEqual([]);
+  });
+
+  it.each([0, 100, 1_000_000, 1.5])(
+    '[TC-U-109] rechaza cantidad %p',
+    async (cantidad) => {
+      expect(await erroresDeCantidad(cantidad)).toHaveLength(1);
+    },
+  );
+});

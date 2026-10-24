@@ -70,6 +70,24 @@ async function abrirMapa(page: Page): Promise<MapaAbierto> {
   };
 }
 
+/**
+ * Redondea los números a 6 decimales para comparar posiciones y tamaños.
+ * Las coordenadas que genera el editor tienen 17 cifras y, al pasar por la
+ * columna JSONB y Prisma, pueden volver con una diferencia en la última
+ * cifra (por ejemplo 487.24793398546063 → 487.2479339854606). Seis decimales
+ * es mucho menos que un píxel, así que la comparación sigue verificando que
+ * el elemento quedó en el mismo lugar.
+ */
+function redondearNumeros<T extends object>(forma: T | undefined) {
+  if (!forma) return forma;
+  return Object.fromEntries(
+    Object.entries(forma).map(([clave, valor]) => [
+      clave,
+      typeof valor === "number" ? Math.round(valor * 1e6) / 1e6 : valor,
+    ]),
+  );
+}
+
 /** Copia solo los campos que acepta el backend (forbidNonWhitelisted). */
 function planoParaGuardar(plano: Plano): Plano {
   return {
@@ -131,13 +149,16 @@ test.describe("HU-028 · Plano completo del salón", () => {
       expect(zona).toBeDefined();
       expect(puerta).toBeDefined();
 
-      // Recargar: lo que devuelve la API tiene que ser exactamente lo que se
-      // guardó (posición, tamaño y rotación).
+      // Recargar: lo que devuelve la API tiene que ser lo que se guardó
+      // (posición, tamaño y rotación), con los números redondeados a 6
+      // decimales (ver redondearNumeros).
       const { plano: recargado } = await abrirMapa(page);
-      expect(recargado.zonas.find((z) => z.id === zona?.id)).toEqual(zona);
-      expect(recargado.elementos.find((e) => e.id === puerta?.id)).toEqual(
-        puerta,
-      );
+      expect(
+        redondearNumeros(recargado.zonas.find((z) => z.id === zona?.id)),
+      ).toEqual(redondearNumeros(zona));
+      expect(
+        redondearNumeros(recargado.elementos.find((e) => e.id === puerta?.id)),
+      ).toEqual(redondearNumeros(puerta));
       await expect(page.getByText("Cambios sin guardar")).toHaveCount(0);
 
       // Y se ve en la pantalla: la lista alternativa del plano muestra la zona.

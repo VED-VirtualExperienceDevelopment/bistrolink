@@ -5,7 +5,11 @@ import {
   DefaultValuePipe,
   Get,
   Header,
+  HttpCode,
+  Param,
   ParseIntPipe,
+  ParseUUIDPipe,
+  Patch,
   Post,
   Query,
   Req,
@@ -17,12 +21,27 @@ import { UsuarioPlataforma } from '../auth/plataforma-jwt.strategy';
 import { AprovisionamientoService } from './aprovisionamiento.service';
 import { AprovisionarEstablecimientoDto } from './dto/aprovisionar-establecimiento.dto';
 import { PlataformaThrottlerGuard } from './plataforma-throttler.guard';
-import { EstablecimientosService } from './establecimientos.service';
+import { FichaEstablecimientoService } from './ficha-establecimiento.service';
+import { DatosEstablecimientoService } from './datos-establecimiento.service';
+import { EditarEstablecimientoDto } from './dto/editar-establecimiento.dto';
+import { SuspenderEstablecimientoDto } from './dto/suspender-establecimiento.dto';
+import { SuspensionEstablecimientoService } from './suspension-establecimiento.service';
+import {
+  esFiltroEstado,
+  EstablecimientosService,
+  FILTROS_ESTADO,
+  FiltroEstado,
+  MAX_LARGO_BUSQUEDA,
+} from './establecimientos.service';
 
 /** BL-163: altas por hora y por usuario de plataforma. */
 export const LIMITE_ALTAS_POR_HORA = 10;
 /** BL-163: consultas del listado por minuto y por usuario de plataforma. */
 export const LIMITE_LISTADOS_POR_MINUTO = 60;
+/** BL-412: ediciones de datos por hora y por usuario de plataforma. */
+export const LIMITE_EDICIONES_POR_HORA = 30;
+/** BL-413: suspensiones y reactivaciones por hora y por usuario de plataforma. */
+export const LIMITE_CAMBIOS_DE_ESTADO_POR_HORA = 30;
 
 /**
  * BL-163 (HU-027), entrega 2: alta de establecimientos para el rol
@@ -44,21 +63,127 @@ export class PlataformaController {
   constructor(
     private readonly aprovisionamiento: AprovisionamientoService,
     private readonly establecimientos: EstablecimientosService,
+    private readonly ficha: FichaEstablecimientoService,
+    private readonly datos: DatosEstablecimientoService,
+    private readonly suspension: SuspensionEstablecimientoService,
   ) {}
 
   /**
    * Listado paginado, del alta más reciente a la más vieja. Sin contraseñas:
    * solo datos del tenant, su restaurante y quién lo dio de alta.
+   *
+   * BL-406: `q` opcional, por razón social o RUT. El ValidationPipe global no
+   * valida parámetros sueltos de tipo string, así que se controla acá: un
+   * solo valor (no `?q=a&q=b`) y como mucho MAX_LARGO_BUSQUEDA caracteres.
+   *
+   * BL-410: `estado` opcional (ACTIVOS, SUSPENDIDOS o ALTA_INCOMPLETA), con el
+   * mismo control: un solo valor y de la lista.
    */
   @Get()
   @Throttle({ default: { limit: LIMITE_LISTADOS_POR_MINUTO, ttl: 60_000 } })
   listar(
     @Query('pagina', new DefaultValuePipe(1), ParseIntPipe) pagina: number,
+    @Query('q') q?: unknown,
+    @Query('estado') estado?: unknown,
   ) {
     if (pagina < 1) {
       throw new BadRequestException('pagina tiene que ser 1 o más');
     }
-    return this.establecimientos.listar(pagina);
+    if (q !== undefined && typeof q !== 'string') {
+      throw new BadRequestException('q tiene que ser un solo texto');
+    }
+    const busqueda = typeof q === 'string' ? q.trim() : undefined;
+    if (busqueda && busqueda.length > MAX_LARGO_BUSQUEDA) {
+      throw new BadRequestException(
+        `q admite como mucho ${MAX_LARGO_BUSQUEDA} caracteres`,
+      );
+    }
+    // BL-410: el filtro ya validado, con su tipo (el guard no acota
+    // `unknown` después de un throw).
+    let filtro: FiltroEstado | undefined;
+    if (estado !== undefined) {
+      if (!esFiltroEstado(estado)) {
+        throw new BadRequestException(
+          `estado tiene que ser uno de: ${FILTROS_ESTADO.join(', ')}`,
+        );
+      }
+      filtro = estado;
+    }
+    return this.establecimientos.listar(pagina, busqueda || undefined, filtro);
+  }
+
+  /**
+   * BL-411: ficha de un establecimiento. Mismo límite que el listado. 400 si
+   * el id no tiene formato de UUID (ParseUUIDPipe, que acepta los ids fijos
+   * del seed) y 404 si no existe. Sin contraseñas ni datos de comensales.
+   */
+  @Get(':tenantId')
+  @Throttle({ default: { limit: LIMITE_LISTADOS_POR_MINUTO, ttl: 60_000 } })
+  obtener(@Param('tenantId', ParseUUIDPipe) tenantId: string) {
+    return this.ficha.obtener(tenantId);
+  }
+
+  /**
+   * BL-412: corregir los datos del establecimiento. Se cambia lo que viene
+   * (400 si no viene nada). RUT inválido: 400 (DTO); RUT de otro
+   * establecimiento: 409; inexistente: 404. Devuelve la ficha actualizada.
+   * Actor: el sub del token, para la auditoría.
+   */
+  @Patch(':tenantId')
+  @Throttle({
+    default: { limit: LIMITE_EDICIONES_POR_HORA, ttl: 60 * 60_000 },
+  })
+  async editar(
+    @Req() req: { user: UsuarioPlataforma },
+    @Param('tenantId', ParseUUIDPipe) tenantId: string,
+    @Body() dto: EditarEstablecimientoDto,
+  ) {
+    await this.datos.actualizar(
+      tenantId,
+      dto,
+      { id: req.user.sub },
+      'PLATAFORMA',
+    );
+    return this.ficha.obtener(tenantId);
+  }
+
+  /**
+   * BL-413: suspender el establecimiento, con un motivo obligatorio. 404 si
+   * no existe, 409 si ya estaba suspendido. No borra datos ni cancela
+   * pedidos: desde ahí cualquier token del tenant recibe 403 y se cierran sus
+   * sesiones en Keycloak. Devuelve la ficha actualizada.
+   */
+  @Post(':tenantId/suspender')
+  @HttpCode(200)
+  @Throttle({
+    default: { limit: LIMITE_CAMBIOS_DE_ESTADO_POR_HORA, ttl: 60 * 60_000 },
+  })
+  async suspender(
+    @Req() req: { user: UsuarioPlataforma },
+    @Param('tenantId', ParseUUIDPipe) tenantId: string,
+    @Body() dto: SuspenderEstablecimientoDto,
+  ) {
+    await this.suspension.suspender(tenantId, dto.motivo, {
+      id: req.user.sub,
+    });
+    return this.ficha.obtener(tenantId);
+  }
+
+  /**
+   * BL-413: reactivar un establecimiento suspendido. 404 si no existe, 409
+   * si no estaba suspendido. Devuelve la ficha actualizada.
+   */
+  @Post(':tenantId/reactivar')
+  @HttpCode(200)
+  @Throttle({
+    default: { limit: LIMITE_CAMBIOS_DE_ESTADO_POR_HORA, ttl: 60 * 60_000 },
+  })
+  async reactivar(
+    @Req() req: { user: UsuarioPlataforma },
+    @Param('tenantId', ParseUUIDPipe) tenantId: string,
+  ) {
+    await this.suspension.reactivar(tenantId, { id: req.user.sub });
+    return this.ficha.obtener(tenantId);
   }
 
   @Post()

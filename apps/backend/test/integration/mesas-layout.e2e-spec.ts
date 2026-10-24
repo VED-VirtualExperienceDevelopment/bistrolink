@@ -46,7 +46,8 @@ const RESTAURANTE_B_ID = 'a46faef3-7412-45ae-af80-3829cd27b990';
 // Rango de números de mesa reservado para esta suite: todo lo que se cree
 // con estos números se borra en afterAll (regla de CRUD real de la guía de
 // casos de prueba). No colisiona con las mesas 1 y 2 del seed.
-const NUMERO_BASE = 900;
+// BL-425: 80 a 99 (antes 900 a 919), porque la API acepta hasta la mesa 99.
+const NUMERO_BASE = 80;
 const NUMEROS_TEST = Array.from({ length: 20 }, (_, i) => NUMERO_BASE + i);
 
 const LAYOUT_VALIDO = {

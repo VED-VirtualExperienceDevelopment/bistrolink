@@ -7,7 +7,19 @@ interface DialogProps {
   onClose: () => void;
   title: string;
   children: ReactNode;
+  /**
+   * BL-408: ancho máximo. `md` (por defecto, 448 px) para confirmaciones y
+   * formularios cortos; `lg` (768 px) para formularios con varias secciones,
+   * como el alta de un establecimiento. En el celular, los dos ocupan el
+   * ancho de la pantalla.
+   */
+  tamano?: 'md' | 'lg';
 }
+
+const ANCHO: Record<NonNullable<DialogProps['tamano']>, string> = {
+  md: 'max-w-md',
+  lg: 'max-w-3xl',
+};
 
 // Elementos que reciben foco con Tab dentro del panel.
 const ENFOCABLES =
@@ -22,8 +34,19 @@ const ENFOCABLES =
  * - Esc cierra, y al cerrar el foco vuelve al elemento que lo abrió (si
  *   sigue en la página).
  * - El botón de cerrar mide 48 px.
+ *
+ * BL-408: el título y el botón de cerrar quedan fijos arriba y solo se
+ * desplaza el contenido (antes se iban con el scroll, y en un formulario
+ * largo no se sabía en qué diálogo se estaba). El alto usa `dvh`, que en el
+ * celular descuenta la barra del navegador.
  */
-export function Dialog({ open, onClose, title, children }: DialogProps) {
+export function Dialog({
+  open,
+  onClose,
+  title,
+  children,
+  tamano = 'md',
+}: Readonly<DialogProps>) {
   const panelRef = useRef<HTMLDivElement>(null);
   const idTitulo = useId();
 
@@ -112,9 +135,9 @@ export function Dialog({ open, onClose, title, children }: DialogProps) {
         aria-modal="true"
         aria-labelledby={idTitulo}
         tabIndex={-1}
-        className="max-h-[calc(100vh-2rem)] w-full max-w-md overflow-y-auto rounded-xl border border-outline-variant bg-surface-container-lowest p-6 shadow-lg outline-none"
+        className={`flex max-h-[calc(100dvh-2rem)] w-full ${ANCHO[tamano]} flex-col overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest shadow-lg outline-none`}
       >
-        <div className="mb-4 flex items-start justify-between gap-2">
+        <div className="flex flex-none items-start justify-between gap-2 border-b border-outline-variant px-6 pb-3 pt-6">
           <h2 id={idTitulo} className="text-headline-sm text-on-surface">
             {title}
           </h2>
@@ -129,7 +152,9 @@ export function Dialog({ open, onClose, title, children }: DialogProps) {
             </span>
           </button>
         </div>
-        {children}
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6 pt-4">
+          {children}
+        </div>
       </div>
     </div>
   );

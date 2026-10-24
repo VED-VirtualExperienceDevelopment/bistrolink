@@ -7,7 +7,7 @@ import {
   IsUUID,
   Length,
   Matches,
-  MinLength,
+  MaxLength,
 } from 'class-validator';
 
 export const ROLES_VALIDOS = ['ADMIN', 'MOZO'] as const;
@@ -26,17 +26,42 @@ export const FORMATO_NOMBRE_PERSONA = /^\p{L}[\p{L}\p{M} .'’-]*$/u;
 export const MENSAJE_NOMBRE =
   'usá solo letras, espacios, apóstrofo, punto o guion, empezando con una letra';
 
+/**
+ * BL-356 (H-02 de la auditoría): nombre de usuario (el login). De 3 a 30
+ * caracteres, empieza con una letra y después admite minúsculas, números,
+ * punto, guion y guion bajo. Deja afuera los usuarios solo numéricos, que
+ * cuestan identificar en el listado y llevan a usar datos personales (un
+ * número de documento) como usuario. Keycloak guarda el usuario en
+ * minúsculas, así que se normaliza antes de validar.
+ */
+export const FORMATO_USERNAME = /^[a-z][a-z0-9._-]{2,29}$/;
+export const MENSAJE_USERNAME =
+  'de 3 a 30 caracteres, empezando con una letra; solo minúsculas, números, punto, guion o guion bajo';
+
+/**
+ * BL-356: largo máximo de un correo (RFC 5321). Sin este tope, un correo más
+ * largo llegaba a Keycloak, que lo rechaza con un 500 en lugar de un 400.
+ */
+export const LARGO_MAXIMO_EMAIL = 254;
+export const MENSAJE_EMAIL_LARGO = `email: puede tener hasta ${LARGO_MAXIMO_EMAIL} caracteres`;
+
+/** Saca los espacios de los extremos y pasa el usuario a minúsculas. */
+export const normalizarUsername = ({ value }: { value: unknown }) =>
+  typeof value === 'string' ? value.trim().toLowerCase() : value;
+
 /** Saca espacios de los extremos y deja uno solo entre palabras. */
 export const limpiarEspacios = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : value;
 
 export class CreateUsuarioDto {
+  @Transform(normalizarUsername)
   @IsString()
-  @MinLength(3)
+  @Matches(FORMATO_USERNAME, { message: `username: ${MENSAJE_USERNAME}` })
   username: string;
 
   @IsOptional()
   @IsEmail()
+  @MaxLength(LARGO_MAXIMO_EMAIL, { message: MENSAJE_EMAIL_LARGO })
   email?: string;
 
   // BL-361: obligatorios, para que el listado y el encabezado (BL-350)

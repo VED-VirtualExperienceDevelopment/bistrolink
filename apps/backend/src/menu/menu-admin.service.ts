@@ -11,6 +11,13 @@ import { CreateItemDto } from './dto/create-item.dto';
 import { UpdateItemDto } from './dto/update-item.dto';
 import { UpdateCategoriaDto } from './dto/update-categoria.dto';
 import { StorageService } from './storage.service';
+import { AuditLogService } from '../audit-log/audit-log.service';
+import { AuditAction } from '../audit-log/audit-action.enum';
+
+const MENSAJE_IMAGEN_AJENA =
+  'La imagen indicada no pertenece a este restaurante';
+const MENSAJE_IMAGEN_INEXISTENTE =
+  'La imagen indicada no existe. Volvé a subirla.';
 
 @Injectable()
 export class MenuAdminService {
@@ -20,7 +27,42 @@ export class MenuAdminService {
     private readonly prisma: TenantPrismaService,
     private readonly menuGateway: MenuGateway,
     private readonly storage: StorageService,
+    private readonly auditLog: AuditLogService,
   ) {}
+
+  /**
+   * BL-54 y BL-387: la imagen tiene que ser una imagen PUBLICADA de este
+   * tenant ({tenant}/menu/{uuid}.webp, generada por la confirmación) y
+   * tiene que existir en el bucket. Si no, 400 sin guardar nada.
+   */
+  private async validarImagen(key: string, tenantId: string): Promise<void> {
+    if (!this.storage.esKeyDelTenant(key, tenantId)) {
+      throw new BadRequestException(MENSAJE_IMAGEN_AJENA);
+    }
+    if (!(await this.storage.existeImagen(key))) {
+      throw new BadRequestException(MENSAJE_IMAGEN_INEXISTENTE);
+    }
+  }
+
+  /** BL-387: deja en la auditoría el alta, cambio o quita de una imagen. */
+  private auditarCambioDeImagen(
+    tenantId: string,
+    actorKeycloakId: string | undefined,
+    itemId: string,
+    keyAnterior: string | null,
+    keyNueva: string | null,
+  ): void {
+    this.auditLog.registrar({
+      action: AuditAction.CARTA_ITEM_IMAGEN_CAMBIADA,
+      tenantId,
+      actorKeycloakId: actorKeycloakId ?? 'desconocido',
+      detalle: {
+        itemId,
+        imagenKeyAnterior: keyAnterior,
+        imagenKeyNueva: keyNueva,
+      },
+    });
+  }
 
   private async resolveRestauranteId(
     tenantId: string,
@@ -176,7 +218,17 @@ export class MenuAdminService {
     });
   }
 
-  async createItem(tenantId: string, data: CreateItemDto) {
+  async createItem(
+    tenantId: string,
+    data: CreateItemDto,
+    actorKeycloakId?: string,
+  ) {
+    // BL-387: la imagen se valida antes de abrir la transacción (consulta a
+    // S3); así la transacción no queda abierta esperando la red.
+    if (data.imagenKey) {
+      await this.validarImagen(data.imagenKey, tenantId);
+    }
+
     return this.prisma.runInTenantContext(tenantId, async (tx) => {
       const categoria = await tx.categoriaCarta.findFirst({
         where: { id: data.categoriaId, tenantId },
@@ -184,17 +236,6 @@ export class MenuAdminService {
       if (!categoria) {
         throw new NotFoundException(
           'La categoría especificada no existe o no pertenece a este tenant',
-        );
-      }
-
-      // BL-54: la imagen tiene que ser de este tenant; si no, se le firmaría
-      // una URL de lectura para una imagen ajena.
-      if (
-        data.imagenKey &&
-        !this.storage.esKeyDelTenant(data.imagenKey, tenantId)
-      ) {
-        throw new BadRequestException(
-          'La imagen indicada no pertenece a este restaurante',
         );
       }
 
@@ -211,12 +252,27 @@ export class MenuAdminService {
         data: nuevoItem as unknown as Record<string, unknown>,
       });
 
+      if (nuevoItem.imagenKey) {
+        this.auditarCambioDeImagen(
+          tenantId,
+          actorKeycloakId,
+          nuevoItem.id,
+          null,
+          nuevoItem.imagenKey,
+        );
+      }
+
       this.logger.log(`Ítem creado: ${nuevoItem.id}`);
       return nuevoItem;
     });
   }
 
-  async updateItem(tenantId: string, itemId: string, dto: UpdateItemDto) {
+  async updateItem(
+    tenantId: string,
+    itemId: string,
+    dto: UpdateItemDto,
+    actorKeycloakId?: string,
+  ) {
     return this.prisma.runInTenantContext(tenantId, async (tx) => {
       const existing = await tx.itemCarta.findFirst({
         where: { id: itemId, tenantId },
@@ -238,14 +294,14 @@ export class MenuAdminService {
         }
       }
 
-      // BL-54: mismo control que en createItem.
-      if (
-        dto.imagenKey &&
-        !this.storage.esKeyDelTenant(dto.imagenKey, tenantId)
-      ) {
-        throw new BadRequestException(
-          'La imagen indicada no pertenece a este restaurante',
-        );
+      // BL-54 y BL-387: mismo control que en createItem, solo si la imagen
+      // CAMBIA. Si el formulario reenvía la misma key, no se vuelve a validar:
+      // las imágenes anteriores al reprocesamiento (BL-390) siguen sirviendo
+      // hasta que se reemplacen.
+      const cambiaLaImagen =
+        dto.imagenKey !== undefined && dto.imagenKey !== existing.imagenKey;
+      if (cambiaLaImagen && dto.imagenKey) {
+        await this.validarImagen(dto.imagenKey, tenantId);
       }
 
       const updated = await tx.itemCarta.update({
@@ -257,6 +313,16 @@ export class MenuAdminService {
         itemId,
         data: updated as unknown as Record<string, unknown>,
       });
+
+      if (cambiaLaImagen) {
+        this.auditarCambioDeImagen(
+          tenantId,
+          actorKeycloakId,
+          itemId,
+          existing.imagenKey,
+          updated.imagenKey,
+        );
+      }
 
       this.logger.log(`Ítem actualizado: ${itemId}`);
       return updated;

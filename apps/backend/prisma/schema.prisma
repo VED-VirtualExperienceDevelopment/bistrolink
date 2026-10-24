@@ -25,6 +25,14 @@ enum UsuarioRol {
   MOZO
 }
 
+// BL-410: estado comercial del establecimiento. SUSPENDIDO es la «baja»
+// reversible (falta de pago, pedido del cliente, fin de una prueba): los
+// datos se conservan y se reactiva sin perder nada (BL-413).
+enum TenantEstado {
+  ACTIVO
+  SUSPENDIDO
+}
+
 enum MesaEstado {
   LIBRE
   OCUPADA
@@ -82,6 +90,17 @@ model Tenant {
   creadoPor   String?  @map("creado_por")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // BL-410: suspensión (la escribe BL-413). La base exige que suspendido_en
+  // esté cargado si y solo si el estado es SUSPENDIDO (CHECK en la
+  // migración, Prisma no los declara).
+  estado           TenantEstado @default(ACTIVO)
+  suspendidoEn     DateTime?    @map("suspendido_en") @db.Timestamptz(3)
+  motivoSuspension String?      @map("motivo_suspension") @db.VarChar(200)
+  // BL-410: cuándo terminó el alta con el kit mínimo (lo escribe
+  // AprovisionamientoService al final). null = «Alta incompleta». Está en
+  // tenant para filtrar el listado sin leer `restaurante`, que tiene RLS.
+  altaCompletadaEn DateTime?    @map("alta_completada_en") @db.Timestamptz(3)
 
   // Un tenant = un restaurante (decisión del 03/10/2026, Anexo 6 §4.2;
   // sucursales fuera del MVP). La relación es 1 a 1: restaurante.tenant_id

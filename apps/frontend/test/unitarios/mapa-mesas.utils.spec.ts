@@ -14,8 +14,10 @@ import {
   mesasConLayoutAEdicion,
   normalizarRotacion,
   nuevaMesaEnEdicion,
+  NUMERO_MAXIMO_MESA,
   numerosDuplicados,
   parsearNumeroMesa,
+  puedeAgregarMesa,
   porcentajeZoom,
   posicionGridPorDefecto,
   puedeEditarMapa,
@@ -479,12 +481,39 @@ describe("parsearNumeroMesa (edición del número con doble clic)", () => {
     expect(parsearNumeroMesa(valor)).toBe(esperado);
   });
 
-  it.each(["0", "-3", "", "abc"])("rechaza %p (devuelve null)", (valor) => {
-    expect(parsearNumeroMesa(valor)).toBeNull();
+  it("BL-425: acepta hasta el número máximo", () => {
+    expect(parsearNumeroMesa(String(NUMERO_MAXIMO_MESA))).toBe(
+      NUMERO_MAXIMO_MESA,
+    );
   });
+
+  it.each(["0", "-3", "", "abc", "100", "999999"])(
+    "rechaza %p (devuelve null)",
+    (valor) => {
+      expect(parsearNumeroMesa(valor)).toBeNull();
+    },
+  );
 
   it("trunca un decimal a su parte entera (comportamiento de parseInt)", () => {
     expect(parsearNumeroMesa("4.9")).toBe(4);
+  });
+});
+
+describe("puedeAgregarMesa (BL-425)", () => {
+  const mesas = (cantidad: number) =>
+    Array.from({ length: cantidad }, (_, i) => ({ numero: i + 1 }));
+
+  it("deja agregar mientras quede un número libre hasta el tope", () => {
+    expect(puedeAgregarMesa(mesas(NUMERO_MAXIMO_MESA - 1))).toBe(true);
+  });
+
+  it("no deja agregar con todos los números del 1 al tope usados", () => {
+    expect(puedeAgregarMesa(mesas(NUMERO_MAXIMO_MESA))).toBe(false);
+  });
+
+  it("si hay un hueco en la numeración, se puede agregar", () => {
+    const conHueco = mesas(NUMERO_MAXIMO_MESA).filter((m) => m.numero !== 50);
+    expect(puedeAgregarMesa(conHueco)).toBe(true);
   });
 });
 

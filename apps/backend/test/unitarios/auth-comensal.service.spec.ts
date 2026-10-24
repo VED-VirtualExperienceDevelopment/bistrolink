@@ -1,9 +1,14 @@
 import {
+  ForbiddenException,
   GoneException,
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
 import { AuthComensalService } from '../../src/auth-comensal/auth-comensal.service';
+import {
+  errorEstablecimientoSuspendido,
+  MENSAJE_SUSPENDIDO_COMENSAL,
+} from '../../src/tenant-estado/tenant-estado.service';
 
 const TENANT_ID = '11111111-1111-1111-1111-111111111111';
 const MESA_ID = '33333333-3333-3333-3333-333333333333';
@@ -12,6 +17,7 @@ const RESTAURANTE_ID = '22222222-2222-2222-2222-222222222222';
 describe('AuthComensalService.emitirToken', () => {
   let mockTenantPrisma: any;
   let mockQrMesaAcceso: any;
+  let mockTenantEstado: { asegurarActivo: jest.Mock };
   let service: AuthComensalService;
   const envOriginal = process.env;
   let fetchMock: jest.Mock;
@@ -28,7 +34,15 @@ describe('AuthComensalService.emitirToken', () => {
 
     mockTenantPrisma = { runInTenantContext: jest.fn() };
     mockQrMesaAcceso = { resolver: jest.fn() };
-    service = new AuthComensalService(mockTenantPrisma, mockQrMesaAcceso);
+    // BL-413: establecimiento activo salvo en los tests de suspensión.
+    mockTenantEstado = {
+      asegurarActivo: jest.fn().mockResolvedValue(undefined),
+    };
+    service = new AuthComensalService(
+      mockTenantPrisma,
+      mockQrMesaAcceso,
+      mockTenantEstado as any,
+    );
 
     fetchMock = jest.fn();
     global.fetch = fetchMock as any;
@@ -135,8 +149,43 @@ describe('AuthComensalService.emitirToken', () => {
     ).rejects.toThrow('Falta KEYCLOAK_COMENSAL_PASSWORD en el .env');
   });
 
+  it('[TC-U-123] no emite el token si el establecimiento está suspendido (403, sin llamar a Keycloak)', async () => {
+    mockTenantPrisma.runInTenantContext.mockResolvedValue({
+      id: RESTAURANTE_ID,
+    });
+    mockTenantEstado.asegurarActivo.mockRejectedValue(
+      errorEstablecimientoSuspendido(MENSAJE_SUSPENDIDO_COMENSAL),
+    );
+
+    await expect(
+      service.emitirToken(TENANT_ID, RESTAURANTE_ID),
+    ).rejects.toThrow(ForbiddenException);
+    expect(mockTenantEstado.asegurarActivo).toHaveBeenCalledWith(
+      TENANT_ID,
+      MENSAJE_SUSPENDIDO_COMENSAL,
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   // HU-034 (BL-204): token del comensal a partir del QR de la mesa.
   describe('emitirTokenPorQr', () => {
+    it('[TC-U-124] con un QR válido de un establecimiento suspendido responde 403 sin pedir el token', async () => {
+      mockQrMesaAcceso.resolver.mockResolvedValue({
+        tenantId: TENANT_ID,
+        mesaId: MESA_ID,
+        restauranteId: RESTAURANTE_ID,
+        numero: 4,
+      });
+      mockTenantEstado.asegurarActivo.mockRejectedValue(
+        errorEstablecimientoSuspendido(MENSAJE_SUSPENDIDO_COMENSAL),
+      );
+
+      await expect(service.emitirTokenPorQr('qr-valido')).rejects.toThrow(
+        MENSAJE_SUSPENDIDO_COMENSAL,
+      );
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
     it('emite el token del comensal técnico del tenant que viene en el QR', async () => {
       mockQrMesaAcceso.resolver.mockResolvedValue({
         tenantId: TENANT_ID,

@@ -89,6 +89,7 @@ describe('AprovisionamientoService (BL-163)', () => {
           Promise.resolve(where.rut ? tenantPorRut : tenantPorId),
         ),
         create: jest.fn().mockResolvedValue({}),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       restaurante: {
         findUnique: jest.fn(() => Promise.resolve(restauranteExistente)),
@@ -481,6 +482,49 @@ describe('AprovisionamientoService (BL-163)', () => {
 
       expect(resultado.tenantId).toBe(TENANT_ID);
       expect(tx.tenant.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('fin del alta (BL-410)', () => {
+    it('marca el alta como completa en la misma transacción que la fila del Admin', async () => {
+      await aprovisionar();
+
+      expect(tx.tenant.updateMany).toHaveBeenCalledTimes(1);
+      expect(tx.tenant.updateMany).toHaveBeenCalledWith({
+        where: { id: TENANT_ID, altaCompletadaEn: null },
+        data: { altaCompletadaEn: expect.any(Date) },
+      });
+      // Después de la fila del Admin: es el último paso del kit mínimo.
+      expect(tx.usuario.upsert.mock.invocationCallOrder[0]).toBeLessThan(
+        tx.tenant.updateMany.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('un alta repetida no pisa la fecha (solo actualiza si estaba nula)', async () => {
+      tx.tenant.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(aprovisionar()).resolves.toBeDefined();
+      expect(tx.tenant.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: TENANT_ID, altaCompletadaEn: null },
+        }),
+      );
+    });
+
+    it('si Keycloak falla, el alta queda incompleta (no se marca)', async () => {
+      keycloakAdmin.createUser.mockRejectedValueOnce(
+        new Error('Keycloak caído'),
+      );
+
+      await expect(aprovisionar()).rejects.toThrow('Keycloak caído');
+      expect(tx.tenant.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('si falla la fila del Admin, el alta queda incompleta (no se marca)', async () => {
+      tx.usuario.upsert.mockRejectedValueOnce(crearErrorP2002());
+
+      await expect(aprovisionar()).rejects.toBeInstanceOf(ConflictException);
+      expect(tx.tenant.updateMany).not.toHaveBeenCalled();
     });
   });
 

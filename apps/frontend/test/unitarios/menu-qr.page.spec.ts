@@ -72,6 +72,29 @@ describe("MenuQrPage", () => {
     );
   });
 
+  it("[TC-U-143] BL-413: 403 de un establecimiento suspendido: aviso «no disponible», sin el menú", async () => {
+    fetchMock.mockResolvedValue(
+      respuesta(403, {
+        statusCode: 403,
+        message: "Este restaurante no está disponible por el momento.",
+        codigo: "ESTABLECIMIENTO_SUSPENDIDO",
+      }),
+    );
+
+    const elemento = await MenuQrPage({ params: params() });
+
+    expect(elemento.type).toBe(AvisoMesaQr);
+    expect(elemento.props.titulo).toBe(
+      "Este restaurante no está disponible por el momento.",
+    );
+  });
+
+  it("BL-413: un 403 sin el código de suspensión es un error, no «no disponible»", async () => {
+    fetchMock.mockResolvedValue(respuesta(403, { message: "Forbidden" }));
+
+    await expect(MenuQrPage({ params: params() })).rejects.toThrow("403");
+  });
+
   it("410 (QR regenerado): aviso de QR reemplazado", async () => {
     fetchMock.mockResolvedValue(respuesta(410));
 

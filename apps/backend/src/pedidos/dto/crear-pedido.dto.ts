@@ -7,6 +7,7 @@ import {
   IsString,
   Length,
   Matches,
+  Max,
   MaxLength,
   Min,
   ValidateNested,
@@ -27,12 +28,23 @@ function stripHtmlTagsSafely(input: string): string {
   return current.trim();
 }
 
+/**
+ * BL-425: tope de unidades de un mismo ítem por pedido. Sin tope, un pedido
+ * podía llevar, por ejemplo, 1.000.000 unidades, y el total y el pago se
+ * calculan con esa cantidad. 99 alcanza para cualquier mesa y es lo que
+ * permite el carrito (CANTIDAD_MAXIMA_POR_ITEM en menu-digital.utils.ts).
+ */
+export const CANTIDAD_MAXIMA_POR_ITEM = 99;
+
 export class CrearPedidoItemDto {
   @Matches(UUID_REGEX, { message: 'itemCartaId debe tener formato UUID' })
   itemCartaId: string;
 
   @IsInt()
   @Min(1)
+  @Max(CANTIDAD_MAXIMA_POR_ITEM, {
+    message: `cantidad: puede ser hasta ${CANTIDAD_MAXIMA_POR_ITEM} unidades por ítem`,
+  })
   cantidad: number;
 
   @IsOptional()

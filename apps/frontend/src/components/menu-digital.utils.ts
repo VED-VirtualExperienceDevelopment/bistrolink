@@ -102,7 +102,47 @@ export function mensajeErrorQr(
   return null;
 }
 
+/**
+ * BL-413: el establecimiento está suspendido. La API responde 403 con este
+ * código en el menú, en el token del comensal y en los pedidos; otros 403
+ * (por ejemplo, la mesa del QR) no lo traen.
+ */
+export const CODIGO_ESTABLECIMIENTO_SUSPENDIDO = "ESTABLECIMIENTO_SUSPENDIDO";
+
+export const MENSAJE_RESTAURANTE_NO_DISPONIBLE =
+  "Este restaurante no está disponible por el momento.";
+
+/** BL-413: ¿la respuesta de la API es la de un establecimiento suspendido? */
+export function esEstablecimientoSuspendido(
+  status: number,
+  cuerpo: unknown,
+): boolean {
+  return (
+    status === 403 &&
+    typeof cuerpo === "object" &&
+    cuerpo !== null &&
+    (cuerpo as { codigo?: unknown }).codigo ===
+      CODIGO_ESTABLECIMIENTO_SUSPENDIDO
+  );
+}
+
 /** Etiqueta del encabezado del menú de mesa. */
 export function etiquetaMesa(numeroMesa?: number): string {
   return numeroMesa ? `Mesa ${numeroMesa}` : "Mesa asignada";
+}
+
+/**
+ * BL-425: tope de unidades de un mismo ítem en el carrito. Mismo valor que
+ * CANTIDAD_MAXIMA_POR_ITEM en crear-pedido.dto.ts (backend).
+ */
+export const CANTIDAD_MAXIMA_POR_ITEM = 99;
+
+/** Cantidad después de sumar una unidad, sin pasar del tope. */
+export function sumarUnidad(cantidad: number): number {
+  return Math.min(cantidad + 1, CANTIDAD_MAXIMA_POR_ITEM);
+}
+
+/** true si el ítem ya llegó al tope de unidades y no se puede agregar otra. */
+export function alcanzoCantidadMaxima(cantidad: number): boolean {
+  return cantidad >= CANTIDAD_MAXIMA_POR_ITEM;
 }

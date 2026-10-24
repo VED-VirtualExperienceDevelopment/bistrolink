@@ -2,6 +2,8 @@
  * BL-257: validación de la imagen y mensajes de error del ImageUploader.
  * BL-54: mensajes para los rechazos del backend (400 formato, 413 tamaño)
  * y para el 400 de S3 cuando la policy rechaza el tamaño.
+ * BL-388: mensajes de la confirmación (la API verifica y reprocesa la
+ * imagen) y del límite de pedidos (429).
  *
  * Lógica pura (sin React ni fetch) para poder testearla igual que el resto
  * de los utils del frontend.
@@ -27,6 +29,39 @@ export class ErrorSubidaAlmacenamiento extends Error {
     super(`La subida a S3 respondió ${status}`);
     this.name = "ErrorSubidaAlmacenamiento";
   }
+}
+
+/**
+ * BL-388: error de la confirmación (POST /admin/menu/imagenes/confirmar).
+ * Envuelve el ApiError para distinguirlo del pedido de la URL firmada: los
+ * 400 de la confirmación traen un motivo propio ("El archivo no es una
+ * imagen válida", "demasiado grande", "animadas") que se muestra tal cual.
+ */
+export class ErrorConfirmacionImagen extends Error {
+  readonly status: number | undefined;
+
+  constructor(readonly causa: unknown) {
+    // ApiError es un Error, pero se acepta cualquier objeto con message
+    // (por ejemplo, un error serializado) para no perder el motivo de la API.
+    super(mensajeDe(causa) ?? "Falló la confirmación de la imagen");
+    this.name = "ErrorConfirmacionImagen";
+    this.status = tieneStatus(causa) ? causa.status : undefined;
+  }
+}
+
+export const MENSAJE_DEMASIADOS_INTENTOS =
+  "Hiciste muchos intentos seguidos. Esperá un minuto y probá de nuevo.";
+export const MENSAJE_SIN_PERMISO =
+  "Tu sesión expiró o no tenés permisos para subir imágenes. Volvé a iniciar sesión.";
+
+function mensajeDe(err: unknown): string | undefined {
+  if (typeof err === "object" && err !== null) {
+    const message = (err as { message?: unknown }).message;
+    if (typeof message === "string" && message.length > 0) {
+      return message;
+    }
+  }
+  return undefined;
 }
 
 function formatearMegas(bytes: number): string {
@@ -60,35 +95,69 @@ function tieneStatus(err: unknown): err is { status: number } {
   );
 }
 
+/** BL-388: la confirmación falló (la API verificó y rechazó, o no respondió). */
+function mensajeErrorConfirmacion(err: ErrorConfirmacionImagen): string {
+  // Los rechazos de la verificación (400), imagen vencida o inexistente (404)
+  // y tamaño real (413) traen el motivo redactado por la API.
+  const conMotivoDeLaApi = [400, 404, 413];
+  if (
+    err.status !== undefined &&
+    conMotivoDeLaApi.includes(err.status) &&
+    err.message
+  ) {
+    return err.message;
+  }
+  if (err.status === 429) {
+    return MENSAJE_DEMASIADOS_INTENTOS;
+  }
+  if (err.status === 401 || err.status === 403) {
+    return MENSAJE_SIN_PERMISO;
+  }
+  return "No pudimos procesar la imagen. Probá de nuevo.";
+}
+
+/**
+ * Falló el POST a S3 con una respuesta. La policy rechaza con 403 si el
+ * Content-Type no coincide y con 400 (EntityTooLarge) si se pasa de 5 MB.
+ */
+function mensajeErrorAlmacenamiento(err: ErrorSubidaAlmacenamiento): string {
+  if (err.status === 400 || err.status === 403) {
+    return "El almacenamiento rechazó la imagen. Verificá que sea PNG, JPG o WEBP de hasta 5 MB.";
+  }
+  return "No pudimos guardar la imagen. Probá de nuevo.";
+}
+
+/** Falló el pedido de la URL firmada al backend (apiFetch lanza con status). */
+function mensajeErrorUrlFirmada(status: number): string {
+  switch (status) {
+    case 413:
+      return MENSAJE_TAMANIO_EXCEDIDO;
+    case 400:
+      return MENSAJE_FORMATO_NO_PERMITIDO;
+    case 429:
+      return MENSAJE_DEMASIADOS_INTENTOS;
+    case 401:
+    case 403:
+      return MENSAJE_SIN_PERMISO;
+    default:
+      return "No pudimos preparar la subida. Probá de nuevo en unos minutos.";
+  }
+}
+
 /** Mensaje para mostrarle al usuario según dónde falló la subida. */
 export function mensajeErrorSubida(err: unknown): string {
-  // Falló el POST a S3 con una respuesta. La policy rechaza con 403 si el
-  // Content-Type no coincide y con 400 (EntityTooLarge) si se pasa de 5 MB.
-  if (err instanceof ErrorSubidaAlmacenamiento) {
-    if (err.status === 400 || err.status === 403) {
-      return "El almacenamiento rechazó la imagen. Verificá que sea PNG, JPG o WEBP de hasta 5 MB.";
-    }
-    return "No pudimos guardar la imagen. Probá de nuevo.";
+  if (err instanceof ErrorConfirmacionImagen) {
+    return mensajeErrorConfirmacion(err);
   }
-
+  if (err instanceof ErrorSubidaAlmacenamiento) {
+    return mensajeErrorAlmacenamiento(err);
+  }
   // fetch tira TypeError cuando no hay respuesta: sin conexión o bloqueo de CORS.
   if (err instanceof TypeError) {
     return "No pudimos conectar con el almacenamiento de imágenes. Revisá tu conexión y probá de nuevo.";
   }
-
-  // Falló el pedido de la URL firmada al backend (apiFetch lanza con status).
   if (tieneStatus(err)) {
-    if (err.status === 413) {
-      return MENSAJE_TAMANIO_EXCEDIDO;
-    }
-    if (err.status === 400) {
-      return MENSAJE_FORMATO_NO_PERMITIDO;
-    }
-    if (err.status === 401 || err.status === 403) {
-      return "Tu sesión expiró o no tenés permisos para subir imágenes. Volvé a iniciar sesión.";
-    }
-    return "No pudimos preparar la subida. Probá de nuevo en unos minutos.";
+    return mensajeErrorUrlFirmada(err.status);
   }
-
   return "No pudimos subir la imagen. Probá de nuevo.";
 }
