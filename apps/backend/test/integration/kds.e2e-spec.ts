@@ -216,7 +216,7 @@ describe('Canal WebSocket del KDS (HU-004) - e2e', () => {
   );
 
   itConMozo(
-    '[TC-I-017] KDS: MOZO marca "En preparación" y el cambio se refleja por WS en <1s (DoD)',
+    '[TC-I-017] KDS: MOZO marca «En preparación» y el cambio se refleja por WS en menos de 1 s (DoD)',
     async () => {
       const pedidoId = await crearPedidoDePrueba(baseUrl);
       const token = await getToken(MOZO_USER as string, MOZO_PASS as string);
