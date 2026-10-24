@@ -8,6 +8,10 @@ import { apiFetch, ApiError } from "@/lib/api-client";
 import { FichaEstablecimiento } from "@/components/plataforma/FichaEstablecimiento";
 import { EditarEstablecimientoDialog } from "@/components/plataforma/EditarEstablecimientoDialog";
 import {
+  type AccionEstado,
+  CambiarEstadoEstablecimientoDialog,
+} from "@/components/plataforma/CambiarEstadoEstablecimientoDialog";
+import {
   mensajeErrorFicha,
   rutaFicha,
 } from "@/components/plataforma/plataforma.utils";
@@ -24,6 +28,10 @@ import type { FichaEstablecimiento as Ficha } from "@/types/plataforma";
  *
  * BL-412: «Editar datos» abre el diálogo; al guardar, la ficha se reemplaza
  * por la que devuelve el PATCH y se anuncia «Datos guardados».
+ *
+ * BL-413: «Suspender» o «Reactivar» (según el estado) abren la
+ * confirmación; al confirmar, la ficha se reemplaza por la que devuelve la
+ * API y se anuncia el resultado en la misma región aria-live.
  */
 export default function FichaEstablecimientoPage() {
   const { tenantId } = useParams<{ tenantId: string }>();
@@ -36,6 +44,8 @@ export default function FichaEstablecimientoPage() {
   // con los datos actuales.
   const [aperturas, setAperturas] = useState(0);
   const [aviso, setAviso] = useState("");
+  // BL-413: acción de estado en curso (null = diálogo cerrado).
+  const [accionEstado, setAccionEstado] = useState<AccionEstado | null>(null);
 
   const cargar = useCallback(async () => {
     if (!token || !tenantId) return;
@@ -122,6 +132,16 @@ export default function FichaEstablecimientoPage() {
               setAperturas((n) => n + 1);
               setEditando(true);
             }}
+            onSuspender={() => {
+              setAviso("");
+              setAperturas((n) => n + 1);
+              setAccionEstado("suspender");
+            }}
+            onReactivar={() => {
+              setAviso("");
+              setAperturas((n) => n + 1);
+              setAccionEstado("reactivar");
+            }}
           />
           <EditarEstablecimientoDialog
             key={aperturas}
@@ -134,6 +154,24 @@ export default function FichaEstablecimientoPage() {
               setAviso("Datos guardados.");
             }}
           />
+          {accionEstado && (
+            <CambiarEstadoEstablecimientoDialog
+              key={`estado-${aperturas}`}
+              accion={accionEstado}
+              open
+              onClose={() => setAccionEstado(null)}
+              token={token}
+              ficha={ficha}
+              onActualizado={(actualizada) => {
+                setFicha(actualizada);
+                setAviso(
+                  accionEstado === "suspender"
+                    ? "Establecimiento suspendido."
+                    : "Establecimiento reactivado.",
+                );
+              }}
+            />
+          )}
         </>
       )}
     </div>

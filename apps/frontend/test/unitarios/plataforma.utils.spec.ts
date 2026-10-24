@@ -1,6 +1,13 @@
 import {
   avisoDeCopia,
+  avisoPedidosAbiertos,
   cambiosDeEdicion,
+  errorDeMotivo,
+  LARGO_MAXIMO_MOTIVO,
+  mensajeErrorCambioEstado,
+  motivoLimpio,
+  rutaReactivar,
+  rutaSuspender,
   errorDeRut,
   normalizarRut,
   construirPedidoAlta,
@@ -695,5 +702,55 @@ describe("editar los datos del establecimiento (BL-412)", () => {
       mensajeErrorEdicion(409, "El RUT ya pertenece a otro establecimiento"),
     ).toBe("El RUT ya pertenece a otro establecimiento");
     expect(mensajeErrorEdicion(429, "Too Many Requests")).toMatch(/límite/);
+  });
+});
+
+describe("BL-413: suspender y reactivar", () => {
+  const ID = "11111111-1111-1111-1111-111111111111";
+
+  it("[TC-U-139] rutas de la API para suspender y reactivar", () => {
+    expect(rutaSuspender(ID)).toBe(
+      `/plataforma/establecimientos/${ID}/suspender`,
+    );
+    expect(rutaReactivar(ID)).toBe(
+      `/plataforma/establecimientos/${ID}/reactivar`,
+    );
+    expect(rutaSuspender("a/b")).toBe(
+      "/plataforma/establecimientos/a%2Fb/suspender",
+    );
+  });
+
+  it("[TC-U-140] el motivo es obligatorio, de 3 a 200 caracteres sin contar espacios de más", () => {
+    expect(errorDeMotivo("")).toMatch(/motivo/);
+    expect(errorDeMotivo("    ")).toMatch(/motivo/);
+    expect(errorDeMotivo(" ab ")).toMatch(/Al menos 3/);
+    expect(errorDeMotivo("abc")).toBeUndefined();
+    expect(errorDeMotivo("a".repeat(LARGO_MAXIMO_MOTIVO))).toBeUndefined();
+    expect(errorDeMotivo("a".repeat(LARGO_MAXIMO_MOTIVO + 1))).toMatch(
+      /Máximo 200/,
+    );
+    expect(motivoLimpio("  Falta   de pago ")).toBe("Falta de pago");
+  });
+
+  it("[TC-U-141] avisa los pedidos abiertos, en singular y en plural, y nada si no hay", () => {
+    expect(avisoPedidosAbiertos(0)).toBeNull();
+    expect(avisoPedidosAbiertos(undefined)).toBeNull();
+    expect(avisoPedidosAbiertos(1)).toMatch(
+      /^Hay 1 pedido abierto\. No se cancela,/,
+    );
+    expect(avisoPedidosAbiertos(3)).toMatch(
+      /^Hay 3 pedidos abiertos\. No se cancelan,/,
+    );
+  });
+
+  it("los 409 y 404 se muestran con el mensaje del backend; 429, 401 y 403 con uno propio", () => {
+    expect(
+      mensajeErrorCambioEstado(409, "El establecimiento ya está suspendido"),
+    ).toBe("El establecimiento ya está suspendido");
+    expect(mensajeErrorCambioEstado(429, "Too Many Requests")).toMatch(
+      /límite/,
+    );
+    expect(mensajeErrorCambioEstado(401, "Unauthorized")).toMatch(/sesión/);
+    expect(mensajeErrorCambioEstado(403, "Forbidden")).toMatch(/permiso/);
   });
 });

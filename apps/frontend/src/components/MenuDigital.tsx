@@ -8,8 +8,10 @@ import { apiFetch, ApiError } from '@/lib/api-client';
 import {
   alcanzoCantidadMaxima,
   CANTIDAD_MAXIMA_POR_ITEM,
+  esEstablecimientoSuspendido,
   etiquetaMesa,
   headersMesaQr,
+  MENSAJE_RESTAURANTE_NO_DISPONIBLE,
   mensajeErrorQr,
   origenPedido,
   solicitudAuthComensal,
@@ -199,9 +201,14 @@ export default function MenuDigital({
       });
 
       if (!authRes.ok) {
+        // BL-413: establecimiento suspendido → «no disponible», no un error
+        // genérico de identificación.
+        const cuerpo = await authRes.json().catch(() => null);
         throw new ApiError(
           authRes.status,
-          mensajeErrorQr(origen, authRes.status) ?? 'Error al identificarte para hacer el pedido.',
+          esEstablecimientoSuspendido(authRes.status, cuerpo)
+            ? MENSAJE_RESTAURANTE_NO_DISPONIBLE
+            : (mensajeErrorQr(origen, authRes.status) ?? 'Error al identificarte para hacer el pedido.'),
         );
       }
 

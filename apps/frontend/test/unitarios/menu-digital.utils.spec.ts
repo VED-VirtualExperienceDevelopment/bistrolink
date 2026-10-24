@@ -1,6 +1,8 @@
 import {
   alcanzoCantidadMaxima,
   CANTIDAD_MAXIMA_POR_ITEM,
+  CODIGO_ESTABLECIMIENTO_SUSPENDIDO,
+  esEstablecimientoSuspendido,
   esTokenQrConFormatoValido,
   etiquetaMesa,
   HEADER_MESA_TOKEN,
@@ -140,5 +142,31 @@ describe("Tope de unidades por ítem en el carrito (BL-425)", () => {
   it("alcanzoCantidadMaxima es true recién en el tope", () => {
     expect(alcanzoCantidadMaxima(98)).toBe(false);
     expect(alcanzoCantidadMaxima(99)).toBe(true);
+  });
+});
+
+describe("BL-413: establecimiento suspendido", () => {
+  it("[TC-U-142] reconoce el 403 con el código de suspensión y no otros 403", () => {
+    expect(
+      esEstablecimientoSuspendido(403, {
+        statusCode: 403,
+        message: "Este restaurante no está disponible por el momento.",
+        codigo: CODIGO_ESTABLECIMIENTO_SUSPENDIDO,
+      }),
+    ).toBe(true);
+    // 403 de la mesa del QR u otro rol: sin el código.
+    expect(
+      esEstablecimientoSuspendido(403, {
+        statusCode: 403,
+        message: "Forbidden",
+      }),
+    ).toBe(false);
+    expect(esEstablecimientoSuspendido(403, null)).toBe(false);
+    expect(esEstablecimientoSuspendido(403, "texto")).toBe(false);
+    expect(
+      esEstablecimientoSuspendido(404, {
+        codigo: CODIGO_ESTABLECIMIENTO_SUSPENDIDO,
+      }),
+    ).toBe(false);
   });
 });

@@ -63,6 +63,8 @@ export interface FichaEstablecimiento {
     itemsCarta: number;
     pedidosRecientes: number;
     diasPedidos: number;
+    /** BL-413: pedidos sin terminar (recibidos, en preparación o listos). */
+    pedidosAbiertos: number;
   } | null;
 }
 

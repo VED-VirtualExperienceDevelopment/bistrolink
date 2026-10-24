@@ -3,7 +3,11 @@ import type { Metadata } from 'next';
 import AvisoMesaQr from '@/components/AvisoMesaQr';
 import MenuMesaCliente from '@/components/MenuMesaCliente';
 import type { CategoriaMenu } from '@/components/MenuDigital';
-import { esTokenQrConFormatoValido } from '@/components/menu-digital.utils';
+import {
+  esEstablecimientoSuspendido,
+  esTokenQrConFormatoValido,
+  MENSAJE_RESTAURANTE_NO_DISPONIBLE,
+} from '@/components/menu-digital.utils';
 
 interface PageProps {
   readonly params: Promise<{ readonly token: string }>;
@@ -18,7 +22,8 @@ interface MenuQrResponse {
 type ResultadoMenuQr =
   | { estado: 'ok'; menu: MenuQrResponse }
   | { estado: 'invalido' }
-  | { estado: 'reemplazado' };
+  | { estado: 'reemplazado' }
+  | { estado: 'no-disponible' };
 
 /**
  * HU-034 (BL-204): menú de una mesa a partir del token opaco del QR
@@ -28,6 +33,8 @@ type ResultadoMenuQr =
  * - 404 / 400 → QR no válido (o de otra clave, o de una mesa que ya no
  *   existe): el backend no distingue el motivo, acá tampoco.
  * - 410 → el QR se regeneró y este quedó viejo.
+ * - 403 con el código ESTABLECIMIENTO_SUSPENDIDO (BL-413) → el restaurante
+ *   no está disponible por el momento.
  * - Cualquier otro error (500, API caída) se lanza: no es un QR inválido.
  *
  * El token se valida ANTES de armar la URL: Next decodifica el parámetro, y
@@ -50,6 +57,12 @@ const obtenerMenuPorQr = cache(
     }
     if (res.status === 410) {
       return { estado: 'reemplazado' };
+    }
+    if (
+      res.status === 403 &&
+      esEstablecimientoSuspendido(res.status, await res.json().catch(() => null))
+    ) {
+      return { estado: 'no-disponible' };
     }
     if (!res.ok) {
       throw new Error(`Error al cargar el menú de la mesa: ${res.status}`);
@@ -82,6 +95,16 @@ export default async function MenuQrPage({ params }: PageProps) {
         icono="🔄"
         titulo="Este QR fue reemplazado."
         detalle="Pedile al personal el QR actualizado de la mesa."
+      />
+    );
+  }
+
+  if (resultado.estado === 'no-disponible') {
+    return (
+      <AvisoMesaQr
+        icono="🕒"
+        titulo={MENSAJE_RESTAURANTE_NO_DISPONIBLE}
+        detalle="Consultá al personal del local."
       />
     );
   }
