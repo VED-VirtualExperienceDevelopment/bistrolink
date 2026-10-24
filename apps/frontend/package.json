@@ -11,6 +11,7 @@
     "test:cov": "jest --coverage"
   },
   "dependencies": {
+    "@mercadopago/sdk-react": "^1.0.7",
     "@sentry/nextjs": "^11.8.0",
     "@types/dompurify": "^3.2.0",
     "dompurify": "^3.4.17",

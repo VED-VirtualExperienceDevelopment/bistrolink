@@ -5,14 +5,34 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { PagoEstado, PedidoEstado, Prisma } from '@prisma/client';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
-import { CrearPagoDto } from './dto/crear-pago.dto';
+import { SolicitudPago } from './dto/crear-pago.dto';
 import { PagoGatewayFactory } from './gateways/pago-gateway.factory';
 import { ResultadoCobro } from './gateways/pago-gateway.interface';
 import { PagoRechazadoException } from './gateways/pago-rechazado.exception';
 import { PagoTemporalmenteNoDisponibleException } from './gateways/pago-temporalmente-no-disponible.exception';
-import { CfeService } from '../cfe/cfe.service';
+import { CfeService, ResumenComprobante } from '../cfe/cfe.service';
+import { PedidosService } from '../pedidos/pedidos.service';
+import { PedidoParaKds } from '../pedidos/pedido-kds.mapper';
+
+/** BL-311: respuesta de GET /pedidos/:pedidoId/pagos. */
+export interface EstadoPagoDelPedido {
+  pedidoId: string;
+  estadoPedido: PedidoEstado;
+  pago: {
+    id: string;
+    estado: PagoEstado;
+    medioPago: string;
+    monto: string;
+  } | null;
+  // Null mientras el CFE no fue emitido (el frontend consulta de nuevo).
+  comprobante: ResumenComprobante | null;
+}
+
+// El pago que importa para el comensal: el que cobró (aprobado o después
+// reembolsado). Si no hay ninguno, el último intento (pendiente o rechazado).
+const ESTADOS_COBRADOS: PagoEstado[] = ['APROBADO', 'REEMBOLSADO'];
 
 @Injectable()
 export class PagosService {
@@ -20,9 +40,11 @@ export class PagosService {
     private readonly tenantPrisma: TenantPrismaService,
     private readonly gatewayFactory: PagoGatewayFactory,
     private readonly cfe: CfeService,
+    private readonly pedidos: PedidosService,
   ) {}
 
-  async crear(tenantId: string, dto: CrearPagoDto) {
+  // BL-311: el pedidoId lo pone el controller desde la ruta.
+  async crear(tenantId: string, dto: SolicitudPago) {
     // Primero se elige la pasarela: si el medio de pago no está disponible,
     // se falla ACÁ, antes de reservar el pago o tocar la mesa.
     const gateway = this.gatewayFactory.obtener(dto.medioPago);
@@ -69,9 +91,8 @@ export class PagosService {
       estado = 'RECHAZADO';
     }
 
-    const pagoFinal = await this.tenantPrisma.runInTenantContext(
-      tenantId,
-      async (tx) => {
+    const { pagoFinal, pedidoConfirmado } =
+      await this.tenantPrisma.runInTenantContext(tenantId, async (tx) => {
         // Solo si el pago sigue PENDIENTE: el webhook de Mercado Pago puede
         // haberlo resuelto antes de que llegue la respuesta de esta llamada,
         // y una respuesta más vieja no debe pisar el estado real.
@@ -79,28 +100,49 @@ export class PagosService {
           where: { id: pago.id, estado: 'PENDIENTE' },
           data: { estado, pasarelaReferencia: resultado.pasarelaReferencia },
         });
+        let confirmado: PedidoParaKds | null = null;
         if (count > 0 && !resultado.pendiente) {
-          // Pago simple (HU-007): un único pago cubre el total. HU-008 lo
-          // reemplaza por la suma de pagos parciales.
+          // BL-311: aprobado o rechazado, la mesa vuelve a OCUPADA. Con
+          // prepago, el comensal paga ANTES de comer: la mesa la libera el
+          // cierre de sesión (HU-017), no el pago.
           await tx.mesa.updateMany({
             where: { id: mesaId, estado: 'EN_PROCESO_DE_PAGO' },
-            data: { estado: resultado.aprobado ? 'LIBRE' : 'OCUPADA' },
+            data: { estado: 'OCUPADA' },
           });
+          // BL-311 (RD.03): pago aprobado => el pedido pasa a RECIBIDO.
+          if (resultado.aprobado) {
+            confirmado = await this.pedidos.confirmarPagoEnTx(
+              tx,
+              tenantId,
+              pago.pedidoId,
+            );
+          }
         }
-        return tx.pago.findUniqueOrThrow({ where: { id: pago.id } });
-      },
-    );
+        return {
+          pagoFinal: await tx.pago.findUniqueOrThrow({
+            where: { id: pago.id },
+          }),
+          pedidoConfirmado: confirmado,
+        };
+      });
+
+    // Recién con la transacción confirmada se avisa a cocina y al comensal.
+    if (pedidoConfirmado) {
+      this.pedidos.notificarPedidoConfirmado(tenantId, pedidoConfirmado);
+    }
 
     // BL-77: ya guardado como RECHAZADO; recién ahora se le avisa al comensal.
     if (pagoFinal.estado === 'RECHAZADO') {
       throw new PagoRechazadoException(resultado.motivoRechazo);
     }
 
-    // Pago aprobado: se emite el eTicket. Si Surtec falla, el cobro no se
-    // pierde: el comprobante queda pendiente de reintento (ver CfeService).
+    // Pago aprobado: el eTicket se emite en segundo plano, para responder
+    // al comensal sin esperar a Surtec (puede tardar varios segundos). La
+    // pantalla de pago aprobado consulta GET /pedidos/:id/pagos hasta que
+    // aparece. Si Surtec falla, el cobro no se pierde (ver CfeService).
     if (pagoFinal.estado === 'APROBADO') {
-      const comprobante = await this.cfe.intentarEmitir(tenantId, pagoFinal.id);
-      return { ...pagoFinal, comprobante };
+      this.cfe.emitirEnSegundoPlano(tenantId, pagoFinal.id);
+      return pagoFinal;
     }
 
     // Checkout embebido (Plexo): esto nunca se persiste — es una URL de un
@@ -111,7 +153,69 @@ export class PagosService {
     return pagoFinal;
   }
 
-  private async reservar(tenantId: string, dto: CrearPagoDto) {
+  /**
+   * BL-311: estado del pago del pedido y su comprobante, para la pantalla
+   * del comensal. El acceso ya lo validó PedidoAccesoGuard (RD.05); acá se
+   * consulta igual dentro del tenant (RLS).
+   *
+   * Solo lectura: no reintenta la emisión del CFE. Si el pago está APROBADO
+   * y el comprobante no llega, lo resuelve la conciliación (HU-023, BL-96).
+   */
+  async consultar(
+    tenantId: string,
+    pedidoId: string,
+  ): Promise<EstadoPagoDelPedido> {
+    const pedido = await this.tenantPrisma.runInTenantContext(tenantId, (tx) =>
+      tx.pedido.findUnique({
+        where: { id: pedidoId },
+        select: {
+          id: true,
+          estado: true,
+          pagos: {
+            orderBy: { createdAt: 'desc' },
+            select: {
+              id: true,
+              estado: true,
+              medioPago: true,
+              monto: true,
+              comprobantes: {
+                orderBy: { createdAt: 'asc' },
+                take: 1,
+                select: { serie: true, numero: true, urlConsulta: true },
+              },
+            },
+          },
+        },
+      }),
+    );
+    if (!pedido) {
+      throw new NotFoundException('Pedido no encontrado');
+    }
+
+    const pago =
+      pedido.pagos.find((p) => ESTADOS_COBRADOS.includes(p.estado)) ??
+      pedido.pagos[0] ??
+      null;
+    const comprobante = pago?.comprobantes[0] ?? null;
+
+    return {
+      pedidoId: pedido.id,
+      estadoPedido: pedido.estado,
+      pago: pago && {
+        id: pago.id,
+        estado: pago.estado,
+        medioPago: pago.medioPago,
+        monto: pago.monto.toFixed(2),
+      },
+      comprobante: comprobante && {
+        serie: comprobante.serie,
+        numero: comprobante.numero,
+        urlConsulta: comprobante.urlConsulta,
+      },
+    };
+  }
+
+  private async reservar(tenantId: string, dto: SolicitudPago) {
     try {
       return await this.tenantPrisma.runInTenantContext(
         tenantId,

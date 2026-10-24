@@ -24,7 +24,14 @@ describe('Pedidos Observaciones - Integración (BL-41)', () => {
   beforeAll(async () => {
     // Mock de la transacción de Prisma
     mockTx = {
-      pedido: { findUnique: jest.fn(), create: jest.fn() },
+      pedido: {
+        findUnique: jest.fn(),
+        create: jest.fn(),
+        // BL-311: confirmación del pago (PENDIENTE_PAGO -> RECIBIDO).
+        updateMany: jest.fn(),
+        findUniqueOrThrow: jest.fn(),
+      },
+      pedidoEstadoHistorial: { create: jest.fn() },
       mesa: { findUnique: jest.fn(), upsert: jest.fn() },
       itemCarta: { findMany: jest.fn() },
     };
@@ -44,6 +51,7 @@ describe('Pedidos Observaciones - Integración (BL-41)', () => {
           provide: KdsGateway,
           useValue: {
             emitirNuevoPedido: jest.fn(),
+            emitirActualizacionPedido: jest.fn(),
           },
         },
       ],
@@ -83,7 +91,7 @@ describe('Pedidos Observaciones - Integración (BL-41)', () => {
     ]);
   });
 
-  it('[TC-I-022] Pedidos: crea un pedido con observaciones de ítem y general, envía payload correcto al KDS', async () => {
+  it('[TC-I-022] Pedidos: crea un pedido con observaciones de ítem y general, y al aprobarse el pago envía el payload correcto al KDS', async () => {
     const tenantId = '11111111-1111-1111-1111-111111111111';
     const dto: CrearPedidoDto = {
       restauranteId: '22222222-2222-2222-2222-222222222222',
@@ -104,7 +112,7 @@ describe('Pedidos Observaciones - Integración (BL-41)', () => {
     const pedidoCreado = {
       id: 'pedido-nuevo-1',
       tenantId,
-      estado: 'RECIBIDO',
+      estado: 'PENDIENTE_PAGO',
       createdAt: new Date('2026-10-11T20:00:00.000Z'),
       observacionGeneral: dto.observacionGeneral,
       lineas: [
@@ -122,6 +130,22 @@ describe('Pedidos Observaciones - Integración (BL-41)', () => {
     // Ejecutamos el servicio real
     await pedidosService.crear(tenantId, dto, MESA_QR);
 
+    // BL-311 (prepago, RD.03): crear el pedido NO avisa a cocina. Llega al
+    // KDS cuando se aprueba el pago: se simula esa confirmación.
+    expect(kdsGateway.emitirNuevoPedido).not.toHaveBeenCalled();
+    mockTx.pedido.updateMany.mockResolvedValue({ count: 1 });
+    mockTx.pedido.findUniqueOrThrow.mockResolvedValue({
+      ...pedidoCreado,
+      estado: 'RECIBIDO',
+      mesa: { numero: 4 },
+    });
+    const confirmado = await pedidosService.confirmarPagoEnTx(
+      mockTx,
+      tenantId,
+      pedidoCreado.id,
+    );
+    pedidosService.notificarPedidoConfirmado(tenantId, confirmado!);
+
     // Verificamos que el gateway recibió el payload correcto
     expect(kdsGateway.emitirNuevoPedido).toHaveBeenCalledWith(
       tenantId,
@@ -137,7 +161,7 @@ describe('Pedidos Observaciones - Integración (BL-41)', () => {
     );
   });
 
-  it('[TC-I-023] Pedidos: crea un pedido sin observaciones sin romper el payload del KDS (undefined manejados)', async () => {
+  it('[TC-I-023] Pedidos: crea un pedido sin observaciones y al aprobarse el pago el payload del KDS no se rompe (undefined manejados)', async () => {
     const tenantId = '11111111-1111-1111-1111-111111111111';
     const dto: CrearPedidoDto = {
       restauranteId: '22222222-2222-2222-2222-222222222222',
@@ -153,7 +177,7 @@ describe('Pedidos Observaciones - Integración (BL-41)', () => {
     const pedidoCreado = {
       id: 'pedido-nuevo-2',
       tenantId,
-      estado: 'RECIBIDO',
+      estado: 'PENDIENTE_PAGO',
       createdAt: new Date('2026-10-11T20:05:00.000Z'),
       observacionGeneral: undefined,
       lineas: [
@@ -170,6 +194,22 @@ describe('Pedidos Observaciones - Integración (BL-41)', () => {
 
     // Ejecutamos el servicio real
     await pedidosService.crear(tenantId, dto, MESA_QR);
+
+    // BL-311 (prepago, RD.03): crear el pedido NO avisa a cocina. Llega al
+    // KDS cuando se aprueba el pago: se simula esa confirmación.
+    expect(kdsGateway.emitirNuevoPedido).not.toHaveBeenCalled();
+    mockTx.pedido.updateMany.mockResolvedValue({ count: 1 });
+    mockTx.pedido.findUniqueOrThrow.mockResolvedValue({
+      ...pedidoCreado,
+      estado: 'RECIBIDO',
+      mesa: { numero: 4 },
+    });
+    const confirmado = await pedidosService.confirmarPagoEnTx(
+      mockTx,
+      tenantId,
+      pedidoCreado.id,
+    );
+    pedidosService.notificarPedidoConfirmado(tenantId, confirmado!);
 
     // Verificamos que el gateway maneja correctamente los undefined sin romper
     expect(kdsGateway.emitirNuevoPedido).toHaveBeenCalledWith(

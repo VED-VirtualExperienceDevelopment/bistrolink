@@ -529,6 +529,7 @@ jobs:
               --build-arg NEXT_PUBLIC_KEYCLOAK_REALM=bistrolink
               --build-arg NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=bistrolink-frontend
               --build-arg NEXT_PUBLIC_APP_VERSION=${{ needs.version.outputs.app_version }}
+              --build-arg NEXT_PUBLIC_MP_PUBLIC_KEY=${MP_PUBLIC_KEY}
           - name: Auth
             image: ghcr.io/ved-virtualexperiencedevelopment/bistrolink-auth
             dockerfile: keycloak/Dockerfile.auth
@@ -543,6 +544,13 @@ jobs:
       - name: Construir imagen (${{ matrix.name }})
         env:
           ENTORNO_WEB: ${{ startsWith(github.ref, 'refs/tags/v') && 'production' || 'staging' }}
+          # BL-311: clave PÚBLICA de Mercado Pago para los Secure Fields. No es
+          # un secreto (va al navegador), pero es distinta por entorno: la de
+          # prueba (sandbox) en staging, la productiva en los tags v*.*.*. Son
+          # variables del repo (Settings > Secrets and variables > Actions >
+          # Variables). Sin clave, la pantalla de pago avisa que no está
+          # configurada y los E2E de pago fallan.
+          MP_PUBLIC_KEY: ${{ startsWith(github.ref, 'refs/tags/v') && vars.MP_PUBLIC_KEY_PRODUCTION || vars.MP_PUBLIC_KEY_STAGING }}
         run: |
           if [ "${{ matrix.name }}" = "Web" ]; then
             echo "Web: URLs de ${ENTORNO_WEB} (bistrolink-api-${ENTORNO_WEB}, bistrolink-auth-${ENTORNO_WEB})"
