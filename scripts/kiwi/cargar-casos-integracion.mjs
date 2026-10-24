@@ -16,6 +16,8 @@
  *   $env:KIWI_TCMS_PASSWORD = "<contraseña>"
  *   node scripts/kiwi/cargar-casos-integracion.mjs            # solo muestra
  *   node scripts/kiwi/cargar-casos-integracion.mjs --aplicar  # carga
+ *   node scripts/kiwi/cargar-casos-integracion.mjs --descripciones            # muestra
+ *   node scripts/kiwi/cargar-casos-integracion.mjs --aplicar --descripciones  # carga
  *
  * Sin --aplicar no cambia nada en Kiwi: lista qué casos ya están, cuáles se
  * crearían y cuáles tienen otro título. Con --aplicar:
@@ -24,16 +26,27 @@
  *   al plan;
  * - corrige el título de los que existen con el mismo TC-I y otro texto.
  *
+ * Con --descripciones, además, compara la descripción de cada caso que tenga
+ * un bloque `## TC-I-NNN` en descripciones-integracion.md (al lado de este
+ * script) y, con --aplicar, reemplaza las que cambiaron. Los casos que no
+ * están en ese archivo no se tocan.
+ *
  * Se puede correr las veces que haga falta: lo que ya está igual no se toca.
  * Las credenciales salen de variables de entorno, nunca del repositorio.
  */
 
 import { readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const DIRECTORIO_TESTS = "apps/backend/test/integration";
 const NOMBRE_PLAN = "Integration tests";
 const APLICAR = process.argv.includes("--aplicar");
+const DESCRIPCIONES = process.argv.includes("--descripciones");
+const ARCHIVO_DESCRIPCIONES = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "descripciones-integracion.md",
+);
 
 /**
  * Datos de cada caso nuevo, con los criterios de
@@ -202,6 +215,21 @@ function casosDelCodigo() {
   return [...casos.values()].sort((a, b) => a.numero - b.numero);
 }
 
+/**
+ * Bloques `## TC-I-NNN` de descripciones-integracion.md: número → texto.
+ * Lo que está antes del primer bloque es la explicación del archivo.
+ */
+function descripcionesDelArchivo() {
+  const partes = readFileSync(ARCHIVO_DESCRIPCIONES, "utf8")
+    .replaceAll("\r\n", "\n")
+    .split(/^## TC-I-(\d{3})[ \t]*$/m);
+  const descripciones = new Map();
+  for (let i = 1; i < partes.length; i += 2) {
+    descripciones.set(Number(partes[i]), partes[i + 1].trim());
+  }
+  return descripciones;
+}
+
 // ── Kiwi (JSON-RPC) ──────────────────────────────────────────────────────────
 
 function variable(nombre) {
@@ -278,6 +306,9 @@ const sinEscapar = (texto) =>
  */
 const CARACTERES_ESCAPADOS = /["'<>&]/;
 
+const textoNormalizado = (texto) =>
+  sinEscapar(texto).replaceAll("\r\n", "\n").trim();
+
 const sinPrefijo = (titulo) =>
   (titulo ?? "").replace(/^\[TC-I-\d{3}\]\s*/, "").trim();
 
@@ -306,7 +337,6 @@ async function main() {
     { name: NOMBRE_PLAN },
     "Test Plan",
   );
-  const producto = plan.product;
   console.log(`Kiwi: Test Plan «${NOMBRE_PLAN}» (id ${plan.id}).`);
 
   const enPlan = await rpc("TestCase.filter", [{ plan: plan.id }]);
@@ -351,6 +381,7 @@ async function main() {
   }
 
   if (!APLICAR) {
+    if (DESCRIPCIONES) await sincronizarDescripciones(plan.id, false);
     console.log(
       "\nNo se cambió nada. Para cargar, volvé a correrlo con --aplicar.",
     );
@@ -362,8 +393,14 @@ async function main() {
     console.log(`Título corregido: TC-${c.enKiwi.id} → ${c.titulo}`);
   }
 
-  if (faltantes.length === 0) return;
+  if (faltantes.length > 0) {
+    await crearFaltantes(faltantes, plan.id, plan.product);
+  }
+  if (DESCRIPCIONES) await sincronizarDescripciones(plan.id, true);
+}
 
+/** Crea los casos que faltan y los agrega al plan. */
+async function crearFaltantes(faltantes, idPlan, producto) {
   const confirmado = await unico(
     "TestCaseStatus.filter",
     { name: "CONFIRMED" },
@@ -417,7 +454,7 @@ async function main() {
         ].join("\n"),
       },
     ]);
-    await rpc("TestPlan.add_case", [plan.id, creado.id]);
+    await rpc("TestPlan.add_case", [idPlan, creado.id]);
     for (const tag of datos.tags) {
       await rpc("TestCase.add_tag", [creado.id, tag]);
     }
@@ -431,6 +468,46 @@ async function main() {
       }
     }
     console.log(`Creado: TC-${creado.id} ${c.titulo}`);
+  }
+}
+
+/**
+ * Compara la descripción de los casos del plan con descripciones-integracion.md
+ * y, si aplicar es true, reemplaza las que cambiaron.
+ */
+async function sincronizarDescripciones(idPlan, aplicar) {
+  const descripciones = descripcionesDelArchivo();
+  const enPlan = await rpc("TestCase.filter", [{ plan: idPlan }]);
+  const porNumero = new Map();
+  for (const caso of enPlan) {
+    const numero = numeroDe(caso.summary);
+    if (numero !== null) porNumero.set(numero, caso);
+  }
+
+  const cambian = [];
+  const sinCaso = [];
+  for (const [numero, texto] of descripciones) {
+    const caso = porNumero.get(numero);
+    if (!caso) sinCaso.push(numero);
+    else if (textoNormalizado(caso.text) !== texto)
+      cambian.push({ caso, texto });
+  }
+
+  console.log(
+    `\nDescripciones: ${descripciones.size} en el archivo, ${cambian.length} para actualizar.`,
+  );
+  for (const { caso } of cambian)
+    console.log(`  TC-${caso.id} ${caso.summary}`);
+  for (const numero of sinCaso) {
+    console.warn(
+      `  Aviso: TC-I-${String(numero).padStart(3, "0")} tiene descripción en el archivo pero no está en el plan.`,
+    );
+  }
+  if (!aplicar) return;
+
+  for (const { caso, texto } of cambian) {
+    await rpc("TestCase.update", [caso.id, { text: texto }]);
+    console.log(`Descripción actualizada: TC-${caso.id}`);
   }
 }
 
