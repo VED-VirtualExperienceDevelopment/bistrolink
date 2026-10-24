@@ -5,6 +5,7 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request = require('supertest');
 import { Prisma, PrismaClient } from '@prisma/client';
 import { AppModule } from '../../src/app.module';
+import { digitoVerificadorRut } from '../../src/plataforma/rut';
 
 /**
  * BL-163 (HU-027), entrega 2: POST /plataforma/establecimientos.
@@ -37,9 +38,29 @@ const COCINA_USER = process.env.TEST_COCINA_USERNAME;
 const COCINA_PASS = process.env.TEST_COCINA_PASSWORD;
 const COMENSAL_PASS = process.env.KEYCLOAK_COMENSAL_PASSWORD;
 
-// Datos únicos por corrida: el RUT tiene que tener 12 dígitos.
+// Datos únicos por corrida.
 const SUFIJO = Date.now().toString().slice(-10);
-const RUT = `29${SUFIJO}`;
+
+/**
+ * BL-409: desde que la API valida el dígito verificador, el RUT de prueba
+ * tiene que ser un RUT válido (antes era `29` + SUFIJO y la API lo rechaza
+ * con 400). Registro 21, seis dígitos de la corrida, `001` y el
+ * verificador. Si con esos dígitos no hay verificador posible (da 10), se
+ * prueba con el número siguiente.
+ */
+function rutDePrueba(): string {
+  const inicial = Number(SUFIJO.slice(-6));
+  for (let intento = 0; intento < 20; intento++) {
+    const numero = String((inicial + intento) % 1_000_000).padStart(6, '0');
+    if (numero === '000000') continue;
+    const base = `21${numero}001`;
+    const digito = digitoVerificadorRut(base);
+    if (digito !== null) return `${base}${digito}`;
+  }
+  throw new Error('No se pudo armar un RUT de prueba válido');
+}
+
+const RUT = rutDePrueba();
 const USUARIO_PLATAFORMA = `dev-e2e${SUFIJO}-plataforma`;
 const PASSWORD_PLATAFORMA = `Plataforma-${SUFIJO}`;
 const ADMIN_NUEVO = `e2e-admin-${SUFIJO}`;
