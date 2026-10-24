@@ -55,25 +55,25 @@ async function getToken(username: string, password: string): Promise<string> {
   return data.access_token as string;
 }
 
-async function getComensalToken(): Promise<string> {
-  const res = await fetch(
-    `${KEYCLOAK_URL.replace('8080', '3001')}/auth/comensal`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        tenantId: TENANT_DEMO_ID,
-        restauranteId: RESTAURANTE_DEMO_ID,
-      }),
-    },
-  ).catch(() => null);
-  // Nota: esto le pega directo al backend real en :3001 (no a `app` de este
-  // test), porque AuthComensalService arma su propio token contra Keycloak
-  // por fuera del request HTTP entrante - no hay forma de invocarlo sobre
-  // la instancia in-memory de `app` sin levantar tambien su servidor HTTP.
-  if (!res || !res.ok) {
+/**
+ * Token de comensal (pedido para retirar) emitido por la app de este test,
+ * vía POST /auth/comensal. AuthComensalService le pide el token a Keycloak
+ * desde adentro de la app, así que funciona igual sobre la instancia
+ * levantada en beforeAll (app.listen). Antes le pegaba a un backend aparte
+ * en :3001, que en CI no existe (BL-177).
+ */
+async function getComensalToken(baseUrl: string): Promise<string> {
+  const res = await fetch(`${baseUrl}/auth/comensal`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      tenantId: TENANT_DEMO_ID,
+      restauranteId: RESTAURANTE_DEMO_ID,
+    }),
+  });
+  if (!res.ok) {
     throw new Error(
-      'No se pudo emitir token de comensal (backend real en :3001 debe estar corriendo)',
+      `No se pudo emitir el token de comensal: ${res.status} ${await res.text()}`,
     );
   }
   const data = await res.json();
@@ -82,7 +82,7 @@ async function getComensalToken(): Promise<string> {
 
 /** Crea un pedido real de prueba en el tenant Demo, vía POST /pedidos. */
 async function crearPedidoDePrueba(baseUrl: string): Promise<string> {
-  const tokenComensal = await getComensalToken();
+  const tokenComensal = await getComensalToken(baseUrl);
   const res = await fetch(`${baseUrl}/pedidos`, {
     method: 'POST',
     headers: {
@@ -216,7 +216,7 @@ describe('Canal WebSocket del KDS (HU-004) - e2e', () => {
   );
 
   itConMozo(
-    '[TC-I-017] KDS: MOZO marca "En preparación" y el cambio se refleja por WS en <1s (DoD)',
+    '[TC-I-017] KDS: MOZO marca «En preparación» y el cambio se refleja por WS en menos de 1 s (DoD)',
     async () => {
       const pedidoId = await crearPedidoDePrueba(baseUrl);
       const token = await getToken(MOZO_USER as string, MOZO_PASS as string);
@@ -281,7 +281,7 @@ describe('Canal WebSocket del KDS (HU-004) - e2e', () => {
   );
 
   it('[TC-I-019] KDS: token real de COMENSAL se conecta, pero pedidos:sync lo rechaza', async () => {
-    const tokenComensal = await getComensalToken();
+    const tokenComensal = await getComensalToken(baseUrl);
     const socket = conectar(tokenComensal);
     try {
       socket.emit('pedidos:sync');

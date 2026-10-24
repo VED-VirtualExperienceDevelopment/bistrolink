@@ -157,7 +157,7 @@ describe('Seguimiento del comensal (HU-006) - e2e', () => {
   });
 
   itConMozo(
-    '[TC-I-028] Seguimiento (DoD): Mozo marca "En preparación" → el comensal que sigue ESE pedido lo recibe en <1s',
+    '[TC-I-028] Seguimiento (DoD): Mozo marca «En preparación» → el comensal que sigue ESE pedido lo recibe en menos de 1 s',
     async () => {
       const pedidoId = await crearPedido();
 
