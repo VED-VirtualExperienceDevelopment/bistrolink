@@ -10,6 +10,7 @@ interface OrderTicketProps {
 // tipo (que es el enum PedidoEstado de Prisma). Cambiar esto no afecta
 // ninguna comparación de estado, solo el texto que ve el usuario.
 export const ESTADO_LABEL: Record<Pedido['estado'], string> = {
+  PENDIENTE_PAGO: 'Esperando el pago',
   RECIBIDO: 'Recibido',
   EN_PREPARACION: 'En preparación',
   LISTO_PARA_ENTREGAR: 'Listo para entregar',

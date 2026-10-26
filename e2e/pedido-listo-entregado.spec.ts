@@ -1,5 +1,6 @@
 import { test, expect } from './support/auth';
 import { MENU_URL_PATH } from './support/ids';
+import { confirmarYPagar } from './support/pago';
 
 test('[TC-E-016] HU-018: cocina mozo comensal, pedido llega a Entregado', async ({ kdsPageMozo, page }) => {
   const kdsPage = kdsPageMozo;
@@ -9,13 +10,8 @@ test('[TC-E-016] HU-018: cocina mozo comensal, pedido llega a Entregado', async 
 
   await comensalPage.getByRole('button', { name: /^Agregar/ }).first().click();
 
-  const [pedidoRes] = await Promise.all([
-    comensalPage.waitForResponse(
-      (res) => res.url().endsWith('/pedidos') && res.request().method() === 'POST',
-    ),
-    comensalPage.getByRole('button', { name: 'Realizar pedido' }).click(),
-  ]);
-  const { id: pedidoId } = await pedidoRes.json();
+  // BL-311 (prepago, RD.03): el pedido llega a cocina con el pago aprobado.
+  const pedidoId = await confirmarYPagar(comensalPage);
 
   const ticket = kdsPage.locator(`article[data-pedido-id="${pedidoId}"]`);
   await expect(ticket).toBeVisible({ timeout: 5000 });

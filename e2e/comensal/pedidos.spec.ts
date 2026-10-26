@@ -1,8 +1,9 @@
 import { test, expect } from '@playwright/test';
 import { ITEM_DISPONIBLE, MENU_URL_PATH } from '../support/ids';
+import { confirmarYPagar } from '../support/pago';
 
 test.describe('HU-003: Carrito y confirmación de pedido', () => {
-  test('[TC-E-010] HU-003: agregar un ítem, confirmar, y ver la confirmación visual', async ({ page }) => {
+  test('[TC-E-010] HU-003: agregar un ítem, confirmar, pagar y ver la confirmación visual', async ({ page }) => {
     await page.goto(MENU_URL_PATH);
     await expect(page.getByText(ITEM_DISPONIBLE)).toBeVisible();
 
@@ -12,13 +13,11 @@ test.describe('HU-003: Carrito y confirmación de pedido', () => {
 
     await expect(page.getByText(/Tu pedido \(1 item\)/i)).toBeVisible();
 
-    await page.getByRole('button', { name: 'Realizar pedido' }).click();
+    // BL-311 (prepago, RD.03): el pedido llega a cocina recién con el pago
+    // aprobado. confirmarYPagar espera «¡Tu pedido ya está en cocina!».
+    await confirmarYPagar(page);
 
-    await expect(
-      page.getByText('¡Pedido enviado! Cocina ya lo recibió.'),
-    ).toBeVisible({ timeout: 10000 });
-
-    // El carrito se vacía al confirmar.
+    // El carrito se vacía al pagar.
     await expect(page.getByText(/Tu pedido \(/i)).not.toBeVisible();
 
     // Criterio de aceptación: el pedido queda en estado Recibido.
