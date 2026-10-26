@@ -76,6 +76,7 @@ describe('PagosWebhookService.procesarOrden (BL-78)', () => {
   let pedidos: {
     confirmarPagoEnTx: jest.Mock;
     notificarPedidoConfirmado: jest.Mock;
+    notificarEstadoMesa: jest.Mock;
   };
   let service: PagosWebhookService;
 
@@ -88,7 +89,7 @@ describe('PagosWebhookService.procesarOrden (BL-78)', () => {
         update: jest.fn(),
       },
       pedido: { findUnique: jest.fn().mockResolvedValue({ mesaId: MESA_ID }) },
-      mesa: { updateMany: jest.fn() },
+      mesa: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
     };
     tenantPrisma = {
       runInTenantContext: jest.fn((_tenantId, callback) => callback(tx)),
@@ -98,6 +99,7 @@ describe('PagosWebhookService.procesarOrden (BL-78)', () => {
     pedidos = {
       confirmarPagoEnTx: jest.fn().mockResolvedValue(PEDIDO_CONFIRMADO),
       notificarPedidoConfirmado: jest.fn(),
+      notificarEstadoMesa: jest.fn(),
     };
     service = new PagosWebhookService(
       tenantPrisma as any,
@@ -108,6 +110,26 @@ describe('PagosWebhookService.procesarOrden (BL-78)', () => {
   });
 
   afterEach(() => jest.restoreAllMocks());
+
+  describe('HU-017 (BL-60): estado de la mesa en el mapa', () => {
+    it('el pago resuelto por webhook devuelve la mesa a OCUPADA y lo avisa', async () => {
+      await service.procesarOrden(ORDER_ID);
+
+      expect(pedidos.notificarEstadoMesa).toHaveBeenCalledWith(
+        TENANT_ID,
+        MESA_ID,
+        'OCUPADA',
+      );
+    });
+
+    it('si la mesa ya no estaba cobrando, no avisa', async () => {
+      tx.mesa.updateMany.mockResolvedValue({ count: 0 });
+
+      await service.procesarOrden(ORDER_ID);
+
+      expect(pedidos.notificarEstadoMesa).not.toHaveBeenCalled();
+    });
+  });
 
   describe('BL-311: prepago (RD.03), confirmación del pedido por webhook', () => {
     it('order procesada => confirma el pedido en la misma transacción y avisa después', async () => {

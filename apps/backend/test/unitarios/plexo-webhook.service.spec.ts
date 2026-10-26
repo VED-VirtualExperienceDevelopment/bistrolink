@@ -69,6 +69,7 @@ describe('PlexoWebhookService.procesarPago (BL-78)', () => {
   let pedidos: {
     confirmarPagoEnTx: jest.Mock;
     notificarPedidoConfirmado: jest.Mock;
+    notificarEstadoMesa: jest.Mock;
   };
   let service: PlexoWebhookService;
 
@@ -81,7 +82,7 @@ describe('PlexoWebhookService.procesarPago (BL-78)', () => {
         update: jest.fn(),
       },
       pedido: { findUnique: jest.fn().mockResolvedValue({ mesaId: MESA_ID }) },
-      mesa: { updateMany: jest.fn() },
+      mesa: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
     };
     tenantPrisma = {
       runInTenantContext: jest.fn((_tenantId, callback) => callback(tx)),
@@ -91,6 +92,7 @@ describe('PlexoWebhookService.procesarPago (BL-78)', () => {
     pedidos = {
       confirmarPagoEnTx: jest.fn().mockResolvedValue(PEDIDO_CONFIRMADO),
       notificarPedidoConfirmado: jest.fn(),
+      notificarEstadoMesa: jest.fn(),
     };
     service = new PlexoWebhookService(
       tenantPrisma as any,
