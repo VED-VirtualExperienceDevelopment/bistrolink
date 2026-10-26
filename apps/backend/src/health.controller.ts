@@ -130,12 +130,19 @@ export class HealthController {
     // migraciones que arrancaron pero fallaron/quedaron a medias — esas no
     // cuentan como "aplicada". Se compara contra el disco más abajo, en
     // "upToDate".
+    //
+    // Se ordena por NOMBRE (el timestamp con que se creó la migración), no
+    // por finished_at (cuándo se aplicó): una rama que tardó en mergearse
+    // trae migraciones con nombre más viejo que otras ya aplicadas, y se
+    // aplican después. Ordenando por finished_at, la "última" era una de
+    // esas y upToDate daba false aunque la base estuviera al día (deploy de
+    // BL-311 del 26/10/2026). El disco también se ordena por nombre.
     let lastMigration: LastMigration = 'unavailable';
     try {
       const rows = await getDiagnosticClient().$queryRawUnsafe<
         { migration_name: string; finished_at: Date | null }[]
       >(
-        `SELECT migration_name, finished_at FROM "_prisma_migrations" WHERE finished_at IS NOT NULL ORDER BY finished_at DESC LIMIT 1`,
+        `SELECT migration_name, finished_at FROM "_prisma_migrations" WHERE finished_at IS NOT NULL ORDER BY migration_name DESC LIMIT 1`,
       );
       if (rows.length > 0 && rows[0].finished_at) {
         lastMigration = {
