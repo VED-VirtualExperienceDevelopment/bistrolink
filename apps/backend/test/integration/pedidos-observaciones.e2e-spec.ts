@@ -13,6 +13,7 @@ const MESA_QR = {
   mesaId: '33333333-3333-3333-3333-333333333333',
   restauranteId: '22222222-2222-2222-2222-222222222222',
   numero: 4,
+  sesionId: '99999999-9999-4999-8999-999999999999',
 };
 
 describe('Pedidos Observaciones - Integración (BL-41)', () => {

@@ -1,6 +1,9 @@
 import { GoneException, NotFoundException } from '@nestjs/common';
 import {
+  exigirSesionAbierta,
+  MENSAJE_MESA_CERRADA,
   MENSAJE_QR_INVALIDO,
+  MENSAJE_SESION_VENCIDA,
   MENSAJE_QR_REEMPLAZADO,
   QrMesaAccesoService,
 } from '../../src/qr-mesa/qr-mesa-acceso.service';
@@ -18,6 +21,7 @@ const MESA_VIGENTE = {
   numero: 4,
   esVirtual: false,
   qrVersion: 2,
+  sesionId: '99999999-9999-4999-8999-999999999999',
 };
 
 describe('QrMesaAccesoService (BL-204)', () => {
@@ -47,7 +51,7 @@ describe('QrMesaAccesoService (BL-204)', () => {
     return qrToken.cifrar({ tenantId: TENANT_ID, mesaId: MESA_ID, version });
   }
 
-  it('con un QR vigente, devuelve la mesa, su restaurante y su número', async () => {
+  it('con un QR vigente, devuelve la mesa, su restaurante, su número y su sesión', async () => {
     tx.mesa.findUnique.mockResolvedValue(MESA_VIGENTE);
 
     await expect(service.resolver(tokenVersion(2))).resolves.toEqual({
@@ -55,6 +59,16 @@ describe('QrMesaAccesoService (BL-204)', () => {
       mesaId: MESA_ID,
       restauranteId: RESTAURANTE_ID,
       numero: 4,
+      sesionId: '99999999-9999-4999-8999-999999999999',
+    });
+  });
+
+  it('HU-017 (BL-60): con la mesa cerrada, el QR sigue siendo válido (sesionId null)', async () => {
+    tx.mesa.findUnique.mockResolvedValue({ ...MESA_VIGENTE, sesionId: null });
+
+    await expect(service.resolver(tokenVersion(2))).resolves.toMatchObject({
+      mesaId: MESA_ID,
+      sesionId: null,
     });
   });
 
@@ -104,5 +118,54 @@ describe('QrMesaAccesoService (BL-204)', () => {
     await expect(promesa).rejects.toThrow(NotFoundException);
     await expect(promesa).rejects.toThrow(MENSAJE_QR_INVALIDO);
     expect(mockTenantPrisma.runInTenantContext).not.toHaveBeenCalled();
+  });
+});
+
+describe('exigirSesionAbierta (HU-017, BL-60)', () => {
+  const SESION = '99999999-9999-4999-8999-999999999999';
+  const mesa = {
+    tenantId: TENANT_ID,
+    mesaId: MESA_ID,
+    restauranteId: RESTAURANTE_ID,
+    numero: 4,
+    sesionId: SESION,
+  };
+
+  function errorDe(fn: () => void): GoneException {
+    try {
+      fn();
+    } catch (e) {
+      return e as GoneException;
+    }
+    throw new Error('no lanzó');
+  }
+
+  it('con la sesión abierta y la de la página: deja pasar', () => {
+    expect(() => exigirSesionAbierta(mesa, SESION)).not.toThrow();
+  });
+
+  it('mesa cerrada: 410 MESA_CERRADA', () => {
+    const error = errorDe(() =>
+      exigirSesionAbierta({ ...mesa, sesionId: null }, SESION),
+    );
+    expect(error).toBeInstanceOf(GoneException);
+    expect(error.getResponse()).toEqual({
+      statusCode: 410,
+      codigo: 'MESA_CERRADA',
+      message: MENSAJE_MESA_CERRADA,
+    });
+  });
+
+  it.each([
+    ['sin sesión', undefined],
+    ['de otra apertura', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'],
+  ])('sesión %s: 410 SESION_VENCIDA', (_caso, sesion) => {
+    const error = errorDe(() => exigirSesionAbierta(mesa, sesion));
+    expect(error).toBeInstanceOf(GoneException);
+    expect(error.getResponse()).toEqual({
+      statusCode: 410,
+      codigo: 'SESION_VENCIDA',
+      message: MENSAJE_SESION_VENCIDA,
+    });
   });
 });

@@ -23,6 +23,9 @@ export class AuthComensalController {
   @Post('mesa')
   @HttpCode(200)
   emitirTokenMesa(@Body() dto: EmitirTokenComensalMesaDto) {
-    return this.authComensalService.emitirTokenPorQr(dto.qrToken);
+    return this.authComensalService.emitirTokenPorQr(
+      dto.qrToken,
+      dto.sesionMesa,
+    );
   }
 }

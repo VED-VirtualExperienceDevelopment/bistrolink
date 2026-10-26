@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { ROUTE_ARGS_METADATA } from '@nestjs/common/constants';
 import {
+  HEADER_MESA_SESION,
   HEADER_MESA_TOKEN,
   MesaDelQrActual,
   MesaQrGuard,
@@ -17,11 +18,14 @@ import {
 const TENANT_ID = '11111111-1111-1111-1111-111111111111';
 const TENANT_ID_AJENO = 'aaaaaaaa-0000-0000-0000-000000000001';
 
+const SESION_ID = '99999999-9999-4999-8999-999999999999';
+
 const MESA_DEL_QR = {
   tenantId: TENANT_ID,
   mesaId: '33333333-3333-3333-3333-333333333333',
   restauranteId: '22222222-2222-2222-2222-222222222222',
   numero: 1,
+  sesionId: SESION_ID,
 };
 
 function contextoCon(request: RequestConMesaQr): ExecutionContext {
@@ -61,7 +65,10 @@ describe('MesaQrGuard (BL-204)', () => {
 
   it('con un QR válido del mismo tenant: deja la mesa en request.mesaQr', async () => {
     mockQrMesaAcceso.resolver.mockResolvedValue(MESA_DEL_QR);
-    const request = requestCon({ [HEADER_MESA_TOKEN]: 'token-del-qr' });
+    const request = requestCon({
+      [HEADER_MESA_TOKEN]: 'token-del-qr',
+      [HEADER_MESA_SESION]: SESION_ID,
+    });
 
     await expect(guard.canActivate(contextoCon(request))).resolves.toBe(true);
     expect(mockQrMesaAcceso.resolver).toHaveBeenCalledWith('token-del-qr');
@@ -73,7 +80,10 @@ describe('MesaQrGuard (BL-204)', () => {
       ...MESA_DEL_QR,
       tenantId: TENANT_ID_AJENO,
     });
-    const request = requestCon({ [HEADER_MESA_TOKEN]: 'token-del-qr' });
+    const request = requestCon({
+      [HEADER_MESA_TOKEN]: 'token-del-qr',
+      [HEADER_MESA_SESION]: SESION_ID,
+    });
 
     await expect(guard.canActivate(contextoCon(request))).rejects.toThrow(
       ForbiddenException,
@@ -90,12 +100,59 @@ describe('MesaQrGuard (BL-204)', () => {
     );
   });
 
+  describe('HU-017 (BL-60): sesión de la mesa', () => {
+    it('410 MESA_CERRADA si la mesa no tiene la sesión abierta', async () => {
+      mockQrMesaAcceso.resolver.mockResolvedValue({
+        ...MESA_DEL_QR,
+        sesionId: null,
+      });
+      const request = requestCon({
+        [HEADER_MESA_TOKEN]: 'token-del-qr',
+        [HEADER_MESA_SESION]: SESION_ID,
+      });
+
+      const error = await guard
+        .canActivate(contextoCon(request))
+        .catch((e: GoneException) => e);
+      expect(error).toBeInstanceOf(GoneException);
+      expect((error as GoneException).getResponse()).toMatchObject({
+        codigo: 'MESA_CERRADA',
+      });
+      expect(request.mesaQr).toBeUndefined();
+    });
+
+    it.each([
+      ['sin header', undefined],
+      ['de otra sesión (página vieja)', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'],
+      ['repetido', [SESION_ID, SESION_ID]],
+    ])('410 SESION_VENCIDA con la sesión %s', async (_caso, sesion) => {
+      mockQrMesaAcceso.resolver.mockResolvedValue(MESA_DEL_QR);
+      const headers: RequestConMesaQr['headers'] = {
+        [HEADER_MESA_TOKEN]: 'token-del-qr',
+      };
+      if (sesion !== undefined) headers[HEADER_MESA_SESION] = sesion;
+      const request = requestCon(headers);
+
+      const error = await guard
+        .canActivate(contextoCon(request))
+        .catch((e: GoneException) => e);
+      expect(error).toBeInstanceOf(GoneException);
+      expect((error as GoneException).getResponse()).toMatchObject({
+        codigo: 'SESION_VENCIDA',
+      });
+      expect(request.mesaQr).toBeUndefined();
+    });
+  });
+
   it.each([
     ['inválido (404)', new NotFoundException('QR no válido')],
     ['reemplazado (410)', new GoneException('Este QR fue reemplazado.')],
   ])('propaga el error si el QR es %s', async (_caso, error) => {
     mockQrMesaAcceso.resolver.mockRejectedValue(error);
-    const request = requestCon({ [HEADER_MESA_TOKEN]: 'token-del-qr' });
+    const request = requestCon({
+      [HEADER_MESA_TOKEN]: 'token-del-qr',
+      [HEADER_MESA_SESION]: SESION_ID,
+    });
 
     await expect(guard.canActivate(contextoCon(request))).rejects.toBe(error);
     expect(request.mesaQr).toBeUndefined();

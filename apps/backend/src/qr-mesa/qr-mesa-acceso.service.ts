@@ -8,6 +8,8 @@ export interface MesaDelQr {
   mesaId: string;
   restauranteId: string;
   numero: number;
+  /** HU-017 (BL-60): sesión abierta de la mesa, o null si está cerrada. */
+  sesionId: string | null;
 }
 
 //Mismo mensaje para cualquier cosa que no sea un QR válido (formato, firma, mesa
@@ -15,6 +17,41 @@ export interface MesaDelQr {
 export const MENSAJE_QR_INVALIDO = 'QR no válido';
 export const MENSAJE_QR_REEMPLAZADO =
   'Este QR fue reemplazado. Pedile al personal el QR actualizado de la mesa.';
+
+// HU-017 (BL-60): el QR es válido pero no se puede usar para pedir. Van con
+// un `codigo` para que el frontend muestre la pantalla que corresponde.
+export const CODIGO_MESA_CERRADA = 'MESA_CERRADA';
+export const CODIGO_SESION_VENCIDA = 'SESION_VENCIDA';
+export const MENSAJE_MESA_CERRADA =
+  'Esta mesa está cerrada. Pedile al mozo que la abra para hacer tu pedido.';
+export const MENSAJE_SESION_VENCIDA =
+  'La sesión de esta mesa terminó. Escaneá de nuevo el QR de la mesa.';
+
+/**
+ * HU-017 (BL-60): el QR solo sirve con la sesión de la mesa abierta, y la
+ * página del comensal tiene que ser de ESA sesión (la recibió al abrir el
+ * menú). 410 en los dos casos: el acceso «ya no existe», igual que un QR
+ * reemplazado.
+ */
+export function exigirSesionAbierta(
+  mesa: MesaDelQr,
+  sesionDelComensal?: string,
+): void {
+  if (!mesa.sesionId) {
+    throw new GoneException({
+      statusCode: 410,
+      codigo: CODIGO_MESA_CERRADA,
+      message: MENSAJE_MESA_CERRADA,
+    });
+  }
+  if (sesionDelComensal !== mesa.sesionId) {
+    throw new GoneException({
+      statusCode: 410,
+      codigo: CODIGO_SESION_VENCIDA,
+      message: MENSAJE_SESION_VENCIDA,
+    });
+  }
+}
 
 /**
  * HU-034 (BL-204): resuelve el token de la URL /q/<token> a la mesa que
@@ -49,6 +86,7 @@ export class QrMesaAccesoService {
             numero: true,
             esVirtual: true,
             qrVersion: true,
+            sesionId: true,
           },
         }),
     );
@@ -73,6 +111,7 @@ export class QrMesaAccesoService {
       mesaId: mesa.id,
       restauranteId: mesa.restauranteId,
       numero: mesa.numero,
+      sesionId: mesa.sesionId,
     };
   }
 }
