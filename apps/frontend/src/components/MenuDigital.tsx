@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import dynamic from 'next/dynamic';
 import ItemImagen from '@/components/menu/ItemImagen';
 import { LlamarMozoButton } from '@/components/LlamarMozoButton';
@@ -69,6 +69,79 @@ interface MenuDigitalProps {
 const MAX_CHARS_GENERAL = 500;
 const MAX_CHARS_ITEM = 300;
 const WARNING_THRESHOLD = 0.9;
+
+/**
+ * Error de las notas del carrito antes de crear el pedido, o null si están
+ * bien (el backend aplica los mismos topes).
+ */
+function errorNotas(carrito: readonly ItemCarrito[], observacionGeneral: string): string | null {
+  if (observacionGeneral.length > MAX_CHARS_GENERAL) {
+    return 'La nota general no puede exceder 500 caracteres';
+  }
+  if (carrito.some((item) => (item.observacion ?? '').length > MAX_CHARS_ITEM)) {
+    return 'Las notas de los ítems no pueden exceder 300 caracteres';
+  }
+  return null;
+}
+
+/** Token del comensal (mesa por QR o pedido web). BL-309 / BL-204 / BL-413. */
+async function identificarComensal(origen: OrigenMenu): Promise<string> {
+  // La ruta, el body y el header salen de menu-digital.utils.ts (con test),
+  // para que no vuelvan a quedar apuntando a una ruta inexistente.
+  const auth = solicitudAuthComensal(origen);
+  const authRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}${auth.ruta}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(auth.body),
+  });
+  if (authRes.ok) {
+    const { accessToken } = await authRes.json();
+    return accessToken;
+  }
+  // BL-413: establecimiento suspendido → «no disponible», no un error
+  // genérico de identificación.
+  const cuerpo = await authRes.json().catch(() => null);
+  const mensaje = esEstablecimientoSuspendido(authRes.status, cuerpo)
+    ? MENSAJE_RESTAURANTE_NO_DISPONIBLE
+    : (mensajeErrorQr(origen, authRes.status) ?? 'Error al identificarte para hacer el pedido.');
+  throw new ApiError(authRes.status, mensaje);
+}
+
+/**
+ * BL-311 (prepago, RD.03): crea el pedido, que queda en PENDIENTE_PAGO
+ * hasta que se apruebe el pago.
+ */
+async function crearPedidoComensal(
+  origen: OrigenMenu,
+  carrito: readonly ItemCarrito[],
+  observacionGeneral: string,
+): Promise<{ pedido: PedidoConfirmado; accessToken: string }> {
+  const accessToken = await identificarComensal(origen);
+  const pedidoBody = {
+    ...origenPedido(origen),
+    idempotencyKey: crypto.randomUUID(),
+    observacionGeneral: observacionGeneral.trim() || undefined,
+    items: carrito.map((item) => ({
+      itemCartaId: item.itemCartaId,
+      cantidad: item.cantidad,
+      observacion: item.observacion?.trim() || undefined,
+    })),
+  };
+  const pedido = await apiFetch<PedidoConfirmado>('/pedidos', accessToken, {
+    method: 'POST',
+    headers: headersMesaQr(origen),
+    body: JSON.stringify(pedidoBody),
+  });
+  return { pedido, accessToken };
+}
+
+/** Mensaje para el comensal si no se pudo crear el pedido. */
+function mensajeErrorAlPedir(origen: OrigenMenu, err: unknown): string {
+  if (err instanceof ApiError) {
+    return mensajeErrorQr(origen, err.status) ?? err.message;
+  }
+  return 'No pudimos enviar tu pedido. Probá de nuevo.';
+}
 
 export default function MenuDigital({
   origen,
@@ -188,16 +261,9 @@ export default function MenuDigital({
   );
 
   const continuarAlPago = async () => {
-    if (isGeneralOverLimit) {
-      setErrorPedido('La nota general no puede exceder 500 caracteres');
-      return;
-    }
-
-    const tieneNotasInvalidas = carrito.some(
-      (item) => (item.observacion || '').length > MAX_CHARS_ITEM
-    );
-    if (tieneNotasInvalidas) {
-      setErrorPedido('Las notas de los ítems no pueden exceder 300 caracteres');
+    const error = errorNotas(carrito, observacionGeneral);
+    if (error) {
+      setErrorPedido(error);
       return;
     }
 
@@ -210,57 +276,8 @@ export default function MenuDigital({
 
     setEstadoPedido('enviando');
     setErrorPedido(null);
-
     try {
-      // BL-309 / BL-204: la ruta, el body y el header salen de
-      // menu-digital.utils.ts (con test), para que no vuelvan a quedar
-      // apuntando a una ruta inexistente.
-      const auth = solicitudAuthComensal(origen);
-
-      const authRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}${auth.ruta}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(auth.body),
-      });
-
-      if (!authRes.ok) {
-        // BL-413: establecimiento suspendido → «no disponible», no un error
-        // genérico de identificación.
-        const cuerpo = await authRes.json().catch(() => null);
-        throw new ApiError(
-          authRes.status,
-          esEstablecimientoSuspendido(authRes.status, cuerpo)
-            ? MENSAJE_RESTAURANTE_NO_DISPONIBLE
-            : (mensajeErrorQr(origen, authRes.status) ?? 'Error al identificarte para hacer el pedido.'),
-        );
-      }
-
-      const { accessToken } = await authRes.json();
-
-      interface PedidoBody {
-        idempotencyKey: string;
-        observacionGeneral?: string;
-        items: { itemCartaId: string; cantidad: number; observacion?: string }[];
-        restauranteId?: string;
-      }
-
-      const pedidoBody: PedidoBody = {
-        ...origenPedido(origen),
-        idempotencyKey: crypto.randomUUID(),
-        observacionGeneral: observacionGeneral.trim() || undefined,
-        items: carrito.map((item) => ({
-          itemCartaId: item.itemCartaId,
-          cantidad: item.cantidad,
-          observacion: item.observacion?.trim() || undefined,
-        })),
-      };
-
-      const pedido = await apiFetch<PedidoConfirmado>('/pedidos', accessToken, {
-        method: 'POST',
-        headers: headersMesaQr(origen),
-        body: JSON.stringify(pedidoBody),
-      });
-
+      const { pedido, accessToken } = await crearPedidoComensal(origen, carrito, observacionGeneral);
       // BL-311: el pedido queda en PENDIENTE_PAGO; el carrito se conserva
       // hasta que el pago se apruebe.
       setPedidoPorPagar({ pedido, accessToken, firma });
@@ -268,11 +285,7 @@ export default function MenuDigital({
       setVista('pago');
       window.scrollTo({ top: 0 });
     } catch (err) {
-      setErrorPedido(
-        err instanceof ApiError
-          ? (mensajeErrorQr(origen, err.status) ?? err.message)
-          : 'No pudimos enviar tu pedido. Probá de nuevo.',
-      );
+      setErrorPedido(mensajeErrorAlPedir(origen, err));
       setEstadoPedido('error');
     }
   };
@@ -331,6 +344,38 @@ export default function MenuDigital({
     };
   }, [altoPanelPedido]);
 
+  // BL-311: pantallas del pago (pagar / pago aprobado); si no corresponde
+  // ninguna, se muestra la carta.
+  let pantallaPago: ReactNode = null;
+  if (vista === 'aprobado' && pagoAprobado) {
+    pantallaPago = (
+      <PagoAprobado
+        origen={origen}
+        pedidoId={pagoAprobado.pedido.id}
+        tokenAcceso={pagoAprobado.pedido.tokenAcceso}
+        accessToken={pagoAprobado.accessToken}
+        lineas={pagoAprobado.lineas}
+        total={pagoAprobado.total}
+        numeroMesa={numeroMesa}
+        onOtroPedido={hacerOtroPedido}
+      />
+    );
+  } else if (vista === 'pago' && pedidoPorPagar) {
+    pantallaPago = (
+      <PagoPedido
+        origen={origen}
+        pedidoId={pedidoPorPagar.pedido.id}
+        tokenAcceso={pedidoPorPagar.pedido.tokenAcceso}
+        accessToken={pedidoPorPagar.accessToken}
+        lineas={carrito}
+        total={totalCarrito}
+        numeroMesa={numeroMesa}
+        onVolver={() => setVista('carta')}
+        onAprobado={alAprobarPago}
+      />
+    );
+  }
+
   return (
     <div
       className="min-h-screen bg-culinary-background pb-28"
@@ -351,30 +396,7 @@ export default function MenuDigital({
         </div>
       </nav>
 
-      {vista === 'aprobado' && pagoAprobado ? (
-        <PagoAprobado
-          origen={origen}
-          pedidoId={pagoAprobado.pedido.id}
-          tokenAcceso={pagoAprobado.pedido.tokenAcceso}
-          accessToken={pagoAprobado.accessToken}
-          lineas={pagoAprobado.lineas}
-          total={pagoAprobado.total}
-          numeroMesa={numeroMesa}
-          onOtroPedido={hacerOtroPedido}
-        />
-      ) : vista === 'pago' && pedidoPorPagar ? (
-        <PagoPedido
-          origen={origen}
-          pedidoId={pedidoPorPagar.pedido.id}
-          tokenAcceso={pedidoPorPagar.pedido.tokenAcceso}
-          accessToken={pedidoPorPagar.accessToken}
-          lineas={carrito}
-          total={totalCarrito}
-          numeroMesa={numeroMesa}
-          onVolver={() => setVista('carta')}
-          onAprobado={alAprobarPago}
-        />
-      ) : (
+      {pantallaPago ?? (
       <>
       {/* BL-320: en pantallas anchas (lg) el panel del pedido va a la
           derecha; con el carrito abierto se le reserva ese espacio para que

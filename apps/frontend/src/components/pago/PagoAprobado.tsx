@@ -215,53 +215,76 @@ function Comprobante({
             Comprobante fiscal
           </h2>
 
-          {comprobante.tipo === 'emitido' ? (
-            <>
-              <p className="mt-1 text-sm text-[#5a575e]">
-                <span className="font-semibold text-foreground">{comprobante.texto}</span> · emitido
-              </p>
-              {comprobante.urlConsulta && (
-                <a
-                  href={comprobante.urlConsulta}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-3 inline-flex items-center gap-2 px-4 py-2.5 bg-[#6e54ad] text-white font-semibold rounded-[0.5rem] hover:bg-[#5b468f] focus:outline-none focus:ring-4 focus:ring-[#6e54ad]/30 transition-colors"
-                >
-                  Ver comprobante en DGI
-                  <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M15 3h6v6" />
-                    <path d="M10 14 21 3" />
-                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                  </svg>
-                  <span className="sr-only">(se abre en otra pestaña)</span>
-                </a>
-              )}
-            </>
-          ) : agotado ? (
-            <>
-              <p className="mt-1 text-sm text-[#5a575e]">
-                Tu pago está aprobado. El comprobante todavía se está emitiendo:
-                volvé a consultar en unos minutos o pedíselo al personal del local.
-              </p>
-              <button
-                type="button"
-                onClick={onReintentar}
-                className="mt-3 px-4 py-2 bg-[#6e54ad]/10 text-[#6e54ad] font-semibold rounded-[0.5rem] hover:bg-[#6e54ad] hover:text-white transition-colors"
-              >
-                Volver a consultar
-              </button>
-            </>
-          ) : (
-            <p className="mt-1 text-sm text-[#5a575e] flex items-center gap-2">
-              <svg aria-hidden="true" className="animate-spin shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none">
-                <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity="0.3" strokeWidth="3" />
-                <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-              </svg>
-              Estamos emitiendo tu comprobante…
-            </p>
-          )}
+          <EstadoDelComprobante
+            comprobante={comprobante}
+            agotado={agotado}
+            onReintentar={onReintentar}
+          />
         </div>
       </div>
     </section>
+  );
+}
+
+/** Emitido (con enlace a DGI), demorado (se puede volver a consultar) o emitiéndose. */
+function EstadoDelComprobante({
+  comprobante,
+  agotado,
+  onReintentar,
+}: {
+  readonly comprobante: EstadoComprobante;
+  readonly agotado: boolean;
+  readonly onReintentar: () => void;
+}) {
+  if (comprobante.tipo === 'emitido') {
+    return (
+      <>
+        <p className="mt-1 text-sm text-[#5a575e]">
+          <span className="font-semibold text-foreground">{comprobante.texto}</span> · emitido
+        </p>
+        {comprobante.urlConsulta && (
+          <a
+            href={comprobante.urlConsulta}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-3 inline-flex items-center gap-2 px-4 py-2.5 bg-[#6e54ad] text-white font-semibold rounded-[0.5rem] hover:bg-[#5b468f] focus:outline-none focus:ring-4 focus:ring-[#6e54ad]/30 transition-colors"
+          >
+            Ver comprobante en DGI
+            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M15 3h6v6" />
+              <path d="M10 14 21 3" />
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+            </svg>
+            <span className="sr-only">(se abre en otra pestaña)</span>
+          </a>
+        )}
+      </>
+    );
+  }
+  if (agotado) {
+    return (
+      <>
+        <p className="mt-1 text-sm text-[#5a575e]">
+          Tu pago está aprobado. El comprobante todavía se está emitiendo:
+          volvé a consultar en unos minutos o pedíselo al personal del local.
+        </p>
+        <button
+          type="button"
+          onClick={onReintentar}
+          className="mt-3 px-4 py-2 bg-[#6e54ad]/10 text-[#6e54ad] font-semibold rounded-[0.5rem] hover:bg-[#6e54ad] hover:text-white transition-colors"
+        >
+          Volver a consultar
+        </button>
+      </>
+    );
+  }
+  return (
+    <p className="mt-1 text-sm text-[#5a575e] flex items-center gap-2">
+      <svg aria-hidden="true" className="animate-spin shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none">
+        <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity="0.3" strokeWidth="3" />
+        <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+      </svg>
+      Estamos emitiendo tu comprobante…
+    </p>
   );
 }

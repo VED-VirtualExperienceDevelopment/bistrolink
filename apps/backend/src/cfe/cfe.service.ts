@@ -80,35 +80,39 @@ export class CfeService {
     pagoId: string,
   ): Promise<ResumenComprobante | null> {
     const actual = this.enCurso.get(pagoId);
-    if (actual) {
+    if (actual !== undefined) {
       return actual;
     }
-    const emision = this.reintentar(tenantId, pagoId).finally(() =>
+    const emision = this.intentarDesde(tenantId, pagoId, 0).finally(() =>
       this.enCurso.delete(pagoId),
     );
     this.enCurso.set(pagoId, emision);
     return emision;
   }
 
-  private async reintentar(
+  // Un intento y, si falla por algo transitorio, el siguiente después de
+  // la espera que corresponde. Recursivo en vez de un await dentro de un
+  // bucle: los intentos son secuenciales a propósito (cada uno espera al
+  // anterior), no se pueden lanzar en paralelo.
+  private async intentarDesde(
     tenantId: string,
     pagoId: string,
+    intento: number,
   ): Promise<ResumenComprobante | null> {
-    for (let intento = 0; ; intento++) {
-      try {
-        return await this.emitir(tenantId, pagoId);
-      } catch (error) {
-        const espera = ESPERAS_REINTENTO_CFE_MS[intento];
-        if (espera === undefined || !esErrorTransitorio(error)) {
-          registrarFallo(pagoId, error);
-          return null;
-        }
-        Logger.warn(
-          `CFE: falló la emisión del pago ${pagoId} (intento ${intento + 1}), se reintenta en ${espera / 1000} s: ${mensajeDe(error)}`,
-          CfeService.name,
-        );
-        await esperar(espera);
+    try {
+      return await this.emitir(tenantId, pagoId);
+    } catch (error) {
+      const espera = ESPERAS_REINTENTO_CFE_MS[intento];
+      if (espera === undefined || !esErrorTransitorio(error)) {
+        registrarFallo(pagoId, error);
+        return null;
       }
+      Logger.warn(
+        `CFE: falló la emisión del pago ${pagoId} (intento ${intento + 1}), se reintenta en ${espera / 1000} s: ${mensajeDe(error)}`,
+        CfeService.name,
+      );
+      await esperar(espera);
+      return this.intentarDesde(tenantId, pagoId, intento + 1);
     }
   }
 

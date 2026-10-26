@@ -136,8 +136,27 @@ describe("documento del titular", () => {
 describe("otros campos", () => {
   it("correo", () => {
     expect(errorEmail("ana@correo.com.uy")).toBeNull();
+    expect(errorEmail(" ana.perez+bistro@correo.uy ")).toBeNull();
     expect(errorEmail("ana@correo")).not.toBeNull();
     expect(errorEmail("")).not.toBeNull();
+  });
+
+  it.each([
+    ["@correo.com"],
+    ["ana@@correo.com"],
+    ["ana@cor@reo.com"],
+    ["ana @correo.com"],
+    ["ana@.com"],
+    ["ana@correo.c"],
+    ["ana@correo."],
+  ])("correo inválido: %s", (correo) => {
+    expect(errorEmail(correo)).not.toBeNull();
+  });
+
+  it("un texto largo armado para trabar una regex se resuelve al instante", () => {
+    const inicio = Date.now();
+    expect(errorEmail(`a@${"a.".repeat(50_000)}`)).not.toBeNull();
+    expect(Date.now() - inicio).toBeLessThan(100);
   });
 
   it("titular", () => {

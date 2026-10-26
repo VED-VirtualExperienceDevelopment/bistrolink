@@ -126,10 +126,23 @@ export function documentoParaMercadoPago(
     : { identificationType: "OTRO", identificationNumber: valor.trim() };
 }
 
-const FORMATO_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+/**
+ * Formato básico de un correo: una sola «@», algo antes, y un dominio con un
+ * punto y al menos 2 caracteres después del último punto. Sin expresión
+ * regular a propósito: la versión con regex podía tardar de más
+ * (backtracking) con textos largos y armados para eso.
+ */
+function esCorreoValido(correo: string): boolean {
+  if (correo.length === 0 || /\s/.test(correo)) return false;
+  const arroba = correo.indexOf("@");
+  if (arroba < 1 || arroba !== correo.lastIndexOf("@")) return false;
+  const dominio = correo.slice(arroba + 1);
+  const punto = dominio.lastIndexOf(".");
+  return punto > 0 && dominio.length - punto - 1 >= 2;
+}
 
 export function errorEmail(valor: string): string | null {
-  return FORMATO_EMAIL.test(valor.trim())
+  return esCorreoValido(valor.trim())
     ? null
     : "Ingresá un correo válido para recibir tu comprobante.";
 }

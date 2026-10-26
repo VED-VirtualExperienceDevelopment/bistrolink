@@ -32,7 +32,10 @@ export interface EstadoPagoDelPedido {
 
 // El pago que importa para el comensal: el que cobró (aprobado o después
 // reembolsado). Si no hay ninguno, el último intento (pendiente o rechazado).
-const ESTADOS_COBRADOS: PagoEstado[] = ['APROBADO', 'REEMBOLSADO'];
+const ESTADOS_COBRADOS: ReadonlySet<PagoEstado> = new Set<PagoEstado>([
+  'APROBADO',
+  'REEMBOLSADO',
+]);
 
 @Injectable()
 export class PagosService {
@@ -193,7 +196,7 @@ export class PagosService {
     }
 
     const pago =
-      pedido.pagos.find((p) => ESTADOS_COBRADOS.includes(p.estado)) ??
+      pedido.pagos.find((p) => ESTADOS_COBRADOS.has(p.estado)) ??
       pedido.pagos[0] ??
       null;
     const comprobante = pago?.comprobantes[0] ?? null;
