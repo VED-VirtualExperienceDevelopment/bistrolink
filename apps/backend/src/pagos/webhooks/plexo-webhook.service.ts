@@ -6,6 +6,7 @@ import { leerReferenciaExterna } from './referencia-externa';
 import { CfeService } from '../../cfe/cfe.service';
 import { PedidosService } from '../../pedidos/pedidos.service';
 import { PedidoParaKds } from '../../pedidos/pedido-kds.mapper';
+import { registrarCambioPago } from '../historial-pago';
 
 type EstadoPago = 'PENDIENTE' | 'APROBADO' | 'RECHAZADO' | 'REEMBOLSADO';
 
@@ -152,6 +153,16 @@ export class PlexoWebhookService {
       where: { id: pagoBd.id },
       data: { estado, pasarelaReferencia: pago.id },
     });
+    // HU-032 (BL-202): el cambio queda registrado con su origen.
+    if (pagoBd.estado !== estado) {
+      await registrarCambioPago(tx, {
+        tenantId,
+        pagoId: pagoBd.id,
+        estadoAnterior: pagoBd.estado,
+        estadoNuevo: estado,
+        origen: 'WEBHOOK',
+      });
+    }
 
     // BL-311 (prepago, RD.03): mismo criterio que con Mercado Pago.
     // Aprobado o rechazado, la mesa vuelve a OCUPADA (el comensal paga antes
