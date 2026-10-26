@@ -554,6 +554,14 @@ jobs:
         run: |
           if [ "${{ matrix.name }}" = "Web" ]; then
             echo "Web: URLs de ${ENTORNO_WEB} (bistrolink-api-${ENTORNO_WEB}, bistrolink-auth-${ENTORNO_WEB})"
+            # BL-311: sin la clave pública, la imagen se construye igual pero la
+            # pantalla de pago queda deshabilitada y los E2E de pago fallan
+            # por timeout, sin un error claro. Se avisa acá.
+            if [ -z "${MP_PUBLIC_KEY}" ]; then
+              echo "::warning::Web sin NEXT_PUBLIC_MP_PUBLIC_KEY: falta la variable del repo MP_PUBLIC_KEY_STAGING (o MP_PUBLIC_KEY_PRODUCTION en un tag). El pago con tarjeta queda deshabilitado."
+            else
+              echo "Web: clave pública de Mercado Pago cargada (${MP_PUBLIC_KEY:0:12}…)"
+            fi
           fi
           docker build \
             -t ${{ matrix.image }}:${{ env.TAG }} \
