@@ -13,6 +13,7 @@ import {
   formatearPrecio,
   HEADER_PEDIDO_TOKEN,
   headersAccesoPedido,
+  MENSAJE_PAGO_VENCIDO,
   MENSAJE_SIN_ACCESO,
   MENSAJE_VERIFICANDO,
   resultadoDeError,
@@ -238,6 +239,18 @@ describe("resultado del pago", () => {
     expect(resultadoDeEstado("RECHAZADO").tipo).toBe("rechazado");
     expect(resultadoDeEstado("PENDIENTE").tipo).toBe("verificando");
     expect(resultadoDeEstado(undefined).tipo).toBe("verificando");
+  });
+
+  it("HU-032: un pago vencido explica que no se confirmó a tiempo", () => {
+    expect(resultadoDeEstado("RECHAZADO", "VENCIDO")).toEqual({
+      tipo: "rechazado",
+      mensaje: MENSAJE_PAGO_VENCIDO,
+    });
+    // Otro motivo (de la pasarela): el mensaje de rechazo de siempre.
+    expect(resultadoDeEstado("RECHAZADO", "insufficient_amount")).not.toEqual(
+      expect.objectContaining({ mensaje: MENSAJE_PAGO_VENCIDO }),
+    );
+    expect(resultadoDeEstado("RECHAZADO", null).tipo).toBe("rechazado");
   });
 
   it("la consulta periódica se corta al llegar al tope", () => {

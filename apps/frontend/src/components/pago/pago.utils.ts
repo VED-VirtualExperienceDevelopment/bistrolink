@@ -167,6 +167,8 @@ export interface EstadoPagoDelPedido {
     estado: EstadoPago;
     medioPago: string;
     monto: string;
+    // HU-032 (BL-202): «VENCIDO» si el pago no se confirmó a tiempo.
+    motivoRechazo?: string | null;
   } | null;
   comprobante: {
     serie: string;
@@ -225,13 +227,25 @@ export function resultadoDeError(
   }
 }
 
+/** HU-032 (BL-202): motivo del backend para un pago que venció. */
+export const MOTIVO_PAGO_VENCIDO = "VENCIDO";
+
+export const MENSAJE_PAGO_VENCIDO =
+  "No recibimos la confirmación de Mercado Pago a tiempo y cancelamos el intento. Tu pedido sigue guardado: podés pagar de nuevo.";
+
 /** Resultado según el estado del pago (respuesta del POST o del GET). */
-export function resultadoDeEstado(estado: EstadoPago | undefined): ResultadoPago {
+export function resultadoDeEstado(
+  estado: EstadoPago | undefined,
+  motivoRechazo?: string | null,
+): ResultadoPago {
   if (estado === "APROBADO") return { tipo: "aprobado" };
   if (estado === "RECHAZADO") {
     return {
       tipo: "rechazado",
-      mensaje: "El pago fue rechazado. No se realizó ningún cargo: probá con otra tarjeta.",
+      mensaje:
+        motivoRechazo === MOTIVO_PAGO_VENCIDO
+          ? MENSAJE_PAGO_VENCIDO
+          : "El pago fue rechazado. No se realizó ningún cargo: probá con otra tarjeta.",
     };
   }
   return { tipo: "verificando", mensaje: MENSAJE_VERIFICANDO };
