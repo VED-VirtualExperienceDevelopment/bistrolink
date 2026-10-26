@@ -9,6 +9,12 @@ import { leerReferenciaExterna } from './referencia-externa';
 import { CfeService } from '../../cfe/cfe.service';
 import { PedidosService } from '../../pedidos/pedidos.service';
 import { PedidoParaKds } from '../../pedidos/pedido-kds.mapper';
+import {
+  DETALLE_REQUIERE_REEMBOLSO,
+  MOTIVO_VENCIDO,
+  registrarCambioPago,
+  textoCorto,
+} from '../historial-pago';
 
 // TODO(Plexo): este servicio y la verificación de firma son específicos de
 // Mercado Pago. Cuando lleguen las credenciales de Plexo y se conozca su
@@ -24,7 +30,13 @@ export type ResultadoWebhook =
   | 'orden_desconocida'
   | 'referencia_ajena'
   | 'pago_no_encontrado'
-  | 'monto_no_coincide';
+  | 'monto_no_coincide'
+  // HU-032 (BL-202): la pasarela cobró, pero el pedido ya no puede usar ese
+  // pago (venció y el comensal pagó con otro, o el pedido se canceló).
+  | 'requiere_reembolso';
+
+/** HU-032 (BL-202): quién pidió aplicar el estado de la order. */
+export type OrigenConsulta = 'WEBHOOK' | 'CONCILIACION';
 
 // Estado real del pago según la order que devuelve Mercado Pago.
 export function estadoPagoDesdeOrden(
@@ -43,6 +55,17 @@ export function estadoPagoDesdeOrden(
   return 'PENDIENTE'; // processing, action_required, o algo que no conocemos
 }
 
+// Lo que queda en el historial del pago junto con el cambio de estado.
+function detalleDelCambio(
+  estado: EstadoPago,
+  statusDetail: string | undefined,
+  requiereReembolso: boolean,
+): string | null {
+  if (requiereReembolso) return DETALLE_REQUIERE_REEMBOLSO;
+  if (estado === 'RECHAZADO') return statusDetail ?? null;
+  return null;
+}
+
 @Injectable()
 export class PagosWebhookService {
   constructor(
@@ -57,7 +80,13 @@ export class PagosWebhookService {
   // Es idempotente: Mercado Pago reintenta hasta recibir un 200, y siempre
   // se lee el estado ACTUAL, así que una notificación duplicada o desordenada
   // no puede dejar un estado viejo.
-  async procesarOrden(orderId: string): Promise<ResultadoWebhook> {
+  //
+  // HU-032 (BL-202): la conciliación de pagos pendientes usa este mismo
+  // flujo (origen CONCILIACION) cuando el webhook nunca llegó.
+  async procesarOrden(
+    orderId: string,
+    origen: OrigenConsulta = 'WEBHOOK',
+  ): Promise<ResultadoWebhook> {
     const orden = await this.mercadoPago.consultarOrden(orderId);
     if (!orden) {
       Logger.warn(
@@ -85,7 +114,7 @@ export class PagosWebhookService {
 
     const { resultado, pagoId, pedidoConfirmado, mesaOcupada } =
       await this.tenantPrisma.runInTenantContext(referencia.tenantId, (tx) =>
-        this.aplicar(tx, orden, referencia, estado),
+        this.aplicar(tx, orden, referencia, estado, origen),
       );
 
     // BL-311: recién con la transacción confirmada se avisa a cocina y al
@@ -124,6 +153,7 @@ export class PagosWebhookService {
     orden: OrdenConsultada,
     referencia: { tenantId: string; pedidoId: string },
     estado: EstadoPago,
+    origen: OrigenConsulta,
   ): Promise<{
     resultado: ResultadoWebhook;
     pagoId?: string;
@@ -137,9 +167,16 @@ export class PagosWebhookService {
     });
     // El webhook puede llegar antes de que la respuesta del cobro guarde la
     // referencia: en ese caso el pago es el PENDIENTE que todavía no la tiene.
+    //
+    // HU-032 (BL-202): o un pago que VENCIÓ sin que llegara nunca la
+    // respuesta del cobro (sin referencia): la notificación es tardía.
+    const sinReferencia = candidatos.filter((p) => !p.pasarelaReferencia);
     const pago =
       candidatos.find((p) => p.pasarelaReferencia === orden.id) ??
-      candidatos.find((p) => p.estado === 'PENDIENTE' && !p.pasarelaReferencia);
+      sinReferencia.find((p) => p.estado === 'PENDIENTE') ??
+      sinReferencia.find(
+        (p) => p.estado === 'RECHAZADO' && p.motivoRechazo === MOTIVO_VENCIDO,
+      );
 
     if (!pago) {
       Logger.warn(
@@ -162,14 +199,72 @@ export class PagosWebhookService {
       return { resultado: 'monto_no_coincide' };
     }
 
-    if (pago.estado === estado && pago.pasarelaReferencia === orden.id) {
-      return { resultado: 'sin_cambios', pagoId: pago.id };
+    if (pago.estado === estado) {
+      // Mismo estado (por ejemplo, un pago vencido cuya order después
+      // también falló): solo se completa la referencia si faltaba.
+      if (pago.pasarelaReferencia !== orden.id) {
+        await tx.pago.update({
+          where: { id: pago.id },
+          data: { pasarelaReferencia: orden.id },
+        });
+      }
+      // Un aviso repetido de un pago marcado para reembolso no debe emitir
+      // el CFE (procesarOrden lo emite en 'sin_cambios').
+      const marcadoParaReembolso = await tx.pagoEstadoHistorial.count({
+        where: { pagoId: pago.id, detalle: DETALLE_REQUIERE_REEMBOLSO },
+      });
+      return {
+        resultado:
+          marcadoParaReembolso > 0 ? 'requiere_reembolso' : 'sin_cambios',
+        pagoId: pago.id,
+      };
+    }
+
+    const pedido = await tx.pedido.findUnique({
+      where: { id: pedidoId },
+      select: { mesaId: true, estado: true },
+    });
+
+    // HU-032 (BL-202): una aprobación tardía (el pago ya había vencido, o se
+    // había rechazado) se aplica si el pedido todavía la puede usar. Si el
+    // comensal ya pagó con otro pago, o el pedido se canceló al cerrar la
+    // mesa (HU-017), la pasarela cobró de más: el pago queda APROBADO (es lo
+    // que pasó) pero NO confirma el pedido, y queda marcado para reembolso
+    // (HU-024, BL-104, todavía sin implementar).
+    let requiereReembolso = false;
+    if (estado === 'APROBADO') {
+      const otroAprobado = await tx.pago.count({
+        where: { pedidoId, estado: 'APROBADO', id: { not: pago.id } },
+      });
+      requiereReembolso = otroAprobado > 0 || pedido?.estado === 'CANCELADO';
     }
 
     await tx.pago.update({
       where: { id: pago.id },
-      data: { estado, pasarelaReferencia: orden.id },
+      data: {
+        estado,
+        pasarelaReferencia: orden.id,
+        motivoRechazo:
+          estado === 'RECHAZADO' ? textoCorto(orden.statusDetail) : null,
+      },
     });
+    await registrarCambioPago(tx, {
+      tenantId,
+      pagoId: pago.id,
+      estadoAnterior: pago.estado,
+      estadoNuevo: estado,
+      origen,
+      detalle: detalleDelCambio(estado, orden.statusDetail, requiereReembolso),
+    });
+
+    if (requiereReembolso) {
+      Logger.error(
+        `El pago ${pago.id} (order ${orden.id}) se aprobó, pero el pedido ${pedidoId} ya está pagado o cancelado: requiere reembolso`,
+        undefined,
+        PagosWebhookService.name,
+      );
+      return { resultado: 'requiere_reembolso', pagoId: pago.id };
+    }
 
     // La mesa solo se toca si sigue EN_PROCESO_DE_PAGO: una notificación
     // tardía no debe ocupar una mesa que ya siguió su curso. BL-311: aprobado
@@ -178,10 +273,6 @@ export class PagosWebhookService {
     let pedidoConfirmado: PedidoParaKds | null = null;
     let mesaOcupada: string | undefined;
     if (estado === 'APROBADO' || estado === 'RECHAZADO') {
-      const pedido = await tx.pedido.findUnique({
-        where: { id: pedidoId },
-        select: { mesaId: true },
-      });
       if (pedido) {
         const mesa = await tx.mesa.updateMany({
           where: { id: pedido.mesaId, estado: 'EN_PROCESO_DE_PAGO' },
