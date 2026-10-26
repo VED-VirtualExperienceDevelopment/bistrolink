@@ -6,7 +6,14 @@ import { MesaDelQr } from '../qr-mesa/qr-mesa-acceso.service';
 import { MesaDelQrActual, MesaQrGuard } from '../qr-mesa/mesa-qr.guard';
 import { PedidosService } from './pedidos.service';
 import { CrearPedidoDto } from './dto/crear-pedido.dto';
+import { ApiTags, ApiBearerAuth, ApiSecurity } from '@nestjs/swagger';
+import { SEGURIDAD_KEYCLOAK, SEGURIDAD_MESA_QR } from '../openapi';
 
+@ApiTags('Pedidos')
+// Pedido para retirar: solo el token del comensal. Pedido de mesa: además,
+// el QR de la mesa (BL-204).
+@ApiBearerAuth(SEGURIDAD_KEYCLOAK)
+@ApiSecurity({ [SEGURIDAD_KEYCLOAK]: [], [SEGURIDAD_MESA_QR]: [] })
 @Controller('pedidos')
 @UseGuards(AuthGuard('jwt'), RolesGuard)
 @Roles('COMENSAL')

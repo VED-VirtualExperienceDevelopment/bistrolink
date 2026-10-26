@@ -26,7 +26,11 @@ import {
   LIMITE_CONFIRMACIONES_POR_MINUTO,
   LIMITE_SUBIDAS_POR_MINUTO,
 } from './upload.constants';
+import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { SEGURIDAD_KEYCLOAK } from '../openapi';
 
+@ApiTags('Menú (gestión)')
+@ApiBearerAuth(SEGURIDAD_KEYCLOAK)
 @Controller('admin/menu')
 @UseGuards(AuthGuard('jwt'), RolesGuard)
 @Roles('ADMIN', 'MOZO')

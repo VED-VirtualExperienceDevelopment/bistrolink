@@ -2,7 +2,9 @@ import { Body, Controller, HttpCode, Post } from '@nestjs/common';
 import { AuthComensalService } from './auth-comensal.service';
 import { EmitirTokenComensalDto } from './dto/emitir-token-comensal.dto';
 import { EmitirTokenComensalMesaDto } from './dto/emitir-token-comensal-mesa.dto';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('Autenticación del comensal')
 @Controller('auth/comensal')
 export class AuthComensalController {
   constructor(private readonly authComensalService: AuthComensalService) {}

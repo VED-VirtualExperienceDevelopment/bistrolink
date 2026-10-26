@@ -2,6 +2,7 @@ import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { ApiTags } from '@nestjs/swagger';
 
 // Cliente Prisma dedicado, solo para diagnóstico (SELECT version()). A
 // propósito NO usa TenantPrismaService: ese servicio es REQUEST-scoped y
@@ -84,6 +85,7 @@ export function getLatestMigrationOnDisk(): string | null {
   }
 }
 
+@ApiTags('Sistema')
 @Controller('health')
 export class HealthController {
   @Get()

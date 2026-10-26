@@ -1,10 +1,12 @@
 import { Body, Controller, HttpCode, Logger, Post } from '@nestjs/common';
 import { PlexoWebhookService } from './plexo-webhook.service';
+import { ApiTags } from '@nestjs/swagger';
 
 interface CallbackPlexo {
   id?: string;
 }
 
+@ApiTags('Webhooks')
 @Controller('webhooks')
 export class PlexoWebhookController {
   constructor(private readonly webhookService: PlexoWebhookService) {}

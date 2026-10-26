@@ -3,6 +3,8 @@ import { AuthGuard } from '@nestjs/passport';
 import { RolesGuard, Roles } from '../auth/roles.guard';
 import { AuthenticatedUser } from '../auth/keycloak-jwt.strategy';
 import { RestaurantesService } from './restaurantes.service';
+import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { SEGURIDAD_KEYCLOAK } from '../openapi';
 
 /**
  * Originalmente ADMIN-only (solo lo consumía la gestión de usuarios, HU-013,
@@ -13,6 +15,8 @@ import { RestaurantesService } from './restaurantes.service';
  * duplicar el endpoint. Sigue sin ser accesible a comensales ni a otros
  * tenants (AuthGuard('jwt') + tenantId del request).
  */
+@ApiTags('Restaurantes')
+@ApiBearerAuth(SEGURIDAD_KEYCLOAK)
 @Controller('restaurantes')
 @UseGuards(AuthGuard('jwt'), RolesGuard)
 @Roles('ADMIN', 'MOZO')

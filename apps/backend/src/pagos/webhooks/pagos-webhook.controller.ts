@@ -17,9 +17,11 @@ import {
   leerNotificacionOrden,
 } from './notificacion-mercadopago';
 import { PagosWebhookService } from './pagos-webhook.service';
+import { ApiTags } from '@nestjs/swagger';
 
 // Endpoint PÚBLICO (Mercado Pago no manda JWT): la autenticidad de cada
 // notificación se comprueba con la firma HMAC-SHA256 (BL-78).
+@ApiTags('Webhooks')
 @Controller('webhooks')
 export class PagosWebhookController {
   constructor(private readonly webhookService: PagosWebhookService) {}

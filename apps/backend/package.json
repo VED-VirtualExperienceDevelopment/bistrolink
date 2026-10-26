@@ -34,6 +34,7 @@
     "@nestjs/passport": "^11.0.5",
     "@nestjs/platform-express": "^11.2.8",
     "@nestjs/platform-socket.io": "^11.2.8",
+    "@nestjs/swagger": "^11.4.7",
     "@nestjs/throttler": "^6.7.1",
     "@nestjs/websockets": "^11.2.8",
     "@prisma/client": "^6.19.3",
@@ -107,7 +108,16 @@
     ],
     "testRegex": "test/unitarios/.*\\.spec\\.ts$",
     "transform": {
-      "^.+\\.(t|j)s$": "ts-jest"
+      "^.+\\.(t|j)s$": [
+        "ts-jest",
+        {
+          "astTransformers": {
+            "before": [
+              "<rootDir>/test/openapi/swagger-plugin.transformer.js"
+            ]
+          }
+        }
+      ]
     },
     "transformIgnorePatterns": [
       "/node_modules/(?!(jose)/)"

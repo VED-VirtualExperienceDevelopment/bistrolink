@@ -33,6 +33,8 @@ import {
   FiltroEstado,
   MAX_LARGO_BUSQUEDA,
 } from './establecimientos.service';
+import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { SEGURIDAD_KEYCLOAK } from '../openapi';
 
 /** BL-163: altas por hora y por usuario de plataforma. */
 export const LIMITE_ALTAS_POR_HORA = 10;
@@ -57,6 +59,8 @@ export const LIMITE_CAMBIOS_DE_ESTADO_POR_HORA = 30;
  * respuesta, como en POST /usuarios. Cache-Control: no-store para que
  * ningún proxy ni el navegador guarde esa respuesta.
  */
+@ApiTags('Plataforma')
+@ApiBearerAuth(SEGURIDAD_KEYCLOAK)
 @Controller('plataforma/establecimientos')
 @UseGuards(AuthGuard('jwt-plataforma'), PlataformaThrottlerGuard)
 export class PlataformaController {
