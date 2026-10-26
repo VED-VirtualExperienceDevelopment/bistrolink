@@ -1,10 +1,13 @@
 import type { INestApplication } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import type { OpenAPIObject } from '@nestjs/swagger';
+import { SwaggerModule, type OpenAPIObject } from '@nestjs/swagger';
 import { AppModule } from '../../src/app.module';
 import {
+  configurarOpenApi,
   crearDocumentoOpenApi,
   openApiHabilitado,
+  RUTA_DOCS,
+  RUTA_DOCS_JSON,
   SEGURIDAD_KEYCLOAK,
   SEGURIDAD_MESA_QR,
   SEGURIDAD_PEDIDO,
@@ -95,6 +98,41 @@ describe('contrato OpenAPI (BL-211)', () => {
         { [SEGURIDAD_KEYCLOAK]: [], [SEGURIDAD_PEDIDO]: [] },
       ]),
     );
+  });
+
+  describe('configurarOpenApi', () => {
+    const entornoOriginal = { ...process.env };
+    let setup: jest.SpyInstance;
+
+    beforeEach(() => {
+      setup = jest.spyOn(SwaggerModule, 'setup').mockImplementation();
+    });
+
+    afterEach(() => {
+      setup.mockRestore();
+      process.env = { ...entornoOriginal };
+    });
+
+    it('en producción (sin OPENAPI_HABILITADO) no publica nada', () => {
+      process.env.NODE_ENV = 'production';
+      delete process.env.OPENAPI_HABILITADO;
+
+      expect(configurarOpenApi(app)).toBe(false);
+      expect(setup).not.toHaveBeenCalled();
+    });
+
+    it('habilitado: publica la UI en /api/docs y el contrato en /api/docs-json', () => {
+      process.env.NODE_ENV = 'production';
+      process.env.OPENAPI_HABILITADO = 'true';
+
+      expect(configurarOpenApi(app)).toBe(true);
+      expect(setup).toHaveBeenCalledWith(
+        RUTA_DOCS,
+        app,
+        expect.objectContaining({ openapi: expect.stringMatching(/^3\./) }),
+        expect.objectContaining({ jsonDocumentUrl: RUTA_DOCS_JSON }),
+      );
+    });
   });
 
   it('describe los DTOs a partir de sus tipos y validaciones (plugin)', () => {
