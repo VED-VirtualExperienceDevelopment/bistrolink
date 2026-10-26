@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
 import { TenantPrismaService } from '../../../src/prisma/tenant-prisma.service';
 import { QrMesaTokenService } from '../../../src/qr-mesa/qr-mesa-token.service';
+import { MesasService } from '../../../src/mesas/mesas.service';
 
 /**
  * HU-034 (BL-204): token del QR vigente de una mesa, para los tests de
@@ -45,4 +46,44 @@ export async function tokenQrDeMesa(
   return app
     .get(QrMesaTokenService)
     .cifrar({ tenantId, mesaId, version: mesa.qrVersion });
+}
+
+/**
+ * HU-017 (BL-60): sesión abierta de la mesa, para mandarla con el QR (body
+ * del token del comensal y header X-Mesa-Sesion). El seed deja abiertas las
+ * mesas de prueba; si algún test la cerró, se vuelve a abrir (y antes se
+ * marca limpia), igual que haría el mozo.
+ */
+export async function sesionDeMesa(
+  app: INestApplication,
+  tenantId: string,
+  mesaId: string,
+): Promise<string> {
+  const tenantPrisma = await app.resolve(TenantPrismaService);
+  const leer = () =>
+    tenantPrisma.runInTenantContext(tenantId, (tx) =>
+      tx.mesa.findUnique({
+        where: { id: mesaId },
+        select: { estado: true, sesionId: true },
+      }),
+    );
+
+  const mesa = await leer();
+  if (!mesa) {
+    throw new Error(
+      `La mesa ${mesaId} no existe en el tenant ${tenantId} (¿seed?)`,
+    );
+  }
+  if (mesa.sesionId) return mesa.sesionId;
+
+  const mesas = await app.resolve(MesasService);
+  if (mesa.estado === 'REQUIERE_LIMPIEZA') {
+    await mesas.marcarLimpia(tenantId, mesaId);
+  }
+  await mesas.abrirSesion(tenantId, mesaId);
+  const abierta = await leer();
+  if (!abierta?.sesionId) {
+    throw new Error(`No se pudo abrir la mesa ${mesaId}`);
+  }
+  return abierta.sesionId;
 }

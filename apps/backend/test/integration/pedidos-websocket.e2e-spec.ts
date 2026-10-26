@@ -5,7 +5,11 @@ import { INestApplication } from '@nestjs/common';
 import request = require('supertest');
 import { io, Socket } from 'socket.io-client';
 import { AppModule } from '../../src/app.module';
-import { asegurarClaveQr, tokenQrDeMesa } from './support/qr-mesa';
+import {
+  asegurarClaveQr,
+  sesionDeMesa,
+  tokenQrDeMesa,
+} from './support/qr-mesa';
 import { conPagoFalso, pagarPedidoDeMesa } from './support/pago-falso';
 
 // ── Config de Keycloak para pedir tokens reales (password grant) ───────────
@@ -78,6 +82,7 @@ describe('WebSocket KDS (HU-003 + HU-004) - emision de pedido:nuevo', () => {
   let tokenComensalDemo: string;
   // BL-204: la mesa solo se usa con el token de su QR.
   let qrToken: string;
+  let sesionMesa: string;
 
   const itConTenantB = TENANT_B_USER && TENANT_B_PASS ? it : it.skip;
   const itConMozo = MOZO_USER && MOZO_PASS ? it : it.skip;
@@ -97,9 +102,11 @@ describe('WebSocket KDS (HU-003 + HU-004) - emision de pedido:nuevo', () => {
     baseUrl = `http://localhost:${port}`;
 
     qrToken = await tokenQrDeMesa(app, TENANT_ID, MESA_ID);
+
+    sesionMesa = await sesionDeMesa(app, TENANT_ID, MESA_ID);
     const authRes = await request(app.getHttpServer())
       .post('/auth/comensal/mesa')
-      .send({ qrToken })
+      .send({ qrToken, sesionMesa })
       .expect(200);
     tokenComensalDemo = authRes.body.accessToken;
   }, 30000);
@@ -126,6 +133,7 @@ describe('WebSocket KDS (HU-003 + HU-004) - emision de pedido:nuevo', () => {
         .post('/pedidos')
         .set('Authorization', `Bearer ${tokenComensalDemo}`)
         .set('X-Mesa-Token', qrToken)
+        .set('X-Mesa-Sesion', sesionMesa)
         .send({
           restauranteId: RESTAURANTE_ID,
           idempotencyKey: `warmup-${Date.now()}`,
@@ -133,7 +141,13 @@ describe('WebSocket KDS (HU-003 + HU-004) - emision de pedido:nuevo', () => {
         })
         .expect(201)
         .then((res) =>
-          pagarPedidoDeMesa(app, res.body.id, tokenComensalDemo, qrToken),
+          pagarPedidoDeMesa(
+            app,
+            res.body.id,
+            tokenComensalDemo,
+            qrToken,
+            sesionMesa,
+          ),
         );
 
       await new Promise<void>((resolve, reject) => {
@@ -173,6 +187,7 @@ describe('WebSocket KDS (HU-003 + HU-004) - emision de pedido:nuevo', () => {
                 .post('/pedidos')
                 .set('Authorization', `Bearer ${tokenComensalDemo}`)
                 .set('X-Mesa-Token', qrToken)
+                .set('X-Mesa-Sesion', sesionMesa)
                 .send({
                   restauranteId: RESTAURANTE_ID,
                   idempotencyKey: `ws-test-${Date.now()}`,
@@ -186,6 +201,7 @@ describe('WebSocket KDS (HU-003 + HU-004) - emision de pedido:nuevo', () => {
                 pedidoId,
                 tokenComensalDemo,
                 qrToken,
+                sesionMesa,
               );
             } catch (err) {
               reject(err);
@@ -220,6 +236,7 @@ describe('WebSocket KDS (HU-003 + HU-004) - emision de pedido:nuevo', () => {
                   .post('/pedidos')
                   .set('Authorization', `Bearer ${tokenComensalDemo}`)
                   .set('X-Mesa-Token', qrToken)
+                  .set('X-Mesa-Sesion', sesionMesa)
                   .send({
                     restauranteId: RESTAURANTE_ID,
                     idempotencyKey: `ws-aislamiento-${Date.now()}`,
@@ -233,6 +250,7 @@ describe('WebSocket KDS (HU-003 + HU-004) - emision de pedido:nuevo', () => {
                   pedidoRes.body.id as string,
                   tokenComensalDemo,
                   qrToken,
+                  sesionMesa,
                 );
 
                 setTimeout(() => {
