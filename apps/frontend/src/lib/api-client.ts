@@ -6,6 +6,8 @@ export class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
+    /** Código de negocio del cuerpo del error, si lo trae (ej. MESA_CERRADA). */
+    public codigo?: string,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -48,7 +50,12 @@ export async function apiFetch<T>(
     const message = Array.isArray(body?.message)
       ? body!.message.join(', ')
       : (body?.message ?? `Error ${res.status}`);
-    throw new ApiError(res.status, message);
+    const codigo = (body as { codigo?: unknown } | undefined)?.codigo;
+    throw new ApiError(
+      res.status,
+      message,
+      typeof codigo === 'string' ? codigo : undefined,
+    );
   }
 
   // 204 No Content (no aplica hoy en /usuarios, pero por las dudas)

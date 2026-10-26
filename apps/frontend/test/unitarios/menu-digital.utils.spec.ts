@@ -2,13 +2,19 @@ import {
   alcanzoCantidadMaxima,
   CANTIDAD_MAXIMA_POR_ITEM,
   CODIGO_ESTABLECIMIENTO_SUSPENDIDO,
+  CODIGO_MESA_CERRADA,
+  CODIGO_SESION_VENCIDA,
+  codigoDeError,
   esEstablecimientoSuspendido,
   esTokenQrConFormatoValido,
   etiquetaMesa,
+  HEADER_MESA_SESION,
   HEADER_MESA_TOKEN,
   headersMesaQr,
+  MENSAJE_MESA_CERRADA,
   MENSAJE_QR_INVALIDO,
   MENSAJE_QR_REEMPLAZADO,
+  MENSAJE_SESION_VENCIDA,
   mensajeErrorQr,
   origenPedido,
   RUTA_AUTH_COMENSAL,
@@ -28,7 +34,8 @@ const TENANT_ID = "11111111-1111-1111-1111-111111111111";
 const RESTAURANTE_ID = "22222222-2222-2222-2222-222222222222";
 const QR_TOKEN = "AbC-123_xyz";
 
-const MESA: OrigenMenu = { tipo: "mesa", qrToken: QR_TOKEN };
+const SESION = "99999999-9999-4999-8999-999999999999";
+const MESA: OrigenMenu = { tipo: "mesa", qrToken: QR_TOKEN, sesionMesa: SESION };
 const PUBLICO: OrigenMenu = {
   tipo: "publico",
   tenantId: TENANT_ID,
@@ -41,14 +48,15 @@ describe("rutas y header (tienen que coincidir con el backend)", () => {
     expect(RUTA_AUTH_COMENSAL_MESA).toBe("/auth/comensal/mesa");
     expect(RUTA_LLAMAR_MOZO).toBe("/mesas/llamar");
     expect(HEADER_MESA_TOKEN.toLowerCase()).toBe("x-mesa-token");
+    expect(HEADER_MESA_SESION.toLowerCase()).toBe("x-mesa-sesion");
   });
 });
 
 describe("solicitudAuthComensal", () => {
-  it("mesa: POST /auth/comensal/mesa solo con el token del QR", () => {
+  it("mesa: POST /auth/comensal/mesa con el token del QR y la sesión (HU-017)", () => {
     expect(solicitudAuthComensal(MESA)).toEqual({
       ruta: "/auth/comensal/mesa",
-      body: { qrToken: QR_TOKEN },
+      body: { qrToken: QR_TOKEN, sesionMesa: SESION },
     });
   });
 
@@ -71,8 +79,11 @@ describe("origenPedido", () => {
 });
 
 describe("headersMesaQr", () => {
-  it("mesa: manda el token del QR en X-Mesa-Token", () => {
-    expect(headersMesaQr(MESA)).toEqual({ [HEADER_MESA_TOKEN]: QR_TOKEN });
+  it("mesa: manda el token del QR y la sesión de la mesa (HU-017)", () => {
+    expect(headersMesaQr(MESA)).toEqual({
+      [HEADER_MESA_TOKEN]: QR_TOKEN,
+      [HEADER_MESA_SESION]: SESION,
+    });
   });
 
   it("link web del local: sin header (el pedido es para retirar)", () => {
@@ -83,6 +94,15 @@ describe("headersMesaQr", () => {
 describe("mensajeErrorQr", () => {
   it("mesa, 410: el QR fue reemplazado", () => {
     expect(mensajeErrorQr(MESA, 410)).toBe(MENSAJE_QR_REEMPLAZADO);
+  });
+
+  it("HU-017 (BL-60): 410 con código: mesa cerrada o sesión vencida", () => {
+    expect(mensajeErrorQr(MESA, 410, CODIGO_MESA_CERRADA)).toBe(
+      MENSAJE_MESA_CERRADA,
+    );
+    expect(mensajeErrorQr(MESA, 410, CODIGO_SESION_VENCIDA)).toBe(
+      MENSAJE_SESION_VENCIDA,
+    );
   });
 
   it("mesa, 404: el QR no es válido", () => {
@@ -169,4 +189,19 @@ describe("BL-413: establecimiento suspendido", () => {
       }),
     ).toBe(false);
   });
+});
+
+describe("codigoDeError (HU-017, BL-60)", () => {
+  it("lee el código del cuerpo del error", () => {
+    expect(codigoDeError({ statusCode: 410, codigo: "MESA_CERRADA" })).toBe(
+      "MESA_CERRADA",
+    );
+  });
+
+  it.each([null, undefined, "texto", { codigo: 3 }, {}])(
+    "sin código válido: undefined (%p)",
+    (cuerpo) => {
+      expect(codigoDeError(cuerpo)).toBeUndefined();
+    },
+  );
 });

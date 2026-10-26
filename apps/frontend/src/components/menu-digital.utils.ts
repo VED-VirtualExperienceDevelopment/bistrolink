@@ -11,10 +11,19 @@
  * - en el body de POST /auth/comensal/mesa, para obtener el JWT del comensal;
  * - en el header X-Mesa-Token de POST /pedidos y POST /mesas/llamar, para que
  *   el backend sepa de qué mesa es (MesaQrGuard), sin confiar en el cliente.
+ *
+ * HU-017 (BL-60): además, la sesión de la mesa que vino con el menú
+ * (sesionMesa). Va en el body del token y en el header X-Mesa-Sesion: con la
+ * mesa cerrada, o si el mozo la cerró y la volvió a abrir, el backend la
+ * rechaza (410).
  */
 
 export type OrigenMenu =
-  | { readonly tipo: "mesa"; readonly qrToken: string }
+  | {
+      readonly tipo: "mesa";
+      readonly qrToken: string;
+      readonly sesionMesa: string;
+    }
   | {
       readonly tipo: "publico";
       readonly tenantId: string;
@@ -30,12 +39,22 @@ export const RUTA_LLAMAR_MOZO = "/mesas/llamar";
 
 /** Header con el token del QR (HEADER_MESA_TOKEN en el backend). */
 export const HEADER_MESA_TOKEN = "X-Mesa-Token";
+/** HU-017 (BL-60): sesión de la mesa (HEADER_MESA_SESION en el backend). */
+export const HEADER_MESA_SESION = "X-Mesa-Sesion";
 
 /** Mismos textos que QrMesaAccesoService en el backend. */
 export const MENSAJE_QR_INVALIDO =
   "Este QR no es válido. Escaneá de nuevo el código de tu mesa.";
 export const MENSAJE_QR_REEMPLAZADO =
   "Este QR fue reemplazado. Pedile al personal el QR actualizado de la mesa.";
+
+/** HU-017 (BL-60): códigos y textos del 410 por la sesión de la mesa. */
+export const CODIGO_MESA_CERRADA = "MESA_CERRADA";
+export const CODIGO_SESION_VENCIDA = "SESION_VENCIDA";
+export const MENSAJE_MESA_CERRADA =
+  "Esta mesa está cerrada. Pedile al mozo que la abra para hacer tu pedido.";
+export const MENSAJE_SESION_VENCIDA =
+  "La sesión de esta mesa terminó. Escaneá de nuevo el QR de la mesa.";
 
 /**
  * Formato del token del QR: base64url, como lo genera QrMesaTokenService
@@ -49,7 +68,8 @@ export function esTokenQrConFormatoValido(token: string): boolean {
 }
 
 export type CuerpoAuthComensal =
-  { qrToken: string } | { tenantId: string; restauranteId: string };
+  | { qrToken: string; sesionMesa: string }
+  | { tenantId: string; restauranteId: string };
 
 export interface SolicitudAuthComensal {
   ruta: typeof RUTA_AUTH_COMENSAL | typeof RUTA_AUTH_COMENSAL_MESA;
@@ -63,7 +83,7 @@ export function solicitudAuthComensal(
   if (origen.tipo === "mesa") {
     return {
       ruta: RUTA_AUTH_COMENSAL_MESA,
-      body: { qrToken: origen.qrToken },
+      body: { qrToken: origen.qrToken, sesionMesa: origen.sesionMesa },
     };
   }
   return {
@@ -82,24 +102,42 @@ export function origenPedido(
   return origen.tipo === "mesa" ? {} : { restauranteId: origen.restauranteId };
 }
 
-/** Header X-Mesa-Token para pedidos y llamados desde la mesa. */
+/** X-Mesa-Token y X-Mesa-Sesion para pedidos, pagos y llamados desde la mesa. */
 export function headersMesaQr(origen: OrigenMenu): Record<string, string> {
-  return origen.tipo === "mesa" ? { [HEADER_MESA_TOKEN]: origen.qrToken } : {};
+  return origen.tipo === "mesa"
+    ? {
+        [HEADER_MESA_TOKEN]: origen.qrToken,
+        [HEADER_MESA_SESION]: origen.sesionMesa,
+      }
+    : {};
 }
 
 /**
  * Mensaje para el comensal si el backend rechazó el QR de la mesa: 410 (se
- * regeneró) o 404 (no válido). null en cualquier otro caso, o si el menú no
+ * regeneró; o, HU-017, la mesa está cerrada o la sesión terminó, según el
+ * `codigo`) o 404 (no válido). null en cualquier otro caso, o si el menú no
  * es de una mesa (en el link web un 404 no tiene que ver con un QR).
  */
 export function mensajeErrorQr(
   origen: OrigenMenu,
   status: number,
+  codigo?: string,
 ): string | null {
   if (origen.tipo !== "mesa") return null;
-  if (status === 410) return MENSAJE_QR_REEMPLAZADO;
+  if (status === 410) {
+    if (codigo === CODIGO_MESA_CERRADA) return MENSAJE_MESA_CERRADA;
+    if (codigo === CODIGO_SESION_VENCIDA) return MENSAJE_SESION_VENCIDA;
+    return MENSAJE_QR_REEMPLAZADO;
+  }
   if (status === 404) return MENSAJE_QR_INVALIDO;
   return null;
+}
+
+/** El `codigo` del cuerpo de un error de la API, si lo trae. */
+export function codigoDeError(cuerpo: unknown): string | undefined {
+  if (typeof cuerpo !== "object" || cuerpo === null) return undefined;
+  const codigo = (cuerpo as { codigo?: unknown }).codigo;
+  return typeof codigo === "string" ? codigo : undefined;
 }
 
 /**
