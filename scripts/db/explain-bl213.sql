@@ -1,8 +1,8 @@
 -- BL-213: EXPLAIN de las consultas que usan los índices nuevos, como lo hace
 -- la API (rol de la app, RLS activo, app.tenant_id seteado).
 -- Uso (base LOCAL, nunca staging/production):
---   docker exec -i bistrolink-db psql -U bistrolink -d bistrolink_dev < scripts/db/explain-bl213.sql
--- Correrlo ANTES y DESPUÉS de aplicar la migración 20261026000000 y adjuntar
+--   PowerShell: Get-Content scripts/db/explain-bl213.sql | docker exec -i bistrolink-db psql -U bistrolink -d bistrolink_dev
+--   bash:       docker exec -i bistrolink-db psql -U bistrolink -d bistrolink_dev < scripts/db/explain-bl213.sql-- Correrlo ANTES y DESPUÉS de aplicar la migración 20261026000000 y adjuntar
 -- las dos salidas al PR. Con pocos datos Postgres puede preferir un Seq Scan:
 -- es normal; la diferencia se ve con volumen.
 BEGIN;
