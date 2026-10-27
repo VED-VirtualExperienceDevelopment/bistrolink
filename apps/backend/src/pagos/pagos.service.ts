@@ -15,6 +15,7 @@ import { PagoTemporalmenteNoDisponibleException } from './gateways/pago-temporal
 import { CfeService, ResumenComprobante } from '../cfe/cfe.service';
 import { PedidosService } from '../pedidos/pedidos.service';
 import { PedidoParaKds } from '../pedidos/pedido-kds.mapper';
+import { registrarCambioPago, textoCorto } from './historial-pago';
 
 /** BL-311: respuesta de GET /pedidos/:pedidoId/pagos. */
 export interface EstadoPagoDelPedido {
@@ -25,6 +26,9 @@ export interface EstadoPagoDelPedido {
     estado: PagoEstado;
     medioPago: string;
     monto: string;
+    // HU-032 (BL-202): «VENCIDO» si venció sin confirmación; el comensal ve
+    // un mensaje distinto. Null si no fue rechazado.
+    motivoRechazo: string | null;
   } | null;
   // Null mientras el CFE no fue emitido (el frontend consulta de nuevo).
   comprobante: ResumenComprobante | null;
@@ -36,6 +40,10 @@ const ESTADOS_COBRADOS: ReadonlySet<PagoEstado> = new Set<PagoEstado>([
   'APROBADO',
   'REEMBOLSADO',
 ]);
+
+// La pasarela respondió con un error (datos de tarjeta inválidos, solicitud
+// rechazada): no hubo cobro.
+const MOTIVO_ERROR_PASARELA = 'ERROR_PASARELA';
 
 @Injectable()
 export class PagosService {
@@ -103,8 +111,26 @@ export class PagosService {
         // y una respuesta más vieja no debe pisar el estado real.
         const { count } = await tx.pago.updateMany({
           where: { id: pago.id, estado: 'PENDIENTE' },
-          data: { estado, pasarelaReferencia: resultado.pasarelaReferencia },
+          data: {
+            estado,
+            pasarelaReferencia: resultado.pasarelaReferencia,
+            motivoRechazo:
+              estado === 'RECHAZADO'
+                ? textoCorto(resultado.motivoRechazo)
+                : null,
+          },
         });
+        // HU-032 (BL-202): el cambio queda registrado con su origen.
+        if (count > 0 && estado !== 'PENDIENTE') {
+          await registrarCambioPago(tx, {
+            tenantId,
+            pagoId: pago.id,
+            estadoAnterior: 'PENDIENTE',
+            estadoNuevo: estado,
+            origen: 'COBRO',
+            detalle: resultado.motivoRechazo,
+          });
+        }
         let confirmado: PedidoParaKds | null = null;
         let volvioAOcupada = false;
         if (count > 0 && !resultado.pendiente) {
@@ -190,6 +216,7 @@ export class PagosService {
               estado: true,
               medioPago: true,
               monto: true,
+              motivoRechazo: true,
               comprobantes: {
                 orderBy: { createdAt: 'asc' },
                 take: 1,
@@ -218,6 +245,7 @@ export class PagosService {
         estado: pago.estado,
         medioPago: pago.medioPago,
         monto: pago.monto.toFixed(2),
+        motivoRechazo: pago.motivoRechazo,
       },
       comprobante: comprobante && {
         serie: comprobante.serie,
@@ -319,9 +347,17 @@ export class PagosService {
       async (tx) => {
         const { count } = await tx.pago.updateMany({
           where: { id: pagoId, estado: 'PENDIENTE' },
-          data: { estado: 'RECHAZADO' },
+          data: { estado: 'RECHAZADO', motivoRechazo: MOTIVO_ERROR_PASARELA },
         });
         if (count === 0) return false;
+        await registrarCambioPago(tx, {
+          tenantId,
+          pagoId,
+          estadoAnterior: 'PENDIENTE',
+          estadoNuevo: 'RECHAZADO',
+          origen: 'COBRO',
+          detalle: MOTIVO_ERROR_PASARELA,
+        });
         const mesa = await tx.mesa.updateMany({
           where: { id: mesaId, estado: 'EN_PROCESO_DE_PAGO' },
           data: { estado: 'OCUPADA' },

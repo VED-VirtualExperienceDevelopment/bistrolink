@@ -66,9 +66,10 @@ describe('estadoPagoDesdeOrden', () => {
 
 describe('PagosWebhookService.procesarOrden (BL-78)', () => {
   let tx: {
-    pago: { findMany: jest.Mock; update: jest.Mock };
+    pago: { findMany: jest.Mock; update: jest.Mock; count: jest.Mock };
     pedido: { findUnique: jest.Mock };
     mesa: { updateMany: jest.Mock };
+    pagoEstadoHistorial: { create: jest.Mock; count: jest.Mock };
   };
   let tenantPrisma: { runInTenantContext: jest.Mock };
   let mercadoPago: { consultarOrden: jest.Mock };
@@ -87,9 +88,18 @@ describe('PagosWebhookService.procesarOrden (BL-78)', () => {
       pago: {
         findMany: jest.fn().mockResolvedValue([pagoGuardado()]),
         update: jest.fn(),
+        count: jest.fn().mockResolvedValue(0),
       },
-      pedido: { findUnique: jest.fn().mockResolvedValue({ mesaId: MESA_ID }) },
+      pedido: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue({ mesaId: MESA_ID, estado: 'PENDIENTE_PAGO' }),
+      },
       mesa: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+      pagoEstadoHistorial: {
+        create: jest.fn(),
+        count: jest.fn().mockResolvedValue(0),
+      },
     };
     tenantPrisma = {
       runInTenantContext: jest.fn((_tenantId, callback) => callback(tx)),
@@ -173,7 +183,11 @@ describe('PagosWebhookService.procesarOrden (BL-78)', () => {
       expect(resultado).toBe('actualizado');
       expect(tx.pago.update).toHaveBeenCalledWith({
         where: { id: 'pago-1' },
-        data: { estado: 'APROBADO', pasarelaReferencia: ORDER_ID },
+        data: {
+          estado: 'APROBADO',
+          pasarelaReferencia: ORDER_ID,
+          motivoRechazo: null,
+        },
       });
       expect(tx.mesa.updateMany).toHaveBeenCalledWith({
         where: { id: MESA_ID, estado: 'EN_PROCESO_DE_PAGO' },
@@ -191,7 +205,11 @@ describe('PagosWebhookService.procesarOrden (BL-78)', () => {
       expect(resultado).toBe('actualizado');
       expect(tx.pago.update).toHaveBeenCalledWith({
         where: { id: 'pago-1' },
-        data: { estado: 'RECHAZADO', pasarelaReferencia: ORDER_ID },
+        data: {
+          estado: 'RECHAZADO',
+          pasarelaReferencia: ORDER_ID,
+          motivoRechazo: 'failed',
+        },
       });
       expect(tx.mesa.updateMany).toHaveBeenCalledWith({
         where: { id: MESA_ID, estado: 'EN_PROCESO_DE_PAGO' },
@@ -306,7 +324,11 @@ describe('PagosWebhookService.procesarOrden (BL-78)', () => {
       expect(resultado).toBe('actualizado');
       expect(tx.pago.update).toHaveBeenCalledWith({
         where: { id: 'pago-1' },
-        data: { estado: 'APROBADO', pasarelaReferencia: ORDER_ID },
+        data: {
+          estado: 'APROBADO',
+          pasarelaReferencia: ORDER_ID,
+          motivoRechazo: null,
+        },
       });
     });
 
@@ -357,6 +379,152 @@ describe('PagosWebhookService.procesarOrden (BL-78)', () => {
           where: { id: MESA_ID, estado: 'EN_PROCESO_DE_PAGO' },
         }),
       );
+    });
+  });
+
+  describe('HU-032 (BL-202): historial y aprobación tardía', () => {
+    const PAGO_VENCIDO = {
+      estado: 'RECHAZADO',
+      motivoRechazo: 'VENCIDO',
+      pasarelaReferencia: null,
+    };
+
+    it('cada cambio queda en el historial con su origen (webhook por defecto)', async () => {
+      await service.procesarOrden(ORDER_ID);
+
+      expect(tx.pagoEstadoHistorial.create).toHaveBeenCalledWith({
+        data: {
+          tenantId: TENANT_ID,
+          pagoId: 'pago-1',
+          estadoAnterior: 'PENDIENTE',
+          estadoNuevo: 'APROBADO',
+          origen: 'WEBHOOK',
+          detalle: null,
+        },
+      });
+    });
+
+    it('la conciliación usa el mismo flujo y queda registrada como CONCILIACION', async () => {
+      mercadoPago.consultarOrden.mockResolvedValue(
+        orden({ status: 'failed', statusDetail: 'failed' }),
+      );
+
+      expect(await service.procesarOrden(ORDER_ID, 'CONCILIACION')).toBe(
+        'actualizado',
+      );
+      expect(tx.pagoEstadoHistorial.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          origen: 'CONCILIACION',
+          estadoNuevo: 'RECHAZADO',
+          detalle: 'failed',
+        }),
+      });
+    });
+
+    it('aprobación tardía de un pago VENCIDO sin referencia: si el pedido la puede usar, se aplica', async () => {
+      tx.pago.findMany.mockResolvedValue([pagoGuardado(PAGO_VENCIDO)]);
+
+      const resultado = await service.procesarOrden(ORDER_ID);
+
+      expect(resultado).toBe('actualizado');
+      expect(tx.pago.update).toHaveBeenCalledWith({
+        where: { id: 'pago-1' },
+        data: {
+          estado: 'APROBADO',
+          pasarelaReferencia: ORDER_ID,
+          motivoRechazo: null,
+        },
+      });
+      expect(tx.pagoEstadoHistorial.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          estadoAnterior: 'RECHAZADO',
+          estadoNuevo: 'APROBADO',
+        }),
+      });
+      expect(pedidos.confirmarPagoEnTx).toHaveBeenCalled();
+      expect(cfe.emitirEnSegundoPlano).toHaveBeenCalledWith(
+        TENANT_ID,
+        'pago-1',
+      );
+    });
+
+    it('un pago rechazado por la tarjeta (no vencido) y sin referencia no se toma', async () => {
+      tx.pago.findMany.mockResolvedValue([
+        pagoGuardado({ ...PAGO_VENCIDO, motivoRechazo: 'insufficient_amount' }),
+      ]);
+
+      expect(await service.procesarOrden(ORDER_ID)).toBe('pago_no_encontrado');
+    });
+
+    it('aprobación tardía con el pedido ya pagado con otro pago: requiere reembolso, no confirma ni emite CFE', async () => {
+      tx.pago.findMany.mockResolvedValue([
+        pagoGuardado({ ...PAGO_VENCIDO, pasarelaReferencia: ORDER_ID }),
+      ]);
+      tx.pago.count.mockResolvedValue(1);
+
+      const resultado = await service.procesarOrden(ORDER_ID);
+
+      expect(resultado).toBe('requiere_reembolso');
+      expect(tx.pago.count).toHaveBeenCalledWith({
+        where: {
+          pedidoId: PEDIDO_ID,
+          estado: 'APROBADO',
+          id: { not: 'pago-1' },
+        },
+      });
+      // El pago refleja lo que pasó (la pasarela cobró)...
+      expect(tx.pago.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ estado: 'APROBADO' }),
+        }),
+      );
+      expect(tx.pagoEstadoHistorial.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ detalle: 'REQUIERE_REEMBOLSO' }),
+      });
+      // ...pero no manda el pedido a cocina otra vez ni factura.
+      expect(pedidos.confirmarPagoEnTx).not.toHaveBeenCalled();
+      expect(pedidos.notificarPedidoConfirmado).not.toHaveBeenCalled();
+      expect(cfe.emitirEnSegundoPlano).not.toHaveBeenCalled();
+      expect(Logger.error).toHaveBeenCalled();
+    });
+
+    it('aprobación tardía con el pedido cancelado (se cerró la mesa): requiere reembolso', async () => {
+      tx.pago.findMany.mockResolvedValue([pagoGuardado(PAGO_VENCIDO)]);
+      tx.pedido.findUnique.mockResolvedValue({
+        mesaId: MESA_ID,
+        estado: 'CANCELADO',
+      });
+
+      expect(await service.procesarOrden(ORDER_ID)).toBe('requiere_reembolso');
+      expect(pedidos.confirmarPagoEnTx).not.toHaveBeenCalled();
+      expect(tx.mesa.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('aviso repetido de un pago marcado para reembolso: tampoco emite CFE', async () => {
+      tx.pago.findMany.mockResolvedValue([
+        pagoGuardado({ estado: 'APROBADO', pasarelaReferencia: ORDER_ID }),
+      ]);
+      tx.pagoEstadoHistorial.count.mockResolvedValue(1);
+
+      expect(await service.procesarOrden(ORDER_ID)).toBe('requiere_reembolso');
+      expect(tx.pagoEstadoHistorial.count).toHaveBeenCalledWith({
+        where: { pagoId: 'pago-1', detalle: 'REQUIERE_REEMBOLSO' },
+      });
+      expect(cfe.emitirEnSegundoPlano).not.toHaveBeenCalled();
+    });
+
+    it('order fallida sobre un pago ya vencido: mismo estado, solo completa la referencia', async () => {
+      tx.pago.findMany.mockResolvedValue([pagoGuardado(PAGO_VENCIDO)]);
+      mercadoPago.consultarOrden.mockResolvedValue(
+        orden({ status: 'expired', statusDetail: 'expired' }),
+      );
+
+      expect(await service.procesarOrden(ORDER_ID)).toBe('sin_cambios');
+      expect(tx.pago.update).toHaveBeenCalledWith({
+        where: { id: 'pago-1' },
+        data: { pasarelaReferencia: ORDER_ID },
+      });
+      expect(tx.pagoEstadoHistorial.create).not.toHaveBeenCalled();
     });
   });
 

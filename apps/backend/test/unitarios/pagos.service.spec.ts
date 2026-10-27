@@ -74,6 +74,8 @@ function crearTx() {
       update: jest.fn(),
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
+    // HU-032 (BL-202): historial de estados del pago.
+    pagoEstadoHistorial: { create: jest.fn() },
   };
 }
 
@@ -136,7 +138,11 @@ describe('PagosService.crear', () => {
       });
       expect(tx.pago.updateMany).toHaveBeenCalledWith({
         where: { id: PAGO_ID, estado: 'PENDIENTE' },
-        data: { estado: 'APROBADO', pasarelaReferencia: 'ORD1' },
+        data: {
+          estado: 'APROBADO',
+          pasarelaReferencia: 'ORD1',
+          motivoRechazo: null,
+        },
       });
       // BL-311: con prepago el comensal paga antes de comer; la mesa la
       // libera el cierre de sesión (HU-017), no el pago.
@@ -401,7 +407,11 @@ describe('PagosService.crear', () => {
 
       expect(tx.pago.updateMany).toHaveBeenCalledWith({
         where: { id: PAGO_ID, estado: 'PENDIENTE' },
-        data: { estado: 'RECHAZADO', pasarelaReferencia: 'ORD-FALLIDA' },
+        data: {
+          estado: 'RECHAZADO',
+          pasarelaReferencia: 'ORD-FALLIDA',
+          motivoRechazo: 'insufficient_amount',
+        },
       });
       expect(tx.pagos.get(PAGO_ID)).toMatchObject({ estado: 'RECHAZADO' });
       expect(estadosDeMesa()).toEqual(['EN_PROCESO_DE_PAGO', 'OCUPADA']);
@@ -556,7 +566,11 @@ describe('PagosService.crear', () => {
       // cualquier PENDIENTE — accionRequerida no es una columna del Pago.
       expect(tx.pago.updateMany).toHaveBeenCalledWith({
         where: { id: PAGO_ID, estado: 'PENDIENTE' },
-        data: { estado: 'PENDIENTE', pasarelaReferencia: 'ses-1' },
+        data: {
+          estado: 'PENDIENTE',
+          pasarelaReferencia: 'ses-1',
+          motivoRechazo: null,
+        },
       });
     });
 
@@ -614,6 +628,83 @@ describe('PagosService.crear', () => {
 
       expect(tx.pago.updateMany).not.toHaveBeenCalled();
       expect(tx.pagos.get(PAGO_ID)).toMatchObject({ estado: 'PENDIENTE' });
+    });
+  });
+
+  describe('HU-032 (BL-202): historial de estados del pago', () => {
+    it('pago aprobado al cobrar => queda registrado con origen COBRO', async () => {
+      await service.crear(TENANT_ID, DTO);
+
+      expect(tx.pagoEstadoHistorial.create).toHaveBeenCalledWith({
+        data: {
+          tenantId: TENANT_ID,
+          pagoId: PAGO_ID,
+          estadoAnterior: 'PENDIENTE',
+          estadoNuevo: 'APROBADO',
+          origen: 'COBRO',
+          detalle: null,
+        },
+      });
+    });
+
+    it('rechazo de la tarjeta => queda registrado con el motivo', async () => {
+      gateway.cobrar.mockResolvedValue({
+        aprobado: false,
+        pasarelaReferencia: 'ORD-FALLIDA',
+        motivoRechazo: 'insufficient_amount',
+      });
+
+      await service.crear(TENANT_ID, DTO).catch(() => undefined);
+
+      expect(tx.pagoEstadoHistorial.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          estadoNuevo: 'RECHAZADO',
+          origen: 'COBRO',
+          detalle: 'insufficient_amount',
+        }),
+      });
+    });
+
+    it('error de la pasarela => RECHAZADO con motivo ERROR_PASARELA', async () => {
+      gateway.cobrar.mockRejectedValue(
+        new BadGatewayException('Mercado Pago no pudo procesar el pago'),
+      );
+
+      await service.crear(TENANT_ID, DTO).catch(() => undefined);
+
+      expect(tx.pagos.get(PAGO_ID)).toMatchObject({
+        estado: 'RECHAZADO',
+        motivoRechazo: 'ERROR_PASARELA',
+      });
+      expect(tx.pagoEstadoHistorial.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          estadoNuevo: 'RECHAZADO',
+          detalle: 'ERROR_PASARELA',
+        }),
+      });
+    });
+
+    it('pago que queda pendiente => todavía no hay cambio que registrar', async () => {
+      gateway.cobrar.mockResolvedValue({
+        aprobado: false,
+        pendiente: true,
+        pasarelaReferencia: 'ORD-P',
+      });
+
+      await service.crear(TENANT_ID, DTO);
+
+      expect(tx.pagoEstadoHistorial.create).not.toHaveBeenCalled();
+    });
+
+    it('si el webhook ya lo resolvió, la respuesta del cobro no registra nada', async () => {
+      gateway.cobrar.mockImplementation(async () => {
+        Object.assign(tx.pagos.get(PAGO_ID), { estado: 'APROBADO' });
+        return { aprobado: true, pasarelaReferencia: 'ORD1' };
+      });
+
+      await service.crear(TENANT_ID, DTO);
+
+      expect(tx.pagoEstadoHistorial.create).not.toHaveBeenCalled();
     });
   });
 

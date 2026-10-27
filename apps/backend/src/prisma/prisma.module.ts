@@ -7,6 +7,9 @@ import { TenantPrismaService } from './tenant-prisma.service';
 // TenantPrismaService.
 @Module({
   providers: [PrismaRuntimeClient, TenantPrismaService],
-  exports: [TenantPrismaService],
+  // HU-032 (BL-202): también se exporta el cliente, para los procesos que
+  // corren fuera de un request (ConciliacionPagosJob) y necesitan leer la
+  // tabla `tenant`, que no tiene RLS.
+  exports: [TenantPrismaService, PrismaRuntimeClient],
 })
 export class PrismaModule {}

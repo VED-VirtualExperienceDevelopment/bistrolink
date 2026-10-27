@@ -144,7 +144,10 @@ export function PagoPedido({
           { headers },
         );
         if (cancelado) return;
-        const resultado = resultadoDeEstado(estado.pago?.estado);
+        const resultado = resultadoDeEstado(
+          estado.pago?.estado,
+          estado.pago?.motivoRechazo,
+        );
         if (resultado.tipo !== 'verificando') {
           aplicarResultado(resultado);
           return;
