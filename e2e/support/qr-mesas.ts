@@ -1,4 +1,4 @@
-import type { APIRequestContext, Page } from "@playwright/test";
+import type { APIRequestContext, APIResponse, Page } from "@playwright/test";
 import { RESTAURANTE_ID } from "./ids";
 
 // HU-034 (BL-204): el menú de una mesa ahora se abre solo desde el QR
@@ -9,6 +9,10 @@ import { RESTAURANTE_ID } from "./ids";
 //
 // Los tests SOLO leen los QR: nunca los regeneran. Regenerar invalida el QR
 // anterior y rompería a los demás tests que corren en paralelo.
+//
+// HU-017 (BL-60): el QR de una mesa CERRADA no abre la carta («mesa
+// cerrada», 410). Por eso, además de leer los QR, el fixture se asegura de
+// que las mesas del seed estén abiertas (asegurarMesasAbiertas, BL-432).
 
 const API_URL = process.env.API_URL ?? "http://localhost:3001";
 
@@ -73,4 +77,66 @@ export async function obtenerQrMesas(
     ruta,
     token: (mesaId) => ruta(mesaId).replace(/^\/q\//, ""),
   };
+}
+
+/**
+ * HU-017 (BL-60) · BL-432: deja abiertas las mesas que usan los tests, con el
+ * mismo token de ADMIN del fixture. Sin esto, si una mesa quedó cerrada en
+ * staging (la cerró alguien desde el mapa de mesas, o la migración de BL-60
+ * no le dio sesión), su QR muestra «mesa cerrada» y los tests que la usan
+ * fallan por timeout.
+ *
+ * - Si la mesa ya está abierta (409 «ya está abierta») no se toca: abrirla de
+ *   nuevo le cambiaría la sesión y rompería a los tests que corren en
+ *   paralelo con la sesión actual.
+ * - Si requiere limpieza (409), se marca limpia y se abre.
+ * - Un 409 después de limpiarla quiere decir que otro worker la abrió al
+ *   mismo tiempo: también queda abierta.
+ */
+export async function asegurarMesasAbiertas(
+  request: APIRequestContext,
+  authorization: string,
+  mesaIds: string[],
+): Promise<void> {
+  for (const mesaId of mesaIds) {
+    const accion = (nombre: "abrir" | "limpia") =>
+      request.post(`${API_URL}/mesas/${mesaId}/${nombre}`, {
+        headers: { authorization },
+      });
+
+    const abrir = await accion("abrir");
+    if (abrir.ok()) continue;
+
+    const motivo = await mensajeDeError(abrir);
+    if (abrir.status() === 409 && /ya está abierta/i.test(motivo)) continue;
+
+    if (abrir.status() === 409 && /requiere limpieza/i.test(motivo)) {
+      const limpia = await accion("limpia");
+      if (!limpia.ok() && limpia.status() !== 409) {
+        throw new Error(
+          `POST /mesas/${mesaId}/limpia respondió ${limpia.status()}: ${await mensajeDeError(limpia)}`,
+        );
+      }
+      const reabrir = await accion("abrir");
+      if (reabrir.ok() || reabrir.status() === 409) continue;
+      throw new Error(
+        `POST /mesas/${mesaId}/abrir respondió ${reabrir.status()}: ${await mensajeDeError(reabrir)}`,
+      );
+    }
+
+    throw new Error(
+      `POST /mesas/${mesaId}/abrir respondió ${abrir.status()}: ${motivo}. No se pudo dejar abierta la mesa del seed.`,
+    );
+  }
+}
+
+/** Mensaje de error de la API (`message`), o el texto crudo si no es JSON. */
+async function mensajeDeError(res: APIResponse): Promise<string> {
+  const texto = await res.text();
+  try {
+    const { message } = JSON.parse(texto) as { message?: unknown };
+    return typeof message === "string" ? message : texto;
+  } catch {
+    return texto;
+  }
 }

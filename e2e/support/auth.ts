@@ -1,6 +1,11 @@
 import { test as base, type BrowserContext, type Page } from "@playwright/test";
-import { KDS_PATH } from "./ids";
-import { obtenerQrMesas, tokenAdminDesdePanel, type QrMesas } from "./qr-mesas";
+import { KDS_PATH, MESA_ID, MESA_ID_RATE_LIMIT } from "./ids";
+import {
+  asegurarMesasAbiertas,
+  obtenerQrMesas,
+  tokenAdminDesdePanel,
+  type QrMesas,
+} from "./qr-mesas";
 
 // BL-181: antes cada spec que necesitaba una sesión de staff en /kds
 // declaraba su propia función `prepararKds(context: any)` casi idéntica
@@ -80,6 +85,8 @@ type WorkerFixtures = {
    * HU-034 (BL-204): URLs de los QR de las mesas del seed (/q/<token>).
    * Una vez por worker: loguea un ADMIN en un contexto aparte, pide
    * GET /mesas/qr y cierra ese contexto. Solo lee los QR, nunca los regenera.
+   * BL-432: además deja abiertas MESA_ID y MESA_ID_RATE_LIMIT (sin cambiar la
+   * sesión de una mesa que ya estaba abierta).
    */
   qrMesas: QrMesas;
 };
@@ -103,6 +110,11 @@ export const test = base.extend<Fixtures, WorkerFixtures>({
         const adminPage = await loginKds(context, credenciales("TEST_ADMIN"));
         const authorization = await tokenAdminDesdePanel(adminPage);
         qrMesas = await obtenerQrMesas(context.request, authorization);
+        // BL-432: el QR de una mesa cerrada no abre la carta (HU-017).
+        await asegurarMesasAbiertas(context.request, authorization, [
+          MESA_ID,
+          MESA_ID_RATE_LIMIT,
+        ]);
       } finally {
         await browser.close();
       }
