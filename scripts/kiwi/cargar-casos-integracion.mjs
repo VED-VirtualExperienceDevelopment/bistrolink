@@ -73,6 +73,12 @@ const plataforma = (ticket, extra = {}) => ({
   ...extra,
   tags: ["BL-404", ticket, ...(extra.tags ?? [])],
 });
+const pagosPendientes = (extra = {}) => ({
+  component: "api",
+  requirement: "HU-032",
+  ...extra,
+  tags: ["HU-032", "BL-202", "pagos", ...(extra.tags ?? [])],
+});
 const DATOS = {
   55: {
     category: "Funcional",
@@ -243,6 +249,22 @@ const DATOS = {
     category: "Funcional",
     priority: "P1",
     tags: ["integridad-datos", "seguridad"],
+  }),
+  95: pagosPendientes({ category: "Funcional", priority: "P1" }),
+  96: pagosPendientes({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["idempotencia"],
+  }),
+  97: pagosPendientes({
+    category: "Funcional",
+    priority: "P2",
+    tags: ["integridad-datos"],
+  }),
+  98: pagosPendientes({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["seguridad", "multi-tenant"],
   }),
 };
 const DATOS_POR_DEFECTO = {

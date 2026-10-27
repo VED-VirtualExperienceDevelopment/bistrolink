@@ -777,3 +777,63 @@ Usuario PLATAFORMA del test y un establecimiento sin pedidos, con un Administrad
 1. 200: `datosEliminados: true` y ninguna cuenta pendiente (al menos 4 borradas).
 2. No queda el tenant, ni el restaurante, ni usuarios, ni mesas; ninguna de sus cuentas existe en Keycloak y el comensal ya no obtiene token.
 3. 404 en los dos casos.
+
+## TC-I-095
+
+### Precondición
+
+Tenant A del seed. Mesa de prueba 96 abierta (con sesión). Pedido en `PENDIENTE_PAGO` con un pago de Mercado Pago `PENDIENTE` creado hace 16 minutos. La consulta de la order a Mercado Pago es falsa y responde `processing` (el webhook nunca llegó).
+
+### Pasos
+
+1. Ejecutar `ConciliacionPagosService.conciliarTenant` (lo que hace el job cada minuto) con vencimiento a los 15 minutos.
+
+### Resultado esperado
+
+El pago queda `RECHAZADO` con `motivo_rechazo = 'VENCIDO'` y una fila en `pago_estado_historial` con origen `VENCIMIENTO`. El pedido sigue en `PENDIENTE_PAGO` (no entra a cocina, sin historial a `RECIBIDO`) y la mesa vuelve a `OCUPADA`.
+
+## TC-I-096
+
+### Precondición
+
+Tenant A del seed. Pedido en `PENDIENTE_PAGO` con un pago de Mercado Pago `PENDIENTE` creado hace 5 minutos. La consulta de la order es falsa y responde `processed/accredited` (el webhook se perdió).
+
+### Pasos
+
+1. Ejecutar `conciliarTenant` dos veces.
+2. Procesar además la misma order con el flujo del webhook (`procesarOrden`).
+
+### Resultado esperado
+
+1. Después de la primera corrida: pago `APROBADO`, pedido en `RECIBIDO` y mesa en `OCUPADA`, con historial de origen `CONCILIACION`.
+2. La segunda corrida y el webhook no cambian nada (`sin_cambios`): el pedido pasa a `RECIBIDO` una sola vez.
+
+## TC-I-097
+
+### Precondición
+
+Tenant A del seed. Un pago de Mercado Pago vencido (`RECHAZADO`, `VENCIDO`). El comensal después pagó el mismo pedido con otro pago, que se aprobó, y el pedido está en `RECIBIDO`.
+
+### Pasos
+
+1. Mercado Pago aprueba tarde la order del pago vencido: procesar el webhook de esa order.
+
+### Resultado esperado
+
+Resultado `requiere_reembolso`. El pago vencido queda `APROBADO` (la pasarela cobró), con historial `REQUIERE_REEMBOLSO` de origen `WEBHOOK`. El pedido no se confirma de nuevo y no se emite el CFE.
+
+## TC-I-098
+
+### Precondición
+
+Tenant A del seed. Un pago vencido por la conciliación, con su fila en `pago_estado_historial`.
+
+### Pasos
+
+1. Contar las filas del historial de ese pago desde el contexto de otro tenant.
+2. Desde el tenant A, intentar `UPDATE` y `DELETE` sobre esas filas.
+
+### Resultado esperado
+
+1. Desde otro tenant no se ve ninguna fila (RLS).
+2. El `UPDATE` y el `DELETE` no afectan ninguna fila (la tabla no tiene políticas de modificación ni borrado) y la fila original sigue intacta.

@@ -239,7 +239,7 @@ describe('HU-032 (BL-202): vencimiento y conciliación de pagos pendientes', () 
     await app.close();
   }, 30000);
 
-  it('[TC-I-087] HU-032: pago pendiente sin webhook vence a los 15 minutos; el pedido no entra a cocina', async () => {
+  it('[TC-I-095] HU-032: pago pendiente sin webhook vence a los 15 minutos; el pedido no entra a cocina', async () => {
     const { pedidoId, pagoId } = await pagoPendiente(16, {
       status: 'processing',
       statusDetail: 'in_process',
@@ -261,7 +261,7 @@ describe('HU-032 (BL-202): vencimiento y conciliación de pagos pendientes', () 
     ]);
   });
 
-  it('[TC-I-088] HU-032: webhook perdido y la pasarela lo aprobó => la conciliación lo pasa a RECIBIDO una sola vez', async () => {
+  it('[TC-I-096] HU-032: webhook perdido y la pasarela lo aprobó => la conciliación lo pasa a RECIBIDO una sola vez', async () => {
     const { pedidoId, pagoId } = await pagoPendiente(5, {
       status: 'processed',
       statusDetail: 'accredited',
@@ -293,7 +293,7 @@ describe('HU-032 (BL-202): vencimiento y conciliación de pagos pendientes', () 
     ]);
   });
 
-  it('[TC-I-089] HU-032: webhook tardío sobre un pago vencido con el pedido ya pagado => queda para reembolso', async () => {
+  it('[TC-I-097] HU-032: webhook tardío sobre un pago vencido con el pedido ya pagado => queda para reembolso', async () => {
     const vencido = await pagoPendiente(20, {
       status: 'processing',
       statusDetail: 'in_process',
@@ -341,7 +341,7 @@ describe('HU-032 (BL-202): vencimiento y conciliación de pagos pendientes', () 
     expect(estado.historialPedido).toBe(0);
   });
 
-  it('[TC-I-090] HU-032: el historial de pagos tiene RLS y no se puede modificar ni borrar', async () => {
+  it('[TC-I-098] HU-032: el historial de pagos tiene RLS y no se puede modificar ni borrar', async () => {
     const { pagoId } = await pagoPendiente(16);
     await conciliacion.conciliarTenant(TENANT_ID, PARAMETROS);
 
