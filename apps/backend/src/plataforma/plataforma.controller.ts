@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   DefaultValuePipe,
+  Delete,
   Get,
   Header,
   HttpCode,
@@ -28,6 +29,8 @@ import { SuspenderEstablecimientoDto } from './dto/suspender-establecimiento.dto
 import { SuspensionEstablecimientoService } from './suspension-establecimiento.service';
 import { AccesoAdministradorService } from './acceso-administrador.service';
 import { CrearAdministradorDto } from './dto/crear-administrador.dto';
+import { EliminacionEstablecimientoService } from './eliminacion-establecimiento.service';
+import { EliminarEstablecimientoDto } from './dto/eliminar-establecimiento.dto';
 import {
   esFiltroEstado,
   EstablecimientosService,
@@ -50,6 +53,8 @@ export const LIMITE_CAMBIOS_DE_ESTADO_POR_HORA = 30;
  * por separado (el throttler cuenta por ruta).
  */
 export const LIMITE_ACCESOS_ADMIN_POR_HORA = 10;
+/** BL-418: eliminaciones (y reintentos) por hora y por usuario de plataforma. */
+export const LIMITE_ELIMINACIONES_POR_HORA = 10;
 
 /**
  * BL-163 (HU-027), entrega 2: alta de establecimientos para el rol
@@ -75,6 +80,7 @@ export class PlataformaController {
     private readonly datos: DatosEstablecimientoService,
     private readonly suspension: SuspensionEstablecimientoService,
     private readonly accesoAdmin: AccesoAdministradorService,
+    private readonly eliminacion: EliminacionEstablecimientoService,
   ) {}
 
   /**
@@ -236,6 +242,26 @@ export class PlataformaController {
     @Body() dto: CrearAdministradorDto,
   ) {
     return this.accesoAdmin.crear(tenantId, dto, { id: req.user.sub });
+  }
+
+  /**
+   * BL-418: eliminar un establecimiento creado por error, sin actividad.
+   * Pide el RUT en el body como confirmación: 400 si no coincide, 409 si
+   * tiene pedidos (hay que suspenderlo), 404 si no existe. Devuelve cuántas
+   * cuentas de Keycloak se borraron y cuáles quedaron pendientes; el mismo
+   * DELETE las reintenta.
+   */
+  @Delete(':tenantId')
+  @HttpCode(200)
+  @Throttle({
+    default: { limit: LIMITE_ELIMINACIONES_POR_HORA, ttl: 60 * 60_000 },
+  })
+  eliminar(
+    @Req() req: { user: UsuarioPlataforma },
+    @Param('tenantId', ParseUUIDPipe) tenantId: string,
+    @Body() dto: EliminarEstablecimientoDto,
+  ) {
+    return this.eliminacion.eliminar(tenantId, dto.rut, { id: req.user.sub });
   }
 
   @Post()

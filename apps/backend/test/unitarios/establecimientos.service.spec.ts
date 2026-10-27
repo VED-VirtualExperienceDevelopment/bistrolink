@@ -52,6 +52,12 @@ describe('EstablecimientosService (BL-163)', () => {
           },
         ]),
       },
+      // BL-418: T1 tiene un pedido; T2 ninguno.
+      pedido: {
+        findFirst: jest.fn(({ where }) =>
+          Promise.resolve(where.tenantId === T1 ? { id: 'pedido-1' } : null),
+        ),
+      },
       restaurante: {
         findUnique: jest.fn(({ where }) =>
           Promise.resolve(
@@ -102,6 +108,7 @@ describe('EstablecimientosService (BL-163)', () => {
           creadoEl: CREADO,
           restaurante: { id: 'r-1', nombre: 'Restaurante Uno' },
           estado: 'ACTIVO',
+          eliminable: false,
         },
         {
           tenantId: T2,
@@ -112,6 +119,7 @@ describe('EstablecimientosService (BL-163)', () => {
           creadoEl: CREADO,
           restaurante: null,
           estado: 'ALTA_INCOMPLETA',
+          eliminable: true,
         },
       ],
     });

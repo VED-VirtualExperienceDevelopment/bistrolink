@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   CanActivate,
   ConflictException,
   ExecutionContext,
@@ -14,6 +15,7 @@ import request = require('supertest');
 import {
   LIMITE_ACCESOS_ADMIN_POR_HORA,
   LIMITE_ALTAS_POR_HORA,
+  LIMITE_ELIMINACIONES_POR_HORA,
   PlataformaController,
 } from '../../src/plataforma/plataforma.controller';
 import { PlataformaThrottlerGuard } from '../../src/plataforma/plataforma-throttler.guard';
@@ -23,6 +25,7 @@ import { FichaEstablecimientoService } from '../../src/plataforma/ficha-establec
 import { DatosEstablecimientoService } from '../../src/plataforma/datos-establecimiento.service';
 import { SuspensionEstablecimientoService } from '../../src/plataforma/suspension-establecimiento.service';
 import { AccesoAdministradorService } from '../../src/plataforma/acceso-administrador.service';
+import { EliminacionEstablecimientoService } from '../../src/plataforma/eliminacion-establecimiento.service';
 
 /**
  * BL-163 (HU-027), entrega 2: POST /plataforma/establecimientos.
@@ -75,6 +78,7 @@ describe('PlataformaController (BL-163)', () => {
   const datos = { actualizar: jest.fn() };
   const suspension = { suspender: jest.fn(), reactivar: jest.fn() };
   const accesoAdmin = { restablecerContrasena: jest.fn(), crear: jest.fn() };
+  const eliminacion = { eliminar: jest.fn() };
 
   beforeEach(async () => {
     establecimientos.listar.mockReset().mockResolvedValue({
@@ -95,6 +99,11 @@ describe('PlataformaController (BL-163)', () => {
       id: 'usuario-nuevo',
       ...ADMIN_NUEVO,
       temporaryPassword: 'temporal-nueva-16',
+    });
+    eliminacion.eliminar.mockReset().mockResolvedValue({
+      tenantId: TENANT_ID,
+      datosEliminados: true,
+      cuentas: { eliminadas: 3, pendientes: [] },
     });
     ficha.obtener
       .mockReset()
@@ -117,6 +126,10 @@ describe('PlataformaController (BL-163)', () => {
         { provide: DatosEstablecimientoService, useValue: datos },
         { provide: SuspensionEstablecimientoService, useValue: suspension },
         { provide: AccesoAdministradorService, useValue: accesoAdmin },
+        {
+          provide: EliminacionEstablecimientoService,
+          useValue: eliminacion,
+        },
       ],
     })
       .overrideGuard(AuthGuard('jwt-plataforma'))
@@ -515,6 +528,68 @@ describe('PlataformaController (BL-163)', () => {
     await reactivar('no-es-un-uuid').expect(400);
     expect(suspension.suspender).not.toHaveBeenCalled();
     expect(suspension.reactivar).not.toHaveBeenCalled();
+  });
+
+  const eliminar = (body: object, sub = 'kc-plataforma-1', id = TENANT_ID) =>
+    request(app.getHttpServer())
+      .delete(`/plataforma/establecimientos/${id}`)
+      .set('x-test-sub', sub)
+      .send(body);
+
+  it('[TC-U-172] BL-418: elimina con el RUT sin espacios de más y el sub del token (200)', async () => {
+    const res = await eliminar({ rut: ' 219999990016 ' }).expect(200);
+
+    expect(eliminacion.eliminar).toHaveBeenCalledWith(
+      TENANT_ID,
+      '219999990016',
+      { id: 'kc-plataforma-1' },
+    );
+    expect(res.body).toEqual({
+      tenantId: TENANT_ID,
+      datosEliminados: true,
+      cuentas: { eliminadas: 3, pendientes: [] },
+    });
+  });
+
+  it.each([
+    ['sin RUT', {}],
+    ['RUT que no es texto', { rut: 219999990016 }],
+    ['campos de más', { rut: '219999990016', forzar: true }],
+  ])(
+    '[TC-U-173] BL-418: rechaza con 400 (%s) sin eliminar',
+    async (_caso, body) => {
+      await eliminar(body).expect(400);
+      expect(eliminacion.eliminar).not.toHaveBeenCalled();
+    },
+  );
+
+  it('BL-418: rechaza con 400 un id que no es UUID, sin eliminar', async () => {
+    await eliminar(
+      { rut: '219999990016' },
+      'kc-plataforma-1',
+      'no-es-un-uuid',
+    ).expect(400);
+    expect(eliminacion.eliminar).not.toHaveBeenCalled();
+  });
+
+  it('BL-418: pasa el 409 (con actividad) y el 400 (RUT distinto) del servicio', async () => {
+    eliminacion.eliminar.mockRejectedValueOnce(
+      new ConflictException('Tiene actividad'),
+    );
+    await eliminar({ rut: '219999990016' }).expect(409);
+
+    eliminacion.eliminar.mockRejectedValueOnce(
+      new BadRequestException('El RUT no coincide'),
+    );
+    await eliminar({ rut: '219999990024' }).expect(400);
+  });
+
+  it(`BL-418: limita a ${LIMITE_ELIMINACIONES_POR_HORA} por hora y por usuario (429 después)`, async () => {
+    for (let i = 0; i < LIMITE_ELIMINACIONES_POR_HORA; i++) {
+      await eliminar({ rut: '219999990016' }).expect(200);
+    }
+    await eliminar({ rut: '219999990016' }).expect(429);
+    await eliminar({ rut: '219999990016' }, 'kc-plataforma-2').expect(200);
   });
 
   it('el listado no consume el límite de altas', async () => {
