@@ -16,6 +16,7 @@ import { ICONO_POR_ELEMENTO } from "./plano-iconos";
 import { ZonaShape } from "./ZonaShape";
 import { ControlesZoom } from "./ControlesZoom";
 import { usePunteroGrueso } from "./usePunteroGrueso";
+import { useNitidezLienzo } from "./useNitidezLienzo";
 import {
   DURACION_DESHACER_MS,
   restaurarMesa,
@@ -245,6 +246,19 @@ export function MapaMesasEditor({
   const tactil = usePunteroGrueso();
   const tactilConfig = configuracionTactil(tactil);
   const propsAnclas = propsAnclasTransformer(tactilConfig);
+  // Nitidez del canvas: resolución de la pantalla y tipografía de la app.
+  const { pixelRatio, fuente } = useNitidezLienzo();
+  const layerRef = useRef<Konva.Layer>(null);
+
+  // Konva toma el pixelRatio al crear el canvas y no lo actualiza solo: si
+  // cambia el zoom del navegador o el monitor, se ajusta acá y se redibuja.
+  useEffect(() => {
+    Konva.pixelRatio = pixelRatio;
+    const capa = layerRef.current;
+    if (!capa) return;
+    capa.getCanvas().setPixelRatio(pixelRatio);
+    capa.batchDraw();
+  }, [pixelRatio]);
 
   // --- Carga inicial: GET /mesas/layout y GET /mesas/plano -------------------
   // Se piden juntas. HU-028 (BL-173): el plano (zonas y elementos fijos) lo
@@ -1418,8 +1432,11 @@ export function MapaMesasEditor({
             dedos). Las mesas siguen en unidades del lienzo; si el mapa no
             entra, el contenedor muestra scroll. */}
         <Stage
-          width={lienzo.ancho * zoom}
-          height={lienzo.alto * zoom}
+          // Tamaño en píxeles enteros: con zoom 0,87 (ajustar al ancho) o con
+          // el pellizco el producto da decimales, y un canvas de 957,3 px el
+          // navegador lo estira y lo ve borroso.
+          width={Math.round(lienzo.ancho * zoom)}
+          height={Math.round(lienzo.alto * zoom)}
           scaleX={zoom}
           scaleY={zoom}
           onMouseDown={handleClickStage}
@@ -1427,7 +1444,7 @@ export function MapaMesasEditor({
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
         >
-          <Layer>
+          <Layer ref={layerRef}>
             {/* HU-028 (BL-173): las zonas van primero para quedar debajo
                 de las mesas. */}
             {zonas.map((zona) => (
@@ -1442,6 +1459,7 @@ export function MapaMesasEditor({
                 editable={puedeEditar}
                 lienzo={lienzo}
                 zoom={zoom}
+                fuente={fuente}
                 onSeleccionar={() => {
                   seleccionarZona(zona);
                   enfocarMapa();
@@ -1474,6 +1492,7 @@ export function MapaMesasEditor({
                 editable={puedeEditar}
                 lienzo={lienzo}
                 zoom={zoom}
+                fuente={fuente}
                 onSeleccionar={() => {
                   seleccionarElemento(elemento.id);
                   enfocarMapa();
@@ -1517,6 +1536,7 @@ export function MapaMesasEditor({
                 lienzo={lienzo}
                 zoom={zoom}
                 zonaToque={tactilConfig.zonaToqueMesa}
+                fuente={fuente}
                 onSeleccionar={() => {
                   seleccionarMesa(mesa.clientId);
                   enfocarMapa();
