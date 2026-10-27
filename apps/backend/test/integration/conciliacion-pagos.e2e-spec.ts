@@ -261,7 +261,7 @@ describe('HU-032 (BL-202): vencimiento y conciliación de pagos pendientes', () 
     ]);
   });
 
-  it('[TC-I-096] HU-032: webhook perdido y la pasarela lo aprobó => la conciliación lo pasa a RECIBIDO una sola vez', async () => {
+  it('[TC-I-096] HU-032: webhook perdido y la pasarela lo aprobó: la conciliación lo pasa a RECIBIDO una sola vez', async () => {
     const { pedidoId, pagoId } = await pagoPendiente(5, {
       status: 'processed',
       statusDetail: 'accredited',
@@ -293,7 +293,7 @@ describe('HU-032 (BL-202): vencimiento y conciliación de pagos pendientes', () 
     ]);
   });
 
-  it('[TC-I-097] HU-032: webhook tardío sobre un pago vencido con el pedido ya pagado => queda para reembolso', async () => {
+  it('[TC-I-097] HU-032: webhook tardío sobre un pago vencido con el pedido ya pagado: queda para reembolso', async () => {
     const vencido = await pagoPendiente(20, {
       status: 'processing',
       statusDetail: 'in_process',
