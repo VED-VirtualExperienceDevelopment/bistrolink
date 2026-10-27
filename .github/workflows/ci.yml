@@ -747,6 +747,70 @@ jobs:
             -f ${{ matrix.dockerfile }} \
             .
 
+      # Smoke test de la imagen de la API: la arranca tal como queda en GHCR
+      # (NODE_ENV=production, sin npm, solo dependencias de producción) y
+      # espera a que responda /health. Los tests de Jest, Pact e integración
+      # corren con node_modules completo, así que no detectan lo que falta en
+      # la imagen final: con ece8404 (BL-211) el Dockerfile borraba lodash,
+      # que @nestjs/swagger requiere, y la API caía al arrancar recién en
+      # Railway. Va antes de Trivy y de publicar, para que una imagen que no
+      # levanta no llegue a GHCR ni a staging.
+      # Sin base ni Keycloak: Prisma y Keycloak se conectan recién al primer
+      # uso, así que alcanza con valores de relleno para pasar
+      # startup-env-check. No son secretos: la clave del QR se genera en
+      # cada corrida y el resto apunta a hosts que no existen.
+      # MercadoPagoGateway exige un access token al construirse (las demás
+      # pasarelas lo piden recién al cobrar): va uno de mentira, igual que en
+      # el job de integración, y la API de Mercado Pago apunta a un puerto
+      # cerrado del propio contenedor, así nada sale del runner.
+      # OPENAPI_HABILITADO=true para que también se genere el contrato
+      # OpenAPI, que en staging está prendido.
+      - name: Smoke test de la imagen (API)
+        if: matrix.name == 'API'
+        run: |
+          set -euo pipefail
+          IMAGEN="${{ matrix.image }}:${{ env.TAG }}"
+          docker run -d --name api-smoke -p 3001:3001 \
+            -e DATABASE_URL="postgresql://smoke:smoke@db-inexistente:5432/smoke" \
+            -e KEYCLOAK_CLIENT_SECRET="smoke-sin-keycloak" \
+            -e QR_TOKEN_KEY="$(openssl rand -base64 32)" \
+            -e MP_ACCESS_TOKEN="TEST-0000000000000000-000000-ci-smoke" \
+            -e MP_API_BASE_URL="http://localhost:9" \
+            -e OPENAPI_HABILITADO=true \
+            "$IMAGEN" > /dev/null
+
+          fallar() {
+            echo "::error::$1"
+            echo "── Log del contenedor ──"
+            docker logs api-smoke 2>&1 | tail -n 80 || true
+            docker rm -f api-smoke > /dev/null 2>&1 || true
+            exit 1
+          }
+
+          for i in $(seq 1 30); do
+            if [ "$(docker inspect -f '{{.State.Running}}' api-smoke)" != "true" ]; then
+              fallar "La API se cayó al arrancar (revisar el log: módulo faltante, variable de entorno, etc.)."
+            fi
+            if curl -fsS --max-time 5 http://localhost:3001/health > /dev/null 2>&1; then
+              echo "OK: /health responde (intento $i)"
+              break
+            fi
+            if [ "$i" = "30" ]; then
+              fallar "La API no respondió /health en 60 s."
+            fi
+            sleep 2
+          done
+
+          # El contrato OpenAPI se genera al arrancar: si /api/docs-json no
+          # devuelve un documento OpenAPI 3, algo del plugin o de los DTOs falló.
+          VERSION_OPENAPI=$(curl -fsS --max-time 10 http://localhost:3001/api/docs-json | jq -r '.openapi // empty' || true)
+          case "$VERSION_OPENAPI" in
+            3.*) echo "OK: contrato OpenAPI $VERSION_OPENAPI" ;;
+            *) fallar "/api/docs-json no devolvió un contrato OpenAPI 3 (respuesta: '${VERSION_OPENAPI:-vacía}')." ;;
+          esac
+
+          docker rm -f api-smoke > /dev/null
+
       - name: Trivy — escaneo (${{ matrix.name }})
         # @master -> @0.35.0: fijar a una versión concreta. En marzo de 2026 se
         # reescribieron 75 de 76 tags de este repo con un payload malicioso que
