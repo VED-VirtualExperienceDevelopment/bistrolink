@@ -68,7 +68,7 @@ const sesionMesa = (extra = {}) => ({
 });
 // BL-416: gestión de establecimientos por la plataforma (BL-404).
 const plataforma = (ticket, extra = {}) => ({
-  component: "api",
+  component: "plataforma",
   requirement: "BL-404",
   ...extra,
   tags: ["BL-404", ticket, ...(extra.tags ?? [])],
