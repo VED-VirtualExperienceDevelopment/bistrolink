@@ -68,6 +68,18 @@ enum PagoEstado {
   REEMBOLSADO
 }
 
+// HU-032 (BL-202): quién resolvió el cambio de estado de un pago.
+// COBRO: la respuesta directa de la pasarela al cobrar. WEBHOOK: la
+// notificación de la pasarela. CONCILIACION: el job que le consulta a la
+// pasarela los pagos pendientes sin webhook. VENCIMIENTO: el job que vence
+// los pagos pendientes sin confirmación.
+enum PagoOrigen {
+  COBRO
+  WEBHOOK
+  CONCILIACION
+  VENCIMIENTO
+}
+
 // ── 4.1 Tenant ───────────────────────────────────────────────────────────────
 // Raíz del aislamiento multi-tenant. NO lleva RLS (es la raíz, no un dato
 // dependiente de un tenant).
@@ -314,16 +326,40 @@ model Pago {
   medioPago          String     @map("medio_pago") // sin enum: no está cerrado en el Anexo 6
   estado             PagoEstado
   pasarelaReferencia String?    @map("pasarela_referencia")
+  // HU-032 (BL-202): por qué quedó RECHAZADO («VENCIDO» si venció sin
+  // confirmación, o el status_detail de la pasarela). Null en los demás.
+  motivoRechazo      String?    @map("motivo_rechazo") @db.VarChar(60)
   createdAt          DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt          DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   pedido       Pedido              @relation(fields: [pedidoId], references: [id])
   comprobantes ComprobanteFiscal[]
+  historial    PagoEstadoHistorial[]
 
   @@index([tenantId])
   // BL-213: pagos de un pedido (cobro, webhook, consulta del comensal).
   @@index([pedidoId])
   @@map("pago")
+}
+
+// HU-032 (BL-202): cada cambio de estado de un pago, con fecha y origen
+// (respuesta del cobro, webhook, conciliación o vencimiento). Solo se agrega:
+// la aplicación nunca actualiza ni borra filas. Con RLS, como pago.
+model PagoEstadoHistorial {
+  id             String      @id @default(uuid()) @db.Uuid
+  tenantId       String      @map("tenant_id") @db.Uuid
+  pagoId         String      @map("pago_id") @db.Uuid
+  estadoAnterior PagoEstado  @map("estado_anterior")
+  estadoNuevo    PagoEstado  @map("estado_nuevo")
+  origen         PagoOrigen
+  // Detalle corto: motivo del rechazo, «REQUIERE_REEMBOLSO», etc.
+  detalle        String?     @db.VarChar(60)
+  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  pago Pago @relation(fields: [pagoId], references: [id])
+
+  @@index([pagoId])
+  @@map("pago_estado_historial")
 }
 
 // ── 4.9 ComprobanteFiscal ─────────────────────────────────────────────────────
