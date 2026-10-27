@@ -72,6 +72,23 @@ function tieneHistorial(
   return conteo.pedidosComoMozo + conteo.historial > 0;
 }
 
+/**
+ * BL-414: la plataforma reusa el alta y el restablecimiento de contraseña de
+ * Usuarios para recuperar el acceso del Administrador de un establecimiento.
+ */
+export interface OpcionesAccionUsuario {
+  /**
+   * Acción de auditoría en lugar de la de Usuarios, para que quede una sola
+   * entrada que diga que lo hizo la plataforma (ESTABLECIMIENTO_ADMIN_*).
+   */
+  accionAuditoria?: AuditAction;
+  /**
+   * Solo sobre usuarios con este rol: con otro rol responde 404, como si no
+   * existiera (la plataforma no restablece la contraseña de un Mozo).
+   */
+  soloRol?: 'ADMIN';
+}
+
 @Injectable()
 export class UsuariosService {
   private readonly logger = new Logger(UsuariosService.name);
@@ -384,6 +401,7 @@ export class UsuariosService {
     tenantId: string,
     actorKeycloakId: string,
     dto: CreateUsuarioDto,
+    opciones: OpcionesAccionUsuario = {},
   ) {
     // Verificar que el restaurante indicado pertenezca al tenant del Admin
     // que hace la request. RLS ya filtra esta query por tenant_id, así que
@@ -439,7 +457,7 @@ export class UsuariosService {
       // El campo `rol` en el detalle permite filtrar específicamente las
       // altas de cuentas Administrador en Grafana Loki.
       this.auditLog.registrar({
-        action: AuditAction.USUARIO_CREADO,
+        action: opciones.accionAuditoria ?? AuditAction.USUARIO_CREADO,
         tenantId,
         actorKeycloakId,
         targetUsuarioId: usuario.id,
@@ -750,12 +768,18 @@ export class UsuariosService {
     tenantId: string,
     actorKeycloakId: string,
     usuarioId: string,
+    opciones: OpcionesAccionUsuario = {},
   ) {
     // Bajo RLS: un usuario de otro tenant no aparece y responde 404. No hay
     // escritura en Postgres, así que alcanza con leer la fila.
     const usuario = await this.tenantPrisma.runInTenantContext(tenantId, (tx) =>
       this.obtenerOFallar(tx, usuarioId),
     );
+
+    // BL-414: con otro rol, el mismo 404 que un usuario inexistente.
+    if (opciones.soloRol && usuario.rol !== opciones.soloRol) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
 
     if (!usuario.activo) {
       throw new ConflictException(
@@ -767,7 +791,8 @@ export class UsuariosService {
       await this.restablecerEnKeycloak(usuario.keycloakId);
 
     this.auditLog.registrar({
-      action: AuditAction.USUARIO_CONTRASENA_RESTABLECIDA,
+      action:
+        opciones.accionAuditoria ?? AuditAction.USUARIO_CONTRASENA_RESTABLECIDA,
       tenantId,
       actorKeycloakId,
       targetUsuarioId: usuarioId,

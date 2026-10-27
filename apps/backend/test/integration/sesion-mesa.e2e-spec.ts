@@ -11,8 +11,14 @@ import { conPagoFalso } from './support/pago-falso';
 
 // HU-017 (BL-60, testing en BL-61): apertura y cierre de la sesión de mesa.
 //
-// Usa una mesa propia (número 97 del tenant A), para no cerrar la mesa 1 del
+// Usa una mesa propia (número 79 del tenant A), para no cerrar la mesa 1 del
 // seed que usan los E2E y el resto de los tests. Al terminar queda LIBRE.
+//
+// El número queda FUERA del rango 80 a 99, que mesas-layout.e2e-spec.ts
+// reserva para sus mesas y borra en cada corrida (BL-177). Antes era la 97:
+// como al cerrar la mesa se cancelan pedidos y queda historial
+// (pedido_estado_historial), mesas-layout no podía borrarla y fallaba
+// cuando corría después de este archivo.
 
 const KEYCLOAK_URL = process.env.KEYCLOAK_URL ?? 'http://localhost:8080';
 const REALM = process.env.KEYCLOAK_REALM ?? 'bistrolink';
@@ -22,7 +28,7 @@ const CLIENT_SECRET = process.env.KEYCLOAK_CLIENT_SECRET ?? '';
 const TENANT_ID = '11111111-1111-1111-1111-111111111111';
 const RESTAURANTE_ID = '22222222-2222-2222-2222-222222222222';
 const ITEM_ID = '55555555-5555-5555-5555-555555555555';
-const NUMERO_MESA_TEST = 97;
+const NUMERO_MESA_TEST = 79;
 
 const MOZO_USER = process.env.TEST_MOZO_USERNAME;
 const MOZO_PASS = process.env.TEST_MOZO_PASSWORD;

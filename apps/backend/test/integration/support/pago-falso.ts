@@ -75,3 +75,26 @@ export async function pagarPedidoDeMesa(
     })
     .expect(201);
 }
+
+/**
+ * Paga un pedido PARA RETIRAR (canal WEB) con la pasarela falsa. No hay QR:
+ * la credencial es el token de acceso que devolvió POST /pedidos al crearlo
+ * (`tokenAcceso`), en X-Pedido-Token (RD.05).
+ */
+export async function pagarPedidoParaRetirar(
+  app: INestApplication,
+  pedidoId: string,
+  tokenComensal: string,
+  tokenAcceso: string,
+): Promise<void> {
+  await request(app.getHttpServer())
+    .post(`/pedidos/${pedidoId}/pagos`)
+    .set('Authorization', `Bearer ${tokenComensal}`)
+    .set('X-Pedido-Token', tokenAcceso)
+    .send({
+      idempotencyKey: `it-${pedidoId}`,
+      medioPago: 'MERCADOPAGO',
+      datosPasarela: {},
+    })
+    .expect(201);
+}

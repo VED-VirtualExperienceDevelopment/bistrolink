@@ -8,6 +8,7 @@ import {
   sesionDeMesa,
   tokenQrDeMesa,
 } from './support/qr-mesa';
+import { conPagoFalso, pagarPedidoDeMesa } from './support/pago-falso';
 
 const KEYCLOAK_URL = process.env.KEYCLOAK_URL ?? 'http://localhost:8080';
 const REALM = process.env.KEYCLOAK_REALM ?? 'bistrolink';
@@ -75,9 +76,10 @@ describe('Seguimiento del comensal (HU-006) - e2e', () => {
 
   beforeAll(async () => {
     asegurarClaveQr();
-    const moduleRef: TestingModule = await Test.createTestingModule({
-      imports: [AppModule],
-    }).compile();
+    // BL-311: pasarela falsa (ver support/pago-falso.ts).
+    const moduleRef: TestingModule = await conPagoFalso(
+      Test.createTestingModule({ imports: [AppModule] }),
+    ).compile();
     app = moduleRef.createNestApplication();
     await app.init();
     await app.listen(0);
@@ -113,6 +115,11 @@ describe('Seguimiento del comensal (HU-006) - e2e', () => {
     });
   }
 
+  /**
+   * Crea un pedido de la mesa y lo paga con la pasarela falsa. BL-311
+   * (prepago, RD.03): sin el pago el pedido queda en PENDIENTE_PAGO, no
+   * llega a cocina y el MOZO no lo puede pasar a «En preparación».
+   */
   async function crearPedido(): Promise<string> {
     const res = await fetch(`${baseUrl}/pedidos`, {
       method: 'POST',
@@ -131,7 +138,9 @@ describe('Seguimiento del comensal (HU-006) - e2e', () => {
     if (!res.ok) {
       throw new Error(`No se pudo crear el pedido de prueba: ${res.status}`);
     }
-    return (await res.json()).id as string;
+    const pedidoId = (await res.json()).id as string;
+    await pagarPedidoDeMesa(app, pedidoId, tokenComensal, qrToken, sesionMesa);
+    return pedidoId;
   }
 
   it('[TC-I-026] Seguimiento pedido: devuelve el estado actual de inmediato al suscribirse', async () => {
@@ -165,7 +174,7 @@ describe('Seguimiento del comensal (HU-006) - e2e', () => {
   });
 
   itConMozo(
-    '[TC-I-028] Seguimiento (DoD): Mozo marca "En preparación" → el comensal que sigue ESE pedido lo recibe en <1s',
+    '[TC-I-028] Seguimiento (DoD): Mozo marca «En preparación» → el comensal que sigue ESE pedido lo recibe en menos de 1 s',
     async () => {
       const pedidoId = await crearPedido();
 

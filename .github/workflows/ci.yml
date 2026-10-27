@@ -270,12 +270,9 @@ jobs:
       # evidencia es este job (check obligatorio), el junit.xml dentro del
       # artifact coverage-report-<workspace> y la cobertura en Codecov.
 
-  # NOTA: este job corre solo los tests UNITARIOS (npm run test:cov), no el
-  # test:e2e de aislamiento multi-tenant (tenant-isolation.e2e-spec.ts) — ese
-  # necesita Keycloak + Postgres reales con el realm importado y 3 fixtures
-  # de usuario ya creados (Cocina, sin-tenant, tenant B), y todavía no tiene
-  # su propio job de CI con service containers + script de seed. Queda
-  # pendiente como paquete aparte (correspondería a EDT 1.8.6, corrido en CI).
+  # NOTA: este job corre solo los tests UNITARIOS (npm run test:cov). Los de
+  # integración (test:e2e, con Postgres y Keycloak reales) corren en el job
+  # "integracion" (BL-177, EDT 1.8.6).
 
   # ── JOB 3: TESTS DE CONTRATO (PactJS) ────────────────────────────────────
   # BL-215 (RNF.04, EDT 1.6.2): contratos del consumidor contra Mercado Pago
@@ -353,6 +350,187 @@ jobs:
           password = ${{ secrets.KIWI_TCMS_PASSWORD }}
           EOF
           tcms-junit.xml-plugin apps/backend/reports/contract-junit.xml
+
+  # ── JOB 3b: TESTS DE INTEGRACIÓN (Jest + Postgres + Keycloak) ─────────────
+  # BL-177 (EDT 1.8.6): corre los *.e2e-spec.ts de apps/backend/test/integration
+  # contra un Postgres y un Keycloak reales, levantados con el mismo
+  # docker-compose.yml que se usa en local (solo bistrolink-db y
+  # bistrolink-auth), y sube los resultados a Kiwi como un TestRun propio.
+  #
+  # Todo es descartable: la base y el Keycloak viven solo durante el job, y
+  # las contraseñas de los usuarios de prueba, el client secret y la clave de
+  # los QR se generan al azar en cada corrida (no hay secrets nuevos). Las
+  # credenciales de la base y del admin de Keycloak son las de desarrollo
+  # local de docker-compose.yml: no sirven fuera de este runner.
+  #
+  # Por ahora NO está en el "needs" de build: primero hay que ver que sea
+  # estable en el runner (algunos casos miden tiempos, como TC-I-020 y 024).
+  # Cuando lo sea, se suma a build y como check obligatorio del PR.
+  integracion:
+    name: 🔗 Tests de integración (Postgres + Keycloak)
+    needs: [version]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      # Pisan el DATABASE_URL de prueba del nivel del workflow: acá hay una
+      # base de verdad. Usuario de migraciones (dueño del esquema) y usuario
+      # de la aplicación, sin bypass de RLS (scripts/db/init.sql).
+      DATABASE_URL: "postgresql://bistrolink:bistrolink_dev@localhost:5432/bistrolink_dev"
+      RUNTIME_DATABASE_URL: "postgresql://bistrolink_app:bistrolink_app_dev@localhost:5432/bistrolink_dev"
+      KEYCLOAK_URL: "http://localhost:8080"
+      KEYCLOAK_REALM: "bistrolink"
+      KEYCLOAK_CLIENT_ID: "bistrolink-backend"
+      # Admin del Keycloak descartable (el de docker-compose.yml).
+      KEYCLOAK_ADMIN: "admin"
+      KEYCLOAK_ADMIN_PASSWORD: "admin"
+      # Usuarios de prueba: los nombres son fijos; las contraseñas se generan
+      # en el paso "Credenciales de esta corrida".
+      TEST_ADMIN_USERNAME: "ci-admin-test"
+      TEST_COCINA_USERNAME: "ci-cocina-test"
+      TEST_NO_TENANT_USERNAME: "ci-sin-tenant-test"
+      TEST_TENANT_B_USERNAME: "ci-admin-b-test"
+      TEST_MOZO_USERNAME: "ci-mozo-test"
+      TEST_COCINA_B_USERNAME: "ci-cocina-b-test"
+      # MercadoPagoGateway exige un access token al arrancar la app (el resto
+      # de las pasarelas lo piden recién al cobrar). Los tests de integración
+      # no cobran: va uno de mentira y la API de Mercado Pago apunta a un
+      # puerto cerrado, así ningún pedido sale del runner por error.
+      MP_ACCESS_TOKEN: "TEST-0000000000000000-000000-ci-integracion"
+      MP_API_BASE_URL: "http://localhost:9"
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          # Fuerza la última 22.x publicada: la caché del runner puede ir atrasada
+          # y quedarse con una versión sin los parches de seguridad.
+          check-latest: true
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      # Contraseñas, client secret y clave de los QR al azar, enmascarados en
+      # el log. Van al entorno de los pasos siguientes y al apps/backend/.env
+      # que lee el contenedor de Keycloak (env_file de docker-compose.yml):
+      # set-client-secret.sh pone el client secret y load-test-users.sh crea
+      # los usuarios de prueba con esas contraseñas.
+      - name: Credenciales de esta corrida
+        run: |
+          set -euo pipefail
+          generar() {
+            local valor
+            valor="$(openssl rand -hex 16)"
+            echo "::add-mask::${valor}"
+            echo "$1=${valor}" >> "$GITHUB_ENV"
+            echo "$1=${valor}" >> apps/backend/.env
+          }
+          : > apps/backend/.env
+          for var in KEYCLOAK_CLIENT_SECRET KEYCLOAK_COMENSAL_PASSWORD \
+                     TEST_ADMIN_PASSWORD TEST_COCINA_PASSWORD \
+                     TEST_NO_TENANT_PASSWORD TEST_TENANT_B_PASSWORD \
+                     TEST_MOZO_PASSWORD TEST_COCINA_B_PASSWORD; do
+            generar "$var"
+          done
+          for var in TEST_ADMIN_USERNAME TEST_COCINA_USERNAME \
+                     TEST_NO_TENANT_USERNAME TEST_TENANT_B_USERNAME \
+                     TEST_MOZO_USERNAME TEST_COCINA_B_USERNAME; do
+            echo "${var}=${!var}" >> apps/backend/.env
+          done
+          qr="$(openssl rand -base64 32)"
+          echo "::add-mask::${qr}"
+          echo "QR_TOKEN_KEY=${qr}" >> "$GITHUB_ENV"
+
+      # --wait espera los healthchecks de docker-compose.yml (Postgres listo
+      # y Keycloak con /health/ready en 200).
+      - name: Levantar Postgres y Keycloak
+        run: docker compose up -d --wait --wait-timeout 300 bistrolink-db bistrolink-auth
+
+      # El healthcheck pasa cuando Keycloak arranca, pero set-client-secret.sh
+      # termina de configurarlo (client secret, roles de la cuenta de
+      # servicio y usuarios de prueba) un poco después. Se espera a que el
+      # Admin de prueba pueda obtener un token.
+      - name: Esperar a que Keycloak tenga los usuarios de prueba
+        run: |
+          for intento in $(seq 1 60); do
+            codigo=$(curl -s -o /dev/null -w '%{http_code}' \
+              -d grant_type=password \
+              -d client_id="$KEYCLOAK_CLIENT_ID" \
+              --data-urlencode client_secret="$KEYCLOAK_CLIENT_SECRET" \
+              --data-urlencode username="$TEST_ADMIN_USERNAME" \
+              --data-urlencode password="$TEST_ADMIN_PASSWORD" \
+              "$KEYCLOAK_URL/realms/$KEYCLOAK_REALM/protocol/openid-connect/token")
+            if [ "$codigo" = "200" ]; then
+              echo "Keycloak listo (intento ${intento})."
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::Keycloak no quedó listo en 5 minutos (último código: ${codigo})."
+          exit 1
+
+      - name: Migraciones y datos de prueba
+        working-directory: apps/backend
+        run: |
+          npx prisma migrate deploy
+          npx prisma db seed
+
+      # jest-junit con el título del it() como nombre de cada caso
+      # (JEST_JUNIT_TITLE): así coincide con el título del caso en Kiwi
+      # («[TC-I-NNN] …»). Archivo propio, separado del de los unitarios.
+      - name: Tests de integración
+        run: npm run test:e2e --workspace=backend -- --reporters=default --reporters=jest-junit
+        env:
+          CI: true
+          JEST_JUNIT_OUTPUT_DIR: reports
+          JEST_JUNIT_OUTPUT_NAME: integration-junit.xml
+          JEST_JUNIT_TITLE: "{title}"
+          JEST_JUNIT_CLASSNAME: "{classname}"
+
+      # Solo si falló: el log de Keycloak ayuda a ver si el problema fue el
+      # entorno (realm, usuarios, client secret) y no el código.
+      - name: Log de Keycloak (si falló)
+        if: failure()
+        run: docker compose logs --no-color --tail=300 bistrolink-auth
+
+      - name: Upload integration artifacts
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: integration-report
+          path: apps/backend/reports/integration-junit.xml
+          retention-days: 14
+
+      # TestRun propio con sufijo "-integration", en el Test Plan
+      # «Integration tests» (TCMS_PLAN_ID: "1"), mismo mecanismo que
+      # performance.yml:
+      # - TCMS_PLAN_ID fijo: el plugin no crea un Test Plan nuevo.
+      # - --summary-template '${name}': busca cada caso por el título del it()
+      #   tal cual. Sin el flag usa «classname.name» y no encuentra ninguno.
+      # Los casos se cargan en Kiwi con scripts/kiwi/
+      # cargar-casos-integracion.mjs ANTES de mergear el PR que los agrega o
+      # les cambia el título: así el plugin los encuentra y no crea
+      # duplicados. Un test nuevo sin cargar se crea solo con el título.
+      - name: Upload results to Kiwi TCMS (integration)
+        if: always() && github.event_name != 'pull_request'
+        continue-on-error: true
+        timeout-minutes: 5
+        env:
+          TCMS_PRODUCT: "Bistrolink"
+          TCMS_PRODUCT_VERSION: ${{ github.ref_name }}
+          TCMS_BUILD: ${{ needs.version.outputs.label }}-integration
+          TCMS_PLAN_ID: "1"
+        run: |
+          pip install kiwitcms-junit.xml-plugin --break-system-packages
+          cat <<EOF > ~/.tcms.conf
+          [tcms]
+          url = ${{ secrets.KIWI_TCMS_URL }}/xml-rpc/
+          username = ${{ secrets.KIWI_TCMS_USERNAME }}
+          password = ${{ secrets.KIWI_TCMS_PASSWORD }}
+          EOF
+          tcms-junit.xml-plugin --verbose --summary-template '${name}' apps/backend/reports/integration-junit.xml
 
   # ── JOB 4: GITLEAKS ───────────────────────────────────────────────────────
   gitleaks:
@@ -554,6 +732,14 @@ jobs:
         run: |
           if [ "${{ matrix.name }}" = "Web" ]; then
             echo "Web: URLs de ${ENTORNO_WEB} (bistrolink-api-${ENTORNO_WEB}, bistrolink-auth-${ENTORNO_WEB})"
+            # BL-311: sin la clave pública, la imagen se construye igual pero la
+            # pantalla de pago queda deshabilitada y los E2E de pago fallan
+            # por timeout, sin un error claro. Se avisa acá.
+            if [ -z "${MP_PUBLIC_KEY}" ]; then
+              echo "::warning::Web sin NEXT_PUBLIC_MP_PUBLIC_KEY: falta la variable del repo MP_PUBLIC_KEY_STAGING (o MP_PUBLIC_KEY_PRODUCTION en un tag). El pago con tarjeta queda deshabilitado."
+            else
+              echo "Web: clave pública de Mercado Pago cargada (${MP_PUBLIC_KEY:0:12}…)"
+            fi
           fi
           docker build \
             -t ${{ matrix.image }}:${{ env.TAG }} \
@@ -1153,6 +1339,13 @@ jobs:
           TEST_MOZO_PASSWORD: ${{ secrets.TEST_MOZO_PASSWORD }}
           TEST_ADMIN_USERNAME: ${{ secrets.TEST_ADMIN_USERNAME }}
           TEST_ADMIN_PASSWORD: ${{ secrets.TEST_ADMIN_PASSWORD }}
+          # BL-416: usuario de plataforma de E2E, con OTP (la clave de su app
+          # de autenticación, para generar el código). Sin estos tres
+          # secrets, e2e/plataforma/gestion-establecimientos.spec.ts se
+          # saltea.
+          TEST_PLATAFORMA_USERNAME: ${{ secrets.TEST_PLATAFORMA_USERNAME }}
+          TEST_PLATAFORMA_PASSWORD: ${{ secrets.TEST_PLATAFORMA_PASSWORD }}
+          TEST_PLATAFORMA_OTP_SECRET: ${{ secrets.TEST_PLATAFORMA_OTP_SECRET }}
 
       # BL-250: aviso visible en el resumen de la corrida cuando E2E falla
       # (el workflow sigue en verde en develop, así que el aviso es lo que
@@ -1431,4 +1624,3 @@ jobs:
   #           check https://bistrolink-api-production.up.railway.app/health/ready
   #           check https://bistrolink-web-production.up.railway.app
   #           check https://bistrolink-auth-production.up.railway.app/realms/bistrolink/.well-known/openid-configuration
-  

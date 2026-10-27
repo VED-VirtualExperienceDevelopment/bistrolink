@@ -23,6 +23,8 @@ export interface ZonaShapeProps {
   zoom: number;
   onSeleccionar: () => void;
   onCambiar: (cambios: Partial<ZonaPlano>) => void;
+  /** Familia tipográfica del nombre (la de la app, ver useNitidezLienzo). */
+  fuente?: string;
 }
 
 /**
@@ -33,7 +35,16 @@ export interface ZonaShapeProps {
  */
 export const ZonaShape = forwardRef<Konva.Group, ZonaShapeProps>(
   function ZonaShape(
-    { zona, seleccionada, editable, lienzo, zoom, onSeleccionar, onCambiar },
+    {
+      zona,
+      seleccionada,
+      editable,
+      lienzo,
+      zoom,
+      onSeleccionar,
+      onCambiar,
+      fuente,
+    },
     ref,
   ) {
     const { ancho, alto } = zona;
@@ -89,7 +100,8 @@ export const ZonaShape = forwardRef<Konva.Group, ZonaShapeProps>(
           wrap="none"
           ellipsis
           fontSize={14}
-          fontStyle="bold"
+          fontFamily={fuente}
+          fontStyle="600"
           fill={COLOR_TEXTO}
           listening={false}
         />

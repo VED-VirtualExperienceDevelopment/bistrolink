@@ -6,6 +6,7 @@ import { apiFetch, ApiError } from "@/lib/api-client";
 import { EstablecimientosTable } from "@/components/plataforma/EstablecimientosTable";
 import { AltaEstablecimientoDialog } from "@/components/plataforma/AltaEstablecimientoDialog";
 import { BuscarEstablecimientos } from "@/components/plataforma/BuscarEstablecimientos";
+import { EliminarEstablecimientoDialog } from "@/components/plataforma/EliminarEstablecimientoDialog";
 import {
   describirCriterio,
   mensajeDeError,
@@ -46,6 +47,10 @@ const ESPERA_BUSQUEDA_MS = 350;
  *
  * BL-410: filtro por estado, también en el servidor. Se aplica apenas se
  * elige (sin la espera de la búsqueda) y vuelve a la primera página.
+ *
+ * BL-418: «Eliminar» (solo en los que no tienen pedidos) abre la
+ * confirmación con el RUT; al cerrarla después de eliminar, se recarga la
+ * página actual.
  */
 export default function PlataformaPage() {
   const { token } = useKeycloakAuth();
@@ -63,6 +68,12 @@ export default function PlataformaPage() {
   // BL-407: establecimiento cuya alta se completa (null = alta nueva).
   const [aCompletar, setACompletar] =
     useState<EstablecimientoListado | null>(null);
+  // BL-418: establecimiento a eliminar (null = diálogo cerrado) y cuántas
+  // veces se abrió, para montar el diálogo de nuevo sin el RUT anterior.
+  const [aEliminar, setAEliminar] = useState<EstablecimientoListado | null>(
+    null,
+  );
+  const [aperturasEliminar, setAperturasEliminar] = useState(0);
   const inputBusqueda = useRef<HTMLInputElement>(null);
   // BL-406: número del último pedido. Si una respuesta vieja llega después
   // de una nueva (escribiendo rápido), se descarta.
@@ -232,6 +243,10 @@ export default function PlataformaPage() {
               setACompletar(e);
               setAltaAbierta(true);
             }}
+            onEliminar={(e) => {
+              setAperturasEliminar((n) => n + 1);
+              setAEliminar(e);
+            }}
           />
 
           {datos.total > 0 && (
@@ -281,6 +296,27 @@ export default function PlataformaPage() {
             </nav>
           )}
         </>
+      )}
+
+      {aEliminar && (
+        <EliminarEstablecimientoDialog
+          key={aperturasEliminar}
+          open
+          onClose={() => setAEliminar(null)}
+          token={token}
+          establecimiento={aEliminar}
+          textoAlTerminar="Cerrar"
+          onTerminado={() => {
+            setAEliminar(null);
+            // Si era el único de una página que no es la primera, vuelve
+            // una atrás (la actual quedaría vacía).
+            if (datos?.items.length === 1 && pagina > 1) {
+              setPagina((p) => p - 1);
+            } else {
+              cargar();
+            }
+          }}
+        />
       )}
 
       <AltaEstablecimientoDialog

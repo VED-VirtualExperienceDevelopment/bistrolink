@@ -129,8 +129,10 @@ test.describe("HU-002: menú vía URL directa (verificado en mobile)", () => {
       .click();
 
     await expect(page.getByText(`1x ${primerItem.nombre}`)).toBeVisible();
+    // BL-311 (prepago, RD.03): el botón del carrito pasó de «Realizar pedido»
+    // a «Continuar al pago».
     await expect(
-      page.getByRole("button", { name: /realizar pedido/i }),
+      page.getByRole("button", { name: /continuar al pago/i }),
     ).toBeVisible();
   });
 

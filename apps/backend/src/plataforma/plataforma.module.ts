@@ -10,6 +10,8 @@ import { DatosEstablecimientoService } from './datos-establecimiento.service';
 import { UsuariosService } from '../usuarios/usuarios.service';
 import { TenantEstadoModule } from '../tenant-estado/tenant-estado.module';
 import { SuspensionEstablecimientoService } from './suspension-establecimiento.service';
+import { AccesoAdministradorService } from './acceso-administrador.service';
+import { EliminacionEstablecimientoService } from './eliminacion-establecimiento.service';
 
 /**
  * BL-163 (HU-027): servicios de plataforma, fuera de cualquier tenant.
@@ -26,6 +28,10 @@ import { SuspensionEstablecimientoService } from './suspension-establecimiento.s
  *   para que HU-020 (BL-72) lo use desde la configuración del restaurante.
  * - SuspensionEstablecimientoService (BL-413): suspender y reactivar. Usa
  *   TenantEstadoModule para invalidar la caché del estado.
+ * - AccesoAdministradorService (BL-414): restablecer la contraseña de un
+ *   Administrador o crear uno nuevo, reusando UsuariosService.
+ * - EliminacionEstablecimientoService (BL-418): eliminar un establecimiento
+ *   creado por error, sin actividad (base y cuentas de Keycloak).
  *
  * Sin controllers a propósito: los scripts levantan solo este módulo
  * (NestFactory.createApplicationContext) y no tienen ThrottlerModule ni
@@ -43,6 +49,8 @@ import { SuspensionEstablecimientoService } from './suspension-establecimiento.s
     FichaEstablecimientoService,
     DatosEstablecimientoService,
     SuspensionEstablecimientoService,
+    AccesoAdministradorService,
+    EliminacionEstablecimientoService,
     UsuariosService,
     KeycloakAdminService,
     AuditLogService,
@@ -54,6 +62,8 @@ import { SuspensionEstablecimientoService } from './suspension-establecimiento.s
     FichaEstablecimientoService,
     DatosEstablecimientoService,
     SuspensionEstablecimientoService,
+    AccesoAdministradorService,
+    EliminacionEstablecimientoService,
   ],
 })
 export class PlataformaModule {}
