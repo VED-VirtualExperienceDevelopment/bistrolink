@@ -22,6 +22,7 @@ import type {
   FormularioAlta,
   FormularioEdicion,
   ResultadoAlta,
+  ResultadoEliminacion,
   UsuarioAprovisionado,
 } from "@/types/plataforma";
 
@@ -735,5 +736,80 @@ export function mensajeErrorAccesoAdmin(
   // 404 (no es un Administrador de este establecimiento), 409 (desactivado,
   // sin restaurante, usuario o correo ya usados) y 400 llegan con el mensaje
   // del backend.
+  return mensaje;
+}
+
+// ── BL-418: eliminar un establecimiento creado por error ────────────────────
+
+/**
+ * BL-418: si el RUT escrito en la confirmación es el del establecimiento.
+ * Acepta puntos, guiones y espacios («21.999999-001-6»), como el alta.
+ */
+export function rutCoincide(escrito: string, rut: string): boolean {
+  return normalizarRut(escrito) === rut;
+}
+
+/** BL-418: ruta y opciones del DELETE, con el RUT sin separadores. */
+export function solicitudEliminacion(
+  tenantId: string,
+  rut: string,
+): { ruta: string; init: RequestInit } {
+  return {
+    ruta: rutaFicha(tenantId),
+    init: {
+      method: "DELETE",
+      body: JSON.stringify({ rut: normalizarRut(rut) }),
+    },
+  };
+}
+
+/**
+ * BL-418: si hay que reintentar: quedaron cuentas de Keycloak sin borrar, o
+ * no se pudo saber (`pendientes` null).
+ */
+export function eliminacionIncompleta(
+  resultado: ResultadoEliminacion,
+): boolean {
+  const { pendientes } = resultado.cuentas;
+  return pendientes === null || pendientes.length > 0;
+}
+
+/** BL-418: texto del resultado, para la pantalla y el lector de pantalla. */
+export function resumirEliminacion(
+  razonSocial: string,
+  resultado: ResultadoEliminacion,
+): string {
+  const { pendientes } = resultado.cuentas;
+  const datos = resultado.datosEliminados
+    ? `${razonSocial} se eliminó.`
+    : `Los datos de ${razonSocial} ya estaban eliminados.`;
+  if (pendientes === null) {
+    return `${datos} No se pudo confirmar que se hayan borrado sus usuarios: Keycloak no respondió. Reintentá.`;
+  }
+  if (pendientes.length === 0) {
+    return `${datos} También se borraron sus usuarios.`;
+  }
+  const lista = pendientes.join(", ");
+  return pendientes.length === 1
+    ? `${datos} Quedó sin borrar el usuario ${lista}. Reintentá.`
+    : `${datos} Quedaron sin borrar los usuarios ${lista}. Reintentá.`;
+}
+
+/** BL-418: mensaje si no se pudo eliminar. */
+export function mensajeErrorEliminacion(
+  status: number,
+  mensaje: string,
+): string {
+  if (status === 429) {
+    return "Llegaste al límite de eliminaciones por hora. Probá de nuevo más tarde.";
+  }
+  if (status === 401) {
+    return "Tu sesión venció. Volvé a ingresar.";
+  }
+  if (status === 403) {
+    return "Tu usuario no tiene permiso para eliminar establecimientos.";
+  }
+  // 409 (tiene actividad: hay que suspenderlo), 400 (el RUT no coincide),
+  // 404 y 503 llegan con el mensaje del backend.
   return mensaje;
 }

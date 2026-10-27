@@ -25,5 +25,6 @@ export enum AuditAction {
   ESTABLECIMIENTO_REACTIVADO = 'ESTABLECIMIENTO_REACTIVADO', // BL-413
   ESTABLECIMIENTO_ADMIN_CONTRASENA_RESTABLECIDA = 'ESTABLECIMIENTO_ADMIN_CONTRASENA_RESTABLECIDA', // BL-414 (la plataforma, nunca con la contraseña)
   ESTABLECIMIENTO_ADMIN_CREADO = 'ESTABLECIMIENTO_ADMIN_CREADO', // BL-414 (Administrador nuevo creado por la plataforma)
+  ESTABLECIMIENTO_ELIMINADO = 'ESTABLECIMIENTO_ELIMINADO', // BL-418 (solo sin actividad; con el RUT y las cuentas de Keycloak que quedaron)
   CARTA_ITEM_IMAGEN_CAMBIADA = 'CARTA_ITEM_IMAGEN_CAMBIADA', // BL-387 (alta, cambio o quita de la imagen de un ítem)
 }
