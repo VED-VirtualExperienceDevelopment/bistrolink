@@ -193,7 +193,8 @@ export class EliminacionEstablecimientoService {
    * Borra las cuentas de Keycloak del tenant, una por una. Se vuelve a
    * comparar el tenant_id de cada una: la búsqueda por atributo es de
    * Keycloak y la verificación queda en nuestro código (mismo criterio que
-   * la suspensión). No lanza: lo que falla queda en `pendientes`.
+   * la suspensión). No lanza: lo que falla queda en `pendientes`, en el
+   * mismo orden en que Keycloak listó las cuentas.
    */
   private async borrarCuentas(tenantId: string): Promise<CuentasEliminadas> {
     let cuentas: { id: string; username: string }[];
@@ -210,17 +211,20 @@ export class EliminacionEstablecimientoService {
       return { eliminadas: 0, pendientes: null };
     }
 
+    // En paralelo: son pocas (personal, Cocina y el comensal) y cada una
+    // es independiente. allSettled: una que falla no corta las demás.
+    const resultados = await Promise.allSettled(
+      cuentas.map((cuenta) => this.keycloakAdmin.deleteUser(cuenta.id)),
+    );
     const pendientes: string[] = [];
-    for (const cuenta of cuentas) {
-      try {
-        await this.keycloakAdmin.deleteUser(cuenta.id);
-      } catch (error) {
+    resultados.forEach((resultado, i) => {
+      if (resultado.status === 'rejected') {
         this.logger.error(
-          `No se pudo borrar la cuenta ${cuenta.username} del establecimiento ${tenantId} en Keycloak: ${mensajeDe(error)}`,
+          `No se pudo borrar la cuenta ${cuentas[i].username} del establecimiento ${tenantId} en Keycloak: ${mensajeDe(resultado.reason)}`,
         );
-        pendientes.push(cuenta.username);
+        pendientes.push(cuentas[i].username);
       }
-    }
+    });
     return { eliminadas: cuentas.length - pendientes.length, pendientes };
   }
 }
