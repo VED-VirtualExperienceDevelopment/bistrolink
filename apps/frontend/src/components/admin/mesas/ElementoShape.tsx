@@ -25,6 +25,8 @@ export interface ElementoShapeProps {
   zoom: number;
   onSeleccionar: () => void;
   onCambiar: (cambios: Partial<ElementoPlano>) => void;
+  /** Familia tipográfica del nombre (la de la app, ver useNitidezLienzo). */
+  fuente?: string;
 }
 
 /**
@@ -44,6 +46,7 @@ export const ElementoShape = forwardRef<Konva.Group, ElementoShapeProps>(
       zoom,
       onSeleccionar,
       onCambiar,
+      fuente,
     },
     ref,
   ) {
@@ -115,7 +118,8 @@ export const ElementoShape = forwardRef<Konva.Group, ElementoShapeProps>(
               align={disposicion.etiqueta.alineacion}
               wrap="none"
               fontSize={12}
-              fontStyle="bold"
+              fontFamily={fuente}
+              fontStyle="600"
               fill={COLOR_CONTENIDO}
             />
           )}

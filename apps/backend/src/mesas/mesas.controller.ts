@@ -6,7 +6,6 @@ import {
   HttpStatus,
   Param,
   ParseUUIDPipe,
-  Patch,
   Post,
   Put,
   Query,
@@ -29,7 +28,6 @@ import {
 import { ListarLayoutQueryDto } from './dto/listar-layout-query.dto';
 import { GuardarLayoutDto } from './dto/guardar-layout.dto';
 import { MesaLayoutDto } from './dto/mesa-layout.dto';
-import { ActualizarEstadoMesaDto } from './dto/actualizar-estado-mesa.dto';
 import { ApiTags, ApiBearerAuth, ApiSecurity } from '@nestjs/swagger';
 import { SEGURIDAD_KEYCLOAK, SEGURIDAD_MESA_QR } from '../openapi';
 
@@ -149,20 +147,43 @@ export class MesasController {
     );
   }
 
-  // PROVISORIO (HU-016 → HU-017): ver ActualizarEstadoMesaDto. Se elimina o
-  // se restringe más (ej. a un rol de sistema) cuando HU-017 dispare estos
-  // cambios directamente desde el flujo de pedidos/pagos.
-  @Patch(':id/estado')
-  @Roles('ADMIN')
-  actualizarEstado(
+  // HU-017 (BL-60): sesión de la mesa. La abre y la cierra el mozo (o el
+  // administrador) desde el mapa de mesas; cada cambio se emite por
+  // WebSocket (mesa:estado_actualizado). Reemplazan al endpoint provisorio
+  // PATCH /mesas/:id/estado de HU-016.
+  @Post(':id/abrir')
+  @Roles('ADMIN', 'MOZO')
+  @HttpCode(HttpStatus.OK)
+  abrirSesion(
     @Req() req: { user: AuthenticatedUser },
     @Param('id', ParseUUIDPipe) mesaId: string,
-    @Body() dto: ActualizarEstadoMesaDto,
   ) {
-    return this.mesasService.actualizarEstado(
+    return this.mesasService.abrirSesion(req.user.tenantId, mesaId);
+  }
+
+  // 409 si hay un cobro en curso o pedidos sin entregar. Los pedidos que
+  // esperaban el pago se cancelan; la respuesta dice cuántos.
+  @Post(':id/cerrar')
+  @Roles('ADMIN', 'MOZO')
+  @HttpCode(HttpStatus.OK)
+  cerrarSesion(
+    @Req() req: { user: AuthenticatedUser },
+    @Param('id', ParseUUIDPipe) mesaId: string,
+  ) {
+    return this.mesasService.cerrarSesion(
       req.user.tenantId,
       mesaId,
-      dto.estado,
+      req.user.sub,
     );
+  }
+
+  @Post(':id/limpia')
+  @Roles('ADMIN', 'MOZO')
+  @HttpCode(HttpStatus.OK)
+  marcarLimpia(
+    @Req() req: { user: AuthenticatedUser },
+    @Param('id', ParseUUIDPipe) mesaId: string,
+  ) {
+    return this.mesasService.marcarLimpia(req.user.tenantId, mesaId);
   }
 }

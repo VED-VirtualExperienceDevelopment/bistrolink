@@ -253,3 +253,23 @@ CVE-2026-91415
 # (BL-137): quitar cuando Keycloak publique una imagen con el JDK corregido.
 
 CVE-2026-91403
+
+# CVE-2026-102554 (HIGH) — com.google.guava:guava 33.5.0-jre, bundleado por la imagen
+
+# oficial de Keycloak (quay.io/keycloak/keycloak:26.7.2). DoS por asignación de memoria
+
+# sin límite al deserializar ciertas colecciones de Guava. Fix en guava 33.7.2, pero
+
+# Keycloak todavía no lo empaquetó: issue keycloak/keycloak#54110 abierto el 19/10/2026,
+
+# "blocked-external", sin milestone ni PR. Los mantenedores indican que Keycloak muy
+
+# probablemente no es afectado. Ninguna release publicada de Keycloak lo incluye aún.
+
+# No es código propio ni una dependencia que gestionemos.
+
+# Agregada el 27/10/2026 (BL-XXX). Pendiente: quitar cuando Keycloak publique una
+
+# versión con guava >= 33.7.2.
+
+CVE-2026-102554

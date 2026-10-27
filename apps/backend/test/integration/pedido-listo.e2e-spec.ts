@@ -5,7 +5,11 @@ import { INestApplication } from '@nestjs/common';
 import request = require('supertest');
 import { io, Socket } from 'socket.io-client';
 import { AppModule } from '../../src/app.module';
-import { asegurarClaveQr, tokenQrDeMesa } from './support/qr-mesa';
+import {
+  asegurarClaveQr,
+  sesionDeMesa,
+  tokenQrDeMesa,
+} from './support/qr-mesa';
 import { conPagoFalso, pagarPedidoDeMesa } from './support/pago-falso';
 
 const KEYCLOAK_URL = process.env.KEYCLOAK_URL ?? 'http://localhost:8080';
@@ -48,6 +52,7 @@ describe('WebSocket KDS (HU-018) - pedido listo para entregar', () => {
   let tokenComensal: string;
   // BL-204: la mesa solo se usa con el token de su QR.
   let qrToken: string;
+  let sesionMesa: string;
   let tokenMozo: string;
 
   const itConMozo = MOZO_USER && MOZO_PASS ? it : it.skip;
@@ -67,9 +72,11 @@ describe('WebSocket KDS (HU-018) - pedido listo para entregar', () => {
     baseUrl = `http://localhost:${port}`;
 
     qrToken = await tokenQrDeMesa(app, TENANT_ID, MESA_ID);
+
+    sesionMesa = await sesionDeMesa(app, TENANT_ID, MESA_ID);
     const authRes = await request(app.getHttpServer())
       .post('/auth/comensal/mesa')
-      .send({ qrToken })
+      .send({ qrToken, sesionMesa })
       .expect(200);
     tokenComensal = authRes.body.accessToken;
 
@@ -89,6 +96,7 @@ describe('WebSocket KDS (HU-018) - pedido listo para entregar', () => {
         .post('/pedidos')
         .set('Authorization', `Bearer ${tokenComensal}`)
         .set('X-Mesa-Token', qrToken)
+        .set('X-Mesa-Sesion', sesionMesa)
         .send({
           restauranteId: RESTAURANTE_ID,
           idempotencyKey: `hu018-${Date.now()}`,
@@ -98,7 +106,13 @@ describe('WebSocket KDS (HU-018) - pedido listo para entregar', () => {
       const pedidoId = pedidoRes.body.id;
 
       // BL-311 (prepago): el pedido llega al KDS recién con el pago aprobado.
-      await pagarPedidoDeMesa(app, pedidoId, tokenComensal, qrToken);
+      await pagarPedidoDeMesa(
+        app,
+        pedidoId,
+        tokenComensal,
+        qrToken,
+        sesionMesa,
+      );
 
       await new Promise<void>((resolve, reject) => {
         const socket: Socket = io(baseUrl, {

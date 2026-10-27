@@ -4,7 +4,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
-import { QrMesaAccesoService } from '../qr-mesa/qr-mesa-acceso.service';
+import {
+  exigirSesionAbierta,
+  QrMesaAccesoService,
+} from '../qr-mesa/qr-mesa-acceso.service';
 import {
   MENSAJE_SUSPENDIDO_COMENSAL,
   TenantEstadoService,
@@ -84,12 +87,18 @@ export class AuthComensalService {
    * 404 si el QR no es válido y 410 si fue reemplazado. BL-413: 403 si el
    * establecimiento está suspendido.
    */
-  async emitirTokenPorQr(qrToken: string): Promise<TokenComensal> {
+  async emitirTokenPorQr(
+    qrToken: string,
+    sesionMesa?: string,
+  ): Promise<TokenComensal> {
     const mesa = await this.qrMesaAcceso.resolver(qrToken);
     await this.tenantEstado.asegurarActivo(
       mesa.tenantId,
       MENSAJE_SUSPENDIDO_COMENSAL,
     );
+    // HU-017 (BL-60): solo con la sesión de la mesa abierta, y la de esta
+    // página (410 MESA_CERRADA / SESION_VENCIDA).
+    exigirSesionAbierta(mesa, sesionMesa);
     return this.pedirTokenKeycloak(mesa.tenantId);
   }
 

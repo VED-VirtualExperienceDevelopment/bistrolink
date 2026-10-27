@@ -4,6 +4,8 @@ import AvisoMesaQr from '@/components/AvisoMesaQr';
 import MenuMesaCliente from '@/components/MenuMesaCliente';
 import type { CategoriaMenu } from '@/components/MenuDigital';
 import {
+  CODIGO_MESA_CERRADA,
+  codigoDeError,
   esEstablecimientoSuspendido,
   esTokenQrConFormatoValido,
   MENSAJE_RESTAURANTE_NO_DISPONIBLE,
@@ -17,12 +19,15 @@ interface MenuQrResponse {
   restaurante: { nombre: string };
   categorias: CategoriaMenu[];
   mesa: { numero: number };
+  /** HU-017 (BL-60): sesión abierta de la mesa. */
+  sesionMesa: string;
 }
 
 type ResultadoMenuQr =
   | { estado: 'ok'; menu: MenuQrResponse }
   | { estado: 'invalido' }
   | { estado: 'reemplazado' }
+  | { estado: 'cerrada' }
   | { estado: 'no-disponible' };
 
 /**
@@ -32,7 +37,8 @@ type ResultadoMenuQr =
  *
  * - 404 / 400 → QR no válido (o de otra clave, o de una mesa que ya no
  *   existe): el backend no distingue el motivo, acá tampoco.
- * - 410 → el QR se regeneró y este quedó viejo.
+ * - 410 → el QR se regeneró y este quedó viejo; o, con el código
+ *   MESA_CERRADA (HU-017, BL-60), la mesa no tiene la sesión abierta.
  * - 403 con el código ESTABLECIMIENTO_SUSPENDIDO (BL-413) → el restaurante
  *   no está disponible por el momento.
  * - Cualquier otro error (500, API caída) se lanza: no es un QR inválido.
@@ -56,7 +62,10 @@ const obtenerMenuPorQr = cache(
       return { estado: 'invalido' };
     }
     if (res.status === 410) {
-      return { estado: 'reemplazado' };
+      const codigo = codigoDeError(await res.json().catch(() => null));
+      return codigo === CODIGO_MESA_CERRADA
+        ? { estado: 'cerrada' }
+        : { estado: 'reemplazado' };
     }
     if (
       res.status === 403 &&
@@ -99,6 +108,16 @@ export default async function MenuQrPage({ params }: PageProps) {
     );
   }
 
+  if (resultado.estado === 'cerrada') {
+    return (
+      <AvisoMesaQr
+        icono="🪑"
+        titulo="Esta mesa está cerrada."
+        detalle="Pedile al mozo que la abra para hacer tu pedido."
+      />
+    );
+  }
+
   if (resultado.estado === 'no-disponible') {
     return (
       <AvisoMesaQr
@@ -125,6 +144,7 @@ export default async function MenuQrPage({ params }: PageProps) {
       restaurante={menu.restaurante}
       categorias={menu.categorias}
       qrToken={token}
+      sesionMesa={menu.sesionMesa}
       numeroMesa={menu.mesa.numero}
     />
   );

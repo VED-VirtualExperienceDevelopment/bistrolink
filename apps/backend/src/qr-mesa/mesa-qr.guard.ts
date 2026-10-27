@@ -7,10 +7,16 @@ import {
   createParamDecorator,
 } from '@nestjs/common';
 import { AuthenticatedUser } from '../auth/keycloak-jwt.strategy';
-import { MesaDelQr, QrMesaAccesoService } from './qr-mesa-acceso.service';
+import {
+  exigirSesionAbierta,
+  MesaDelQr,
+  QrMesaAccesoService,
+} from './qr-mesa-acceso.service';
 
 /** Header con el token del QR de la mesa (el mismo de la URL /q/<token>). */
 export const HEADER_MESA_TOKEN = 'x-mesa-token';
+/** HU-017 (BL-60): sesión de la mesa que el comensal recibió con el menú. */
+export const HEADER_MESA_SESION = 'x-mesa-sesion';
 
 export interface RequestConMesaQr {
   user?: AuthenticatedUser;
@@ -28,6 +34,9 @@ export interface RequestConMesaQr {
  * Si la request trae el header X-Mesa-Token:
  * - el QR tiene que ser válido y vigente (QrMesaAccesoService: 404 / 410);
  * - la mesa tiene que ser del mismo tenant que el JWT del comensal (403);
+ * - HU-017 (BL-60): la mesa tiene que tener la sesión abierta y el header
+ *   X-Mesa-Sesion tiene que ser el de esa sesión (410 MESA_CERRADA /
+ *   SESION_VENCIDA);
  * - la mesa queda en `request.mesaQr` (decorador @MesaDelQrActual): el
  *   endpoint usa ESA mesa, no la que diga el cliente.
  *
@@ -57,6 +66,9 @@ export class MesaQrGuard implements CanActivate {
         'El QR no corresponde a este establecimiento',
       );
     }
+
+    const sesion = request.headers[HEADER_MESA_SESION];
+    exigirSesionAbierta(mesa, typeof sesion === 'string' ? sesion : undefined);
 
     request.mesaQr = mesa;
     return true;

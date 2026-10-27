@@ -14,15 +14,24 @@ interface Props {
   establecimientos: EstablecimientoListado[];
   /** BL-407: abre el alta con los datos del establecimiento para completarla. */
   onCompletarAlta: (establecimiento: EstablecimientoListado) => void;
+  /** BL-418: abre la confirmación para eliminarlo (solo si es eliminable). */
+  onEliminar?: (establecimiento: EstablecimientoListado) => void;
 }
 
 // BL-405: en PC y tablet, columnas alineadas (establecimiento, restaurante,
 // plan, alta); en el celular, cada establecimiento es una tarjeta de una sola
 // columna, sin desplazamiento horizontal. Mismo patrón que UsuariosTable
 // (BL-364): cada fila es su propia grilla con las mismas columnas.
-// BL-411: última columna con «Ver», que abre la ficha.
+// BL-411: última columna con «Ver», que abre la ficha. BL-418: y, si no
+// tiene pedidos, «Eliminar». Esa columna tiene ancho fijo: cada fila es su
+// propia grilla, y con `auto` las filas con dos botones quedaban más anchas
+// que las de uno y las columnas no coincidían entre filas. En tablet los dos
+// botones van uno debajo del otro; desde `xl:`, uno al lado del otro.
 const COLUMNAS =
-  "md:grid md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_8rem_minmax(0,1fr)_auto] md:items-center md:gap-4";
+  "md:grid md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_8rem_minmax(0,1fr)_9rem] md:items-center md:gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_8rem_minmax(0,1fr)_13rem]";
+
+const CLASE_ACCION_FILA =
+  "flex min-h-12 items-center justify-center gap-1 rounded-lg border border-outline-variant px-4 text-body-md font-medium hover:bg-surface-container-high focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary md:w-full xl:w-auto";
 
 /**
  * BL-163 (HU-027): establecimientos dados de alta, del más reciente al más
@@ -37,6 +46,7 @@ const COLUMNAS =
 export function EstablecimientosTable({
   establecimientos,
   onCompletarAlta,
+  onEliminar,
 }: Readonly<Props>) {
   if (establecimientos.length === 0) {
     return (
@@ -185,20 +195,39 @@ export function EstablecimientosTable({
               </p>
             </div>
 
-            {/* BL-411: abre la ficha. El nombre accesible dice de quién es. */}
-            <Link
-              href={rutaFicha(e.tenantId)}
-              aria-label={`Ver ficha de ${e.razonSocial}`}
-              className="flex min-h-12 items-center justify-center gap-1 self-start rounded-lg border border-outline-variant px-4 text-body-md font-medium text-primary hover:bg-surface-container-high focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary md:self-center"
-            >
-              <span aria-hidden="true">Ver</span>
-              <span
-                className="material-symbols-outlined text-[20px]"
-                aria-hidden="true"
+            {/* BL-411: abre la ficha. BL-418: «Eliminar», solo sin pedidos.
+                Los nombres accesibles dicen de quién es cada uno. */}
+            <div className="flex flex-wrap gap-2 self-start md:flex-col md:self-center xl:flex-row xl:justify-end">
+              <Link
+                href={rutaFicha(e.tenantId)}
+                aria-label={`Ver ficha de ${e.razonSocial}`}
+                className={`${CLASE_ACCION_FILA} text-primary`}
               >
-                chevron_right
-              </span>
-            </Link>
+                <span aria-hidden="true">Ver</span>
+                <span
+                  className="material-symbols-outlined text-[20px]"
+                  aria-hidden="true"
+                >
+                  chevron_right
+                </span>
+              </Link>
+              {e.eliminable && onEliminar && (
+                <button
+                  type="button"
+                  onClick={() => onEliminar(e)}
+                  aria-label={`Eliminar definitivamente ${e.razonSocial}`}
+                  className={`${CLASE_ACCION_FILA} text-error`}
+                >
+                  <span
+                    className="material-symbols-outlined text-[20px]"
+                    aria-hidden="true"
+                  >
+                    delete_forever
+                  </span>
+                  <span aria-hidden="true">Eliminar</span>
+                </button>
+              )}
+            </div>
           </li>
         ))}
       </ul>

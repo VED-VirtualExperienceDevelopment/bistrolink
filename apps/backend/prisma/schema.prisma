@@ -36,14 +36,10 @@ enum TenantEstado {
 enum MesaEstado {
   LIBRE
   OCUPADA
-  // HU-016/HU-017: agregado de forma aditiva (expand/contract) — el disparo
-  // real de esta transición (al iniciarse el cobro de un pedido) lo
-  // implementa HU-017; hasta entonces queda expuesta y es seteable vía el
-  // endpoint mock de MesasController.
+  // Mientras se cobra un pedido de la mesa (BL-311, PagosService).
   EN_PROCESO_DE_PAGO
-  // HU-028 (BL-173): agregado de forma aditiva, igual que EN_PROCESO_DE_PAGO.
-  // Por ahora se setea con el endpoint provisorio PATCH /mesas/:id/estado;
-  // la transición real (al liberar la mesa) la implementa HU-017 (BL-60).
+  // HU-017 (BL-60): al cerrar la sesión. Vuelve a LIBRE cuando el mozo la
+  // marca como limpia.
   REQUIERE_LIMPIEZA
 }
 
@@ -70,6 +66,18 @@ enum PagoEstado {
   APROBADO
   RECHAZADO
   REEMBOLSADO
+}
+
+// HU-032 (BL-202): quién resolvió el cambio de estado de un pago.
+// COBRO: la respuesta directa de la pasarela al cobrar. WEBHOOK: la
+// notificación de la pasarela. CONCILIACION: el job que le consulta a la
+// pasarela los pagos pendientes sin webhook. VENCIMIENTO: el job que vence
+// los pagos pendientes sin confirmación.
+enum PagoOrigen {
+  COBRO
+  WEBHOOK
+  CONCILIACION
+  VENCIMIENTO
 }
 
 // ── 4.1 Tenant ───────────────────────────────────────────────────────────────
@@ -190,6 +198,15 @@ model Mesa {
   // versión anterior dejan de funcionar (410 Gone) sin guardar nada más.
   // Default 1: las mesas existentes quedan con un QR válido sin migrar datos.
   qrVersion     Int        @default(1) @map("qr_version")
+  // HU-017 (BL-60): sesión de la mesa. La abre el mozo al recibir
+  // comensales y la cierra cuando todo está entregado. Con la sesión
+  // cerrada el QR impreso no sirve para pedir (410); con cada apertura
+  // cambia, así que una página que quedó abierta de la sesión anterior
+  // tampoco. La base exige que haya sesión si y solo si la mesa está
+  // OCUPADA o EN_PROCESO_DE_PAGO (CHECK en la migración; la mesa virtual
+  // queda afuera).
+  sesionId        String?    @map("sesion_id") @db.Uuid
+  sesionAbiertaEn DateTime?  @map("sesion_abierta_en") @db.Timestamptz(3)
   createdAt     DateTime   @default(now()) @map("created_at")
   updatedAt     DateTime   @updatedAt @map("updated_at")
 
@@ -303,14 +320,38 @@ model Pago {
   medioPago          String     @map("medio_pago") // sin enum: no está cerrado en el Anexo 6
   estado             PagoEstado
   pasarelaReferencia String?    @map("pasarela_referencia")
+  // HU-032 (BL-202): por qué quedó RECHAZADO («VENCIDO» si venció sin
+  // confirmación, o el status_detail de la pasarela). Null en los demás.
+  motivoRechazo      String?    @map("motivo_rechazo") @db.VarChar(60)
   createdAt          DateTime   @default(now()) @map("created_at")
   updatedAt          DateTime   @updatedAt @map("updated_at")
 
   pedido       Pedido              @relation(fields: [pedidoId], references: [id])
   comprobantes ComprobanteFiscal[]
+  historial    PagoEstadoHistorial[]
 
   @@index([tenantId])
   @@map("pago")
+}
+
+// HU-032 (BL-202): cada cambio de estado de un pago, con fecha y origen
+// (respuesta del cobro, webhook, conciliación o vencimiento). Solo se agrega:
+// la aplicación nunca actualiza ni borra filas. Con RLS, como pago.
+model PagoEstadoHistorial {
+  id             String      @id @default(uuid()) @db.Uuid
+  tenantId       String      @map("tenant_id") @db.Uuid
+  pagoId         String      @map("pago_id") @db.Uuid
+  estadoAnterior PagoEstado  @map("estado_anterior")
+  estadoNuevo    PagoEstado  @map("estado_nuevo")
+  origen         PagoOrigen
+  // Detalle corto: motivo del rechazo, «REQUIERE_REEMBOLSO», etc.
+  detalle        String?     @db.VarChar(60)
+  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  pago Pago @relation(fields: [pagoId], references: [id])
+
+  @@index([pagoId])
+  @@map("pago_estado_historial")
 }
 
 // ── 4.9 ComprobanteFiscal ─────────────────────────────────────────────────────

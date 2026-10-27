@@ -24,6 +24,7 @@ const MESA_QR = {
   mesaId: MESA_ID,
   restauranteId: RESTAURANTE_ID,
   numero: 7,
+  sesionId: '99999999-9999-4999-8999-999999999999',
 };
 
 /** BL-309: mesa real tal como la devuelve tx.mesa.findUnique. */
@@ -631,6 +632,7 @@ describe('PedidosService.confirmarPagoEnTx / notificarPedidoConfirmado (BL-311, 
     mockKdsGateway = {
       emitirNuevoPedido: jest.fn(),
       emitirActualizacionPedido: jest.fn(),
+      emitirEstadoMesa: jest.fn(),
     };
     service = new PedidosService({} as any, mockKdsGateway);
   });
@@ -731,6 +733,16 @@ describe('PedidosService.confirmarPagoEnTx / notificarPedidoConfirmado (BL-311, 
         estado: 'RECIBIDO',
         actualizadoEn: '2026-10-10T23:45:00.000Z',
       },
+    );
+  });
+
+  it('HU-017 (BL-60) notificarEstadoMesa: avisa al mapa de mesas el nuevo estado de la mesa', () => {
+    service.notificarEstadoMesa(TENANT_ID, 'mesa-1', 'EN_PROCESO_DE_PAGO');
+
+    expect(mockKdsGateway.emitirEstadoMesa).toHaveBeenCalledWith(
+      TENANT_ID,
+      'mesa-1',
+      'EN_PROCESO_DE_PAGO',
     );
   });
 });

@@ -270,12 +270,9 @@ jobs:
       # evidencia es este job (check obligatorio), el junit.xml dentro del
       # artifact coverage-report-<workspace> y la cobertura en Codecov.
 
-  # NOTA: este job corre solo los tests UNITARIOS (npm run test:cov), no el
-  # test:e2e de aislamiento multi-tenant (tenant-isolation.e2e-spec.ts) — ese
-  # necesita Keycloak + Postgres reales con el realm importado y 3 fixtures
-  # de usuario ya creados (Cocina, sin-tenant, tenant B), y todavía no tiene
-  # su propio job de CI con service containers + script de seed. Queda
-  # pendiente como paquete aparte (correspondería a EDT 1.8.6, corrido en CI).
+  # NOTA: este job corre solo los tests UNITARIOS (npm run test:cov). Los de
+  # integración (test:e2e, con Postgres y Keycloak reales) corren en el job
+  # "integracion" (BL-177, EDT 1.8.6).
 
   # ── JOB 3: TESTS DE CONTRATO (PactJS) ────────────────────────────────────
   # BL-215 (RNF.04, EDT 1.6.2): contratos del consumidor contra Mercado Pago
@@ -353,6 +350,187 @@ jobs:
           password = ${{ secrets.KIWI_TCMS_PASSWORD }}
           EOF
           tcms-junit.xml-plugin apps/backend/reports/contract-junit.xml
+
+  # ── JOB 3b: TESTS DE INTEGRACIÓN (Jest + Postgres + Keycloak) ─────────────
+  # BL-177 (EDT 1.8.6): corre los *.e2e-spec.ts de apps/backend/test/integration
+  # contra un Postgres y un Keycloak reales, levantados con el mismo
+  # docker-compose.yml que se usa en local (solo bistrolink-db y
+  # bistrolink-auth), y sube los resultados a Kiwi como un TestRun propio.
+  #
+  # Todo es descartable: la base y el Keycloak viven solo durante el job, y
+  # las contraseñas de los usuarios de prueba, el client secret y la clave de
+  # los QR se generan al azar en cada corrida (no hay secrets nuevos). Las
+  # credenciales de la base y del admin de Keycloak son las de desarrollo
+  # local de docker-compose.yml: no sirven fuera de este runner.
+  #
+  # Por ahora NO está en el "needs" de build: primero hay que ver que sea
+  # estable en el runner (algunos casos miden tiempos, como TC-I-020 y 024).
+  # Cuando lo sea, se suma a build y como check obligatorio del PR.
+  integracion:
+    name: 🔗 Tests de integración (Postgres + Keycloak)
+    needs: [version]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      # Pisan el DATABASE_URL de prueba del nivel del workflow: acá hay una
+      # base de verdad. Usuario de migraciones (dueño del esquema) y usuario
+      # de la aplicación, sin bypass de RLS (scripts/db/init.sql).
+      DATABASE_URL: "postgresql://bistrolink:bistrolink_dev@localhost:5432/bistrolink_dev"
+      RUNTIME_DATABASE_URL: "postgresql://bistrolink_app:bistrolink_app_dev@localhost:5432/bistrolink_dev"
+      KEYCLOAK_URL: "http://localhost:8080"
+      KEYCLOAK_REALM: "bistrolink"
+      KEYCLOAK_CLIENT_ID: "bistrolink-backend"
+      # Admin del Keycloak descartable (el de docker-compose.yml).
+      KEYCLOAK_ADMIN: "admin"
+      KEYCLOAK_ADMIN_PASSWORD: "admin"
+      # Usuarios de prueba: los nombres son fijos; las contraseñas se generan
+      # en el paso "Credenciales de esta corrida".
+      TEST_ADMIN_USERNAME: "ci-admin-test"
+      TEST_COCINA_USERNAME: "ci-cocina-test"
+      TEST_NO_TENANT_USERNAME: "ci-sin-tenant-test"
+      TEST_TENANT_B_USERNAME: "ci-admin-b-test"
+      TEST_MOZO_USERNAME: "ci-mozo-test"
+      TEST_COCINA_B_USERNAME: "ci-cocina-b-test"
+      # MercadoPagoGateway exige un access token al arrancar la app (el resto
+      # de las pasarelas lo piden recién al cobrar). Los tests de integración
+      # no cobran: va uno de mentira y la API de Mercado Pago apunta a un
+      # puerto cerrado, así ningún pedido sale del runner por error.
+      MP_ACCESS_TOKEN: "TEST-0000000000000000-000000-ci-integracion"
+      MP_API_BASE_URL: "http://localhost:9"
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          # Fuerza la última 22.x publicada: la caché del runner puede ir atrasada
+          # y quedarse con una versión sin los parches de seguridad.
+          check-latest: true
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      # Contraseñas, client secret y clave de los QR al azar, enmascarados en
+      # el log. Van al entorno de los pasos siguientes y al apps/backend/.env
+      # que lee el contenedor de Keycloak (env_file de docker-compose.yml):
+      # set-client-secret.sh pone el client secret y load-test-users.sh crea
+      # los usuarios de prueba con esas contraseñas.
+      - name: Credenciales de esta corrida
+        run: |
+          set -euo pipefail
+          generar() {
+            local valor
+            valor="$(openssl rand -hex 16)"
+            echo "::add-mask::${valor}"
+            echo "$1=${valor}" >> "$GITHUB_ENV"
+            echo "$1=${valor}" >> apps/backend/.env
+          }
+          : > apps/backend/.env
+          for var in KEYCLOAK_CLIENT_SECRET KEYCLOAK_COMENSAL_PASSWORD \
+                     TEST_ADMIN_PASSWORD TEST_COCINA_PASSWORD \
+                     TEST_NO_TENANT_PASSWORD TEST_TENANT_B_PASSWORD \
+                     TEST_MOZO_PASSWORD TEST_COCINA_B_PASSWORD; do
+            generar "$var"
+          done
+          for var in TEST_ADMIN_USERNAME TEST_COCINA_USERNAME \
+                     TEST_NO_TENANT_USERNAME TEST_TENANT_B_USERNAME \
+                     TEST_MOZO_USERNAME TEST_COCINA_B_USERNAME; do
+            echo "${var}=${!var}" >> apps/backend/.env
+          done
+          qr="$(openssl rand -base64 32)"
+          echo "::add-mask::${qr}"
+          echo "QR_TOKEN_KEY=${qr}" >> "$GITHUB_ENV"
+
+      # --wait espera los healthchecks de docker-compose.yml (Postgres listo
+      # y Keycloak con /health/ready en 200).
+      - name: Levantar Postgres y Keycloak
+        run: docker compose up -d --wait --wait-timeout 300 bistrolink-db bistrolink-auth
+
+      # El healthcheck pasa cuando Keycloak arranca, pero set-client-secret.sh
+      # termina de configurarlo (client secret, roles de la cuenta de
+      # servicio y usuarios de prueba) un poco después. Se espera a que el
+      # Admin de prueba pueda obtener un token.
+      - name: Esperar a que Keycloak tenga los usuarios de prueba
+        run: |
+          for intento in $(seq 1 60); do
+            codigo=$(curl -s -o /dev/null -w '%{http_code}' \
+              -d grant_type=password \
+              -d client_id="$KEYCLOAK_CLIENT_ID" \
+              --data-urlencode client_secret="$KEYCLOAK_CLIENT_SECRET" \
+              --data-urlencode username="$TEST_ADMIN_USERNAME" \
+              --data-urlencode password="$TEST_ADMIN_PASSWORD" \
+              "$KEYCLOAK_URL/realms/$KEYCLOAK_REALM/protocol/openid-connect/token")
+            if [ "$codigo" = "200" ]; then
+              echo "Keycloak listo (intento ${intento})."
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::Keycloak no quedó listo en 5 minutos (último código: ${codigo})."
+          exit 1
+
+      - name: Migraciones y datos de prueba
+        working-directory: apps/backend
+        run: |
+          npx prisma migrate deploy
+          npx prisma db seed
+
+      # jest-junit con el título del it() como nombre de cada caso
+      # (JEST_JUNIT_TITLE): así coincide con el título del caso en Kiwi
+      # («[TC-I-NNN] …»). Archivo propio, separado del de los unitarios.
+      - name: Tests de integración
+        run: npm run test:e2e --workspace=backend -- --reporters=default --reporters=jest-junit
+        env:
+          CI: true
+          JEST_JUNIT_OUTPUT_DIR: reports
+          JEST_JUNIT_OUTPUT_NAME: integration-junit.xml
+          JEST_JUNIT_TITLE: "{title}"
+          JEST_JUNIT_CLASSNAME: "{classname}"
+
+      # Solo si falló: el log de Keycloak ayuda a ver si el problema fue el
+      # entorno (realm, usuarios, client secret) y no el código.
+      - name: Log de Keycloak (si falló)
+        if: failure()
+        run: docker compose logs --no-color --tail=300 bistrolink-auth
+
+      - name: Upload integration artifacts
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: integration-report
+          path: apps/backend/reports/integration-junit.xml
+          retention-days: 14
+
+      # TestRun propio con sufijo "-integration", en el Test Plan
+      # «Integration tests» (TCMS_PLAN_ID: "1"), mismo mecanismo que
+      # performance.yml:
+      # - TCMS_PLAN_ID fijo: el plugin no crea un Test Plan nuevo.
+      # - --summary-template '${name}': busca cada caso por el título del it()
+      #   tal cual. Sin el flag usa «classname.name» y no encuentra ninguno.
+      # Los casos se cargan en Kiwi con scripts/kiwi/
+      # cargar-casos-integracion.mjs ANTES de mergear el PR que los agrega o
+      # les cambia el título: así el plugin los encuentra y no crea
+      # duplicados. Un test nuevo sin cargar se crea solo con el título.
+      - name: Upload results to Kiwi TCMS (integration)
+        if: always() && github.event_name != 'pull_request'
+        continue-on-error: true
+        timeout-minutes: 5
+        env:
+          TCMS_PRODUCT: "Bistrolink"
+          TCMS_PRODUCT_VERSION: ${{ github.ref_name }}
+          TCMS_BUILD: ${{ needs.version.outputs.label }}-integration
+          TCMS_PLAN_ID: "1"
+        run: |
+          pip install kiwitcms-junit.xml-plugin --break-system-packages
+          cat <<EOF > ~/.tcms.conf
+          [tcms]
+          url = ${{ secrets.KIWI_TCMS_URL }}/xml-rpc/
+          username = ${{ secrets.KIWI_TCMS_USERNAME }}
+          password = ${{ secrets.KIWI_TCMS_PASSWORD }}
+          EOF
+          tcms-junit.xml-plugin --verbose --summary-template '${name}' apps/backend/reports/integration-junit.xml
 
   # ── JOB 4: GITLEAKS ───────────────────────────────────────────────────────
   gitleaks:
@@ -1161,6 +1339,13 @@ jobs:
           TEST_MOZO_PASSWORD: ${{ secrets.TEST_MOZO_PASSWORD }}
           TEST_ADMIN_USERNAME: ${{ secrets.TEST_ADMIN_USERNAME }}
           TEST_ADMIN_PASSWORD: ${{ secrets.TEST_ADMIN_PASSWORD }}
+          # BL-416: usuario de plataforma de E2E, con OTP (la clave de su app
+          # de autenticación, para generar el código). Sin estos tres
+          # secrets, e2e/plataforma/gestion-establecimientos.spec.ts se
+          # saltea.
+          TEST_PLATAFORMA_USERNAME: ${{ secrets.TEST_PLATAFORMA_USERNAME }}
+          TEST_PLATAFORMA_PASSWORD: ${{ secrets.TEST_PLATAFORMA_PASSWORD }}
+          TEST_PLATAFORMA_OTP_SECRET: ${{ secrets.TEST_PLATAFORMA_OTP_SECRET }}
 
       # BL-250: aviso visible en el resumen de la corrida cuando E2E falla
       # (el workflow sigue en verde en develop, así que el aviso es lo que
@@ -1238,19 +1423,104 @@ jobs:
           ET.ElementTree(merged).write("playwright-report/junit.xml", encoding="utf-8", xml_declaration=True)
           PY
 
+      # BL-435: reporte para Kiwi, con un resultado por caso TC-E.
+      # - Nombre: Playwright arma «describe › título»; se deja solo el
+      #   título desde «[TC-E-NNN]», que es el Summary del caso en Kiwi
+      #   (cargado con scripts/kiwi/cargar-casos-integracion.mjs --e2e).
+      # - Un mismo test corre en varios proyectos (chromium, mobile-chrome,
+      #   mobile-safari, desktop-safari): se junta en un solo resultado.
+      #   Falla si falló en alguno (el mensaje dice en cuál), pasa si pasó
+      #   en alguno y los demás lo saltearon, y queda salteado solo si se
+      #   salteó en todos. Sin esto, el último proyecto pisaba a los otros.
+      # - Un test sin [TC-E-NNN] no se reporta (se avisa): el plugin
+      #   crearía un caso nuevo con ese nombre.
+      # - El timestamp va sin la «Z» final: el plugin 15.0 no la acepta.
+      - name: Preparar el reporte para Kiwi (un resultado por TC-E)
+        run: |
+          python3 - <<'PY'
+          import re
+          import xml.etree.ElementTree as ET
+
+          raiz = ET.parse("playwright-report/junit.xml").getroot()
+          casos = {}
+          inicio = None
+          for suite in raiz.iter("testsuite"):
+              proyecto = suite.get("hostname") or "?"
+              marca = (suite.get("timestamp") or "").removesuffix("Z")
+              if marca and (inicio is None or marca < inicio):
+                  inicio = marca
+              for caso in suite.iter("testcase"):
+                  nombre = caso.get("name", "")
+                  m = re.search(r"\[TC-E-\d{3}\].*$", nombre)
+                  if not m:
+                      print(f"::warning::Test sin [TC-E-NNN], no se reporta a Kiwi: {nombre}")
+                      continue
+                  falla = caso.find("failure")
+                  if falla is None:
+                      falla = caso.find("error")
+                  if falla is not None:
+                      estado = "falla"
+                  elif caso.find("skipped") is not None:
+                      estado = "salteado"
+                  else:
+                      estado = "pasa"
+                  casos.setdefault(m.group(0), []).append((proyecto, estado, caso))
+
+          salida = ET.Element("testsuites")
+          suite = ET.SubElement(salida, "testsuite", name="e2e", tests=str(len(casos)))
+          if inicio:
+              suite.set("timestamp", inicio)
+          resumen = {"falla": 0, "salteado": 0, "pasa": 0}
+          for nombre, corridas in sorted(casos.items()):
+              estados = [e for _, e, _ in corridas]
+              nuevo = ET.SubElement(suite, "testcase", name=nombre,
+                                    classname=corridas[0][2].get("classname", ""),
+                                    time=str(max(float(c.get("time") or 0) for _, _, c in corridas)))
+              if "falla" in estados:
+                  resumen["falla"] += 1
+                  for proyecto, estado, original in corridas:
+                      if estado != "falla":
+                          continue
+                      detalle = original.find("failure")
+                      if detalle is None:
+                          detalle = original.find("error")
+                      copia = ET.SubElement(nuevo, "failure",
+                                            message=f"[{proyecto}] {detalle.get('message', '')}",
+                                            type=detalle.get("type", "FAILURE"))
+                      copia.text = detalle.text
+                      for etiqueta in ("system-out", "system-err"):
+                          log = original.find(etiqueta)
+                          if log is not None:
+                              ET.SubElement(nuevo, etiqueta).text = log.text
+                      break
+              elif "pasa" in estados:
+                  resumen["pasa"] += 1
+              else:
+                  resumen["salteado"] += 1
+                  ET.SubElement(nuevo, "skipped", message="Salteado en todos los proyectos")
+          ET.ElementTree(salida).write("playwright-report/kiwi-junit.xml", encoding="utf-8", xml_declaration=True)
+          print(f"Casos TC-E: {len(casos)} (pasan {resumen['pasa']}, fallan {resumen['falla']}, salteados {resumen['salteado']}).")
+          PY
+
       - name: Upload Playwright report combinado (artifact)
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: playwright-report
-          path: playwright-report/junit.xml
+          path: |
+            playwright-report/junit.xml
+            playwright-report/kiwi-junit.xml
           retention-days: 14
 
-      # Mismo plugin y patrón que el job "jest" (ver ahí los comentarios de
-      # TCMS_PRODUCT_VERSION). TCMS_BUILD lleva sufijo "-e2e" para que quede
-      # en su propio TestRun, separado de -backend/-frontend. Cada caso se
-      # identifica por describe()/test() de Playwright, que ya incluye los
-      # IDs de HU/BL en el título.
+      # Mismo plugin y patrón que el job "integracion" (BL-177). TCMS_BUILD
+      # lleva sufijo "-e2e" para que quede en su propio TestRun.
+      # BL-435: los resultados van a los casos del plan «E2E-Playwright»:
+      # - TCMS_PLAN_ID y TCMS_PRODUCT se buscan por el nombre del plan (el
+      #   plugin, sin plan fijo, armaba un plan propio con casos duplicados);
+      # - --summary-template '${name}': busca cada caso por su título exacto
+      #   (el «[TC-E-NNN] …» que deja el paso anterior).
+      # Antes de mergear un PR con tests nuevos o con títulos cambiados, se
+      # corre scripts/kiwi/cargar-casos-integracion.mjs --e2e --aplicar.
       #
       # Se saltea el reporte solo si es un workflow_dispatch manual con
       # "playwright_report_kiwi" destildado — en push a develop (o un
@@ -1261,7 +1531,6 @@ jobs:
         continue-on-error: true
         timeout-minutes: 5
         env:
-          TCMS_PRODUCT: "BistroLink"
           TCMS_PRODUCT_VERSION: ${{ github.event_name == 'pull_request' && github.base_ref || github.ref_name }}
           TCMS_BUILD: ${{ needs.version.outputs.label }}-e2e
         run: |
@@ -1272,15 +1541,21 @@ jobs:
           username = ${{ secrets.KIWI_TCMS_USERNAME }}
           password = ${{ secrets.KIWI_TCMS_PASSWORD }}
           EOF
-          # kiwitcms-junit.xml-plugin 15.0 (tcms_junit_plugin/__init__.py,
-          # parse_timestamp) solo acepta "%Y-%m-%dT%H:%M:%S.%f",
-          # "%Y-%m-%dT%H:%M:%S" o "%Y-%m-%d %H:%M:%S" — el reporter junit de
-          # Playwright escribe con sufijo "Z" (2026-09-21T14:12:30.222Z), que
-          # no matchea ninguno y hace explotar el plugin con
-          # "ValueError: Unknown timestamp format". Se saca solo la "Z"; los
-          # milisegundos quedan (los cubre %f).
-          sed -i -E 's/timestamp="([0-9T:.-]+)Z"/timestamp="\1"/g' playwright-report/junit.xml
-          tcms-junit.xml-plugin playwright-report/junit.xml
+          # Plan «E2E-Playwright» y su producto (el plugin busca los casos en
+          # el producto del plan y arma la versión y el build con
+          # TCMS_PRODUCT: tienen que ser el mismo).
+          variables="$(python3 - <<'PY'
+          from tcms_api import TCMS
+          planes = TCMS().exec.TestPlan.filter({"name": "E2E-Playwright"})
+          if len(planes) != 1:
+              raise SystemExit(f"::error::Se esperaba un Test Plan «E2E-Playwright» y hay {len(planes)}")
+          print(f"export TCMS_PLAN_ID={planes[0]['id']}")
+          print(f"export TCMS_PRODUCT='{planes[0]['product__name']}'")
+          PY
+          )"
+          eval "$variables"
+          echo "Plan E2E-Playwright: id $TCMS_PLAN_ID, producto $TCMS_PRODUCT"
+          tcms-junit.xml-plugin --verbose --summary-template '${name}' playwright-report/kiwi-junit.xml
 
   # ── JOB 11: DEPLOY PRODUCCIÓN (manual, solo en tag v*.*.*) ───────────────
   # Disparador: push de un tag v*.*.* (ya declarado en "on:"). Un tag es una
@@ -1439,4 +1714,3 @@ jobs:
   #           check https://bistrolink-api-production.up.railway.app/health/ready
   #           check https://bistrolink-web-production.up.railway.app
   #           check https://bistrolink-auth-production.up.railway.app/realms/bistrolink/.well-known/openid-configuration
-  

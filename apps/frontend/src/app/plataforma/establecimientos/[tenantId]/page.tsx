@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useKeycloakAuth } from "@/components/providers/KeycloakProvider";
 import { apiFetch, ApiError } from "@/lib/api-client";
 import { FichaEstablecimiento } from "@/components/plataforma/FichaEstablecimiento";
@@ -11,11 +11,18 @@ import {
   type AccionEstado,
   CambiarEstadoEstablecimientoDialog,
 } from "@/components/plataforma/CambiarEstadoEstablecimientoDialog";
+import { RestablecerAdministradorDialog } from "@/components/plataforma/RestablecerAdministradorDialog";
+import { AgregarAdministradorDialog } from "@/components/plataforma/AgregarAdministradorDialog";
+import { EliminarEstablecimientoDialog } from "@/components/plataforma/EliminarEstablecimientoDialog";
 import {
   mensajeErrorFicha,
+  nombreDeCuenta,
   rutaFicha,
 } from "@/components/plataforma/plataforma.utils";
-import type { FichaEstablecimiento as Ficha } from "@/types/plataforma";
+import type {
+  AdministradorFicha,
+  FichaEstablecimiento as Ficha,
+} from "@/types/plataforma";
 
 /**
  * BL-411: ficha de un establecimiento (/plataforma/establecimientos/[id]).
@@ -32,10 +39,21 @@ import type { FichaEstablecimiento as Ficha } from "@/types/plataforma";
  * BL-413: «Suspender» o «Reactivar» (según el estado) abren la
  * confirmación; al confirmar, la ficha se reemplaza por la que devuelve la
  * API y se anuncia el resultado en la misma región aria-live.
+ *
+ * BL-414: «Restablecer contraseña» (de un Administrador) y «Agregar
+ * Administrador» abren su diálogo. Esas respuestas traen la contraseña
+ * temporal, no la ficha: al agregar, la ficha se vuelve a pedir en segundo
+ * plano (sin el indicador de carga, que desmontaría el diálogo con la
+ * contraseña a la vista).
+ *
+ * BL-418: «Eliminar definitivamente» (solo sin pedidos) abre la
+ * confirmación con el RUT. Al cerrarla después de eliminar, vuelve al
+ * listado: la ficha ya no existe.
  */
 export default function FichaEstablecimientoPage() {
   const { tenantId } = useParams<{ tenantId: string }>();
   const { token } = useKeycloakAuth();
+  const router = useRouter();
   const [ficha, setFicha] = useState<Ficha | null>(null);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -46,6 +64,13 @@ export default function FichaEstablecimientoPage() {
   const [aviso, setAviso] = useState("");
   // BL-413: acción de estado en curso (null = diálogo cerrado).
   const [accionEstado, setAccionEstado] = useState<AccionEstado | null>(null);
+  // BL-414: Administrador al que se le restablece la contraseña (null =
+  // diálogo cerrado) y si está abierto «Agregar Administrador».
+  const [adminARestablecer, setAdminARestablecer] =
+    useState<AdministradorFicha | null>(null);
+  const [agregandoAdmin, setAgregandoAdmin] = useState(false);
+  // BL-418: si está abierta la confirmación de eliminar.
+  const [eliminando, setEliminando] = useState(false);
 
   const cargar = useCallback(async () => {
     if (!token || !tenantId) return;
@@ -68,6 +93,18 @@ export default function FichaEstablecimientoPage() {
   useEffect(() => {
     cargar();
   }, [cargar]);
+
+  // BL-414: refresca la ficha sin mostrar «Cargando» ni tocar los diálogos.
+  // Si falla, queda la ficha que estaba (el Administrador nuevo aparece al
+  // recargar la página).
+  const refrescarFicha = useCallback(async () => {
+    if (!token || !tenantId) return;
+    try {
+      setFicha(await apiFetch<Ficha>(rutaFicha(tenantId), token));
+    } catch {
+      // Sin aviso: el alta ya se hizo y el diálogo lo muestra.
+    }
+  }, [token, tenantId]);
 
   return (
     <div className="w-full space-y-6 p-4 md:p-6">
@@ -142,6 +179,21 @@ export default function FichaEstablecimientoPage() {
               setAperturas((n) => n + 1);
               setAccionEstado("reactivar");
             }}
+            onRestablecerAdmin={(administrador) => {
+              setAviso("");
+              setAperturas((n) => n + 1);
+              setAdminARestablecer(administrador);
+            }}
+            onAgregarAdmin={() => {
+              setAviso("");
+              setAperturas((n) => n + 1);
+              setAgregandoAdmin(true);
+            }}
+            onEliminar={() => {
+              setAviso("");
+              setAperturas((n) => n + 1);
+              setEliminando(true);
+            }}
           />
           <EditarEstablecimientoDialog
             key={aperturas}
@@ -170,6 +222,45 @@ export default function FichaEstablecimientoPage() {
                     : "Establecimiento reactivado.",
                 );
               }}
+            />
+          )}
+          {adminARestablecer && (
+            <RestablecerAdministradorDialog
+              key={`restablecer-${aperturas}`}
+              open
+              onClose={() => setAdminARestablecer(null)}
+              token={token}
+              tenantId={tenantId}
+              administrador={adminARestablecer}
+              onRestablecida={() =>
+                setAviso(
+                  `Contraseña de ${nombreDeCuenta(adminARestablecer)} restablecida.`,
+                )
+              }
+            />
+          )}
+          {agregandoAdmin && (
+            <AgregarAdministradorDialog
+              key={`agregar-${aperturas}`}
+              open
+              onClose={() => setAgregandoAdmin(false)}
+              token={token}
+              tenantId={tenantId}
+              onCreado={(creado) => {
+                setAviso(`Administrador ${nombreDeCuenta(creado)} agregado.`);
+                refrescarFicha();
+              }}
+            />
+          )}
+          {eliminando && (
+            <EliminarEstablecimientoDialog
+              key={`eliminar-${aperturas}`}
+              open
+              onClose={() => setEliminando(false)}
+              token={token}
+              establecimiento={ficha}
+              textoAlTerminar="Volver al listado"
+              onTerminado={() => router.push("/plataforma")}
             />
           )}
         </>

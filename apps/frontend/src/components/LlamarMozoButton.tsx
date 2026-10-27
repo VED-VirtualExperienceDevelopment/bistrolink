@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import {
+  codigoDeError,
   headersMesaQr,
   mensajeErrorQr,
   RUTA_LLAMAR_MOZO,
@@ -15,14 +16,19 @@ interface LlamarMozoButtonProps {
    * servidor (POST /mesas/llamar con X-Mesa-Token); el botón no conoce ids.
    */
   readonly qrToken: string;
+  /** HU-017 (BL-60): sesión de la mesa que vino con el menú. */
+  readonly sesionMesa: string;
 }
 
 const MENSAJE_ERROR_GENERICO = 'No pudimos avisarle al mozo. Probá de nuevo.';
 
 type Estado = 'idle' | 'enviando' | 'enviado' | 'error';
 
-export function LlamarMozoButton({ qrToken }: LlamarMozoButtonProps) {
-  const origen: OrigenMenu = { tipo: 'mesa', qrToken };
+export function LlamarMozoButton({
+  qrToken,
+  sesionMesa,
+}: LlamarMozoButtonProps) {
+  const origen: OrigenMenu = { tipo: 'mesa', qrToken, sesionMesa };
   const [estado, setEstado] = useState<Estado>('idle');
   const [mensaje, setMensaje] = useState<string | null>(null);
 
@@ -64,7 +70,10 @@ export function LlamarMozoButton({ qrToken }: LlamarMozoButtonProps) {
         },
       );
       if (!authRes.ok) {
-        mostrarError(mensajeErrorQr(origen, authRes.status));
+        const cuerpo = await authRes.json().catch(() => null);
+        mostrarError(
+          mensajeErrorQr(origen, authRes.status, codigoDeError(cuerpo)),
+        );
         return;
       }
       const { accessToken } = await authRes.json();
@@ -88,7 +97,8 @@ export function LlamarMozoButton({ qrToken }: LlamarMozoButtonProps) {
         return;
       }
       if (!res.ok) {
-        mostrarError(mensajeErrorQr(origen, res.status));
+        const cuerpo = await res.json().catch(() => null);
+        mostrarError(mensajeErrorQr(origen, res.status, codigoDeError(cuerpo)));
         return;
       }
 

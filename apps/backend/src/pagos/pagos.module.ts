@@ -13,6 +13,8 @@ import { AuthModule } from '../auth/auth.module';
 import { Module } from '@nestjs/common';
 import { CfeModule } from '../cfe/cfe.module';
 import { QrMesaModule } from '../qr-mesa/qr-mesa.module';
+import { ConciliacionPagosService } from './conciliacion/conciliacion-pagos.service';
+import { ConciliacionPagosJob } from './conciliacion/conciliacion-pagos.job';
 
 @Module({
   // BL-311: QrMesaModule para MesaQrGuard en el pago (RD.05).
@@ -29,6 +31,9 @@ import { QrMesaModule } from '../qr-mesa/qr-mesa.module';
     PlexoGateway,
     PagoGatewayFactory,
     PlexoWebhookService,
+    // HU-032 (BL-202): vencimiento y conciliación de pagos pendientes.
+    ConciliacionPagosService,
+    ConciliacionPagosJob,
   ],
 })
 export class PagosModule {}

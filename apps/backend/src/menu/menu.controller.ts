@@ -1,6 +1,9 @@
 import { Controller, Get, Param, ParseUUIDPipe } from '@nestjs/common';
 import { MenuService } from './menu.service';
-import { QrMesaAccesoService } from '../qr-mesa/qr-mesa-acceso.service';
+import {
+  exigirSesionAbierta,
+  QrMesaAccesoService,
+} from '../qr-mesa/qr-mesa-acceso.service';
 import {
   MENSAJE_SUSPENDIDO_COMENSAL,
   TenantEstadoService,
@@ -73,10 +76,20 @@ export class MenuController {
       mesa.tenantId,
       MENSAJE_SUSPENDIDO_COMENSAL,
     );
+    // HU-017 (BL-60): con la mesa cerrada, el QR no abre la carta (410
+    // MESA_CERRADA). Abierta, el menú trae la sesión: el comensal la manda
+    // en cada pedido, pago y llamado (X-Mesa-Sesion).
+    if (!mesa.sesionId) {
+      exigirSesionAbierta(mesa);
+    }
     const menu = await this.menuService.getMenuByMesa(
       mesa.tenantId,
       mesa.mesaId,
     );
-    return { ...menu, mesa: { numero: mesa.numero } };
+    return {
+      ...menu,
+      mesa: { numero: mesa.numero },
+      sesionMesa: mesa.sesionId,
+    };
   }
 }

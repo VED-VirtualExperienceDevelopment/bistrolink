@@ -22,6 +22,12 @@ useDefault = true
     # (keycloak-admin.service.spec.ts). La regla generic-api-key las toma por
     # estar después de un id que empieza con «keycloak» («key»).
     '''^Temporal-123456$''',
-    '''^No-Loguear-123$'''
+    '''^No-Loguear-123$''',
+    # BL-414: contraseñas temporales ficticias de los tests de recuperar el
+    # acceso del Administrador (acceso-administrador.service.spec.ts y
+    # plataforma.controller.spec.ts). La regla generic-api-key las toma por
+    # estar en `temporaryPassword: '...'`.
+    '''^temporal-16-chars$''',
+    '''^temporal-nueva-16$'''
   ]
   
