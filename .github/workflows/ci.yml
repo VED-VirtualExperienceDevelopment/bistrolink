@@ -1339,6 +1339,13 @@ jobs:
           TEST_MOZO_PASSWORD: ${{ secrets.TEST_MOZO_PASSWORD }}
           TEST_ADMIN_USERNAME: ${{ secrets.TEST_ADMIN_USERNAME }}
           TEST_ADMIN_PASSWORD: ${{ secrets.TEST_ADMIN_PASSWORD }}
+          # BL-416: usuario de plataforma de E2E, con OTP (la clave de su app
+          # de autenticación, para generar el código). Sin estos tres
+          # secrets, e2e/plataforma/gestion-establecimientos.spec.ts se
+          # saltea.
+          TEST_PLATAFORMA_USERNAME: ${{ secrets.TEST_PLATAFORMA_USERNAME }}
+          TEST_PLATAFORMA_PASSWORD: ${{ secrets.TEST_PLATAFORMA_PASSWORD }}
+          TEST_PLATAFORMA_OTP_SECRET: ${{ secrets.TEST_PLATAFORMA_OTP_SECRET }}
 
       # BL-250: aviso visible en el resumen de la corrida cuando E2E falla
       # (el workflow sigue en verde en develop, así que el aviso es lo que
