@@ -12,6 +12,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 import request = require('supertest');
 import {
+  LIMITE_ACCESOS_ADMIN_POR_HORA,
   LIMITE_ALTAS_POR_HORA,
   PlataformaController,
 } from '../../src/plataforma/plataforma.controller';
@@ -21,6 +22,7 @@ import { EstablecimientosService } from '../../src/plataforma/establecimientos.s
 import { FichaEstablecimientoService } from '../../src/plataforma/ficha-establecimiento.service';
 import { DatosEstablecimientoService } from '../../src/plataforma/datos-establecimiento.service';
 import { SuspensionEstablecimientoService } from '../../src/plataforma/suspension-establecimiento.service';
+import { AccesoAdministradorService } from '../../src/plataforma/acceso-administrador.service';
 
 /**
  * BL-163 (HU-027), entrega 2: POST /plataforma/establecimientos.
@@ -42,6 +44,16 @@ class AuthFalsa implements CanActivate {
 // BL-411: id fijo con formato del seed (no es un UUID v4).
 const TENANT_ID = '11111111-1111-1111-1111-111111111111';
 
+// BL-414: id de la fila de un Administrador (UUID v4).
+const ADMIN_ID = 'dddddddd-4444-4444-8444-444444444444';
+
+const ADMIN_NUEVO = {
+  username: 'nuevo-admin',
+  email: 'nuevo-admin@prueba.bistrolink.local',
+  nombre: 'Laura',
+  apellido: 'Méndez',
+};
+
 const ALTA = {
   razonSocial: 'Restaurante de Prueba SRL',
   rut: '219999990016',
@@ -62,6 +74,7 @@ describe('PlataformaController (BL-163)', () => {
   const ficha = { obtener: jest.fn() };
   const datos = { actualizar: jest.fn() };
   const suspension = { suspender: jest.fn(), reactivar: jest.fn() };
+  const accesoAdmin = { restablecerContrasena: jest.fn(), crear: jest.fn() };
 
   beforeEach(async () => {
     establecimientos.listar.mockReset().mockResolvedValue({
@@ -73,6 +86,16 @@ describe('PlataformaController (BL-163)', () => {
     datos.actualizar.mockReset().mockResolvedValue(['razonSocial']);
     suspension.suspender.mockReset().mockResolvedValue(undefined);
     suspension.reactivar.mockReset().mockResolvedValue(undefined);
+    accesoAdmin.restablecerContrasena.mockReset().mockResolvedValue({
+      id: ADMIN_ID,
+      temporaryPassword: 'temporal-16-chars',
+      sesionesCerradas: true,
+    });
+    accesoAdmin.crear.mockReset().mockResolvedValue({
+      id: 'usuario-nuevo',
+      ...ADMIN_NUEVO,
+      temporaryPassword: 'temporal-nueva-16',
+    });
     ficha.obtener
       .mockReset()
       .mockResolvedValue({ tenantId: TENANT_ID, razonSocial: 'Uno SRL' });
@@ -93,6 +116,7 @@ describe('PlataformaController (BL-163)', () => {
         { provide: FichaEstablecimientoService, useValue: ficha },
         { provide: DatosEstablecimientoService, useValue: datos },
         { provide: SuspensionEstablecimientoService, useValue: suspension },
+        { provide: AccesoAdministradorService, useValue: accesoAdmin },
       ],
     })
       .overrideGuard(AuthGuard('jwt-plataforma'))
@@ -327,6 +351,104 @@ describe('PlataformaController (BL-163)', () => {
     request(app.getHttpServer())
       .post(`/plataforma/establecimientos/${id}/reactivar`)
       .set('x-test-sub', 'kc-plataforma-1');
+
+  const restablecerAdmin = (
+    sub = 'kc-plataforma-1',
+    id = TENANT_ID,
+    usuarioId = ADMIN_ID,
+  ) =>
+    request(app.getHttpServer())
+      .post(
+        `/plataforma/establecimientos/${id}/administradores/${usuarioId}/restablecer-contrasena`,
+      )
+      .set('x-test-sub', sub);
+
+  const crearAdmin = (body: object = ADMIN_NUEVO, id = TENANT_ID) =>
+    request(app.getHttpServer())
+      .post(`/plataforma/establecimientos/${id}/administradores`)
+      .set('x-test-sub', 'kc-plataforma-1')
+      .send(body);
+
+  it('[TC-U-157] BL-414: restablece la contraseña de un Administrador con el sub del token (200, no-store)', async () => {
+    const res = await restablecerAdmin().expect(200);
+
+    expect(accesoAdmin.restablecerContrasena).toHaveBeenCalledWith(
+      TENANT_ID,
+      ADMIN_ID,
+      { id: 'kc-plataforma-1' },
+    );
+    expect(res.headers['cache-control']).toBe('no-store');
+    expect(res.body).toEqual({
+      id: ADMIN_ID,
+      temporaryPassword: 'temporal-16-chars',
+      sesionesCerradas: true,
+    });
+  });
+
+  it('BL-414: restablecer da 404 si no es un Administrador del establecimiento y 409 si está desactivado', async () => {
+    accesoAdmin.restablecerContrasena.mockRejectedValueOnce(
+      new NotFoundException('Usuario no encontrado'),
+    );
+    await restablecerAdmin().expect(404);
+
+    accesoAdmin.restablecerContrasena.mockRejectedValueOnce(
+      new ConflictException('El usuario está desactivado'),
+    );
+    await restablecerAdmin().expect(409);
+  });
+
+  it('BL-414: rechaza con 400 ids que no son UUID, sin restablecer', async () => {
+    await restablecerAdmin('kc-plataforma-1', 'no-es-un-uuid').expect(400);
+    await restablecerAdmin(
+      'kc-plataforma-1',
+      TENANT_ID,
+      'no-es-un-uuid',
+    ).expect(400);
+    expect(accesoAdmin.restablecerContrasena).not.toHaveBeenCalled();
+  });
+
+  it('[TC-U-158] BL-414: crea un Administrador con el usuario normalizado y el sub del token (201, no-store)', async () => {
+    const res = await crearAdmin({
+      ...ADMIN_NUEVO,
+      username: '  Nuevo-Admin ',
+      nombre: '  Laura  ',
+    }).expect(201);
+
+    expect(accesoAdmin.crear).toHaveBeenCalledWith(
+      TENANT_ID,
+      { ...ADMIN_NUEVO, username: 'nuevo-admin', nombre: 'Laura' },
+      { id: 'kc-plataforma-1' },
+    );
+    expect(res.headers['cache-control']).toBe('no-store');
+    expect(res.body.temporaryPassword).toBe('temporal-nueva-16');
+  });
+
+  it.each([
+    ['sin correo', { ...ADMIN_NUEVO, email: undefined }],
+    ['correo inválido', { ...ADMIN_NUEVO, email: 'no-es-correo' }],
+    ['usuario solo numérico', { ...ADMIN_NUEVO, username: '12345' }],
+    ['sin nombre', { ...ADMIN_NUEVO, nombre: '' }],
+    ['apellido con símbolos', { ...ADMIN_NUEVO, apellido: '<script>' }],
+    ['rol en el body', { ...ADMIN_NUEVO, rol: 'MOZO' }],
+    ['restaurante en el body', { ...ADMIN_NUEVO, restauranteId: TENANT_ID }],
+  ])(
+    '[TC-U-159] BL-414: rechaza con 400 (%s) sin crear',
+    async (_caso, body) => {
+      await crearAdmin(body).expect(400);
+      expect(accesoAdmin.crear).not.toHaveBeenCalled();
+    },
+  );
+
+  it(`[TC-U-160] BL-414: limita a ${LIMITE_ACCESOS_ADMIN_POR_HORA} por hora y por usuario cada acción (429 después)`, async () => {
+    for (let i = 0; i < LIMITE_ACCESOS_ADMIN_POR_HORA; i++) {
+      await restablecerAdmin().expect(200);
+    }
+    await restablecerAdmin().expect(429);
+
+    // El límite es por usuario de plataforma y por ruta.
+    await restablecerAdmin('kc-plataforma-2').expect(200);
+    await crearAdmin().expect(201);
+  });
 
   it('[TC-U-125] BL-413: suspende con el motivo sin espacios de más y el sub del token, y devuelve la ficha (200)', async () => {
     const res = await suspender({ motivo: '  Falta   de pago  ' }).expect(200);
