@@ -1423,19 +1423,104 @@ jobs:
           ET.ElementTree(merged).write("playwright-report/junit.xml", encoding="utf-8", xml_declaration=True)
           PY
 
+      # BL-435: reporte para Kiwi, con un resultado por caso TC-E.
+      # - Nombre: Playwright arma «describe › título»; se deja solo el
+      #   título desde «[TC-E-NNN]», que es el Summary del caso en Kiwi
+      #   (cargado con scripts/kiwi/cargar-casos-integracion.mjs --e2e).
+      # - Un mismo test corre en varios proyectos (chromium, mobile-chrome,
+      #   mobile-safari, desktop-safari): se junta en un solo resultado.
+      #   Falla si falló en alguno (el mensaje dice en cuál), pasa si pasó
+      #   en alguno y los demás lo saltearon, y queda salteado solo si se
+      #   salteó en todos. Sin esto, el último proyecto pisaba a los otros.
+      # - Un test sin [TC-E-NNN] no se reporta (se avisa): el plugin
+      #   crearía un caso nuevo con ese nombre.
+      # - El timestamp va sin la «Z» final: el plugin 15.0 no la acepta.
+      - name: Preparar el reporte para Kiwi (un resultado por TC-E)
+        run: |
+          python3 - <<'PY'
+          import re
+          import xml.etree.ElementTree as ET
+
+          raiz = ET.parse("playwright-report/junit.xml").getroot()
+          casos = {}
+          inicio = None
+          for suite in raiz.iter("testsuite"):
+              proyecto = suite.get("hostname") or "?"
+              marca = (suite.get("timestamp") or "").removesuffix("Z")
+              if marca and (inicio is None or marca < inicio):
+                  inicio = marca
+              for caso in suite.iter("testcase"):
+                  nombre = caso.get("name", "")
+                  m = re.search(r"\[TC-E-\d{3}\].*$", nombre)
+                  if not m:
+                      print(f"::warning::Test sin [TC-E-NNN], no se reporta a Kiwi: {nombre}")
+                      continue
+                  falla = caso.find("failure")
+                  if falla is None:
+                      falla = caso.find("error")
+                  if falla is not None:
+                      estado = "falla"
+                  elif caso.find("skipped") is not None:
+                      estado = "salteado"
+                  else:
+                      estado = "pasa"
+                  casos.setdefault(m.group(0), []).append((proyecto, estado, caso))
+
+          salida = ET.Element("testsuites")
+          suite = ET.SubElement(salida, "testsuite", name="e2e", tests=str(len(casos)))
+          if inicio:
+              suite.set("timestamp", inicio)
+          resumen = {"falla": 0, "salteado": 0, "pasa": 0}
+          for nombre, corridas in sorted(casos.items()):
+              estados = [e for _, e, _ in corridas]
+              nuevo = ET.SubElement(suite, "testcase", name=nombre,
+                                    classname=corridas[0][2].get("classname", ""),
+                                    time=str(max(float(c.get("time") or 0) for _, _, c in corridas)))
+              if "falla" in estados:
+                  resumen["falla"] += 1
+                  for proyecto, estado, original in corridas:
+                      if estado != "falla":
+                          continue
+                      detalle = original.find("failure")
+                      if detalle is None:
+                          detalle = original.find("error")
+                      copia = ET.SubElement(nuevo, "failure",
+                                            message=f"[{proyecto}] {detalle.get('message', '')}",
+                                            type=detalle.get("type", "FAILURE"))
+                      copia.text = detalle.text
+                      for etiqueta in ("system-out", "system-err"):
+                          log = original.find(etiqueta)
+                          if log is not None:
+                              ET.SubElement(nuevo, etiqueta).text = log.text
+                      break
+              elif "pasa" in estados:
+                  resumen["pasa"] += 1
+              else:
+                  resumen["salteado"] += 1
+                  ET.SubElement(nuevo, "skipped", message="Salteado en todos los proyectos")
+          ET.ElementTree(salida).write("playwright-report/kiwi-junit.xml", encoding="utf-8", xml_declaration=True)
+          print(f"Casos TC-E: {len(casos)} (pasan {resumen['pasa']}, fallan {resumen['falla']}, salteados {resumen['salteado']}).")
+          PY
+
       - name: Upload Playwright report combinado (artifact)
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: playwright-report
-          path: playwright-report/junit.xml
+          path: |
+            playwright-report/junit.xml
+            playwright-report/kiwi-junit.xml
           retention-days: 14
 
-      # Mismo plugin y patrón que el job "jest" (ver ahí los comentarios de
-      # TCMS_PRODUCT_VERSION). TCMS_BUILD lleva sufijo "-e2e" para que quede
-      # en su propio TestRun, separado de -backend/-frontend. Cada caso se
-      # identifica por describe()/test() de Playwright, que ya incluye los
-      # IDs de HU/BL en el título.
+      # Mismo plugin y patrón que el job "integracion" (BL-177). TCMS_BUILD
+      # lleva sufijo "-e2e" para que quede en su propio TestRun.
+      # BL-435: los resultados van a los casos del plan «E2E-Playwright»:
+      # - TCMS_PLAN_ID y TCMS_PRODUCT se buscan por el nombre del plan (el
+      #   plugin, sin plan fijo, armaba un plan propio con casos duplicados);
+      # - --summary-template '${name}': busca cada caso por su título exacto
+      #   (el «[TC-E-NNN] …» que deja el paso anterior).
+      # Antes de mergear un PR con tests nuevos o con títulos cambiados, se
+      # corre scripts/kiwi/cargar-casos-integracion.mjs --e2e --aplicar.
       #
       # Se saltea el reporte solo si es un workflow_dispatch manual con
       # "playwright_report_kiwi" destildado — en push a develop (o un
@@ -1446,7 +1531,6 @@ jobs:
         continue-on-error: true
         timeout-minutes: 5
         env:
-          TCMS_PRODUCT: "BistroLink"
           TCMS_PRODUCT_VERSION: ${{ github.event_name == 'pull_request' && github.base_ref || github.ref_name }}
           TCMS_BUILD: ${{ needs.version.outputs.label }}-e2e
         run: |
@@ -1457,15 +1541,21 @@ jobs:
           username = ${{ secrets.KIWI_TCMS_USERNAME }}
           password = ${{ secrets.KIWI_TCMS_PASSWORD }}
           EOF
-          # kiwitcms-junit.xml-plugin 15.0 (tcms_junit_plugin/__init__.py,
-          # parse_timestamp) solo acepta "%Y-%m-%dT%H:%M:%S.%f",
-          # "%Y-%m-%dT%H:%M:%S" o "%Y-%m-%d %H:%M:%S" — el reporter junit de
-          # Playwright escribe con sufijo "Z" (2026-09-21T14:12:30.222Z), que
-          # no matchea ninguno y hace explotar el plugin con
-          # "ValueError: Unknown timestamp format". Se saca solo la "Z"; los
-          # milisegundos quedan (los cubre %f).
-          sed -i -E 's/timestamp="([0-9T:.-]+)Z"/timestamp="\1"/g' playwright-report/junit.xml
-          tcms-junit.xml-plugin playwright-report/junit.xml
+          # Plan «E2E-Playwright» y su producto (el plugin busca los casos en
+          # el producto del plan y arma la versión y el build con
+          # TCMS_PRODUCT: tienen que ser el mismo).
+          variables="$(python3 - <<'PY'
+          from tcms_api import TCMS
+          planes = TCMS().exec.TestPlan.filter({"name": "E2E-Playwright"})
+          if len(planes) != 1:
+              raise SystemExit(f"::error::Se esperaba un Test Plan «E2E-Playwright» y hay {len(planes)}")
+          print(f"export TCMS_PLAN_ID={planes[0]['id']}")
+          print(f"export TCMS_PRODUCT='{planes[0]['product__name']}'")
+          PY
+          )"
+          eval "$variables"
+          echo "Plan E2E-Playwright: id $TCMS_PLAN_ID, producto $TCMS_PRODUCT"
+          tcms-junit.xml-plugin --verbose --summary-template '${name}' playwright-report/kiwi-junit.xml
 
   # ── JOB 11: DEPLOY PRODUCCIÓN (manual, solo en tag v*.*.*) ───────────────
   # Disparador: push de un tag v*.*.* (ya declarado en "on:"). Un tag es una
