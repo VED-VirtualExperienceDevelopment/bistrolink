@@ -33,6 +33,8 @@ const prisma = new PrismaClient();
 // Ojo: estos IDs no son UUID RFC 4122 válidos (el 4to grupo no empieza con
 // 8, 9, a ni b); un @IsUUID() estricto los rechaza (ver TC-I-032).
 const TENANT_A_ID = '11111111-1111-1111-1111-111111111111';
+// Emisor habilitado en el ambiente de pruebas de Surtec/FEU (ver CfeService).
+const RUT_EMISOR_PRUEBA = '214198620015';
 const RESTAURANTE_A_ID = '22222222-2222-2222-2222-222222222222';
 const MESA_A1_ID = '33333333-3333-3333-3333-333333333333';
 const MESA_A2_ID = '33333333-3333-3333-3333-333333333334'; // e2e/llamado-mozo.spec.ts: mesa dedicada al test de rate limiting, para no compartir cupo con la mesa 1
@@ -100,11 +102,17 @@ async function tenantA() {
   // Tenant: NO tiene RLS (es la raíz del aislamiento).
   await prisma.tenant.upsert({
     where: { id: TENANT_A_ID },
-    update: { razonSocial: 'Restaurante Testing A SRL' },
+    // BL-311: el RUT es el del emisor de prueba de Surtec/FEU; con uno
+    // ficticio Surtec rechaza el eTicket («no es un emisor válido»). Va
+    // también en `update` para corregir bases ya sembradas.
+    update: {
+      razonSocial: 'Restaurante Testing A SRL',
+      rut: RUT_EMISOR_PRUEBA,
+    },
     create: {
       id: TENANT_A_ID,
       razonSocial: 'Restaurante Testing A SRL',
-      rut: '210000000019', // RUT ficticio, formato UY (12 dígitos)
+      rut: RUT_EMISOR_PRUEBA,
       plan: 'BASICO',
     },
   });

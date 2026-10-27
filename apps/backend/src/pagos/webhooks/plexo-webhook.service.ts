@@ -4,6 +4,8 @@ import { TenantPrismaService } from '../../prisma/tenant-prisma.service';
 import { PlexoGateway } from '../gateways/plexo.gateway';
 import { leerReferenciaExterna } from './referencia-externa';
 import { CfeService } from '../../cfe/cfe.service';
+import { PedidosService } from '../../pedidos/pedidos.service';
+import { PedidoParaKds } from '../../pedidos/pedido-kds.mapper';
 
 type EstadoPago = 'PENDIENTE' | 'APROBADO' | 'RECHAZADO' | 'REEMBOLSADO';
 
@@ -28,6 +30,7 @@ export class PlexoWebhookService {
     private readonly tenantPrisma: TenantPrismaService,
     private readonly plexo: PlexoGateway,
     private readonly cfe: CfeService,
+    private readonly pedidos: PedidosService,
   ) {}
 
   async procesarPago(paymentId: string): Promise<ResultadoWebhookPlexo> {
@@ -64,18 +67,28 @@ export class PlexoWebhookService {
       return 'sin_resolver';
     }
 
-    const { resultado, pagoId } = await this.tenantPrisma.runInTenantContext(
-      referencia.tenantId,
-      (tx) => this.aplicar(tx, pago, referencia.pedidoId, estado),
-    );
+    const { resultado, pagoId, pedidoConfirmado } =
+      await this.tenantPrisma.runInTenantContext(referencia.tenantId, (tx) =>
+        this.aplicar(tx, pago, referencia, estado),
+      );
 
-    // Pago aprobado: se emite el CFE en segundo plano (ver PagosWebhookService).
+    // BL-311: igual que con Mercado Pago, recién con la transacción
+    // confirmada se avisa a cocina y al comensal.
+    if (pedidoConfirmado) {
+      this.pedidos.notificarPedidoConfirmado(
+        referencia.tenantId,
+        pedidoConfirmado,
+      );
+    }
+
+    // Pago aprobado: se emite el CFE en segundo plano, con reintentos
+    // acotados (ver PagosWebhookService).
     if (
       estado === 'APROBADO' &&
       pagoId &&
       (resultado === 'actualizado' || resultado === 'sin_cambios')
     ) {
-      void this.cfe.intentarEmitir(referencia.tenantId, pagoId);
+      this.cfe.emitirEnSegundoPlano(referencia.tenantId, pagoId);
     }
     return resultado;
   }
@@ -83,9 +96,14 @@ export class PlexoWebhookService {
   private async aplicar(
     tx: PrismaClient,
     pago: { id: string; totalAmount?: number },
-    pedidoId: string,
+    referencia: { tenantId: string; pedidoId: string },
     estado: EstadoPago,
-  ): Promise<{ resultado: ResultadoWebhookPlexo; pagoId?: string }> {
+  ): Promise<{
+    resultado: ResultadoWebhookPlexo;
+    pagoId?: string;
+    pedidoConfirmado?: PedidoParaKds | null;
+  }> {
+    const { tenantId, pedidoId } = referencia;
     const candidatos = await tx.pago.findMany({
       where: { pedidoId, medioPago: 'PLEXO' },
     });
@@ -126,6 +144,11 @@ export class PlexoWebhookService {
       data: { estado, pasarelaReferencia: pago.id },
     });
 
+    // BL-311 (prepago, RD.03): mismo criterio que con Mercado Pago.
+    // Aprobado o rechazado, la mesa vuelve a OCUPADA (el comensal paga antes
+    // de comer; la libera el cierre de sesión, HU-017), y con el pago
+    // aprobado el pedido pasa de PENDIENTE_PAGO a RECIBIDO.
+    let pedidoConfirmado: PedidoParaKds | null = null;
     if (estado === 'APROBADO' || estado === 'RECHAZADO') {
       const pedido = await tx.pedido.findUnique({
         where: { id: pedidoId },
@@ -134,11 +157,18 @@ export class PlexoWebhookService {
       if (pedido) {
         await tx.mesa.updateMany({
           where: { id: pedido.mesaId, estado: 'EN_PROCESO_DE_PAGO' },
-          data: { estado: estado === 'APROBADO' ? 'LIBRE' : 'OCUPADA' },
+          data: { estado: 'OCUPADA' },
         });
+      }
+      if (estado === 'APROBADO') {
+        pedidoConfirmado = await this.pedidos.confirmarPagoEnTx(
+          tx,
+          tenantId,
+          pedidoId,
+        );
       }
     }
 
-    return { resultado: 'actualizado', pagoId: pagoBd.id };
+    return { resultado: 'actualizado', pagoId: pagoBd.id, pedidoConfirmado };
   }
 }

@@ -254,6 +254,14 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.server.to(this.salaTenant(tenantId)).emit('pedido:nuevo', pedido);
   }
 
+  // BL-311: avisa al comensal que sigue el pedido (sala del pedido, la que
+  // se une con pedido:seguir) que el pedido cambió de estado.
+  emitirActualizacionPedido(pedidoId: string, actualizado: unknown) {
+    this.server
+      .to(this.salaPedido(pedidoId))
+      .emit('pedido:actualizado', actualizado);
+  }
+
   emitirLlamado(tenantId: string, mesaId: string, mesaNumero: number) {
     this.server
       .to(this.salaTenant(tenantId))

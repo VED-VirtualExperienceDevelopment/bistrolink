@@ -6,7 +6,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { CrearPagoDto } from '../../src/pagos/dto/crear-pago.dto';
+import { SolicitudPago } from '../../src/pagos/dto/crear-pago.dto';
 import { PagoRechazadoException } from '../../src/pagos/gateways/pago-rechazado.exception';
 import { PagoTemporalmenteNoDisponibleException } from '../../src/pagos/gateways/pago-temporalmente-no-disponible.exception';
 import { PagosService } from '../../src/pagos/pagos.service';
@@ -16,7 +16,17 @@ const PEDIDO_ID = '3cdf1dad-31d6-43c9-9739-11485e0e23f8';
 const MESA_ID = '33333333-3333-3333-3333-333333333333';
 const PAGO_ID = 'a4a91b9c-a546-4b7a-be01-cd8861294bae';
 
-const DTO: CrearPagoDto = {
+// BL-311: lo que devuelve PedidosService.confirmarPagoEnTx al pasar a RECIBIDO.
+const PEDIDO_CONFIRMADO = {
+  id: PEDIDO_ID,
+  estado: 'RECIBIDO',
+  createdAt: new Date('2026-10-19T03:00:00.000Z'),
+  observacionGeneral: null,
+  mesa: { numero: 4 },
+  lineas: [],
+};
+
+const DTO: SolicitudPago = {
   pedidoId: PEDIDO_ID,
   idempotencyKey: 'pago-001',
   medioPago: 'MERCADOPAGO',
@@ -72,7 +82,11 @@ describe('PagosService.crear', () => {
   let tenantPrisma: { runInTenantContext: jest.Mock };
   let gateway: { cobrar: jest.Mock };
   let gatewayFactory: { obtener: jest.Mock };
-  let cfe: { intentarEmitir: jest.Mock };
+  let cfe: { emitirEnSegundoPlano: jest.Mock };
+  let pedidos: {
+    confirmarPagoEnTx: jest.Mock;
+    notificarPedidoConfirmado: jest.Mock;
+  };
   let service: PagosService;
 
   beforeEach(() => {
@@ -86,11 +100,16 @@ describe('PagosService.crear', () => {
         .mockResolvedValue({ aprobado: true, pasarelaReferencia: 'ORD1' }),
     };
     gatewayFactory = { obtener: jest.fn().mockReturnValue(gateway) };
-    cfe = { intentarEmitir: jest.fn().mockResolvedValue(null) };
+    cfe = { emitirEnSegundoPlano: jest.fn() };
+    pedidos = {
+      confirmarPagoEnTx: jest.fn().mockResolvedValue(PEDIDO_CONFIRMADO),
+      notificarPedidoConfirmado: jest.fn(),
+    };
     service = new PagosService(
       tenantPrisma as any,
       gatewayFactory as any,
       cfe as any,
+      pedidos as any,
     );
   });
 
@@ -101,7 +120,7 @@ describe('PagosService.crear', () => {
     );
 
   describe('camino feliz', () => {
-    it('reserva el pago PENDIENTE, cobra, lo marca APROBADO y libera la mesa', async () => {
+    it('reserva el pago PENDIENTE, cobra, lo marca APROBADO y la mesa vuelve a OCUPADA (BL-311)', async () => {
       const pago = await service.crear(TENANT_ID, DTO);
 
       expect(tx.pago.create).toHaveBeenCalledWith({
@@ -117,7 +136,9 @@ describe('PagosService.crear', () => {
         where: { id: PAGO_ID, estado: 'PENDIENTE' },
         data: { estado: 'APROBADO', pasarelaReferencia: 'ORD1' },
       });
-      expect(estadosDeMesa()).toEqual(['EN_PROCESO_DE_PAGO', 'LIBRE']);
+      // BL-311: con prepago el comensal paga antes de comer; la mesa la
+      // libera el cierre de sesión (HU-017), no el pago.
+      expect(estadosDeMesa()).toEqual(['EN_PROCESO_DE_PAGO', 'OCUPADA']);
       expect(pago).toMatchObject({
         id: PAGO_ID,
         estado: 'APROBADO',
@@ -167,6 +188,83 @@ describe('PagosService.crear', () => {
       await service.crear(TENANT_ID, DTO);
 
       expect(cobroDentro).toBe(false);
+    });
+  });
+
+  describe('BL-311: prepago (RD.03), el pedido pasa a RECIBIDO al aprobarse el pago', () => {
+    it('pago aprobado => confirma el pedido DENTRO de la transacción del pago', async () => {
+      await service.crear(TENANT_ID, DTO);
+
+      expect(pedidos.confirmarPagoEnTx).toHaveBeenCalledWith(
+        tx,
+        TENANT_ID,
+        PEDIDO_ID,
+      );
+    });
+
+    it('avisa a cocina y al comensal DESPUÉS de confirmar la transacción', async () => {
+      const llamadas: string[] = [];
+      tenantPrisma.runInTenantContext.mockImplementation(
+        async (_tenantId, callback) => {
+          const r = await callback(tx);
+          llamadas.push('fin-transaccion');
+          return r;
+        },
+      );
+      pedidos.notificarPedidoConfirmado.mockImplementation(() =>
+        llamadas.push('notificar'),
+      );
+
+      await service.crear(TENANT_ID, DTO);
+
+      expect(pedidos.notificarPedidoConfirmado).toHaveBeenCalledWith(
+        TENANT_ID,
+        PEDIDO_CONFIRMADO,
+      );
+      expect(llamadas.at(-1)).toBe('notificar');
+      expect(llamadas.at(-2)).toBe('fin-transaccion');
+    });
+
+    it('si el pedido ya estaba confirmado (llegó antes el webhook), no avisa dos veces', async () => {
+      pedidos.confirmarPagoEnTx.mockResolvedValue(null);
+
+      await service.crear(TENANT_ID, DTO);
+
+      expect(pedidos.notificarPedidoConfirmado).not.toHaveBeenCalled();
+    });
+
+    it('pago rechazado => el pedido sigue en PENDIENTE_PAGO y cocina no se entera', async () => {
+      gateway.cobrar.mockResolvedValue({
+        aprobado: false,
+        pasarelaReferencia: 'ORD1',
+        motivoRechazo: 'insufficient_amount',
+      });
+
+      await expect(service.crear(TENANT_ID, DTO)).rejects.toThrow(
+        PagoRechazadoException,
+      );
+      expect(pedidos.confirmarPagoEnTx).not.toHaveBeenCalled();
+      expect(pedidos.notificarPedidoConfirmado).not.toHaveBeenCalled();
+    });
+
+    it('pago pendiente => el pedido no se confirma todavía (lo hará el webhook)', async () => {
+      gateway.cobrar.mockResolvedValue({
+        aprobado: false,
+        pendiente: true,
+        pasarelaReferencia: 'ORD1',
+      });
+
+      await service.crear(TENANT_ID, DTO);
+
+      expect(pedidos.confirmarPagoEnTx).not.toHaveBeenCalled();
+    });
+
+    it('si el webhook ya resolvió el pago, la respuesta directa no confirma el pedido', async () => {
+      tx.pago.updateMany.mockResolvedValueOnce({ count: 0 });
+
+      await service.crear(TENANT_ID, DTO);
+
+      expect(pedidos.confirmarPagoEnTx).not.toHaveBeenCalled();
     });
   });
 
@@ -518,28 +616,12 @@ describe('PagosService.crear', () => {
   });
 
   describe('emisión del CFE', () => {
-    it('pago aprobado => emite el comprobante y lo incluye en la respuesta', async () => {
-      cfe.intentarEmitir.mockResolvedValue({
-        serie: 'A',
-        numero: 49,
-        urlConsulta: 'https://www.efactura.dgi.gub.uy/consultaQR/cfe?x',
-      });
-
+    it('pago aprobado => responde sin esperar a Surtec y emite en segundo plano', async () => {
       const pago = await service.crear(TENANT_ID, DTO);
 
-      expect(cfe.intentarEmitir).toHaveBeenCalledWith(TENANT_ID, PAGO_ID);
-      expect(pago).toMatchObject({
-        estado: 'APROBADO',
-        comprobante: { serie: 'A', numero: 49 },
-      });
-    });
-
-    it('si la emisión falla, el pago igual queda APROBADO (comprobante null)', async () => {
-      cfe.intentarEmitir.mockResolvedValue(null);
-
-      const pago = await service.crear(TENANT_ID, DTO);
-
-      expect(pago).toMatchObject({ estado: 'APROBADO', comprobante: null });
+      expect(cfe.emitirEnSegundoPlano).toHaveBeenCalledWith(TENANT_ID, PAGO_ID);
+      expect(pago).toMatchObject({ estado: 'APROBADO' });
+      expect(pago).not.toHaveProperty('comprobante');
     });
 
     it('pago PENDIENTE (ej. Plexo) => todavía no se emite', async () => {
@@ -551,7 +633,7 @@ describe('PagosService.crear', () => {
 
       await service.crear(TENANT_ID, DTO);
 
-      expect(cfe.intentarEmitir).not.toHaveBeenCalled();
+      expect(cfe.emitirEnSegundoPlano).not.toHaveBeenCalled();
     });
 
     it('pago rechazado => no se emite', async () => {
@@ -563,7 +645,7 @@ describe('PagosService.crear', () => {
 
       await expect(service.crear(TENANT_ID, DTO)).rejects.toThrow();
 
-      expect(cfe.intentarEmitir).not.toHaveBeenCalled();
+      expect(cfe.emitirEnSegundoPlano).not.toHaveBeenCalled();
     });
   });
 });

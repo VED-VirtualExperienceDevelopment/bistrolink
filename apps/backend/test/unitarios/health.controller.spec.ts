@@ -188,6 +188,33 @@ describe('HealthController', () => {
       expect(result.upToDate).toBe(false);
     });
 
+    it('la última migración es la de nombre mayor, no la aplicada más tarde (rama mergeada tarde)', async () => {
+      // BL-311 traía migraciones del 19/10 y se aplicaron el 26/10, después
+      // de una del 22/10 que ya estaba en la base: la base está al día.
+      mockQueryRawUnsafe
+        .mockResolvedValueOnce([{ version: 'PostgreSQL 18.6 on x86_64' }])
+        .mockResolvedValueOnce([
+          {
+            migration_name: '20261022120000_tenant_estado_y_alta_completada',
+            finished_at: new Date('2026-10-22T15:00:00.000Z'),
+          },
+        ]);
+      mockReaddirSync.mockReturnValue([
+        { name: '20261019220000_pedido_acceso_token', isDirectory: () => true },
+        {
+          name: '20261022120000_tenant_estado_y_alta_completada',
+          isDirectory: () => true,
+        },
+      ]);
+
+      const result = await controller.version();
+
+      expect(mockQueryRawUnsafe).toHaveBeenLastCalledWith(
+        expect.stringContaining('ORDER BY migration_name DESC LIMIT 1'),
+      );
+      expect(result.upToDate).toBe(true);
+    });
+
     it('devuelve "unavailable" en todos los campos si la DB no responde', async () => {
       mockQueryRawUnsafe.mockRejectedValue(new Error('connection refused'));
       mockReaddirSync.mockReturnValue([]);
