@@ -38,7 +38,15 @@
  *   node scripts/kiwi/cargar-casos-integracion.mjs --e2e --descripciones
  *   node scripts/kiwi/cargar-casos-integracion.mjs --e2e --aplicar --descripciones
  *
- * En los dos modos, con --aplicar también pasa a CONFIRMED los casos del
+ * Con --contrato, lo mismo con los contratos PactJS (TC-C, en los
+ * .pact.spec.ts de apps/backend/test/contract), contra el Test Plan
+ * «Contract-PactJS» y con descripciones-contrato.md (ver el README de esa
+ * carpeta):
+ *
+ *   node scripts/kiwi/cargar-casos-integracion.mjs --contrato --descripciones
+ *   node scripts/kiwi/cargar-casos-integracion.mjs --contrato --aplicar --descripciones
+ *
+ * En todos los modos, con --aplicar también pasa a CONFIRMED los casos del
  * código que en Kiwi siguen en otro estado (PROPOSED): se corre después de
  * una corrida en verde.
  *
@@ -53,37 +61,57 @@ import { fileURLToPath } from "node:url";
 const APLICAR = process.argv.includes("--aplicar");
 const DESCRIPCIONES = process.argv.includes("--descripciones");
 const E2E = process.argv.includes("--e2e");
+const CONTRATO = process.argv.includes("--contrato");
+if (E2E && CONTRATO) {
+  console.error("Usá --e2e o --contrato, no los dos.");
+  process.exit(1);
+}
 
 /**
- * Qué se carga: los tests de integración (por defecto) o, con --e2e, los
- * E2E de Playwright (BL-435). Cada tipo tiene su prefijo, su carpeta, su
- * Test Plan y su archivo de descripciones.
+ * Qué se carga: los tests de integración (por defecto), con --e2e los E2E
+ * de Playwright (BL-435) y con --contrato los contratos PactJS. Cada tipo
+ * tiene su prefijo, su carpeta, su Test Plan y su archivo de descripciones.
  */
-const TIPO = E2E
-  ? {
-      prefijo: "TC-E",
-      directorio: "e2e",
-      // Recursivo: los specs van por carpeta de dominio (e2e/comensal/...).
-      // support/ no tiene specs.
-      esSpec: (archivo) => archivo.endsWith(".spec.ts"),
-      plan: "E2E-Playwright",
-      descripciones: "descripciones-e2e.md",
-      // Mismo formato que TC-E-001 a 016: el comando que corre solo ese
-      // test, con la ruta sin la línea (cambia con cualquier edición) y -g
-      // con el título sin el prefijo (es una expresión regular: se escapan
-      // los signos).
-      comando: (archivo, titulo) =>
-        `npx playwright test e2e/${archivo.replace(/:\d+$/, "")} -g '${sinPrefijo(titulo).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'`,
-    }
-  : {
-      prefijo: "TC-I",
-      directorio: "apps/backend/test/integration",
-      esSpec: (archivo) =>
-        archivo.endsWith(".e2e-spec.ts") && !archivo.includes("/"),
-      plan: "Integration tests",
-      descripciones: "descripciones-integracion.md",
-      comando: (archivo) => archivo,
-    };
+// -t de Jest y -g de Playwright son expresiones regulares: se escapan los
+// signos del título.
+const comoRegex = (texto) => texto.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const CONFIG_CONTRATO = {
+  prefijo: "TC-C",
+  directorio: "apps/backend/test/contract",
+  esSpec: (archivo) => archivo.endsWith(".pact.spec.ts"),
+  plan: "Contract-PactJS",
+  descripciones: "descripciones-contrato.md",
+  // Corre solo ese contrato (sin la línea: cambia con cualquier edición).
+  comando: (_archivo, titulo) =>
+    `npm run test:pact --workspace=backend -- -t '${comoRegex(sinPrefijo(titulo))}'`,
+};
+const TIPO = CONTRATO
+  ? CONFIG_CONTRATO
+  : E2E
+    ? {
+        prefijo: "TC-E",
+        directorio: "e2e",
+        // Recursivo: los specs van por carpeta de dominio (e2e/comensal/...).
+        // support/ no tiene specs.
+        esSpec: (archivo) => archivo.endsWith(".spec.ts"),
+        plan: "E2E-Playwright",
+        descripciones: "descripciones-e2e.md",
+        // Mismo formato que TC-E-001 a 016: el comando que corre solo ese
+        // test, con la ruta sin la línea (cambia con cualquier edición) y -g
+        // con el título sin el prefijo (es una expresión regular: se escapan
+        // los signos).
+        comando: (archivo, titulo) =>
+          `npx playwright test e2e/${archivo.replace(/:\d+$/, "")} -g '${comoRegex(sinPrefijo(titulo))}'`,
+      }
+    : {
+        prefijo: "TC-I",
+        directorio: "apps/backend/test/integration",
+        esSpec: (archivo) =>
+          archivo.endsWith(".e2e-spec.ts") && !archivo.includes("/"),
+        plan: "Integration tests",
+        descripciones: "descripciones-integracion.md",
+        comando: (archivo) => archivo,
+      };
 const DIRECTORIO_TESTS = TIPO.directorio;
 const NOMBRE_PLAN = TIPO.plan;
 const ARCHIVO_DESCRIPCIONES = join(
@@ -509,7 +537,50 @@ const DATOS_E2E = {
     tags: ["BL-404", "BL-418", "integridad-datos"],
   }),
 };
-const DATOS = E2E ? DATOS_E2E : DATOS_INTEGRACION;
+/**
+ * Datos de los contratos PactJS (TC-C). Requirement con la HU que usa el
+ * endpoint; Component `api`; el proveedor como tag (`mercadopago`, después
+ * `surtec`, BL-216), así se filtra por proveedor en un solo plan.
+ */
+const contrato = (requirement, proveedor, extra = {}) => ({
+  category: "Funcional",
+  component: "api",
+  requirement,
+  ...extra,
+  tags: [requirement, "contrato", proveedor, ...(extra.tags ?? [])],
+});
+const DATOS_CONTRATO = {
+  // Mercado Pago, API Orders (BL-215).
+  1: contrato("HU-007", "mercadopago", { priority: "P1", tags: ["BL-215"] }),
+  2: contrato("HU-007", "mercadopago", { priority: "P1", tags: ["BL-215"] }),
+  3: contrato("HU-007", "mercadopago", { priority: "P2", tags: ["BL-215"] }),
+  4: contrato("HU-032", "mercadopago", {
+    priority: "P1",
+    tags: ["BL-215", "BL-78"],
+  }),
+  5: contrato("HU-032", "mercadopago", {
+    priority: "P2",
+    tags: ["BL-215", "BL-78"],
+  }),
+  6: contrato("HU-032", "mercadopago", {
+    priority: "P2",
+    tags: ["BL-215", "BL-78"],
+  }),
+  7: contrato("HU-032", "mercadopago", {
+    priority: "P2",
+    tags: ["BL-215", "BL-78"],
+  }),
+  // Mercado Pago, notificación de webhook (BL-215).
+  8: contrato("HU-032", "mercadopago", {
+    priority: "P1",
+    tags: ["BL-215", "BL-78", "webhook"],
+  }),
+  9: contrato("HU-032", "mercadopago", {
+    priority: "P1",
+    tags: ["BL-215", "BL-78", "webhook"],
+  }),
+};
+const DATOS = CONTRATO ? DATOS_CONTRATO : E2E ? DATOS_E2E : DATOS_INTEGRACION;
 
 const DATOS_POR_DEFECTO = {
   category: "Funcional",

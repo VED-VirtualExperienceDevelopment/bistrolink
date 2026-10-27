@@ -8,6 +8,9 @@
 // depende una decisión (status/status_detail). Así el contrato no se rompe
 // por campos nuevos de Mercado Pago, pero sí si cambia algo que usamos.
 //
+// Cada test lleva su [TC-C-NNN]: es el título del caso en el Test Plan
+// «Contract-PactJS» de Kiwi TCMS (ver test/contract/README.md).
+//
 // Los ids de las orders usan fromProviderState: hoy toman el valor de
 // ejemplo, y el día que el contrato se verifique contra el sandbox (job
 // nocturno) el "provider state" puede inyectar ids reales.
@@ -101,7 +104,7 @@ describe('Contrato Mercado Pago — API Orders (BL-215)', () => {
   }
 
   describe('POST /v1/orders — crear el cobro', () => {
-    it('pago aprobado: 201 con la order procesada y acreditada', async () => {
+    it('[TC-C-001] Mercado Pago Orders: POST /v1/orders con pago aprobado responde 201 con la order procesada y acreditada', async () => {
       await pact
         .addInteraction()
         .given('la tarjeta de prueba del pagador tiene fondos')
@@ -135,7 +138,7 @@ describe('Contrato Mercado Pago — API Orders (BL-215)', () => {
         });
     });
 
-    it('rechazo del emisor: 402 con el motivo en data.transactions', async () => {
+    it('[TC-C-002] Mercado Pago Orders: POST /v1/orders con rechazo del emisor responde 402 con el motivo en data.transactions', async () => {
       await pact
         .addInteraction()
         .given('la tarjeta de prueba del pagador no tiene fondos suficientes')
@@ -175,7 +178,7 @@ describe('Contrato Mercado Pago — API Orders (BL-215)', () => {
         });
     });
 
-    it('token de tarjeta inválido o ya usado: 402 invalid_card_token', async () => {
+    it('[TC-C-003] Mercado Pago Orders: POST /v1/orders con un token de tarjeta inválido o ya usado responde 402 invalid_card_token', async () => {
       await pact
         .addInteraction()
         .given('el token de tarjeta ya fue usado')
@@ -234,16 +237,28 @@ describe('Contrato Mercado Pago — API Orders (BL-215)', () => {
       };
     }
 
+    // El título completo va en la primera columna (y no armado con %s) para
+    // que cada fila tenga su propio [TC-C-NNN] y el script de carga lo lea.
     it.each([
-      ['aprobada', 'una order aprobada', 'processed', 'accredited'],
       [
-        'pendiente',
+        '[TC-C-004] Mercado Pago Orders: GET /v1/orders/{id} de una order aprobada devuelve processed y accredited',
+        'una order aprobada',
+        'processed',
+        'accredited',
+      ],
+      [
+        '[TC-C-005] Mercado Pago Orders: GET /v1/orders/{id} de una order pendiente devuelve action_required',
         'una order pendiente de acción',
         'action_required',
         'waiting_payment',
       ],
-      ['rechazada', 'una order fallida', 'failed', 'insufficient_amount'],
-    ])('order %s', async (_nombre, estadoProveedor, status, statusDetail) => {
+      [
+        '[TC-C-006] Mercado Pago Orders: GET /v1/orders/{id} de una order rechazada devuelve failed',
+        'una order fallida',
+        'failed',
+        'insufficient_amount',
+      ],
+    ])('%s', async (_titulo, estadoProveedor, status, statusDetail) => {
       await pact
         .addInteraction()
         .given(`existe ${estadoProveedor} creada por BistroLink`, {
@@ -271,7 +286,7 @@ describe('Contrato Mercado Pago — API Orders (BL-215)', () => {
         });
     });
 
-    it('order inexistente: 404 → null (el webhook responde 200 y la ignora)', async () => {
+    it('[TC-C-007] Mercado Pago Orders: GET /v1/orders/{id} de una order inexistente responde 404 y el gateway devuelve null', async () => {
       await pact
         .addInteraction()
         .given('no existe la order consultada')

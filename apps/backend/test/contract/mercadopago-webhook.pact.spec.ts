@@ -10,6 +10,9 @@
 //   - El estado aprobado/rechazado: la notificación no lo trae como dato
 //     confiable; se consulta con GET /v1/orders/{id} (contrato HTTP en
 //     mercadopago-orders.pact.spec.ts, casos aprobada/rechazada/pendiente).
+//
+// Cada test lleva su [TC-C-NNN]: es el título del caso en el Test Plan
+// «Contract-PactJS» de Kiwi TCMS (ver test/contract/README.md).
 import { resolve } from 'node:path';
 import {
   MatchersV3,
@@ -46,53 +49,60 @@ async function procesarNotificacion(
 }
 
 describe('Contrato Mercado Pago — notificación de webhook (BL-215)', () => {
+  // El título completo va en la primera columna para que cada fila tenga su
+  // propio [TC-C-NNN] (ver mercadopago-orders.pact.spec.ts).
   it.each([
-    ['order.processed', 'una order procesada (pago aprobado)'],
-    ['order.failed', 'una order fallida (pago rechazado)'],
-  ])(
-    'notificación %s → se consulta la order notificada',
-    async (accion, descripcion) => {
-      await pact
-        .addAsynchronousInteraction()
-        .given(`Mercado Pago notifica ${descripcion}`)
-        .expectsToReceive(
-          `una notificación de webhook de ${descripcion}`,
-          (b) => {
-            b.withJSONContent({
-              type: 'order',
-              action: like(accion),
-              data: { id: like('ORD01JQ4S4KY8HWQ6NA5PXB65B3D3') },
-            }).withMetadata({
-              // Headers y query con los que llega la notificación; son los que
-              // entran en el manifiesto de la firma.
-              'x-signature': regex(
-                '^ts=\\d+,v1=[0-9a-f]{64}$',
-                'ts=1742505638683,v1=ced36ab6d33566bb1e16c125819b8d840d6b8ef136b0b9127c76064466f5229b',
-              ),
-              'x-request-id': like('bb56a2f1-6aae-46ac-982e-9dcd3581d08e'),
-              'query.type': 'order',
-              'query.data.id': like('ORD01JQ4S4KY8HWQ6NA5PXB65B3D3'),
-            });
+    [
+      '[TC-C-008] Mercado Pago webhook: la notificación order.processed trae el id de la order y se consulta esa order',
+      'order.processed',
+      'una order procesada (pago aprobado)',
+    ],
+    [
+      '[TC-C-009] Mercado Pago webhook: la notificación order.failed trae el id de la order y se consulta esa order',
+      'order.failed',
+      'una order fallida (pago rechazado)',
+    ],
+  ])('%s', async (_titulo, accion, descripcion) => {
+    await pact
+      .addAsynchronousInteraction()
+      .given(`Mercado Pago notifica ${descripcion}`)
+      .expectsToReceive(
+        `una notificación de webhook de ${descripcion}`,
+        (b) => {
+          b.withJSONContent({
+            type: 'order',
+            action: like(accion),
+            data: { id: like('ORD01JQ4S4KY8HWQ6NA5PXB65B3D3') },
+          }).withMetadata({
+            // Headers y query con los que llega la notificación; son los que
+            // entran en el manifiesto de la firma.
+            'x-signature': regex(
+              '^ts=\\d+,v1=[0-9a-f]{64}$',
+              'ts=1742505638683,v1=ced36ab6d33566bb1e16c125819b8d840d6b8ef136b0b9127c76064466f5229b',
+            ),
+            'x-request-id': like('bb56a2f1-6aae-46ac-982e-9dcd3581d08e'),
+            'query.type': 'order',
+            'query.data.id': like('ORD01JQ4S4KY8HWQ6NA5PXB65B3D3'),
+          });
+        },
+      )
+      .executeTest(async (mensaje) => {
+        const cuerpo = mensaje.contents.content as CuerpoNotificacion;
+        const metadata = mensaje.metadata ?? {};
+        const procesarOrden = jest.fn().mockResolvedValue('actualizado');
+
+        await procesarNotificacion(
+          {
+            type: metadata['query.type'] as string,
+            'data.id': metadata['query.data.id'] as string,
           },
-        )
-        .executeTest(async (mensaje) => {
-          const cuerpo = mensaje.contents.content as CuerpoNotificacion;
-          const metadata = mensaje.metadata ?? {};
-          const procesarOrden = jest.fn().mockResolvedValue('actualizado');
+          cuerpo,
+          procesarOrden,
+        );
 
-          await procesarNotificacion(
-            {
-              type: metadata['query.type'] as string,
-              'data.id': metadata['query.data.id'] as string,
-            },
-            cuerpo,
-            procesarOrden,
-          );
-
-          expect(procesarOrden).toHaveBeenCalledWith(
-            'ORD01JQ4S4KY8HWQ6NA5PXB65B3D3',
-          );
-        });
-    },
-  );
+        expect(procesarOrden).toHaveBeenCalledWith(
+          'ORD01JQ4S4KY8HWQ6NA5PXB65B3D3',
+        );
+      });
+  });
 });

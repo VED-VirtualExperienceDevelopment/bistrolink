@@ -110,7 +110,7 @@ jobs:
         run: k6 run --summary-export=k6-pedidos-carga-summary.json k6/pedidos-carga.js
 
       # ── Lighthouse ──────────────────────────────────────────────────────
-      - name: Lighthouse CI — TC-P-003 (vista de mesa, HU-001)
+      - name: Lighthouse CI — TC-P-003 (menú digital, HU-001)
         continue-on-error: true
         run: npx @lhci/cli@0.14.x autorun
 
@@ -185,7 +185,8 @@ jobs:
                   passed = score is not None and score >= 0.8
                   detail = f"score={score}"
           add_case(
-              "[TC-P-003] HU-001: performance Lighthouse de la vista de mesa (score ≥ 0.8)",
+              # Mismo título que scripts/kiwi/lighthouse-a-junit.mjs (BL-437).
+              "[TC-P-003] HU-001: performance Lighthouse del menú digital en celular (score ≥ 0.8)",
               "lighthouse", passed, detail,
           )
 

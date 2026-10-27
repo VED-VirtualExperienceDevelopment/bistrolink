@@ -37,7 +37,7 @@ on:
       # requiriendo que "deploy-staging" corra antes (needs: deploy-staging),
       # así que un run manual solo tiene sentido apuntando a la rama develop.
       playwright_report_kiwi:
-        description: "E2E manual: reportar los resultados a Kiwi TCMS (tildado = sí)"
+        description: "E2E y Lighthouse manual: reportar los resultados a Kiwi TCMS (tildado = sí)"
         required: false
         type: boolean
         default: true
@@ -330,15 +330,20 @@ jobs:
             apps/backend/reports/contract-junit.xml
           retention-days: 14
 
-      # Mismo mecanismo que el reporte E2E (JOB 10): un TestRun propio con
-      # sufijo "-contract". A diferencia de los unitarios, los contratos SÍ
-      # se cargan en Kiwi (BL-215: "resultados reportados a Kiwi TCMS").
+      # Un TestRun propio con sufijo "-contract". A diferencia de los
+      # unitarios, los contratos SÍ se cargan en Kiwi (BL-215: "resultados
+      # reportados a Kiwi TCMS"). Mismo mecanismo que el reporte E2E:
+      # - el plan «Contract-PactJS» y su producto se buscan por nombre (sin
+      #   plan fijo, el plugin los mandaba a un plan propio, TP-4);
+      # - --summary-template '${name}': busca cada caso por el título del
+      #   it() (jest-contract.json ya lo deja como nombre del testcase).
+      # Los casos se cargan con scripts/kiwi/cargar-casos-integracion.mjs
+      # --contrato antes de mergear (ver apps/backend/test/contract/README.md).
       - name: Upload results to Kiwi TCMS (contract)
         if: always() && github.event_name != 'pull_request'
         continue-on-error: true
         timeout-minutes: 5
         env:
-          TCMS_PRODUCT: "BistroLink"
           TCMS_PRODUCT_VERSION: ${{ github.ref_name }}
           TCMS_BUILD: ${{ needs.version.outputs.label }}-contract
         run: |
@@ -349,7 +354,21 @@ jobs:
           username = ${{ secrets.KIWI_TCMS_USERNAME }}
           password = ${{ secrets.KIWI_TCMS_PASSWORD }}
           EOF
-          tcms-junit.xml-plugin apps/backend/reports/contract-junit.xml
+          # Plan «Contract-PactJS» y su producto: el plugin busca los casos
+          # en el producto del plan y arma la versión y el build con
+          # TCMS_PRODUCT (tienen que ser el mismo).
+          variables="$(python3 - <<'PY'
+          from tcms_api import TCMS
+          planes = TCMS().exec.TestPlan.filter({"name": "Contract-PactJS"})
+          if len(planes) != 1:
+              raise SystemExit(f"::error::Se esperaba un Test Plan «Contract-PactJS» y hay {len(planes)}")
+          print(f"export TCMS_PLAN_ID={planes[0]['id']}")
+          print(f"export TCMS_PRODUCT='{planes[0]['product__name']}'")
+          PY
+          )"
+          eval "$variables"
+          echo "Plan Contract-PactJS: id $TCMS_PLAN_ID, producto $TCMS_PRODUCT"
+          tcms-junit.xml-plugin --verbose --summary-template '${name}' apps/backend/reports/contract-junit.xml
 
   # ── JOB 3b: TESTS DE INTEGRACIÓN (Jest + Postgres + Keycloak) ─────────────
   # BL-177 (EDT 1.8.6): corre los *.e2e-spec.ts de apps/backend/test/integration
@@ -1213,9 +1232,20 @@ jobs:
           exit 1
 
   # ── JOB 9B: LIGHTHOUSE (Performance mobile) — staging ────────────────────────
+  # BL-437: mismo comportamiento que los E2E (JOB 10): corre contra staging
+  # después de cada deploy de develop (o a mano) y reporta a Kiwi TCMS, al
+  # caso TC-P-003 del plan «Performance-k6-Lighthouse». El umbral
+  # (performance >= 0.8, lighthouserc.json) está en "warn": un puntaje bajo
+  # no hace fallar el job; queda como FAILED en Kiwi y con ❌ en el resumen.
+  #
+  # URL (lighthouserc.json): el menú por el link web del local
+  # (/m/<tenant>/restaurante/<restaurante>), público y con la misma carta
+  # que por QR. La ruta vieja de la mesa por ids (/m/<tenant>/<mesa>) desde
+  # HU-034 solo muestra «Este enlace ya no se usa.» (TC-E-019), y la del QR
+  # (/q/<token>) necesita un token generado por el Administrador.
   lighthouse:
     name: 🔦 Lighthouse Performance (mobile) — staging
-    needs: deploy-staging
+    needs: [deploy-staging, version]
     if: github.ref == 'refs/heads/develop'
     runs-on: ubuntu-latest
     steps:
@@ -1232,6 +1262,57 @@ jobs:
         run: npx @lhci/cli@0.14.x autorun
         env:
           LHCI_GITHUB_APP_TOKEN: ${{ secrets.LHCI_GITHUB_APP_TOKEN }}
+
+      # Puntajes de cada corrida en el resumen de GitHub y lighthouse-junit.xml
+      # con TC-P-003 para Kiwi. Corre aunque lhci haya fallado: en ese caso
+      # el caso queda fallido con el motivo.
+      - name: Resultado de Lighthouse (resumen y JUnit)
+        if: always()
+        run: node scripts/kiwi/lighthouse-a-junit.mjs lighthouse-junit.xml
+
+      - name: Upload Lighthouse report (artifact)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: lighthouse-report
+          path: |
+            lighthouse-results/
+            lighthouse-junit.xml
+          retention-days: 14
+
+      # Mismo patrón que el reporte E2E: plan buscado por nombre, título del
+      # caso como Summary, y se saltea solo en un workflow_dispatch con
+      # «reportar a Kiwi» destildado.
+      - name: Upload results to Kiwi TCMS (lighthouse)
+        if: always() && (github.event_name != 'workflow_dispatch' || inputs.playwright_report_kiwi == true)
+        continue-on-error: true
+        timeout-minutes: 5
+        env:
+          TCMS_PRODUCT_VERSION: ${{ github.ref_name }}
+          TCMS_BUILD: ${{ needs.version.outputs.label }}-lighthouse
+        run: |
+          pip install kiwitcms-junit.xml-plugin --break-system-packages
+          cat <<EOF > ~/.tcms.conf
+          [tcms]
+          url = ${{ secrets.KIWI_TCMS_URL }}/xml-rpc/
+          username = ${{ secrets.KIWI_TCMS_USERNAME }}
+          password = ${{ secrets.KIWI_TCMS_PASSWORD }}
+          EOF
+          # Plan «Performance-k6-Lighthouse» y su producto: el plugin busca
+          # los casos en el producto del plan y arma la versión y el build
+          # con TCMS_PRODUCT (tienen que ser el mismo).
+          variables="$(python3 - <<'PY'
+          from tcms_api import TCMS
+          planes = TCMS().exec.TestPlan.filter({"name": "Performance-k6-Lighthouse"})
+          if len(planes) != 1:
+              raise SystemExit(f"::error::Se esperaba un Test Plan «Performance-k6-Lighthouse» y hay {len(planes)}")
+          print(f"export TCMS_PLAN_ID={planes[0]['id']}")
+          print(f"export TCMS_PRODUCT='{planes[0]['product__name']}'")
+          PY
+          )"
+          eval "$variables"
+          echo "Plan Performance-k6-Lighthouse: id $TCMS_PLAN_ID, producto $TCMS_PRODUCT"
+          tcms-junit.xml-plugin --verbose --summary-template '${name}' lighthouse-junit.xml
 
   # ── JOB 10: TESTS E2E (Playwright) — matrix por browser ───────────────────
   # Corre después de deploy-staging (push a develop) o a mano vía
