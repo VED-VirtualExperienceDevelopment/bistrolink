@@ -80,6 +80,13 @@ test.describe("BL-404 · Gestión de establecimientos (plataforma)", () => {
       .getByRole("listitem")
       .filter({ hasText: establecimiento.rut });
 
+  // El estado vacío del listado. El mismo texto está también en la región
+  // aria-live (sr-only) que anuncia el resultado: se toma solo el visible.
+  const sinCoincidencias = () =>
+    page
+      .locator("p:not(.sr-only)")
+      .filter({ hasText: /Ningún establecimiento coincide con/ });
+
   /** Abre el listado y busca el establecimiento de prueba por su RUT. */
   async function buscarEnListado(estado = "") {
     await page.goto("/plataforma");
@@ -113,9 +120,7 @@ test.describe("BL-404 · Gestión de establecimientos (plataforma)", () => {
     await filtroEstado().selectOption({ label: "Activos" });
     await expect(fila()).toHaveCount(1);
     await filtroEstado().selectOption({ label: "Suspendidos" });
-    await expect(
-      page.getByText(/Ningún establecimiento coincide con/),
-    ).toBeVisible();
+    await expect(sinCoincidencias()).toBeVisible();
     await expect(fila()).toHaveCount(0);
   });
 
@@ -262,8 +267,6 @@ test.describe("BL-404 · Gestión de establecimientos (plataforma)", () => {
     await expect(page).toHaveURL(/\/plataforma$/);
 
     await buscador().fill(establecimiento.rut);
-    await expect(
-      page.getByText(/Ningún establecimiento coincide con/),
-    ).toBeVisible();
+    await expect(sinCoincidencias()).toBeVisible();
   });
 });
