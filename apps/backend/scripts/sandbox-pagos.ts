@@ -69,12 +69,14 @@ async function http(
   url: string,
   body?: unknown,
   token?: string,
+  extraHeaders: Record<string, string> = {},
 ): Promise<Respuesta> {
   const respuesta = await fetch(url, {
     method,
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...extraHeaders,
     },
     body: body === undefined ? undefined : JSON.stringify(body),
     signal: AbortSignal.timeout(30_000),
@@ -122,6 +124,10 @@ async function primerItemDisponible(): Promise<{
   throw new Error('El menú del tenant no tiene ítems disponibles');
 }
 
+// BL-311 (RD.05): token de acceso de cada pedido para retirar, tal como lo
+// devuelve POST /pedidos. Sin él (header X-Pedido-Token) no se puede pagar.
+const tokensDeAcceso = new Map<string, string>();
+
 async function crearPedido(token: string, itemId: string): Promise<string> {
   const r = await http(
     'POST',
@@ -138,6 +144,11 @@ async function crearPedido(token: string, itemId: string): Promise<string> {
     r.status < 300 && id,
     `No se pudo crear el pedido (HTTP ${r.status}): ${JSON.stringify(r.body)}`,
   );
+  exigir(
+    r.body?.tokenAcceso,
+    'POST /pedidos no devolvió tokenAcceso (¿la API es anterior a BL-311?)',
+  );
+  tokensDeAcceso.set(id, r.body.tokenAcceso);
   return id;
 }
 
@@ -173,7 +184,6 @@ function pagar(
     'POST',
     `${API_URL}/pedidos/${pedidoId}/pagos`,
     {
-      pedidoId,
       idempotencyKey,
       medioPago: 'MERCADOPAGO',
       datosPasarela: {
@@ -184,6 +194,7 @@ function pagar(
       },
     },
     token,
+    { 'X-Pedido-Token': tokensDeAcceso.get(pedidoId) ?? '' },
   );
 }
 

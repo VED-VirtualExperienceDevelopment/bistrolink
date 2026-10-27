@@ -6,6 +6,8 @@ import Konva from "konva";
 import { io, type Socket } from "socket.io-client";
 import { useKeycloakAuth } from "@/components/providers/KeycloakProvider";
 import { apiFetch, ApiError } from "@/lib/api-client";
+import { SesionMesaPanel } from "./SesionMesaPanel";
+import { puedeGestionarSesion } from "./sesion-mesa.utils";
 import { LeyendaEstadosMesa } from "./LeyendaEstadosMesa";
 import { ElementoShape } from "./ElementoShape";
 import { ListaPlano } from "./ListaPlano";
@@ -161,6 +163,7 @@ export function MapaMesasEditor({
 }: Readonly<Props>) {
   const { token, hasRole } = useKeycloakAuth();
   const puedeEditar = puedeEditarMapa(hasRole);
+  const gestionaSesion = puedeGestionarSesion(hasRole);
 
   const [mesas, setMesas] = useState<MesaEnEdicion[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1284,6 +1287,20 @@ export function MapaMesasEditor({
             </p>
           )}
         </section>
+      )}
+
+      {/* HU-017 (BL-60): abrir / cerrar / marcar limpia la mesa
+          seleccionada. Lo ven el mozo y el administrador. */}
+      {mesaSeleccionada && gestionaSesion && (
+        <SesionMesaPanel
+          mesaId={mesaSeleccionada.id}
+          numero={mesaSeleccionada.numero}
+          estado={mesaSeleccionada.estado}
+          token={token}
+          onEstado={(mesaId, estado) =>
+            setMesas((prev) => actualizarEstadosMesas(prev, [{ id: mesaId, estado }]))
+          }
+        />
       )}
 
       <div className="flex flex-wrap items-center justify-between gap-3">

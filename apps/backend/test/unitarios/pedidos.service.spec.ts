@@ -8,6 +8,7 @@ import {
   PedidosService,
   ESTADO_INICIAL_PEDIDO,
 } from '../../src/pedidos/pedidos.service';
+import { hashTokenAcceso } from '../../src/pedidos/token-acceso-pedido';
 import { CrearPedidoDto } from '../../src/pedidos/dto/crear-pedido.dto';
 
 const TENANT_ID = '11111111-1111-1111-1111-111111111111';
@@ -23,6 +24,7 @@ const MESA_QR = {
   mesaId: MESA_ID,
   restauranteId: RESTAURANTE_ID,
   numero: 7,
+  sesionId: '99999999-9999-4999-8999-999999999999',
 };
 
 /** BL-309: mesa real tal como la devuelve tx.mesa.findUnique. */
@@ -110,7 +112,7 @@ describe('PedidosService.crear - idempotencia', () => {
 
     const resultado = await service.crear(TENANT_ID, dtoBase(), MESA_QR);
 
-    expect(resultado).toBe(pedidoExistente);
+    expect(resultado).toEqual(pedidoExistente);
     expect(mockTx.pedido.create).not.toHaveBeenCalled();
   });
 
@@ -126,7 +128,7 @@ describe('PedidosService.crear - idempotencia', () => {
     expect(mockKdsGateway.emitirNuevoPedido).not.toHaveBeenCalled();
   });
 
-  it('SÍ crea el pedido y notifica al KDS cuando la idempotencyKey es nueva', async () => {
+  it('SÍ crea el pedido en PENDIENTE_PAGO cuando la idempotencyKey es nueva, y NO avisa al KDS (BL-311, prepago)', async () => {
     mockTx.pedido.findUnique.mockResolvedValue(null);
     mockTx.mesa.findUnique.mockResolvedValue(mesaReal({ numero: 5 }));
     mockTx.itemCarta.findMany.mockResolvedValue([
@@ -142,52 +144,18 @@ describe('PedidosService.crear - idempotencia', () => {
 
     const resultado = await service.crear(TENANT_ID, dtoBase(), MESA_QR);
 
-    expect(mockTx.pedido.create).toHaveBeenCalledTimes(1);
-    // La respuesta al comensal sigue siendo el pedido completo (HU-003).
-    expect(resultado).toBe(pedidoCreado);
-    // BL-244: al KDS va con la forma del snapshot, con mesaNumero.
-    expect(mockKdsGateway.emitirNuevoPedido).toHaveBeenCalledWith(TENANT_ID, {
-      id: 'pedido-nuevo',
-      mesaNumero: 5,
-      estado: 'RECIBIDO',
-      createdAt: '2026-10-10T23:41:00.000Z',
-      observacionGeneral: null,
-      lineas: [
-        {
-          id: 'linea-1',
-          nombreSnapshot: 'Milanesa a la napolitana',
-          cantidad: 1,
-          observacion: null,
-        },
-      ],
-    });
-  });
-
-  it('BL-244: el evento al KDS no incluye datos que el tablero no usa (precios, idempotencyKey)', async () => {
-    mockTx.pedido.findUnique.mockResolvedValue(null);
-    mockTx.mesa.findUnique.mockResolvedValue(mesaReal({ numero: 5 }));
-    mockTx.itemCarta.findMany.mockResolvedValue([
-      {
-        id: '55555555-5555-5555-5555-555555555555',
-        nombre: 'Milanesa a la napolitana',
-        precio: new Decimal('590'),
-        disponible: true,
-      },
-    ]);
-    mockTx.pedido.create.mockResolvedValue(
-      pedidoPrisma({ id: 'pedido-nuevo' }),
+    expect(mockTx.pedido.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ estado: 'PENDIENTE_PAGO' }),
+      }),
     );
-
-    await service.crear(TENANT_ID, dtoBase(), MESA_QR);
-
-    const [, emitido] = mockKdsGateway.emitirNuevoPedido.mock.calls[0];
-    expect(emitido).not.toHaveProperty('idempotencyKey');
-    expect(emitido).not.toHaveProperty('mesaId');
-    expect(emitido.lineas[0]).not.toHaveProperty('precioUnitarioSnapshot');
-    expect(emitido.lineas[0]).not.toHaveProperty('subtotal');
+    // La respuesta al comensal sigue siendo el pedido completo (HU-003).
+    expect(resultado).toEqual(pedidoCreado);
+    // RD.03: cocina recién lo ve cuando se aprueba el pago (confirmarPagoEnTx).
+    expect(mockKdsGateway.emitirNuevoPedido).not.toHaveBeenCalled();
   });
 
-  it('dos llamadas seguidas con la MISMA key: la segunda no dispara un create ni un aviso nuevo', async () => {
+  it('dos llamadas seguidas con la MISMA key: la segunda no dispara un create', async () => {
     const pedidoCreado = pedidoPrisma({ id: 'pedido-nuevo' });
 
     mockTx.pedido.findUnique.mockResolvedValueOnce(null);
@@ -209,7 +177,6 @@ describe('PedidosService.crear - idempotencia', () => {
 
     expect(primeraLlamada.id).toBe(segundaLlamada.id);
     expect(mockTx.pedido.create).toHaveBeenCalledTimes(1);
-    expect(mockKdsGateway.emitirNuevoPedido).toHaveBeenCalledTimes(1);
   });
 });
 describe('PedidosService.crear — validaciones y mesa virtual', () => {
@@ -299,12 +266,8 @@ describe('PedidosService.crear — validaciones y mesa virtual', () => {
 
     await service.crear(TENANT_ID, dtoSinMesa);
 
-    // BL-244: el pedido web llega al KDS como «Mesa 0» (la mesa virtual),
-    // no como «Mesa» sin número.
-    expect(mockKdsGateway.emitirNuevoPedido).toHaveBeenCalledWith(
-      TENANT_ID,
-      expect.objectContaining({ id: 'pedido-web', mesaNumero: 0 }),
-    );
+    // BL-311 (prepago): tampoco el pedido para retirar va al KDS al crearse.
+    expect(mockKdsGateway.emitirNuevoPedido).not.toHaveBeenCalled();
 
     expect(mockTx.mesa.findUnique).not.toHaveBeenCalled();
     expect(mockTx.mesa.upsert).toHaveBeenCalledWith(
@@ -383,10 +346,8 @@ describe('PedidosService.crear — mesa y restaurante (BL-309)', () => {
         }),
       }),
     );
-    expect(mockKdsGateway.emitirNuevoPedido).toHaveBeenCalledWith(
-      TENANT_ID,
-      expect.objectContaining({ mesaNumero: 7 }),
-    );
+    // BL-311 (prepago): no se avisa a cocina hasta que se apruebe el pago.
+    expect(mockKdsGateway.emitirNuevoPedido).not.toHaveBeenCalled();
   });
 
   it('pedido de mesa con el restauranteId de la mesa: se acepta', async () => {
@@ -535,6 +496,91 @@ describe('PedidosService.crear — QR de mesa y restaurante del tenant (BL-204)'
     );
   });
 
+  describe('BL-311 (RD.05): token de acceso del pedido para retirar', () => {
+    beforeEach(() => {
+      mockTx.pedido.update = jest.fn();
+      mockTx.restaurante.findUnique.mockResolvedValue({ tenantId: TENANT_ID });
+      mockTx.mesa.upsert.mockResolvedValue({
+        id: 'mesa-virtual-id',
+        numero: 0,
+        esVirtual: true,
+      });
+    });
+
+    it('pedido para retirar: guarda solo el hash y devuelve el token en claro una vez', async () => {
+      mockTx.pedido.create.mockImplementation(async ({ data }) =>
+        pedidoPrisma({ canal: 'WEB', accesoTokenHash: data.accesoTokenHash }),
+      );
+
+      const resultado: any = await service.crear(TENANT_ID, dtoBase());
+
+      const { accesoTokenHash } = mockTx.pedido.create.mock.calls[0][0].data;
+      expect(resultado.tokenAcceso).toEqual(expect.any(String));
+      expect(resultado.tokenAcceso.length).toBeGreaterThanOrEqual(43);
+      expect(accesoTokenHash).toBe(hashTokenAcceso(resultado.tokenAcceso));
+      // El hash nunca sale del backend.
+      expect(resultado).not.toHaveProperty('accesoTokenHash');
+    });
+
+    it('pedido de mesa: no lleva token (se autoriza con el QR) ni guarda hash', async () => {
+      mockTx.mesa.findUnique.mockResolvedValue(mesaReal());
+
+      const resultado: any = await service.crear(
+        TENANT_ID,
+        dtoBase({ restauranteId: undefined }),
+        MESA_QR,
+      );
+
+      expect(mockTx.pedido.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ accesoTokenHash: null }),
+        }),
+      );
+      expect(resultado).not.toHaveProperty('tokenAcceso');
+    });
+
+    it('dos pedidos para retirar no comparten token', async () => {
+      mockTx.pedido.create.mockImplementation(async () =>
+        pedidoPrisma({ canal: 'WEB' }),
+      );
+
+      const a: any = await service.crear(TENANT_ID, dtoBase());
+      const b: any = await service.crear(TENANT_ID, dtoBase());
+
+      expect(a.tokenAcceso).not.toBe(b.tokenAcceso);
+    });
+
+    it('reintento con la misma clave de un pedido para retirar: emite un token nuevo y reemplaza el hash', async () => {
+      mockTx.pedido.findUnique.mockResolvedValue(
+        pedidoPrisma({
+          id: 'pedido-web',
+          canal: 'WEB',
+          accesoTokenHash: 'a'.repeat(64),
+        }),
+      );
+
+      const resultado: any = await service.crear(TENANT_ID, dtoBase());
+
+      expect(mockTx.pedido.create).not.toHaveBeenCalled();
+      expect(mockTx.pedido.update).toHaveBeenCalledWith({
+        where: { id: 'pedido-web' },
+        data: { accesoTokenHash: hashTokenAcceso(resultado.tokenAcceso) },
+      });
+      expect(resultado).not.toHaveProperty('accesoTokenHash');
+    });
+
+    it('reintento con la misma clave de un pedido de mesa: no toca el token', async () => {
+      mockTx.pedido.findUnique.mockResolvedValue(
+        pedidoPrisma({ canal: 'QR', accesoTokenHash: null }),
+      );
+
+      const resultado: any = await service.crear(TENANT_ID, dtoBase(), MESA_QR);
+
+      expect(mockTx.pedido.update).not.toHaveBeenCalled();
+      expect(resultado).not.toHaveProperty('tokenAcceso');
+    });
+  });
+
   it.each([
     ['no existe o RLS no lo deja ver', null],
     ['es de otro tenant', { tenantId: 'aaaaaaaa-0000-0000-0000-000000000001' }],
@@ -550,4 +596,153 @@ describe('PedidosService.crear — QR de mesa y restaurante del tenant (BL-204)'
       expect(mockTx.pedido.create).not.toHaveBeenCalled();
     },
   );
+});
+
+describe('PedidosService.confirmarPagoEnTx / notificarPedidoConfirmado (BL-311, prepago RD.03)', () => {
+  let mockTx: any;
+  let mockKdsGateway: any;
+  let service: PedidosService;
+
+  // Lo que devuelve tx.pedido.findUniqueOrThrow con el select del servicio.
+  const pedidoConfirmado = {
+    id: 'pedido-nuevo',
+    estado: 'RECIBIDO',
+    createdAt: new Date('2026-10-10T23:41:00.000Z'),
+    updatedAt: new Date('2026-10-10T23:45:00.000Z'),
+    observacionGeneral: null,
+    mesa: { numero: 5 },
+    lineas: [
+      {
+        id: 'linea-1',
+        nombreSnapshot: 'Milanesa a la napolitana',
+        cantidad: 1,
+        observacion: null,
+      },
+    ],
+  };
+
+  beforeEach(() => {
+    mockTx = {
+      pedido: {
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        findUniqueOrThrow: jest.fn().mockResolvedValue(pedidoConfirmado),
+      },
+      pedidoEstadoHistorial: { create: jest.fn() },
+    };
+    mockKdsGateway = {
+      emitirNuevoPedido: jest.fn(),
+      emitirActualizacionPedido: jest.fn(),
+      emitirEstadoMesa: jest.fn(),
+    };
+    service = new PedidosService({} as any, mockKdsGateway);
+  });
+
+  it('pasa el pedido de PENDIENTE_PAGO a RECIBIDO solo si sigue en PENDIENTE_PAGO', async () => {
+    await service.confirmarPagoEnTx(mockTx, TENANT_ID, 'pedido-nuevo');
+
+    expect(mockTx.pedido.updateMany).toHaveBeenCalledWith({
+      where: { id: 'pedido-nuevo', estado: 'PENDIENTE_PAGO' },
+      data: { estado: 'RECIBIDO' },
+    });
+  });
+
+  it('deja el cambio en el historial, sin usuario (lo dispara el pago, no el staff)', async () => {
+    await service.confirmarPagoEnTx(mockTx, TENANT_ID, 'pedido-nuevo');
+
+    expect(mockTx.pedidoEstadoHistorial.create).toHaveBeenCalledWith({
+      data: {
+        tenantId: TENANT_ID,
+        pedidoId: 'pedido-nuevo',
+        estadoAnterior: 'PENDIENTE_PAGO',
+        estadoNuevo: 'RECIBIDO',
+      },
+    });
+  });
+
+  it('devuelve el pedido con lo que necesita el KDS (mesa y líneas)', async () => {
+    const resultado = await service.confirmarPagoEnTx(
+      mockTx,
+      TENANT_ID,
+      'pedido-nuevo',
+    );
+
+    expect(resultado).toBe(pedidoConfirmado);
+  });
+
+  it('idempotente: si ya no estaba en PENDIENTE_PAGO, no toca el historial y devuelve null', async () => {
+    mockTx.pedido.updateMany.mockResolvedValue({ count: 0 });
+
+    const resultado = await service.confirmarPagoEnTx(
+      mockTx,
+      TENANT_ID,
+      'pedido-nuevo',
+    );
+
+    expect(resultado).toBeNull();
+    expect(mockTx.pedidoEstadoHistorial.create).not.toHaveBeenCalled();
+    expect(mockTx.pedido.findUniqueOrThrow).not.toHaveBeenCalled();
+  });
+
+  it('notificarPedidoConfirmado: al KDS va con la forma del snapshot, con mesaNumero (BL-244)', () => {
+    service.notificarPedidoConfirmado(TENANT_ID, pedidoConfirmado as any);
+
+    expect(mockKdsGateway.emitirNuevoPedido).toHaveBeenCalledWith(TENANT_ID, {
+      id: 'pedido-nuevo',
+      mesaNumero: 5,
+      estado: 'RECIBIDO',
+      createdAt: '2026-10-10T23:41:00.000Z',
+      observacionGeneral: null,
+      lineas: [
+        {
+          id: 'linea-1',
+          nombreSnapshot: 'Milanesa a la napolitana',
+          cantidad: 1,
+          observacion: null,
+        },
+      ],
+    });
+  });
+
+  it('notificarPedidoConfirmado: el evento al KDS no incluye datos que el tablero no usa (BL-244)', () => {
+    service.notificarPedidoConfirmado(TENANT_ID, pedidoConfirmado as any);
+
+    const [, emitido] = mockKdsGateway.emitirNuevoPedido.mock.calls[0];
+    expect(emitido).not.toHaveProperty('updatedAt');
+    expect(emitido).not.toHaveProperty('mesa');
+  });
+
+  it('notificarPedidoConfirmado: el pedido para retirar llega al KDS como «Mesa 0» (BL-244)', () => {
+    service.notificarPedidoConfirmado(TENANT_ID, {
+      ...pedidoConfirmado,
+      mesa: { numero: 0 },
+    } as any);
+
+    expect(mockKdsGateway.emitirNuevoPedido).toHaveBeenCalledWith(
+      TENANT_ID,
+      expect.objectContaining({ mesaNumero: 0 }),
+    );
+  });
+
+  it('notificarPedidoConfirmado: avisa al comensal que sigue el pedido que pasó a RECIBIDO', () => {
+    service.notificarPedidoConfirmado(TENANT_ID, pedidoConfirmado as any);
+
+    expect(mockKdsGateway.emitirActualizacionPedido).toHaveBeenCalledWith(
+      'pedido-nuevo',
+      {
+        id: 'pedido-nuevo',
+        estado: 'RECIBIDO',
+        actualizadoEn: '2026-10-10T23:45:00.000Z',
+      },
+    );
+  });
+
+  it('HU-017 (BL-60) notificarEstadoMesa: avisa al mapa de mesas el nuevo estado de la mesa', () => {
+    service.notificarEstadoMesa(TENANT_ID, 'mesa-1', 'EN_PROCESO_DE_PAGO');
+
+    expect(mockKdsGateway.emitirEstadoMesa).toHaveBeenCalledWith(
+      TENANT_ID,
+      'mesa-1',
+      'EN_PROCESO_DE_PAGO',
+    );
+  });
 });

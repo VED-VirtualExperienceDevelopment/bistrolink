@@ -3,7 +3,11 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import { io, Socket } from 'socket.io-client';
 import { AppModule } from '../../src/app.module';
-import { asegurarClaveQr, tokenQrDeMesa } from './support/qr-mesa';
+import {
+  asegurarClaveQr,
+  sesionDeMesa,
+  tokenQrDeMesa,
+} from './support/qr-mesa';
 
 const KEYCLOAK_URL = process.env.KEYCLOAK_URL ?? 'http://localhost:8080';
 const REALM = process.env.KEYCLOAK_REALM ?? 'bistrolink';
@@ -65,6 +69,7 @@ describe('Seguimiento del comensal (HU-006) - e2e', () => {
   let tokenComensal: string;
   // BL-204: la mesa solo se usa con el token de su QR.
   let qrToken: string;
+  let sesionMesa: string;
 
   const itConMozo = MOZO_USER && MOZO_PASS ? it : it.skip;
 
@@ -82,10 +87,12 @@ describe('Seguimiento del comensal (HU-006) - e2e', () => {
     baseUrl = `http://localhost:${port}`;
 
     qrToken = await tokenQrDeMesa(app, TENANT_DEMO_ID, MESA_DEMO_ID);
+
+    sesionMesa = await sesionDeMesa(app, TENANT_DEMO_ID, MESA_DEMO_ID);
     const authRes = await fetch(`${baseUrl}/auth/comensal/mesa`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ qrToken }),
+      body: JSON.stringify({ qrToken, sesionMesa }),
     });
     if (!authRes.ok) {
       throw new Error(`No se pudo emitir token de comensal: ${authRes.status}`);
@@ -113,6 +120,7 @@ describe('Seguimiento del comensal (HU-006) - e2e', () => {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${tokenComensal}`,
         'X-Mesa-Token': qrToken,
+        'X-Mesa-Sesion': sesionMesa,
       },
       body: JSON.stringify({
         restauranteId: RESTAURANTE_DEMO_ID,

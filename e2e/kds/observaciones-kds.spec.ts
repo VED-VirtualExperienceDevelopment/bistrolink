@@ -1,5 +1,6 @@
 import { test, expect } from '../support/auth';
 import { ITEM_DISPONIBLE, MENU_URL_PATH } from '../support/ids';
+import { confirmarYPagar } from '../support/pago';
 
 // BL-253: cada test identifica SU pedido en el KDS con una marca única en
 // la observación, en lugar de buscar por el nombre del ítem (staging acumula
@@ -30,11 +31,8 @@ test.describe('BL-154/BL-155: Observaciones visibles en KDS (E2E)', () => {
 
     await menuPage.getByLabel(/instrucciones generales|alergias/i).fill(observacionGeneral);
 
-    // 2. Comensal confirma
-    await menuPage.getByRole('button', { name: 'Realizar pedido' }).click();
-    await expect(menuPage.getByText('¡Pedido enviado! Cocina ya lo recibió.')).toBeVisible({
-      timeout: 10000,
-    });
+    // 2. Comensal confirma y paga (BL-311: prepago, RD.03)
+    await confirmarYPagar(menuPage);
 
     // 3. Recargar el KDS (BL-244: todavía no se actualiza solo)
     await kdsPageMozo.reload();
@@ -73,11 +71,8 @@ test.describe('BL-154/BL-155: Observaciones visibles en KDS (E2E)', () => {
     await menuPage.getByRole('dialog').getByRole('button', { name: /guardar nota/i }).click();
     await expect(menuPage.getByText(observacionItem)).toBeVisible();
 
-    // 3. Comensal confirma
-    await menuPage.getByRole('button', { name: 'Realizar pedido' }).click();
-    await expect(menuPage.getByText('¡Pedido enviado! Cocina ya lo recibió.')).toBeVisible({
-      timeout: 10000,
-    });
+    // 3. Comensal confirma y paga (BL-311: prepago, RD.03)
+    await confirmarYPagar(menuPage);
 
     // 4. Recargar el KDS
     await kdsPageMozo.reload();

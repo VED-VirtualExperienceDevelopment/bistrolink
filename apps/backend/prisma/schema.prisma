@@ -36,18 +36,17 @@ enum TenantEstado {
 enum MesaEstado {
   LIBRE
   OCUPADA
-  // HU-016/HU-017: agregado de forma aditiva (expand/contract) — el disparo
-  // real de esta transición (al iniciarse el cobro de un pedido) lo
-  // implementa HU-017; hasta entonces queda expuesta y es seteable vía el
-  // endpoint mock de MesasController.
+  // Mientras se cobra un pedido de la mesa (BL-311, PagosService).
   EN_PROCESO_DE_PAGO
-  // HU-028 (BL-173): agregado de forma aditiva, igual que EN_PROCESO_DE_PAGO.
-  // Por ahora se setea con el endpoint provisorio PATCH /mesas/:id/estado;
-  // la transición real (al liberar la mesa) la implementa HU-017 (BL-60).
+  // HU-017 (BL-60): al cerrar la sesión. Vuelve a LIBRE cuando el mozo la
+  // marca como limpia.
   REQUIERE_LIMPIEZA
 }
 
 enum PedidoEstado {
+  // BL-311 (RD.03, prepago): carrito confirmado esperando el pago aprobado.
+  // Invisible para el KDS; pasa a RECIBIDO al aprobarse el pago.
+  PENDIENTE_PAGO
   RECIBIDO
   EN_PREPARACION
   LISTO_PARA_ENTREGAR
@@ -187,6 +186,15 @@ model Mesa {
   // versión anterior dejan de funcionar (410 Gone) sin guardar nada más.
   // Default 1: las mesas existentes quedan con un QR válido sin migrar datos.
   qrVersion     Int        @default(1) @map("qr_version")
+  // HU-017 (BL-60): sesión de la mesa. La abre el mozo al recibir
+  // comensales y la cierra cuando todo está entregado. Con la sesión
+  // cerrada el QR impreso no sirve para pedir (410); con cada apertura
+  // cambia, así que una página que quedó abierta de la sesión anterior
+  // tampoco. La base exige que haya sesión si y solo si la mesa está
+  // OCUPADA o EN_PROCESO_DE_PAGO (CHECK en la migración; la mesa virtual
+  // queda afuera).
+  sesionId        String?    @map("sesion_id") @db.Uuid
+  sesionAbiertaEn DateTime?  @map("sesion_abierta_en") @db.Timestamptz(3)
   createdAt     DateTime   @default(now()) @map("created_at")
   updatedAt     DateTime   @updatedAt @map("updated_at")
 
@@ -248,6 +256,10 @@ model Pedido {
   estado             PedidoEstado
   canal              PedidoCanal
   observacionGeneral String?      @map("observacion_general") @db.VarChar(500) // <-- NUEVO
+  // BL-311 (RD.05): SHA-256 del token de acceso de un pedido para retirar
+  // (canal WEB, sin QR). El token en claro se devuelve una sola vez, al
+  // crear el pedido; acá nunca se guarda. Null en los pedidos de mesa.
+  accesoTokenHash    String?      @map("acceso_token_hash") @db.Char(64)
   createdAt          DateTime     @default(now()) @map("created_at")
   updatedAt          DateTime     @updatedAt @map("updated_at")
 

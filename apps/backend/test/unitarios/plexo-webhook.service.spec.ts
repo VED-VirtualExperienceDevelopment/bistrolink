@@ -47,6 +47,16 @@ describe('estadoPagoDesdePlexo', () => {
   });
 });
 
+// BL-311: lo que devuelve PedidosService.confirmarPagoEnTx al pasar a RECIBIDO.
+const PEDIDO_CONFIRMADO = {
+  id: PEDIDO_ID,
+  estado: 'RECIBIDO',
+  createdAt: new Date('2026-10-19T03:00:00.000Z'),
+  observacionGeneral: null,
+  mesa: { numero: 4 },
+  lineas: [],
+};
+
 describe('PlexoWebhookService.procesarPago (BL-78)', () => {
   let tx: {
     pago: { findMany: jest.Mock; update: jest.Mock };
@@ -55,7 +65,12 @@ describe('PlexoWebhookService.procesarPago (BL-78)', () => {
   };
   let tenantPrisma: { runInTenantContext: jest.Mock };
   let plexo: { consultarPago: jest.Mock };
-  let cfe: { intentarEmitir: jest.Mock };
+  let cfe: { emitirEnSegundoPlano: jest.Mock };
+  let pedidos: {
+    confirmarPagoEnTx: jest.Mock;
+    notificarPedidoConfirmado: jest.Mock;
+    notificarEstadoMesa: jest.Mock;
+  };
   let service: PlexoWebhookService;
 
   beforeEach(() => {
@@ -67,24 +82,74 @@ describe('PlexoWebhookService.procesarPago (BL-78)', () => {
         update: jest.fn(),
       },
       pedido: { findUnique: jest.fn().mockResolvedValue({ mesaId: MESA_ID }) },
-      mesa: { updateMany: jest.fn() },
+      mesa: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
     };
     tenantPrisma = {
       runInTenantContext: jest.fn((_tenantId, callback) => callback(tx)),
     };
     plexo = { consultarPago: jest.fn().mockResolvedValue(pago()) };
-    cfe = { intentarEmitir: jest.fn().mockResolvedValue(null) };
+    cfe = { emitirEnSegundoPlano: jest.fn() };
+    pedidos = {
+      confirmarPagoEnTx: jest.fn().mockResolvedValue(PEDIDO_CONFIRMADO),
+      notificarPedidoConfirmado: jest.fn(),
+      notificarEstadoMesa: jest.fn(),
+    };
     service = new PlexoWebhookService(
       tenantPrisma as any,
       plexo as any,
       cfe as any,
+      pedidos as any,
     );
   });
 
   afterEach(() => jest.restoreAllMocks());
 
+  describe('BL-311: prepago (RD.03), confirmación del pedido', () => {
+    it('approved => confirma el pedido en la misma transacción y avisa después', async () => {
+      await service.procesarPago(PAYMENT_ID);
+
+      expect(pedidos.confirmarPagoEnTx).toHaveBeenCalledWith(
+        tx,
+        TENANT_ID,
+        PEDIDO_ID,
+      );
+      expect(pedidos.notificarPedidoConfirmado).toHaveBeenCalledWith(
+        TENANT_ID,
+        PEDIDO_CONFIRMADO,
+      );
+    });
+
+    it('si el pedido ya estaba confirmado, no avisa dos veces', async () => {
+      pedidos.confirmarPagoEnTx.mockResolvedValue(null);
+
+      await service.procesarPago(PAYMENT_ID);
+
+      expect(pedidos.notificarPedidoConfirmado).not.toHaveBeenCalled();
+    });
+
+    it('denied => no confirma el pedido', async () => {
+      plexo.consultarPago.mockResolvedValue(pago({ status: 'denied' }));
+
+      await service.procesarPago(PAYMENT_ID);
+
+      expect(pedidos.confirmarPagoEnTx).not.toHaveBeenCalled();
+      expect(pedidos.notificarPedidoConfirmado).not.toHaveBeenCalled();
+    });
+
+    it('notificación repetida (sin_cambios) => no confirma ni avisa de nuevo', async () => {
+      tx.pago.findMany.mockResolvedValue([
+        pagoGuardado({ estado: 'APROBADO', pasarelaReferencia: PAYMENT_ID }),
+      ]);
+
+      await service.procesarPago(PAYMENT_ID);
+
+      expect(pedidos.confirmarPagoEnTx).not.toHaveBeenCalled();
+      expect(pedidos.notificarPedidoConfirmado).not.toHaveBeenCalled();
+    });
+  });
+
   describe('resuelve el pago según el estado REAL en Plexo', () => {
-    it('approved => Pago APROBADO y mesa LIBRE', async () => {
+    it('approved => Pago APROBADO y mesa vuelve a OCUPADA (BL-311)', async () => {
       const resultado = await service.procesarPago(PAYMENT_ID);
 
       expect(resultado).toBe('actualizado');
@@ -94,7 +159,7 @@ describe('PlexoWebhookService.procesarPago (BL-78)', () => {
       });
       expect(tx.mesa.updateMany).toHaveBeenCalledWith({
         where: { id: MESA_ID, estado: 'EN_PROCESO_DE_PAGO' },
-        data: { estado: 'LIBRE' },
+        data: { estado: 'OCUPADA' },
       });
     });
 
@@ -272,7 +337,10 @@ describe('PlexoWebhookService.procesarPago (BL-78)', () => {
     it('pago aprobado => emite el comprobante del pago', async () => {
       await service.procesarPago(PAYMENT_ID);
 
-      expect(cfe.intentarEmitir).toHaveBeenCalledWith(TENANT_ID, 'pago-1');
+      expect(cfe.emitirEnSegundoPlano).toHaveBeenCalledWith(
+        TENANT_ID,
+        'pago-1',
+      );
     });
 
     it('notificación repetida (sin_cambios) => reintenta la emisión, por si falló antes', async () => {
@@ -283,7 +351,10 @@ describe('PlexoWebhookService.procesarPago (BL-78)', () => {
       const resultado = await service.procesarPago(PAYMENT_ID);
 
       expect(resultado).toBe('sin_cambios');
-      expect(cfe.intentarEmitir).toHaveBeenCalledWith(TENANT_ID, 'pago-1');
+      expect(cfe.emitirEnSegundoPlano).toHaveBeenCalledWith(
+        TENANT_ID,
+        'pago-1',
+      );
     });
 
     it('pago rechazado => no emite nada', async () => {
@@ -291,7 +362,7 @@ describe('PlexoWebhookService.procesarPago (BL-78)', () => {
 
       await service.procesarPago(PAYMENT_ID);
 
-      expect(cfe.intentarEmitir).not.toHaveBeenCalled();
+      expect(cfe.emitirEnSegundoPlano).not.toHaveBeenCalled();
     });
 
     it('monto que no coincide => no emite nada', async () => {
@@ -299,7 +370,7 @@ describe('PlexoWebhookService.procesarPago (BL-78)', () => {
 
       await service.procesarPago(PAYMENT_ID);
 
-      expect(cfe.intentarEmitir).not.toHaveBeenCalled();
+      expect(cfe.emitirEnSegundoPlano).not.toHaveBeenCalled();
     });
   });
 });

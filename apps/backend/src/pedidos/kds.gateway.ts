@@ -254,6 +254,14 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.server.to(this.salaTenant(tenantId)).emit('pedido:nuevo', pedido);
   }
 
+  // BL-311: avisa al comensal que sigue el pedido (sala del pedido, la que
+  // se une con pedido:seguir) que el pedido cambió de estado.
+  emitirActualizacionPedido(pedidoId: string, actualizado: unknown) {
+    this.server
+      .to(this.salaPedido(pedidoId))
+      .emit('pedido:actualizado', actualizado);
+  }
+
   emitirLlamado(tenantId: string, mesaId: string, mesaNumero: number) {
     this.server
       .to(this.salaTenant(tenantId))
@@ -261,12 +269,9 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   // HU-016/HU-017: punto de entrada único para propagar un cambio de estado
-  // de mesa (LIBRE/OCUPADA/EN_PROCESO_DE_PAGO) a todo el staff conectado del
-  // tenant, para que el mapa visual (HU-016 frontend) se actualice en vivo
-  // sin poll. Lo llama MesasService.actualizarEstado() — hoy disparado solo
-  // por el endpoint mock PATCH /mesas/:id/estado; cuando HU-017 exista, va a
-  // llamar a ese mismo método de servicio desde el flujo de pedidos/pagos,
-  // sin tocar nada de este gateway.
+  // de mesa a todo el staff conectado del tenant, para que el mapa visual
+  // (HU-016) se actualice en vivo sin poll. Lo llama MesasService al abrir,
+  // cerrar y marcar limpia la sesión de la mesa (HU-017, BL-60).
   emitirEstadoMesa(tenantId: string, mesaId: string, estado: MesaEstado) {
     this.server
       .to(this.salaTenant(tenantId))

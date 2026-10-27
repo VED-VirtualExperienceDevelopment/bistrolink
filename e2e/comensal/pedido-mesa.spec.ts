@@ -1,6 +1,7 @@
 import { test, expect } from "../support/auth";
 import { ITEM_DISPONIBLE, MESA_ID } from "../support/ids";
 import { entregarPedidoDesdeKds, intentarEntregarPedido } from "../support/kds";
+import { pagarConTarjetaDePrueba } from "../support/pago";
 
 // BL-309: el pedido desde el menú de una mesa nunca llegaba a crearse (auth
 // a una ruta inexistente y restauranteId obligatorio en el DTO), y ningún
@@ -14,9 +15,13 @@ import { entregarPedidoDesdeKds, intentarEntregarPedido } from "../support/kds";
 // HU-034 (BL-204): la mesa se abre desde la URL de su QR (fixture qrMesas).
 // El pedido lleva el token en X-Mesa-Token y el body no lleva ningún id: la
 // mesa (y su restaurante) los resuelve el backend a partir del QR.
+//
+// BL-311 (prepago, RD.03): «Continuar al pago» crea el pedido en
+// PENDIENTE_PAGO; llega a cocina recién con el pago aprobado (tarjeta de
+// prueba del sandbox, ver support/pago.ts).
 
 test.describe("BL-309: Pedido desde la mesa", () => {
-  test("[TC-E-017] HU-003: pedido desde la mesa, se confirma y queda en Recibido", async ({
+  test("[TC-E-017] HU-003: pedido desde la mesa, se paga y queda en Recibido", async ({
     page,
     kdsPageMozo,
     qrMesas,
@@ -45,7 +50,7 @@ test.describe("BL-309: Pedido desde la mesa", () => {
           (res) =>
             res.url().endsWith("/pedidos") && res.request().method() === "POST",
         ),
-        page.getByRole("button", { name: "Realizar pedido" }).click(),
+        page.getByRole("button", { name: "Continuar al pago" }).click(),
       ]);
       expect(authRes.status()).toBe(200);
       expect(pedidoRes.status()).toBe(201);
@@ -58,11 +63,24 @@ test.describe("BL-309: Pedido desde la mesa", () => {
       expect(body).not.toHaveProperty("mesaId");
       expect(body).not.toHaveProperty("restauranteId");
 
-      await expect(page.getByText("¡Pedido enviado a cocina!")).toBeVisible({
-        timeout: 10000,
-      });
+      // BL-311 (RD.05): el pago del pedido de mesa también va con el QR.
+      const [pagoReq] = await Promise.all([
+        page.waitForRequest(
+          (req) =>
+            req.url().endsWith(`/pedidos/${pedidoId}/pagos`) &&
+            req.method() === "POST",
+        ),
+        pagarConTarjetaDePrueba(page, "APRO").then((status) =>
+          expect(status).toBe(201),
+        ),
+      ]);
+      expect(pagoReq.headers()["x-mesa-token"]).toBe(qrMesas.token(MESA_ID));
 
-      // El carrito se vacía al confirmar.
+      await expect(
+        page.getByRole("heading", { name: "¡Tu pedido ya está en cocina!" }),
+      ).toBeVisible({ timeout: 15000 });
+
+      // El carrito se vacía al pagar.
       await expect(page.getByText(/Tu pedido \(/i)).not.toBeVisible();
 
       // Mismo criterio que TC-E-010 (BL-253): el paso actual del seguimiento.
@@ -93,10 +111,13 @@ test.describe("BL-309: Pedido desde la mesa", () => {
           (res) =>
             res.url().endsWith("/pedidos") && res.request().method() === "POST",
         ),
-        page.getByRole("button", { name: "Realizar pedido" }).click(),
+        page.getByRole("button", { name: "Continuar al pago" }).click(),
       ]);
       expect(pedidoRes.status()).toBe(201);
       pedidoId = (await pedidoRes.json()).id;
+
+      // BL-311: sin pagar, el pedido no llega al KDS.
+      expect(await pagarConTarjetaDePrueba(page, "APRO")).toBe(201);
 
       // MESA_ID es la mesa 1 del seed (MESA_A1_ID). El número sale de la
       // base, a partir del QR, no del cliente (BL-244 / BL-204).
