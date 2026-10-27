@@ -759,6 +759,10 @@ jobs:
       # uso, así que alcanza con valores de relleno para pasar
       # startup-env-check. No son secretos: la clave del QR se genera en
       # cada corrida y el resto apunta a hosts que no existen.
+      # MercadoPagoGateway exige un access token al construirse (las demás
+      # pasarelas lo piden recién al cobrar): va uno de mentira, igual que en
+      # el job de integración, y la API de Mercado Pago apunta a un puerto
+      # cerrado del propio contenedor, así nada sale del runner.
       # OPENAPI_HABILITADO=true para que también se genere el contrato
       # OpenAPI, que en staging está prendido.
       - name: Smoke test de la imagen (API)
@@ -770,6 +774,8 @@ jobs:
             -e DATABASE_URL="postgresql://smoke:smoke@db-inexistente:5432/smoke" \
             -e KEYCLOAK_CLIENT_SECRET="smoke-sin-keycloak" \
             -e QR_TOKEN_KEY="$(openssl rand -base64 32)" \
+            -e MP_ACCESS_TOKEN="TEST-0000000000000000-000000-ci-smoke" \
+            -e MP_API_BASE_URL="http://localhost:9" \
             -e OPENAPI_HABILITADO=true \
             "$IMAGEN" > /dev/null
 
