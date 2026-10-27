@@ -60,6 +60,12 @@ const usuarios = (ticket, extra = {}) => ({
   ...extra,
   tags: ["HU-013", ticket, ...(extra.tags ?? [])],
 });
+const sesionMesa = (extra = {}) => ({
+  component: "mesas",
+  requirement: "HU-017",
+  ...extra,
+  tags: ["HU-017", "BL-60", ...(extra.tags ?? [])],
+});
 const DATOS = {
   55: {
     category: "Funcional",
@@ -178,6 +184,23 @@ const DATOS = {
     requirement: "BL-385",
     tags: ["BL-385", "seguridad"],
   },
+  82: sesionMesa({ category: "Funcional", priority: "P2" }),
+  83: sesionMesa({ category: "Performance", priority: "P1" }),
+  84: sesionMesa({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["integridad-datos"],
+  }),
+  85: sesionMesa({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["seguridad", "integridad-datos"],
+  }),
+  86: sesionMesa({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["seguridad"],
+  }),
 };
 const DATOS_POR_DEFECTO = {
   category: "Funcional",

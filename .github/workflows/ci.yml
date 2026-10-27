@@ -509,8 +509,9 @@ jobs:
       # - TCMS_PLAN_ID fijo: el plugin no crea un Test Plan nuevo.
       # - --summary-template '${name}': busca cada caso por el título del it()
       #   tal cual. Sin el flag usa «classname.name» y no encuentra ninguno.
-      # Los 81 casos ya están cargados en Kiwi (scripts/kiwi/
-      # cargar-casos-integracion.mjs): el plugin los encuentra y no crea
+      # Los casos se cargan en Kiwi con scripts/kiwi/
+      # cargar-casos-integracion.mjs ANTES de mergear el PR que los agrega o
+      # les cambia el título: así el plugin los encuentra y no crea
       # duplicados. Un test nuevo sin cargar se crea solo con el título.
       - name: Upload results to Kiwi TCMS (integration)
         if: always() && github.event_name != 'pull_request'
