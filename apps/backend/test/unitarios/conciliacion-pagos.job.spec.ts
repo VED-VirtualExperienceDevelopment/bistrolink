@@ -82,14 +82,11 @@ describe('ConciliacionPagosJob', () => {
   const entornoOriginal = process.env;
   let moduleRef: { resolve: jest.Mock };
   let servicio: { conciliarTenant: jest.Mock };
-  let prisma: { tenant: { findMany: jest.Mock }; $disconnect: jest.Mock };
+  let prisma: { tenant: { findMany: jest.Mock } };
 
   function crearJob(env: NodeJS.ProcessEnv = {}): ConciliacionPagosJob {
     process.env = { ...entornoOriginal, NODE_ENV: 'production', ...env };
-    const job = new ConciliacionPagosJob(moduleRef as any);
-    // El PrismaClient real se crea en la primera corrida: acá, uno falso.
-    (job as any).prisma = prisma;
-    return job;
+    return new ConciliacionPagosJob(moduleRef as any, prisma as any);
   }
 
   beforeEach(() => {
@@ -101,7 +98,6 @@ describe('ConciliacionPagosJob', () => {
       tenant: {
         findMany: jest.fn().mockResolvedValue([{ id: 't1' }, { id: 't2' }]),
       },
-      $disconnect: jest.fn(),
     };
   });
 
@@ -215,10 +211,9 @@ describe('ConciliacionPagosJob', () => {
     jest.advanceTimersByTime(30_000);
     expect(ejecutar).toHaveBeenCalledTimes(2);
 
-    await job.onModuleDestroy();
+    job.onModuleDestroy();
     jest.advanceTimersByTime(60_000);
     expect(ejecutar).toHaveBeenCalledTimes(2);
-    expect(prisma.$disconnect).toHaveBeenCalled();
   });
 
   it('deshabilitado: no programa nada', () => {
