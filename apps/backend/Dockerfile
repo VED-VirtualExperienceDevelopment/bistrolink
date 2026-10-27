@@ -82,11 +82,15 @@ ENV APP_VERSION=$GIT_SHA
 
 COPY package*.json ./
 COPY apps/backend/package*.json ./apps/backend/
+# BL-211: NO borrar node_modules/lodash. @nestjs/swagger (contrato OpenAPI)
+# lo requiere en runtime y sin él la API cae al arrancar con
+# "Cannot find module 'lodash'". El borrado venía de un hallazgo viejo de
+# Trivy (BL-001); hoy el override del package.json raíz fija lodash en una
+# versión corregida, así que Trivy lo sigue escaneando sin marcarlo.
 RUN npm pkg delete scripts.prepare && \
   npm ci --workspace=apps/backend --omit=dev --ignore-scripts && \
   npm cache clean --force && \
   rm -rf node_modules/.cache \
-  node_modules/lodash \
   node_modules/picomatch && \
   # El backend corre con "node dist/main.js" — nunca necesita npm en runtime.
   # node:22-alpine trae el CLI de npm empaquetado (con sus propias dependencias
