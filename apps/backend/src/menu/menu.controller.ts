@@ -8,7 +8,9 @@ import {
   MENSAJE_SUSPENDIDO_COMENSAL,
   TenantEstadoService,
 } from '../tenant-estado/tenant-estado.service';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('Menú público')
 @Controller('menu')
 export class MenuController {
   constructor(

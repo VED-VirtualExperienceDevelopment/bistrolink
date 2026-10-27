@@ -28,7 +28,11 @@ import {
 import { ListarLayoutQueryDto } from './dto/listar-layout-query.dto';
 import { GuardarLayoutDto } from './dto/guardar-layout.dto';
 import { MesaLayoutDto } from './dto/mesa-layout.dto';
+import { ApiTags, ApiBearerAuth, ApiSecurity } from '@nestjs/swagger';
+import { SEGURIDAD_KEYCLOAK, SEGURIDAD_MESA_QR } from '../openapi';
 
+@ApiTags('Mesas')
+@ApiBearerAuth(SEGURIDAD_KEYCLOAK)
 @Controller('mesas')
 @UseGuards(AuthGuard('jwt'), RolesGuard)
 @Roles('COMENSAL')
@@ -46,6 +50,7 @@ export class MesasController {
   // 3. MesaThrottlerGuard: 1 llamado por minuto por mesa del QR. Va último
   //    para que un token inválido no consuma el cupo de la mesa.
   @Post('llamar')
+  @ApiSecurity({ [SEGURIDAD_KEYCLOAK]: [], [SEGURIDAD_MESA_QR]: [] })
   @UseGuards(MesaQrGuard, MesaQrObligatoriaGuard, MesaThrottlerGuard)
   @Throttle({ default: { limit: 1, ttl: 60_000 } })
   llamarDesdeQr(

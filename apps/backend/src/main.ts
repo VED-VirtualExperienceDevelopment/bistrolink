@@ -6,6 +6,7 @@ import { AppModule } from './app.module';
 import { checkRequiredEnvVars } from './startup-env-check';
 import { origenesPermitidos, redireccionHttps } from './seguridad-http';
 import { ValidationPipe } from '@nestjs/common';
+import { configurarOpenApi, RUTA_DOCS } from './openapi';
 
 async function bootstrap() {
   // Falla rápido y con un mensaje claro si falta una variable de entorno
@@ -40,11 +41,19 @@ async function bootstrap() {
       transform: true, // necesario para que @ValidateNested (arrays anidados, ej. ítems del pedido) valide bien objetos JSON planos
     }),
   );
+  // BL-211: contrato OpenAPI 3 en /api/docs (local y staging; apagado en
+  // producción salvo OPENAPI_HABILITADO=true, ver openapi.ts).
+  const conDocs = configurarOpenApi(app);
   const port = process.env.PORT || 3001;
   await app.listen(port);
   app
     .get(Logger)
     .log(`Application is running on: http://localhost:${port}`, 'Main');
+  if (conDocs) {
+    app
+      .get(Logger)
+      .log(`Contrato OpenAPI: http://localhost:${port}/${RUTA_DOCS}`, 'Main');
+  }
 }
 bootstrap().catch((err) => {
   // eslint-disable-next-line no-console

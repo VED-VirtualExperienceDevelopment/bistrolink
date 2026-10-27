@@ -3,7 +3,10 @@ import { AuthGuard } from '@nestjs/passport';
 import { RolesGuard, Roles } from '../auth/roles.guard';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { AuthenticatedUser } from '../auth/keycloak-jwt.strategy';
+import { ApiExcludeController } from '@nestjs/swagger';
 
+// BL-211: endpoints de prueba, fuera del contrato OpenAPI.
+@ApiExcludeController()
 @Controller('test')
 export class TestController {
   constructor(private readonly tenantPrisma: TenantPrismaService) {}
