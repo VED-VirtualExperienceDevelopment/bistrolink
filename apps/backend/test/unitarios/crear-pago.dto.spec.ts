@@ -36,6 +36,12 @@ describe('CrearPagoDto (BL-90: el monto nunca viaja desde el cliente)', () => {
     ).toEqual(['medioPago']);
   });
 
+  it('BL-311: pedidoId es opcional (el pedido sale de la ruta)', async () => {
+    const sinPedido: Partial<typeof base> = { ...base };
+    delete sinPedido.pedidoId;
+    expect(await propiedadesConError(sinPedido)).toEqual([]);
+  });
+
   it('rechaza un pedidoId que no es UUID', async () => {
     expect(
       await propiedadesConError({ ...base, pedidoId: 'no-es-uuid' }),

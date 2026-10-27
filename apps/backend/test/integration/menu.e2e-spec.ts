@@ -47,7 +47,7 @@ async function seedTenant(
   rut: string,
 ) {
   // `update: { rut }` corrige bases donde estos tenants quedaron de corridas
-  // anteriores con el RUT del tenant Demo del seed (210000000019).
+  // anteriores con el RUT que tenía antes el tenant A del seed (210000000019).
   await prisma.tenant.upsert({
     where: { id: tenantId },
     update: { rut },

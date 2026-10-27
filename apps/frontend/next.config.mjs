@@ -16,6 +16,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
  * fonts.gstatic.com (Material Symbols) — sin esto, la CSP bloquea la hoja
  * de estilos de Google Fonts (visto en consola de staging).
  *
+ * script-src incluye https://sdk.mercadopago.com (BL-311): el SDK de
+ * Mercado Pago (Secure Fields) se carga desde ahí. Los campos de la tarjeta
+ * son iframes de Mercado Pago, que ya entran en "frame-src https:", y la
+ * tokenización usa "connect-src https:".
+ *
  * img-src incluye blob: para la vista previa de la imagen del ítem antes de
  * subirla (ImageUploader usa URL.createObjectURL). Sin blob:, el navegador
  * bloquea la vista previa y la imagen recién se ve al guardar el ítem, cuando
@@ -66,7 +71,7 @@ const baseSecurityHeaders = [
   {
     key: "Content-Security-Policy",
     value:
-      `default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https: wss:${devConnectSrc}; frame-src 'self' https:${devFrameSrc}; object-src 'none'; base-uri 'self'; form-action 'self'`,
+      `default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://sdk.mercadopago.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https: wss:${devConnectSrc}; frame-src 'self' https:${devFrameSrc}; object-src 'none'; base-uri 'self'; form-action 'self'`,
   },
 ];
 

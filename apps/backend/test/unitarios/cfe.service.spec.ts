@@ -1,6 +1,11 @@
 import { Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { CfeService } from '../../src/cfe/cfe.service';
+import {
+  CfeService,
+  ESPERAS_REINTENTO_CFE_MS,
+  esErrorTransitorio,
+} from '../../src/cfe/cfe.service';
+import { SurtecError } from '../../src/cfe/surtec.client';
 
 const TENANT_ID = '11111111-1111-1111-1111-111111111111';
 const PAGO_ID = '22222222-2222-2222-2222-222222222222';
@@ -198,5 +203,132 @@ describe('CfeService.intentarEmitir', () => {
     await expect(
       service.intentarEmitir(TENANT_ID, PAGO_ID),
     ).resolves.toBeNull();
+  });
+});
+
+describe('esErrorTransitorio', () => {
+  it.each([
+    [new SurtecError('caído', 503), true],
+    [new SurtecError('demasiados pedidos', 429), true],
+    [new TypeError('fetch failed'), true],
+    [new DOMException('timeout', 'TimeoutError'), true],
+    [new SurtecError('no es un emisor válido', 400), false],
+    [new SurtecError('Surtec no aceptó las credenciales'), false],
+  ])('%p => %p', (error, esperado) => {
+    expect(esErrorTransitorio(error)).toBe(esperado);
+  });
+});
+
+describe('CfeService.emitirConReintentos (BL-311)', () => {
+  let tx: {
+    pago: { findUnique: jest.Mock };
+    tenant: { findUnique: jest.Mock };
+    comprobanteFiscal: { upsert: jest.Mock };
+  };
+  let tenantPrisma: { runInTenantContext: jest.Mock };
+  let surtec: { configurado: jest.Mock; emitirETicket: jest.Mock };
+  let service: CfeService;
+
+  beforeEach(() => {
+    jest.spyOn(Logger, 'warn').mockImplementation();
+    jest.spyOn(Logger, 'error').mockImplementation();
+    tx = {
+      pago: { findUnique: jest.fn().mockResolvedValue(pagoBd()) },
+      tenant: {
+        findUnique: jest.fn().mockResolvedValue({ rut: '214198620015' }),
+      },
+      comprobanteFiscal: {
+        upsert: jest
+          .fn()
+          .mockImplementation(({ create }) => Promise.resolve(create)),
+      },
+    };
+    tenantPrisma = {
+      runInTenantContext: jest.fn((_tenantId, callback) => callback(tx)),
+    };
+    surtec = {
+      configurado: jest.fn().mockReturnValue(true),
+      emitirETicket: jest.fn().mockResolvedValue(EMITIDO),
+    };
+    service = new CfeService(tenantPrisma as any, surtec as any);
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+    jest.restoreAllMocks();
+  });
+
+  it('Surtec responde bien: emite en el primer intento', async () => {
+    const resumen = await service.emitirConReintentos(TENANT_ID, PAGO_ID);
+
+    expect(resumen).toEqual({
+      serie: 'A',
+      numero: 49,
+      urlConsulta: EMITIDO.url,
+    });
+    expect(surtec.emitirETicket).toHaveBeenCalledTimes(1);
+  });
+
+  it('falla transitoria (503): reintenta con el mismo id_externo y emite', async () => {
+    jest.useFakeTimers();
+    surtec.emitirETicket
+      .mockRejectedValueOnce(new SurtecError('caído', 503))
+      .mockResolvedValueOnce(EMITIDO);
+
+    const emision = service.emitirConReintentos(TENANT_ID, PAGO_ID);
+    await jest.advanceTimersByTimeAsync(ESPERAS_REINTENTO_CFE_MS[0]);
+
+    await expect(emision).resolves.toMatchObject({ serie: 'A', numero: 49 });
+    expect(surtec.emitirETicket).toHaveBeenCalledTimes(2);
+    const ids = surtec.emitirETicket.mock.calls.map(([c]) => c.idExterno);
+    expect(ids).toEqual([`bl-${PAGO_ID}`, `bl-${PAGO_ID}`]);
+  });
+
+  it('Surtec sigue caído: corta después de 3 intentos, devuelve null y lo registra', async () => {
+    jest.useFakeTimers();
+    surtec.emitirETicket.mockRejectedValue(new SurtecError('caído', 503));
+
+    const emision = service.emitirConReintentos(TENANT_ID, PAGO_ID);
+    for (const espera of ESPERAS_REINTENTO_CFE_MS) {
+      await jest.advanceTimersByTimeAsync(espera);
+    }
+
+    await expect(emision).resolves.toBeNull();
+    expect(surtec.emitirETicket).toHaveBeenCalledTimes(
+      ESPERAS_REINTENTO_CFE_MS.length + 1,
+    );
+    expect(Logger.error).toHaveBeenCalledTimes(1);
+  });
+
+  it('error permanente (4xx, ej. RUT no habilitado): no reintenta', async () => {
+    surtec.emitirETicket.mockRejectedValue(
+      new SurtecError('210000000019 no es un emisor válido.', 400),
+    );
+
+    await expect(
+      service.emitirConReintentos(TENANT_ID, PAGO_ID),
+    ).resolves.toBeNull();
+    expect(surtec.emitirETicket).toHaveBeenCalledTimes(1);
+    expect(Logger.error).toHaveBeenCalledWith(
+      expect.stringContaining('no es un emisor válido'),
+      undefined,
+      'CfeService',
+    );
+  });
+
+  it('POST y webhook a la vez: una sola emisión para el mismo pago', async () => {
+    const [a, b] = await Promise.all([
+      service.emitirConReintentos(TENANT_ID, PAGO_ID),
+      service.emitirConReintentos(TENANT_ID, PAGO_ID),
+    ]);
+
+    expect(a).toEqual(b);
+    expect(surtec.emitirETicket).toHaveBeenCalledTimes(1);
+  });
+
+  it('emitirEnSegundoPlano no espera ni lanza aunque Surtec falle', () => {
+    surtec.emitirETicket.mockRejectedValue(new SurtecError('x', 400));
+
+    expect(service.emitirEnSegundoPlano(TENANT_ID, PAGO_ID)).toBeUndefined();
   });
 });

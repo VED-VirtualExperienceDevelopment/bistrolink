@@ -12,6 +12,16 @@ const MESA_ID = '33333333-3333-3333-3333-333333333333';
 const ORDER_ID = 'ORDTST01M3K7AB0GE4WGFXSRXNSH0Y3Y';
 const REFERENCIA = armarReferenciaExterna(TENANT_ID, PEDIDO_ID);
 
+// BL-311: lo que devuelve PedidosService.confirmarPagoEnTx al pasar a RECIBIDO.
+const PEDIDO_CONFIRMADO = {
+  id: PEDIDO_ID,
+  estado: 'RECIBIDO',
+  createdAt: new Date('2026-10-19T03:00:00.000Z'),
+  observacionGeneral: null,
+  mesa: { numero: 4 },
+  lineas: [],
+};
+
 function orden(overrides: Record<string, unknown> = {}) {
   return {
     id: ORDER_ID,
@@ -62,7 +72,11 @@ describe('PagosWebhookService.procesarOrden (BL-78)', () => {
   };
   let tenantPrisma: { runInTenantContext: jest.Mock };
   let mercadoPago: { consultarOrden: jest.Mock };
-  let cfe: { intentarEmitir: jest.Mock };
+  let cfe: { emitirEnSegundoPlano: jest.Mock };
+  let pedidos: {
+    confirmarPagoEnTx: jest.Mock;
+    notificarPedidoConfirmado: jest.Mock;
+  };
   let service: PagosWebhookService;
 
   beforeEach(() => {
@@ -80,18 +94,58 @@ describe('PagosWebhookService.procesarOrden (BL-78)', () => {
       runInTenantContext: jest.fn((_tenantId, callback) => callback(tx)),
     };
     mercadoPago = { consultarOrden: jest.fn().mockResolvedValue(orden()) };
-    cfe = { intentarEmitir: jest.fn().mockResolvedValue(null) };
+    cfe = { emitirEnSegundoPlano: jest.fn() };
+    pedidos = {
+      confirmarPagoEnTx: jest.fn().mockResolvedValue(PEDIDO_CONFIRMADO),
+      notificarPedidoConfirmado: jest.fn(),
+    };
     service = new PagosWebhookService(
       tenantPrisma as any,
       mercadoPago as any,
       cfe as any,
+      pedidos as any,
     );
   });
 
   afterEach(() => jest.restoreAllMocks());
 
+  describe('BL-311: prepago (RD.03), confirmación del pedido por webhook', () => {
+    it('order procesada => confirma el pedido en la misma transacción y avisa después', async () => {
+      await service.procesarOrden(ORDER_ID);
+
+      expect(pedidos.confirmarPagoEnTx).toHaveBeenCalledWith(
+        tx,
+        TENANT_ID,
+        PEDIDO_ID,
+      );
+      expect(pedidos.notificarPedidoConfirmado).toHaveBeenCalledWith(
+        TENANT_ID,
+        PEDIDO_CONFIRMADO,
+      );
+    });
+
+    it('si la respuesta directa ya confirmó el pedido, no avisa dos veces', async () => {
+      pedidos.confirmarPagoEnTx.mockResolvedValue(null);
+
+      await service.procesarOrden(ORDER_ID);
+
+      expect(pedidos.notificarPedidoConfirmado).not.toHaveBeenCalled();
+    });
+
+    it('order fallida => no confirma el pedido', async () => {
+      mercadoPago.consultarOrden.mockResolvedValue(
+        orden({ status: 'failed', statusDetail: 'failed' }),
+      );
+
+      await service.procesarOrden(ORDER_ID);
+
+      expect(pedidos.confirmarPagoEnTx).not.toHaveBeenCalled();
+      expect(pedidos.notificarPedidoConfirmado).not.toHaveBeenCalled();
+    });
+  });
+
   describe('resuelve el pago según el estado REAL de la order en Mercado Pago', () => {
-    it('order procesada => Pago APROBADO y mesa LIBRE', async () => {
+    it('order procesada => Pago APROBADO y mesa vuelve a OCUPADA (BL-311)', async () => {
       const resultado = await service.procesarOrden(ORDER_ID);
 
       expect(resultado).toBe('actualizado');
@@ -101,7 +155,7 @@ describe('PagosWebhookService.procesarOrden (BL-78)', () => {
       });
       expect(tx.mesa.updateMany).toHaveBeenCalledWith({
         where: { id: MESA_ID, estado: 'EN_PROCESO_DE_PAGO' },
-        data: { estado: 'LIBRE' },
+        data: { estado: 'OCUPADA' },
       });
     });
 
@@ -341,7 +395,10 @@ describe('PagosWebhookService.procesarOrden (BL-78)', () => {
     it('order procesada => emite el comprobante del pago', async () => {
       await service.procesarOrden(ORDER_ID);
 
-      expect(cfe.intentarEmitir).toHaveBeenCalledWith(TENANT_ID, 'pago-1');
+      expect(cfe.emitirEnSegundoPlano).toHaveBeenCalledWith(
+        TENANT_ID,
+        'pago-1',
+      );
     });
 
     it('notificación repetida (sin_cambios) => reintenta la emisión, por si falló antes', async () => {
@@ -352,7 +409,10 @@ describe('PagosWebhookService.procesarOrden (BL-78)', () => {
       const resultado = await service.procesarOrden(ORDER_ID);
 
       expect(resultado).toBe('sin_cambios');
-      expect(cfe.intentarEmitir).toHaveBeenCalledWith(TENANT_ID, 'pago-1');
+      expect(cfe.emitirEnSegundoPlano).toHaveBeenCalledWith(
+        TENANT_ID,
+        'pago-1',
+      );
     });
 
     it('order fallida => no emite nada', async () => {
@@ -362,7 +422,7 @@ describe('PagosWebhookService.procesarOrden (BL-78)', () => {
 
       await service.procesarOrden(ORDER_ID);
 
-      expect(cfe.intentarEmitir).not.toHaveBeenCalled();
+      expect(cfe.emitirEnSegundoPlano).not.toHaveBeenCalled();
     });
   });
 });

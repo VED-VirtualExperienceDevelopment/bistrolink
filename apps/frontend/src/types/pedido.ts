@@ -4,6 +4,7 @@
 // mostrar un texto legible en la UI, ver ESTADO_LABEL en OrderTicket.tsx
 // (eso es solo una etiqueta de visualización, no cambia este tipo).
 export type EstadoPedido =
+  | 'PENDIENTE_PAGO' // BL-311: esperando el pago aprobado (prepago, RD.03)
   | 'RECIBIDO'
   | 'EN_PREPARACION'
   | 'LISTO_PARA_ENTREGAR'

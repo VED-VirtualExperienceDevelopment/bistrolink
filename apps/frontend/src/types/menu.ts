@@ -42,4 +42,7 @@ export interface PedidoConfirmado {
   id: string;
   estado: EstadoPedido; // Mantenemos el tipo fuerte que agregó develop
   createdAt: string;
+  // BL-311 (RD.05): solo en pedidos para retirar. Se manda en X-Pedido-Token
+  // para pagar y consultar el comprobante; los de mesa usan el QR.
+  tokenAcceso?: string;
 }
