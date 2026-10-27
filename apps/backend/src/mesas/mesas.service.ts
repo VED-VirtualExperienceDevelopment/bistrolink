@@ -4,13 +4,29 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { MesaEstado, Prisma } from '@prisma/client';
+import { randomUUID } from 'node:crypto';
+import { MesaEstado, PedidoEstado, Prisma } from '@prisma/client';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { KdsGateway } from '../pedidos/kds.gateway';
 import { MesaLayoutDto } from './dto/mesa-layout.dto';
 import { MesaLayoutItemDto } from './dto/guardar-layout.dto';
 import { PlanoDto } from './dto/plano.dto';
 import { MesaDelQr } from '../qr-mesa/qr-mesa-acceso.service';
+
+// HU-017 (BL-60): lo que se devuelve y se emite al cambiar el estado.
+const SELECT_MESA_ESTADO = {
+  id: true,
+  numero: true,
+  estado: true,
+  layout: true,
+} as const;
+
+// Pedidos que todavía tienen que salir de cocina: impiden cerrar la mesa.
+const ESTADOS_SIN_ENTREGAR: PedidoEstado[] = [
+  PedidoEstado.RECIBIDO,
+  PedidoEstado.EN_PREPARACION,
+  PedidoEstado.LISTO_PARA_ENTREGAR,
+];
 
 /** "mesa 3" o "mesas 3, 5", para los mensajes de error del editor. */
 function listarMesas(numeros: number[]): string {
@@ -376,40 +392,196 @@ export class MesasService {
   }
 
   /**
-   * Punto de entrada para cambiar el estado de una mesa y notificarlo por
-   * WebSocket. HU-017 va a llamar este mismo método desde el ciclo de vida
-   * de pedidos/pagos; hasta entonces lo dispara el endpoint mock
-   * PATCH /mesas/:id/estado (ver ActualizarEstadoMesaDto).
+   * HU-017 (BL-60): el mozo abre la sesión de la mesa al recibir comensales.
+   * Solo desde LIBRE (una mesa que requiere limpieza primero se marca
+   * limpia). Cada apertura tiene un id de sesión nuevo: el QR impreso vuelve
+   * a servir, pero solo con esta sesión.
    */
-  async actualizarEstado(
-    tenantId: string,
-    mesaId: string,
-    nuevoEstado: MesaEstado,
-  ) {
+  async abrirSesion(tenantId: string, mesaId: string) {
     const mesa = await this.tenantPrisma.runInTenantContext(
       tenantId,
       async (tx) => {
-        const existente = await tx.mesa.findUnique({
-          where: { id: mesaId },
-          select: { id: true },
-        });
-
-        if (!existente) {
-          throw new NotFoundException(
-            'Mesa no encontrada para este establecimiento',
+        const actual = await this.mesaFisica(tx, mesaId);
+        if (actual.estado !== MesaEstado.LIBRE) {
+          throw new ConflictException(
+            actual.estado === MesaEstado.REQUIERE_LIMPIEZA
+              ? 'La mesa requiere limpieza: marcala como limpia antes de abrirla'
+              : 'La mesa ya está abierta',
           );
         }
-
-        return tx.mesa.update({
+        // Condicional: si otro mozo la abrió al mismo tiempo, no se pisa.
+        const { count } = await tx.mesa.updateMany({
+          where: { id: mesaId, estado: MesaEstado.LIBRE },
+          data: {
+            estado: MesaEstado.OCUPADA,
+            sesionId: randomUUID(),
+            sesionAbiertaEn: new Date(),
+          },
+        });
+        if (count === 0) {
+          throw new ConflictException('La mesa ya está abierta');
+        }
+        return tx.mesa.findUniqueOrThrow({
           where: { id: mesaId },
-          data: { estado: nuevoEstado },
-          select: { id: true, numero: true, estado: true, layout: true },
+          select: SELECT_MESA_ESTADO,
         });
       },
     );
-
     this.kdsGateway.emitirEstadoMesa(tenantId, mesa.id, mesa.estado);
-
     return mesa;
+  }
+
+  /**
+   * HU-017 (BL-60): cierra la sesión de la mesa. Solo si no hay un cobro en
+   * curso ni pedidos sin entregar (409). Los pedidos que quedaron esperando
+   * el pago (nunca llegaron a cocina ni se cobraron) se cancelan. La mesa
+   * pasa a REQUIERE_LIMPIEZA y el QR deja de servir para pedir.
+   */
+  async cerrarSesion(
+    tenantId: string,
+    mesaId: string,
+    usuarioKeycloakId: string,
+  ) {
+    const resultado = await this.tenantPrisma.runInTenantContext(
+      tenantId,
+      async (tx) => {
+        const actual = await this.mesaFisica(tx, mesaId);
+        if (!actual.sesionId) {
+          throw new ConflictException('La mesa no está abierta');
+        }
+        if (actual.estado === MesaEstado.EN_PROCESO_DE_PAGO) {
+          throw new ConflictException(
+            'Hay un pago en curso en esta mesa: esperá a que termine',
+          );
+        }
+
+        const sinEntregar = await tx.pedido.count({
+          where: { mesaId, estado: { in: ESTADOS_SIN_ENTREGAR } },
+        });
+        if (sinEntregar > 0) {
+          throw new ConflictException(
+            sinEntregar === 1
+              ? 'Hay 1 pedido sin entregar: no se puede cerrar la mesa'
+              : `Hay ${sinEntregar} pedidos sin entregar: no se puede cerrar la mesa`,
+          );
+        }
+
+        // Condicional: si justo empezó un cobro o la cerró otro mozo, no se
+        // pisa (409).
+        const { count } = await tx.mesa.updateMany({
+          where: {
+            id: mesaId,
+            sesionId: actual.sesionId,
+            estado: MesaEstado.OCUPADA,
+          },
+          data: {
+            estado: MesaEstado.REQUIERE_LIMPIEZA,
+            sesionId: null,
+            sesionAbiertaEn: null,
+          },
+        });
+        if (count === 0) {
+          throw new ConflictException(
+            'La mesa cambió mientras se cerraba: probá de nuevo',
+          );
+        }
+
+        const pedidosCancelados = await this.cancelarSinPagar(
+          tx,
+          tenantId,
+          mesaId,
+          usuarioKeycloakId,
+        );
+        const mesa = await tx.mesa.findUniqueOrThrow({
+          where: { id: mesaId },
+          select: SELECT_MESA_ESTADO,
+        });
+        return { mesa, pedidosCancelados };
+      },
+    );
+    this.kdsGateway.emitirEstadoMesa(
+      tenantId,
+      resultado.mesa.id,
+      resultado.mesa.estado,
+    );
+    return resultado;
+  }
+
+  /** HU-017 (BL-60): después de cerrar, el mozo la marca limpia (LIBRE). */
+  async marcarLimpia(tenantId: string, mesaId: string) {
+    const mesa = await this.tenantPrisma.runInTenantContext(
+      tenantId,
+      async (tx) => {
+        await this.mesaFisica(tx, mesaId);
+        const { count } = await tx.mesa.updateMany({
+          where: { id: mesaId, estado: MesaEstado.REQUIERE_LIMPIEZA },
+          data: { estado: MesaEstado.LIBRE },
+        });
+        if (count === 0) {
+          throw new ConflictException('La mesa no está esperando limpieza');
+        }
+        return tx.mesa.findUniqueOrThrow({
+          where: { id: mesaId },
+          select: SELECT_MESA_ESTADO,
+        });
+      },
+    );
+    this.kdsGateway.emitirEstadoMesa(tenantId, mesa.id, mesa.estado);
+    return mesa;
+  }
+
+  // La mesa del tenant (RLS + 404) que no sea la virtual de los pedidos para
+  // retirar: esa no tiene sesión.
+  private async mesaFisica(tx: Prisma.TransactionClient, mesaId: string) {
+    const mesa = await tx.mesa.findUnique({
+      where: { id: mesaId },
+      select: { id: true, estado: true, sesionId: true, esVirtual: true },
+    });
+    if (!mesa) {
+      throw new NotFoundException(
+        'Mesa no encontrada para este establecimiento',
+      );
+    }
+    if (mesa.esVirtual) {
+      throw new BadRequestException(
+        'La mesa de los pedidos para retirar no se abre ni se cierra',
+      );
+    }
+    return mesa;
+  }
+
+  // Pedidos de la mesa que esperaban el pago (prepago, RD.03): pasan a
+  // CANCELADO, con su historial. Nunca llegaron a cocina ni se cobraron.
+  private async cancelarSinPagar(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    mesaId: string,
+    usuarioKeycloakId: string,
+  ): Promise<number> {
+    const pendientes = await tx.pedido.findMany({
+      where: { mesaId, estado: PedidoEstado.PENDIENTE_PAGO },
+      select: { id: true },
+    });
+    if (pendientes.length === 0) return 0;
+
+    const usuario = await tx.usuario.findUnique({
+      where: { keycloakId: usuarioKeycloakId },
+      select: { id: true },
+    });
+    const ids = pendientes.map((p) => p.id);
+    await tx.pedido.updateMany({
+      where: { id: { in: ids }, estado: PedidoEstado.PENDIENTE_PAGO },
+      data: { estado: PedidoEstado.CANCELADO },
+    });
+    await tx.pedidoEstadoHistorial.createMany({
+      data: ids.map((pedidoId) => ({
+        tenantId,
+        pedidoId,
+        usuarioId: usuario?.id ?? null,
+        estadoAnterior: PedidoEstado.PENDIENTE_PAGO,
+        estadoNuevo: PedidoEstado.CANCELADO,
+      })),
+    });
+    return ids.length;
   }
 }

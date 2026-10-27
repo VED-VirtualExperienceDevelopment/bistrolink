@@ -34,12 +34,15 @@ e2e/
 │   └── llamado-mozo.spec.ts              # BL-69: llamado al mozo (usa support/auth.ts)
 ├── kds/
 │   └── observaciones-kds.spec.ts         # observaciones del comensal en el KDS
+├── plataforma/
+│   └── gestion-establecimientos.spec.ts  # BL-404: buscar, ficha, editar, suspender, eliminar (usa support/plataforma.ts)
 ├── pedido-listo-entregado.spec.ts        # flujo listo → entregado (pendiente de mover a su dominio)
 ├── support/                              # fixtures e IDs del seed; sin tests propios
 │   ├── ids.ts                            # UUIDs y paths del seed
 │   ├── auth.ts                           # fixtures kdsPageMozo / kdsPageAdmin / qrMesas
 │   ├── qr-mesas.ts                       # URLs de los QR de las mesas (HU-034)
-│   └── kds.ts                            # entregar pedidos desde el KDS
+│   ├── kds.ts                            # entregar pedidos desde el KDS
+│   └── plataforma.ts                     # ingreso a /plataforma con OTP y establecimiento de prueba
 └── README.md
 playwright.config.ts                      # raíz del monorepo
 scripts/e2e-update-snapshots.sh           # regenera baselines en Docker
@@ -60,8 +63,18 @@ Reglas de estructura:
 2. Creá `<feature>.spec.ts`.
 3. Importá los IDs del seed desde `e2e/support/ids.ts`. Si falta uno, agregalo ahí (y al seed).
 4. Decidí en qué navegadores tiene que correr (ver tabla). Por defecto solo corre en `chromium`.
-5. Corrélo local con `--project=chromium --ignore-snapshots`.
-6. Abrí el PR.
+5. Ponele a cada `test(...)` el título `[TC-E-NNN] <HU o pantalla>: <qué comprueba>`, con el siguiente número libre (ver «Casos en Kiwi TCMS»).
+6. Corrélo local con `--project=chromium --ignore-snapshots`.
+7. Cargá el caso en Kiwi y abrí el PR.
+
+### Casos en Kiwi TCMS (BL-435)
+
+Cada test es un caso del Test Plan «E2E-Playwright» de Kiwi, y el pipeline registra ahí su resultado (job «Merge + reporte E2E a Kiwi TCMS»). Para eso:
+
+- **El título del test es el título del caso en Kiwi, idéntico.** Empieza con `[TC-E-NNN]` y no lleva comillas ni los signos `<`, `>` y `&` (Kiwi los guarda escapados y no encontraría el caso): se usan `«»` y palabras («en menos de 1 s»).
+- **Antes de mergear** un PR que agrega tests o les cambia el título, se cargan con `scripts/kiwi/cargar-casos-integracion.mjs --e2e` (crea los que faltan, corrige los títulos y, con `--descripciones`, carga la descripción desde `scripts/kiwi/descripciones-e2e.md`). Si no, el reporte crea un caso nuevo solo con el título.
+- Un test que corre en varios proyectos es un solo caso: falla si falló en alguno (el comentario dice en cuál) y queda salteado solo si se salteó en todos.
+- Un test sin `[TC-E-NNN]` no se reporta a Kiwi (el job lo avisa).
 
 ### Proyectos configurados
 
@@ -76,15 +89,20 @@ Si tu spec también debe correr en mobile/Safari, agregalo al `testMatch` de eso
 
 ### `e2e/support/`
 
-| Archivo       | Qué exporta                                                                                                                                                    | Para qué                                                                                                                                                           |
-| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `ids.ts`      | `TENANT_ID`, `RESTAURANTE_ID`, `MESA_ID`, `MESA_ID_RATE_LIMIT`, `ITEM_DISPONIBLE`, `ITEM_NO_DISPONIBLE`, `ENLACE_VIEJO_MESA_PATH`, `MENU_URL_PATH`, `KDS_PATH` | UUIDs y paths fijos que carga `apps/backend/prisma/seed.ts`. Si el seed cambia un UUID o un nombre de ítem, se actualiza acá una sola vez.                         |
-| `auth.ts`     | `test`/`expect` (extiende los de `@playwright/test`), fixtures `kdsPageMozo`, `kdsPageAdmin` y `qrMesas`                                                       | Loguea contra Keycloak en una pestaña nueva del `context` y la deja en `/kds` ya autenticada. Usalo en vez de escribir el login a mano en cada spec de `e2e/kds/`. |
-| `qr-mesas.ts` | `QrMesas` y los helpers del fixture `qrMesas`                                                                                                                  | HU-034 (BL-204): URLs de los QR de las mesas del seed. Ver abajo.                                                                                                  |
+| Archivo         | Qué exporta                                                                                                                                                    | Para qué                                                                                                                                                           |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ids.ts`        | `TENANT_ID`, `RESTAURANTE_ID`, `MESA_ID`, `MESA_ID_RATE_LIMIT`, `ITEM_DISPONIBLE`, `ITEM_NO_DISPONIBLE`, `ENLACE_VIEJO_MESA_PATH`, `MENU_URL_PATH`, `KDS_PATH` | UUIDs y paths fijos que carga `apps/backend/prisma/seed.ts`. Si el seed cambia un UUID o un nombre de ítem, se actualiza acá una sola vez.                         |
+| `auth.ts`       | `test`/`expect` (extiende los de `@playwright/test`), fixtures `kdsPageMozo`, `kdsPageAdmin` y `qrMesas`                                                       | Loguea contra Keycloak en una pestaña nueva del `context` y la deja en `/kds` ya autenticada. Usalo en vez de escribir el login a mano en cada spec de `e2e/kds/`. |
+| `qr-mesas.ts`   | `QrMesas` y los helpers del fixture `qrMesas`                                                                                                                  | HU-034 (BL-204): URLs de los QR de las mesas del seed. Ver abajo.                                                                                                  |
+| `plataforma.ts` | `ingresarPlataforma`, `codigoOtp`, `crearEstablecimiento`, `eliminarEstablecimiento`, `hayCredencialesPlataforma`                                              | BL-416: ingreso a `/plataforma` con usuario, contraseña y OTP, y alta y baja de un establecimiento de prueba por la API. Ver abajo.                                |
 
 **Menú de mesa (QR).** Desde HU-034 (BL-204) el menú de una mesa se abre solo desde la URL de su QR (`/q/<token>`). El token no se puede armar en el test (lo cifra el backend con `QR_TOKEN_KEY`, un secreto de cada entorno), así que lo da el fixture `qrMesas`: `await page.goto(qrMesas.ruta(MESA_ID))`, o `qrMesas.token(MESA_ID)` para la API (`/menu/qr/<token>`). Una vez por worker, loguea un ADMIN en un contexto aparte y pide `GET /mesas/qr`, así que necesita `TEST_ADMIN_USERNAME`/`TEST_ADMIN_PASSWORD`. Los tests **solo leen** los QR: nunca los regeneran, porque regenerar invalida el QR anterior y rompe a los tests que corren en paralelo.
 
+**Mesas abiertas (HU-017, BL-432).** Desde la sesión de mesa (BL-60), el QR de una mesa **cerrada** no abre la carta: muestra «mesa cerrada». Por eso el mismo fixture `qrMesas`, después de leer los QR, deja abiertas `MESA_ID` y `MESA_ID_RATE_LIMIT` (`asegurarMesasAbiertas` en `qr-mesas.ts`): si una mesa ya está abierta no la toca, porque abrirla de nuevo le cambia la sesión a los tests que corren en paralelo; si requiere limpieza, la marca limpia y la abre. Si sumás una mesa propia a `ids.ts` para un test que usa su QR, agregala también a esa lista en `auth.ts`. Ningún test debería cerrar `MESA_ID` ni `MESA_ID_RATE_LIMIT`: para probar el cierre, usá una mesa propia.
+
 `MESA_ID_RATE_LIMIT` existe porque `MESA_ID` ya lo usan varios specs para leer/agregar al carrito: si un test de rate-limit (que agota el cupo de 1 llamado/minuto) compartiera esa misma mesa, podría hacer fallar a otro test que corre en paralelo. Si tu test agota un cupo o deja la mesa en un estado particular, seguí ese patrón: agregá tu propia mesa a `ids.ts` en vez de reusar `MESA_ID`.
+
+**Usuario de plataforma (BL-416).** `e2e/plataforma/` entra a `/plataforma` con un usuario PLATAFORMA propio de E2E. Como toda cuenta PLATAFORMA, tiene OTP: el test genera el código de 6 dígitos con la clave de su app de autenticación (TOTP, RFC 6238, la política por defecto del realm). Necesita `TEST_PLATAFORMA_USERNAME`, `TEST_PLATAFORMA_PASSWORD` y `TEST_PLATAFORMA_OTP_SECRET` (la clave en Base32 que muestra Keycloak en «¿No podés escanearlo?» al configurar el OTP); sin las tres, el spec se saltea. Keycloak no acepta dos veces el mismo código: si el de esta ventana de 30 s ya se usó, el ingreso prueba con el de la siguiente. El spec da de alta su propio establecimiento por la API, corre en orden sobre él y lo elimina al final: nunca toca los demás. Un solo ingreso y una sola alta por corrida (la plataforma limita las altas a 10 por hora por usuario).
 
 Para usar `kdsPageMozo`/`kdsPageAdmin` localmente necesitás las credenciales de los usuarios de prueba de **tu Keycloak local** en variables de entorno de la sesión (`TEST_MOZO_USERNAME`, `TEST_MOZO_PASSWORD`, `TEST_ADMIN_USERNAME`, `TEST_ADMIN_PASSWORD`). Los valores son los de tu `apps/backend/.env`. Nunca se escriben en un spec, en un README ni en un commit, y las de staging no se usan en local.
 
@@ -102,7 +120,10 @@ import { test, expect } from "../support/auth";
 import { MESA_ID } from "../support/ids";
 
 test.describe("HU-00X · Título corto de la historia", () => {
-  test("el comensal ve el menú al entrar por QR", async ({ page, qrMesas }) => {
+  test("[TC-E-0NN] HU-00X: el comensal ve el menú al entrar por QR", async ({
+    page,
+    qrMesas,
+  }) => {
     await page.goto(qrMesas.ruta(MESA_ID)); // /q/<token>, usa BASE_URL de la config
 
     await expect(page.getByRole("heading", { name: "Menú" })).toBeVisible();
@@ -260,21 +281,22 @@ Enmascarar o evitar: fechas y horas, contadores, imágenes remotas y el badge de
 
 ## Errores comunes
 
-| Síntoma                                                         | Causa                                                                                                                                                                          | Solución                                                                                                                     |
-| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
-| `A snapshot doesn't exist at ...-darwin.png, writing actual`    | Corriste un spec visual fuera de Docker                                                                                                                                        | Correr con `--ignore-snapshots`; borrar el archivo generado. 🚫 **No commitearlo**                                           |
-| El spec visual pasa en tu máquina y falla en CI                 | Baseline generado fuera de Docker, o contra datos distintos a staging                                                                                                          | Regenerar con `npm run test:e2e:update-snapshots`                                                                            |
-| `Please update docker image as well`                            | `PLAYWRIGHT_IMAGE` desincronizada de `@playwright/test`                                                                                                                        | `npx playwright --version` y actualizar el tag                                                                               |
-| `unable to upgrade to tcp, received 404` (Git Bash)             | Conversión de paths de MSYS                                                                                                                                                    | El script ya setea `MSYS_NO_PATHCONV=1`; usarlo en vez de `docker run` a mano                                                |
-| Contra `localhost` desde Docker no conecta (macOS/Windows)      | `--network host` solo funciona bien en Linux                                                                                                                                   | Usar WSL2, o apuntar a staging                                                                                               |
-| `Executable doesn't exist ...`                                  | Faltan los navegadores                                                                                                                                                         | `npx playwright install` (o `install webkit`)                                                                                |
-| Falla en local por datos que faltan                             | Seed no cargado                                                                                                                                                                | Cargar el seed antes de correr                                                                                               |
-| Mi spec nuevo no corre en mobile/Safari                         | Esos proyectos tienen `testMatch` acotado                                                                                                                                      | Sumarlo al `testMatch` en `playwright.config.ts`                                                                             |
-| Corre un spec de otro dominio sin querer                        | Nombre de archivo duplicado que matchea el regex                                                                                                                               | Nombres de spec únicos en todo el repo                                                                                       |
-| Falla intermitente                                              | `waitForTimeout` o dependencia entre tests                                                                                                                                     | Aserciones web-first; tests independientes                                                                                   |
-| Los snapshots quedan con dueño `root` (Linux)                   | Bind mount de Docker                                                                                                                                                           | `sudo chown -R $USER e2e/`                                                                                                   |
-| Se rompe el visual en cada deploy                               | El badge de versión (SHA) entra en el screenshot                                                                                                                               | Enmascararlo con `mask`                                                                                                      |
-| `llamado-mozo.spec.ts` (rate limit) falla en el reintento de CI | El job tiene `retries: 2`; un reintento a menos de 1 minuto del anterior encuentra la mesa ya throttled, así que el PRIMER click del reintento ya cae en "Ya llamaste al mozo" | Considerar `retries: 0` para este spec puntual (`test.describe.configure({ retries: 0 })`) o usar una mesa nueva por corrida |
+| Síntoma                                                         | Causa                                                                                                                                                                          | Solución                                                                                                                              |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `A snapshot doesn't exist at ...-darwin.png, writing actual`    | Corriste un spec visual fuera de Docker                                                                                                                                        | Correr con `--ignore-snapshots`; borrar el archivo generado. 🚫 **No commitearlo**                                                    |
+| El spec visual pasa en tu máquina y falla en CI                 | Baseline generado fuera de Docker, o contra datos distintos a staging                                                                                                          | Regenerar con `npm run test:e2e:update-snapshots`                                                                                     |
+| `Please update docker image as well`                            | `PLAYWRIGHT_IMAGE` desincronizada de `@playwright/test`                                                                                                                        | `npx playwright --version` y actualizar el tag                                                                                        |
+| `unable to upgrade to tcp, received 404` (Git Bash)             | Conversión de paths de MSYS                                                                                                                                                    | El script ya setea `MSYS_NO_PATHCONV=1`; usarlo en vez de `docker run` a mano                                                         |
+| Contra `localhost` desde Docker no conecta (macOS/Windows)      | `--network host` solo funciona bien en Linux                                                                                                                                   | Usar WSL2, o apuntar a staging                                                                                                        |
+| `Executable doesn't exist ...`                                  | Faltan los navegadores                                                                                                                                                         | `npx playwright install` (o `install webkit`)                                                                                         |
+| QR de mesa con «mesa cerrada» o sin botón «Llamar al mozo»      | La mesa quedó cerrada (HU-017) y el fixture no la pudo abrir                                                                                                                   | Ver el error de `asegurarMesasAbiertas` en el log; abrirla desde el mapa de mesas y revisar que la mesa esté en la lista de `auth.ts` |
+| Falla en local por datos que faltan                             | Seed no cargado                                                                                                                                                                | Cargar el seed antes de correr                                                                                                        |
+| Mi spec nuevo no corre en mobile/Safari                         | Esos proyectos tienen `testMatch` acotado                                                                                                                                      | Sumarlo al `testMatch` en `playwright.config.ts`                                                                                      |
+| Corre un spec de otro dominio sin querer                        | Nombre de archivo duplicado que matchea el regex                                                                                                                               | Nombres de spec únicos en todo el repo                                                                                                |
+| Falla intermitente                                              | `waitForTimeout` o dependencia entre tests                                                                                                                                     | Aserciones web-first; tests independientes                                                                                            |
+| Los snapshots quedan con dueño `root` (Linux)                   | Bind mount de Docker                                                                                                                                                           | `sudo chown -R $USER e2e/`                                                                                                            |
+| Se rompe el visual en cada deploy                               | El badge de versión (SHA) entra en el screenshot                                                                                                                               | Enmascararlo con `mask`                                                                                                               |
+| `llamado-mozo.spec.ts` (rate limit) falla en el reintento de CI | El job tiene `retries: 2`; un reintento a menos de 1 minuto del anterior encuentra la mesa ya throttled, así que el PRIMER click del reintento ya cae en "Ya llamaste al mozo" | Considerar `retries: 0` para este spec puntual (`test.describe.configure({ retries: 0 })`) o usar una mesa nueva por corrida          |
 
 ⚠️ No confundir con `test:e2e` del backend: `npm run test:e2e` en la raíz corre **Playwright**. Los tests de aislamiento multi-tenant del backend (`*.e2e-spec.ts`, Jest) son otra cosa y se corren desde su workspace.
 
@@ -284,6 +306,7 @@ Enmascarar o evitar: fechas y horas, contadores, imágenes remotas y el badge de
 - [ ] No hay URLs, IDs ni credenciales hardcodeados.
 - [ ] Sin `waitForTimeout`; los locators son por rol/label/testid.
 - [ ] Pasa local con `--project=chromium --ignore-snapshots`.
+- [ ] Cada test tiene su `[TC-E-NNN]` y está cargado en Kiwi con el mismo título (`cargar-casos-integracion.mjs --e2e` dice «0 para actualizar»).
 - [ ] (Sprints 8 y 9) Si toca UI con screenshots: baselines regenerados con `npm run test:e2e:update-snapshots` y diff revisado.
 - [ ] No hay `*-darwin.png` ni `*-win32.png` en el commit.
 - [ ] Si debe correr en mobile/Safari: agregado al `testMatch`.

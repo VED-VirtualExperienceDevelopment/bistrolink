@@ -11,6 +11,7 @@ function pago(overrides: Record<string, unknown> = {}) {
     estado: 'APROBADO',
     medioPago: 'MERCADOPAGO',
     monto: new Prisma.Decimal('590'),
+    motivoRechazo: null,
     comprobantes: [],
     ...overrides,
   };
@@ -59,12 +60,28 @@ describe('PagosService.consultar (BL-311: estado del pago y comprobante para el 
         estado: 'APROBADO',
         medioPago: 'MERCADOPAGO',
         monto: '590.00',
+        motivoRechazo: null,
       },
       comprobante: {
         serie: 'A',
         numero: 1234,
         urlConsulta: 'https://www.efactura.dgi.gub.uy/consultaQR/x',
       },
+    });
+  });
+
+  it('HU-032 (BL-202): pago vencido => devuelve el motivo, para que el comensal sepa por qué', async () => {
+    findUnique.mockResolvedValue({
+      id: PEDIDO_ID,
+      estado: 'PENDIENTE_PAGO',
+      pagos: [pago({ estado: 'RECHAZADO', motivoRechazo: 'VENCIDO' })],
+    });
+
+    const r = await service.consultar(TENANT_ID, PEDIDO_ID);
+
+    expect(r.pago).toMatchObject({
+      estado: 'RECHAZADO',
+      motivoRechazo: 'VENCIDO',
     });
   });
 
@@ -147,6 +164,7 @@ describe('PagosService.consultar (BL-311: estado del pago y comprobante para el 
       'id',
       'medioPago',
       'monto',
+      'motivoRechazo',
     ]);
     expect(Object.keys(r.comprobante!).sort()).toEqual([
       'numero',

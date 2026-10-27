@@ -1,5 +1,6 @@
 import { Injectable, Scope } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
+import { PrismaRuntimeClient } from './prisma-runtime.client';
 
 /**
  * Servicio Prisma con scope por request (REQUEST): cada request autenticada
@@ -32,12 +33,15 @@ import { PrismaClient } from '@prisma/client';
  * .env real de desarrollo, simplemente nunca se propagó a esos otros
  * dos lugares. Ver .env.example y variables de Railway, actualizados
  * en el mismo cambio que este revert.
+ *
+ * Conexiones: el servicio sigue siendo por request, pero el cliente de
+ * Prisma NO. Lo provee PrismaRuntimeClient (singleton, con
+ * RUNTIME_DATABASE_URL), así todas las requests comparten un solo pool. Antes
+ * se creaba un PrismaClient por request y sus conexiones nunca se cerraban.
  */
 @Injectable({ scope: Scope.REQUEST })
 export class TenantPrismaService {
-  private readonly prisma = new PrismaClient({
-    datasourceUrl: process.env.RUNTIME_DATABASE_URL,
-  });
+  constructor(private readonly prisma: PrismaRuntimeClient) {}
 
   async runInTenantContext<T>(
     tenantId: string,

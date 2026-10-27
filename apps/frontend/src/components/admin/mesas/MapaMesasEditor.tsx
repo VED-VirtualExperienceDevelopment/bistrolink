@@ -6,6 +6,8 @@ import Konva from "konva";
 import { io, type Socket } from "socket.io-client";
 import { useKeycloakAuth } from "@/components/providers/KeycloakProvider";
 import { apiFetch, ApiError } from "@/lib/api-client";
+import { SesionMesaPanel } from "./SesionMesaPanel";
+import { puedeGestionarSesion } from "./sesion-mesa.utils";
 import { LeyendaEstadosMesa } from "./LeyendaEstadosMesa";
 import { ElementoShape } from "./ElementoShape";
 import { ListaPlano } from "./ListaPlano";
@@ -14,6 +16,7 @@ import { ICONO_POR_ELEMENTO } from "./plano-iconos";
 import { ZonaShape } from "./ZonaShape";
 import { ControlesZoom } from "./ControlesZoom";
 import { usePunteroGrueso } from "./usePunteroGrueso";
+import { useNitidezLienzo } from "./useNitidezLienzo";
 import {
   DURACION_DESHACER_MS,
   restaurarMesa,
@@ -161,6 +164,7 @@ export function MapaMesasEditor({
 }: Readonly<Props>) {
   const { token, hasRole } = useKeycloakAuth();
   const puedeEditar = puedeEditarMapa(hasRole);
+  const gestionaSesion = puedeGestionarSesion(hasRole);
 
   const [mesas, setMesas] = useState<MesaEnEdicion[]>([]);
   const [loading, setLoading] = useState(true);
@@ -242,6 +246,19 @@ export function MapaMesasEditor({
   const tactil = usePunteroGrueso();
   const tactilConfig = configuracionTactil(tactil);
   const propsAnclas = propsAnclasTransformer(tactilConfig);
+  // Nitidez del canvas: resolución de la pantalla y tipografía de la app.
+  const { pixelRatio, fuente } = useNitidezLienzo();
+  const layerRef = useRef<Konva.Layer>(null);
+
+  // Konva toma el pixelRatio al crear el canvas y no lo actualiza solo: si
+  // cambia el zoom del navegador o el monitor, se ajusta acá y se redibuja.
+  useEffect(() => {
+    Konva.pixelRatio = pixelRatio;
+    const capa = layerRef.current;
+    if (!capa) return;
+    capa.getCanvas().setPixelRatio(pixelRatio);
+    capa.batchDraw();
+  }, [pixelRatio]);
 
   // --- Carga inicial: GET /mesas/layout y GET /mesas/plano -------------------
   // Se piden juntas. HU-028 (BL-173): el plano (zonas y elementos fijos) lo
@@ -1286,6 +1303,20 @@ export function MapaMesasEditor({
         </section>
       )}
 
+      {/* HU-017 (BL-60): abrir / cerrar / marcar limpia la mesa
+          seleccionada. Lo ven el mozo y el administrador. */}
+      {mesaSeleccionada && gestionaSesion && (
+        <SesionMesaPanel
+          mesaId={mesaSeleccionada.id}
+          numero={mesaSeleccionada.numero}
+          estado={mesaSeleccionada.estado}
+          token={token}
+          onEstado={(mesaId, estado) =>
+            setMesas((prev) => actualizarEstadosMesas(prev, [{ id: mesaId, estado }]))
+          }
+        />
+      )}
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <LeyendaEstadosMesa />
         {/* Ayuda de los atajos. Se esconde en tablets y celulares, donde no
@@ -1401,8 +1432,11 @@ export function MapaMesasEditor({
             dedos). Las mesas siguen en unidades del lienzo; si el mapa no
             entra, el contenedor muestra scroll. */}
         <Stage
-          width={lienzo.ancho * zoom}
-          height={lienzo.alto * zoom}
+          // Tamaño en píxeles enteros: con zoom 0,87 (ajustar al ancho) o con
+          // el pellizco el producto da decimales, y un canvas de 957,3 px el
+          // navegador lo estira y lo ve borroso.
+          width={Math.round(lienzo.ancho * zoom)}
+          height={Math.round(lienzo.alto * zoom)}
           scaleX={zoom}
           scaleY={zoom}
           onMouseDown={handleClickStage}
@@ -1410,7 +1444,7 @@ export function MapaMesasEditor({
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
         >
-          <Layer>
+          <Layer ref={layerRef}>
             {/* HU-028 (BL-173): las zonas van primero para quedar debajo
                 de las mesas. */}
             {zonas.map((zona) => (
@@ -1425,6 +1459,7 @@ export function MapaMesasEditor({
                 editable={puedeEditar}
                 lienzo={lienzo}
                 zoom={zoom}
+                fuente={fuente}
                 onSeleccionar={() => {
                   seleccionarZona(zona);
                   enfocarMapa();
@@ -1457,6 +1492,7 @@ export function MapaMesasEditor({
                 editable={puedeEditar}
                 lienzo={lienzo}
                 zoom={zoom}
+                fuente={fuente}
                 onSeleccionar={() => {
                   seleccionarElemento(elemento.id);
                   enfocarMapa();
@@ -1500,6 +1536,7 @@ export function MapaMesasEditor({
                 lienzo={lienzo}
                 zoom={zoom}
                 zonaToque={tactilConfig.zonaToqueMesa}
+                fuente={fuente}
                 onSeleccionar={() => {
                   seleccionarMesa(mesa.clientId);
                   enfocarMapa();

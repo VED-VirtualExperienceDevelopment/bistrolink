@@ -6,6 +6,7 @@ import {
   EstadoEstablecimiento,
   estadoDelEstablecimiento,
 } from './establecimientos.service';
+import { tieneActividad } from './eliminacion-establecimiento.service';
 
 /** BL-411: días que abarca el conteo de pedidos del resumen. */
 export const DIAS_RESUMEN_PEDIDOS = 30;
@@ -25,6 +26,7 @@ export const ESTADOS_PEDIDO_ABIERTO: PedidoEstado[] = [
 /**
  * BL-411: una cuenta del establecimiento, como la ve la plataforma. Sin
  * contraseñas, email ni ids: lo necesario para saber quién es y si entra.
+ * Los Administradores suman el id de su fila (AdministradorFicha, BL-414).
  *
  * `ultimoIngreso`: ISO, `null` si no ingresó en los últimos 90 días, o
  * ausente si Keycloak no pudo dar el dato (mismo criterio que Usuarios,
@@ -36,6 +38,15 @@ export interface CuentaFicha {
   apellido: string | null;
   activo: boolean;
   ultimoIngreso?: string | null;
+}
+
+/**
+ * BL-414: un Administrador en la ficha. Suma el id de su fila en `usuario`,
+ * que la plataforma necesita para restablecerle la contraseña. Sigue sin
+ * email ni id de Keycloak.
+ */
+export interface AdministradorFicha extends CuentaFicha {
+  id: string;
 }
 
 export interface FichaEstablecimiento {
@@ -57,7 +68,7 @@ export interface FichaEstablecimiento {
     direccion: string;
     timezone: string;
   } | null;
-  administradores: CuentaFicha[];
+  administradores: AdministradorFicha[];
   /** La cuenta compartida de Cocina (solo Keycloak); normalmente una. */
   cocina: CuentaFicha[];
   /** null si el tenant todavía no tiene restaurante. */
@@ -69,9 +80,16 @@ export interface FichaEstablecimiento {
     /** BL-413: pedidos sin terminar (ESTADOS_PEDIDO_ABIERTO). */
     pedidosAbiertos: number;
   } | null;
+  /**
+   * BL-418: si se puede eliminar (no tiene ningún pedido). Si no, la única
+   * opción es suspenderlo. El DELETE lo vuelve a controlar.
+   */
+  eliminable: boolean;
 }
 
 interface CuentaListada {
+  /** Fila de `usuario` (personal) o id de Keycloak (Cocina). */
+  id: string;
   rol: string;
   cuentaCompartida: boolean;
   username: string | null;
@@ -85,8 +103,13 @@ interface CuentaListada {
  * BL-411: arma una cuenta para la ficha. `ultimoIngreso` se copia solo si
  * vino: ausente quiere decir «no se sabe», distinto de null («sin ingresos
  * recientes»).
+ *
+ * No usa el id: los Administradores lo suman aparte (BL-414) y la cuenta de
+ * Cocina no lo lleva.
  */
-export function cuentaParaFicha(cuenta: CuentaListada): CuentaFicha {
+export function cuentaParaFicha(
+  cuenta: Omit<CuentaListada, 'id'>,
+): CuentaFicha {
   return {
     username: cuenta.username,
     nombre: cuenta.nombre,
@@ -163,14 +186,15 @@ export class FichaEstablecimientoService {
               }),
             }
           : null;
-        return { tenant, restaurante, resumen };
+        const eliminable = !(await tieneActividad(tx, tenantId));
+        return { tenant, restaurante, resumen, eliminable };
       },
     );
 
     if (!datos) {
       throw new NotFoundException('No existe un establecimiento con ese id');
     }
-    const { tenant, restaurante, resumen } = datos;
+    const { tenant, restaurante, resumen, eliminable } = datos;
 
     const cuentas: CuentaListada[] = await this.usuarios.listar(tenantId);
     const porUsername = (a: CuentaFicha, b: CuentaFicha) =>
@@ -192,13 +216,14 @@ export class FichaEstablecimientoService {
       restaurante,
       administradores: cuentas
         .filter((c) => c.rol === 'ADMIN' && !c.cuentaCompartida)
-        .map(cuentaParaFicha)
+        .map((c) => ({ ...cuentaParaFicha(c), id: c.id }))
         .sort(porUsername),
       cocina: cuentas
         .filter((c) => c.cuentaCompartida)
         .map(cuentaParaFicha)
         .sort(porUsername),
       resumen,
+      eliminable,
     };
   }
 }

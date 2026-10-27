@@ -62,6 +62,7 @@ describe('PlexoWebhookService.procesarPago (BL-78)', () => {
     pago: { findMany: jest.Mock; update: jest.Mock };
     pedido: { findUnique: jest.Mock };
     mesa: { updateMany: jest.Mock };
+    pagoEstadoHistorial: { create: jest.Mock };
   };
   let tenantPrisma: { runInTenantContext: jest.Mock };
   let plexo: { consultarPago: jest.Mock };
@@ -69,6 +70,7 @@ describe('PlexoWebhookService.procesarPago (BL-78)', () => {
   let pedidos: {
     confirmarPagoEnTx: jest.Mock;
     notificarPedidoConfirmado: jest.Mock;
+    notificarEstadoMesa: jest.Mock;
   };
   let service: PlexoWebhookService;
 
@@ -81,7 +83,9 @@ describe('PlexoWebhookService.procesarPago (BL-78)', () => {
         update: jest.fn(),
       },
       pedido: { findUnique: jest.fn().mockResolvedValue({ mesaId: MESA_ID }) },
-      mesa: { updateMany: jest.fn() },
+      mesa: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+      // HU-032 (BL-202): historial de estados del pago.
+      pagoEstadoHistorial: { create: jest.fn() },
     };
     tenantPrisma = {
       runInTenantContext: jest.fn((_tenantId, callback) => callback(tx)),
@@ -91,6 +95,7 @@ describe('PlexoWebhookService.procesarPago (BL-78)', () => {
     pedidos = {
       confirmarPagoEnTx: jest.fn().mockResolvedValue(PEDIDO_CONFIRMADO),
       notificarPedidoConfirmado: jest.fn(),
+      notificarEstadoMesa: jest.fn(),
     };
     service = new PlexoWebhookService(
       tenantPrisma as any,
@@ -158,6 +163,15 @@ describe('PlexoWebhookService.procesarPago (BL-78)', () => {
       expect(tx.mesa.updateMany).toHaveBeenCalledWith({
         where: { id: MESA_ID, estado: 'EN_PROCESO_DE_PAGO' },
         data: { estado: 'OCUPADA' },
+      });
+      // HU-032 (BL-202): el cambio queda en el historial del pago.
+      expect(tx.pagoEstadoHistorial.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          pagoId: 'pago-1',
+          estadoAnterior: 'PENDIENTE',
+          estadoNuevo: 'APROBADO',
+          origen: 'WEBHOOK',
+        }),
       });
     });
 

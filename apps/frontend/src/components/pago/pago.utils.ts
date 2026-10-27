@@ -7,7 +7,7 @@
  * y recién con el pago aprobado el pedido llega a cocina.
  */
 import type { OrigenMenu } from "@/components/menu-digital.utils";
-import { HEADER_MESA_TOKEN } from "@/components/menu-digital.utils";
+import { headersMesaQr } from "@/components/menu-digital.utils";
 
 /** Header con el token de acceso de un pedido para retirar (backend: HEADER_PEDIDO_TOKEN). */
 export const HEADER_PEDIDO_TOKEN = "X-Pedido-Token";
@@ -27,7 +27,8 @@ export function headersAccesoPedido(
   tokenAcceso?: string,
 ): Record<string, string> {
   if (origen.tipo === "mesa") {
-    return { [HEADER_MESA_TOKEN]: origen.qrToken };
+    // HU-017 (BL-60): el QR y la sesión de la mesa.
+    return headersMesaQr(origen);
   }
   return tokenAcceso ? { [HEADER_PEDIDO_TOKEN]: tokenAcceso } : {};
 }
@@ -166,6 +167,8 @@ export interface EstadoPagoDelPedido {
     estado: EstadoPago;
     medioPago: string;
     monto: string;
+    // HU-032 (BL-202): «VENCIDO» si el pago no se confirmó a tiempo.
+    motivoRechazo?: string | null;
   } | null;
   comprobante: {
     serie: string;
@@ -211,23 +214,38 @@ export function resultadoDeError(
         tipo: "error",
         mensaje: mensajeBackend ?? MENSAJE_ERROR_GENERICO,
       };
+    case 410:
+      // HU-017 (BL-60): la mesa se cerró o la sesión terminó; el backend
+      // redacta el motivo para el comensal.
+      return { tipo: "error", mensaje: mensajeBackend ?? MENSAJE_SIN_ACCESO };
     case 401:
     case 403:
     case 404:
-    case 410:
       return { tipo: "error", mensaje: MENSAJE_SIN_ACCESO };
     default:
       return { tipo: "error", mensaje: MENSAJE_ERROR_GENERICO };
   }
 }
 
+/** HU-032 (BL-202): motivo del backend para un pago que venció. */
+export const MOTIVO_PAGO_VENCIDO = "VENCIDO";
+
+export const MENSAJE_PAGO_VENCIDO =
+  "No recibimos la confirmación de Mercado Pago a tiempo y cancelamos el intento. Tu pedido sigue guardado: podés pagar de nuevo.";
+
 /** Resultado según el estado del pago (respuesta del POST o del GET). */
-export function resultadoDeEstado(estado: EstadoPago | undefined): ResultadoPago {
+export function resultadoDeEstado(
+  estado: EstadoPago | undefined,
+  motivoRechazo?: string | null,
+): ResultadoPago {
   if (estado === "APROBADO") return { tipo: "aprobado" };
   if (estado === "RECHAZADO") {
     return {
       tipo: "rechazado",
-      mensaje: "El pago fue rechazado. No se realizó ningún cargo: probá con otra tarjeta.",
+      mensaje:
+        motivoRechazo === MOTIVO_PAGO_VENCIDO
+          ? MENSAJE_PAGO_VENCIDO
+          : "El pago fue rechazado. No se realizó ningún cargo: probá con otra tarjeta.",
     };
   }
   return { tipo: "verificando", mensaje: MENSAJE_VERIFICANDO };

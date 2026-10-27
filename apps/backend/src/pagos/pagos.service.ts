@@ -15,6 +15,7 @@ import { PagoTemporalmenteNoDisponibleException } from './gateways/pago-temporal
 import { CfeService, ResumenComprobante } from '../cfe/cfe.service';
 import { PedidosService } from '../pedidos/pedidos.service';
 import { PedidoParaKds } from '../pedidos/pedido-kds.mapper';
+import { registrarCambioPago, textoCorto } from './historial-pago';
 
 /** BL-311: respuesta de GET /pedidos/:pedidoId/pagos. */
 export interface EstadoPagoDelPedido {
@@ -25,6 +26,9 @@ export interface EstadoPagoDelPedido {
     estado: PagoEstado;
     medioPago: string;
     monto: string;
+    // HU-032 (BL-202): «VENCIDO» si venció sin confirmación; el comensal ve
+    // un mensaje distinto. Null si no fue rechazado.
+    motivoRechazo: string | null;
   } | null;
   // Null mientras el CFE no fue emitido (el frontend consulta de nuevo).
   comprobante: ResumenComprobante | null;
@@ -36,6 +40,10 @@ const ESTADOS_COBRADOS: ReadonlySet<PagoEstado> = new Set<PagoEstado>([
   'APROBADO',
   'REEMBOLSADO',
 ]);
+
+// La pasarela respondió con un error (datos de tarjeta inválidos, solicitud
+// rechazada): no hubo cobro.
+const MOTIVO_ERROR_PASARELA = 'ERROR_PASARELA';
 
 @Injectable()
 export class PagosService {
@@ -59,6 +67,8 @@ export class PagosService {
       return reserva.existente; // idempotencia: misma clave, mismo pago
     }
     const { pago, mesaId } = reserva;
+    // HU-017 (BL-60): el mapa de mesas muestra el cobro en curso.
+    this.pedidos.notificarEstadoMesa(tenantId, mesaId, 'EN_PROCESO_DE_PAGO');
 
     // Fase 2: cobrar FUERA de la transacción (la pasarela puede tardar).
     let resultado: ResultadoCobro;
@@ -94,24 +104,44 @@ export class PagosService {
       estado = 'RECHAZADO';
     }
 
-    const { pagoFinal, pedidoConfirmado } =
+    const { pagoFinal, pedidoConfirmado, mesaOcupada } =
       await this.tenantPrisma.runInTenantContext(tenantId, async (tx) => {
         // Solo si el pago sigue PENDIENTE: el webhook de Mercado Pago puede
         // haberlo resuelto antes de que llegue la respuesta de esta llamada,
         // y una respuesta más vieja no debe pisar el estado real.
         const { count } = await tx.pago.updateMany({
           where: { id: pago.id, estado: 'PENDIENTE' },
-          data: { estado, pasarelaReferencia: resultado.pasarelaReferencia },
+          data: {
+            estado,
+            pasarelaReferencia: resultado.pasarelaReferencia,
+            motivoRechazo:
+              estado === 'RECHAZADO'
+                ? textoCorto(resultado.motivoRechazo)
+                : null,
+          },
         });
+        // HU-032 (BL-202): el cambio queda registrado con su origen.
+        if (count > 0 && estado !== 'PENDIENTE') {
+          await registrarCambioPago(tx, {
+            tenantId,
+            pagoId: pago.id,
+            estadoAnterior: 'PENDIENTE',
+            estadoNuevo: estado,
+            origen: 'COBRO',
+            detalle: resultado.motivoRechazo,
+          });
+        }
         let confirmado: PedidoParaKds | null = null;
+        let volvioAOcupada = false;
         if (count > 0 && !resultado.pendiente) {
           // BL-311: aprobado o rechazado, la mesa vuelve a OCUPADA. Con
           // prepago, el comensal paga ANTES de comer: la mesa la libera el
           // cierre de sesión (HU-017), no el pago.
-          await tx.mesa.updateMany({
+          const mesa = await tx.mesa.updateMany({
             where: { id: mesaId, estado: 'EN_PROCESO_DE_PAGO' },
             data: { estado: 'OCUPADA' },
           });
+          volvioAOcupada = mesa.count > 0;
           // BL-311 (RD.03): pago aprobado => el pedido pasa a RECIBIDO.
           if (resultado.aprobado) {
             confirmado = await this.pedidos.confirmarPagoEnTx(
@@ -126,8 +156,13 @@ export class PagosService {
             where: { id: pago.id },
           }),
           pedidoConfirmado: confirmado,
+          mesaOcupada: volvioAOcupada,
         };
       });
+
+    if (mesaOcupada) {
+      this.pedidos.notificarEstadoMesa(tenantId, mesaId, 'OCUPADA');
+    }
 
     // Recién con la transacción confirmada se avisa a cocina y al comensal.
     if (pedidoConfirmado) {
@@ -181,6 +216,7 @@ export class PagosService {
               estado: true,
               medioPago: true,
               monto: true,
+              motivoRechazo: true,
               comprobantes: {
                 orderBy: { createdAt: 'asc' },
                 take: 1,
@@ -209,6 +245,7 @@ export class PagosService {
         estado: pago.estado,
         medioPago: pago.medioPago,
         monto: pago.monto.toFixed(2),
+        motivoRechazo: pago.motivoRechazo,
       },
       comprobante: comprobante && {
         serie: comprobante.serie,
@@ -305,17 +342,31 @@ export class PagosService {
     pagoId: string,
     mesaId: string,
   ) {
-    await this.tenantPrisma.runInTenantContext(tenantId, async (tx) => {
-      const { count } = await tx.pago.updateMany({
-        where: { id: pagoId, estado: 'PENDIENTE' },
-        data: { estado: 'RECHAZADO' },
-      });
-      if (count > 0) {
-        await tx.mesa.updateMany({
+    const mesaOcupada = await this.tenantPrisma.runInTenantContext(
+      tenantId,
+      async (tx) => {
+        const { count } = await tx.pago.updateMany({
+          where: { id: pagoId, estado: 'PENDIENTE' },
+          data: { estado: 'RECHAZADO', motivoRechazo: MOTIVO_ERROR_PASARELA },
+        });
+        if (count === 0) return false;
+        await registrarCambioPago(tx, {
+          tenantId,
+          pagoId,
+          estadoAnterior: 'PENDIENTE',
+          estadoNuevo: 'RECHAZADO',
+          origen: 'COBRO',
+          detalle: MOTIVO_ERROR_PASARELA,
+        });
+        const mesa = await tx.mesa.updateMany({
           where: { id: mesaId, estado: 'EN_PROCESO_DE_PAGO' },
           data: { estado: 'OCUPADA' },
         });
-      }
-    });
+        return mesa.count > 0;
+      },
+    );
+    if (mesaOcupada) {
+      this.pedidos.notificarEstadoMesa(tenantId, mesaId, 'OCUPADA');
+    }
   }
 }

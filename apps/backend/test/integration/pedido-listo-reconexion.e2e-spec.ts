@@ -5,7 +5,11 @@ import { INestApplication } from '@nestjs/common';
 import request = require('supertest');
 import { io, Socket } from 'socket.io-client';
 import { AppModule } from '../../src/app.module';
-import { asegurarClaveQr, tokenQrDeMesa } from './support/qr-mesa';
+import {
+  asegurarClaveQr,
+  sesionDeMesa,
+  tokenQrDeMesa,
+} from './support/qr-mesa';
 import { conPagoFalso, pagarPedidoDeMesa } from './support/pago-falso';
 
 const KEYCLOAK_URL = process.env.KEYCLOAK_URL ?? 'http://localhost:8080';
@@ -54,6 +58,7 @@ describe('WebSocket KDS (HU-018/BL-65) - reconexion no pierde notificaciones', (
   let tokenComensal: string;
   // BL-204: la mesa solo se usa con el token de su QR.
   let qrToken: string;
+  let sesionMesa: string;
   let tokenMozo: string;
   let pedidoId: string;
 
@@ -74,9 +79,11 @@ describe('WebSocket KDS (HU-018/BL-65) - reconexion no pierde notificaciones', (
     baseUrl = `http://localhost:${port}`;
 
     qrToken = await tokenQrDeMesa(app, TENANT_ID, MESA_ID);
+
+    sesionMesa = await sesionDeMesa(app, TENANT_ID, MESA_ID);
     const authRes = await request(app.getHttpServer())
       .post('/auth/comensal/mesa')
-      .send({ qrToken })
+      .send({ qrToken, sesionMesa })
       .expect(200);
     tokenComensal = authRes.body.accessToken;
 
@@ -96,6 +103,7 @@ describe('WebSocket KDS (HU-018/BL-65) - reconexion no pierde notificaciones', (
         .post('/pedidos')
         .set('Authorization', `Bearer ${tokenComensal}`)
         .set('X-Mesa-Token', qrToken)
+        .set('X-Mesa-Sesion', sesionMesa)
         .send({
           restauranteId: RESTAURANTE_ID,
           idempotencyKey: `hu018-recon-${Date.now()}`,
@@ -105,7 +113,13 @@ describe('WebSocket KDS (HU-018/BL-65) - reconexion no pierde notificaciones', (
       pedidoId = pedidoRes.body.id;
 
       // BL-311 (prepago): el pedido llega al KDS recién con el pago aprobado.
-      await pagarPedidoDeMesa(app, pedidoId, tokenComensal, qrToken);
+      await pagarPedidoDeMesa(
+        app,
+        pedidoId,
+        tokenComensal,
+        qrToken,
+        sesionMesa,
+      );
 
       // Llevar el pedido hasta LISTO_PARA_ENTREGAR con un primer socket,
       // que despues se desconecta (simulando al mozo perdiendo conexion).

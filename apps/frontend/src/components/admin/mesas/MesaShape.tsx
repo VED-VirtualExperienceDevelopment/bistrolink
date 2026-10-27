@@ -16,6 +16,20 @@ import {
 
 const COLOR_SELECCION = "#8069BF"; // primary de tailwind.config.ts, para consistencia visual con el resto del admin
 const COLOR_BORDE = "#494551"; // on-surface-variant
+// Sombra suave debajo de cada mesa: la separa del fondo de la zona y le da
+// volumen sin cambiar los colores de estado.
+const SOMBRA_MESA = {
+  shadowColor: "#1C1B1F", // on-surface
+  shadowBlur: 6,
+  shadowOffsetY: 2,
+  shadowOpacity: 0.18,
+  // La sombra solo para el relleno: con el borde punteado se duplicaría.
+  shadowForStrokeEnabled: false,
+} as const;
+// Caja del número: se centra en ella (en vez de correrlo "a ojo") para que
+// quede en el medio con cualquier fuente.
+const ANCHO_TEXTO = 80;
+const ALTO_TEXTO = 24;
 
 export interface MesaShapeProps {
   numero: number;
@@ -47,6 +61,8 @@ export interface MesaShapeProps {
    * (`configuracionTactil`). "auto" con mouse: la zona es la figura.
    */
   zonaToque?: number | "auto";
+  /** Familia tipográfica del número (la de la app, ver useNitidezLienzo). */
+  fuente?: string;
 }
 
 /**
@@ -82,6 +98,7 @@ export const MesaShape = forwardRef<Konva.Group, MesaShapeProps>(
       onTransformar,
       onEditarNumero,
       zonaToque = "auto",
+      fuente,
     },
     ref,
   ) {
@@ -143,6 +160,7 @@ export const MesaShape = forwardRef<Konva.Group, MesaShapeProps>(
             strokeWidth={strokeWidth}
             dash={dash}
             hitStrokeWidth={zonaToque}
+            {...SOMBRA_MESA}
           />
         ) : (
           <Rect
@@ -156,17 +174,21 @@ export const MesaShape = forwardRef<Konva.Group, MesaShapeProps>(
             strokeWidth={strokeWidth}
             dash={dash}
             hitStrokeWidth={zonaToque}
+            {...SOMBRA_MESA}
           />
         )}
         <Text
           text={String(numero)}
           rotation={-rotacion}
-          width={80}
+          width={ANCHO_TEXTO}
+          height={ALTO_TEXTO}
           align="center"
-          offsetX={40}
-          offsetY={8}
+          verticalAlign="middle"
+          offsetX={ANCHO_TEXTO / 2}
+          offsetY={ALTO_TEXTO / 2}
           fontSize={16}
-          fontStyle="bold"
+          fontFamily={fuente}
+          fontStyle="700"
           fill={TEXTO_POR_ESTADO[estado]}
           listening={false}
         />
