@@ -48,7 +48,7 @@ function itemsDe(menu: MenuResponse): ItemMenu[] {
 }
 
 test.describe("HU-002: menú vía URL directa (verificado en mobile)", () => {
-  test(" [TC-E-006] HU-002: renderiza el restaurante que declara la API, sin login", async ({
+  test("[TC-E-006] HU-002: renderiza el restaurante que declara la API, sin login", async ({
     page,
     request,
   }) => {
