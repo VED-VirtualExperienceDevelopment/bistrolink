@@ -120,6 +120,10 @@ const mockMenuAdminService = {
     }),
 };
 
+// BL-435: los casos del CRUD (BL-52/BL-53) tenían el prefijo de los E2E
+// ([TC-E-001] a [TC-E-011]) y chocaban con los TC-E de Playwright. Son de
+// integración: pasan a TC-I-099 a 108, cargados en el plan «Integration
+// tests» de Kiwi.
 describe('Menu Admin (BL-52/BL-53) - CRUD Completo con Soft Delete', () => {
   let app: INestApplication;
 
@@ -156,7 +160,7 @@ describe('Menu Admin (BL-52/BL-53) - CRUD Completo con Soft Delete', () => {
 
   describe('Validación de DTOs (400 Bad Request)', () => {
     itConAdmin(
-      '[TC-E-001] POST /admin/menu/item: devuelve 400 si el nombre está vacío',
+      '[TC-I-099] Menú: POST /admin/menu/item: devuelve 400 si el nombre está vacío',
       async () => {
         const token = await getToken(
           ADMIN_USER as string,
@@ -183,7 +187,7 @@ describe('Menu Admin (BL-52/BL-53) - CRUD Completo con Soft Delete', () => {
     );
 
     itConAdmin(
-      '[TC-E-002] POST /admin/menu/item: devuelve 400 si el precio es negativo',
+      '[TC-I-100] Menú: POST /admin/menu/item: devuelve 400 si el precio es negativo',
       async () => {
         const token = await getToken(
           ADMIN_USER as string,
@@ -212,7 +216,7 @@ describe('Menu Admin (BL-52/BL-53) - CRUD Completo con Soft Delete', () => {
     );
 
     itConAdmin(
-      '[TC-E-003] PATCH /admin/menu/item/:id: devuelve 400 si el precio es negativo',
+      '[TC-I-101] Menú: PATCH /admin/menu/item/:id: devuelve 400 si el precio es negativo',
       async () => {
         const token = await getToken(
           ADMIN_USER as string,
@@ -241,7 +245,7 @@ describe('Menu Admin (BL-52/BL-53) - CRUD Completo con Soft Delete', () => {
 
   describe('Autorización por Rol (403 Forbidden)', () => {
     itConCocina(
-      '[TC-E-004] POST /admin/menu/item: devuelve 403 si el rol es COCINA',
+      '[TC-I-102] Menú: POST /admin/menu/item: devuelve 403 si el rol es COCINA',
       async () => {
         const token = await getToken(
           COCINA_USER as string,
@@ -261,7 +265,7 @@ describe('Menu Admin (BL-52/BL-53) - CRUD Completo con Soft Delete', () => {
     );
 
     itConCocina(
-      '[TC-E-005] PATCH /admin/menu/item/:id: devuelve 403 si el rol es COCINA',
+      '[TC-I-103] Menú: PATCH /admin/menu/item/:id: devuelve 403 si el rol es COCINA',
       async () => {
         const token = await getToken(
           COCINA_USER as string,
@@ -279,7 +283,7 @@ describe('Menu Admin (BL-52/BL-53) - CRUD Completo con Soft Delete', () => {
     );
 
     itConCocina(
-      '[TC-E-009] DELETE /admin/menu/item/:id: devuelve 403 si el rol es COCINA',
+      '[TC-I-104] Menú: DELETE /admin/menu/item/:id: devuelve 403 si el rol es COCINA',
       async () => {
         const token = await getToken(
           COCINA_USER as string,
@@ -294,7 +298,7 @@ describe('Menu Admin (BL-52/BL-53) - CRUD Completo con Soft Delete', () => {
     );
 
     itConCocina(
-      '[TC-E-011] DELETE /admin/menu/categoria/:id: devuelve 403 si el rol es COCINA',
+      '[TC-I-105] Menú: DELETE /admin/menu/categoria/:id: devuelve 403 si el rol es COCINA',
       async () => {
         const token = await getToken(
           COCINA_USER as string,
@@ -311,7 +315,7 @@ describe('Menu Admin (BL-52/BL-53) - CRUD Completo con Soft Delete', () => {
 
   describe('Soft Delete de Ítems (DELETE)', () => {
     itConAdmin(
-      '[TC-E-007] DELETE /admin/menu/item/:id: elimina lógicamente un ítem (200)',
+      '[TC-I-106] Menú: DELETE /admin/menu/item/:id: elimina lógicamente un ítem (200)',
       async () => {
         const token = await getToken(
           ADMIN_USER as string,
@@ -345,7 +349,7 @@ describe('Menu Admin (BL-52/BL-53) - CRUD Completo con Soft Delete', () => {
 
   describe('Soft Delete de Categorías (DELETE)', () => {
     itConAdmin(
-      '[TC-E-010] DELETE /admin/menu/categoria/:id: elimina lógicamente una categoría (200)',
+      '[TC-I-107] Menú: DELETE /admin/menu/categoria/:id: elimina lógicamente una categoría (200)',
       async () => {
         const token = await getToken(
           ADMIN_USER as string,
@@ -378,7 +382,7 @@ describe('Menu Admin (BL-52/BL-53) - CRUD Completo con Soft Delete', () => {
 
   describe('Integración WebSocket - Tiempo Real (<2s)', () => {
     itConAdmin(
-      '[TC-E-006] PATCH /admin/menu/item/:id: emite evento WebSocket en menos de 2s',
+      '[TC-I-108] Menú: PATCH /admin/menu/item/:id: emite evento WebSocket en menos de 2s',
       async () => {
         const token = await getToken(
           ADMIN_USER as string,
