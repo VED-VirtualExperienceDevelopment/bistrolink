@@ -44,8 +44,8 @@ const ID_RUT = "eliminar-rut";
  *   El foco empieza en «Cancelar».
  * - Si tiene actividad, el backend responde 409 con «suspendelo»; ese
  *   mensaje se muestra tal cual.
- * - Después de eliminar, el diálogo muestra el resultado (y lo anuncia).
- *   Si quedaron usuarios de Keycloak sin borrar, ofrece «Reintentar», que
+ * - Después de eliminar, el diálogo muestra el resultado en un <output>
+ *   (que se anuncia) y no se cierra solo. Si quedaron usuarios de Keycloak sin borrar, ofrece «Reintentar», que
  *   repite el mismo DELETE. Cerrarlo, de cualquier forma, llama a
  *   onTerminado: el establecimiento ya no existe.
  *
@@ -114,12 +114,12 @@ export function EliminarEstablecimientoDialog({
     >
       {resultado ? (
         <div className="space-y-4 text-body-md text-on-surface">
-          <p
-            role="status"
-            className={`rounded-lg px-3 py-2 ${incompleta ? "bg-tertiary-fixed text-on-tertiary-fixed" : "bg-secondary-container text-on-secondary-container"}`}
+          {/* <output> ya tiene el rol status: se anuncia sin mover el foco. */}
+          <output
+            className={`block rounded-lg px-3 py-2 ${incompleta ? "bg-tertiary-fixed text-on-tertiary-fixed" : "bg-secondary-container text-on-secondary-container"}`}
           >
             {resumirEliminacion(establecimiento.razonSocial, resultado)}
-          </p>
+          </output>
 
           {error && (
             <p
