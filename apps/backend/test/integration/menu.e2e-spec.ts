@@ -18,6 +18,8 @@ const TENANT_B = 'bbbbbbbb-0000-0000-0000-000000000002';
 const RESTAURANTE_A = 'aaaaaaaa-0000-0000-0000-000000000011';
 const RESTAURANTE_B = 'bbbbbbbb-0000-0000-0000-000000000022';
 const MESA_A = 'aaaaaaaa-0000-0000-0000-000000000111';
+// HU-017 (BL-60): las mesas de este archivo se crean abiertas, con esta sesión.
+const SESION_MESA_TEST = 'bbbbbbbb-0000-4000-8000-000000000111';
 const MESA_B = 'bbbbbbbb-0000-0000-0000-000000000222';
 
 // RUT propio de cada tenant de prueba: tenant.rut es único (BL-163).
@@ -80,7 +82,10 @@ async function seedTenant(
         tenantId,
         restauranteId,
         numero: 99,
-        estado: 'LIBRE',
+        // HU-017 (BL-60): abierta, para que el QR abra la carta.
+        estado: 'OCUPADA',
+        sesionId: SESION_MESA_TEST,
+        sesionAbiertaEn: new Date(),
       },
     });
   });
@@ -159,6 +164,8 @@ describe('Menú (HU-001 / HU-034) - QR de mesa y aislamiento multi-tenant - inte
 
     expect(res.body.restaurante.nombre).toBe('Restaurante Test A');
     expect(res.body.mesa).toEqual({ numero: 99 });
+    // HU-017 (BL-60): la sesión de la mesa, para el token y los pedidos.
+    expect(res.body.sesionMesa).toBe(SESION_MESA_TEST);
   });
 
   it('[TC-I-011] Menú: devuelve 404 si el QR combina un tenant con una mesa de OTRO tenant', async () => {

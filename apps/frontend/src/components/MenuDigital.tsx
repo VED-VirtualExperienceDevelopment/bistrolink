@@ -8,6 +8,7 @@ import { apiFetch, ApiError } from '@/lib/api-client';
 import {
   alcanzoCantidadMaxima,
   CANTIDAD_MAXIMA_POR_ITEM,
+  codigoDeError,
   esEstablecimientoSuspendido,
   etiquetaMesa,
   headersMesaQr,
@@ -103,7 +104,8 @@ async function identificarComensal(origen: OrigenMenu): Promise<string> {
   const cuerpo = await authRes.json().catch(() => null);
   const mensaje = esEstablecimientoSuspendido(authRes.status, cuerpo)
     ? MENSAJE_RESTAURANTE_NO_DISPONIBLE
-    : (mensajeErrorQr(origen, authRes.status) ?? 'Error al identificarte para hacer el pedido.');
+    : (mensajeErrorQr(origen, authRes.status, codigoDeError(cuerpo)) ??
+      'Error al identificarte para hacer el pedido.');
   throw new ApiError(authRes.status, mensaje);
 }
 
@@ -138,7 +140,7 @@ async function crearPedidoComensal(
 /** Mensaje para el comensal si no se pudo crear el pedido. */
 function mensajeErrorAlPedir(origen: OrigenMenu, err: unknown): string {
   if (err instanceof ApiError) {
-    return mensajeErrorQr(origen, err.status) ?? err.message;
+    return mensajeErrorQr(origen, err.status, err.codigo) ?? err.message;
   }
   return 'No pudimos enviar tu pedido. Probá de nuevo.';
 }
@@ -524,7 +526,10 @@ export default function MenuDigital({
 
         {origen.tipo === 'mesa' && (
           <div className="mt-8 flex justify-center w-full">
-            <LlamarMozoButton qrToken={origen.qrToken} />
+            <LlamarMozoButton
+              qrToken={origen.qrToken}
+              sesionMesa={origen.sesionMesa}
+            />
           </div>
         )}
       </main>

@@ -256,7 +256,10 @@ export function PagoPedido({
               <p className="text-sm text-[#5a575e]">
                 ¿Preferís pagar en efectivo o con el POS del local?
               </p>
-              <LlamarMozoButton qrToken={origen.qrToken} />
+              <LlamarMozoButton
+              qrToken={origen.qrToken}
+              sesionMesa={origen.sesionMesa}
+            />
             </section>
           )}
         </div>

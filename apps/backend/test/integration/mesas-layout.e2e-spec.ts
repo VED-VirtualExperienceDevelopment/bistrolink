@@ -1,11 +1,16 @@
 import 'dotenv/config';
+import { randomUUID } from 'node:crypto';
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 import request = require('supertest');
 import { MesaEstado, Prisma, PrismaClient } from '@prisma/client';
 import { AppModule } from '../../src/app.module';
-import { asegurarClaveQr, tokenQrDeMesa } from './support/qr-mesa';
+import {
+  asegurarClaveQr,
+  sesionDeMesa,
+  tokenQrDeMesa,
+} from './support/qr-mesa';
 
 // ── Config de Keycloak (mismo esquema que usuarios.e2e-spec.ts) ─────────────
 const KEYCLOAK_URL = process.env.KEYCLOAK_URL ?? 'http://localhost:8080';
@@ -317,12 +322,6 @@ describe('Mapa de mesas (HU-016) - e2e', () => {
         .send(LAYOUT_VALIDO)
         .expect(403);
 
-      await request(app.getHttpServer())
-        .patch(`/mesas/${MESA_A1_ID}/estado`)
-        .set('Authorization', `Bearer ${token}`)
-        .send({ estado: 'OCUPADA' })
-        .expect(403);
-
       // Nada cambió en la mesa: ni layout ni estado.
       const despues = await enTenant(TENANT_A_ID, (tx) =>
         tx.mesa.findUnique({ where: { id: MESA_A1_ID } }),
@@ -449,10 +448,12 @@ describe('Mapa de mesas (HU-016) - e2e', () => {
       // @Roles del método, no a un token inválido o sin rol.
       // BL-204: el llamado va con el QR de la mesa.
       const qrToken = await tokenQrDeMesa(app, TENANT_A_ID, MESA_A1_ID);
+      const sesionMesa = await sesionDeMesa(app, TENANT_A_ID, MESA_A1_ID);
       await request(app.getHttpServer())
         .post('/mesas/llamar')
         .set('Authorization', `Bearer ${token}`)
         .set('X-Mesa-Token', qrToken)
+        .set('X-Mesa-Sesion', sesionMesa)
         .expect(201);
 
       await request(app.getHttpServer())
@@ -476,11 +477,13 @@ describe('Mapa de mesas (HU-016) - e2e', () => {
         .send(LAYOUT_VALIDO)
         .expect(403);
 
-      await request(app.getHttpServer())
-        .patch(`/mesas/${MESA_A1_ID}/estado`)
-        .set('Authorization', `Bearer ${token}`)
-        .send({ estado: 'OCUPADA' })
-        .expect(403);
+      // HU-017 (BL-60): el comensal no abre ni cierra mesas (BL-62).
+      for (const accion of ['abrir', 'cerrar', 'limpia']) {
+        await request(app.getHttpServer())
+          .post(`/mesas/${MESA_A1_ID}/${accion}`)
+          .set('Authorization', `Bearer ${token}`)
+          .expect(403);
+      }
 
       // Nada cambió en la mesa: ni layout ni estado.
       const despues = await enTenant(TENANT_A_ID, (tx) =>
@@ -558,6 +561,8 @@ describe('Mapa de mesas (HU-016) - e2e', () => {
               restauranteId: RESTAURANTE_A_ID,
               numero,
               estado,
+              // HU-017 (BL-60): una mesa ocupada tiene sesión (CHECK).
+              sesionId: estado === 'LIBRE' ? null : randomUUID(),
               layout: LAYOUT_VALIDO,
             },
           });

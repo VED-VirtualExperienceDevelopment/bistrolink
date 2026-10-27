@@ -53,18 +53,21 @@ export function conPagoFalso(
 
 /**
  * Paga un pedido de MESA con la pasarela falsa. Mismas credenciales que el
- * frontend: el token del comensal y el del QR de la mesa (RD.05).
+ * frontend: el token del comensal, el del QR de la mesa (RD.05) y la sesión
+ * de la mesa (HU-017).
  */
 export async function pagarPedidoDeMesa(
   app: INestApplication,
   pedidoId: string,
   tokenComensal: string,
   qrToken: string,
+  sesionMesa: string,
 ): Promise<void> {
   await request(app.getHttpServer())
     .post(`/pedidos/${pedidoId}/pagos`)
     .set('Authorization', `Bearer ${tokenComensal}`)
     .set('X-Mesa-Token', qrToken)
+    .set('X-Mesa-Sesion', sesionMesa)
     .send({
       idempotencyKey: `it-${pedidoId}`,
       medioPago: 'MERCADOPAGO',

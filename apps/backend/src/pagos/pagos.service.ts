@@ -59,6 +59,8 @@ export class PagosService {
       return reserva.existente; // idempotencia: misma clave, mismo pago
     }
     const { pago, mesaId } = reserva;
+    // HU-017 (BL-60): el mapa de mesas muestra el cobro en curso.
+    this.pedidos.notificarEstadoMesa(tenantId, mesaId, 'EN_PROCESO_DE_PAGO');
 
     // Fase 2: cobrar FUERA de la transacción (la pasarela puede tardar).
     let resultado: ResultadoCobro;
@@ -94,7 +96,7 @@ export class PagosService {
       estado = 'RECHAZADO';
     }
 
-    const { pagoFinal, pedidoConfirmado } =
+    const { pagoFinal, pedidoConfirmado, mesaOcupada } =
       await this.tenantPrisma.runInTenantContext(tenantId, async (tx) => {
         // Solo si el pago sigue PENDIENTE: el webhook de Mercado Pago puede
         // haberlo resuelto antes de que llegue la respuesta de esta llamada,
@@ -104,14 +106,16 @@ export class PagosService {
           data: { estado, pasarelaReferencia: resultado.pasarelaReferencia },
         });
         let confirmado: PedidoParaKds | null = null;
+        let volvioAOcupada = false;
         if (count > 0 && !resultado.pendiente) {
           // BL-311: aprobado o rechazado, la mesa vuelve a OCUPADA. Con
           // prepago, el comensal paga ANTES de comer: la mesa la libera el
           // cierre de sesión (HU-017), no el pago.
-          await tx.mesa.updateMany({
+          const mesa = await tx.mesa.updateMany({
             where: { id: mesaId, estado: 'EN_PROCESO_DE_PAGO' },
             data: { estado: 'OCUPADA' },
           });
+          volvioAOcupada = mesa.count > 0;
           // BL-311 (RD.03): pago aprobado => el pedido pasa a RECIBIDO.
           if (resultado.aprobado) {
             confirmado = await this.pedidos.confirmarPagoEnTx(
@@ -126,8 +130,13 @@ export class PagosService {
             where: { id: pago.id },
           }),
           pedidoConfirmado: confirmado,
+          mesaOcupada: volvioAOcupada,
         };
       });
+
+    if (mesaOcupada) {
+      this.pedidos.notificarEstadoMesa(tenantId, mesaId, 'OCUPADA');
+    }
 
     // Recién con la transacción confirmada se avisa a cocina y al comensal.
     if (pedidoConfirmado) {
@@ -305,17 +314,23 @@ export class PagosService {
     pagoId: string,
     mesaId: string,
   ) {
-    await this.tenantPrisma.runInTenantContext(tenantId, async (tx) => {
-      const { count } = await tx.pago.updateMany({
-        where: { id: pagoId, estado: 'PENDIENTE' },
-        data: { estado: 'RECHAZADO' },
-      });
-      if (count > 0) {
-        await tx.mesa.updateMany({
+    const mesaOcupada = await this.tenantPrisma.runInTenantContext(
+      tenantId,
+      async (tx) => {
+        const { count } = await tx.pago.updateMany({
+          where: { id: pagoId, estado: 'PENDIENTE' },
+          data: { estado: 'RECHAZADO' },
+        });
+        if (count === 0) return false;
+        const mesa = await tx.mesa.updateMany({
           where: { id: mesaId, estado: 'EN_PROCESO_DE_PAGO' },
           data: { estado: 'OCUPADA' },
         });
-      }
-    });
+        return mesa.count > 0;
+      },
+    );
+    if (mesaOcupada) {
+      this.pedidos.notificarEstadoMesa(tenantId, mesaId, 'OCUPADA');
+    }
   }
 }

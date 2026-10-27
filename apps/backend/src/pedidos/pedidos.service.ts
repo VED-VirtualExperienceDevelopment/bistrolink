@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, MesaEstado } from '@prisma/client';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { CrearPedidoDto } from './dto/crear-pedido.dto';
 import { MesaDelQr } from '../qr-mesa/qr-mesa-acceso.service';
@@ -179,6 +179,15 @@ export class PedidosService {
         },
       },
     });
+  }
+
+  /**
+   * HU-017 (BL-60): avisa al mapa de mesas que la mesa cambió de estado al
+   * empezar o terminar un cobro (EN_PROCESO_DE_PAGO / OCUPADA). Igual que
+   * notificarPedidoConfirmado, se llama después de confirmar la transacción.
+   */
+  notificarEstadoMesa(tenantId: string, mesaId: string, estado: MesaEstado) {
+    this.kdsGateway.emitirEstadoMesa(tenantId, mesaId, estado);
   }
 
   /**

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 
 // Datos de los dos tenants de TESTING (BL-197): local, CI y staging. Nunca
@@ -131,19 +132,28 @@ async function tenantA() {
     },
   });
 
+  // HU-017 (BL-60): las mesas de prueba quedan ABIERTAS (con sesión), para
+  // que el QR sirva para pedir en los E2E y los tests de integración sin
+  // pasar antes por el mozo. Los tests que cierran una mesa la vuelven a
+  // abrir al terminar.
   for (const [id, numero] of [
     [MESA_A1_ID, 1],
     [MESA_A2_ID, 2],
   ] as const) {
+    const sesionAbierta = {
+      estado: 'OCUPADA' as const,
+      sesionId: randomUUID(),
+      sesionAbiertaEn: new Date(),
+    };
     await prisma.mesa.upsert({
       where: { id },
-      update: {},
+      update: sesionAbierta,
       create: {
         id,
         tenantId: TENANT_A_ID,
         restauranteId: RESTAURANTE_A_ID,
         numero,
-        estado: 'LIBRE',
+        ...sesionAbierta,
       },
     });
   }

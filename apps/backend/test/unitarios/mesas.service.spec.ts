@@ -1,5 +1,9 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
-import { MesaEstado, Prisma } from '@prisma/client';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
+import { MesaEstado, PedidoEstado, Prisma } from '@prisma/client';
 import { MesasService } from '../../src/mesas/mesas.service';
 
 const TENANT_ID = '11111111-1111-1111-1111-111111111111';
@@ -33,6 +37,7 @@ describe('MesasService.llamarMozo', () => {
     mesaId: MESA_ID,
     restauranteId: RESTAURANTE_ID,
     numero: 5,
+    sesionId: '99999999-9999-4999-8999-999999999999',
   };
 
   beforeEach(() => {
@@ -283,18 +288,45 @@ describe('MesasService.actualizarLayoutMesa', () => {
   });
 });
 
-describe('MesasService.actualizarEstado', () => {
+describe('MesasService: sesión de mesa (HU-017, BL-60)', () => {
+  const SESION = '99999999-9999-4999-8999-999999999999';
+  const MOZO_KEYCLOAK_ID = '77777777-7777-4777-8777-777777777777';
   let mockTenantPrisma: any;
   let mockKdsGateway: any;
   let mockTx: any;
   let service: MesasService;
 
+  function mesa(overrides: Record<string, unknown> = {}) {
+    return {
+      id: MESA_ID,
+      estado: MesaEstado.OCUPADA,
+      sesionId: SESION,
+      esVirtual: false,
+      ...overrides,
+    };
+  }
+
   beforeEach(() => {
     mockTx = {
       mesa: {
-        findUnique: jest.fn(),
-        update: jest.fn(),
+        findUnique: jest.fn().mockResolvedValue(mesa()),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        findUniqueOrThrow: jest.fn(({ where }: any) =>
+          Promise.resolve({
+            id: where.id,
+            numero: 4,
+            estado: mockTx.__estadoFinal,
+            layout: null,
+          }),
+        ),
       },
+      pedido: {
+        count: jest.fn().mockResolvedValue(0),
+        findMany: jest.fn().mockResolvedValue([]),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
+      usuario: { findUnique: jest.fn().mockResolvedValue({ id: 'usuario-1' }) },
+      pedidoEstadoHistorial: { createMany: jest.fn() },
     };
     mockTenantPrisma = {
       runInTenantContext: jest.fn((_tenantId: string, cb: any) => cb(mockTx)),
@@ -303,41 +335,233 @@ describe('MesasService.actualizarEstado', () => {
     service = new MesasService(mockTenantPrisma, mockKdsGateway);
   });
 
-  it('rechaza con 404 si la mesa no existe en este tenant', async () => {
-    mockTx.mesa.findUnique.mockResolvedValue(null);
-
-    await expect(
-      service.actualizarEstado(TENANT_ID, MESA_ID, MesaEstado.OCUPADA),
-    ).rejects.toThrow(NotFoundException);
-    expect(mockKdsGateway.emitirEstadoMesa).not.toHaveBeenCalled();
-  });
-
-  it('actualiza el estado y emite el evento por WebSocket con el estado resultante', async () => {
-    mockTx.mesa.findUnique.mockResolvedValue({ id: MESA_ID });
-    mockTx.mesa.update.mockResolvedValue({
-      id: MESA_ID,
-      numero: 4,
-      estado: MesaEstado.EN_PROCESO_DE_PAGO,
-      layout: LAYOUT_EJEMPLO,
+  describe('abrirSesion', () => {
+    beforeEach(() => {
+      mockTx.mesa.findUnique.mockResolvedValue(
+        mesa({ estado: MesaEstado.LIBRE, sesionId: null }),
+      );
+      mockTx.__estadoFinal = MesaEstado.OCUPADA;
     });
 
-    const resultado = await service.actualizarEstado(
-      TENANT_ID,
-      MESA_ID,
-      MesaEstado.EN_PROCESO_DE_PAGO,
+    it('LIBRE => OCUPADA con una sesión nueva, y lo avisa por WebSocket', async () => {
+      const resultado = await service.abrirSesion(TENANT_ID, MESA_ID);
+
+      const { where, data } = mockTx.mesa.updateMany.mock.calls[0][0];
+      expect(where).toEqual({ id: MESA_ID, estado: MesaEstado.LIBRE });
+      expect(data.estado).toBe(MesaEstado.OCUPADA);
+      expect(data.sesionId).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+      );
+      expect(data.sesionAbiertaEn).toBeInstanceOf(Date);
+      expect(mockKdsGateway.emitirEstadoMesa).toHaveBeenCalledWith(
+        TENANT_ID,
+        MESA_ID,
+        MesaEstado.OCUPADA,
+      );
+      expect(resultado.estado).toBe(MesaEstado.OCUPADA);
+    });
+
+    it('cada apertura tiene un id de sesión distinto', async () => {
+      await service.abrirSesion(TENANT_ID, MESA_ID);
+      await service.abrirSesion(TENANT_ID, MESA_ID);
+
+      const [primera, segunda] = mockTx.mesa.updateMany.mock.calls.map(
+        ([args]: any) => args.data.sesionId,
+      );
+      expect(primera).not.toBe(segunda);
+    });
+
+    it.each([
+      [MesaEstado.OCUPADA, /ya está abierta/],
+      [MesaEstado.EN_PROCESO_DE_PAGO, /ya está abierta/],
+      [MesaEstado.REQUIERE_LIMPIEZA, /requiere limpieza/],
+    ])('409 si la mesa está %s', async (estado, mensaje) => {
+      mockTx.mesa.findUnique.mockResolvedValue(mesa({ estado }));
+
+      await expect(service.abrirSesion(TENANT_ID, MESA_ID)).rejects.toThrow(
+        mensaje,
+      );
+      expect(mockTx.mesa.updateMany).not.toHaveBeenCalled();
+      expect(mockKdsGateway.emitirEstadoMesa).not.toHaveBeenCalled();
+    });
+
+    it('409 si otro mozo la abrió al mismo tiempo', async () => {
+      mockTx.mesa.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(service.abrirSesion(TENANT_ID, MESA_ID)).rejects.toThrow(
+        ConflictException,
+      );
+      expect(mockKdsGateway.emitirEstadoMesa).not.toHaveBeenCalled();
+    });
+
+    it('404 si la mesa no es del tenant; 400 si es la mesa virtual', async () => {
+      mockTx.mesa.findUnique.mockResolvedValueOnce(null);
+      await expect(service.abrirSesion(TENANT_ID, MESA_ID)).rejects.toThrow(
+        NotFoundException,
+      );
+
+      mockTx.mesa.findUnique.mockResolvedValueOnce(
+        mesa({ estado: MesaEstado.LIBRE, sesionId: null, esVirtual: true }),
+      );
+      await expect(service.abrirSesion(TENANT_ID, MESA_ID)).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+  });
+
+  describe('cerrarSesion', () => {
+    beforeEach(() => {
+      mockTx.__estadoFinal = MesaEstado.REQUIERE_LIMPIEZA;
+    });
+
+    it('con todo entregado: REQUIERE_LIMPIEZA, sin sesión, y lo avisa', async () => {
+      const { mesa: resultado, pedidosCancelados } = await service.cerrarSesion(
+        TENANT_ID,
+        MESA_ID,
+        MOZO_KEYCLOAK_ID,
+      );
+
+      expect(mockTx.pedido.count).toHaveBeenCalledWith({
+        where: {
+          mesaId: MESA_ID,
+          estado: {
+            in: [
+              PedidoEstado.RECIBIDO,
+              PedidoEstado.EN_PREPARACION,
+              PedidoEstado.LISTO_PARA_ENTREGAR,
+            ],
+          },
+        },
+      });
+      expect(mockTx.mesa.updateMany).toHaveBeenCalledWith({
+        where: { id: MESA_ID, sesionId: SESION, estado: MesaEstado.OCUPADA },
+        data: {
+          estado: MesaEstado.REQUIERE_LIMPIEZA,
+          sesionId: null,
+          sesionAbiertaEn: null,
+        },
+      });
+      expect(mockKdsGateway.emitirEstadoMesa).toHaveBeenCalledWith(
+        TENANT_ID,
+        MESA_ID,
+        MesaEstado.REQUIERE_LIMPIEZA,
+      );
+      expect(resultado.estado).toBe(MesaEstado.REQUIERE_LIMPIEZA);
+      expect(pedidosCancelados).toBe(0);
+    });
+
+    it.each([
+      [1, /Hay 1 pedido sin entregar/],
+      [3, /Hay 3 pedidos sin entregar/],
+    ])(
+      '409 con %i pedido(s) sin entregar, sin tocar la mesa',
+      async (n, mensaje) => {
+        mockTx.pedido.count.mockResolvedValue(n);
+
+        await expect(
+          service.cerrarSesion(TENANT_ID, MESA_ID, MOZO_KEYCLOAK_ID),
+        ).rejects.toThrow(mensaje);
+        expect(mockTx.mesa.updateMany).not.toHaveBeenCalled();
+        expect(mockKdsGateway.emitirEstadoMesa).not.toHaveBeenCalled();
+      },
     );
 
-    expect(mockTx.mesa.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { id: MESA_ID },
-        data: { estado: MesaEstado.EN_PROCESO_DE_PAGO },
-      }),
-    );
-    expect(mockKdsGateway.emitirEstadoMesa).toHaveBeenCalledWith(
-      TENANT_ID,
-      MESA_ID,
-      MesaEstado.EN_PROCESO_DE_PAGO,
-    );
-    expect(resultado.estado).toBe(MesaEstado.EN_PROCESO_DE_PAGO);
+    it('409 con un pago en curso', async () => {
+      mockTx.mesa.findUnique.mockResolvedValue(
+        mesa({ estado: MesaEstado.EN_PROCESO_DE_PAGO }),
+      );
+
+      await expect(
+        service.cerrarSesion(TENANT_ID, MESA_ID, MOZO_KEYCLOAK_ID),
+      ).rejects.toThrow(/pago en curso/);
+      expect(mockTx.pedido.count).not.toHaveBeenCalled();
+    });
+
+    it('409 si la mesa no está abierta', async () => {
+      mockTx.mesa.findUnique.mockResolvedValue(
+        mesa({ estado: MesaEstado.LIBRE, sesionId: null }),
+      );
+
+      await expect(
+        service.cerrarSesion(TENANT_ID, MESA_ID, MOZO_KEYCLOAK_ID),
+      ).rejects.toThrow(/no está abierta/);
+    });
+
+    it('409 si la mesa cambió mientras se cerraba (empezó un cobro)', async () => {
+      mockTx.mesa.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(
+        service.cerrarSesion(TENANT_ID, MESA_ID, MOZO_KEYCLOAK_ID),
+      ).rejects.toThrow(ConflictException);
+      expect(mockTx.pedido.updateMany).not.toHaveBeenCalled();
+      expect(mockKdsGateway.emitirEstadoMesa).not.toHaveBeenCalled();
+    });
+
+    it('cancela los pedidos que esperaban el pago, con su historial', async () => {
+      mockTx.pedido.findMany.mockResolvedValue([{ id: 'p1' }, { id: 'p2' }]);
+
+      const { pedidosCancelados } = await service.cerrarSesion(
+        TENANT_ID,
+        MESA_ID,
+        MOZO_KEYCLOAK_ID,
+      );
+
+      expect(mockTx.pedido.findMany).toHaveBeenCalledWith({
+        where: { mesaId: MESA_ID, estado: PedidoEstado.PENDIENTE_PAGO },
+        select: { id: true },
+      });
+      expect(mockTx.pedido.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: { in: ['p1', 'p2'] },
+          estado: PedidoEstado.PENDIENTE_PAGO,
+        },
+        data: { estado: PedidoEstado.CANCELADO },
+      });
+      expect(mockTx.usuario.findUnique).toHaveBeenCalledWith({
+        where: { keycloakId: MOZO_KEYCLOAK_ID },
+        select: { id: true },
+      });
+      expect(mockTx.pedidoEstadoHistorial.createMany).toHaveBeenCalledWith({
+        data: ['p1', 'p2'].map((pedidoId) => ({
+          tenantId: TENANT_ID,
+          pedidoId,
+          usuarioId: 'usuario-1',
+          estadoAnterior: PedidoEstado.PENDIENTE_PAGO,
+          estadoNuevo: PedidoEstado.CANCELADO,
+        })),
+      });
+      expect(pedidosCancelados).toBe(2);
+    });
+  });
+
+  describe('marcarLimpia', () => {
+    it('REQUIERE_LIMPIEZA => LIBRE, y lo avisa', async () => {
+      mockTx.mesa.findUnique.mockResolvedValue(
+        mesa({ estado: MesaEstado.REQUIERE_LIMPIEZA, sesionId: null }),
+      );
+      mockTx.__estadoFinal = MesaEstado.LIBRE;
+
+      const resultado = await service.marcarLimpia(TENANT_ID, MESA_ID);
+
+      expect(mockTx.mesa.updateMany).toHaveBeenCalledWith({
+        where: { id: MESA_ID, estado: MesaEstado.REQUIERE_LIMPIEZA },
+        data: { estado: MesaEstado.LIBRE },
+      });
+      expect(mockKdsGateway.emitirEstadoMesa).toHaveBeenCalledWith(
+        TENANT_ID,
+        MESA_ID,
+        MesaEstado.LIBRE,
+      );
+      expect(resultado.estado).toBe(MesaEstado.LIBRE);
+    });
+
+    it('409 si la mesa no está esperando limpieza', async () => {
+      mockTx.mesa.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(service.marcarLimpia(TENANT_ID, MESA_ID)).rejects.toThrow(
+        /no está esperando limpieza/,
+      );
+      expect(mockKdsGateway.emitirEstadoMesa).not.toHaveBeenCalled();
+    });
   });
 });

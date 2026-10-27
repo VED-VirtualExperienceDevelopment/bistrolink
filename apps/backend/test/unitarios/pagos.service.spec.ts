@@ -86,6 +86,7 @@ describe('PagosService.crear', () => {
   let pedidos: {
     confirmarPagoEnTx: jest.Mock;
     notificarPedidoConfirmado: jest.Mock;
+    notificarEstadoMesa: jest.Mock;
   };
   let service: PagosService;
 
@@ -104,6 +105,7 @@ describe('PagosService.crear', () => {
     pedidos = {
       confirmarPagoEnTx: jest.fn().mockResolvedValue(PEDIDO_CONFIRMADO),
       notificarPedidoConfirmado: jest.fn(),
+      notificarEstadoMesa: jest.fn(),
     };
     service = new PagosService(
       tenantPrisma as any,
@@ -612,6 +614,27 @@ describe('PagosService.crear', () => {
 
       expect(tx.pago.updateMany).not.toHaveBeenCalled();
       expect(tx.pagos.get(PAGO_ID)).toMatchObject({ estado: 'PENDIENTE' });
+    });
+  });
+
+  describe('HU-017 (BL-60): estado de la mesa en el mapa', () => {
+    it('al empezar el cobro avisa EN_PROCESO_DE_PAGO, y al aprobarse OCUPADA', async () => {
+      await service.crear(TENANT_ID, DTO);
+
+      expect(pedidos.notificarEstadoMesa.mock.calls).toEqual([
+        [TENANT_ID, MESA_ID, 'EN_PROCESO_DE_PAGO'],
+        [TENANT_ID, MESA_ID, 'OCUPADA'],
+      ]);
+    });
+
+    it('si la mesa ya no estaba cobrando, no avisa OCUPADA', async () => {
+      tx.mesa.updateMany.mockResolvedValue({ count: 0 });
+
+      await service.crear(TENANT_ID, DTO);
+
+      expect(pedidos.notificarEstadoMesa.mock.calls).toEqual([
+        [TENANT_ID, MESA_ID, 'EN_PROCESO_DE_PAGO'],
+      ]);
     });
   });
 

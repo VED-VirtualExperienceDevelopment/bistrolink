@@ -22,12 +22,20 @@ import {
   tipoTarjeta,
   TOPE_CONSULTA_MS,
 } from "@/components/pago/pago.utils";
-import { HEADER_MESA_TOKEN, type OrigenMenu } from "@/components/menu-digital.utils";
+import {
+  HEADER_MESA_SESION,
+  HEADER_MESA_TOKEN,
+  type OrigenMenu,
+} from "@/components/menu-digital.utils";
 
 // BL-311 (HU-007): pago del comensal con prepago (RD.03) y acceso al pedido
 // atado a quien lo hizo (RD.05).
 
-const MESA: OrigenMenu = { tipo: "mesa", qrToken: "qr-abc" };
+const MESA: OrigenMenu = {
+  tipo: "mesa",
+  qrToken: "qr-abc",
+  sesionMesa: "99999999-9999-4999-8999-999999999999",
+};
 const PUBLICO: OrigenMenu = {
   tipo: "publico",
   tenantId: "11111111-1111-1111-1111-111111111111",
@@ -45,9 +53,10 @@ describe("rutas y headers del pago", () => {
     expect(rutaPagos("../admin")).toBe("/pedidos/..%2Fadmin/pagos");
   });
 
-  it("mesa: se autoriza con el QR (X-Mesa-Token)", () => {
+  it("mesa: se autoriza con el QR y la sesión de la mesa", () => {
     expect(headersAccesoPedido(MESA, "ignorado")).toEqual({
       [HEADER_MESA_TOKEN]: "qr-abc",
+      [HEADER_MESA_SESION]: "99999999-9999-4999-8999-999999999999",
     });
   });
 
@@ -203,8 +212,19 @@ describe("resultado del pago", () => {
     });
   });
 
-  it.each([401, 403, 404, 410])(
-    "%i (sin acceso al pedido o QR viejo): error sin detalles internos",
+  it("410 (HU-017: mesa cerrada o sesión vencida): el mensaje del backend", () => {
+    expect(resultadoDeError(410, "Esta mesa está cerrada.")).toEqual({
+      tipo: "error",
+      mensaje: "Esta mesa está cerrada.",
+    });
+    expect(resultadoDeError(410)).toEqual({
+      tipo: "error",
+      mensaje: MENSAJE_SIN_ACCESO,
+    });
+  });
+
+  it.each([401, 403, 404])(
+    "%i (sin acceso al pedido): error sin detalles internos",
     (status) => {
       expect(resultadoDeError(status, "Este pedido es de otra mesa")).toEqual({
         tipo: "error",

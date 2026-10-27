@@ -186,19 +186,23 @@ describe('AuthComensalService.emitirToken', () => {
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
+    const SESION = '99999999-9999-4999-8999-999999999999';
+    const MESA_ABIERTA = {
+      tenantId: TENANT_ID,
+      mesaId: MESA_ID,
+      restauranteId: RESTAURANTE_ID,
+      numero: 4,
+      sesionId: SESION,
+    };
+
     it('emite el token del comensal técnico del tenant que viene en el QR', async () => {
-      mockQrMesaAcceso.resolver.mockResolvedValue({
-        tenantId: TENANT_ID,
-        mesaId: MESA_ID,
-        restauranteId: RESTAURANTE_ID,
-        numero: 4,
-      });
+      mockQrMesaAcceso.resolver.mockResolvedValue(MESA_ABIERTA);
       fetchMock.mockResolvedValue({
         ok: true,
         json: async () => ({ access_token: 'jwt-de-prueba', expires_in: 3600 }),
       });
 
-      const resultado = await service.emitirTokenPorQr('token-del-qr');
+      const resultado = await service.emitirTokenPorQr('token-del-qr', SESION);
 
       expect(mockQrMesaAcceso.resolver).toHaveBeenCalledWith('token-del-qr');
       expect(resultado).toEqual({
@@ -208,6 +212,36 @@ describe('AuthComensalService.emitirToken', () => {
       const body = fetchMock.mock.calls[0][1].body as URLSearchParams;
       expect(body.get('username')).toBe(`comensal-${TENANT_ID}`);
     });
+
+    it.each([
+      [
+        'la mesa está cerrada',
+        { ...MESA_ABIERTA, sesionId: null },
+        SESION,
+        'MESA_CERRADA',
+      ],
+      [
+        'la sesión es de otra apertura',
+        MESA_ABIERTA,
+        'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        'SESION_VENCIDA',
+      ],
+      ['no vino la sesión', MESA_ABIERTA, undefined, 'SESION_VENCIDA'],
+    ])(
+      'HU-017 (BL-60): 410 sin pedir token si %s',
+      async (_caso, mesa, sesion, codigo) => {
+        mockQrMesaAcceso.resolver.mockResolvedValue(mesa);
+
+        const error = await service
+          .emitirTokenPorQr('token-del-qr', sesion)
+          .catch((e: GoneException) => e);
+        expect(error).toBeInstanceOf(GoneException);
+        expect((error as GoneException).getResponse()).toMatchObject({
+          codigo,
+        });
+        expect(fetchMock).not.toHaveBeenCalled();
+      },
+    );
 
     it.each([
       ['inválido (404)', new NotFoundException('QR no válido')],

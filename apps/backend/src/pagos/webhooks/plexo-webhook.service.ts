@@ -67,7 +67,7 @@ export class PlexoWebhookService {
       return 'sin_resolver';
     }
 
-    const { resultado, pagoId, pedidoConfirmado } =
+    const { resultado, pagoId, pedidoConfirmado, mesaOcupada } =
       await this.tenantPrisma.runInTenantContext(referencia.tenantId, (tx) =>
         this.aplicar(tx, pago, referencia, estado),
       );
@@ -78,6 +78,13 @@ export class PlexoWebhookService {
       this.pedidos.notificarPedidoConfirmado(
         referencia.tenantId,
         pedidoConfirmado,
+      );
+    }
+    if (mesaOcupada) {
+      this.pedidos.notificarEstadoMesa(
+        referencia.tenantId,
+        mesaOcupada,
+        'OCUPADA',
       );
     }
 
@@ -102,6 +109,8 @@ export class PlexoWebhookService {
     resultado: ResultadoWebhookPlexo;
     pagoId?: string;
     pedidoConfirmado?: PedidoParaKds | null;
+    /** HU-017 (BL-60): mesa que volvió a OCUPADA, para avisar al mapa. */
+    mesaOcupada?: string;
   }> {
     const { tenantId, pedidoId } = referencia;
     const candidatos = await tx.pago.findMany({
@@ -149,16 +158,18 @@ export class PlexoWebhookService {
     // de comer; la libera el cierre de sesión, HU-017), y con el pago
     // aprobado el pedido pasa de PENDIENTE_PAGO a RECIBIDO.
     let pedidoConfirmado: PedidoParaKds | null = null;
+    let mesaOcupada: string | undefined;
     if (estado === 'APROBADO' || estado === 'RECHAZADO') {
       const pedido = await tx.pedido.findUnique({
         where: { id: pedidoId },
         select: { mesaId: true },
       });
       if (pedido) {
-        await tx.mesa.updateMany({
+        const mesa = await tx.mesa.updateMany({
           where: { id: pedido.mesaId, estado: 'EN_PROCESO_DE_PAGO' },
           data: { estado: 'OCUPADA' },
         });
+        if (mesa.count > 0) mesaOcupada = pedido.mesaId;
       }
       if (estado === 'APROBADO') {
         pedidoConfirmado = await this.pedidos.confirmarPagoEnTx(
@@ -169,6 +180,11 @@ export class PlexoWebhookService {
       }
     }
 
-    return { resultado: 'actualizado', pagoId: pagoBd.id, pedidoConfirmado };
+    return {
+      resultado: 'actualizado',
+      pagoId: pagoBd.id,
+      pedidoConfirmado,
+      mesaOcupada,
+    };
   }
 }
