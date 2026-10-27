@@ -118,9 +118,11 @@ export function SesionMesaPanel({
         </p>
       )}
       {aviso && (
-        <p role="status" className="w-full text-label-sm text-on-surface">
+        // <output> ya tiene el rol «status» (región en vivo): el lector de
+        // pantalla anuncia el aviso sin role explícito (Sonar S6819).
+        <output className="block w-full text-label-sm text-on-surface">
           {aviso}
-        </p>
+        </output>
       )}
     </section>
   );
