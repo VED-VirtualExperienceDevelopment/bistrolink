@@ -3,6 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import { io, Socket } from 'socket.io-client';
 import { AppModule } from '../../src/app.module';
+import { conPagoFalso, pagarPedidoParaRetirar } from './support/pago-falso';
 
 // ── Config de Keycloak para pedir tokens reales (password grant) ───────────
 const KEYCLOAK_URL = process.env.KEYCLOAK_URL ?? 'http://localhost:8080';
@@ -80,8 +81,17 @@ async function getComensalToken(baseUrl: string): Promise<string> {
   return data.accessToken as string;
 }
 
-/** Crea un pedido real de prueba en el tenant Demo, vía POST /pedidos. */
-async function crearPedidoDePrueba(baseUrl: string): Promise<string> {
+/**
+ * Crea un pedido real de prueba en el tenant Demo, vía POST /pedidos, y lo
+ * paga con la pasarela falsa. BL-311 (prepago, RD.03): el pedido nace en
+ * PENDIENTE_PAGO y recién con el pago aprobado pasa a RECIBIDO y entra al
+ * KDS (snapshot y transiciones). Sin pagarlo, el MOZO no lo ve ni lo puede
+ * pasar a «En preparación».
+ */
+async function crearPedidoDePrueba(
+  app: INestApplication,
+  baseUrl: string,
+): Promise<string> {
   const tokenComensal = await getComensalToken(baseUrl);
   const res = await fetch(`${baseUrl}/pedidos`, {
     method: 'POST',
@@ -98,8 +108,14 @@ async function crearPedidoDePrueba(baseUrl: string): Promise<string> {
   if (!res.ok) {
     throw new Error(`No se pudo crear el pedido de prueba: ${res.status}`);
   }
-  const pedido = await res.json();
-  return pedido.id as string;
+  const pedido = (await res.json()) as { id: string; tokenAcceso: string };
+  await pagarPedidoParaRetirar(
+    app,
+    pedido.id,
+    tokenComensal,
+    pedido.tokenAcceso,
+  );
+  return pedido.id;
 }
 
 /** Espera un evento del socket con timeout, para no colgar el test si algo falla. */
@@ -132,9 +148,10 @@ describe('Canal WebSocket del KDS (HU-004) - e2e', () => {
   const itConCocina = COCINA_USER && COCINA_PASS ? it : it.skip;
 
   beforeAll(async () => {
-    const moduleRef: TestingModule = await Test.createTestingModule({
-      imports: [AppModule],
-    }).compile();
+    // BL-311: pasarela falsa (ver support/pago-falso.ts).
+    const moduleRef: TestingModule = await conPagoFalso(
+      Test.createTestingModule({ imports: [AppModule] }),
+    ).compile();
     app = moduleRef.createNestApplication();
     await app.init();
     await app.listen(0); // puerto aleatorio libre, necesario para conexiones WS reales
@@ -218,7 +235,7 @@ describe('Canal WebSocket del KDS (HU-004) - e2e', () => {
   itConMozo(
     '[TC-I-017] KDS: MOZO marca «En preparación» y el cambio se refleja por WS en menos de 1 s (DoD)',
     async () => {
-      const pedidoId = await crearPedidoDePrueba(baseUrl);
+      const pedidoId = await crearPedidoDePrueba(app, baseUrl);
       const token = await getToken(MOZO_USER as string, MOZO_PASS as string);
       const socket = conectar(token);
 
@@ -249,7 +266,7 @@ describe('Canal WebSocket del KDS (HU-004) - e2e', () => {
   itConMozo(
     '[TC-I-018] KDS: reconexión (pedidos:sync) no pierde pedidos pendientes tras un corte',
     async () => {
-      const pedidoId = await crearPedidoDePrueba(baseUrl);
+      const pedidoId = await crearPedidoDePrueba(app, baseUrl);
       const token = await getToken(MOZO_USER as string, MOZO_PASS as string);
 
       // Primera conexion, simulando el cliente antes del corte.

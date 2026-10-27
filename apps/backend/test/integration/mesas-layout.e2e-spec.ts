@@ -49,9 +49,12 @@ const TENANT_B_ID = 'b02579f2-2bb0-496b-abf2-33c494c93122';
 const RESTAURANTE_B_ID = 'a46faef3-7412-45ae-af80-3829cd27b990';
 
 // Rango de números de mesa reservado para esta suite: todo lo que se cree
-// con estos números se borra en afterAll (regla de CRUD real de la guía de
-// casos de prueba). No colisiona con las mesas 1 y 2 del seed.
+// con estos números se borra en beforeAll y afterAll (regla de CRUD real de
+// la guía de casos de prueba). No colisiona con las mesas 1 y 2 del seed.
 // BL-425: 80 a 99 (antes 900 a 919), porque la API acepta hasta la mesa 99.
+// Ninguna otra suite puede usar estos números en los restaurantes A y B:
+// esta los borra (sesion-mesa.e2e-spec.ts usa la 79). Ver «Números de mesa
+// reservados por suite» en el mapeo de casos de integración.
 const NUMERO_BASE = 80;
 const NUMEROS_TEST = Array.from({ length: 20 }, (_, i) => NUMERO_BASE + i);
 
@@ -192,21 +195,42 @@ describe('Mapa de mesas (HU-016) - e2e', () => {
   // Borra lo creado con los números reservados en los restaurantes de la
   // suite, desde el contexto de cada tenant (incluida una mesa que TC-I-033
   // pudiera haber creado con tenant A colgada del restaurante B).
-  // Primero los pedidos de esas mesas (TC-I-036 crea uno): Pedido.mesaId es
-  // FK obligatoria y sin ellos el borrado de la mesa falla.
+  //
+  // Orden de borrado: primero todo lo que cuelga de los pedidos de esas
+  // mesas (historial de estados, comprobantes, pagos y líneas), después los
+  // pedidos y al final las mesas. Las FK no tienen ON DELETE CASCADE: si
+  // quedara un solo registro hijo, el borrado del pedido fallaría y se
+  // revertiría la limpieza de TODO el tenant (BL-177: una mesa del rango con
+  // historial de pedidos dejó 9 mesas trabadas entre corridas). El
+  // comprobante va antes que el pago porque también apunta al pago.
+  //
+  // Si la limpieza de un tenant falla, se muestra el error (con la causa
+  // real, por ejemplo la FK que la frena) y la suite sigue: el conteo final
+  // y el expect del afterAll la marcan como fallida.
+  //
   // Devuelve cuántas mesas de test quedaron sin borrar.
   async function limpiarMesasDeTest(): Promise<number> {
     const tenants = [TENANT_A_ID, TENANT_B_ID];
     for (const tenantId of tenants) {
+      const deEsasMesas = {
+        pedido: { tenantId, mesa: FILTRO_MESAS_TEST },
+      };
       await enTenant(tenantId, async (tx) => {
+        await tx.pedidoEstadoHistorial.deleteMany({ where: deEsasMesas });
+        await tx.comprobanteFiscal.deleteMany({ where: deEsasMesas });
+        await tx.pago.deleteMany({ where: deEsasMesas });
+        await tx.lineaPedido.deleteMany({ where: deEsasMesas });
         await tx.pedido.deleteMany({
           where: { tenantId, mesa: FILTRO_MESAS_TEST },
         });
         return tx.mesa.deleteMany({
           where: { tenantId, ...FILTRO_MESAS_TEST },
         });
-      }).catch(() => {
-        // Best-effort: se verifica abajo con el conteo final.
+      }).catch((error: unknown) => {
+        console.error(
+          `mesas-layout: no se pudieron limpiar las mesas de test del tenant ${tenantId}`,
+          error,
+        );
       });
     }
     let restantes = 0;
