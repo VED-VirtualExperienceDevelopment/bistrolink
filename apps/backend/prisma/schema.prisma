@@ -96,8 +96,8 @@ model Tenant {
   // tenant; null en los que existían antes. El sub del token queda en la
   // auditoría.
   creadoPor   String?  @map("creado_por")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   // BL-410: suspensión (la escribe BL-413). La base exige que suspendido_en
   // esté cargado si y solo si el estado es SUSPENDIDO (CHECK en la
@@ -135,8 +135,8 @@ model Restaurante {
   // Nullable: null = plano sin elementos ni zonas (los layouts de HU-016,
   // que viven en mesa.layout, no cambian). Validado por PlanoDto.
   plano     Json?
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   tenant     Tenant           @relation(fields: [tenantId], references: [id])
   usuarios   Usuario[]
@@ -164,8 +164,8 @@ model Usuario {
   apellido      String?
   rol           UsuarioRol
   activo        Boolean    @default(true)
-  createdAt     DateTime   @default(now()) @map("created_at")
-  updatedAt     DateTime   @updatedAt @map("updated_at")
+  createdAt     DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   restaurante     Restaurante             @relation(fields: [restauranteId], references: [id])
   pedidosComoMozo Pedido[]                @relation("PedidoUsuario")
@@ -207,8 +207,8 @@ model Mesa {
   // queda afuera).
   sesionId        String?    @map("sesion_id") @db.Uuid
   sesionAbiertaEn DateTime?  @map("sesion_abierta_en") @db.Timestamptz(3)
-  createdAt     DateTime   @default(now()) @map("created_at")
-  updatedAt     DateTime   @updatedAt @map("updated_at")
+  createdAt     DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   restaurante Restaurante @relation(fields: [restauranteId], references: [id])
   pedidos     Pedido[]
@@ -227,8 +227,8 @@ model CategoriaCarta {
   nombre        String
   orden         Int      @default(0)
   activo        Boolean  @default(true) // <-- ÚNICA LÍNEA AGREGADA: Permite deshabilitar categorías completas
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   restaurante Restaurante @relation(fields: [restauranteId], references: [id])
   items       ItemCarta[]
@@ -246,8 +246,8 @@ model ItemCarta {
   precio      Decimal  @db.Decimal(10, 2)
   disponible  Boolean  @default(true)
   imagenKey   String?  @map("imagen_key")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   categoria    CategoriaCarta @relation(fields: [categoriaId], references: [id])
   lineasPedido LineaPedido[]
@@ -272,8 +272,8 @@ model Pedido {
   // (canal WEB, sin QR). El token en claro se devuelve una sola vez, al
   // crear el pedido; acá nunca se guarda. Null en los pedidos de mesa.
   accesoTokenHash    String?      @map("acceso_token_hash") @db.Char(64)
-  createdAt          DateTime     @default(now()) @map("created_at")
-  updatedAt          DateTime     @updatedAt @map("updated_at")
+  createdAt          DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   restaurante      Restaurante             @relation(fields: [restauranteId], references: [id])
   mesa             Mesa                    @relation(fields: [mesaId], references: [id])
@@ -284,6 +284,10 @@ model Pedido {
   historialEstados PedidoEstadoHistorial[]
 
   @@index([tenantId])
+  // BL-213: KDS y listado de pedidos (por fecha y por estado), dentro
+  // del tenant (compatibles con el predicado de RLS).
+  @@index([tenantId, createdAt])
+  @@index([tenantId, estado])
   @@map("pedido")
 }
 
@@ -299,13 +303,15 @@ model LineaPedido {
   cantidad               Int
   subtotal               Decimal  @db.Decimal(10, 2)
   observacion            String?  @map("observacion") @db.VarChar(300) // <-- NUEVO
-  createdAt              DateTime @default(now()) @map("created_at")
-  updatedAt              DateTime @updatedAt @map("updated_at")
+  createdAt              DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt              DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   pedido    Pedido    @relation(fields: [pedidoId], references: [id])
   itemCarta ItemCarta @relation(fields: [itemCartaId], references: [id])
 
   @@index([tenantId])
+  // BL-213: líneas de un pedido (KDS, monto del pago, CFE).
+  @@index([pedidoId])
   @@map("linea_pedido")
 }
 
@@ -323,14 +329,16 @@ model Pago {
   // HU-032 (BL-202): por qué quedó RECHAZADO («VENCIDO» si venció sin
   // confirmación, o el status_detail de la pasarela). Null en los demás.
   motivoRechazo      String?    @map("motivo_rechazo") @db.VarChar(60)
-  createdAt          DateTime   @default(now()) @map("created_at")
-  updatedAt          DateTime   @updatedAt @map("updated_at")
+  createdAt          DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   pedido       Pedido              @relation(fields: [pedidoId], references: [id])
   comprobantes ComprobanteFiscal[]
   historial    PagoEstadoHistorial[]
 
   @@index([tenantId])
+  // BL-213: pagos de un pedido (cobro, webhook, consulta del comensal).
+  @@index([pedidoId])
   @@map("pago")
 }
 
@@ -378,10 +386,10 @@ model ComprobanteFiscal {
   caeVencimiento DateTime? @map("cae_vencimiento") @db.Date
   // URL de consulta QR de DGI.
   urlConsulta    String?   @map("url_consulta")
-  fechaEmision   DateTime  @map("fecha_emision")
+  fechaEmision   DateTime  @map("fecha_emision") @db.Timestamptz(3)
   retencionHasta DateTime  @map("retencion_hasta") @db.Date
-  createdAt      DateTime  @default(now()) @map("created_at")
-  updatedAt      DateTime  @updatedAt @map("updated_at")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   pedido Pedido @relation(fields: [pedidoId], references: [id])
   pago   Pago?  @relation(fields: [pagoId], references: [id])
@@ -400,7 +408,7 @@ model PedidoEstadoHistorial {
   usuarioId      String?      @map("usuario_id") @db.Uuid
   estadoAnterior PedidoEstado @map("estado_anterior")
   estadoNuevo    PedidoEstado @map("estado_nuevo")
-  timestamp      DateTime     @default(now())
+  timestamp      DateTime     @default(now()) @db.Timestamptz(3)
 
   pedido  Pedido   @relation(fields: [pedidoId], references: [id])
   usuario Usuario? @relation(fields: [usuarioId], references: [id])
