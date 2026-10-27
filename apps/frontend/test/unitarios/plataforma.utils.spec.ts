@@ -45,12 +45,18 @@ import {
   totalPaginas,
   validarEdicion,
   validarFormulario,
+  eliminacionIncompleta,
+  mensajeErrorEliminacion,
+  resumirEliminacion,
+  rutCoincide,
+  solicitudEliminacion,
 } from "@/components/plataforma/plataforma.utils";
 import type {
   EstablecimientoListado,
   FichaEstablecimiento,
   FormularioAlta,
   ResultadoAlta,
+  ResultadoEliminacion,
 } from "@/types/plataforma";
 
 /** BL-163 (HU-027): lógica pura de la pantalla /plataforma. */
@@ -451,6 +457,7 @@ describe("alta incompleta (BL-407)", () => {
     creadoEl: "2026-10-09T12:00:00Z",
     restaurante: null,
     estado: "ALTA_INCOMPLETA",
+    eliminable: true,
   };
 
   it("BL-410: es incompleta según el estado que manda el backend", () => {
@@ -621,6 +628,7 @@ describe("editar los datos del establecimiento (BL-412)", () => {
     administradores: [],
     cocina: [],
     resumen: null,
+    eliminable: false,
   };
 
   it("el formulario arranca con los datos de la ficha", () => {
@@ -855,5 +863,67 @@ describe("recuperar el acceso del Administrador (BL-414)", () => {
     expect(mensajeErrorAccesoAdmin(429, "Too Many Requests")).toMatch(/límite/);
     expect(mensajeErrorAccesoAdmin(401, "Unauthorized")).toMatch(/sesión/);
     expect(mensajeErrorAccesoAdmin(403, "Forbidden")).toMatch(/permiso/);
+  });
+});
+
+describe("eliminar un establecimiento creado por error (BL-418)", () => {
+  const resultado = (
+    pendientes: string[] | null,
+    datosEliminados = true,
+  ): ResultadoEliminacion => ({
+    tenantId: "t-1",
+    datosEliminados,
+    cuentas: { eliminadas: 3, pendientes },
+  });
+
+  it("[TC-U-175] el RUT coincide escrito con o sin puntos, guiones y espacios", () => {
+    expect(rutCoincide("219999990016", "219999990016")).toBe(true);
+    expect(rutCoincide(" 21.999999-001-6 ", "219999990016")).toBe(true);
+    expect(rutCoincide("219999990024", "219999990016")).toBe(false);
+    expect(rutCoincide("", "219999990016")).toBe(false);
+  });
+
+  it("[TC-U-176] arma el DELETE a la ficha con el RUT sin separadores", () => {
+    expect(solicitudEliminacion("t-1", "21.999999-001-6")).toEqual({
+      ruta: "/plataforma/establecimientos/t-1",
+      init: {
+        method: "DELETE",
+        body: JSON.stringify({ rut: "219999990016" }),
+      },
+    });
+  });
+
+  it("[TC-U-177] pide reintentar si quedaron usuarios sin borrar o Keycloak no respondió", () => {
+    expect(eliminacionIncompleta(resultado([]))).toBe(false);
+    expect(eliminacionIncompleta(resultado(["uno-cocina"]))).toBe(true);
+    expect(eliminacionIncompleta(resultado(null))).toBe(true);
+
+    expect(resumirEliminacion("Uno SRL", resultado([]))).toBe(
+      "Uno SRL se eliminó. También se borraron sus usuarios.",
+    );
+    expect(resumirEliminacion("Uno SRL", resultado(["uno-cocina"]))).toMatch(
+      /Quedó sin borrar el usuario uno-cocina\. Reintentá\./,
+    );
+    expect(resumirEliminacion("Uno SRL", resultado(["a", "b"], false))).toMatch(
+      /^Los datos de Uno SRL ya estaban eliminados\. Quedaron sin borrar los usuarios a, b/,
+    );
+    expect(resumirEliminacion("Uno SRL", resultado(null))).toMatch(
+      /Keycloak no respondió/,
+    );
+  });
+
+  it("[TC-U-178] el 409 (tiene actividad) y el 400 (RUT) se muestran con el mensaje del backend; 429, 401 y 403 con uno propio", () => {
+    expect(
+      mensajeErrorEliminacion(
+        409,
+        "Tiene actividad: suspendelo en lugar de eliminarlo.",
+      ),
+    ).toMatch(/suspendelo/);
+    expect(mensajeErrorEliminacion(400, "El RUT no coincide")).toBe(
+      "El RUT no coincide",
+    );
+    expect(mensajeErrorEliminacion(429, "Too Many Requests")).toMatch(/límite/);
+    expect(mensajeErrorEliminacion(401, "Unauthorized")).toMatch(/sesión/);
+    expect(mensajeErrorEliminacion(403, "Forbidden")).toMatch(/permiso/);
   });
 });

@@ -24,6 +24,8 @@ export interface EstablecimientoListado {
   restaurante: { id: string; nombre: string } | null;
   /** BL-410 */
   estado: EstadoEstablecimiento;
+  /** BL-418: sin ningún pedido; se puede eliminar definitivamente. */
+  eliminable: boolean;
 }
 
 /**
@@ -102,6 +104,27 @@ export interface FichaEstablecimiento {
     /** BL-413: pedidos sin terminar (recibidos, en preparación o listos). */
     pedidosAbiertos: number;
   } | null;
+  /** BL-418: sin ningún pedido; se puede eliminar definitivamente. */
+  eliminable: boolean;
+}
+
+/**
+ * BL-418: respuesta de DELETE /plataforma/establecimientos/:tenantId.
+ * `pendientes`: usuarios de Keycloak que no se pudieron borrar (se
+ * reintenta con el mismo DELETE); null si Keycloak no respondió.
+ */
+export interface ResultadoEliminacion {
+  tenantId: string;
+  /** false si los datos ya estaban borrados y solo se limpió Keycloak. */
+  datosEliminados: boolean;
+  cuentas: { eliminadas: number; pendientes: string[] | null };
+}
+
+/** BL-418: lo mínimo para confirmar la eliminación (ficha o fila del listado). */
+export interface EstablecimientoAEliminar {
+  tenantId: string;
+  razonSocial: string;
+  rut: string;
 }
 
 /**

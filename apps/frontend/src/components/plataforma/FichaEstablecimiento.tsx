@@ -246,7 +246,8 @@ function Indicador({
  * «Editar datos» (BL-412), «Suspender» o «Reactivar» (BL-413, según el
  * estado), y en la tarjeta de Administradores, «Restablecer contraseña» de
  * cada uno activo y «Agregar Administrador» (BL-414). Agregar necesita el
- * restaurante: con el alta incompleta no se ofrece.
+ * restaurante: con el alta incompleta no se ofrece. «Eliminar
+ * definitivamente» (BL-418) solo si no tiene ningún pedido (`eliminable`).
  *
  * Una columna en el celular y la tablet; dos desde `lg:`. Cada bloque es una
  * sección con su encabezado (h2) para navegar con el lector de pantalla, y
@@ -259,6 +260,7 @@ export function FichaEstablecimiento({
   onReactivar,
   onRestablecerAdmin,
   onAgregarAdmin,
+  onEliminar,
 }: Readonly<{
   ficha: Ficha;
   onEditar?: () => void;
@@ -266,6 +268,7 @@ export function FichaEstablecimiento({
   onReactivar?: () => void;
   onRestablecerAdmin?: (administrador: AdministradorFicha) => void;
   onAgregarAdmin?: () => void;
+  onEliminar?: () => void;
 }>) {
   const suspendido = ficha.estado === "SUSPENDIDO";
   return (
@@ -281,7 +284,8 @@ export function FichaEstablecimiento({
           </div>
         </div>
         {/* BL-412: corregir los datos. BL-413: suspender o reactivar, según
-            el estado. En el celular van una debajo de la otra. */}
+            el estado. BL-418: eliminar, solo sin pedidos. En el celular van
+            una debajo de la otra. */}
         <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap md:justify-end">
           {onEditar && (
             <BotonAccion icono="edit" texto="Editar datos" onClick={onEditar} />
@@ -298,6 +302,14 @@ export function FichaEstablecimiento({
               icono="block"
               texto="Suspender"
               onClick={onSuspender}
+              peligro
+            />
+          )}
+          {ficha.eliminable && onEliminar && (
+            <BotonAccion
+              icono="delete_forever"
+              texto="Eliminar definitivamente"
+              onClick={onEliminar}
               peligro
             />
           )}

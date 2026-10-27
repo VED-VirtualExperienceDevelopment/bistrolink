@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useKeycloakAuth } from "@/components/providers/KeycloakProvider";
 import { apiFetch, ApiError } from "@/lib/api-client";
 import { FichaEstablecimiento } from "@/components/plataforma/FichaEstablecimiento";
@@ -13,6 +13,7 @@ import {
 } from "@/components/plataforma/CambiarEstadoEstablecimientoDialog";
 import { RestablecerAdministradorDialog } from "@/components/plataforma/RestablecerAdministradorDialog";
 import { AgregarAdministradorDialog } from "@/components/plataforma/AgregarAdministradorDialog";
+import { EliminarEstablecimientoDialog } from "@/components/plataforma/EliminarEstablecimientoDialog";
 import {
   mensajeErrorFicha,
   nombreDeCuenta,
@@ -44,10 +45,15 @@ import type {
  * temporal, no la ficha: al agregar, la ficha se vuelve a pedir en segundo
  * plano (sin el indicador de carga, que desmontaría el diálogo con la
  * contraseña a la vista).
+ *
+ * BL-418: «Eliminar definitivamente» (solo sin pedidos) abre la
+ * confirmación con el RUT. Al cerrarla después de eliminar, vuelve al
+ * listado: la ficha ya no existe.
  */
 export default function FichaEstablecimientoPage() {
   const { tenantId } = useParams<{ tenantId: string }>();
   const { token } = useKeycloakAuth();
+  const router = useRouter();
   const [ficha, setFicha] = useState<Ficha | null>(null);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -63,6 +69,8 @@ export default function FichaEstablecimientoPage() {
   const [adminARestablecer, setAdminARestablecer] =
     useState<AdministradorFicha | null>(null);
   const [agregandoAdmin, setAgregandoAdmin] = useState(false);
+  // BL-418: si está abierta la confirmación de eliminar.
+  const [eliminando, setEliminando] = useState(false);
 
   const cargar = useCallback(async () => {
     if (!token || !tenantId) return;
@@ -181,6 +189,11 @@ export default function FichaEstablecimientoPage() {
               setAperturas((n) => n + 1);
               setAgregandoAdmin(true);
             }}
+            onEliminar={() => {
+              setAviso("");
+              setAperturas((n) => n + 1);
+              setEliminando(true);
+            }}
           />
           <EditarEstablecimientoDialog
             key={aperturas}
@@ -237,6 +250,17 @@ export default function FichaEstablecimientoPage() {
                 setAviso(`Administrador ${nombreDeCuenta(creado)} agregado.`);
                 refrescarFicha();
               }}
+            />
+          )}
+          {eliminando && (
+            <EliminarEstablecimientoDialog
+              key={`eliminar-${aperturas}`}
+              open
+              onClose={() => setEliminando(false)}
+              token={token}
+              establecimiento={ficha}
+              textoAlTerminar="Volver al listado"
+              onTerminado={() => router.push("/plataforma")}
             />
           )}
         </>
