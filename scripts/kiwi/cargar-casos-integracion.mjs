@@ -66,6 +66,13 @@ const sesionMesa = (extra = {}) => ({
   ...extra,
   tags: ["HU-017", "BL-60", ...(extra.tags ?? [])],
 });
+// BL-416: gestión de establecimientos por la plataforma (BL-404).
+const plataforma = (ticket, extra = {}) => ({
+  component: "plataforma",
+  requirement: "BL-404",
+  ...extra,
+  tags: ["BL-404", ticket, ...(extra.tags ?? [])],
+});
 const DATOS = {
   55: {
     category: "Funcional",
@@ -200,6 +207,42 @@ const DATOS = {
     category: "Seguridad",
     priority: "P1",
     tags: ["seguridad"],
+  }),
+  87: plataforma("BL-416", {
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["seguridad", "multi-tenant"],
+  }),
+  88: plataforma("BL-409", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["integridad-datos"],
+  }),
+  89: plataforma("BL-411", { category: "Funcional", priority: "P2" }),
+  90: plataforma("BL-413", {
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["seguridad"],
+  }),
+  91: plataforma("BL-414", {
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["seguridad", "multi-tenant"],
+  }),
+  92: plataforma("BL-414", {
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["seguridad", "multi-tenant"],
+  }),
+  93: plataforma("BL-418", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["integridad-datos"],
+  }),
+  94: plataforma("BL-418", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["integridad-datos", "seguridad"],
   }),
 };
 const DATOS_POR_DEFECTO = {

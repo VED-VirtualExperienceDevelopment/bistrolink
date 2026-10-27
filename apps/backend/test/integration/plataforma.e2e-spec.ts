@@ -5,7 +5,15 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request = require('supertest');
 import { Prisma, PrismaClient } from '@prisma/client';
 import { AppModule } from '../../src/app.module';
-import { digitoVerificadorRut } from '../../src/plataforma/rut';
+import {
+  borrarUsuarioKeycloak,
+  buscarUsuarioKeycloak,
+  claims,
+  crearUsuarioPlataforma,
+  pedirToken,
+  rolesKeycloak,
+  rutDePrueba,
+} from './support/plataforma';
 
 /**
  * BL-163 (HU-027), entrega 2: POST /plataforma/establecimientos.
@@ -25,12 +33,10 @@ import { digitoVerificadorRut } from '../../src/plataforma/rut';
  *
  * Todo lo que crea (usuarios de Keycloak y filas de la base) se borra en
  * afterAll, aunque algún test falle.
+ *
+ * BL-416: las ayudas de Keycloak y del RUT están en support/plataforma.ts,
+ * compartidas con plataforma-gestion.e2e-spec.ts.
  */
-
-const KEYCLOAK_URL = process.env.KEYCLOAK_URL ?? 'http://localhost:8080';
-const REALM = process.env.KEYCLOAK_REALM ?? 'bistrolink';
-const CLIENT_ID = process.env.KEYCLOAK_CLIENT_ID ?? 'bistrolink-backend';
-const CLIENT_SECRET = process.env.KEYCLOAK_CLIENT_SECRET ?? '';
 
 const ADMIN_USER = process.env.TEST_ADMIN_USERNAME ?? 'admin-test';
 const ADMIN_PASS = process.env.TEST_ADMIN_PASSWORD;
@@ -41,26 +47,8 @@ const COMENSAL_PASS = process.env.KEYCLOAK_COMENSAL_PASSWORD;
 // Datos únicos por corrida.
 const SUFIJO = Date.now().toString().slice(-10);
 
-/**
- * BL-409: desde que la API valida el dígito verificador, el RUT de prueba
- * tiene que ser un RUT válido (antes era `29` + SUFIJO y la API lo rechaza
- * con 400). Registro 21, seis dígitos de la corrida, `001` y el
- * verificador. Si con esos dígitos no hay verificador posible (da 10), se
- * prueba con el número siguiente.
- */
-function rutDePrueba(): string {
-  const inicial = Number(SUFIJO.slice(-6));
-  for (let intento = 0; intento < 20; intento++) {
-    const numero = String((inicial + intento) % 1_000_000).padStart(6, '0');
-    if (numero === '000000') continue;
-    const base = `21${numero}001`;
-    const digito = digitoVerificadorRut(base);
-    if (digito !== null) return `${base}${digito}`;
-  }
-  throw new Error('No se pudo armar un RUT de prueba válido');
-}
-
-const RUT = rutDePrueba();
+// BL-409: RUT válido (con dígito verificador), único por corrida.
+const RUT = rutDePrueba(SUFIJO);
 const USUARIO_PLATAFORMA = `dev-e2e${SUFIJO}-plataforma`;
 const PASSWORD_PLATAFORMA = `Plataforma-${SUFIJO}`;
 const ADMIN_NUEVO = `e2e-admin-${SUFIJO}`;
@@ -81,97 +69,6 @@ const ALTA = {
   },
   cocina: { username: COCINA_NUEVO },
 };
-
-async function pedirToken(username: string, password: string) {
-  const res = await fetch(
-    `${KEYCLOAK_URL}/realms/${REALM}/protocol/openid-connect/token`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        grant_type: 'password',
-        client_id: CLIENT_ID,
-        client_secret: CLIENT_SECRET,
-        username,
-        password,
-      }),
-    },
-  );
-  if (!res.ok) {
-    throw new Error(
-      `No se pudo obtener token para ${username}: ${res.status} ${await res.text()}`,
-    );
-  }
-  return (await res.json()).access_token as string;
-}
-
-function claims(token: string): Record<string, unknown> {
-  return JSON.parse(
-    Buffer.from(token.split('.')[1], 'base64url').toString('utf8'),
-  );
-}
-
-// Mismo token de admin de master que usuarios.e2e-spec.ts.
-async function getMasterAdminToken(): Promise<string> {
-  const res = await fetch(
-    `${KEYCLOAK_URL}/realms/master/protocol/openid-connect/token`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        grant_type: 'password',
-        client_id: 'admin-cli',
-        username:
-          process.env.KC_BOOTSTRAP_ADMIN_USERNAME ??
-          process.env.KEYCLOAK_ADMIN ??
-          'admin',
-        password:
-          process.env.KC_BOOTSTRAP_ADMIN_PASSWORD ??
-          process.env.KEYCLOAK_ADMIN_PASSWORD ??
-          'admin',
-      }),
-    },
-  );
-  if (!res.ok) {
-    throw new Error(`No se pudo obtener token de admin master: ${res.status}`);
-  }
-  return (await res.json()).access_token as string;
-}
-
-async function adminKeycloak(path: string, init: RequestInit = {}) {
-  return fetch(`${KEYCLOAK_URL}/admin/realms/${REALM}${path}`, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${await getMasterAdminToken()}`,
-      'Content-Type': 'application/json',
-    },
-  });
-}
-
-async function buscarUsuarioKeycloak(username: string) {
-  const res = await adminKeycloak(
-    `/users?username=${encodeURIComponent(username)}&exact=true`,
-  );
-  const usuarios = (await res.json()) as {
-    id: string;
-    email?: string;
-    firstName?: string;
-    lastName?: string;
-  }[];
-  return usuarios[0];
-}
-
-async function rolesKeycloak(keycloakId: string): Promise<string[]> {
-  const res = await adminKeycloak(`/users/${keycloakId}/role-mappings/realm`);
-  return ((await res.json()) as { name: string }[]).map((r) => r.name);
-}
-
-async function borrarUsuarioKeycloak(username: string): Promise<void> {
-  const usuario = await buscarUsuarioKeycloak(username);
-  if (usuario) {
-    await adminKeycloak(`/users/${usuario.id}`, { method: 'DELETE' });
-  }
-}
 
 describe('Alta de establecimientos por la plataforma (HU-027) - e2e', () => {
   let app: INestApplication;
@@ -208,39 +105,10 @@ describe('Alta de establecimientos por la plataforma (HU-027) - e2e', () => {
     if (!COMENSAL_PASS) return;
 
     // Usuario PLATAFORMA del test: sin tenant_id y sin OTP.
-    const rol = await adminKeycloak('/roles/PLATAFORMA');
-    if (!rol.ok) {
-      throw new Error(
-        'Falta el rol PLATAFORMA en el realm (ver keycloak/realm-export.json).',
-      );
-    }
-    const creado = await adminKeycloak('/users', {
-      method: 'POST',
-      body: JSON.stringify({
-        username: USUARIO_PLATAFORMA,
-        email: `${USUARIO_PLATAFORMA}@prueba.bistrolink.local`,
-        firstName: 'Plataforma',
-        lastName: 'Prueba',
-        enabled: true,
-        emailVerified: true,
-        credentials: [
-          { type: 'password', value: PASSWORD_PLATAFORMA, temporary: false },
-        ],
-      }),
-    });
-    if (creado.status !== 201) {
-      throw new Error(
-        `No se pudo crear el usuario PLATAFORMA del test: ${creado.status}`,
-      );
-    }
-    const keycloakId = (creado.headers.get('location') as string)
-      .split('/')
-      .pop();
-    await adminKeycloak(`/users/${keycloakId}/role-mappings/realm`, {
-      method: 'POST',
-      body: JSON.stringify([await rol.json()]),
-    });
-    tokenPlataforma = await pedirToken(USUARIO_PLATAFORMA, PASSWORD_PLATAFORMA);
+    tokenPlataforma = await crearUsuarioPlataforma(
+      USUARIO_PLATAFORMA,
+      PASSWORD_PLATAFORMA,
+    );
   });
 
   afterAll(async () => {
@@ -359,9 +227,9 @@ describe('Alta de establecimientos por la plataforma (HU-027) - e2e', () => {
         const usuario = await buscarUsuarioKeycloak(username);
         expect(usuario).toBeDefined();
         expect(
-          usuario.email && usuario.firstName && usuario.lastName,
+          usuario?.email && usuario.firstName && usuario.lastName,
         ).toBeTruthy();
-        expect(await rolesKeycloak(usuario.id)).toContain(rol);
+        expect(await rolesKeycloak(usuario?.id ?? '')).toContain(rol);
       }
 
       // Admin y Cocina: contraseña temporal, devuelta una sola vez.

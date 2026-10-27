@@ -34,12 +34,15 @@ e2e/
 │   └── llamado-mozo.spec.ts              # BL-69: llamado al mozo (usa support/auth.ts)
 ├── kds/
 │   └── observaciones-kds.spec.ts         # observaciones del comensal en el KDS
+├── plataforma/
+│   └── gestion-establecimientos.spec.ts  # BL-404: buscar, ficha, editar, suspender, eliminar (usa support/plataforma.ts)
 ├── pedido-listo-entregado.spec.ts        # flujo listo → entregado (pendiente de mover a su dominio)
 ├── support/                              # fixtures e IDs del seed; sin tests propios
 │   ├── ids.ts                            # UUIDs y paths del seed
 │   ├── auth.ts                           # fixtures kdsPageMozo / kdsPageAdmin / qrMesas
 │   ├── qr-mesas.ts                       # URLs de los QR de las mesas (HU-034)
-│   └── kds.ts                            # entregar pedidos desde el KDS
+│   ├── kds.ts                            # entregar pedidos desde el KDS
+│   └── plataforma.ts                     # ingreso a /plataforma con OTP y establecimiento de prueba
 └── README.md
 playwright.config.ts                      # raíz del monorepo
 scripts/e2e-update-snapshots.sh           # regenera baselines en Docker
@@ -76,17 +79,20 @@ Si tu spec también debe correr en mobile/Safari, agregalo al `testMatch` de eso
 
 ### `e2e/support/`
 
-| Archivo       | Qué exporta                                                                                                                                                    | Para qué                                                                                                                                                           |
-| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `ids.ts`      | `TENANT_ID`, `RESTAURANTE_ID`, `MESA_ID`, `MESA_ID_RATE_LIMIT`, `ITEM_DISPONIBLE`, `ITEM_NO_DISPONIBLE`, `ENLACE_VIEJO_MESA_PATH`, `MENU_URL_PATH`, `KDS_PATH` | UUIDs y paths fijos que carga `apps/backend/prisma/seed.ts`. Si el seed cambia un UUID o un nombre de ítem, se actualiza acá una sola vez.                         |
-| `auth.ts`     | `test`/`expect` (extiende los de `@playwright/test`), fixtures `kdsPageMozo`, `kdsPageAdmin` y `qrMesas`                                                       | Loguea contra Keycloak en una pestaña nueva del `context` y la deja en `/kds` ya autenticada. Usalo en vez de escribir el login a mano en cada spec de `e2e/kds/`. |
-| `qr-mesas.ts` | `QrMesas` y los helpers del fixture `qrMesas`                                                                                                                  | HU-034 (BL-204): URLs de los QR de las mesas del seed. Ver abajo.                                                                                                  |
+| Archivo         | Qué exporta                                                                                                                                                    | Para qué                                                                                                                                                           |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ids.ts`        | `TENANT_ID`, `RESTAURANTE_ID`, `MESA_ID`, `MESA_ID_RATE_LIMIT`, `ITEM_DISPONIBLE`, `ITEM_NO_DISPONIBLE`, `ENLACE_VIEJO_MESA_PATH`, `MENU_URL_PATH`, `KDS_PATH` | UUIDs y paths fijos que carga `apps/backend/prisma/seed.ts`. Si el seed cambia un UUID o un nombre de ítem, se actualiza acá una sola vez.                         |
+| `auth.ts`       | `test`/`expect` (extiende los de `@playwright/test`), fixtures `kdsPageMozo`, `kdsPageAdmin` y `qrMesas`                                                       | Loguea contra Keycloak en una pestaña nueva del `context` y la deja en `/kds` ya autenticada. Usalo en vez de escribir el login a mano en cada spec de `e2e/kds/`. |
+| `qr-mesas.ts`   | `QrMesas` y los helpers del fixture `qrMesas`                                                                                                                  | HU-034 (BL-204): URLs de los QR de las mesas del seed. Ver abajo.                                                                                                  |
+| `plataforma.ts` | `ingresarPlataforma`, `codigoOtp`, `crearEstablecimiento`, `eliminarEstablecimiento`, `hayCredencialesPlataforma`                                              | BL-416: ingreso a `/plataforma` con usuario, contraseña y OTP, y alta y baja de un establecimiento de prueba por la API. Ver abajo.                                |
 
 **Menú de mesa (QR).** Desde HU-034 (BL-204) el menú de una mesa se abre solo desde la URL de su QR (`/q/<token>`). El token no se puede armar en el test (lo cifra el backend con `QR_TOKEN_KEY`, un secreto de cada entorno), así que lo da el fixture `qrMesas`: `await page.goto(qrMesas.ruta(MESA_ID))`, o `qrMesas.token(MESA_ID)` para la API (`/menu/qr/<token>`). Una vez por worker, loguea un ADMIN en un contexto aparte y pide `GET /mesas/qr`, así que necesita `TEST_ADMIN_USERNAME`/`TEST_ADMIN_PASSWORD`. Los tests **solo leen** los QR: nunca los regeneran, porque regenerar invalida el QR anterior y rompe a los tests que corren en paralelo.
 
 **Mesas abiertas (HU-017, BL-432).** Desde la sesión de mesa (BL-60), el QR de una mesa **cerrada** no abre la carta: muestra «mesa cerrada». Por eso el mismo fixture `qrMesas`, después de leer los QR, deja abiertas `MESA_ID` y `MESA_ID_RATE_LIMIT` (`asegurarMesasAbiertas` en `qr-mesas.ts`): si una mesa ya está abierta no la toca, porque abrirla de nuevo le cambia la sesión a los tests que corren en paralelo; si requiere limpieza, la marca limpia y la abre. Si sumás una mesa propia a `ids.ts` para un test que usa su QR, agregala también a esa lista en `auth.ts`. Ningún test debería cerrar `MESA_ID` ni `MESA_ID_RATE_LIMIT`: para probar el cierre, usá una mesa propia.
 
 `MESA_ID_RATE_LIMIT` existe porque `MESA_ID` ya lo usan varios specs para leer/agregar al carrito: si un test de rate-limit (que agota el cupo de 1 llamado/minuto) compartiera esa misma mesa, podría hacer fallar a otro test que corre en paralelo. Si tu test agota un cupo o deja la mesa en un estado particular, seguí ese patrón: agregá tu propia mesa a `ids.ts` en vez de reusar `MESA_ID`.
+
+**Usuario de plataforma (BL-416).** `e2e/plataforma/` entra a `/plataforma` con un usuario PLATAFORMA propio de E2E. Como toda cuenta PLATAFORMA, tiene OTP: el test genera el código de 6 dígitos con la clave de su app de autenticación (TOTP, RFC 6238, la política por defecto del realm). Necesita `TEST_PLATAFORMA_USERNAME`, `TEST_PLATAFORMA_PASSWORD` y `TEST_PLATAFORMA_OTP_SECRET` (la clave en Base32 que muestra Keycloak en «¿No podés escanearlo?» al configurar el OTP); sin las tres, el spec se saltea. Keycloak no acepta dos veces el mismo código: si el de esta ventana de 30 s ya se usó, el ingreso prueba con el de la siguiente. El spec da de alta su propio establecimiento por la API, corre en orden sobre él y lo elimina al final: nunca toca los demás. Un solo ingreso y una sola alta por corrida (la plataforma limita las altas a 10 por hora por usuario).
 
 Para usar `kdsPageMozo`/`kdsPageAdmin` localmente necesitás las credenciales de los usuarios de prueba de **tu Keycloak local** en variables de entorno de la sesión (`TEST_MOZO_USERNAME`, `TEST_MOZO_PASSWORD`, `TEST_ADMIN_USERNAME`, `TEST_ADMIN_PASSWORD`). Los valores son los de tu `apps/backend/.env`. Nunca se escriben en un spec, en un README ni en un commit, y las de staging no se usan en local.
 
