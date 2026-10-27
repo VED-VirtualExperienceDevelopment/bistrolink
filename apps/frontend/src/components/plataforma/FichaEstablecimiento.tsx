@@ -108,20 +108,61 @@ function Fecha({ iso }: Readonly<{ iso: string }>) {
   return <time dateTime={iso}>{formatearFechaAlta(iso)}</time>;
 }
 
+const CLASE_ACCION =
+  "flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-lg border border-outline-variant px-4 text-body-md font-medium hover:bg-surface-container-high focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary";
+
 /**
- * Cuentas de una sección. BL-414: `accion` agrega un botón por cuenta (por
- * ejemplo, «Restablecer contraseña» en los Administradores).
+ * Botón de acción de la ficha, con ícono y texto. BL-414: `etiqueta` es el
+ * nombre accesible cuando el texto solo no alcanza (varios «Restablecer
+ * contraseña» en la lista: dice de quién). Empieza con el texto visible.
+ */
+function BotonAccion({
+  icono,
+  texto,
+  onClick,
+  peligro = false,
+  etiqueta,
+}: Readonly<{
+  icono: string;
+  texto: string;
+  onClick: () => void;
+  peligro?: boolean;
+  etiqueta?: string;
+}>) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={etiqueta}
+      className={`${CLASE_ACCION} ${peligro ? "text-error" : "text-primary"}`}
+    >
+      <span
+        className="material-symbols-outlined text-[20px]"
+        aria-hidden="true"
+      >
+        {icono}
+      </span>
+      <span>{texto}</span>
+    </button>
+  );
+}
+
+/**
+ * Cuentas de una sección. BL-414: con `onRestablecer`, cada cuenta activa
+ * suma «Restablecer contraseña» (en los Administradores). Una cuenta
+ * desactivada no ingresa: no tiene sentido darle una contraseña (el backend
+ * responde 409).
  */
 function ListaCuentas<C extends CuentaFicha>({
   cuentas,
   vacia,
   etiqueta,
-  accion,
+  onRestablecer,
 }: Readonly<{
   cuentas: C[];
   vacia: string;
   etiqueta: string;
-  accion?: (cuenta: C) => ReactNode;
+  onRestablecer?: (cuenta: C) => void;
 }>) {
   if (cuentas.length === 0) {
     return <p className="text-body-md text-on-surface-variant">{vacia}</p>;
@@ -171,7 +212,14 @@ function ListaCuentas<C extends CuentaFicha>({
                 </p>
               )}
             </div>
-            {accion?.(c)}
+            {onRestablecer && c.activo && (
+              <BotonAccion
+                icono="lock_reset"
+                texto="Restablecer contraseña"
+                etiqueta={`Restablecer contraseña de ${nombreDeCuenta(c)}`}
+                onClick={() => onRestablecer(c)}
+              />
+            )}
           </li>
         );
       })}
@@ -190,45 +238,6 @@ function Indicador({
         {valor}
       </dd>
     </div>
-  );
-}
-
-const CLASE_ACCION =
-  "flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-lg border border-outline-variant px-4 text-body-md font-medium hover:bg-surface-container-high focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary";
-
-/**
- * Botón de acción de la ficha, con ícono y texto. BL-414: `etiqueta` es el
- * nombre accesible cuando el texto solo no alcanza (varios «Restablecer
- * contraseña» en la lista: dice de quién). Empieza con el texto visible.
- */
-function BotonAccion({
-  icono,
-  texto,
-  onClick,
-  peligro = false,
-  etiqueta,
-}: Readonly<{
-  icono: string;
-  texto: string;
-  onClick: () => void;
-  peligro?: boolean;
-  etiqueta?: string;
-}>) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={etiqueta}
-      className={`${CLASE_ACCION} ${peligro ? "text-error" : "text-primary"}`}
-    >
-      <span
-        className="material-symbols-outlined text-[20px]"
-        aria-hidden="true"
-      >
-        {icono}
-      </span>
-      <span>{texto}</span>
-    </button>
   );
 }
 
@@ -387,21 +396,7 @@ export function FichaEstablecimiento({
             cuentas={ficha.administradores}
             etiqueta="Administradores"
             vacia="No tiene Administradores. Sin uno, nadie del restaurante puede gestionar usuarios."
-            accion={
-              onRestablecerAdmin
-                ? (admin) =>
-                    // Una cuenta desactivada no ingresa: no tiene sentido
-                    // darle una contraseña (el backend responde 409).
-                    admin.activo && (
-                      <BotonAccion
-                        icono="lock_reset"
-                        texto="Restablecer contraseña"
-                        etiqueta={`Restablecer contraseña de ${nombreDeCuenta(admin)}`}
-                        onClick={() => onRestablecerAdmin(admin)}
-                      />
-                    )
-                : undefined
-            }
+            onRestablecer={onRestablecerAdmin}
           />
         </Seccion>
 
