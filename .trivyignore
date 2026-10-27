@@ -141,6 +141,20 @@ CVE-2026-84939
 GHSA-6v7p-g79w-8964
 CVE-2025-47273
 
+# CVE-2026-114613 (HIGH) — msgpack 1.1.2 de la imagen oficial kiwitcms/kiwi:latest
+
+# (DoS por memoria al deserializar mapas; corregido en 1.2.3). Mismo caso que las de
+
+# arriba: vive en el venv de la imagen upstream, no es código propio, y Kiwi solo se usa
+
+# en staging, sin datos de producción. Apareció en la base de Trivy del 27/10/2026, en el
+
+# escaneo de testmgmt de una corrida manual del CI.
+
+# Pendiente: revisar cuando kiwitcms/kiwi publique una imagen con msgpack >= 1.2.3.
+
+CVE-2026-114613
+
 # CVE-2026-97687 y CVE-2026-97689 (HIGH) — urllib3 2.7.0 del venv de la imagen
 
 # oficial kiwitcms/kiwi:latest (corregido en 2.8.0). No es código propio y Kiwi
