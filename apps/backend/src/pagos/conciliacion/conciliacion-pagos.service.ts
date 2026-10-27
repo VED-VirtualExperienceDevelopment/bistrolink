@@ -94,12 +94,16 @@ export class ConciliacionPagosService {
         }),
     );
 
+    // Secuencial a propósito (Sonar S9382): de a un pago, para no mandarle
+    // ráfagas de consultas a Mercado Pago ni ocupar varias conexiones del pool
+    // único de la API (BL-430) a la vez. Son pocos pagos (lote acotado) y el
+    // job corre en segundo plano: el tiempo total no importa.
     for (const pago of pendientes) {
       resumen.revisados++;
 
       if (pago.medioPago === 'MERCADOPAGO' && pago.pasarelaReferencia) {
         try {
-          const resultado = await this.webhook.procesarOrden(
+          const resultado = await /* NOSONAR */ this.webhook.procesarOrden(
             pago.pasarelaReferencia,
             'CONCILIACION',
           );
@@ -120,9 +124,8 @@ export class ConciliacionPagosService {
       }
 
       if (pago.createdAt < limiteVencimiento) {
-        if (await this.vencer(tenantId, pago.id)) {
-          resumen.vencidos++;
-        }
+        const vencido = await /* NOSONAR */ this.vencer(tenantId, pago.id);
+        if (vencido) resumen.vencidos++;
       }
     }
 

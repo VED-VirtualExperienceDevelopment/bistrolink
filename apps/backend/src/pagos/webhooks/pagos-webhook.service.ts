@@ -55,6 +55,40 @@ export function estadoPagoDesdeOrden(
   return 'PENDIENTE'; // processing, action_required, o algo que no conocemos
 }
 
+/**
+ * El pago de nuestra base al que corresponde la order: el que tiene esa
+ * referencia. Si no hay, el webhook puede llegar antes de que la respuesta
+ * del cobro guarde la referencia: es el PENDIENTE que todavía no la tiene.
+ * HU-032 (BL-202): o un pago que VENCIÓ sin que llegara nunca la respuesta
+ * del cobro (sin referencia): la notificación es tardía.
+ */
+export function elegirPago<
+  T extends {
+    pasarelaReferencia: string | null;
+    estado: string;
+    motivoRechazo: string | null;
+  },
+>(candidatos: T[], orderId: string): T | undefined {
+  const sinReferencia = candidatos.filter((p) => !p.pasarelaReferencia);
+  return (
+    candidatos.find((p) => p.pasarelaReferencia === orderId) ??
+    sinReferencia.find((p) => p.estado === 'PENDIENTE') ??
+    sinReferencia.find(
+      (p) => p.estado === 'RECHAZADO' && p.motivoRechazo === MOTIVO_VENCIDO,
+    )
+  );
+}
+
+/** 590 y 590.00 son el mismo monto; sin monto en la order, no coincide. */
+export function montoCoincide(
+  montoOrden: string | undefined,
+  montoPago: Prisma.Decimal,
+): boolean {
+  return (
+    montoOrden !== undefined && new Prisma.Decimal(montoOrden).equals(montoPago)
+  );
+}
+
 // Lo que queda en el historial del pago junto con el cambio de estado.
 function detalleDelCambio(
   estado: EstadoPago,
@@ -165,18 +199,7 @@ export class PagosWebhookService {
     const candidatos = await tx.pago.findMany({
       where: { pedidoId, medioPago: 'MERCADOPAGO' },
     });
-    // El webhook puede llegar antes de que la respuesta del cobro guarde la
-    // referencia: en ese caso el pago es el PENDIENTE que todavía no la tiene.
-    //
-    // HU-032 (BL-202): o un pago que VENCIÓ sin que llegara nunca la
-    // respuesta del cobro (sin referencia): la notificación es tardía.
-    const sinReferencia = candidatos.filter((p) => !p.pasarelaReferencia);
-    const pago =
-      candidatos.find((p) => p.pasarelaReferencia === orden.id) ??
-      sinReferencia.find((p) => p.estado === 'PENDIENTE') ??
-      sinReferencia.find(
-        (p) => p.estado === 'RECHAZADO' && p.motivoRechazo === MOTIVO_VENCIDO,
-      );
+    const pago = elegirPago(candidatos, orden.id);
 
     if (!pago) {
       Logger.warn(
@@ -187,10 +210,7 @@ export class PagosWebhookService {
     }
 
     // Defensa: nunca se da por resuelto un pago cuyo monto no coincide.
-    if (
-      orden.totalAmount === undefined ||
-      !new Prisma.Decimal(orden.totalAmount).equals(pago.monto)
-    ) {
+    if (!montoCoincide(orden.totalAmount, pago.monto)) {
       Logger.error(
         `Webhook: el monto de la order ${orden.id} (${orden.totalAmount}) no coincide con el del pago ${pago.id} (${pago.monto})`,
         undefined,
@@ -200,44 +220,16 @@ export class PagosWebhookService {
     }
 
     if (pago.estado === estado) {
-      // Mismo estado (por ejemplo, un pago vencido cuya order después
-      // también falló): solo se completa la referencia si faltaba.
-      if (pago.pasarelaReferencia !== orden.id) {
-        await tx.pago.update({
-          where: { id: pago.id },
-          data: { pasarelaReferencia: orden.id },
-        });
-      }
-      // Un aviso repetido de un pago marcado para reembolso no debe emitir
-      // el CFE (procesarOrden lo emite en 'sin_cambios').
-      const marcadoParaReembolso = await tx.pagoEstadoHistorial.count({
-        where: { pagoId: pago.id, detalle: DETALLE_REQUIERE_REEMBOLSO },
-      });
-      return {
-        resultado:
-          marcadoParaReembolso > 0 ? 'requiere_reembolso' : 'sin_cambios',
-        pagoId: pago.id,
-      };
+      return this.resolverMismoEstado(tx, pago, orden.id);
     }
 
     const pedido = await tx.pedido.findUnique({
       where: { id: pedidoId },
       select: { mesaId: true, estado: true },
     });
-
-    // HU-032 (BL-202): una aprobación tardía (el pago ya había vencido, o se
-    // había rechazado) se aplica si el pedido todavía la puede usar. Si el
-    // comensal ya pagó con otro pago, o el pedido se canceló al cerrar la
-    // mesa (HU-017), la pasarela cobró de más: el pago queda APROBADO (es lo
-    // que pasó) pero NO confirma el pedido, y queda marcado para reembolso
-    // (HU-024, BL-104, todavía sin implementar).
-    let requiereReembolso = false;
-    if (estado === 'APROBADO') {
-      const otroAprobado = await tx.pago.count({
-        where: { pedidoId, estado: 'APROBADO', id: { not: pago.id } },
-      });
-      requiereReembolso = otroAprobado > 0 || pedido?.estado === 'CANCELADO';
-    }
+    const requiereReembolso =
+      estado === 'APROBADO' &&
+      (await this.pedidoYaNoUsaElPago(tx, pedidoId, pago.id, pedido?.estado));
 
     await tx.pago.update({
       where: { id: pago.id },
@@ -296,5 +288,54 @@ export class PagosWebhookService {
       pedidoConfirmado,
       mesaOcupada,
     };
+  }
+
+  /**
+   * Mismo estado que ya tenía el pago (por ejemplo, un pago vencido cuya
+   * order después también falló): solo se completa la referencia si faltaba.
+   * Un aviso repetido de un pago marcado para reembolso devuelve
+   * 'requiere_reembolso', para que procesarOrden no emita el CFE (lo emite en
+   * 'sin_cambios').
+   */
+  private async resolverMismoEstado(
+    tx: PrismaClient,
+    pago: { id: string; pasarelaReferencia: string | null },
+    orderId: string,
+  ): Promise<{ resultado: ResultadoWebhook; pagoId: string }> {
+    if (pago.pasarelaReferencia !== orderId) {
+      await tx.pago.update({
+        where: { id: pago.id },
+        data: { pasarelaReferencia: orderId },
+      });
+    }
+    const marcadoParaReembolso = await tx.pagoEstadoHistorial.count({
+      where: { pagoId: pago.id, detalle: DETALLE_REQUIERE_REEMBOLSO },
+    });
+    return {
+      resultado:
+        marcadoParaReembolso > 0 ? 'requiere_reembolso' : 'sin_cambios',
+      pagoId: pago.id,
+    };
+  }
+
+  /**
+   * HU-032 (BL-202): una aprobación tardía (el pago ya había vencido, o se
+   * había rechazado) se aplica si el pedido todavía la puede usar. Si el
+   * comensal ya pagó con otro pago, o el pedido se canceló al cerrar la mesa
+   * (HU-017), la pasarela cobró de más: el pago queda APROBADO (es lo que
+   * pasó) pero NO confirma el pedido, y queda marcado para reembolso
+   * (HU-024, BL-104, todavía sin implementar).
+   */
+  private async pedidoYaNoUsaElPago(
+    tx: PrismaClient,
+    pedidoId: string,
+    pagoId: string,
+    estadoPedido: string | undefined,
+  ): Promise<boolean> {
+    if (estadoPedido === 'CANCELADO') return true;
+    const otroAprobado = await tx.pago.count({
+      where: { pedidoId, estado: 'APROBADO', id: { not: pagoId } },
+    });
+    return otroAprobado > 0;
   }
 }

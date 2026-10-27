@@ -96,9 +96,12 @@ export class ConciliacionPagosJob
         select: { id: true },
       });
 
+      // Secuencial a propósito (Sonar S9382): un establecimiento por vez,
+      // para no ocupar varias conexiones del pool único (BL-430) ni mandarle
+      // ráfagas de consultas a Mercado Pago. Es un job en segundo plano.
       for (const { id } of tenants) {
         try {
-          const resumen = await this.servicio.conciliarTenant(
+          const resumen = await /* NOSONAR */ this.servicio.conciliarTenant(
             id,
             this.configuracion,
             ahora,
