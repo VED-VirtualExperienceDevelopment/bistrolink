@@ -31,6 +31,17 @@
  * script) y, con --aplicar, reemplaza las que cambiaron. Los casos que no
  * están en ese archivo no se tocan.
  *
+ * BL-435: con --e2e hace lo mismo con los E2E de Playwright (TC-E, en los
+ * .spec.ts de e2e/ y sus subcarpetas), contra el Test Plan «E2E-Playwright»
+ * y con las descripciones de descripciones-e2e.md:
+ *
+ *   node scripts/kiwi/cargar-casos-integracion.mjs --e2e --descripciones
+ *   node scripts/kiwi/cargar-casos-integracion.mjs --e2e --aplicar --descripciones
+ *
+ * En los dos modos, con --aplicar también pasa a CONFIRMED los casos del
+ * código que en Kiwi siguen en otro estado (PROPOSED): se corre después de
+ * una corrida en verde.
+ *
  * Se puede correr las veces que haga falta: lo que ya está igual no se toca.
  * Las credenciales salen de variables de entorno, nunca del repositorio.
  */
@@ -39,13 +50,45 @@ import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const DIRECTORIO_TESTS = "apps/backend/test/integration";
-const NOMBRE_PLAN = "Integration tests";
 const APLICAR = process.argv.includes("--aplicar");
 const DESCRIPCIONES = process.argv.includes("--descripciones");
+const E2E = process.argv.includes("--e2e");
+
+/**
+ * Qué se carga: los tests de integración (por defecto) o, con --e2e, los
+ * E2E de Playwright (BL-435). Cada tipo tiene su prefijo, su carpeta, su
+ * Test Plan y su archivo de descripciones.
+ */
+const TIPO = E2E
+  ? {
+      prefijo: "TC-E",
+      directorio: "e2e",
+      // Recursivo: los specs van por carpeta de dominio (e2e/comensal/...).
+      // support/ no tiene specs.
+      esSpec: (archivo) => archivo.endsWith(".spec.ts"),
+      plan: "E2E-Playwright",
+      descripciones: "descripciones-e2e.md",
+      // Mismo formato que TC-E-001 a 016: el comando que corre solo ese
+      // test, con la ruta sin la línea (cambia con cualquier edición) y -g
+      // con el título sin el prefijo (es una expresión regular: se escapan
+      // los signos).
+      comando: (archivo, titulo) =>
+        `npx playwright test e2e/${archivo.replace(/:\d+$/, "")} -g '${sinPrefijo(titulo).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'`,
+    }
+  : {
+      prefijo: "TC-I",
+      directorio: "apps/backend/test/integration",
+      esSpec: (archivo) =>
+        archivo.endsWith(".e2e-spec.ts") && !archivo.includes("/"),
+      plan: "Integration tests",
+      descripciones: "descripciones-integracion.md",
+      comando: (archivo) => archivo,
+    };
+const DIRECTORIO_TESTS = TIPO.directorio;
+const NOMBRE_PLAN = TIPO.plan;
 const ARCHIVO_DESCRIPCIONES = join(
   dirname(fileURLToPath(import.meta.url)),
-  "descripciones-integracion.md",
+  TIPO.descripciones,
 );
 
 /**
@@ -73,7 +116,7 @@ const plataforma = (ticket, extra = {}) => ({
   ...extra,
   tags: ["BL-404", ticket, ...(extra.tags ?? [])],
 });
-const DATOS = {
+const DATOS_INTEGRACION = {
   55: {
     category: "Funcional",
     priority: "P2",
@@ -245,6 +288,166 @@ const DATOS = {
     tags: ["integridad-datos", "seguridad"],
   }),
 };
+/**
+ * BL-435: datos de los E2E TC-E-017 en adelante, con los criterios de
+ * Mapeo-Test-Cases-Kiwi-TCMS-E2E.md: Requirement con la HU (o el ticket
+ * principal si no tiene HU), Component por la pantalla o el actor que
+ * prueba, Category `Accesibilidad` para los de axe, tags en minúscula salvo
+ * HU-XXX y BL-XXX. TC-E-001 a 016 ya estaban cargados a mano.
+ */
+const e2e = (component, requirement, extra = {}) => ({
+  component,
+  requirement,
+  ...extra,
+  tags: [requirement, "e2e", ...(extra.tags ?? [])],
+});
+const axe = ["axe-core", "wcag2aa"];
+const DATOS_E2E = {
+  17: e2e("comensal", "HU-003", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-309", "BL-311"],
+  }),
+  18: e2e("kds", "HU-003", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-309", "BL-204"],
+  }),
+  19: e2e("comensal", "HU-034", {
+    category: "Seguridad",
+    priority: "P2",
+    tags: ["BL-204", "seguridad"],
+  }),
+  20: e2e("mesas", "HU-028", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-173", "integridad-datos"],
+  }),
+  21: e2e("mesas", "HU-028", {
+    category: "Seguridad",
+    priority: "P2",
+    tags: ["BL-173", "seguridad"],
+  }),
+  22: e2e("mesas", "HU-028", {
+    category: "Accesibilidad",
+    priority: "P2",
+    tags: ["BL-330", ...axe],
+  }),
+  23: e2e("keycloak", "BL-342", {
+    category: "Accesibilidad",
+    priority: "P2",
+    tags: ["BL-351", "cross-browser", ...axe],
+  }),
+  24: e2e("keycloak", "BL-342", {
+    category: "Accesibilidad",
+    priority: "P2",
+    tags: ["BL-345", "cross-browser", ...axe],
+  }),
+  25: e2e("keycloak", "BL-342", {
+    category: "Funcional",
+    priority: "P3",
+    tags: ["BL-351", "teclado"],
+  }),
+  26: e2e("keycloak", "BL-342", { category: "Funcional", priority: "P3" }),
+  27: e2e("comensal", "BL-352", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["cross-browser"],
+  }),
+  28: e2e("comensal", "BL-352", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["cross-browser", "responsive"],
+  }),
+  29: e2e("comensal", "BL-352", {
+    category: "Funcional",
+    priority: "P3",
+    tags: ["cross-browser", "responsive"],
+  }),
+  30: e2e("comensal", "BL-352", {
+    category: "Accesibilidad",
+    priority: "P2",
+    tags: ["cross-browser", ...axe],
+  }),
+  31: e2e("keycloak", "HU-013", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-358"],
+  }),
+  32: e2e("keycloak", "HU-013", {
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["BL-359", "seguridad"],
+  }),
+  33: e2e("keycloak", "HU-013", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-362", "BL-366"],
+  }),
+  34: e2e("keycloak", "HU-013", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-361"],
+  }),
+  35: e2e("keycloak", "HU-013", {
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["BL-367", "seguridad"],
+  }),
+  36: e2e("keycloak", "HU-013", {
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["BL-369", "seguridad"],
+  }),
+  37: e2e("keycloak", "HU-013", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-382", "integridad-datos"],
+  }),
+  38: e2e("keycloak", "HU-013", {
+    category: "Accesibilidad",
+    priority: "P2",
+    tags: ["BL-357", ...axe],
+  }),
+  39: e2e("comensal", "HU-007", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-311", "pagos", "integridad-datos"],
+  }),
+  // Gestión de establecimientos (BL-404, HU-041).
+  40: e2e("plataforma", "HU-041", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-404", "BL-406"],
+  }),
+  41: e2e("plataforma", "HU-041", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-404", "BL-411"],
+  }),
+  42: e2e("plataforma", "HU-041", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-404", "BL-412"],
+  }),
+  43: e2e("plataforma", "HU-041", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-404", "BL-413"],
+  }),
+  44: e2e("plataforma", "HU-041", {
+    category: "Accesibilidad",
+    priority: "P1",
+    tags: ["BL-404", "BL-416", "responsive", ...axe],
+  }),
+  45: e2e("plataforma", "HU-041", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-404", "BL-418", "integridad-datos"],
+  }),
+};
+const DATOS = E2E ? DATOS_E2E : DATOS_INTEGRACION;
+
 const DATOS_POR_DEFECTO = {
   category: "Funcional",
   priority: "P3",
@@ -260,11 +463,17 @@ function casosDelCodigo() {
   // Un literal entre comillas simples, dobles o backticks que empieza con
   // [TC-I-NNN]. Cada alternativa admite las otras comillas adentro (hay
   // títulos con "En preparación").
-  const patron =
-    /'(\[TC-I-(\d{3})\][^'\n]*)'|"(\[TC-I-(\d{3})\][^"\n]*)"|`(\[TC-I-(\d{3})\][^`\n]*)`/g;
+  const p = TIPO.prefijo;
+  const patron = new RegExp(
+    `'(\\[${p}-(\\d{3})\\][^'\\n]*)'|"(\\[${p}-(\\d{3})\\][^"\\n]*)"|\`(\\[${p}-(\\d{3})\\][^\`\\n]*)\``,
+    "g",
+  );
   const casos = new Map();
-  for (const archivo of readdirSync(DIRECTORIO_TESTS).sort()) {
-    if (!archivo.endsWith(".e2e-spec.ts")) continue;
+  const archivos = readdirSync(DIRECTORIO_TESTS, { recursive: true })
+    .map((a) => String(a).replaceAll("\\", "/"))
+    .filter(TIPO.esSpec)
+    .sort();
+  for (const archivo of archivos) {
     const fuente = readFileSync(join(DIRECTORIO_TESTS, archivo), "utf8");
     for (const m of fuente.matchAll(patron)) {
       const titulo = m[1] ?? m[3] ?? m[5];
@@ -272,7 +481,7 @@ function casosDelCodigo() {
       const linea = fuente.slice(0, m.index).split("\n").length;
       if (casos.has(numero)) {
         throw new Error(
-          `TC-I-${String(numero).padStart(3, "0")} está repetido en el código (${casos.get(numero).script} y ${archivo}:${linea})`,
+          `${p}-${String(numero).padStart(3, "0")} está repetido en el código (${casos.get(numero).script} y ${archivo}:${linea})`,
         );
       }
       casos.set(numero, { numero, titulo, script: `${archivo}:${linea}` });
@@ -288,7 +497,7 @@ function casosDelCodigo() {
 function descripcionesDelArchivo() {
   const partes = readFileSync(ARCHIVO_DESCRIPCIONES, "utf8")
     .replaceAll("\r\n", "\n")
-    .split(/^## TC-I-(\d{3})[ \t]*$/m);
+    .split(new RegExp(`^## ${TIPO.prefijo}-(\\d{3})[ \\t]*$`, "m"));
   const descripciones = new Map();
   for (let i = 1; i < partes.length; i += 2) {
     descripciones.set(Number(partes[i]), partes[i + 1].trim());
@@ -348,7 +557,7 @@ async function unico(metodo, filtro, descripcion) {
 }
 
 const numeroDe = (summary) => {
-  const m = /^\[TC-I-(\d{3})\]/.exec(summary ?? "");
+  const m = new RegExp(`^\\[${TIPO.prefijo}-(\\d{3})\\]`).exec(summary ?? "");
   return m ? Number(m[1]) : null;
 };
 
@@ -376,13 +585,17 @@ const textoNormalizado = (texto) =>
   sinEscapar(texto).replaceAll("\r\n", "\n").trim();
 
 const sinPrefijo = (titulo) =>
-  (titulo ?? "").replace(/^\[TC-I-\d{3}\]\s*/, "").trim();
+  (titulo ?? "")
+    .replace(new RegExp(`^\\[${TIPO.prefijo}-\\d{3}\\]\\s*`), "")
+    .trim();
 
 // ── Principal ────────────────────────────────────────────────────────────────
 
 async function main() {
   const casos = casosDelCodigo();
-  console.log(`Código: ${casos.length} casos TC-I en ${DIRECTORIO_TESTS}.`);
+  console.log(
+    `Código: ${casos.length} casos ${TIPO.prefijo} en ${DIRECTORIO_TESTS}.`,
+  );
 
   const conEscapados = casos.filter((c) => CARACTERES_ESCAPADOS.test(c.titulo));
   if (conEscapados.length > 0) {
@@ -403,7 +616,9 @@ async function main() {
     { name: NOMBRE_PLAN },
     "Test Plan",
   );
-  console.log(`Kiwi: Test Plan «${NOMBRE_PLAN}» (id ${plan.id}).`);
+  console.log(
+    `Kiwi: Test Plan «${NOMBRE_PLAN}» (id ${plan.id}, producto ${plan.product__name}).`,
+  );
 
   const enPlan = await rpc("TestCase.filter", [{ plan: plan.id }]);
   // Se busca por el TC-I del principio del título y, si en Kiwi está sin ese
@@ -438,6 +653,26 @@ async function main() {
     console.log(`    Código: ${c.titulo}`);
   }
 
+  // Casos del código que en Kiwi no están en CONFIRMED (los E2E cargados a
+  // mano quedaron en PROPOSED hasta su primera corrida en verde).
+  const confirmado = await unico(
+    "TestCaseStatus.filter",
+    { name: "CONFIRMED" },
+    "estado CONFIRMED",
+  );
+  const sinConfirmar = [...iguales, ...titulosDistintos]
+    .map(
+      (c) =>
+        c.enKiwi ??
+        porNumero.get(c.numero) ??
+        porTexto.get(sinPrefijo(c.titulo)),
+    )
+    .filter((caso) => caso.case_status !== confirmado.id);
+  console.log(`\nSin CONFIRMED en Kiwi: ${sinConfirmar.length}.`);
+  for (const caso of sinConfirmar) {
+    console.log(`  TC-${caso.id} ${caso.summary} (${caso.case_status__name})`);
+  }
+
   console.log(`\nFaltan en Kiwi: ${faltantes.length}.`);
   for (const c of faltantes) {
     const sinDatos = DATOS[c.numero]
@@ -447,7 +682,10 @@ async function main() {
   }
 
   if (!APLICAR) {
-    if (DESCRIPCIONES) await sincronizarDescripciones(plan.id, false);
+    if (DESCRIPCIONES) {
+      const aCrear = new Set(faltantes.map((c) => c.numero));
+      await sincronizarDescripciones(plan.id, false, aCrear);
+    }
     console.log(
       "\nNo se cambió nada. Para cargar, volvé a correrlo con --aplicar.",
     );
@@ -457,6 +695,11 @@ async function main() {
   for (const c of titulosDistintos) {
     await rpc("TestCase.update", [c.enKiwi.id, { summary: c.titulo }]);
     console.log(`Título corregido: TC-${c.enKiwi.id} → ${c.titulo}`);
+  }
+
+  for (const caso of sinConfirmar) {
+    await rpc("TestCase.update", [caso.id, { case_status: confirmado.id }]);
+    console.log(`Confirmado: TC-${caso.id}`);
   }
 
   if (faltantes.length > 0) {
@@ -506,14 +749,14 @@ async function crearFaltantes(faltantes, idPlan, producto) {
         priority: await idPrioridad(datos.priority),
         case_status: confirmado.id,
         is_automated: true,
-        script: c.script,
+        script: TIPO.comando(c.script, c.titulo),
         requirement: datos.requirement,
         text: [
           "### Precondición",
           "Ver el test automatizado.",
           "",
           "### Pasos",
-          `Automatizado en \`apps/backend/test/integration/${c.script}\`.`,
+          `Automatizado en \`${DIRECTORIO_TESTS}/${c.script}\`.`,
           "",
           "### Resultado esperado",
           "El test pasa.",
@@ -541,7 +784,7 @@ async function crearFaltantes(faltantes, idPlan, producto) {
  * Compara la descripción de los casos del plan con descripciones-integracion.md
  * y, si aplicar es true, reemplaza las que cambiaron.
  */
-async function sincronizarDescripciones(idPlan, aplicar) {
+async function sincronizarDescripciones(idPlan, aplicar, aCrear = new Set()) {
   const descripciones = descripcionesDelArchivo();
   const enPlan = await rpc("TestCase.filter", [{ plan: idPlan }]);
   const porNumero = new Map();
@@ -552,9 +795,11 @@ async function sincronizarDescripciones(idPlan, aplicar) {
 
   const cambian = [];
   const sinCaso = [];
+  let conCasoNuevo = 0;
   for (const [numero, texto] of descripciones) {
     const caso = porNumero.get(numero);
-    if (!caso) sinCaso.push(numero);
+    if (!caso && aCrear.has(numero)) conCasoNuevo++;
+    else if (!caso) sinCaso.push(numero);
     else if (textoNormalizado(caso.text) !== texto)
       cambian.push({ caso, texto });
   }
@@ -562,11 +807,16 @@ async function sincronizarDescripciones(idPlan, aplicar) {
   console.log(
     `\nDescripciones: ${descripciones.size} en el archivo, ${cambian.length} para actualizar.`,
   );
+  if (conCasoNuevo > 0) {
+    console.log(
+      `  Más ${conCasoNuevo} de casos que faltan: se cargan después de crearlos, en la misma corrida con --aplicar.`,
+    );
+  }
   for (const { caso } of cambian)
     console.log(`  TC-${caso.id} ${caso.summary}`);
   for (const numero of sinCaso) {
     console.warn(
-      `  Aviso: TC-I-${String(numero).padStart(3, "0")} tiene descripción en el archivo pero no está en el plan.`,
+      `  Aviso: ${TIPO.prefijo}-${String(numero).padStart(3, "0")} tiene descripción en el archivo pero no está en el plan.`,
     );
   }
   if (!aplicar) return;

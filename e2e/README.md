@@ -63,8 +63,18 @@ Reglas de estructura:
 2. Creá `<feature>.spec.ts`.
 3. Importá los IDs del seed desde `e2e/support/ids.ts`. Si falta uno, agregalo ahí (y al seed).
 4. Decidí en qué navegadores tiene que correr (ver tabla). Por defecto solo corre en `chromium`.
-5. Corrélo local con `--project=chromium --ignore-snapshots`.
-6. Abrí el PR.
+5. Ponele a cada `test(...)` el título `[TC-E-NNN] <HU o pantalla>: <qué comprueba>`, con el siguiente número libre (ver «Casos en Kiwi TCMS»).
+6. Corrélo local con `--project=chromium --ignore-snapshots`.
+7. Cargá el caso en Kiwi y abrí el PR.
+
+### Casos en Kiwi TCMS (BL-435)
+
+Cada test es un caso del Test Plan «E2E-Playwright» de Kiwi, y el pipeline registra ahí su resultado (job «Merge + reporte E2E a Kiwi TCMS»). Para eso:
+
+- **El título del test es el título del caso en Kiwi, idéntico.** Empieza con `[TC-E-NNN]` y no lleva comillas ni los signos `<`, `>` y `&` (Kiwi los guarda escapados y no encontraría el caso): se usan `«»` y palabras («en menos de 1 s»).
+- **Antes de mergear** un PR que agrega tests o les cambia el título, se cargan con `scripts/kiwi/cargar-casos-integracion.mjs --e2e` (crea los que faltan, corrige los títulos y, con `--descripciones`, carga la descripción desde `scripts/kiwi/descripciones-e2e.md`). Si no, el reporte crea un caso nuevo solo con el título.
+- Un test que corre en varios proyectos es un solo caso: falla si falló en alguno (el comentario dice en cuál) y queda salteado solo si se salteó en todos.
+- Un test sin `[TC-E-NNN]` no se reporta a Kiwi (el job lo avisa).
 
 ### Proyectos configurados
 
@@ -110,7 +120,10 @@ import { test, expect } from "../support/auth";
 import { MESA_ID } from "../support/ids";
 
 test.describe("HU-00X · Título corto de la historia", () => {
-  test("el comensal ve el menú al entrar por QR", async ({ page, qrMesas }) => {
+  test("[TC-E-0NN] HU-00X: el comensal ve el menú al entrar por QR", async ({
+    page,
+    qrMesas,
+  }) => {
     await page.goto(qrMesas.ruta(MESA_ID)); // /q/<token>, usa BASE_URL de la config
 
     await expect(page.getByRole("heading", { name: "Menú" })).toBeVisible();
@@ -293,6 +306,7 @@ Enmascarar o evitar: fechas y horas, contadores, imágenes remotas y el badge de
 - [ ] No hay URLs, IDs ni credenciales hardcodeados.
 - [ ] Sin `waitForTimeout`; los locators son por rol/label/testid.
 - [ ] Pasa local con `--project=chromium --ignore-snapshots`.
+- [ ] Cada test tiene su `[TC-E-NNN]` y está cargado en Kiwi con el mismo título (`cargar-casos-integracion.mjs --e2e` dice «0 para actualizar»).
 - [ ] (Sprints 8 y 9) Si toca UI con screenshots: baselines regenerados con `npm run test:e2e:update-snapshots` y diff revisado.
 - [ ] No hay `*-darwin.png` ni `*-win32.png` en el commit.
 - [ ] Si debe correr en mobile/Safari: agregado al `testMatch`.
