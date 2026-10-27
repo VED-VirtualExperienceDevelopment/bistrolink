@@ -122,6 +122,13 @@ const pagosPendientes = (extra = {}) => ({
   ...extra,
   tags: ["HU-032", "BL-202", "pagos", ...(extra.tags ?? [])],
 });
+// BL-435: CRUD de la carta (BL-52/BL-53, HU-005), en menu-admin.e2e-spec.ts.
+const cartaAdmin = (extra = {}) => ({
+  component: "api",
+  requirement: "HU-005",
+  ...extra,
+  tags: ["HU-005", "BL-52", ...(extra.tags ?? [])],
+});
 const DATOS_INTEGRACION = {
   55: {
     category: "Funcional",
@@ -309,6 +316,40 @@ const DATOS_INTEGRACION = {
     priority: "P1",
     tags: ["seguridad", "multi-tenant"],
   }),
+  99: cartaAdmin({ category: "Funcional", priority: "P2" }),
+  100: cartaAdmin({ category: "Funcional", priority: "P2" }),
+  101: cartaAdmin({ category: "Funcional", priority: "P2" }),
+  102: cartaAdmin({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["seguridad"],
+  }),
+  103: cartaAdmin({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["seguridad"],
+  }),
+  104: cartaAdmin({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["BL-53", "seguridad"],
+  }),
+  105: cartaAdmin({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["BL-53", "seguridad"],
+  }),
+  106: cartaAdmin({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-53", "integridad-datos"],
+  }),
+  107: cartaAdmin({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-53", "integridad-datos"],
+  }),
+  108: cartaAdmin({ category: "Performance", priority: "P2" }),
 };
 /**
  * BL-435: datos de los E2E TC-E-017 en adelante, con los criterios de
