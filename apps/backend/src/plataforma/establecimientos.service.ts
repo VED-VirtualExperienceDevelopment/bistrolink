@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
+import { tieneActividad } from './eliminacion-establecimiento.service';
 
 export const TAMANO_PAGINA_ESTABLECIMIENTOS = 20;
 
@@ -74,6 +75,8 @@ export interface EstablecimientoListado {
   restaurante: { id: string; nombre: string } | null;
   /** BL-410: ver estadoDelEstablecimiento. */
   estado: EstadoEstablecimiento;
+  /** BL-418: sin ningún pedido, se puede eliminar (ver tieneActividad). */
+  eliminable: boolean;
 }
 
 export interface PaginaEstablecimientos {
@@ -142,6 +145,10 @@ export function combinarCondiciones(
  *
  * BL-410: filtro opcional por estado (condicionEstado), que se combina con
  * la búsqueda. Cada fila trae su estado, calculado con la misma regla.
+ *
+ * BL-418: cada fila dice si se puede eliminar. Se calcula en el mismo
+ * contexto en que se lee el restaurante (una consulta más por fila, con
+ * LIMIT 1).
  */
 @Injectable()
 export class EstablecimientosService {
@@ -185,14 +192,14 @@ export class EstablecimientosService {
 
     const items: EstablecimientoListado[] = [];
     for (const tenant of tenants) {
-      const restaurante = await this.tenantPrisma.runInTenantContext(
-        tenant.id,
-        (tx) =>
-          tx.restaurante.findUnique({
+      const { restaurante, eliminable } =
+        await this.tenantPrisma.runInTenantContext(tenant.id, async (tx) => ({
+          restaurante: await tx.restaurante.findUnique({
             where: { tenantId: tenant.id },
             select: { id: true, nombre: true },
           }),
-      );
+          eliminable: !(await tieneActividad(tx, tenant.id)),
+        }));
       items.push({
         tenantId: tenant.id,
         razonSocial: tenant.razonSocial,
@@ -202,6 +209,7 @@ export class EstablecimientosService {
         creadoEl: tenant.createdAt,
         restaurante,
         estado: estadoDelEstablecimiento(tenant),
+        eliminable,
       });
     }
 

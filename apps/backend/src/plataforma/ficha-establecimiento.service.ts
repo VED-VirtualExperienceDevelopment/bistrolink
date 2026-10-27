@@ -6,6 +6,7 @@ import {
   EstadoEstablecimiento,
   estadoDelEstablecimiento,
 } from './establecimientos.service';
+import { tieneActividad } from './eliminacion-establecimiento.service';
 
 /** BL-411: días que abarca el conteo de pedidos del resumen. */
 export const DIAS_RESUMEN_PEDIDOS = 30;
@@ -79,6 +80,11 @@ export interface FichaEstablecimiento {
     /** BL-413: pedidos sin terminar (ESTADOS_PEDIDO_ABIERTO). */
     pedidosAbiertos: number;
   } | null;
+  /**
+   * BL-418: si se puede eliminar (no tiene ningún pedido). Si no, la única
+   * opción es suspenderlo. El DELETE lo vuelve a controlar.
+   */
+  eliminable: boolean;
 }
 
 interface CuentaListada {
@@ -180,14 +186,15 @@ export class FichaEstablecimientoService {
               }),
             }
           : null;
-        return { tenant, restaurante, resumen };
+        const eliminable = !(await tieneActividad(tx, tenantId));
+        return { tenant, restaurante, resumen, eliminable };
       },
     );
 
     if (!datos) {
       throw new NotFoundException('No existe un establecimiento con ese id');
     }
-    const { tenant, restaurante, resumen } = datos;
+    const { tenant, restaurante, resumen, eliminable } = datos;
 
     const cuentas: CuentaListada[] = await this.usuarios.listar(tenantId);
     const porUsername = (a: CuentaFicha, b: CuentaFicha) =>
@@ -216,6 +223,7 @@ export class FichaEstablecimientoService {
         .map(cuentaParaFicha)
         .sort(porUsername),
       resumen,
+      eliminable,
     };
   }
 }

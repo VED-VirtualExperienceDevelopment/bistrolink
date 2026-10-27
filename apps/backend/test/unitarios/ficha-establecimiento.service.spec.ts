@@ -101,7 +101,11 @@ describe('FichaEstablecimientoService (BL-411)', () => {
       restaurante: { findUnique: jest.fn().mockResolvedValue(RESTAURANTE) },
       mesa: { count: jest.fn().mockResolvedValue(8) },
       itemCarta: { count: jest.fn().mockResolvedValue(24) },
-      pedido: { count: jest.fn().mockResolvedValue(57) },
+      pedido: {
+        count: jest.fn().mockResolvedValue(57),
+        // BL-418: tiene pedidos, no se puede eliminar.
+        findFirst: jest.fn().mockResolvedValue({ id: 'pedido-1' }),
+      },
     };
     const tenantPrisma = {
       runInTenantContext: jest.fn((tenantId: string, fn: any) => {
@@ -251,6 +255,17 @@ describe('FichaEstablecimientoService (BL-411)', () => {
     expect(ficha.resumen).toBeNull();
     expect(tx.mesa.count).not.toHaveBeenCalled();
     expect(tx.pedido.count).not.toHaveBeenCalled();
+  });
+
+  it('[TC-U-174] BL-418: eliminable solo si no tiene ningún pedido, de cualquier estado', async () => {
+    expect((await service.obtener(TENANT_ID, AHORA)).eliminable).toBe(false);
+    expect(tx.pedido.findFirst).toHaveBeenCalledWith({
+      where: { tenantId: TENANT_ID },
+      select: { id: true },
+    });
+
+    tx.pedido.findFirst.mockResolvedValue(null);
+    expect((await service.obtener(TENANT_ID, AHORA)).eliminable).toBe(true);
   });
 
   it('un tenant inexistente da 404, sin buscar cuentas', async () => {
