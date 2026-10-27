@@ -39,6 +39,41 @@ export interface CuentaFicha {
   ultimoIngreso?: string | null;
 }
 
+/**
+ * BL-414: un Administrador en la ficha. Suma el id de su fila en `usuario`,
+ * para restablecerle la contraseña (sigue sin email ni id de Keycloak).
+ */
+export interface AdministradorFicha extends CuentaFicha {
+  id: string;
+}
+
+/** BL-414: respuesta de restablecer la contraseña de un Administrador. */
+export interface ContrasenaRestablecida {
+  id: string;
+  /** Temporal: se muestra una sola vez. */
+  temporaryPassword: string;
+  /** false si la contraseña cambió pero no se pudieron cerrar sus sesiones. */
+  sesionesCerradas: boolean;
+}
+
+/** BL-414: el Administrador nuevo, con su contraseña temporal (una sola vez). */
+export interface AdministradorCreado {
+  id: string;
+  username: string | null;
+  nombre: string | null;
+  apellido: string | null;
+  email: string | null;
+  temporaryPassword: string;
+}
+
+/** BL-414: lo que se escribe en «Agregar Administrador» (todo string). */
+export interface FormularioAdministrador {
+  nombre: string;
+  apellido: string;
+  username: string;
+  email: string;
+}
+
 /** BL-411: GET /plataforma/establecimientos/:tenantId (fechas en ISO). */
 export interface FichaEstablecimiento {
   tenantId: string;
@@ -56,7 +91,8 @@ export interface FichaEstablecimiento {
     direccion: string;
     timezone: string;
   } | null;
-  administradores: CuentaFicha[];
+  /** BL-414: con el id de su fila. */
+  administradores: AdministradorFicha[];
   cocina: CuentaFicha[];
   resumen: {
     mesas: number;

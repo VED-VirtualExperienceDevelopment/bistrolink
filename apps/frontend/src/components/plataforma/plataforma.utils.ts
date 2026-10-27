@@ -6,6 +6,11 @@
 // (AprovisionarEstablecimientoDto): el backend sigue siendo quien decide, esto
 // solo evita un viaje de ida y vuelta para errores obvios.
 
+import {
+  errorNombrePersona,
+  errorUsername,
+  normalizarUsername,
+} from "@/components/admin/usuarios/Usuarios.utils";
 import type {
   CambiosEstablecimiento,
   CuentaFicha,
@@ -13,6 +18,7 @@ import type {
   EstadoEstablecimiento,
   FichaEstablecimiento,
   FiltroEstado,
+  FormularioAdministrador,
   FormularioAlta,
   FormularioEdicion,
   ResultadoAlta,
@@ -402,8 +408,13 @@ export const ETIQUETA_ESTADO: Record<EstadoEstablecimiento, string> = {
   ALTA_INCOMPLETA: "Alta incompleta",
 };
 
-/** BL-411: «Ana Gómez»; si no tiene nombre cargado, el usuario. */
-export function nombreDeCuenta(cuenta: CuentaFicha): string {
+/**
+ * BL-411: «Ana Gómez»; si no tiene nombre cargado, el usuario. BL-414: sirve
+ * también para el Administrador recién creado (solo usa estos tres datos).
+ */
+export function nombreDeCuenta(
+  cuenta: Pick<CuentaFicha, "nombre" | "apellido" | "username">,
+): string {
   const nombre = [cuenta.nombre, cuenta.apellido]
     .filter((parte) => parte?.trim())
     .join(" ")
@@ -634,5 +645,95 @@ export function mensajeErrorCambioEstado(
   }
   // 409 (ya estaba suspendido o activo), 404 y 400 llegan con el mensaje del
   // backend.
+  return mensaje;
+}
+
+// ── BL-414: recuperar el acceso del Administrador ───────────────────────────
+
+/** BL-414: rutas de la API (POST). */
+export function rutaAdministradores(tenantId: string): string {
+  return `${rutaFicha(tenantId)}/administradores`;
+}
+
+export function rutaRestablecerAdministrador(
+  tenantId: string,
+  usuarioId: string,
+): string {
+  return `${rutaAdministradores(tenantId)}/${encodeURIComponent(usuarioId)}/restablecer-contrasena`;
+}
+
+export const FORMULARIO_ADMIN_VACIO: FormularioAdministrador = {
+  nombre: "",
+  apellido: "",
+  username: "",
+  email: "",
+};
+
+/** BL-414: errores por campo; un objeto vacío quiere decir que es válido. */
+export type ErroresAdministrador = Partial<
+  Record<keyof FormularioAdministrador, string>
+>;
+
+/**
+ * BL-414: mismas reglas que «Nuevo usuario» (nombre, apellido y usuario de 3
+ * a 30 caracteres), con el correo obligatorio como en el alta del
+ * establecimiento: el perfil del realm lo exige.
+ */
+export function validarFormularioAdministrador(
+  f: FormularioAdministrador,
+): ErroresAdministrador {
+  const errores: ErroresAdministrador = {};
+  const nombre = errorNombrePersona(f.nombre, "nombre");
+  if (nombre) errores.nombre = nombre;
+  const apellido = errorNombrePersona(f.apellido, "apellido");
+  if (apellido) errores.apellido = apellido;
+  const username = errorUsername(f.username);
+  if (username) errores.username = username;
+  const email = f.email.trim();
+  if (!email) {
+    errores.email = "Ingresá el correo.";
+  } else if (!esEmailValido(email)) {
+    errores.email = "Ingresá un correo válido, por ejemplo ana@restaurante.uy.";
+  }
+  return errores;
+}
+
+/** BL-414: body de POST /administradores, con los textos limpios. */
+export function construirPedidoAdministrador(f: FormularioAdministrador) {
+  return {
+    nombre: limpiar(f.nombre),
+    apellido: limpiar(f.apellido),
+    username: normalizarUsername(f.username),
+    email: f.email.trim(),
+  };
+}
+
+/** BL-414: aviso para el lector de pantalla después de intentar copiar. */
+export function avisoCopiaContrasena(
+  deQuien: string,
+  copiada: boolean,
+): string {
+  return copiada
+    ? `Contraseña de ${deQuien} copiada`
+    : `No se pudo copiar la contraseña de ${deQuien}. Quedó seleccionada: copiala con Ctrl+C.`;
+}
+
+/** BL-414: mensaje si no se pudo restablecer ni crear. */
+export function mensajeErrorAccesoAdmin(
+  status: number,
+  mensaje: string,
+): string {
+  if (status === 429) {
+    return "Llegaste al límite de accesos por hora. Probá de nuevo más tarde.";
+  }
+  if (status === 401) {
+    return "Tu sesión venció. Volvé a ingresar.";
+  }
+  if (status === 403) {
+    return "Tu usuario no tiene permiso para gestionar el acceso de los establecimientos.";
+  }
+  // 404 (no es un Administrador de este establecimiento), 409 (desactivado,
+  // sin restaurante, usuario o correo ya usados) y 400 llegan con el mensaje
+  // del backend.
   return mensaje;
 }

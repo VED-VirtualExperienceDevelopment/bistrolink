@@ -1,4 +1,11 @@
 import {
+  avisoCopiaContrasena,
+  construirPedidoAdministrador,
+  FORMULARIO_ADMIN_VACIO,
+  mensajeErrorAccesoAdmin,
+  rutaAdministradores,
+  rutaRestablecerAdministrador,
+  validarFormularioAdministrador,
   avisoDeCopia,
   avisoPedidosAbiertos,
   cambiosDeEdicion,
@@ -769,5 +776,84 @@ describe("BL-413: suspender y reactivar", () => {
     );
     expect(mensajeErrorCambioEstado(401, "Unauthorized")).toMatch(/sesión/);
     expect(mensajeErrorCambioEstado(403, "Forbidden")).toMatch(/permiso/);
+  });
+});
+
+describe("recuperar el acceso del Administrador (BL-414)", () => {
+  const ADMIN_VALIDO = {
+    nombre: "Laura",
+    apellido: "Méndez",
+    username: "laura.mendez",
+    email: "laura@restaurante.uy",
+  };
+
+  it("[TC-U-161] rutas de la API para restablecer y agregar, con los ids codificados", () => {
+    expect(rutaAdministradores("t-1")).toBe(
+      "/plataforma/establecimientos/t-1/administradores",
+    );
+    expect(rutaRestablecerAdministrador("t-1", "u-1")).toBe(
+      "/plataforma/establecimientos/t-1/administradores/u-1/restablecer-contrasena",
+    );
+    expect(rutaRestablecerAdministrador("t-1", "a/b")).toContain("a%2Fb");
+  });
+
+  it("[TC-U-162] un formulario completo y válido no tiene errores", () => {
+    expect(validarFormularioAdministrador(ADMIN_VALIDO)).toEqual({});
+  });
+
+  it("[TC-U-163] el formulario vacío marca los cuatro campos, con el correo obligatorio", () => {
+    const errores = validarFormularioAdministrador(FORMULARIO_ADMIN_VACIO);
+    expect(Object.keys(errores).sort()).toEqual(
+      ["apellido", "email", "nombre", "username"].sort(),
+    );
+    expect(errores.email).toBe("Ingresá el correo.");
+  });
+
+  it("[TC-U-164] rechaza un correo inválido, un usuario solo numérico y un nombre con símbolos", () => {
+    const errores = validarFormularioAdministrador({
+      nombre: "<script>",
+      apellido: "Méndez",
+      username: "12345",
+      email: "no-es-un-correo",
+    });
+    expect(errores.nombre).toMatch(/letras/);
+    expect(errores.username).toMatch(/al menos una letra/);
+    expect(errores.email).toMatch(/correo válido/);
+    expect(errores.apellido).toBeUndefined();
+  });
+
+  it("[TC-U-165] arma el pedido con los textos limpios y el usuario en minúsculas", () => {
+    expect(
+      construirPedidoAdministrador({
+        nombre: "  Laura   María ",
+        apellido: " Méndez ",
+        username: "  Laura.Mendez ",
+        email: " laura@restaurante.uy ",
+      }),
+    ).toEqual({
+      nombre: "Laura María",
+      apellido: "Méndez",
+      username: "laura.mendez",
+      email: "laura@restaurante.uy",
+    });
+  });
+
+  it("anuncia la copia, o que falló y quedó seleccionada", () => {
+    expect(avisoCopiaContrasena("Ana Gómez", true)).toBe(
+      "Contraseña de Ana Gómez copiada",
+    );
+    expect(avisoCopiaContrasena("Ana Gómez", false)).toMatch(/Ctrl\+C/);
+  });
+
+  it("los 404 y 409 se muestran con el mensaje del backend; 429, 401 y 403 con uno propio", () => {
+    expect(mensajeErrorAccesoAdmin(409, "El usuario está desactivado")).toBe(
+      "El usuario está desactivado",
+    );
+    expect(mensajeErrorAccesoAdmin(404, "Usuario no encontrado")).toBe(
+      "Usuario no encontrado",
+    );
+    expect(mensajeErrorAccesoAdmin(429, "Too Many Requests")).toMatch(/límite/);
+    expect(mensajeErrorAccesoAdmin(401, "Unauthorized")).toMatch(/sesión/);
+    expect(mensajeErrorAccesoAdmin(403, "Forbidden")).toMatch(/permiso/);
   });
 });

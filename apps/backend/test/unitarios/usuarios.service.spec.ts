@@ -130,6 +130,49 @@ describe('UsuariosService', () => {
       expect(resultado.temporaryPassword).toBeDefined();
     });
 
+    it('[TC-U-155] UsuariosService.crear audita con la acción indicada (BL-414) y una sola vez', async () => {
+      tx().restaurante.findUnique.mockResolvedValue({
+        id: RESTAURANTE_ID,
+        tenantId: TENANT_ID,
+      });
+      keycloakAdmin.createUser.mockResolvedValue('keycloak-id-admin');
+      tx().usuario.create.mockResolvedValue({
+        id: 'usuario-admin-nuevo',
+        tenantId: TENANT_ID,
+        restauranteId: RESTAURANTE_ID,
+        keycloakId: 'keycloak-id-admin',
+        rol: 'ADMIN',
+      });
+
+      await service.crear(
+        TENANT_ID,
+        'kc-plataforma-1',
+        {
+          username: 'admin-nuevo',
+          email: 'admin-nuevo@uno.local',
+          nombre: 'Laura',
+          apellido: 'Méndez',
+          rol: 'ADMIN',
+          restauranteId: RESTAURANTE_ID,
+        },
+        { accionAuditoria: AuditAction.ESTABLECIMIENTO_ADMIN_CREADO },
+      );
+
+      expect(keycloakAdmin.assignRealmRole).toHaveBeenCalledWith(
+        'keycloak-id-admin',
+        'ADMIN',
+      );
+      expect(auditLog.registrar).toHaveBeenCalledTimes(1);
+      expect(auditLog.registrar).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: AuditAction.ESTABLECIMIENTO_ADMIN_CREADO,
+          actorKeycloakId: 'kc-plataforma-1',
+          targetUsuarioId: 'usuario-admin-nuevo',
+          detalle: { rol: 'ADMIN', restauranteId: RESTAURANTE_ID },
+        }),
+      );
+    });
+
     it('[TC-U-009] UsuariosService.crear rechaza con 403 si el restaurante no pertenece al tenant', async () => {
       // RLS ya filtra esta query — si el restaurante es de otro tenant,
       // simplemente no aparece, y el mock lo simula devolviendo null.
@@ -709,6 +752,58 @@ describe('UsuariosService', () => {
         expect.objectContaining({
           action: AuditAction.USUARIO_CONTRASENA_RESTABLECIDA,
           detalle: { rol: 'MOZO', sesionesCerradas: false },
+        }),
+      );
+    });
+
+    // BL-414: la plataforma reusa este método para recuperar el acceso del
+    // Administrador de un establecimiento.
+    it('[TC-U-153] UsuariosService.restablecerContrasena con soloRol ADMIN responde 404 para un Mozo, sin tocar Keycloak', async () => {
+      tx().usuario.findUnique.mockResolvedValue(mozoActivo);
+
+      await expect(
+        service.restablecerContrasena(
+          TENANT_ID,
+          ACTOR_KEYCLOAK_ID,
+          'usuario-mozo',
+          { soloRol: 'ADMIN' },
+        ),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(keycloakAdmin.resetPassword).not.toHaveBeenCalled();
+      expect(auditLog.registrar).not.toHaveBeenCalled();
+    });
+
+    it('[TC-U-154] UsuariosService.restablecerContrasena audita con la acción indicada (BL-414) y una sola vez', async () => {
+      tx().usuario.findUnique.mockResolvedValue({
+        ...mozoActivo,
+        id: 'usuario-admin',
+        rol: 'ADMIN',
+        keycloakId: 'kc-admin',
+      });
+
+      await service.restablecerContrasena(
+        TENANT_ID,
+        'kc-plataforma-1',
+        'usuario-admin',
+        {
+          soloRol: 'ADMIN',
+          accionAuditoria:
+            AuditAction.ESTABLECIMIENTO_ADMIN_CONTRASENA_RESTABLECIDA,
+        },
+      );
+
+      expect(keycloakAdmin.resetPassword).toHaveBeenCalledWith(
+        'kc-admin',
+        expect.any(String),
+      );
+      expect(auditLog.registrar).toHaveBeenCalledTimes(1);
+      expect(auditLog.registrar).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: AuditAction.ESTABLECIMIENTO_ADMIN_CONTRASENA_RESTABLECIDA,
+          actorKeycloakId: 'kc-plataforma-1',
+          targetUsuarioId: 'usuario-admin',
+          detalle: { rol: 'ADMIN', sesionesCerradas: true },
         }),
       );
     });

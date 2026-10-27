@@ -39,6 +39,7 @@ const RESTAURANTE = {
 
 const CUENTAS = [
   {
+    id: 'u-mozo',
     rol: 'MOZO',
     cuentaCompartida: false,
     username: 'uno-mozo',
@@ -50,6 +51,7 @@ const CUENTAS = [
     ultimoIngreso: null,
   },
   {
+    id: 'u-admin-b',
     rol: 'ADMIN',
     cuentaCompartida: false,
     username: 'uno-admin-b',
@@ -61,6 +63,7 @@ const CUENTAS = [
     ultimoIngreso: null,
   },
   {
+    id: 'u-admin-a',
     rol: 'ADMIN',
     cuentaCompartida: false,
     username: 'uno-admin-a',
@@ -72,6 +75,7 @@ const CUENTAS = [
     ultimoIngreso: '2026-10-21T10:00:00.000Z',
   },
   {
+    id: 'kc-cocina',
     rol: 'COCINA',
     cuentaCompartida: true,
     username: 'uno-cocina',
@@ -173,11 +177,12 @@ describe('FichaEstablecimientoService (BL-411)', () => {
     });
   });
 
-  it('Administradores ordenados por usuario, sin Mozos ni datos de más', async () => {
+  it('[TC-U-156] Administradores ordenados por usuario, con el id de su fila (BL-414), sin Mozos ni datos de más', async () => {
     const ficha = await service.obtener(TENANT_ID, AHORA);
 
     expect(ficha.administradores).toEqual([
       {
+        id: 'u-admin-a',
         username: 'uno-admin-a',
         nombre: 'Ana',
         apellido: 'Gómez',
@@ -185,6 +190,7 @@ describe('FichaEstablecimientoService (BL-411)', () => {
         ultimoIngreso: '2026-10-21T10:00:00.000Z',
       },
       {
+        id: 'u-admin-b',
         username: 'uno-admin-b',
         nombre: 'Beatriz',
         apellido: 'Pérez',

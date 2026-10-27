@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { textoUltimoIngreso } from "@/components/admin/usuarios/Usuarios.utils";
 import type {
+  AdministradorFicha,
   CuentaFicha,
   EstadoEstablecimiento,
   FichaEstablecimiento as Ficha,
@@ -59,17 +60,29 @@ function EstadoBadge({ estado }: Readonly<{ estado: EstadoEstablecimiento }>) {
   );
 }
 
-/** Sección con título propio, para navegar por encabezados. */
+/**
+ * Sección con título propio, para navegar por encabezados. BL-414: `accion`
+ * va junto al título (en el celular, debajo).
+ */
 function Seccion({
   id,
   titulo,
+  accion,
   children,
-}: Readonly<{ id: string; titulo: string; children: ReactNode }>) {
+}: Readonly<{
+  id: string;
+  titulo: string;
+  accion?: ReactNode;
+  children: ReactNode;
+}>) {
   return (
     <section aria-labelledby={id} className={CLASE_TARJETA}>
-      <h2 id={id} className="mb-4 text-headline-sm text-on-surface">
-        {titulo}
-      </h2>
+      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <h2 id={id} className="text-headline-sm text-on-surface">
+          {titulo}
+        </h2>
+        {accion}
+      </div>
       {children}
     </section>
   );
@@ -95,11 +108,62 @@ function Fecha({ iso }: Readonly<{ iso: string }>) {
   return <time dateTime={iso}>{formatearFechaAlta(iso)}</time>;
 }
 
-function ListaCuentas({
+const CLASE_ACCION =
+  "flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-lg border border-outline-variant px-4 text-body-md font-medium hover:bg-surface-container-high focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary";
+
+/**
+ * Botón de acción de la ficha, con ícono y texto. BL-414: `etiqueta` es el
+ * nombre accesible cuando el texto solo no alcanza (varios «Restablecer
+ * contraseña» en la lista: dice de quién). Empieza con el texto visible.
+ */
+function BotonAccion({
+  icono,
+  texto,
+  onClick,
+  peligro = false,
+  etiqueta,
+}: Readonly<{
+  icono: string;
+  texto: string;
+  onClick: () => void;
+  peligro?: boolean;
+  etiqueta?: string;
+}>) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={etiqueta}
+      className={`${CLASE_ACCION} ${peligro ? "text-error" : "text-primary"}`}
+    >
+      <span
+        className="material-symbols-outlined text-[20px]"
+        aria-hidden="true"
+      >
+        {icono}
+      </span>
+      <span>{texto}</span>
+    </button>
+  );
+}
+
+/**
+ * Cuentas de una sección. BL-414: con `onRestablecer`, cada cuenta activa
+ * suma «Restablecer contraseña» (en los Administradores). Una cuenta
+ * desactivada no ingresa: no tiene sentido darle una contraseña (el backend
+ * responde 409).
+ */
+function ListaCuentas<C extends CuentaFicha>({
   cuentas,
   vacia,
   etiqueta,
-}: Readonly<{ cuentas: CuentaFicha[]; vacia: string; etiqueta: string }>) {
+  onRestablecer,
+}: Readonly<{
+  cuentas: C[];
+  vacia: string;
+  etiqueta: string;
+  onRestablecer?: (cuenta: C) => void;
+}>) {
   if (cuentas.length === 0) {
     return <p className="text-body-md text-on-surface-variant">{vacia}</p>;
   }
@@ -114,37 +178,47 @@ function ListaCuentas({
         return (
           <li
             key={c.username ?? nombreDeCuenta(c)}
-            className="flex flex-col gap-1 py-3 first:pt-0 last:pb-0"
+            className="flex flex-col gap-3 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-start sm:justify-between"
           >
-            <p className="flex flex-wrap items-center gap-2 text-body-lg text-on-surface">
-              <span className="break-words font-semibold">
-                {nombreDeCuenta(c)}
-              </span>
-              {!c.activo && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-surface-container-high px-2 py-0.5 text-body-md text-on-surface-variant">
-                  <span
-                    className="material-symbols-outlined text-[16px]"
-                    aria-hidden="true"
-                  >
-                    person_off
-                  </span>
-                  <span>Desactivada</span>
+            <div className="flex min-w-0 flex-col gap-1">
+              <p className="flex flex-wrap items-center gap-2 text-body-lg text-on-surface">
+                <span className="break-words font-semibold">
+                  {nombreDeCuenta(c)}
                 </span>
-              )}
-            </p>
-            {c.username && (
-              <p className="break-all text-body-md text-on-surface-variant">
-                <span className="sr-only">Usuario: </span>
-                {c.username}
-              </p>
-            )}
-            {ingreso && (
-              <p className="text-body-md text-on-surface-variant">
-                {ingreso.texto}
-                {ingreso.completo && (
-                  <span className="sr-only"> ({ingreso.completo})</span>
+                {!c.activo && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-surface-container-high px-2 py-0.5 text-body-md text-on-surface-variant">
+                    <span
+                      className="material-symbols-outlined text-[16px]"
+                      aria-hidden="true"
+                    >
+                      person_off
+                    </span>
+                    <span>Desactivada</span>
+                  </span>
                 )}
               </p>
+              {c.username && (
+                <p className="break-all text-body-md text-on-surface-variant">
+                  <span className="sr-only">Usuario: </span>
+                  {c.username}
+                </p>
+              )}
+              {ingreso && (
+                <p className="text-body-md text-on-surface-variant">
+                  {ingreso.texto}
+                  {ingreso.completo && (
+                    <span className="sr-only"> ({ingreso.completo})</span>
+                  )}
+                </p>
+              )}
+            </div>
+            {onRestablecer && c.activo && (
+              <BotonAccion
+                icono="lock_reset"
+                texto="Restablecer contraseña"
+                etiqueta={`Restablecer contraseña de ${nombreDeCuenta(c)}`}
+                onClick={() => onRestablecer(c)}
+              />
             )}
           </li>
         );
@@ -167,42 +241,12 @@ function Indicador({
   );
 }
 
-const CLASE_ACCION =
-  "flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-lg border border-outline-variant px-4 text-body-md font-medium hover:bg-surface-container-high focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary";
-
-/** Botón de acción de la ficha, con ícono y texto. */
-function BotonAccion({
-  icono,
-  texto,
-  onClick,
-  peligro = false,
-}: Readonly<{
-  icono: string;
-  texto: string;
-  onClick: () => void;
-  peligro?: boolean;
-}>) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`${CLASE_ACCION} ${peligro ? "text-error" : "text-primary"}`}
-    >
-      <span
-        className="material-symbols-outlined text-[20px]"
-        aria-hidden="true"
-      >
-        {icono}
-      </span>
-      <span>{texto}</span>
-    </button>
-  );
-}
-
 /**
- * BL-411: ficha de un establecimiento para el rol PLATAFORMA. Las acciones
- * llegan de a una: «Editar datos» (BL-412), «Suspender» o «Reactivar»
- * (BL-413, según el estado); recuperar el acceso (BL-414) viene después.
+ * BL-411: ficha de un establecimiento para el rol PLATAFORMA. Acciones:
+ * «Editar datos» (BL-412), «Suspender» o «Reactivar» (BL-413, según el
+ * estado), y en la tarjeta de Administradores, «Restablecer contraseña» de
+ * cada uno activo y «Agregar Administrador» (BL-414). Agregar necesita el
+ * restaurante: con el alta incompleta no se ofrece.
  *
  * Una columna en el celular y la tablet; dos desde `lg:`. Cada bloque es una
  * sección con su encabezado (h2) para navegar con el lector de pantalla, y
@@ -213,11 +257,15 @@ export function FichaEstablecimiento({
   onEditar,
   onSuspender,
   onReactivar,
+  onRestablecerAdmin,
+  onAgregarAdmin,
 }: Readonly<{
   ficha: Ficha;
   onEditar?: () => void;
   onSuspender?: () => void;
   onReactivar?: () => void;
+  onRestablecerAdmin?: (administrador: AdministradorFicha) => void;
+  onAgregarAdmin?: () => void;
 }>) {
   const suspendido = ficha.estado === "SUSPENDIDO";
   return (
@@ -330,11 +378,25 @@ export function FichaEstablecimiento({
           )}
         </Seccion>
 
-        <Seccion id="ficha-administradores" titulo="Administradores">
+        <Seccion
+          id="ficha-administradores"
+          titulo="Administradores"
+          accion={
+            onAgregarAdmin &&
+            ficha.restaurante && (
+              <BotonAccion
+                icono="person_add"
+                texto="Agregar Administrador"
+                onClick={onAgregarAdmin}
+              />
+            )
+          }
+        >
           <ListaCuentas
             cuentas={ficha.administradores}
             etiqueta="Administradores"
             vacia="No tiene Administradores. Sin uno, nadie del restaurante puede gestionar usuarios."
+            onRestablecer={onRestablecerAdmin}
           />
         </Seccion>
 

@@ -11,11 +11,17 @@ import {
   type AccionEstado,
   CambiarEstadoEstablecimientoDialog,
 } from "@/components/plataforma/CambiarEstadoEstablecimientoDialog";
+import { RestablecerAdministradorDialog } from "@/components/plataforma/RestablecerAdministradorDialog";
+import { AgregarAdministradorDialog } from "@/components/plataforma/AgregarAdministradorDialog";
 import {
   mensajeErrorFicha,
+  nombreDeCuenta,
   rutaFicha,
 } from "@/components/plataforma/plataforma.utils";
-import type { FichaEstablecimiento as Ficha } from "@/types/plataforma";
+import type {
+  AdministradorFicha,
+  FichaEstablecimiento as Ficha,
+} from "@/types/plataforma";
 
 /**
  * BL-411: ficha de un establecimiento (/plataforma/establecimientos/[id]).
@@ -32,6 +38,12 @@ import type { FichaEstablecimiento as Ficha } from "@/types/plataforma";
  * BL-413: «Suspender» o «Reactivar» (según el estado) abren la
  * confirmación; al confirmar, la ficha se reemplaza por la que devuelve la
  * API y se anuncia el resultado en la misma región aria-live.
+ *
+ * BL-414: «Restablecer contraseña» (de un Administrador) y «Agregar
+ * Administrador» abren su diálogo. Esas respuestas traen la contraseña
+ * temporal, no la ficha: al agregar, la ficha se vuelve a pedir en segundo
+ * plano (sin el indicador de carga, que desmontaría el diálogo con la
+ * contraseña a la vista).
  */
 export default function FichaEstablecimientoPage() {
   const { tenantId } = useParams<{ tenantId: string }>();
@@ -46,6 +58,11 @@ export default function FichaEstablecimientoPage() {
   const [aviso, setAviso] = useState("");
   // BL-413: acción de estado en curso (null = diálogo cerrado).
   const [accionEstado, setAccionEstado] = useState<AccionEstado | null>(null);
+  // BL-414: Administrador al que se le restablece la contraseña (null =
+  // diálogo cerrado) y si está abierto «Agregar Administrador».
+  const [adminARestablecer, setAdminARestablecer] =
+    useState<AdministradorFicha | null>(null);
+  const [agregandoAdmin, setAgregandoAdmin] = useState(false);
 
   const cargar = useCallback(async () => {
     if (!token || !tenantId) return;
@@ -68,6 +85,18 @@ export default function FichaEstablecimientoPage() {
   useEffect(() => {
     cargar();
   }, [cargar]);
+
+  // BL-414: refresca la ficha sin mostrar «Cargando» ni tocar los diálogos.
+  // Si falla, queda la ficha que estaba (el Administrador nuevo aparece al
+  // recargar la página).
+  const refrescarFicha = useCallback(async () => {
+    if (!token || !tenantId) return;
+    try {
+      setFicha(await apiFetch<Ficha>(rutaFicha(tenantId), token));
+    } catch {
+      // Sin aviso: el alta ya se hizo y el diálogo lo muestra.
+    }
+  }, [token, tenantId]);
 
   return (
     <div className="w-full space-y-6 p-4 md:p-6">
@@ -142,6 +171,16 @@ export default function FichaEstablecimientoPage() {
               setAperturas((n) => n + 1);
               setAccionEstado("reactivar");
             }}
+            onRestablecerAdmin={(administrador) => {
+              setAviso("");
+              setAperturas((n) => n + 1);
+              setAdminARestablecer(administrador);
+            }}
+            onAgregarAdmin={() => {
+              setAviso("");
+              setAperturas((n) => n + 1);
+              setAgregandoAdmin(true);
+            }}
           />
           <EditarEstablecimientoDialog
             key={aperturas}
@@ -169,6 +208,34 @@ export default function FichaEstablecimientoPage() {
                     ? "Establecimiento suspendido."
                     : "Establecimiento reactivado.",
                 );
+              }}
+            />
+          )}
+          {adminARestablecer && (
+            <RestablecerAdministradorDialog
+              key={`restablecer-${aperturas}`}
+              open
+              onClose={() => setAdminARestablecer(null)}
+              token={token}
+              tenantId={tenantId}
+              administrador={adminARestablecer}
+              onRestablecida={() =>
+                setAviso(
+                  `Contraseña de ${nombreDeCuenta(adminARestablecer)} restablecida.`,
+                )
+              }
+            />
+          )}
+          {agregandoAdmin && (
+            <AgregarAdministradorDialog
+              key={`agregar-${aperturas}`}
+              open
+              onClose={() => setAgregandoAdmin(false)}
+              token={token}
+              tenantId={tenantId}
+              onCreado={(creado) => {
+                setAviso(`Administrador ${nombreDeCuenta(creado)} agregado.`);
+                refrescarFicha();
               }}
             />
           )}
