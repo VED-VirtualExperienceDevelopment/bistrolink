@@ -27,4 +27,7 @@ export enum AuditAction {
   ESTABLECIMIENTO_ADMIN_CREADO = 'ESTABLECIMIENTO_ADMIN_CREADO', // BL-414 (Administrador nuevo creado por la plataforma)
   ESTABLECIMIENTO_ELIMINADO = 'ESTABLECIMIENTO_ELIMINADO', // BL-418 (solo sin actividad; con el RUT y las cuentas de Keycloak que quedaron)
   CARTA_ITEM_IMAGEN_CAMBIADA = 'CARTA_ITEM_IMAGEN_CAMBIADA', // BL-387 (alta, cambio o quita de la imagen de un ítem)
+  CARTA_ITEM_MODIFICADO = 'CARTA_ITEM_MODIFICADO', // BL-205 (HU-005: precio o disponibilidad, con antes y después)
+  CARTA_ITEM_DADO_DE_BAJA = 'CARTA_ITEM_DADO_DE_BAJA', // BL-205 (baja de un ítem: pasa a no disponible)
+  MESA_PEDIDOS_CANCELADOS = 'MESA_PEDIDOS_CANCELADOS', // BL-205 (al cerrar la mesa se cancelan los pedidos sin pagar, HU-017)
 }

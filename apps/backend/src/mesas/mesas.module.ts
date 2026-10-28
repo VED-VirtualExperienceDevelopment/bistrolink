@@ -8,6 +8,7 @@ import { MesasController } from './mesas.controller';
 import { MesasService } from './mesas.service';
 import { MesasQrService } from './mesas-qr.service';
 import { MesaThrottlerGuard } from './mesa-throttler.guard';
+import { AuditLogService } from '../audit-log/audit-log.service';
 
 @Module({
   imports: [
@@ -18,6 +19,11 @@ import { MesaThrottlerGuard } from './mesa-throttler.guard';
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 1 }]),
   ],
   controllers: [MesasController],
-  providers: [MesasService, MesasQrService, MesaThrottlerGuard],
+  providers: [
+    MesasService,
+    MesasQrService,
+    MesaThrottlerGuard,
+    AuditLogService,
+  ],
 })
 export class MesasModule {}

@@ -105,7 +105,7 @@ async function main(): Promise<void> {
   });
   const storage = new StorageService();
   const procesador = new ProcesadorImagenService();
-  const auditoria = new AuditLogService();
+  const auditoria = new AuditLogService(prisma);
   const actor = `script:${userInfo().username}`;
 
   // Mismo patrón que TenantPrismaService: cada consulta a una tabla con RLS
@@ -201,13 +201,29 @@ async function main(): Promise<void> {
           const keyNueva = `${tenant.id}/menu/${randomUUID()}.webp`;
           await storage.guardarImagenPublicada(keyNueva, procesada);
 
-          // Solo si la imagen del ítem sigue siendo la que se procesó.
-          const { count } = await enTenant(tenant.id, (tx) =>
-            tx.itemCarta.updateMany({
+          // Solo si la imagen del ítem sigue siendo la que se procesó. El
+          // registro de auditoría (BL-205) va en la misma transacción.
+          const { count } = await enTenant(tenant.id, async (tx) => {
+            const actualizado = await tx.itemCarta.updateMany({
               where: { id: item.id, imagenKey: keyOriginal },
               data: { imagenKey: keyNueva },
-            }),
-          );
+            });
+            if (actualizado.count > 0) {
+              await auditoria.registrarEnTx(tx, {
+                action: AuditAction.CARTA_ITEM_IMAGEN_CAMBIADA,
+                tenantId: tenant.id,
+                actorKeycloakId: actor,
+                entidadId: item.id,
+                detalle: {
+                  itemId: item.id,
+                  imagenKeyAnterior: keyOriginal,
+                  imagenKeyNueva: keyNueva,
+                  motivo: 'reprocesamiento BL-390',
+                },
+              });
+            }
+            return actualizado;
+          });
           if (count === 0) {
             resumen.omitidos++;
             resumen.aReprocesar--;
@@ -217,17 +233,6 @@ async function main(): Promise<void> {
             continue;
           }
 
-          auditoria.registrar({
-            action: AuditAction.CARTA_ITEM_IMAGEN_CAMBIADA,
-            tenantId: tenant.id,
-            actorKeycloakId: actor,
-            detalle: {
-              itemId: item.id,
-              imagenKeyAnterior: keyOriginal,
-              imagenKeyNueva: keyNueva,
-              motivo: 'reprocesamiento BL-390',
-            },
-          });
           resumen.reprocesados++;
           console.log(
             `${etiqueta}: reprocesada (${kb(original.length)} → ${kb(procesada.length)})`,

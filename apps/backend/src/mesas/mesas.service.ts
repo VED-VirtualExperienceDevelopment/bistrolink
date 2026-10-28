@@ -8,6 +8,8 @@ import { randomUUID } from 'node:crypto';
 import { MesaEstado, PedidoEstado, Prisma } from '@prisma/client';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { KdsGateway } from '../pedidos/kds.gateway';
+import { AuditLogService } from '../audit-log/audit-log.service';
+import { AuditAction } from '../audit-log/audit-action.enum';
 import { MesaLayoutDto } from './dto/mesa-layout.dto';
 import { MesaLayoutItemDto } from './dto/guardar-layout.dto';
 import { PlanoDto } from './dto/plano.dto';
@@ -92,6 +94,7 @@ export class MesasService {
   constructor(
     private readonly tenantPrisma: TenantPrismaService,
     private readonly kdsGateway: KdsGateway,
+    private readonly auditLog: AuditLogService,
   ) {}
 
   /**
@@ -581,6 +584,15 @@ export class MesasService {
         estadoAnterior: PedidoEstado.PENDIENTE_PAGO,
         estadoNuevo: PedidoEstado.CANCELADO,
       })),
+    });
+    // HU-035 (BL-205): las cancelaciones quedan en la auditoría, en la misma
+    // transacción del cierre.
+    await this.auditLog.registrarEnTx(tx, {
+      action: AuditAction.MESA_PEDIDOS_CANCELADOS,
+      tenantId,
+      actorKeycloakId: usuarioKeycloakId,
+      entidadId: mesaId,
+      detalle: { motivo: 'cierre de la mesa', pedidosCancelados: ids },
     });
     return ids.length;
   }

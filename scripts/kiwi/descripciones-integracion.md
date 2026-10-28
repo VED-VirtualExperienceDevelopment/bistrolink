@@ -20,3 +20,64 @@ Formato de cada bloque: `### Precondición`, `### Pasos` y `### Resultado
 esperado`, igual que los casos cargados a mano desde TC-I-029.
 
 ## Casos para cargar
+
+## TC-I-109
+
+### Precondición
+
+Tenant A del seed con el ítem de carta 5555… y su precio original.
+
+### Pasos
+
+1. Cambiar el precio del ítem con `MenuAdminService.updateItem` (el mismo servicio que usa `PATCH /admin/menu/item/:id`), con un actor de prueba.
+2. Volver a poner el precio original.
+
+### Resultado esperado
+
+1. En `registro_auditoria` hay una fila `CARTA_ITEM_MODIFICADO` del ítem, con el actor, `valores_antes` con el precio original y `valores_despues` con el nuevo.
+2. La vuelta también queda registrada, con el precio original en `valores_despues`.
+
+## TC-I-110
+
+### Precondición
+
+Un registro de auditoría del tenant A (el de TC-I-109). La API usa el rol de runtime `bistrolink_app`.
+
+### Pasos
+
+1. Desde el tenant A, `UPDATE registro_auditoria` sobre ese registro.
+2. Desde el tenant A, `DELETE FROM registro_auditoria` sobre ese registro.
+
+### Resultado esperado
+
+Los dos fallan con «permission denied» (el rol no tiene UPDATE ni DELETE sobre la tabla) y el registro sigue igual.
+
+## TC-I-111
+
+### Precondición
+
+Un registro de auditoría del tenant A.
+
+### Pasos
+
+1. Contar ese registro desde el contexto de otro tenant.
+
+### Resultado esperado
+
+0 filas: RLS no deja ver registros de otro establecimiento.
+
+## TC-I-112
+
+### Precondición
+
+Usuarios de prueba ADMIN y MOZO del tenant A (`TEST_ADMIN_*`, `TEST_MOZO_*`) y al menos un registro `CARTA_ITEM_MODIFICADO`.
+
+### Pasos
+
+1. `GET /auditoria?accion=CARTA_ITEM_MODIFICADO` con el token del ADMIN.
+2. `GET /auditoria` con el token del MOZO.
+
+### Resultado esperado
+
+1. 200 con registros, todos de esa acción; el más reciente es del ítem 5555… (entidad `item_carta`).
+2. 403: solo el administrador consulta la auditoría.

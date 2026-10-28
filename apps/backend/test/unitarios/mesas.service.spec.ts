@@ -6,6 +6,9 @@ import {
 import { MesaEstado, PedidoEstado, Prisma } from '@prisma/client';
 import { MesasService } from '../../src/mesas/mesas.service';
 
+// HU-035 (BL-205): el registro de auditoría se prueba en audit-log.service.spec.
+const mockAuditLog = { registrarEnTx: jest.fn() } as any;
+
 const TENANT_ID = '11111111-1111-1111-1111-111111111111';
 const TENANT_ID_AJENO = 'aaaaaaaa-0000-0000-0000-000000000001';
 const RESTAURANTE_ID = '22222222-2222-2222-2222-222222222222';
@@ -43,7 +46,7 @@ describe('MesasService.llamarMozo', () => {
   beforeEach(() => {
     mockTenantPrisma = { runInTenantContext: jest.fn() };
     mockKdsGateway = { emitirLlamado: jest.fn() };
-    service = new MesasService(mockTenantPrisma, mockKdsGateway);
+    service = new MesasService(mockTenantPrisma, mockKdsGateway, mockAuditLog);
   });
 
   // BL-204: la mesa sale solo del QR, ya validado por MesaQrGuard.
@@ -77,7 +80,7 @@ describe('MesasService.obtenerLayout', () => {
       runInTenantContext: jest.fn((_tenantId: string, cb: any) => cb(mockTx)),
     };
     mockKdsGateway = { emitirLlamado: jest.fn(), emitirEstadoMesa: jest.fn() };
-    service = new MesasService(mockTenantPrisma, mockKdsGateway);
+    service = new MesasService(mockTenantPrisma, mockKdsGateway, mockAuditLog);
   });
 
   it('devuelve las mesas del restaurante con su layout y estado, excluyendo la mesa virtual', async () => {
@@ -128,7 +131,7 @@ describe('MesasService.guardarLayout', () => {
       runInTenantContext: jest.fn((_tenantId: string, cb: any) => cb(mockTx)),
     };
     mockKdsGateway = { emitirLlamado: jest.fn(), emitirEstadoMesa: jest.fn() };
-    service = new MesasService(mockTenantPrisma, mockKdsGateway);
+    service = new MesasService(mockTenantPrisma, mockKdsGateway, mockAuditLog);
   });
 
   it('actualiza una mesa existente del mismo tenant y restaurante', async () => {
@@ -251,7 +254,7 @@ describe('MesasService.actualizarLayoutMesa', () => {
       runInTenantContext: jest.fn((_tenantId: string, cb: any) => cb(mockTx)),
     };
     mockKdsGateway = { emitirLlamado: jest.fn(), emitirEstadoMesa: jest.fn() };
-    service = new MesasService(mockTenantPrisma, mockKdsGateway);
+    service = new MesasService(mockTenantPrisma, mockKdsGateway, mockAuditLog);
   });
 
   it('rechaza con 404 si la mesa no existe en este tenant', async () => {
@@ -332,7 +335,7 @@ describe('MesasService: sesión de mesa (HU-017, BL-60)', () => {
       runInTenantContext: jest.fn((_tenantId: string, cb: any) => cb(mockTx)),
     };
     mockKdsGateway = { emitirLlamado: jest.fn(), emitirEstadoMesa: jest.fn() };
-    service = new MesasService(mockTenantPrisma, mockKdsGateway);
+    service = new MesasService(mockTenantPrisma, mockKdsGateway, mockAuditLog);
   });
 
   describe('abrirSesion', () => {
@@ -531,6 +534,26 @@ describe('MesasService: sesión de mesa (HU-017, BL-60)', () => {
         })),
       });
       expect(pedidosCancelados).toBe(2);
+      // HU-035 (BL-205): la cancelación queda en la auditoría, en la misma
+      // transacción.
+      expect(mockAuditLog.registrarEnTx).toHaveBeenCalledWith(mockTx, {
+        action: 'MESA_PEDIDOS_CANCELADOS',
+        tenantId: TENANT_ID,
+        actorKeycloakId: MOZO_KEYCLOAK_ID,
+        entidadId: MESA_ID,
+        detalle: {
+          motivo: 'cierre de la mesa',
+          pedidosCancelados: ['p1', 'p2'],
+        },
+      });
+    });
+
+    it('sin pedidos para cancelar no escribe en la auditoría', async () => {
+      mockAuditLog.registrarEnTx.mockClear();
+
+      await service.cerrarSesion(TENANT_ID, MESA_ID, MOZO_KEYCLOAK_ID);
+
+      expect(mockAuditLog.registrarEnTx).not.toHaveBeenCalled();
     });
   });
 

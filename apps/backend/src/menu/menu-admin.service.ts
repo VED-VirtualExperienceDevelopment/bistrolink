@@ -13,6 +13,39 @@ import { UpdateCategoriaDto } from './dto/update-categoria.dto';
 import { StorageService } from './storage.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { AuditAction } from '../audit-log/audit-action.enum';
+import { Prisma, PrismaClient } from '@prisma/client';
+
+/**
+ * HU-035 (BL-205): de precio y disponibilidad, solo lo que cambió (el precio
+ * se compara como decimal: 590 y 590.00 son el mismo).
+ */
+/** Precio tal como llega: decimal de Prisma, texto del DTO o vacío. */
+type PrecioCarta = Prisma.Decimal | string | null;
+
+export function camposCambiados(
+  antes: { precio?: PrecioCarta; disponible?: boolean },
+  despues: { precio?: PrecioCarta; disponible?: boolean },
+): { antes: Record<string, unknown>; despues: Record<string, unknown> } {
+  const a: Record<string, unknown> = {};
+  const d: Record<string, unknown> = {};
+  if (
+    antes.precio != null &&
+    despues.precio != null &&
+    !new Prisma.Decimal(antes.precio).equals(despues.precio)
+  ) {
+    a.precio = new Prisma.Decimal(antes.precio).toFixed(2);
+    d.precio = new Prisma.Decimal(despues.precio).toFixed(2);
+  }
+  if (
+    antes.disponible !== undefined &&
+    despues.disponible !== undefined &&
+    antes.disponible !== despues.disponible
+  ) {
+    a.disponible = antes.disponible;
+    d.disponible = despues.disponible;
+  }
+  return { antes: a, despues: d };
+}
 
 const MENSAJE_IMAGEN_AJENA =
   'La imagen indicada no pertenece a este restaurante';
@@ -46,21 +79,53 @@ export class MenuAdminService {
 
   /** BL-387: deja en la auditoría el alta, cambio o quita de una imagen. */
   private auditarCambioDeImagen(
+    tx: PrismaClient,
     tenantId: string,
     actorKeycloakId: string | undefined,
     itemId: string,
     keyAnterior: string | null,
     keyNueva: string | null,
-  ): void {
-    this.auditLog.registrar({
+  ): Promise<void> {
+    return this.auditLog.registrarEnTx(tx, {
       action: AuditAction.CARTA_ITEM_IMAGEN_CAMBIADA,
       tenantId,
       actorKeycloakId: actorKeycloakId ?? 'desconocido',
+      entidadId: itemId,
       detalle: {
         itemId,
         imagenKeyAnterior: keyAnterior,
         imagenKeyNueva: keyNueva,
       },
+    });
+  }
+
+  /**
+   * HU-035 (BL-205): cambios de precio y de disponibilidad (stock) de un
+   * ítem, con los valores antes y después. Va en la transacción del cambio.
+   */
+  private async auditarPrecioYDisponibilidad(
+    tx: PrismaClient,
+    tenantId: string,
+    actorKeycloakId: string | undefined,
+    antes: {
+      id: string;
+      nombre: string;
+      precio?: PrecioCarta;
+      disponible?: boolean;
+    },
+    despues: { precio?: PrecioCarta; disponible?: boolean },
+    accion: AuditAction = AuditAction.CARTA_ITEM_MODIFICADO,
+  ): Promise<void> {
+    const cambios = camposCambiados(antes, despues);
+    if (Object.keys(cambios.antes).length === 0) return;
+    await this.auditLog.registrarEnTx(tx, {
+      action: accion,
+      tenantId,
+      actorKeycloakId: actorKeycloakId ?? 'desconocido',
+      entidadId: antes.id,
+      antes: cambios.antes,
+      despues: cambios.despues,
+      detalle: { nombre: antes.nombre },
     });
   }
 
@@ -253,7 +318,8 @@ export class MenuAdminService {
       });
 
       if (nuevoItem.imagenKey) {
-        this.auditarCambioDeImagen(
+        await this.auditarCambioDeImagen(
+          tx,
           tenantId,
           actorKeycloakId,
           nuevoItem.id,
@@ -314,8 +380,17 @@ export class MenuAdminService {
         data: updated as unknown as Record<string, unknown>,
       });
 
+      await this.auditarPrecioYDisponibilidad(
+        tx,
+        tenantId,
+        actorKeycloakId,
+        existing,
+        updated,
+      );
+
       if (cambiaLaImagen) {
-        this.auditarCambioDeImagen(
+        await this.auditarCambioDeImagen(
+          tx,
           tenantId,
           actorKeycloakId,
           itemId,
@@ -329,7 +404,7 @@ export class MenuAdminService {
     });
   }
 
-  async deleteItem(tenantId: string, itemId: string) {
+  async deleteItem(tenantId: string, itemId: string, actorKeycloakId?: string) {
     return this.prisma.runInTenantContext(tenantId, async (tx) => {
       const existing = await tx.itemCarta.findFirst({
         where: { id: itemId, tenantId },
@@ -345,6 +420,16 @@ export class MenuAdminService {
         where: { id: itemId },
         data: { disponible: false },
       });
+
+      // HU-035 (BL-205): la baja de un ítem es un cambio de disponibilidad.
+      await this.auditarPrecioYDisponibilidad(
+        tx,
+        tenantId,
+        actorKeycloakId,
+        existing,
+        updated,
+        AuditAction.CARTA_ITEM_DADO_DE_BAJA,
+      );
 
       // Emitir evento para que el menú público lo quite inmediatamente
       this.menuGateway.emitItemUpdated(tenantId, {

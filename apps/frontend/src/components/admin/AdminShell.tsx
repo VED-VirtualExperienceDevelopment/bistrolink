@@ -19,6 +19,8 @@ const NAV_ITEMS = [
   { href: '/admin/kds', label: 'KDS', icon: 'skillet' },
   // Gestión de Carta - Administración del menú (categorías, ítems, disponibilidad)
   { href: '/admin/menu', label: 'Gestión de Carta', icon: 'restaurant_menu' },
+  // HU-035 (BL-205): registro de auditoría, solo Administrador.
+  { href: '/admin/auditoria', label: 'Auditoría', icon: 'history', roles: ['ADMIN'] },
   // Próximos módulos (HU-001, HU-003, etc.) se suman acá a medida que
   // existan pantallas reales — evitamos linkear secciones que no existen.
 ];

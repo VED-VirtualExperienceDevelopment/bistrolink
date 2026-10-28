@@ -151,6 +151,13 @@ const pagosPendientes = (extra = {}) => ({
   tags: ["HU-032", "BL-202", "pagos", ...(extra.tags ?? [])],
 });
 // BL-435: CRUD de la carta (BL-52/BL-53, HU-005), en menu-admin.e2e-spec.ts.
+// HU-035 (BL-205): registro de auditoría.
+const auditoria = (extra = {}) => ({
+  component: "api",
+  requirement: "HU-035",
+  ...extra,
+  tags: ["HU-035", "BL-205", "auditoria", ...(extra.tags ?? [])],
+});
 const cartaAdmin = (extra = {}) => ({
   component: "api",
   requirement: "HU-005",
@@ -378,6 +385,22 @@ const DATOS_INTEGRACION = {
     tags: ["BL-53", "integridad-datos"],
   }),
   108: cartaAdmin({ category: "Performance", priority: "P2" }),
+  109: auditoria({ category: "Funcional", priority: "P1" }),
+  110: auditoria({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["seguridad", "integridad-datos"],
+  }),
+  111: auditoria({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["seguridad", "multi-tenant"],
+  }),
+  112: auditoria({
+    category: "Seguridad",
+    priority: "P2",
+    tags: ["seguridad"],
+  }),
 };
 /**
  * BL-435: datos de los E2E TC-E-017 en adelante, con los criterios de
