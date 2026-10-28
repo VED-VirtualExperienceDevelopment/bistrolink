@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { HealthController } from './health.controller';
@@ -15,6 +15,8 @@ import { MesasModule } from './mesas/mesas.module';
 import { PagosModule } from './pagos/pagos.module';
 import { PlataformaApiModule } from './plataforma/plataforma-api.module';
 import { construirConfiguracionLog } from './logger/destinos-log';
+import { AuditoriaModule } from './audit-log/auditoria.module';
+import { ContextoAuditoriaMiddleware } from './audit-log/contexto-auditoria';
 
 // BL-273: destinos y formato de los logs según el entorno (ver
 // logger/destinos-log.ts).
@@ -69,9 +71,17 @@ const configuracionLog = construirConfiguracionLog(process.env);
     PagosModule,
     // BL-163 (HU-027): /plataforma/establecimientos, solo rol PLATAFORMA.
     PlataformaApiModule,
+    // HU-035 (BL-205): GET /auditoria, solo ADMIN.
+    AuditoriaModule,
   ],
   controllers: [AppController, HealthController, TestController],
   providers: [AppService],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  // HU-035 (BL-205): la IP de cada request queda disponible para el registro
+  // de auditoría (contexto-auditoria.ts).
+  configure(consumer: MiddlewareConsumer): void {
+    consumer.apply(ContextoAuditoriaMiddleware).forRoutes('*');
+  }
+}
 //to deploy api
