@@ -63,6 +63,7 @@ export const ETIQUETAS_ACCION: Record<string, string> = {
   CARTA_ITEM_MODIFICADO: "Precio o disponibilidad de un ítem",
   CARTA_ITEM_DADO_DE_BAJA: "Ítem dado de baja",
   MESA_PEDIDOS_CANCELADOS: "Pedidos cancelados al cerrar la mesa",
+  PAGO_EFECTIVO_REGISTRADO: "Cobro en efectivo",
 };
 
 export function etiquetaAccion(accion: string): string {
@@ -115,6 +116,10 @@ const NOMBRE_CAMPO: Record<string, string> = {
   disponible: "Disponible",
   rol: "Rol",
   imagenKey: "Imagen",
+  // HU-031 (BL-201): cobro en efectivo.
+  monto: "Total",
+  montoRecibido: "Recibido",
+  vuelto: "Vuelto",
 };
 
 function valorParaMostrar(valor: unknown): string {
