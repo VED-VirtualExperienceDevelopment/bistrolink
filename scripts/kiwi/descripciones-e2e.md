@@ -61,3 +61,36 @@ Usuario de prueba MOZO (`TEST_MOZO_*`) del tenant A, con el efectivo habilitado 
 1. El pedido aparece entre los pendientes de pago, con su código y su total.
 2. El diálogo muestra el vuelto antes de confirmar; al confirmar, aviso «Cobro registrado» y el pedido sale de la lista.
 3. El pedido aparece en el KDS (pasó a RECIBIDO).
+
+## TC-E-047
+
+### Precondición
+
+Mesa del seed abierta (QR del fixture), efectivo habilitado en el establecimiento y usuario de prueba MOZO (`TEST_MOZO_*`).
+
+### Pasos
+
+1. Como comensal, desde el QR de la mesa, agregar un ítem y tocar «Continuar al pago».
+2. Elegir «Efectivo», completar «¿Con cuánto vas a pagar?» con 10000 y tocar «Avisar al mozo».
+3. Como mozo, abrir «Cobros pendientes», buscar el pedido por su código, tocar «Cobrar en efectivo» y confirmar.
+
+### Resultado esperado
+
+1. Aparecen las opciones «Tarjeta de débito o crédito» y «Efectivo».
+2. La pantalla del comensal pasa a «Esperando al mozo».
+3. El pedido aparece marcado «Pidió pagar en efectivo» y el diálogo trae 10000.00 en «Monto recibido».
+4. Al confirmar, la pantalla del comensal pasa sola a «¡Tu pedido ya está en cocina!».
+
+## TC-E-048
+
+### Precondición
+
+Carta web del local (pedido para retirar, fuera del local).
+
+### Pasos
+
+1. Agregar un ítem y tocar «Continuar al pago».
+
+### Resultado esperado
+
+Se ve solo el formulario de tarjeta: no aparecen las opciones de pago ni «Efectivo».
