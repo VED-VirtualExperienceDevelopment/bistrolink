@@ -42,3 +42,22 @@ Reglas:
     Lo que tiene que verse.
 
 ## Casos para cargar
+
+## TC-E-046
+
+### Precondición
+
+Usuario de prueba MOZO (`TEST_MOZO_*`) del tenant A, con el efectivo habilitado en el establecimiento. Ítem disponible en la carta web (pedido para retirar).
+
+### Pasos
+
+1. Como comensal, agregar un ítem desde la carta web y tocar «Continuar al pago», sin pagar con tarjeta.
+2. Como mozo, abrir «Cobros pendientes» y buscar el pedido por su código.
+3. Tocar «Cobrar en efectivo», ingresar el monto recibido y confirmar.
+4. Abrir el KDS.
+
+### Resultado esperado
+
+1. El pedido aparece entre los pendientes de pago, con su código y su total.
+2. El diálogo muestra el vuelto antes de confirmar; al confirmar, aviso «Cobro registrado» y el pedido sale de la lista.
+3. El pedido aparece en el KDS (pasó a RECIBIDO).

@@ -7,6 +7,7 @@ import { io, type Socket } from "socket.io-client";
 import { useKeycloakAuth } from "@/components/providers/KeycloakProvider";
 import { apiFetch, ApiError } from "@/lib/api-client";
 import { SesionMesaPanel } from "./SesionMesaPanel";
+import { CobrosMesaPanel } from "../cobros/CobrosMesaPanel";
 import { puedeGestionarSesion } from "./sesion-mesa.utils";
 import { LeyendaEstadosMesa } from "./LeyendaEstadosMesa";
 import { ElementoShape } from "./ElementoShape";
@@ -1314,6 +1315,19 @@ export function MapaMesasEditor({
           onEstado={(mesaId, estado) =>
             setMesas((prev) => actualizarEstadosMesas(prev, [{ id: mesaId, estado }]))
           }
+        />
+      )}
+
+      {/* HU-031 (BL-201): pedidos de la mesa que esperan el pago, para
+          cobrarlos en efectivo. Una mesa nueva sin guardar no tiene pedidos.
+          La key incluye el estado: al cerrar la mesa (se cancelan los
+          pedidos sin pagar) o al empezar un cobro con tarjeta, se recarga. */}
+      {mesaSeleccionada?.id && gestionaSesion && (
+        <CobrosMesaPanel
+          key={`${mesaSeleccionada.id}-${mesaSeleccionada.estado}`}
+          mesaId={mesaSeleccionada.id}
+          numero={mesaSeleccionada.numero}
+          token={token}
         />
       )}
 

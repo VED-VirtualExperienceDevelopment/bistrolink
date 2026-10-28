@@ -17,6 +17,8 @@ const NAV_ITEMS = [
   // embebido dentro de este layout para que ADMIN/MOZO no tengan que salir
   // de /admin para verlo.
   { href: '/admin/kds', label: 'KDS', icon: 'skillet' },
+  // HU-031 (BL-201): pedidos que esperan el pago (cobro en efectivo).
+  { href: '/admin/cobros', label: 'Cobros pendientes', icon: 'payments' },
   // Gestión de Carta - Administración del menú (categorías, ítems, disponibilidad)
   { href: '/admin/menu', label: 'Gestión de Carta', icon: 'restaurant_menu' },
   // HU-035 (BL-205): registro de auditoría, solo Administrador.

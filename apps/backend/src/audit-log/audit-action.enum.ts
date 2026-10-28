@@ -30,4 +30,5 @@ export enum AuditAction {
   CARTA_ITEM_MODIFICADO = 'CARTA_ITEM_MODIFICADO', // BL-205 (HU-005: precio o disponibilidad, con antes y después)
   CARTA_ITEM_DADO_DE_BAJA = 'CARTA_ITEM_DADO_DE_BAJA', // BL-205 (baja de un ítem: pasa a no disponible)
   MESA_PEDIDOS_CANCELADOS = 'MESA_PEDIDOS_CANCELADOS', // BL-205 (al cerrar la mesa se cancelan los pedidos sin pagar, HU-017)
+  PAGO_EFECTIVO_REGISTRADO = 'PAGO_EFECTIVO_REGISTRADO', // BL-201 (HU-031: cobro en efectivo, con monto recibido y vuelto)
 }

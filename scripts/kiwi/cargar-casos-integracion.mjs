@@ -158,6 +158,13 @@ const auditoria = (extra = {}) => ({
   ...extra,
   tags: ["HU-035", "BL-205", "auditoria", ...(extra.tags ?? [])],
 });
+// HU-031 (BL-201): cobro en efectivo.
+const cobroEfectivo = (extra = {}) => ({
+  component: "api",
+  requirement: "HU-031",
+  ...extra,
+  tags: ["HU-031", "BL-201", "pagos", ...(extra.tags ?? [])],
+});
 const cartaAdmin = (extra = {}) => ({
   component: "api",
   requirement: "HU-005",
@@ -401,6 +408,23 @@ const DATOS_INTEGRACION = {
     priority: "P2",
     tags: ["seguridad"],
   }),
+  113: cobroEfectivo({ category: "Funcional", priority: "P1" }),
+  114: cobroEfectivo({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["idempotencia"],
+  }),
+  115: cobroEfectivo({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["concurrencia", "integridad-datos"],
+  }),
+  116: cobroEfectivo({ category: "Funcional", priority: "P2" }),
+  117: cobroEfectivo({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["seguridad"],
+  }),
 };
 /**
  * BL-435: datos de los E2E TC-E-017 en adelante, con los criterios de
@@ -558,6 +582,11 @@ const DATOS_E2E = {
     category: "Funcional",
     priority: "P1",
     tags: ["BL-404", "BL-418", "integridad-datos"],
+  }),
+  46: e2e("mozo", "HU-031", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-201", "pagos"],
   }),
 };
 /**
