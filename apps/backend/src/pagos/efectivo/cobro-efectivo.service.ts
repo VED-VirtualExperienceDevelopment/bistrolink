@@ -40,6 +40,28 @@ export interface PedidoPendienteDeCobro {
   lineas: { id: string; nombre: string; cantidad: number; subtotal: string }[];
   /** El comensal tiene un pago con tarjeta en curso: no se puede cobrar en efectivo. */
   pagoEnCurso: boolean;
+  /**
+   * HU-031b (BL-442): el comensal avisó que paga en efectivo (cuándo y, si lo
+   * dijo, con cuánto). Null si no avisó.
+   */
+  efectivoSolicitado: { en: Date; pagaCon: string | null } | null;
+}
+
+/**
+ * HU-031b (BL-442): primero los que pidieron pagar en efectivo (el mozo
+ * tiene que ir a cobrarlos), del más antiguo al más nuevo; después el resto,
+ * por hora del pedido.
+ */
+export function ordenarPendientes(
+  pedidos: PedidoPendienteDeCobro[],
+): PedidoPendienteDeCobro[] {
+  const momento = (p: PedidoPendienteDeCobro) =>
+    (p.efectivoSolicitado?.en ?? p.createdAt).getTime();
+  return [...pedidos].sort((a, b) => {
+    const solicitoA = a.efectivoSolicitado ? 0 : 1;
+    const solicitoB = b.efectivoSolicitado ? 0 : 1;
+    return solicitoA - solicitoB || momento(a) - momento(b);
+  });
 }
 
 export interface PendientesDeCobro {
@@ -139,6 +161,8 @@ export class CobroEfectivoService {
           id: true,
           canal: true,
           createdAt: true,
+          efectivoSolicitadoEn: true,
+          efectivoPagaCon: true,
           mesa: { select: { id: true, numero: true, esVirtual: true } },
           lineas: {
             orderBy: { createdAt: 'asc' },
@@ -154,20 +178,28 @@ export class CobroEfectivoService {
       });
       return {
         efectivoHabilitado: restaurante?.efectivoHabilitado ?? false,
-        pedidos: pedidos.map((pedido) => ({
-          id: pedido.id,
-          canal: pedido.canal,
-          createdAt: pedido.createdAt,
-          mesa: pedido.mesa,
-          total: sumarLineas(pedido.lineas).toFixed(2),
-          lineas: pedido.lineas.map((linea) => ({
-            id: linea.id,
-            nombre: linea.nombreSnapshot,
-            cantidad: linea.cantidad,
-            subtotal: linea.subtotal.toFixed(2),
+        pedidos: ordenarPendientes(
+          pedidos.map((pedido) => ({
+            id: pedido.id,
+            canal: pedido.canal,
+            createdAt: pedido.createdAt,
+            mesa: pedido.mesa,
+            total: sumarLineas(pedido.lineas).toFixed(2),
+            lineas: pedido.lineas.map((linea) => ({
+              id: linea.id,
+              nombre: linea.nombreSnapshot,
+              cantidad: linea.cantidad,
+              subtotal: linea.subtotal.toFixed(2),
+            })),
+            pagoEnCurso: pedido.pagos.length > 0,
+            efectivoSolicitado: pedido.efectivoSolicitadoEn
+              ? {
+                  en: pedido.efectivoSolicitadoEn,
+                  pagaCon: pedido.efectivoPagaCon?.toFixed(2) ?? null,
+                }
+              : null,
           })),
-          pagoEnCurso: pedido.pagos.length > 0,
-        })),
+        ),
       };
     });
   }
