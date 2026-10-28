@@ -43,7 +43,11 @@ function crearService(mockTx: any) {
     emitirLlamado: jest.fn(),
     emitirEstadoMesa: jest.fn(),
   };
-  return new MesasService(mockTenantPrisma as any, mockKdsGateway as any);
+  return new MesasService(
+    mockTenantPrisma as any,
+    mockKdsGateway as any,
+    { registrarEnTx: jest.fn() } as any,
+  );
 }
 
 describe('MesasService.guardarLayout con plano (HU-028)', () => {

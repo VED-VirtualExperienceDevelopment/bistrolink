@@ -63,6 +63,8 @@ describe('MenuAdminService', () => {
 
   const mockAuditLog = {
     registrar: jest.fn(),
+    // HU-035 (BL-205): la carta se audita dentro de la transacción.
+    registrarEnTx: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -238,7 +240,7 @@ describe('MenuAdminService', () => {
           'La imagen indicada no existe. Volvé a subirla.',
         );
         expect(mockPrismaService.runInTenantContext).not.toHaveBeenCalled();
-        expect(mockAuditLog.registrar).not.toHaveBeenCalled();
+        expect(mockAuditLog.registrarEnTx).not.toHaveBeenCalled();
       });
 
       it('audita el alta de un ítem con imagen, con el actor del token', async () => {
@@ -246,10 +248,11 @@ describe('MenuAdminService', () => {
 
         await service.createItem(tenantId, dto, 'sub-del-admin');
 
-        expect(mockAuditLog.registrar).toHaveBeenCalledWith({
+        expect(mockAuditLog.registrarEnTx).toHaveBeenCalledWith(mockTx, {
           action: 'CARTA_ITEM_IMAGEN_CAMBIADA',
           tenantId,
           actorKeycloakId: 'sub-del-admin',
+          entidadId: 'item-123',
           detalle: {
             itemId: 'item-123',
             imagenKeyAnterior: null,
@@ -261,7 +264,7 @@ describe('MenuAdminService', () => {
       it('no audita el alta de un ítem sin imagen', async () => {
         await service.createItem(tenantId, createItemDto, 'sub-del-admin');
 
-        expect(mockAuditLog.registrar).not.toHaveBeenCalled();
+        expect(mockAuditLog.registrarEnTx).not.toHaveBeenCalled();
       });
     });
   });
@@ -307,6 +310,77 @@ describe('MenuAdminService', () => {
           data: mockUpdated,
         },
       );
+    });
+
+    describe('HU-035 (BL-205): auditoría de precio y disponibilidad', () => {
+      const anterior = {
+        id: itemId,
+        nombre: 'Pizza',
+        precio: '12.50',
+        disponible: true,
+        tenantId,
+      };
+
+      it('un cambio de precio queda con el valor antes y después', async () => {
+        mockTx.itemCarta.findFirst.mockResolvedValue(anterior);
+        mockTx.itemCarta.update.mockResolvedValue({
+          ...anterior,
+          precio: '14',
+        });
+
+        await service.updateItem(
+          tenantId,
+          itemId,
+          { precio: '14' } as UpdateItemDto,
+          'sub-del-admin',
+        );
+
+        expect(mockAuditLog.registrarEnTx).toHaveBeenCalledWith(mockTx, {
+          action: 'CARTA_ITEM_MODIFICADO',
+          tenantId,
+          actorKeycloakId: 'sub-del-admin',
+          entidadId: itemId,
+          antes: { precio: '12.50' },
+          despues: { precio: '14.00' },
+          detalle: { nombre: 'Pizza' },
+        });
+      });
+
+      it('marcar como agotado queda como cambio de disponibilidad', async () => {
+        mockTx.itemCarta.findFirst.mockResolvedValue(anterior);
+        mockTx.itemCarta.update.mockResolvedValue({
+          ...anterior,
+          disponible: false,
+        });
+
+        await service.updateItem(tenantId, itemId, {
+          disponible: false,
+        } as UpdateItemDto);
+
+        expect(mockAuditLog.registrarEnTx).toHaveBeenCalledWith(
+          mockTx,
+          expect.objectContaining({
+            actorKeycloakId: 'desconocido',
+            antes: { disponible: true },
+            despues: { disponible: false },
+          }),
+        );
+      });
+
+      it('sin cambio de precio ni disponibilidad (por ejemplo, solo el nombre) no audita', async () => {
+        mockTx.itemCarta.findFirst.mockResolvedValue(anterior);
+        mockTx.itemCarta.update.mockResolvedValue({
+          ...anterior,
+          nombre: 'Pizza grande',
+          precio: '12.5',
+        });
+
+        await service.updateItem(tenantId, itemId, {
+          nombre: 'Pizza grande',
+        } as UpdateItemDto);
+
+        expect(mockAuditLog.registrarEnTx).not.toHaveBeenCalled();
+      });
     });
 
     it('debe lanzar NotFoundException si el ítem no existe', async () => {
@@ -438,7 +512,7 @@ describe('MenuAdminService', () => {
 
         expect(mockStorage.esKeyDelTenant).not.toHaveBeenCalled();
         expect(mockStorage.existeImagen).not.toHaveBeenCalled();
-        expect(mockAuditLog.registrar).not.toHaveBeenCalled();
+        expect(mockAuditLog.registrarEnTx).not.toHaveBeenCalled();
         expect(mockTx.itemCarta.update).toHaveBeenCalled();
       });
 
@@ -456,10 +530,11 @@ describe('MenuAdminService', () => {
           'sub-del-admin',
         );
 
-        expect(mockAuditLog.registrar).toHaveBeenCalledWith({
+        expect(mockAuditLog.registrarEnTx).toHaveBeenCalledWith(mockTx, {
           action: 'CARTA_ITEM_IMAGEN_CAMBIADA',
           tenantId,
           actorKeycloakId: 'sub-del-admin',
+          entidadId: itemId,
           detalle: {
             itemId,
             imagenKeyAnterior: keyVieja,
@@ -482,6 +557,33 @@ describe('MenuAdminService', () => {
   describe('deleteItem', () => {
     const tenantId = 'test-tenant-id';
     const itemId = 'item-123';
+
+    it('HU-035 (BL-205): la baja queda en la auditoría como cambio de disponibilidad', async () => {
+      const existente = {
+        id: itemId,
+        nombre: 'Pizza',
+        precio: '12.50',
+        disponible: true,
+        tenantId,
+      };
+      mockTx.itemCarta.findFirst.mockResolvedValue(existente);
+      mockTx.itemCarta.update.mockResolvedValue({
+        ...existente,
+        disponible: false,
+      });
+
+      await service.deleteItem(tenantId, itemId, 'sub-del-admin');
+
+      expect(mockAuditLog.registrarEnTx).toHaveBeenCalledWith(mockTx, {
+        action: 'CARTA_ITEM_DADO_DE_BAJA',
+        tenantId,
+        actorKeycloakId: 'sub-del-admin',
+        entidadId: itemId,
+        antes: { disponible: true },
+        despues: { disponible: false },
+        detalle: { nombre: 'Pizza' },
+      });
+    });
 
     it('debe realizar un soft delete (disponible: false) y emitir evento WebSocket', async () => {
       const mockExisting = {

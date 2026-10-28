@@ -141,6 +141,11 @@ export class MenuAdminController {
 
   @Delete('item/:id')
   async deleteItem(@Req() req: any, @Param('id', ParseUUIDPipe) id: string) {
-    return this.menuAdminService.deleteItem(req.user.tenantId, id);
+    // HU-035 (BL-205): el actor de la auditoría es el sub del token.
+    return this.menuAdminService.deleteItem(
+      req.user.tenantId,
+      id,
+      req.user.sub,
+    );
   }
 }

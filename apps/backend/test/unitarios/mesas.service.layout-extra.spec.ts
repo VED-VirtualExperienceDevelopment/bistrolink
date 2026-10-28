@@ -42,6 +42,7 @@ function armarServicio() {
   const service = new MesasService(
     mockTenantPrisma as any,
     mockKdsGateway as any,
+    { registrarEnTx: jest.fn() } as any,
   );
   return { service, mockTx };
 }

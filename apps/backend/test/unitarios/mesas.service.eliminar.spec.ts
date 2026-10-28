@@ -6,6 +6,9 @@ import {
 import { MesaEstado, Prisma } from '@prisma/client';
 import { MesasService } from '../../src/mesas/mesas.service';
 
+// HU-035 (BL-205): el registro de auditoría se prueba en audit-log.service.spec.
+const mockAuditLog = { registrarEnTx: jest.fn() } as any;
+
 /**
  * BL-58 — eliminación de mesas desde el editor del mapa
  * (guardarLayout con `eliminar` + MesasService.eliminarMesas).
@@ -74,7 +77,7 @@ describe('MesasService.guardarLayout — eliminar (BL-58)', () => {
       runInTenantContext: jest.fn((_tenantId: string, cb: any) => cb(mockTx)),
     };
     mockKdsGateway = { emitirLlamado: jest.fn(), emitirEstadoMesa: jest.fn() };
-    service = new MesasService(mockTenantPrisma, mockKdsGateway);
+    service = new MesasService(mockTenantPrisma, mockKdsGateway, mockAuditLog);
   });
 
   it('rechaza con 400 si un mismo id viene para actualizar y para eliminar, sin abrir la transacción', async () => {
