@@ -61,7 +61,7 @@ const OCULTO = '[oculto]';
 
 export function sinDatosSensibles(valor: unknown): unknown {
   if (Array.isArray(valor)) return valor.map(sinDatosSensibles);
-  if (valor instanceof Prisma.Decimal) return valor.toString();
+  if (valor instanceof Prisma.Decimal) return valor.toFixed();
   if (valor instanceof Date) return valor.toISOString();
   if (valor && typeof valor === 'object') {
     return Object.fromEntries(

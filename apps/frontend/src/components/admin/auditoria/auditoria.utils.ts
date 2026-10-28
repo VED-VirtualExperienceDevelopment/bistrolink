@@ -121,8 +121,9 @@ function valorParaMostrar(valor: unknown): string {
   if (valor === null || valor === undefined || valor === "") return "—";
   if (valor === true) return "sí";
   if (valor === false) return "no";
-  if (typeof valor === "object") return JSON.stringify(valor);
-  return String(valor);
+  if (typeof valor === "string") return valor;
+  if (typeof valor === "number" || typeof valor === "bigint") return valor.toString();
+  return JSON.stringify(valor);
 }
 
 /**

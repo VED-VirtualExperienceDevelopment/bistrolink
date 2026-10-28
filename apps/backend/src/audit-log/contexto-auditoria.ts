@@ -47,11 +47,13 @@ interface RequestMinima {
 export function ipDeLaRequest(req: RequestMinima): string | null {
   const reenviada = req.headers['x-forwarded-for'];
   const lista = Array.isArray(reenviada) ? reenviada.join(',') : reenviada;
+  // La última no vacía. (findLast es de ES2023 y el backend compila a
+  // ES2021: se recorre de atrás para adelante.)
   const ultima = lista
     ?.split(',')
     .map((ip) => ip.trim())
-    .filter(Boolean)
-    .pop();
+    .reverse()
+    .find((ip) => ip.length > 0);
   const ip = ultima ?? req.socket?.remoteAddress ?? null;
   return ip ? ip.slice(0, LARGO_IP) : null;
 }

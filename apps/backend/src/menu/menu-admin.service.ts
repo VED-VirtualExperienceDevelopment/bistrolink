@@ -19,9 +19,12 @@ import { Prisma, PrismaClient } from '@prisma/client';
  * HU-035 (BL-205): de precio y disponibilidad, solo lo que cambió (el precio
  * se compara como decimal: 590 y 590.00 son el mismo).
  */
+/** Precio tal como llega: decimal de Prisma, texto del DTO o vacío. */
+type PrecioCarta = Prisma.Decimal | string | null;
+
 export function camposCambiados(
-  antes: { precio?: Prisma.Decimal | string | null; disponible?: boolean },
-  despues: { precio?: Prisma.Decimal | string | null; disponible?: boolean },
+  antes: { precio?: PrecioCarta; disponible?: boolean },
+  despues: { precio?: PrecioCarta; disponible?: boolean },
 ): { antes: Record<string, unknown>; despues: Record<string, unknown> } {
   const a: Record<string, unknown> = {};
   const d: Record<string, unknown> = {};
@@ -107,10 +110,10 @@ export class MenuAdminService {
     antes: {
       id: string;
       nombre: string;
-      precio?: Prisma.Decimal | string | null;
+      precio?: PrecioCarta;
       disponible?: boolean;
     },
-    despues: { precio?: Prisma.Decimal | string | null; disponible?: boolean },
+    despues: { precio?: PrecioCarta; disponible?: boolean },
     accion: AuditAction = AuditAction.CARTA_ITEM_MODIFICADO,
   ): Promise<void> {
     const cambios = camposCambiados(antes, despues);
