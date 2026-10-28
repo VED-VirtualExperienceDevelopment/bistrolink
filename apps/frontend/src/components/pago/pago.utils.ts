@@ -175,6 +175,15 @@ export interface EstadoPagoDelPedido {
     numero: number;
     urlConsulta: string | null;
   } | null;
+  /**
+   * HU-031b (BL-442): pago en efectivo. `disponible` solo en pedidos de mesa
+   * de un local que acepta efectivo. Opcional: un backend anterior no lo trae.
+   */
+  efectivo?: {
+    disponible: boolean;
+    solicitadoEn: string | null;
+    pagaCon: string | null;
+  };
 }
 
 /** Lo que la pantalla tiene que mostrar después de intentar pagar. */
@@ -315,4 +324,59 @@ export function estadoComprobante(
     texto: `e-Ticket ${numeroComprobante(c.serie, c.numero)}`,
     urlConsulta: urlConsultaSegura(c.urlConsulta),
   };
+}
+
+// ── Pago en efectivo (HU-031b, BL-442) ───────────────────────────────────
+
+/** POST: el comensal de una mesa avisa que paga en efectivo. */
+export function rutaSolicitudEfectivo(pedidoId: string): string {
+  return `${rutaPagos(pedidoId)}/solicitud-efectivo`;
+}
+
+/** Respuesta de POST .../solicitud-efectivo. */
+export interface SolicitudEfectivo {
+  total: string;
+  pagaCon: string | null;
+  solicitadoEn: string;
+  /** false si ya se había avisado hace menos de un minuto. */
+  avisado: boolean;
+}
+
+export type MetodoPago = "tarjeta" | "efectivo";
+
+/** Mientras se espera al mozo, se consulta cada 5 segundos... */
+export const INTERVALO_CONSULTA_EFECTIVO_MS = 5_000;
+/** ...hasta 20 minutos; después se ofrece consultar a mano. */
+export const TOPE_CONSULTA_EFECTIVO_MS = 20 * 60_000;
+
+export type EstadoPagaCon =
+  | { tipo: "vacio" }
+  | { tipo: "invalido" }
+  | { tipo: "insuficiente" }
+  | { tipo: "ok"; monto: string };
+
+/**
+ * «¿Con cuánto vas a pagar?»: opcional. Acepta «1000», «1000,50» o
+ * «1000.50» (mismo formato que valida el backend) y no puede ser menor que
+ * el total. Se compara en centésimos para no arrastrar errores de redondeo.
+ */
+export function evaluarPagaCon(texto: string, total: number): EstadoPagaCon {
+  const limpio = texto.trim().replace(",", ".");
+  if (limpio === "") return { tipo: "vacio" };
+  if (!/^\d{1,8}(\.\d{1,2})?$/.test(limpio)) return { tipo: "invalido" };
+  const [enteros, decimales = ""] = limpio.split(".");
+  const centesimos = Number(enteros) * 100 + Number(decimales.padEnd(2, "0"));
+  if (centesimos < Math.round(total * 100)) return { tipo: "insuficiente" };
+  return { tipo: "ok", monto: limpio };
+}
+
+/** Lo que ve el comensal mientras espera al mozo. */
+export function mensajeEsperandoMozo(
+  total: number | string,
+  pagaCon: string | null,
+): string {
+  const base = `Avisamos al mozo. Tené listos ${formatearPrecio(total)}.`;
+  return pagaCon
+    ? `${base} Le dijimos que pagás con ${formatearPrecio(pagaCon)}, así trae el cambio.`
+    : base;
 }
