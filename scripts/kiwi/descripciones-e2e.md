@@ -94,3 +94,21 @@ Carta web del local (pedido para retirar, fuera del local).
 ### Resultado esperado
 
 Se ve solo el formulario de tarjeta: no aparecen las opciones de pago ni «Efectivo».
+
+## TC-E-049
+
+### Precondición
+
+Usuario de prueba MOZO (`TEST_MOZO_*`) y la mesa del seed abierta (la abre el fixture de los QR). Efectivo habilitado en el establecimiento.
+
+### Pasos
+
+1. Como mozo, abrir la carga de pedido de la mesa (`/admin/mesas/pedido?mesa=…`), agregar una unidad de un ítem con una nota y tocar «Confirmar pedido».
+2. Tocar «Cobrar en efectivo», ingresar el monto recibido y confirmar.
+3. Abrir el KDS.
+
+### Resultado esperado
+
+1. El pedido se crea con canal `MOZO`.
+2. Aparece el aviso «Cobro registrado».
+3. El pedido aparece en el KDS.
