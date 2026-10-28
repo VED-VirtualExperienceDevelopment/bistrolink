@@ -57,31 +57,30 @@ export function SelectorMetodoPago({
       <div className="grid gap-3 sm:grid-cols-2">
         {OPCIONES.map((opcion) => {
           const elegida = metodo === opcion.valor;
+          const idOpcion = `${nombre}-${opcion.valor}`;
           return (
             <label
               key={opcion.valor}
-              className={`flex cursor-pointer items-start gap-3 rounded-[0.75rem] border-2 p-4 transition-colors ${
+              htmlFor={idOpcion}
+              className={`grid cursor-pointer grid-cols-[auto_1fr] items-start gap-x-3 rounded-[0.75rem] border-2 p-4 transition-colors ${
                 elegida
                   ? 'border-[#6e54ad] bg-[#6e54ad]/5'
                   : 'border-culinary-neutral/30 hover:border-[#6e54ad]/50'
               }`}
             >
               <input
+                id={idOpcion}
                 type="radio"
                 name={nombre}
                 value={opcion.valor}
                 checked={elegida}
                 onChange={() => onCambiar(opcion.valor)}
-                className="mt-1 h-5 w-5 shrink-0 accent-[#6e54ad]"
+                className="row-span-2 mt-1 h-5 w-5 shrink-0 accent-[#6e54ad]"
               />
-              <span>
-                <span className="block font-semibold text-foreground">
-                  {opcion.titulo}
-                </span>
-                <span className="block text-sm text-[#5a575e]">
-                  {opcion.detalle}
-                </span>
-              </span>
+              {/* Texto directo en el label (sin anidar): Sonar S6853 lo
+                  busca a poca profundidad. */}
+              <span className="font-semibold text-foreground">{opcion.titulo}</span>
+              <span className="text-sm text-[#5a575e]">{opcion.detalle}</span>
             </label>
           );
         })}
