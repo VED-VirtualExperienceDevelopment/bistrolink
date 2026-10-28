@@ -135,6 +135,10 @@ model Restaurante {
   // Nullable: null = plano sin elementos ni zonas (los layouts de HU-016,
   // que viven en mesa.layout, no cambian). Validado por PlanoDto.
   plano     Json?
+  // HU-031 (BL-201): el local acepta efectivo. Columna mínima hasta HU-020
+  // (BL-72, configuración del establecimiento), que la va a administrar.
+  // Default true: los locales existentes siguen cobrando en efectivo.
+  efectivoHabilitado Boolean @default(true) @map("efectivo_habilitado")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
