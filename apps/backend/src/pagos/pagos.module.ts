@@ -15,6 +15,9 @@ import { CfeModule } from '../cfe/cfe.module';
 import { QrMesaModule } from '../qr-mesa/qr-mesa.module';
 import { ConciliacionPagosService } from './conciliacion/conciliacion-pagos.service';
 import { ConciliacionPagosJob } from './conciliacion/conciliacion-pagos.job';
+import { CobrosController } from './efectivo/cobros.controller';
+import { CobroEfectivoService } from './efectivo/cobro-efectivo.service';
+import { AuditLogService } from '../audit-log/audit-log.service';
 
 @Module({
   // BL-311: QrMesaModule para MesaQrGuard en el pago (RD.05).
@@ -23,6 +26,8 @@ import { ConciliacionPagosJob } from './conciliacion/conciliacion-pagos.job';
     PagosController,
     PagosWebhookController,
     PlexoWebhookController,
+    // HU-031 (BL-201): cobro en efectivo (mozo y administrador).
+    CobrosController,
   ],
   providers: [
     PagosService,
@@ -34,6 +39,8 @@ import { ConciliacionPagosJob } from './conciliacion/conciliacion-pagos.job';
     // HU-032 (BL-202): vencimiento y conciliación de pagos pendientes.
     ConciliacionPagosService,
     ConciliacionPagosJob,
+    CobroEfectivoService,
+    AuditLogService,
   ],
 })
 export class PagosModule {}
