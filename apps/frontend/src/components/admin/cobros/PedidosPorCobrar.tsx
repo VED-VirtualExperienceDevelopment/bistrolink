@@ -9,6 +9,7 @@ import {
   mensajeCobroRegistrado,
   motivoSinEfectivo,
   resumenDeLineas,
+  textoSolicitudEfectivo,
   type CobroEfectivoRegistrado,
   type PedidoPendienteDeCobro,
 } from "./cobros.utils";
@@ -62,6 +63,7 @@ export function PedidosPorCobrar({
         <ul className="space-y-2">
           {pedidos.map((pedido) => {
             const motivo = motivoSinEfectivo(pedido, efectivoHabilitado);
+            const solicitud = textoSolicitudEfectivo(pedido);
             const idMotivo = `motivo-${pedido.id}`;
             return (
               <li
@@ -69,6 +71,12 @@ export function PedidosPorCobrar({
                 className="flex flex-col gap-2 rounded-lg border border-outline-variant bg-surface-container-lowest p-3 md:flex-row md:items-center md:justify-between"
               >
                 <div className="min-w-0">
+                  {solicitud && (
+                    <p className="mb-1 inline-flex items-center gap-1 rounded-full bg-tertiary-container px-2 py-0.5 text-label-sm text-on-tertiary-container">
+                      <span aria-hidden="true">💵</span>
+                      <span>{solicitud}</span>
+                    </p>
+                  )}
                   <p className="text-body-md font-medium text-on-surface">
                     Pedido {codigoDelPedido(pedido.id)} ·{" "}
                     {formatearMonto(pedido.total)}

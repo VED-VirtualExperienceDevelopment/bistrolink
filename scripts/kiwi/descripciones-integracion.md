@@ -11,6 +11,7 @@
 | 1.4     | 27/10/2026 | TC-I-095 a 098 (vencimiento y conciliación de pagos, HU-032 / BL-202).                                                                                   |
 | 1.5     | 27/10/2026 | Se recupera el contenido que se perdió en el merge de BL-435 (TC-I-010 a 098). TC-I-099 a 108: CRUD de la carta (HU-005, BL-52/BL-53), antes `[TC-E-…]`. |
 | 1.6     | 28/10/2026 | TC-I-113 a 117 (cobro en efectivo, HU-031 / BL-201), para cargar con el script antes de mergear el PR.                                                   |
+| 1.7     | 28/10/2026 | TC-I-118 a 121 (solicitud de pago en efectivo del comensal, HU-031b / BL-442), para cargar con el script antes de mergear el PR.                         |
 
 Texto del campo de descripción de cada caso TC-I en Kiwi. Lo carga
 `cargar-casos-integracion.mjs --descripciones`: cada bloque `## TC-I-NNN`
@@ -162,3 +163,69 @@ Usuarios de prueba MOZO y COCINA del tenant A (`TEST_MOZO_*`, `TEST_COCINA_*`). 
 2. 400: el monto recibido es menor que el total.
 3. 403: Cocina no puede registrar cobros.
 4. 201 con vuelto $ 10.00; el pedido queda en `RECIBIDO`.
+
+## TC-I-118
+
+### Precondición
+
+Tenant A del seed con el efectivo habilitado y la mesa de prueba 93 ocupada. Dos pedidos de la mesa en `PENDIENTE_PAGO`, de $ 590.
+
+### Pasos
+
+1. Pedir pagar en efectivo el segundo pedido con `SolicitudEfectivoService.solicitar` (el mismo servicio que usa `POST /pedidos/:id/pagos/solicitud-efectivo`), diciendo que paga con $ 1000.
+2. Consultar los cobros pendientes (`CobroEfectivoService.pendientes`, el de `GET /cobros/pendientes`).
+
+### Resultado esperado
+
+1. La respuesta trae el total ($ 590.00), con cuánto paga ($ 1000.00) y que se avisó.
+2. El pedido sigue en `PENDIENTE_PAGO`, con `efectivo_solicitado_en` y `efectivo_paga_con` = 1000.00, y sin ningún pago creado.
+3. Se avisa al staff (`llamado:nuevo`) con la mesa 93, el pedido, el total y con cuánto paga.
+4. En los cobros pendientes, ese pedido aparece antes que el otro y marcado con la solicitud de efectivo.
+
+## TC-I-119
+
+### Precondición
+
+Un pedido para retirar (canal WEB, mesa virtual) en `PENDIENTE_PAGO`.
+
+### Pasos
+
+1. Pedir pagar en efectivo ese pedido.
+
+### Resultado esperado
+
+409 (el efectivo es solo para pedidos hechos en el local). El pedido no queda marcado y no se avisa al staff.
+
+## TC-I-120
+
+### Precondición
+
+Un pedido de la mesa de prueba en `PENDIENTE_PAGO`. El establecimiento con `efectivo_habilitado = false` (se vuelve a habilitar al terminar).
+
+### Pasos
+
+1. Pedir pagar en efectivo.
+
+### Resultado esperado
+
+409 «Este local no acepta pagos en efectivo…». El pedido no queda marcado.
+
+## TC-I-121
+
+### Precondición
+
+Un pedido de la mesa de prueba en `PENDIENTE_PAGO`, el token del comensal (`POST /auth/comensal/mesa` con el QR y la sesión de la mesa) y el QR y la sesión de otra mesa (la del seed).
+
+### Pasos
+
+1. `POST /pedidos/:id/pagos/solicitud-efectivo` sin `X-Mesa-Token`.
+2. El mismo POST con el QR y la sesión de otra mesa.
+3. El mismo POST con el QR y la sesión de su mesa, pagando con $ 600.
+4. `GET /pedidos/:id/pagos` con el QR y la sesión de su mesa.
+
+### Resultado esperado
+
+1. 400.
+2. 403 (el pedido es de otra mesa).
+3. 200, con `pagaCon` 600.00 y `avisado` true.
+4. 200 con `efectivo.disponible` true y `efectivo.pagaCon` 600.00.

@@ -15,6 +15,15 @@ import { WsAuthService, WsAuthError } from './ws-auth.service';
 import { PedidosTransicionService } from './pedidos-transicion.service';
 import { origenesPermitidos } from '../seguridad-http';
 
+/** HU-031b (BL-442): datos del llamado de una mesa que quiere pagar en efectivo. */
+export interface LlamadoPagoEfectivo {
+  pedidoId: string;
+  /** Total del pedido, con 2 decimales. */
+  total: string;
+  /** Con cuánto va a pagar el comensal, si lo dijo. */
+  pagaCon: string | null;
+}
+
 @Injectable()
 // BL-426: antes `origin: '*'`. Los dos gateways comparten el servidor de
 // socket.io, así que tienen que declarar la misma lista que la API.
@@ -262,10 +271,23 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       .emit('pedido:actualizado', actualizado);
   }
 
-  emitirLlamado(tenantId: string, mesaId: string, mesaNumero: number) {
-    this.server
-      .to(this.salaTenant(tenantId))
-      .emit('llamado:nuevo', { mesaId, mesaNumero, ts: Date.now() });
+  /**
+   * HU-019/BL-68: el comensal llama al mozo. HU-031b (BL-442): con `pago`,
+   * el llamado es porque quiere pagar en efectivo (el banner muestra el
+   * total y con cuánto paga). Sin `pago`, el payload no cambia.
+   */
+  emitirLlamado(
+    tenantId: string,
+    mesaId: string,
+    mesaNumero: number,
+    pago?: LlamadoPagoEfectivo,
+  ) {
+    this.server.to(this.salaTenant(tenantId)).emit('llamado:nuevo', {
+      mesaId,
+      mesaNumero,
+      ts: Date.now(),
+      ...(pago && { motivo: 'PAGO_EFECTIVO', ...pago }),
+    });
   }
 
   // HU-016/HU-017: punto de entrada único para propagar un cambio de estado

@@ -393,6 +393,26 @@ describe('KdsGateway', () => {
         'llamado:nuevo',
         expect.objectContaining({ mesaId: 'mesa-1', mesaNumero: 5 }),
       );
+      // Sin pago: el payload de siempre, sin motivo.
+      expect(mockServer.emit.mock.calls[0][1]).not.toHaveProperty('motivo');
+    });
+
+    it('HU-031b (BL-442): con pago en efectivo, suma el motivo, el pedido, el total y con cuánto paga', () => {
+      gateway.emitirLlamado(TENANT_ID, 'mesa-1', 5, {
+        pedidoId: 'pedido-1',
+        total: '810.00',
+        pagaCon: '1000.00',
+      });
+
+      expect(mockServer.emit).toHaveBeenCalledWith('llamado:nuevo', {
+        mesaId: 'mesa-1',
+        mesaNumero: 5,
+        ts: expect.any(Number),
+        motivo: 'PAGO_EFECTIVO',
+        pedidoId: 'pedido-1',
+        total: '810.00',
+        pagaCon: '1000.00',
+      });
     });
   });
 

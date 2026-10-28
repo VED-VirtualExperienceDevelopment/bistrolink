@@ -759,4 +759,22 @@ describe('PedidosService.confirmarPagoEnTx / notificarPedidoConfirmado (BL-311, 
       'EN_PROCESO_DE_PAGO',
     );
   });
+
+  it('HU-031b (BL-442) notificarSolicitudEfectivo: avisa al staff con el mismo llamado, con el pago', () => {
+    mockKdsGateway.emitirLlamado = jest.fn();
+    const pago = { pedidoId: 'pedido-1', total: '810.00', pagaCon: null };
+
+    service.notificarSolicitudEfectivo(
+      TENANT_ID,
+      { id: 'mesa-1', numero: 3 },
+      pago,
+    );
+
+    expect(mockKdsGateway.emitirLlamado).toHaveBeenCalledWith(
+      TENANT_ID,
+      'mesa-1',
+      3,
+      pago,
+    );
+  });
 });

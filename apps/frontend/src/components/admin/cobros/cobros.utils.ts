@@ -15,6 +15,11 @@ export interface PedidoPendienteDeCobro {
   lineas: { id: string; nombre: string; cantidad: number; subtotal: string }[];
   /** El comensal tiene un pago con tarjeta en curso. */
   pagoEnCurso: boolean;
+  /**
+   * HU-031b (BL-442): el comensal avisó que paga en efectivo. Opcional: un
+   * backend anterior no lo trae.
+   */
+  efectivoSolicitado?: { en: string; pagaCon: string | null } | null;
 }
 
 /** Respuesta de GET /cobros/pendientes. */
@@ -163,4 +168,24 @@ export function mensajeCobroRegistrado(
  */
 export function nuevaClaveDeCobro(): string {
   return `efectivo-${crypto.randomUUID()}`;
+}
+
+/**
+ * HU-031b (BL-442): marca de un pedido cuyo comensal avisó que paga en
+ * efectivo, o null si no avisó.
+ */
+export function textoSolicitudEfectivo(
+  pedido: PedidoPendienteDeCobro,
+): string | null {
+  const solicitud = pedido.efectivoSolicitado;
+  if (!solicitud) return null;
+  const pagaCon = solicitud.pagaCon
+    ? ` · paga con ${formatearMonto(solicitud.pagaCon)}`
+    : "";
+  return `Pidió pagar en efectivo a las ${horaDelPedido(solicitud.en)}${pagaCon}`;
+}
+
+/** Lo que se precarga en «Monto recibido»: con cuánto dijo que paga. */
+export function montoRecibidoInicial(pedido: PedidoPendienteDeCobro): string {
+  return pedido.efectivoSolicitado?.pagaCon ?? "";
 }

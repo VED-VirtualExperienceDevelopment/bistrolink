@@ -8,7 +8,7 @@ import { PrismaClient, MesaEstado } from '@prisma/client';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { CrearPedidoDto } from './dto/crear-pedido.dto';
 import { MesaDelQr } from '../qr-mesa/qr-mesa-acceso.service';
-import { KdsGateway } from './kds.gateway';
+import { KdsGateway, LlamadoPagoEfectivo } from './kds.gateway';
 import { aPedidoKds, PedidoParaKds } from './pedido-kds.mapper';
 import { generarTokenAcceso } from './token-acceso-pedido';
 
@@ -192,6 +192,18 @@ export class PedidosService {
    */
   notificarEstadoMesa(tenantId: string, mesaId: string, estado: MesaEstado) {
     this.kdsGateway.emitirEstadoMesa(tenantId, mesaId, estado);
+  }
+
+  /**
+   * HU-031b (BL-442): el comensal de la mesa quiere pagar en efectivo. Usa
+   * el mismo aviso que «Llamar al mozo», con el total y con cuánto paga.
+   */
+  notificarSolicitudEfectivo(
+    tenantId: string,
+    mesa: { id: string; numero: number },
+    pago: LlamadoPagoEfectivo,
+  ) {
+    this.kdsGateway.emitirLlamado(tenantId, mesa.id, mesa.numero, pago);
   }
 
   /**

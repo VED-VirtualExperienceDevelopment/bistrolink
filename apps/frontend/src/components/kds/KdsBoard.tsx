@@ -5,6 +5,7 @@ import { io, type Socket } from 'socket.io-client';
 import { useKeycloakAuth } from '@/components/providers/KeycloakProvider';
 import { OrderTicket } from './OrderTicket';
 import type { Pedido } from '@/types/pedido';
+import { agregarLlamado, textoLlamado, type LlamadoMozo } from './llamado.utils';
 
 const WS_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
@@ -15,12 +16,6 @@ interface PedidoActualizadoPayload {
   estado: EstadoPedido;
   actualizadoEn: string;
   mesaNumero?: number;
-}
-
-interface LlamadoMozo {
-  mesaId: string;
-  mesaNumero: number;
-  ts: number;
 }
 
 export function KdsBoard() {
@@ -73,9 +68,7 @@ export function KdsBoard() {
 
     // HU-019/BL-68
     socket.on('llamado:nuevo', (llamado: LlamadoMozo) => {
-      setLlamados((prev) =>
-        prev.some((l) => l.mesaId === llamado.mesaId) ? prev : [...prev, llamado],
-      );
+      setLlamados((prev) => agregarLlamado(prev, llamado));
     });
 
     socket.on('llamado:resuelto', ({ mesaId }: { mesaId: string }) => {
@@ -130,7 +123,7 @@ export function KdsBoard() {
           role="alert"
           className="flex items-center justify-between rounded-lg bg-tertiary-container px-3 py-2 text-label-md text-on-tertiary-container"
         >
-          <span>🔔 Mesa {llamado.mesaNumero} solicita atención</span>
+          <span>{textoLlamado(llamado)}</span>
           {puedeOperarTransiciones && (
             <div className="flex gap-2">
               <button

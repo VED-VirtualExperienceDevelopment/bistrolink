@@ -7,6 +7,7 @@ import {
   codigoDelPedido,
   evaluarMontoRecibido,
   formatearMonto,
+  montoRecibidoInicial,
   nuevaClaveDeCobro,
   RUTA_COBRO_EFECTIVO,
   type CobroEfectivoRegistrado,
@@ -42,7 +43,8 @@ export function CobrarEfectivoDialog({
   useEffect(() => {
     if (pedido) {
       claveRef.current = nuevaClaveDeCobro();
-      setTexto("");
+      // HU-031b (BL-442): si el comensal dijo con cuánto paga, ya viene cargado.
+      setTexto(montoRecibidoInicial(pedido));
       setError(null);
     }
   }, [pedido]);

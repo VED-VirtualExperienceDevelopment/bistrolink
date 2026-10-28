@@ -1,22 +1,28 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { LlamarMozoButton } from '@/components/LlamarMozoButton';
 import { etiquetaMesa, type OrigenMenu } from '@/components/menu-digital.utils';
 import { FormularioTarjeta, IconoCandado, type DatosTarjeta } from './FormularioTarjeta';
+import { EsperandoMozo, FormularioEfectivo, SelectorMetodoPago } from './PagoEfectivo';
 import {
   codigoPedido,
   formatearPrecio,
   headersAccesoPedido,
+  INTERVALO_CONSULTA_EFECTIVO_MS,
   INTERVALO_CONSULTA_MS,
   resultadoDeError,
   resultadoDeEstado,
   rutaPagos,
+  rutaSolicitudEfectivo,
   seguirConsultando,
+  TOPE_CONSULTA_EFECTIVO_MS,
   type EstadoPago,
   type EstadoPagoDelPedido,
+  type MetodoPago,
   type ResultadoPago,
+  type SolicitudEfectivo,
 } from './pago.utils';
 
 export interface LineaResumen {
@@ -46,7 +52,14 @@ type Pantalla =
   | { tipo: 'procesando' }
   | { tipo: 'rechazado'; mensaje: string }
   | { tipo: 'error'; mensaje: string }
-  | { tipo: 'verificando'; mensaje: string; agotado: boolean };
+  | { tipo: 'verificando'; mensaje: string; agotado: boolean }
+  // HU-031b (BL-442): avisó al mozo que paga en efectivo y lo espera.
+  | {
+      tipo: 'esperandoEfectivo';
+      pagaCon: string | null;
+      aviso: string | null;
+      agotado: boolean;
+    };
 
 interface PagoCreado {
   estado: EstadoPago;
@@ -80,6 +93,12 @@ export function PagoPedido({
   // token de la tarjeta es de un solo uso).
   const [intento, setIntento] = useState(0);
   const tituloRef = useRef<HTMLHeadingElement>(null);
+  // HU-031b (BL-442): la opción «Efectivo» solo existe en pedidos de mesa de
+  // un local que acepta efectivo (lo dice el backend en GET .../pagos).
+  const [efectivoDisponible, setEfectivoDisponible] = useState(false);
+  const [metodo, setMetodo] = useState<MetodoPago>('tarjeta');
+  const [avisandoMozo, setAvisandoMozo] = useState(false);
+  const [errorEfectivo, setErrorEfectivo] = useState<string | null>(null);
 
   const headers = headersAccesoPedido(origen, tokenAcceso);
   const cantidadItems = lineas.reduce((acc, l) => acc + l.cantidad, 0);
@@ -172,7 +191,126 @@ export function PagoPedido({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [verificando, pedidoId, accessToken, aplicarResultado]);
 
-  const bloqueado = pantalla.tipo === 'procesando' || pantalla.tipo === 'verificando';
+  // HU-031b (BL-442): al abrir la pantalla de un pedido de mesa, si el
+  // local acepta efectivo y si el comensal ya había avisado (recargó la
+  // página), sigue esperando al mozo.
+  const esMesa = origen.tipo === 'mesa';
+  useEffect(() => {
+    if (!esMesa) return;
+    let cancelado = false;
+    apiFetch<EstadoPagoDelPedido>(rutaPagos(pedidoId), accessToken, { headers })
+      .then((estado) => {
+        if (cancelado || !estado.efectivo) return;
+        setEfectivoDisponible(estado.efectivo.disponible);
+        if (
+          estado.efectivo.solicitadoEn &&
+          estado.estadoPedido === 'PENDIENTE_PAGO' &&
+          estado.pago?.estado !== 'PENDIENTE'
+        ) {
+          setMetodo('efectivo');
+          setPantalla({
+            tipo: 'esperandoEfectivo',
+            pagaCon: estado.efectivo.pagaCon,
+            aviso: null,
+            agotado: false,
+          });
+        }
+      })
+      .catch(() => {
+        // Sin la consulta, se ofrece solo la tarjeta (como antes).
+      });
+    return () => {
+      cancelado = true;
+    };
+    // headers se arma en cada render con los mismos valores: no es dependencia.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [esMesa, pedidoId, accessToken]);
+
+  async function avisarAlMozo(pagaCon: string | null) {
+    setAvisandoMozo(true);
+    setErrorEfectivo(null);
+    try {
+      const solicitud = await apiFetch<SolicitudEfectivo>(
+        rutaSolicitudEfectivo(pedidoId),
+        accessToken,
+        {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(pagaCon ? { pagaCon } : {}),
+        },
+      );
+      setPantalla({
+        tipo: 'esperandoEfectivo',
+        pagaCon: solicitud.pagaCon,
+        aviso: solicitud.avisado ? null : 'Ya le avisamos al mozo hace un momento.',
+        agotado: false,
+      });
+    } catch (err) {
+      // 409 (el local no acepta efectivo, ya pagado, tarjeta en curso), 400
+      // y 410 (la mesa se cerró) llegan con el mensaje del backend.
+      setErrorEfectivo(
+        err instanceof ApiError
+          ? err.message
+          : 'No pudimos avisarle al mozo. Probá de nuevo.',
+      );
+    } finally {
+      setAvisandoMozo(false);
+    }
+  }
+
+  // Esperando al mozo: consulta hasta que registra el cobro (pago APROBADO).
+  const esperandoMozo = pantalla.tipo === 'esperandoEfectivo' && !pantalla.agotado;
+  useEffect(() => {
+    if (!esperandoMozo) return;
+    let cancelado = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const inicio = Date.now();
+
+    const consultar = async () => {
+      try {
+        const estado = await apiFetch<EstadoPagoDelPedido>(
+          rutaPagos(pedidoId),
+          accessToken,
+          { headers },
+        );
+        if (cancelado) return;
+        if (estado.pago?.estado === 'APROBADO') {
+          onAprobado();
+          return;
+        }
+        if (estado.estadoPedido === 'CANCELADO') {
+          setPantalla({
+            tipo: 'error',
+            mensaje: 'Tu pedido se canceló. Si querés, hacé uno nuevo desde la carta.',
+          });
+          return;
+        }
+      } catch {
+        // Un error de red no resuelve nada: se vuelve a intentar.
+      }
+      if (cancelado) return;
+      if (Date.now() - inicio < TOPE_CONSULTA_EFECTIVO_MS) {
+        timer = setTimeout(consultar, INTERVALO_CONSULTA_EFECTIVO_MS);
+      } else {
+        setPantalla((p) =>
+          p.tipo === 'esperandoEfectivo' ? { ...p, agotado: true } : p,
+        );
+      }
+    };
+
+    timer = setTimeout(consultar, INTERVALO_CONSULTA_EFECTIVO_MS);
+    return () => {
+      cancelado = true;
+      clearTimeout(timer);
+    };
+    // headers se arma en cada render con los mismos valores: no es dependencia.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [esperandoMozo, pedidoId, accessToken, onAprobado]);
+
+  const bloqueado =
+    pantalla.tipo === 'procesando' ||
+    pantalla.tipo === 'verificando' ||
+    pantalla.tipo === 'esperandoEfectivo';
 
   return (
     <div className="pt-20 pb-12 px-4 md:px-8 max-w-[1100px] mx-auto">
@@ -219,45 +357,83 @@ export function PagoPedido({
             )}
           </section>
 
-          {pantalla.tipo === 'verificando' ? (
-            <Verificando
-              mensaje={pantalla.mensaje}
-              agotado={pantalla.agotado}
-              onReintentarConsulta={() =>
-                setPantalla({ ...pantalla, agotado: false })
-              }
-            />
-          ) : (
-            <section
-              aria-labelledby="metodo-pago"
-              className="bg-white rounded-[1rem] border border-culinary-neutral/15 p-5 md:p-6 shadow-[0px_4px_20px_rgba(121,118,125,0.08)]"
-            >
-              <div className="flex items-center justify-between gap-3 mb-5">
-                <h2 id="metodo-pago" className="text-lg font-bold text-foreground">
-                  Tarjeta de crédito o débito
-                </h2>
-                <span className="hidden sm:inline-flex items-center gap-1 text-xs text-[#5a575e] shrink-0">
-                  <IconoCandado /> Pago protegido
-                </span>
-              </div>
-              <FormularioTarjeta
-                key={intento}
-                monto={total}
-                procesando={pantalla.tipo === 'procesando'}
-                textoBoton={
-                  pantalla.tipo === 'rechazado'
-                    ? `Reintentar pago (${formatearPrecio(total)})`
-                    : undefined
-                }
-                onPagar={pagar}
+          <MetodosDePago
+            pantalla={pantalla}
+            mostrarSelector={efectivoDisponible}
+            metodo={metodo}
+            onCambiarMetodo={(m) => {
+              setMetodo(m);
+              setErrorEfectivo(null);
+            }}
+            tarjeta={
+              <section
+                aria-labelledby="metodo-pago"
+                className="bg-white rounded-[1rem] border border-culinary-neutral/15 p-5 md:p-6 shadow-[0px_4px_20px_rgba(121,118,125,0.08)]"
+              >
+                <div className="flex items-center justify-between gap-3 mb-5">
+                  <h2 id="metodo-pago" className="text-lg font-bold text-foreground">
+                    Tarjeta de débito o crédito
+                  </h2>
+                  <span className="hidden sm:inline-flex items-center gap-1 text-xs text-[#5a575e] shrink-0">
+                    <IconoCandado /> Pago protegido
+                  </span>
+                </div>
+                <FormularioTarjeta
+                  key={intento}
+                  monto={total}
+                  procesando={pantalla.tipo === 'procesando'}
+                  textoBoton={
+                    pantalla.tipo === 'rechazado'
+                      ? `Reintentar pago (${formatearPrecio(total)})`
+                      : undefined
+                  }
+                  onPagar={pagar}
+                />
+              </section>
+            }
+            efectivo={
+              <FormularioEfectivo
+                total={total}
+                enviando={avisandoMozo}
+                error={errorEfectivo}
+                onAvisar={avisarAlMozo}
               />
-            </section>
-          )}
+            }
+            verificando={
+              pantalla.tipo === 'verificando' && (
+                <Verificando
+                  mensaje={pantalla.mensaje}
+                  agotado={pantalla.agotado}
+                  onReintentarConsulta={() => setPantalla({ ...pantalla, agotado: false })}
+                />
+              )
+            }
+            esperandoMozo={
+              pantalla.tipo === 'esperandoEfectivo' && (
+                <EsperandoMozo
+                  total={total}
+                  pagaCon={pantalla.pagaCon}
+                  aviso={pantalla.aviso}
+                  agotado={pantalla.agotado}
+                  enviando={avisandoMozo}
+                  onAvisarDeNuevo={() => void avisarAlMozo(pantalla.pagaCon)}
+                  onConsultar={() => setPantalla({ ...pantalla, agotado: false })}
+                  onPagarConTarjeta={() => {
+                    setMetodo('tarjeta');
+                    setPantalla({ tipo: 'formulario' });
+                  }}
+                />
+              )
+            }
+          />
 
           {origen.tipo === 'mesa' && pantalla.tipo === 'rechazado' && (
             <section className="bg-white rounded-[1rem] border border-culinary-neutral/15 p-5 flex flex-col items-center gap-3 text-center">
               <p className="text-sm text-[#5a575e]">
-                ¿Preferís pagar en efectivo o con el POS del local?
+                {/* HU-031b (BL-442): si hay efectivo, ya está entre las opciones. */}
+                {efectivoDisponible
+                  ? '¿Preferís pagar con el POS del local?'
+                  : '¿Preferís pagar en efectivo o con el POS del local?'}
               </p>
               <LlamarMozoButton
               qrToken={origen.qrToken}
@@ -273,8 +449,49 @@ export function PagoPedido({
   );
 }
 
+/**
+ * Qué se muestra debajo del encabezado: el pago en verificación, la espera
+ * del mozo (efectivo) o el método elegido, con el selector si el pedido
+ * admite efectivo (HU-031b, BL-442).
+ */
+function MetodosDePago({
+  pantalla,
+  mostrarSelector,
+  metodo,
+  onCambiarMetodo,
+  tarjeta,
+  efectivo,
+  verificando,
+  esperandoMozo,
+}: {
+  readonly pantalla: Pantalla;
+  readonly mostrarSelector: boolean;
+  readonly metodo: MetodoPago;
+  readonly onCambiarMetodo: (metodo: MetodoPago) => void;
+  readonly tarjeta: ReactNode;
+  readonly efectivo: ReactNode;
+  readonly verificando: ReactNode;
+  readonly esperandoMozo: ReactNode;
+}) {
+  if (pantalla.tipo === 'verificando') return verificando;
+  if (pantalla.tipo === 'esperandoEfectivo') return esperandoMozo;
+  if (!mostrarSelector) return tarjeta;
+  return (
+    <>
+      <SelectorMetodoPago
+        metodo={metodo}
+        onCambiar={onCambiarMetodo}
+        deshabilitado={pantalla.tipo === 'procesando'}
+      />
+      {metodo === 'tarjeta' ? tarjeta : efectivo}
+    </>
+  );
+}
+
 function tituloDe(pantalla: Pantalla): string {
   switch (pantalla.tipo) {
+    case 'esperandoEfectivo':
+      return 'Esperando al mozo';
     case 'rechazado':
       return 'No se pudo completar el cobro';
     case 'verificando':
@@ -288,6 +505,8 @@ function tituloDe(pantalla: Pantalla): string {
 
 function bajadaDe(pantalla: Pantalla): string {
   switch (pantalla.tipo) {
+    case 'esperandoEfectivo':
+      return 'Tu pedido pasa a cocina cuando el mozo registre el cobro.';
     case 'rechazado':
       return 'No te preocupes: no se realizó ningún cargo y tu pedido sigue guardado.';
     case 'verificando':

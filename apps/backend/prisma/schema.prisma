@@ -276,6 +276,11 @@ model Pedido {
   // (canal WEB, sin QR). El token en claro se devuelve una sola vez, al
   // crear el pedido; acá nunca se guarda. Null en los pedidos de mesa.
   accesoTokenHash    String?      @map("acceso_token_hash") @db.Char(64)
+  // HU-031b (BL-442): el comensal de una mesa pidió pagar en efectivo
+  // (cuándo, y con cuánto va a pagar si lo dijo). No es un pago: el pedido
+  // sigue en PENDIENTE_PAGO hasta que el mozo registra el cobro (BL-201).
+  efectivoSolicitadoEn DateTime? @map("efectivo_solicitado_en") @db.Timestamptz(3)
+  efectivoPagaCon      Decimal?  @map("efectivo_paga_con") @db.Decimal(10, 2)
   createdAt          DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt          DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
 

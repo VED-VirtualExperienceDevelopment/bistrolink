@@ -32,6 +32,17 @@ export interface EstadoPagoDelPedido {
   } | null;
   // Null mientras el CFE no fue emitido (el frontend consulta de nuevo).
   comprobante: ResumenComprobante | null;
+  /**
+   * HU-031b (BL-442): pago en efectivo. `disponible` solo en pedidos de mesa
+   * (canal QR) de un local que acepta efectivo. `solicitadoEn` no es null si
+   * el comensal ya avisó que paga en efectivo (al recargar la página, sigue
+   * esperando al mozo).
+   */
+  efectivo: {
+    disponible: boolean;
+    solicitadoEn: Date | null;
+    pagaCon: string | null;
+  };
 }
 
 // El pago que importa para el comensal: el que cobró (aprobado o después
@@ -203,30 +214,41 @@ export class PagosService {
     tenantId: string,
     pedidoId: string,
   ): Promise<EstadoPagoDelPedido> {
-    const pedido = await this.tenantPrisma.runInTenantContext(tenantId, (tx) =>
-      tx.pedido.findUnique({
-        where: { id: pedidoId },
-        select: {
-          id: true,
-          estado: true,
-          pagos: {
-            orderBy: { createdAt: 'desc' },
-            select: {
-              id: true,
-              estado: true,
-              medioPago: true,
-              monto: true,
-              motivoRechazo: true,
-              comprobantes: {
-                orderBy: { createdAt: 'asc' },
-                take: 1,
-                select: { serie: true, numero: true, urlConsulta: true },
+    const datos = await this.tenantPrisma.runInTenantContext(
+      tenantId,
+      async (tx) => ({
+        pedido: await tx.pedido.findUnique({
+          where: { id: pedidoId },
+          select: {
+            id: true,
+            estado: true,
+            canal: true,
+            efectivoSolicitadoEn: true,
+            efectivoPagaCon: true,
+            pagos: {
+              orderBy: { createdAt: 'desc' },
+              select: {
+                id: true,
+                estado: true,
+                medioPago: true,
+                monto: true,
+                motivoRechazo: true,
+                comprobantes: {
+                  orderBy: { createdAt: 'asc' },
+                  take: 1,
+                  select: { serie: true, numero: true, urlConsulta: true },
+                },
               },
             },
           },
-        },
+        }),
+        restaurante: await tx.restaurante.findUnique({
+          where: { tenantId },
+          select: { efectivoHabilitado: true },
+        }),
       }),
     );
+    const { pedido } = datos;
     if (!pedido) {
       throw new NotFoundException('Pedido no encontrado');
     }
@@ -251,6 +273,13 @@ export class PagosService {
         serie: comprobante.serie,
         numero: comprobante.numero,
         urlConsulta: comprobante.urlConsulta,
+      },
+      efectivo: {
+        disponible:
+          pedido.canal === 'QR' &&
+          Boolean(datos.restaurante?.efectivoHabilitado),
+        solicitadoEn: pedido.efectivoSolicitadoEn ?? null,
+        pagaCon: pedido.efectivoPagaCon?.toFixed(2) ?? null,
       },
     };
   }

@@ -14,6 +14,7 @@ import { AuditAction } from '../../src/audit-log/audit-action.enum';
 import {
   CobroEfectivoService,
   HORAS_PENDIENTES_RETIRO,
+  ordenarPendientes,
 } from '../../src/pagos/efectivo/cobro-efectivo.service';
 import { CobrosController } from '../../src/pagos/efectivo/cobros.controller';
 import { RegistrarCobroEfectivoDto } from '../../src/pagos/efectivo/registrar-cobro-efectivo.dto';
@@ -425,8 +426,32 @@ describe('CobroEfectivoService (HU-031, BL-201)', () => {
               { id: 'l-2', nombre: 'Agua', cantidad: 2, subtotal: '200.00' },
             ],
             pagoEnCurso: true,
+            efectivoSolicitado: null,
           },
         ],
+      });
+    });
+
+    it('HU-031b (BL-442): devuelve la solicitud de efectivo con cuánto paga', async () => {
+      const cuando = new Date('2026-10-28T15:05:00.000Z');
+      tx.pedido.findMany.mockResolvedValue([
+        {
+          id: PEDIDO,
+          canal: 'QR',
+          createdAt: AHORA,
+          efectivoSolicitadoEn: cuando,
+          efectivoPagaCon: new Prisma.Decimal('1000'),
+          mesa: { id: 'mesa-3', numero: 3, esVirtual: false },
+          lineas: [],
+          pagos: [],
+        },
+      ]);
+
+      const { pedidos } = await service.pendientes(TENANT, AHORA);
+
+      expect(pedidos[0].efectivoSolicitado).toEqual({
+        en: cuando,
+        pagaCon: '1000.00',
       });
     });
 
@@ -513,5 +538,36 @@ describe('RegistrarCobroEfectivoDto (HU-031, BL-201)', () => {
         dto({ pedidoId: 'no-uuid', idempotencyKey: 'x'.repeat(65) }),
       ),
     ).toEqual(['pedidoId', 'idempotencyKey']);
+  });
+});
+
+describe('ordenarPendientes (HU-031b, BL-442)', () => {
+  const pedido = (id: string, minuto: number, solicitadoMinuto?: number) =>
+    ({
+      id,
+      createdAt: new Date(Date.UTC(2026, 9, 28, 15, minuto)),
+      efectivoSolicitado:
+        solicitadoMinuto === undefined
+          ? null
+          : {
+              en: new Date(Date.UTC(2026, 9, 28, 15, solicitadoMinuto)),
+              pagaCon: null,
+            },
+    }) as any;
+
+  it('primero los que pidieron efectivo (por hora de la solicitud) y después el resto (por hora del pedido)', () => {
+    const ordenados = ordenarPendientes([
+      pedido('sin-1', 1),
+      pedido('pidio-tarde', 2, 20),
+      pedido('sin-2', 0),
+      pedido('pidio-antes', 5, 10),
+    ]);
+
+    expect(ordenados.map((p) => p.id)).toEqual([
+      'pidio-antes',
+      'pidio-tarde',
+      'sin-2',
+      'sin-1',
+    ]);
   });
 });

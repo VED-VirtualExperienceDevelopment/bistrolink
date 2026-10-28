@@ -165,6 +165,13 @@ const cobroEfectivo = (extra = {}) => ({
   ...extra,
   tags: ["HU-031", "BL-201", "pagos", ...(extra.tags ?? [])],
 });
+// HU-031b (BL-442): el comensal de una mesa pide pagar en efectivo.
+const solicitudEfectivo = (extra = {}) => ({
+  component: "api",
+  requirement: "HU-031b",
+  ...extra,
+  tags: ["HU-031b", "BL-442", "pagos", ...(extra.tags ?? [])],
+});
 const cartaAdmin = (extra = {}) => ({
   component: "api",
   requirement: "HU-005",
@@ -425,6 +432,18 @@ const DATOS_INTEGRACION = {
     priority: "P1",
     tags: ["seguridad"],
   }),
+  118: solicitudEfectivo({ category: "Funcional", priority: "P1" }),
+  119: solicitudEfectivo({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["integridad-datos"],
+  }),
+  120: solicitudEfectivo({ category: "Funcional", priority: "P2" }),
+  121: solicitudEfectivo({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["seguridad", "qr"],
+  }),
 };
 /**
  * BL-435: datos de los E2E TC-E-017 en adelante, con los criterios de
@@ -587,6 +606,16 @@ const DATOS_E2E = {
     category: "Funcional",
     priority: "P1",
     tags: ["BL-201", "pagos"],
+  }),
+  47: e2e("comensal", "HU-031b", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-442", "pagos"],
+  }),
+  48: e2e("comensal", "HU-031b", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-442", "pagos"],
   }),
 };
 /**
