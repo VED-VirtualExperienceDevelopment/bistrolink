@@ -653,9 +653,23 @@ describe('PedidosService.confirmarPagoEnTx / notificarPedidoConfirmado (BL-311, 
       data: {
         tenantId: TENANT_ID,
         pedidoId: 'pedido-nuevo',
+        usuarioId: null,
         estadoAnterior: 'PENDIENTE_PAGO',
         estadoNuevo: 'RECIBIDO',
       },
+    });
+  });
+
+  it('HU-031 (BL-201): en efectivo, el historial guarda quién cobró', async () => {
+    await service.confirmarPagoEnTx(
+      mockTx,
+      TENANT_ID,
+      'pedido-nuevo',
+      'usuario-mozo',
+    );
+
+    expect(mockTx.pedidoEstadoHistorial.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ usuarioId: 'usuario-mozo' }),
     });
   });
 

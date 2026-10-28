@@ -136,11 +136,15 @@ export class PedidosService {
    * directa y el webhook llegan los dos), devuelve null y no hace nada. El
    * que recibe el pedido es el que avisa a cocina (notificarPedidoConfirmado),
    * así el KDS no recibe el mismo pedido dos veces.
+   *
+   * HU-031 (BL-201): en un cobro en efectivo lo confirma una persona del
+   * staff, que queda en el historial (usuarioId). Con la pasarela, null.
    */
   async confirmarPagoEnTx(
     tx: PrismaClient,
     tenantId: string,
     pedidoId: string,
+    usuarioId: string | null = null,
   ): Promise<PedidoParaKds | null> {
     const { count } = await tx.pedido.updateMany({
       where: { id: pedidoId, estado: 'PENDIENTE_PAGO' },
@@ -150,11 +154,11 @@ export class PedidosService {
       return null;
     }
 
-    // Sin usuario: el cambio lo dispara el pago, no una persona del staff.
     await tx.pedidoEstadoHistorial.create({
       data: {
         tenantId,
         pedidoId,
+        usuarioId,
         estadoAnterior: 'PENDIENTE_PAGO',
         estadoNuevo: 'RECIBIDO',
       },
