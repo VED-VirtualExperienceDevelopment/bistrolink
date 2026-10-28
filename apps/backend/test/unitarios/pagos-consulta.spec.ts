@@ -19,13 +19,20 @@ function pago(overrides: Record<string, unknown> = {}) {
 
 describe('PagosService.consultar (BL-311: estado del pago y comprobante para el comensal)', () => {
   let findUnique: jest.Mock;
+  let restauranteFindUnique: jest.Mock;
   let runInTenantContext: jest.Mock;
   let service: PagosService;
 
   beforeEach(() => {
     findUnique = jest.fn();
+    restauranteFindUnique = jest
+      .fn()
+      .mockResolvedValue({ efectivoHabilitado: true });
     runInTenantContext = jest.fn((_tenantId, fn) =>
-      fn({ pedido: { findUnique } }),
+      fn({
+        pedido: { findUnique },
+        restaurante: { findUnique: restauranteFindUnique },
+      }),
     );
     service = new PagosService(
       { runInTenantContext } as any,
@@ -67,6 +74,7 @@ describe('PagosService.consultar (BL-311: estado del pago y comprobante para el 
         numero: 1234,
         urlConsulta: 'https://www.efactura.dgi.gub.uy/consultaQR/x',
       },
+      efectivo: { disponible: false, solicitadoEn: null, pagaCon: null },
     });
   });
 
@@ -110,6 +118,7 @@ describe('PagosService.consultar (BL-311: estado del pago y comprobante para el 
       estadoPedido: 'PENDIENTE_PAGO',
       pago: null,
       comprobante: null,
+      efectivo: { disponible: false, solicitadoEn: null, pagaCon: null },
     });
   });
 
@@ -202,5 +211,64 @@ describe('PagosService.consultar (BL-311: estado del pago y comprobante para el 
     await expect(service.consultar(TENANT_ID, PEDIDO_ID)).rejects.toThrow(
       NotFoundException,
     );
+  });
+
+  describe('pago en efectivo (HU-031b, BL-442)', () => {
+    const pendiente = (overrides: Record<string, unknown> = {}) => ({
+      id: PEDIDO_ID,
+      estado: 'PENDIENTE_PAGO',
+      canal: 'QR',
+      efectivoSolicitadoEn: null,
+      efectivoPagaCon: null,
+      pagos: [],
+      ...overrides,
+    });
+
+    it('pedido de mesa en un local que acepta efectivo: disponible', async () => {
+      findUnique.mockResolvedValue(pendiente());
+
+      const r = await service.consultar(TENANT_ID, PEDIDO_ID);
+
+      expect(r.efectivo).toEqual({
+        disponible: true,
+        solicitadoEn: null,
+        pagaCon: null,
+      });
+    });
+
+    it('pedido para retirar (fuera del local): no disponible', async () => {
+      findUnique.mockResolvedValue(pendiente({ canal: 'WEB' }));
+
+      const r = await service.consultar(TENANT_ID, PEDIDO_ID);
+
+      expect(r.efectivo.disponible).toBe(false);
+    });
+
+    it('local sin efectivo habilitado: no disponible', async () => {
+      restauranteFindUnique.mockResolvedValue({ efectivoHabilitado: false });
+      findUnique.mockResolvedValue(pendiente());
+
+      const r = await service.consultar(TENANT_ID, PEDIDO_ID);
+
+      expect(r.efectivo.disponible).toBe(false);
+    });
+
+    it('ya pidió efectivo: devuelve cuándo y con cuánto paga (al recargar, sigue esperando al mozo)', async () => {
+      const cuando = new Date('2026-10-28T17:30:00.000Z');
+      findUnique.mockResolvedValue(
+        pendiente({
+          efectivoSolicitadoEn: cuando,
+          efectivoPagaCon: new Prisma.Decimal('1000'),
+        }),
+      );
+
+      const r = await service.consultar(TENANT_ID, PEDIDO_ID);
+
+      expect(r.efectivo).toEqual({
+        disponible: true,
+        solicitadoEn: cuando,
+        pagaCon: '1000.00',
+      });
+    });
   });
 });

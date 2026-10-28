@@ -3,6 +3,8 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseUUIDPipe,
   Post,
@@ -16,6 +18,8 @@ import { MesaQrGuard } from '../qr-mesa/mesa-qr.guard';
 import { PedidoAccesoGuard } from '../pedidos/pedido-acceso.guard';
 import { PagosService } from './pagos.service';
 import { CrearPagoDto } from './dto/crear-pago.dto';
+import { SolicitudEfectivoService } from './efectivo/solicitud-efectivo.service';
+import { SolicitarEfectivoDto } from './efectivo/solicitar-efectivo.dto';
 import { ApiTags, ApiSecurity } from '@nestjs/swagger';
 import {
   SEGURIDAD_KEYCLOAK,
@@ -31,7 +35,10 @@ import {
 @UseGuards(AuthGuard('jwt'), RolesGuard)
 @Roles('COMENSAL')
 export class PagosController {
-  constructor(private readonly pagosService: PagosService) {}
+  constructor(
+    private readonly pagosService: PagosService,
+    private readonly solicitudEfectivo: SolicitudEfectivoService,
+  ) {}
 
   // BL-311 (RD.05): solo quien hizo el pedido lo puede pagar (mesa del QR o
   // token de acceso del pedido para retirar; ver PedidoAccesoGuard).
@@ -63,5 +70,19 @@ export class PagosController {
     @Param('pedidoId', ParseUUIDPipe) pedidoId: string,
   ) {
     return this.pagosService.consultar(req.user.tenantId, pedidoId);
+  }
+
+  // HU-031b (BL-442): el comensal de una mesa pide pagar en efectivo y se
+  // avisa al mozo. Mismo control de acceso que el pago (RD.05). Solo
+  // pedidos de mesa: un pedido para retirar recibe 409.
+  @Post('solicitud-efectivo')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(MesaQrGuard, PedidoAccesoGuard)
+  solicitarEfectivo(
+    @Req() req: { user: AuthenticatedUser },
+    @Param('pedidoId', ParseUUIDPipe) pedidoId: string,
+    @Body() dto: SolicitarEfectivoDto,
+  ) {
+    return this.solicitudEfectivo.solicitar(req.user.tenantId, pedidoId, dto);
   }
 }

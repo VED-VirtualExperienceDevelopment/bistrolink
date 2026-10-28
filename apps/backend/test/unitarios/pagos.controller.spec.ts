@@ -16,6 +16,7 @@ const BODY = {
 
 describe('PagosController (BL-311)', () => {
   let pagosService: { crear: jest.Mock; consultar: jest.Mock };
+  let solicitudEfectivo: { solicitar: jest.Mock };
   let controller: PagosController;
   const req = { user: { sub: 'c', tenantId: TENANT_ID, roles: ['COMENSAL'] } };
 
@@ -24,7 +25,11 @@ describe('PagosController (BL-311)', () => {
       crear: jest.fn().mockResolvedValue({ id: 'pago' }),
       consultar: jest.fn().mockResolvedValue({ pedidoId: PEDIDO_ID }),
     };
-    controller = new PagosController(pagosService as any);
+    solicitudEfectivo = { solicitar: jest.fn().mockResolvedValue({}) };
+    controller = new PagosController(
+      pagosService as any,
+      solicitudEfectivo as any,
+    );
   });
 
   it('POST pasa por MesaQrGuard y PedidoAccesoGuard, en ese orden (RD.05)', () => {
@@ -69,5 +74,25 @@ describe('PagosController (BL-311)', () => {
     await controller.consultar(req, PEDIDO_ID);
 
     expect(pagosService.consultar).toHaveBeenCalledWith(TENANT_ID, PEDIDO_ID);
+  });
+
+  describe('solicitud de efectivo (HU-031b, BL-442)', () => {
+    it('pasa por los mismos guards que el pago (QR y sesión de la mesa, RD.05)', () => {
+      const guards = Reflect.getMetadata(
+        GUARDS_METADATA,
+        controller.solicitarEfectivo,
+      );
+      expect(guards).toEqual([MesaQrGuard, PedidoAccesoGuard]);
+    });
+
+    it('solicita el efectivo del pedido de la ruta en el tenant del JWT', async () => {
+      await controller.solicitarEfectivo(req, PEDIDO_ID, { pagaCon: '1000' });
+
+      expect(solicitudEfectivo.solicitar).toHaveBeenCalledWith(
+        TENANT_ID,
+        PEDIDO_ID,
+        { pagaCon: '1000' },
+      );
+    });
   });
 });
