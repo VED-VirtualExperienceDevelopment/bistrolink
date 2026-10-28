@@ -102,7 +102,7 @@ export function PedidosPorCobrar({
                   >
                     payments
                   </span>
-                  Cobrar en efectivo
+                  <span>Cobrar en efectivo</span>
                 </button>
               </li>
             );

@@ -36,7 +36,7 @@ export function CobrosMesaPanel({ mesaId, numero, token }: Props) {
           <span aria-hidden="true" className="material-symbols-outlined text-[20px]">
             refresh
           </span>
-          Actualizar
+          <span>Actualizar</span>
         </button>
       </div>
 

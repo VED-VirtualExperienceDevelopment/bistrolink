@@ -37,7 +37,7 @@ export default function CobrosPage() {
           <span aria-hidden="true" className="material-symbols-outlined text-[20px]">
             refresh
           </span>
-          Actualizar
+          <span>Actualizar</span>
         </button>
       </div>
 
