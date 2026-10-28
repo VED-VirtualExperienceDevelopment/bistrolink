@@ -398,6 +398,35 @@ model ComprobanteFiscal {
   @@map("comprobante_fiscal")
 }
 
+// ── HU-035 (BL-205) RegistroAuditoria ────────────────────────────────────────
+// Acciones administrativas sensibles: quién, qué, sobre qué entidad, cuándo y
+// desde qué IP, con los valores antes y después cuando aplica. Append-only:
+// el rol de la aplicación no tiene UPDATE ni DELETE sobre la tabla (REVOKE en
+// la migración) y RLS solo permite leer e insertar en el propio tenant.
+//
+// Sin claves foráneas a propósito: el registro tiene que sobrevivir a la baja
+// de un usuario (BL-382) y a la eliminación de un establecimiento (BL-418).
+// El historial de estados del pedido sigue en PedidoEstadoHistorial.
+model RegistroAuditoria {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenantId        String   @map("tenant_id") @db.Uuid
+  // Quién: el sub del token (también para usuarios de plataforma o scripts,
+  // que no tienen fila en `usuario`) y, si es del tenant, su usuario.
+  actorKeycloakId String   @map("actor_keycloak_id") @db.VarChar(64)
+  usuarioId       String?  @map("usuario_id") @db.Uuid
+  accion          String   @db.VarChar(60) // AuditAction
+  entidad         String   @db.VarChar(40)
+  entidadId       String?  @map("entidad_id") @db.VarChar(64)
+  valoresAntes    Json?    @map("valores_antes")
+  valoresDespues  Json?    @map("valores_despues")
+  detalle         Json?
+  ip              String?  @db.VarChar(45)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([tenantId, createdAt])
+  @@map("registro_auditoria")
+}
+
 // ── 4.10 PedidoEstadoHistorial ────────────────────────────────────────────────
 // Append-only: nunca se actualiza ni se borra.
 
