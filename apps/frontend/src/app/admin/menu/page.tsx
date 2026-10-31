@@ -15,6 +15,12 @@ import {
 } from "@/components/menu/ArchivarDialog";
 import { FiltrosCarta } from "@/components/menu/FiltrosCarta";
 import { MenuAcciones } from "@/components/menu/MenuAcciones";
+import {
+  IndiceCategorias,
+  MINIMO_CATEGORIAS_INDICE,
+  idSeccionCategoria,
+  idTituloCategoria,
+} from "@/components/menu/IndiceCategorias";
 import { AvisoDeshacer } from "@/components/menu/AvisoDeshacer";
 import { ArchivadosCarta } from "@/components/menu/ArchivadosCarta";
 import { EliminarDefinitivoDialog } from "@/components/menu/EliminarDefinitivoDialog";
@@ -47,10 +53,6 @@ import {
   esDesconexionInesperada,
 } from "@/components/admin/mesas/mapa-mesas.utils";
 
-// Botón de ícono de 48 px, igual que las acciones de Usuarios.
-const CLASE_ACCION =
-  "flex h-12 w-12 flex-none items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-high focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary";
-
 const horaActual = () => new Date().toLocaleTimeString("es-UY");
 
 /** BL-398 (parte 5): «Ítem «Flan» archivado» / «Categoría «Postres» archivada». */
@@ -62,22 +64,16 @@ const textoAvisoDeshacer = (objetivo: ArchivarObjetivo | null) => {
 };
 
 // ============================================================================
-// ESTADO DE UN ÍTEM
+// AGOTADO
 // ============================================================================
 
 /**
- * BL-398: estado con ícono y texto, sin tachado (el tachado se confundía con
- * un ítem borrado). Agotado en ámbar, como en la propuesta.
+ * BL-398 / BL-400: solo se marca la excepción. Un ítem disponible no lleva
+ * badge (el switch ya lo dice); uno agotado, sí, en ámbar y con ícono, sin
+ * tachado (el tachado se confundía con un ítem borrado).
  */
-function EstadoItem({ disponible }: { readonly disponible: boolean }) {
-  return disponible ? (
-    <span className="inline-flex items-center gap-1 rounded-full bg-surface-container px-2.5 py-0.5 text-body-sm text-on-surface">
-      <span className="material-symbols-outlined text-[16px]" aria-hidden="true">
-        check_circle
-      </span>
-      Disponible
-    </span>
-  ) : (
+function BadgeAgotado() {
+  return (
     <span className="inline-flex items-center gap-1 rounded-full bg-tertiary-fixed px-2.5 py-0.5 text-body-sm text-on-tertiary-container">
       <span className="material-symbols-outlined text-[16px]" aria-hidden="true">
         block
@@ -100,6 +96,12 @@ interface ItemCardProps {
   readonly puedeEditar: boolean;
 }
 
+/**
+ * BL-400: tarjeta simplificada. Nombre y precio en la misma línea, la
+ * descripción debajo y el badge solo si está agotado. A la derecha, el
+ * switch de disponibilidad y el menú «⋯» (Editar, Archivar). Para el ADMIN,
+ * el nombre abre el formulario de edición.
+ */
 function ItemCard({
   item,
   categoria,
@@ -109,8 +111,8 @@ function ItemCard({
   puedeEditar,
 }: ItemCardProps) {
   return (
-    <li className="flex gap-3 rounded-xl border border-outline-variant bg-surface-container-lowest p-3">
-      <div className="h-16 w-16 flex-none overflow-hidden rounded-lg border border-outline-variant bg-surface-container">
+    <li className="flex items-start gap-3 rounded-xl border border-outline-variant bg-surface-container-lowest p-3">
+      <div className="h-14 w-14 flex-none overflow-hidden rounded-lg border border-outline-variant bg-surface-container">
         <ItemImagen
           url={item.imagenUrl}
           alt={item.nombre}
@@ -119,76 +121,61 @@ function ItemCard({
       </div>
 
       <div className="min-w-0 flex-1">
-        <h3 className="text-body-lg font-medium text-on-surface">
-          {item.nombre}
-        </h3>
+        <div className="flex flex-wrap items-baseline gap-x-2">
+          <h3 className="text-body-lg font-medium text-on-surface">
+            {puedeEditar ? (
+              <button
+                type="button"
+                onClick={() => onEditar(categoria, item)}
+                className="rounded text-left hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+              >
+                <span className="sr-only">Editar </span>
+                {item.nombre}
+              </button>
+            ) : (
+              item.nombre
+            )}
+          </h3>
+          <span className="text-body-md font-semibold text-on-surface">
+            {formatearPrecio(item.precio)}
+          </span>
+        </div>
         {item.descripcion && (
           <p className="line-clamp-2 text-body-md text-on-surface-variant">
             {item.descripcion}
           </p>
         )}
-        <div className="mt-1 flex flex-wrap items-center gap-2">
-          <span className="text-body-md font-semibold text-on-surface">
-            {formatearPrecio(item.precio)}
-          </span>
-          <EstadoItem disponible={item.disponible} />
-        </div>
+        {!item.disponible && (
+          <div className="mt-1">
+            <BadgeAgotado />
+          </div>
+        )}
       </div>
 
-      <div className="flex flex-none flex-col items-end justify-between gap-1">
+      <div className="flex flex-none items-center gap-1">
         <Switch
           checked={item.disponible}
           onChange={() => onCambiarDisponibilidad(item.id, item.disponible)}
           label={`${item.nombre} disponible`}
         />
         {puedeEditar && (
-          // BL-398 (parte 5): en el celular las acciones van en el menú «⋯»;
-          // desde 768 px, como botones de ícono.
-          <div className="md:hidden">
-            <MenuAcciones
-              etiqueta={`Acciones de ${item.nombre}`}
-              acciones={[
-                {
-                  id: "editar",
-                  texto: "Editar",
-                  icono: "edit",
-                  onSelect: () => onEditar(categoria, item),
-                },
-                {
-                  id: "archivar",
-                  texto: "Archivar",
-                  icono: "archive",
-                  onSelect: () => onArchivar(item),
-                },
-              ]}
-            />
-          </div>
-        )}
-        {puedeEditar && (
-          <div className="hidden md:flex">
-            <button
-              type="button"
-              onClick={() => onEditar(categoria, item)}
-              className={`${CLASE_ACCION} hover:text-primary`}
-              title="Editar ítem"
-              aria-label={`Editar ${item.nombre}`}
-            >
-              <span className="material-symbols-outlined text-[20px]" aria-hidden="true">
-                edit
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => onArchivar(item)}
-              className={`${CLASE_ACCION} hover:text-primary`}
-              title="Archivar ítem"
-              aria-label={`Archivar ${item.nombre}`}
-            >
-              <span className="material-symbols-outlined text-[20px]" aria-hidden="true">
-                archive
-              </span>
-            </button>
-          </div>
+          <MenuAcciones
+            etiqueta={`Acciones de ${item.nombre}`}
+            acciones={[
+              {
+                id: "editar",
+                texto: "Editar",
+                icono: "edit",
+                onSelect: () => onEditar(categoria, item),
+              },
+              {
+                id: "archivar",
+                texto: "Archivar",
+                icono: "archive",
+                onSelect: () => onArchivar(item),
+              },
+            ]}
+          />
         )}
       </div>
     </li>
@@ -240,6 +227,9 @@ export default function AdminMenuPage() {
   // BL-398 (parte 3): «Archivados» trae aparte lo archivado
   // (incluirArchivados=true) y lo muestra con Restaurar y Eliminar.
   const verArchivados = filtros.estado === "ARCHIVADOS";
+  // BL-400: el índice solo ayuda con una carta larga.
+  const mostrarIndice =
+    !verArchivados && categoriasVisibles.length >= MINIMO_CATEGORIAS_INDICE;
   const [archivados, setArchivados] = useState<CategoriaGestion[]>([]);
   const [cargandoArchivados, setCargandoArchivados] = useState(false);
   const archivadosVisibles = useMemo(
@@ -590,6 +580,13 @@ export default function AdminMenuPage() {
             categorias={verArchivados ? archivados : categorias}
             esAdmin={puedeEditarCarta}
           />
+          {/* BL-400: en el celular y la tablet, chips para saltar a una
+              categoría; en PC va la columna de la izquierda. */}
+          {mostrarIndice && (
+            <div className="mt-3 xl:hidden">
+              <IndiceCategorias categorias={categoriasVisibles} variante="chips" />
+            </div>
+          )}
         </div>
       )}
 
@@ -660,149 +657,141 @@ export default function AdminMenuPage() {
         </div>
       )}
 
-      {!loading &&
-        !verArchivados &&
-        categoriasVisibles.map((cat) => (
-          <section
-            key={cat.id}
-            aria-labelledby={`categoria-${cat.id}`}
-            className={`overflow-hidden rounded-xl border border-outline-variant ${
-              cat.activo ? "bg-surface-container-lowest" : "bg-surface-container"
-            }`}
-          >
-            <div className="flex flex-col gap-2 border-b border-outline-variant bg-surface-container-low px-4 py-3 md:flex-row md:items-center md:justify-between">
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 id={`categoria-${cat.id}`} className="text-headline-sm text-on-surface">
-                  {cat.nombre}
-                </h2>
-                {!cat.activo && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-surface-container-highest px-2.5 py-0.5 text-body-sm text-on-surface-variant">
-                    <span className="material-symbols-outlined text-[16px]" aria-hidden="true">
-                      visibility_off
-                    </span>
-                    Oculta
-                  </span>
-                )}
-                <span className="text-body-md text-on-surface-variant">
-                  {textoItemsDeCategoria(cat)}
-                </span>
-                {/* BL-393: subtítulo opcional de la categoría. */}
-                {cat.descripcion && (
-                  <p className="w-full text-body-md text-on-surface-variant">
-                    {cat.descripcion}
-                  </p>
-                )}
-              </div>
-              {puedeEditarCarta && (
-                <div className="flex items-center gap-2">
-                  <span className="text-body-md text-on-surface-variant">Visible</span>
-                  <Switch
-                    checked={cat.activo}
-                    onChange={() => cambiarVisibilidad(cat.id, cat.activo)}
-                    label={`Categoría ${cat.nombre} visible en la carta`}
-                  />
-                  <div className="md:hidden">
-                    <MenuAcciones
-                      etiqueta={`Acciones de la categoría ${cat.nombre}`}
-                      acciones={[
-                        {
-                          id: "editar",
-                          texto: "Editar",
-                          icono: "edit",
-                          onSelect: () =>
-                            setCategoriaEnDialogo({
-                              modo: "editar",
-                              categoria: cat,
-                            }),
-                        },
-                        {
-                          id: "archivar",
-                          texto: "Archivar",
-                          icono: "archive",
-                          onSelect: () =>
-                            setAArchivar({
-                              tipo: "categoria",
-                              id: cat.id,
-                              nombre: cat.nombre,
-                            }),
-                        },
-                      ]}
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setCategoriaEnDialogo({ modo: "editar", categoria: cat })
-                    }
-                    className={`${CLASE_ACCION} hidden hover:text-primary md:flex`}
-                    title="Editar categoría"
-                    aria-label={`Editar categoría ${cat.nombre}`}
-                  >
-                    <span className="material-symbols-outlined text-[20px]" aria-hidden="true">
-                      edit
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setAArchivar({
-                        tipo: "categoria",
-                        id: cat.id,
-                        nombre: cat.nombre,
-                      })
-                    }
-                    className={`${CLASE_ACCION} hidden hover:text-primary md:flex`}
-                    title="Archivar categoría"
-                    aria-label={`Archivar categoría ${cat.nombre}`}
-                  >
-                    <span className="material-symbols-outlined text-[20px]" aria-hidden="true">
-                      archive
-                    </span>
-                  </button>
-                </div>
-              )}
+      {!loading && !verArchivados && categoriasVisibles.length > 0 && (
+        // BL-400: en PC, índice de categorías fijo a la izquierda y la carta
+        // a la derecha.
+        <div
+          className={
+            mostrarIndice
+              ? "xl:grid xl:grid-cols-[14rem_minmax(0,1fr)] xl:items-start xl:gap-6"
+              : undefined
+          }
+        >
+          {mostrarIndice && (
+            <div className="hidden xl:sticky xl:top-28 xl:block">
+              <IndiceCategorias categorias={categoriasVisibles} variante="lista" />
             </div>
+          )}
+          <div className="space-y-6">
+            {categoriasVisibles.map((cat) => (
+              <section
+                key={cat.id}
+                id={idSeccionCategoria(cat.id)}
+                aria-labelledby={idTituloCategoria(cat.id)}
+                // BL-400: margen para que, al saltar desde el índice, el título
+                // no quede tapado por la barra fija.
+                className={`scroll-mt-64 overflow-hidden rounded-xl border border-outline-variant md:scroll-mt-44 xl:scroll-mt-28 ${
+                  cat.activo ? "bg-surface-container-lowest" : "bg-surface-container"
+                }`}
+              >
+                <div className="flex flex-col gap-2 border-b border-outline-variant bg-surface-container-low px-4 py-3 md:flex-row md:items-center md:justify-between">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2
+                      id={idTituloCategoria(cat.id)}
+                      tabIndex={-1}
+                      className="text-headline-sm text-on-surface focus:outline-none"
+                    >
+                      {cat.nombre}
+                    </h2>
+                    {!cat.activo && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-surface-container-highest px-2.5 py-0.5 text-body-sm text-on-surface-variant">
+                        <span className="material-symbols-outlined text-[16px]" aria-hidden="true">
+                          visibility_off
+                        </span>
+                        Oculta
+                      </span>
+                    )}
+                    <span className="text-body-md text-on-surface-variant">
+                      {textoItemsDeCategoria(cat)}
+                    </span>
+                    {/* BL-393: subtítulo opcional de la categoría. */}
+                    {cat.descripcion && (
+                      <p className="w-full text-body-md text-on-surface-variant">
+                        {cat.descripcion}
+                      </p>
+                    )}
+                  </div>
+                  {puedeEditarCarta && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-body-md text-on-surface-variant">Visible</span>
+                      <Switch
+                        checked={cat.activo}
+                        onChange={() => cambiarVisibilidad(cat.id, cat.activo)}
+                        label={`Categoría ${cat.nombre} visible en la carta`}
+                      />
+                      <MenuAcciones
+                        etiqueta={`Acciones de la categoría ${cat.nombre}`}
+                        acciones={[
+                          {
+                            id: "editar",
+                            texto: "Editar",
+                            icono: "edit",
+                            onSelect: () =>
+                              setCategoriaEnDialogo({
+                                modo: "editar",
+                                categoria: cat,
+                              }),
+                          },
+                          {
+                            id: "archivar",
+                            texto: "Archivar",
+                            icono: "archive",
+                            onSelect: () =>
+                              setAArchivar({
+                                tipo: "categoria",
+                                id: cat.id,
+                                nombre: cat.nombre,
+                              }),
+                          },
+                        ]}
+                      />
+                    </div>
+                  )}
+                </div>
 
-            {cat.items.length === 0 ? (
-              <p className="px-4 py-8 text-center text-body-md text-on-surface-variant">
-                No hay ítems en esta categoría.
-              </p>
-            ) : (
-              // BL-398: en PC los ítems van en 2 o 3 columnas para aprovechar
-              // el ancho sin que cada tarjeta quede demasiado estirada.
-              <ul className="grid grid-cols-1 gap-3 p-4 lg:grid-cols-2 2xl:grid-cols-3">
-                {cat.items.map((item) => (
-                  <ItemCard
-                    key={item.id}
-                    item={item}
-                    categoria={cat}
-                    onEditar={abrirEditarItem}
-                    onCambiarDisponibilidad={cambiarDisponibilidad}
-                    onArchivar={(i) =>
-                      setAArchivar({ tipo: "item", id: i.id, nombre: i.nombre })
-                    }
-                    puedeEditar={puedeEditarCarta}
-                  />
-                ))}
-              </ul>
-            )}
+                {cat.items.length === 0 ? (
+                  <p className="px-4 py-8 text-center text-body-md text-on-surface-variant">
+                    No hay ítems en esta categoría.
+                  </p>
+                ) : (
+                  // BL-398: en PC los ítems van en 2 o 3 columnas para aprovechar
+                  // el ancho sin que cada tarjeta quede demasiado estirada.
+                  <ul className="grid grid-cols-1 gap-3 p-4 lg:grid-cols-2 2xl:grid-cols-3">
+                    {cat.items.map((item) => (
+                      <ItemCard
+                        key={item.id}
+                        item={item}
+                        categoria={cat}
+                        onEditar={abrirEditarItem}
+                        onCambiarDisponibilidad={cambiarDisponibilidad}
+                        onArchivar={(i) =>
+                          setAArchivar({ tipo: "item", id: i.id, nombre: i.nombre })
+                        }
+                        puedeEditar={puedeEditarCarta}
+                      />
+                    ))}
+                  </ul>
+                )}
 
-            {puedeEditarCarta && (
-              <div className="border-t border-outline-variant px-4 py-2">
-                <button
-                  type="button"
-                  onClick={() => abrirNuevoItem(cat)}
-                  className="flex min-h-12 items-center gap-1 rounded-lg px-2 text-body-md font-medium text-primary hover:bg-surface-container"
-                >
-                  <span className="material-symbols-outlined text-[20px]" aria-hidden="true">
-                    add
-                  </span>
-                  Agregar ítem
-                </button>
-              </div>
-            )}
-          </section>
-        ))}
+                {puedeEditarCarta && (
+                  <div className="border-t border-outline-variant px-4 py-2">
+                    <button
+                      type="button"
+                      onClick={() => abrirNuevoItem(cat)}
+                      className="flex min-h-12 items-center gap-1 rounded-lg px-2 text-body-md font-medium text-primary hover:bg-surface-container"
+                    >
+                      <span className="material-symbols-outlined text-[20px]" aria-hidden="true">
+                        add
+                      </span>
+                      Agregar ítem
+                    </button>
+                  </div>
+                )}
+              </section>
+            ))}
+          </div>
+        </div>
+      )}
 
       {modalOpen && selectedCategoria && (
         <ItemFormModal

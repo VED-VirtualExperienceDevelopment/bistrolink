@@ -53,9 +53,11 @@ export function FiltrosCarta({
       role="search"
       aria-label="Buscar y filtrar la carta"
       onSubmit={(e) => e.preventDefault()}
-      className="grid gap-3 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)]"
+      // BL-400: en el celular, Estado y Categoría van uno al lado del otro
+      // debajo de la búsqueda, para que la barra fija ocupe menos alto.
+      className="grid grid-cols-2 gap-3 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)]"
     >
-      <div>
+      <div className="col-span-2 md:col-span-1">
         <label htmlFor="carta-busqueda" className="mb-1 block text-label-md text-on-surface-variant">
           Buscar
         </label>
