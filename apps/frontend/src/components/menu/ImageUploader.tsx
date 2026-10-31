@@ -169,55 +169,81 @@ export default function ImageUploader({ onUploadSuccess, initialPreviewUrl }: Im
     [ocupado, procesarArchivo],
   );
 
-  let estiloBorde = 'border-[#79767D]/30 bg-gray-50 hover:bg-gray-100';
-  if (ocupado || arrastrando) estiloBorde = 'border-[#8069BF] bg-[#8069BF]/5';
-  if (error) estiloBorde = 'border-red-300 bg-red-50';
+  // BL-398 (parte 4c): colores del tema en lugar de hex fijos.
+  let estiloBorde =
+    'border-outline-variant bg-surface-container-low hover:bg-surface-container';
+  if (ocupado || arrastrando) estiloBorde = 'border-primary bg-primary-fixed';
+  if (error) estiloBorde = 'border-error bg-error-container';
 
   return (
     <div className="w-full max-w-xs">
+      {/* BL-398: el input ya no es «hidden» sino sr-only, para que se pueda
+          elegir la imagen con el teclado (Tab y Enter); el recuadro muestra
+          el foco con focus-within. */}
       <label
         htmlFor="image-upload"
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         aria-busy={ocupado}
-        className={`flex flex-col items-center justify-center w-full h-40 border-2 border-dashed rounded-lg cursor-pointer transition-all duration-200 ${estiloBorde}`}
+        className={`flex h-40 w-full cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed transition-colors duration-200 focus-within:ring-2 focus-within:ring-primary ${estiloBorde}`}
       >
         {preview ? (
-          <div className="relative w-full h-full p-2">
-            <Image src={preview} alt="Vista previa" fill className="object-contain rounded-md" unoptimized />
+          <div className="relative h-full w-full p-2">
+            <Image src={preview} alt="Vista previa" fill className="rounded-md object-contain" unoptimized />
             {ocupado && (
-              <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center gap-2 rounded-md">
-                <div className="w-8 h-8 border-4 border-white border-t-[#8069BF] rounded-full animate-spin" />
-                <span className="text-xs font-medium text-white">{TEXTO_ETAPA[etapa as Exclude<Etapa, 'libre'>]}</span>
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 rounded-md bg-on-surface/40">
+                <div className="h-8 w-8 animate-spin rounded-full border-4 border-on-primary border-t-primary" />
+                <span className="text-body-sm font-medium text-on-primary">
+                  {TEXTO_ETAPA[etapa as Exclude<Etapa, 'libre'>]}
+                </span>
               </div>
             )}
           </div>
         ) : (
-          <div className="flex flex-col items-center justify-center pt-5 pb-6">
+          <div className="flex flex-col items-center justify-center px-4 pb-6 pt-5 text-center">
             {ocupado ? (
-              <div className="w-8 h-8 border-4 border-[#8069BF] border-t-transparent rounded-full animate-spin mb-2" />
+              <div className="mb-2 h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
             ) : (
-              <svg className="w-8 h-8 mb-3 text-[#79767D]" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-              </svg>
+              <span className="material-symbols-outlined mb-2 text-[32px] text-on-surface-variant" aria-hidden="true">
+                add_photo_alternate
+              </span>
             )}
-            <p className="mb-1 text-sm text-[#79767D]">
-              <span className="font-semibold text-[#8069BF]">Click para subir</span> o arrastrá
+            <p className="mb-1 text-body-md text-on-surface-variant">
+              <span className="font-semibold text-primary">Elegí una imagen</span> o
+              arrastrala acá
             </p>
-            <p className="text-xs text-[#79767D]/70">PNG, JPG o WEBP (Máx. 5MB)</p>
+            <p className="text-body-sm text-on-surface-variant">
+              PNG, JPG o WEBP, hasta 5 MB
+            </p>
           </div>
         )}
-        <input id="image-upload" type="file" className="hidden" accept={TIPOS_IMAGEN_PERMITIDOS.join(',')} onChange={handleFileChange} disabled={ocupado} />
+        <input
+          id="image-upload"
+          type="file"
+          className="sr-only"
+          accept={TIPOS_IMAGEN_PERMITIDOS.join(',')}
+          onChange={handleFileChange}
+          disabled={ocupado}
+        />
       </label>
+
+      {preview && !ocupado && (
+        <p className="mt-1 text-body-sm text-on-surface-variant">
+          Para cambiarla, elegí o arrastrá otra.
+        </p>
+      )}
 
       <p className="sr-only" aria-live="polite">
         {ocupado ? TEXTO_ETAPA[etapa as Exclude<Etapa, 'libre'>] : ''}
       </p>
 
       {error && (
-        <p role="alert" className="mt-2 text-sm text-amber-600 text-center font-medium bg-amber-50 py-1 px-2 rounded border border-amber-200">
-          ⚠️ {error}
+        <p
+          role="alert"
+          className="mt-2 rounded-lg bg-error-container px-3 py-2 text-body-sm text-on-error-container"
+        >
+          {error}
         </p>
       )}
     </div>
