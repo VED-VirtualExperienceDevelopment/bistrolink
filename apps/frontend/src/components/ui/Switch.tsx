@@ -13,6 +13,7 @@ export default function Switch({
   label,
   disabled,
 }: SwitchProps) {
+  // BL-398: colores del tema (primary / outline) en lugar de hex fijos.
   return (
     <button
       type="button"
@@ -21,8 +22,8 @@ export default function Switch({
       aria-label={label}
       disabled={disabled}
       onClick={() => !disabled && onChange(!checked)}
-      className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-[#8069BF] focus-visible:ring-offset-2 ${
-        checked ? 'bg-[#8069BF]' : 'bg-[#79767D]'
+      className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${
+        checked ? 'bg-primary' : 'bg-outline'
       } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
     >
       <span className="sr-only">{label}</span>

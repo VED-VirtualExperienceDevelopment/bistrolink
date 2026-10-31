@@ -1,138 +1,164 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api-client";
 import { getKeycloak } from "@/lib/keycloak";
+import { useKeycloakAuth } from "@/components/providers/KeycloakProvider";
+import type { Socket } from "socket.io-client";
 import { getMenuSocket } from "@/lib/socket";
 import Switch from "@/components/ui/Switch";
-import Badge from "@/components/ui/Badge";
 import ItemFormModal from "@/components/menu/ItemFormModal";
 import ItemImagen from "@/components/menu/ItemImagen";
-interface Item {
-  readonly id: string;
-  readonly nombre: string;
-  readonly descripcion?: string;
-  readonly precio: string;
-  readonly disponible: boolean;
-  readonly imagenKey?: string;
-  readonly imagenUrl?: string | null;
-  readonly categoriaId: string;
-}
+import {
+  ArchivarDialog,
+  type ArchivarObjetivo,
+} from "@/components/menu/ArchivarDialog";
+import { FiltrosCarta } from "@/components/menu/FiltrosCarta";
+import { ArchivadosCarta } from "@/components/menu/ArchivadosCarta";
+import { EliminarDefinitivoDialog } from "@/components/menu/EliminarDefinitivoDialog";
+import {
+  CategoriaDialog,
+  type CategoriaEnDialogo,
+} from "@/components/menu/CategoriaDialog";
+import {
+  FILTROS_CARTA_INICIALES,
+  filtrarCarta,
+  hayFiltrosCarta,
+  textoResultadoFiltros,
+  soloArchivados,
+  conVersionCategoria,
+  conVersionItem,
+  textoArchivados,
+  type FiltrosCarta as Filtros,
+  conDisponibilidad,
+  conVisibilidad,
+  sinCategoria,
+  sinItem,
+  textoContadorCarta,
+  textoItemsDeCategoria,
+  type CategoriaGestion,
+  type ItemGestion,
+} from "@/components/menu/gestion-carta.utils";
+import { formatearPrecio } from "@/components/pago/pago.utils";
+import {
+  DEMORA_AVISO_SIN_CONEXION_MS,
+  esDesconexionInesperada,
+} from "@/components/admin/mesas/mapa-mesas.utils";
 
-interface Categoria {
-  readonly id: string;
-  readonly nombre: string;
-  readonly activo: boolean;
-  readonly orden: number;
-  readonly items: readonly Item[];
-}
+// Botón de ícono de 48 px, igual que las acciones de Usuarios.
+const CLASE_ACCION =
+  "flex h-12 w-12 flex-none items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-high focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary";
+
+const horaActual = () => new Date().toLocaleTimeString("es-UY");
 
 // ============================================================================
-// HELPERS
+// ESTADO DE UN ÍTEM
 // ============================================================================
 
-const updateItemAvailability = (
-  items: readonly Item[],
-  itemId: string,
-  disponible: boolean,
-): Item[] => {
-  return items.map((item) =>
-    item.id === itemId ? { ...item, disponible } : item,
+/**
+ * BL-398: estado con ícono y texto, sin tachado (el tachado se confundía con
+ * un ítem borrado). Agotado en ámbar, como en la propuesta.
+ */
+function EstadoItem({ disponible }: { readonly disponible: boolean }) {
+  return disponible ? (
+    <span className="inline-flex items-center gap-1 rounded-full bg-surface-container px-2.5 py-0.5 text-body-sm text-on-surface">
+      <span className="material-symbols-outlined text-[16px]" aria-hidden="true">
+        check_circle
+      </span>
+      Disponible
+    </span>
+  ) : (
+    <span className="inline-flex items-center gap-1 rounded-full bg-tertiary-fixed px-2.5 py-0.5 text-body-sm text-on-tertiary-container">
+      <span className="material-symbols-outlined text-[16px]" aria-hidden="true">
+        block
+      </span>
+      Agotado
+    </span>
   );
-};
-
-const updateCategoriaActivo = (
-  categorias: readonly Categoria[],
-  categoriaId: string,
-  activo: boolean,
-): Categoria[] => {
-  return categorias.map((cat) =>
-    cat.id === categoriaId ? { ...cat, activo } : cat,
-  );
-};
-
-// ============================================================================
-// COMPONENTE ITEM ROW
-// ============================================================================
-interface ItemRowProps {
-  readonly item: Item;
-  readonly catId: string;
-  readonly catName: string;
-  readonly onEdit: (catId: string, catName: string, item: Item) => void;
-  readonly onToggle: (itemId: string, current: boolean) => void;
-  readonly onDelete: (itemId: string, itemName: string) => void;
 }
 
-function ItemRow({ item, catId, catName, onEdit, onToggle, onDelete }: ItemRowProps) {
+// ============================================================================
+// TARJETA DE ÍTEM
+// ============================================================================
+interface ItemCardProps {
+  readonly item: ItemGestion;
+  readonly categoria: CategoriaGestion;
+  readonly onEditar: (categoria: CategoriaGestion, item: ItemGestion) => void;
+  readonly onCambiarDisponibilidad: (itemId: string, actual: boolean) => void;
+  readonly onArchivar: (item: ItemGestion) => void;
+  // BL-395: editar y archivar son solo del ADMIN; el MOZO solo ve el switch.
+  readonly puedeEditar: boolean;
+}
+
+function ItemCard({
+  item,
+  categoria,
+  onEditar,
+  onCambiarDisponibilidad,
+  onArchivar,
+  puedeEditar,
+}: ItemCardProps) {
   return (
-    <div className="px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors group">
-      <div className="flex items-center gap-4 flex-1">
-        <div className="w-16 h-16 rounded-lg bg-gray-100 overflow-hidden flex-shrink-0 border border-[#79767D]/20">
-          <ItemImagen
-            url={item.imagenUrl}
-            alt={item.nombre}
-            className="w-full h-full object-cover"
-          />
-        </div>
-        <div className="flex-1 min-w-0">
-          <h3
-            className={`font-medium ${!item.disponible ? "text-[#79767D] line-through" : "text-[#7C7296]"}`}
-          >
-            {item.nombre}
-          </h3>
-          {item.descripcion && (
-            <p className="text-sm text-[#79767D] truncate">
-              {item.descripcion}
-            </p>
-          )}
-          <p className="text-sm font-semibold text-[#C9A74D] mt-1">
-            ${Number(item.precio).toFixed(2)}
+    <li className="flex gap-3 rounded-xl border border-outline-variant bg-surface-container-lowest p-3">
+      <div className="h-16 w-16 flex-none overflow-hidden rounded-lg border border-outline-variant bg-surface-container">
+        <ItemImagen
+          url={item.imagenUrl}
+          alt={item.nombre}
+          className="h-full w-full object-cover"
+        />
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <h3 className="text-body-lg font-medium text-on-surface">
+          {item.nombre}
+        </h3>
+        {item.descripcion && (
+          <p className="line-clamp-2 text-body-md text-on-surface-variant">
+            {item.descripcion}
           </p>
+        )}
+        <div className="mt-1 flex flex-wrap items-center gap-2">
+          <span className="text-body-md font-semibold text-on-surface">
+            {formatearPrecio(item.precio)}
+          </span>
+          <EstadoItem disponible={item.disponible} />
         </div>
       </div>
-      <div className="flex items-center gap-6">
-        <Badge variant={item.disponible ? "success" : "danger"}>
-          {item.disponible ? "Disponible" : "Agotado"}
-        </Badge>
+
+      <div className="flex flex-none flex-col items-end justify-between gap-1">
         <Switch
           checked={item.disponible}
-          onChange={() => onToggle(item.id, item.disponible)}
-          label={`Marcar ${item.nombre} como disponible`}
+          onChange={() => onCambiarDisponibilidad(item.id, item.disponible)}
+          label={`${item.nombre} disponible`}
         />
-        <button
-          type="button"
-          onClick={() => onEdit(catId, catName, item)}
-          className="opacity-0 group-hover:opacity-100 transition-opacity text-[#79767D] hover:text-[#8069BF]"
-          title="Editar ítem"
-          aria-label={`Editar ${item.nombre}`}
-        >
-          <svg
-            className="w-5 h-5"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="2"
-              d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-            />
-          </svg>
-        </button>
-        <button
-          type="button"
-          onClick={() => onDelete(item.id, item.nombre)}
-          className="opacity-0 group-hover:opacity-100 transition-opacity text-[#79767D] hover:text-red-600"
-          title="Eliminar ítem"
-          aria-label={`Eliminar ${item.nombre}`}
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-          </svg>
-        </button>
+        {puedeEditar && (
+          <div className="flex">
+            <button
+              type="button"
+              onClick={() => onEditar(categoria, item)}
+              className={`${CLASE_ACCION} hover:text-primary`}
+              title="Editar ítem"
+              aria-label={`Editar ${item.nombre}`}
+            >
+              <span className="material-symbols-outlined text-[20px]" aria-hidden="true">
+                edit
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onArchivar(item)}
+              className={`${CLASE_ACCION} hover:text-primary`}
+              title="Archivar ítem"
+              aria-label={`Archivar ${item.nombre}`}
+            >
+              <span className="material-symbols-outlined text-[20px]" aria-hidden="true">
+                archive
+              </span>
+            </button>
+          </div>
+        )}
       </div>
-    </div>
+    </li>
   );
 }
 
@@ -140,401 +166,575 @@ function ItemRow({ item, catId, catName, onEdit, onToggle, onDelete }: ItemRowPr
 // COMPONENTE PRINCIPAL
 // ============================================================================
 export default function AdminMenuPage() {
-  const [categorias, setCategorias] = useState<Categoria[]>([]);
+  // BL-395: la carta la edita el ADMIN. El MOZO la ve y solo marca ítems
+  // como agotados o disponibles (la API le responde 403 en todo lo demás).
+  const { hasRole } = useKeycloakAuth();
+  const puedeEditarCarta = hasRole("ADMIN");
+  const [categorias, setCategorias] = useState<CategoriaGestion[]>([]);
   const [loading, setLoading] = useState(true);
-  const [lastUpdate, setLastUpdate] = useState<string>("");
+  // BL-398: última novedad, anunciada al lector de pantalla (aria-live).
+  const [ultimaNovedad, setUltimaNovedad] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
-  const [categoriaModalOpen, setCategoriaModalOpen] = useState(false);
   const [selectedCategoria, setSelectedCategoria] = useState<{
     readonly id: string;
     readonly nombre: string;
   } | null>(null);
-  const [itemToEdit, setItemToEdit] = useState<Item | null>(null);
+  const [itemToEdit, setItemToEdit] = useState<ItemGestion | null>(null);
 
-  const [nuevaCategoriaNombre, setNuevaCategoriaNombre] = useState("");
-  const [nuevaCategoriaOrden, setNuevaCategoriaOrden] = useState("0");
-  const [creandoCategoria, setCreandoCategoria] = useState(false);
+  // BL-398 (parte 4): crear o editar una categoría en CategoriaDialog.
+  const [categoriaEnDialogo, setCategoriaEnDialogo] =
+    useState<CategoriaEnDialogo | null>(null);
+  // BL-394: archivar se confirma con un diálogo propio (no confirm()).
+  const [aArchivar, setAArchivar] = useState<ArchivarObjetivo | null>(null);
+  // BL-394: errores de las acciones sin diálogo (switches) y de la carga, en
+  // un aviso de la página con los tokens del tema, como Usuarios.
+  const [errorPagina, setErrorPagina] = useState<string | null>(null);
+  // BL-398: aviso de conexión en tiempo real perdida, como el mapa de mesas
+  // (BL-331). Se muestra después de DEMORA_AVISO_SIN_CONEXION_MS, para que
+  // no parpadee en cortes cortos.
+  const [sinConexion, setSinConexion] = useState(false);
+  const [avisoSinConexion, setAvisoSinConexion] = useState(false);
+  const huboConexionRef = useRef(false);
+  const socketRef = useRef<Socket | null>(null);
+  // BL-398 (parte 2): búsqueda y filtros. Se aplican en el navegador sobre
+  // la carta ya cargada, así que no hay demora ni pedidos de más.
+  const [filtros, setFiltros] = useState<Filtros>(FILTROS_CARTA_INICIALES);
+  const categoriasVisibles = useMemo(
+    () => filtrarCarta(categorias, filtros),
+    [categorias, filtros],
+  );
+  const conFiltros = hayFiltrosCarta(filtros);
+  // BL-398 (parte 3): «Archivados» trae aparte lo archivado
+  // (incluirArchivados=true) y lo muestra con Restaurar y Eliminar.
+  const verArchivados = filtros.estado === "ARCHIVADOS";
+  const [archivados, setArchivados] = useState<CategoriaGestion[]>([]);
+  const [cargandoArchivados, setCargandoArchivados] = useState(false);
+  const archivadosVisibles = useMemo(
+    () => filtrarCarta(archivados, { ...filtros, estado: "TODOS" }),
+    [archivados, filtros],
+  );
+  const [aEliminar, setAEliminar] = useState<ArchivarObjetivo | null>(null);
 
-  const cargarDatos = async () => {
-    setLoading(true);
+  const cargarDatos = useCallback(async () => {
     try {
       const keycloak = getKeycloak();
       const restauranteId = keycloak.tokenParsed?.restaurante_id || "";
-      const data = await apiFetch<Categoria[]>(
+      const data = await apiFetch<CategoriaGestion[]>(
         `/admin/menu/categoria?restauranteId=${restauranteId}`,
         keycloak.token,
       );
       setCategorias(data || []);
     } catch (error: unknown) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Error desconocido al cargar el menú";
-      console.error("Error cargando menú:", message);
+      setErrorPagina(
+        error instanceof Error ? error.message : "No se pudo cargar la carta",
+      );
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  const cargarArchivados = useCallback(async () => {
+    setCargandoArchivados(true);
+    try {
+      const keycloak = getKeycloak();
+      const restauranteId = keycloak.tokenParsed?.restaurante_id || "";
+      const data = await apiFetch<CategoriaGestion[]>(
+        `/admin/menu/categoria?restauranteId=${restauranteId}&incluirArchivados=true`,
+        keycloak.token,
+      );
+      setArchivados(soloArchivados(data || []));
+    } catch (error: unknown) {
+      setErrorPagina(
+        error instanceof Error
+          ? error.message
+          : "No se pudo cargar lo archivado",
+      );
+    } finally {
+      setCargandoArchivados(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (verArchivados) void cargarArchivados();
+  }, [verArchivados, cargarArchivados]);
 
   useEffect(() => {
     void cargarDatos();
     const keycloak = getKeycloak();
     const tenantId = keycloak.tokenParsed?.tenant_id || "";
     const socket = getMenuSocket(tenantId, keycloak.token);
+    socketRef.current = socket;
+    huboConexionRef.current = socket.connected;
 
-    // FIX: Callbacks estrictamente síncronos para evitar advertencias de promesas no manejadas
-    socket.on(
-      "menu:item:updated",
-      (data: { itemId: string; disponible: boolean }) => {
-        setCategorias((prev) =>
-          prev.map((cat) => ({
-            ...cat,
-            items: updateItemAvailability(
-              cat.items,
-              data.itemId,
-              data.disponible,
-            ),
-          })),
-        );
-        setLastUpdate(
-          `⚡ Ítem actualizado en tiempo real — ${new Date().toLocaleTimeString("es-AR")}`,
-        );
-      },
-    );
+    const alActualizarItem = (data: { itemId: string; disponible: boolean }) => {
+      setCategorias((prev) =>
+        conDisponibilidad(prev, data.itemId, data.disponible),
+      );
+      setUltimaNovedad(`Carta actualizada en tiempo real a las ${horaActual()}`);
+    };
+    const alActualizarCategoria = (data: {
+      categoriaId: string;
+      activo: boolean;
+    }) => {
+      setCategorias((prev) =>
+        conVisibilidad(prev, data.categoriaId, data.activo),
+      );
+      setUltimaNovedad(`Carta actualizada en tiempo real a las ${horaActual()}`);
+    };
+    // BL-394: un ítem o una categoría se archivó o se eliminó en otra
+    // pantalla: se saca de la lista.
+    const alRetirarItem = (data: { itemId: string }) =>
+      setCategorias((prev) => sinItem(prev, data.itemId));
+    const alRetirarCategoria = (data: { categoriaId: string }) =>
+      setCategorias((prev) => sinCategoria(prev, data.categoriaId));
 
-    socket.on(
-      "menu:categoria:updated",
-      (data: { categoriaId: string; activo: boolean }) => {
-        setCategorias((prev) =>
-          updateCategoriaActivo(prev, data.categoriaId, data.activo),
-        );
-        setLastUpdate(
-          `⚡ Categoría actualizada en tiempo real — ${new Date().toLocaleTimeString("es-AR")}`,
-        );
-      },
-    );
+    // BL-398: al reconectar se vuelve a cargar la carta, porque pudieron
+    // perderse cambios mientras no había conexión.
+    const alConectar = () => {
+      setSinConexion(false);
+      if (huboConexionRef.current) void cargarDatos();
+      huboConexionRef.current = true;
+    };
+    const alDesconectar = (motivo: string) => {
+      if (esDesconexionInesperada(motivo)) setSinConexion(true);
+    };
+    const alFallarConexion = () => setSinConexion(true);
+
+    socket.on("menu:item:updated", alActualizarItem);
+    socket.on("menu:categoria:updated", alActualizarCategoria);
+    socket.on("menu:item:retirado", alRetirarItem);
+    socket.on("menu:categoria:retirada", alRetirarCategoria);
+    socket.on("connect", alConectar);
+    socket.on("disconnect", alDesconectar);
+    socket.on("connect_error", alFallarConexion);
 
     return () => {
-      socket.off("menu:item:updated");
-      socket.off("menu:categoria:updated");
+      socket.off("menu:item:updated", alActualizarItem);
+      socket.off("menu:categoria:updated", alActualizarCategoria);
+      socket.off("menu:item:retirado", alRetirarItem);
+      socket.off("menu:categoria:retirada", alRetirarCategoria);
+      socket.off("connect", alConectar);
+      socket.off("disconnect", alDesconectar);
+      socket.off("connect_error", alFallarConexion);
     };
-  }, []);
+  }, [cargarDatos]);
 
-  const crearCategoria = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setCreandoCategoria(true);
-    try {
-      const keycloak = getKeycloak();
-      await apiFetch("/admin/menu/categoria", keycloak.token, {
-        method: "POST",
-        body: JSON.stringify({
-          nombre: nuevaCategoriaNombre,
-          orden: Number.parseInt(nuevaCategoriaOrden, 10) || 0,
-        }),
-      });
-      setCategoriaModalOpen(false);
-      setNuevaCategoriaNombre("");
-      setNuevaCategoriaOrden("0");
-      await cargarDatos();
-    } catch (error: unknown) {
-      const message =
-        error instanceof Error ? error.message : "Error al crear la categoría";
-      alert(message);
-    } finally {
-      setCreandoCategoria(false);
-    }
-  };
-
-  const toggleItem = async (itemId: string, current: boolean) => {
-    setCategorias((prev) =>
-      prev.map((cat) => ({
-        ...cat,
-        items: updateItemAvailability(cat.items, itemId, !current),
-      })),
-    );
-    try {
-      const keycloak = getKeycloak();
-      await apiFetch(`/admin/menu/item/${itemId}`, keycloak.token, {
-        method: "PATCH",
-        body: JSON.stringify({ disponible: !current }),
-      });
-    } catch (error: unknown) {
-      setCategorias((prev) =>
-        prev.map((cat) => ({
-          ...cat,
-          items: updateItemAvailability(cat.items, itemId, current),
-        })),
-      );
-      const message =
-        error instanceof Error ? error.message : "Error al actualizar el ítem";
-      alert(message);
-    }
-  };
-
-  const deleteItem = async (itemId: string, itemName: string) => {
-    if (!confirm(`¿Estás seguro de que deseas eliminar "${itemName}"? Esta acción lo ocultará del menú público.`)) {
+  useEffect(() => {
+    if (!sinConexion) {
+      setAvisoSinConexion(false);
       return;
     }
-
-    setCategorias((prev) =>
-      prev.map((cat) => ({
-        ...cat,
-        items: cat.items.filter((item) => item.id !== itemId),
-      }))
+    const temporizador = setTimeout(
+      () => setAvisoSinConexion(true),
+      DEMORA_AVISO_SIN_CONEXION_MS,
     );
+    return () => clearTimeout(temporizador);
+  }, [sinConexion]);
 
-    try {
-      const keycloak = getKeycloak();
-      await apiFetch(`/admin/menu/item/${itemId}`, keycloak.token, {
-        method: 'DELETE',
-      });
-      setLastUpdate(`🗑️ Ítem eliminado — ${new Date().toLocaleTimeString('es-AR')}`);
-    } catch (error: unknown) {
-      await cargarDatos();
-      const message = error instanceof Error ? error.message : 'Error al eliminar el ítem';
-      alert(message);
-    }
+  // Reintenta con el mismo socket, para no perder los listeners del efecto.
+  const reintentarConexion = () => {
+    const socket = socketRef.current;
+    if (socket && !socket.connected) socket.connect();
+    void cargarDatos();
   };
 
-  const deleteCategoria = async (categoriaId: string, categoriaNombre: string) => {
-    if (!confirm(`¿Estás seguro de que deseas eliminar la categoría "${categoriaNombre}"? Los ítems asociados quedarán ocultos.`)) {
-      return;
-    }
-
-    // Actualización optimista
-    setCategorias((prev) => updateCategoriaActivo(prev, categoriaId, false));
-
-    try {
-      const keycloak = getKeycloak();
-      await apiFetch(`/admin/menu/categoria/${categoriaId}`, keycloak.token, {
-        method: 'DELETE',
-      });
-      setLastUpdate(`🗑️ Categoría eliminada — ${new Date().toLocaleTimeString('es-AR')}`);
-    } catch (error: unknown) {
-      // Revertir en caso de error
-      setCategorias((prev) => updateCategoriaActivo(prev, categoriaId, true));
-      const message = error instanceof Error ? error.message : 'Error al eliminar la categoría';
-      alert(message);
-    }
+  const alGuardarCategoria = (nombre: string) => {
+    setUltimaNovedad(`«${nombre}» guardada a las ${horaActual()}`);
+    void cargarDatos();
   };
 
-  const toggleCategoria = async (categoriaId: string, current: boolean) => {
-    setCategorias((prev) => updateCategoriaActivo(prev, categoriaId, !current));
+  const cambiarDisponibilidad = async (itemId: string, actual: boolean) => {
+    setErrorPagina(null);
+    setCategorias((prev) => conDisponibilidad(prev, itemId, !actual));
     try {
       const keycloak = getKeycloak();
-      await apiFetch(`/admin/menu/categoria/${categoriaId}`, keycloak.token, {
-        method: "PATCH",
-        body: JSON.stringify({ activo: !current }),
-      });
-    } catch (error: unknown) {
-      setCategorias((prev) =>
-        updateCategoriaActivo(prev, categoriaId, current),
+      const actualizado = await apiFetch<ItemGestion>(
+        `/admin/menu/item/${itemId}/disponibilidad`,
+        keycloak.token,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ disponible: !actual }),
+        },
       );
-      const message =
+      setCategorias((prev) =>
+        conVersionItem(prev, itemId, actualizado?.updatedAt),
+      );
+    } catch (error: unknown) {
+      setCategorias((prev) => conDisponibilidad(prev, itemId, actual));
+      setErrorPagina(
+        error instanceof Error ? error.message : "No se pudo actualizar el ítem",
+      );
+    }
+  };
+
+  // BL-394: «Eliminar» pasa a ser «Archivar» (baja lógica que conserva el
+  // historial). Se confirma en ArchivarDialog; si la API responde 409, el
+  // diálogo muestra el motivo. La eliminación definitiva y «Restaurar»
+  // llegan con el filtro «Archivados» (BL-398, parte 3).
+  const archivar = async ({ tipo, id }: ArchivarObjetivo) => {
+    const keycloak = getKeycloak();
+    const ruta =
+      tipo === "item"
+        ? `/admin/menu/item/${id}/archivar`
+        : `/admin/menu/categoria/${id}/archivar`;
+    await apiFetch(ruta, keycloak.token, { method: "POST" });
+    if (tipo === "item") {
+      setCategorias((prev) => sinItem(prev, id));
+      setUltimaNovedad(`Ítem archivado a las ${horaActual()}`);
+    } else {
+      setCategorias((prev) => sinCategoria(prev, id));
+      setUltimaNovedad(`Categoría archivada a las ${horaActual()}`);
+    }
+  };
+
+  // BL-398 (parte 3): restaurar vuelve a dejarlo en la carta. Un 409 (nombre
+  // ya usado, categoría archivada) se muestra en el aviso de la página.
+  const restaurar = async ({ tipo, id, nombre }: ArchivarObjetivo) => {
+    setErrorPagina(null);
+    try {
+      const keycloak = getKeycloak();
+      const ruta =
+        tipo === "item"
+          ? `/admin/menu/item/${id}/restaurar`
+          : `/admin/menu/categoria/${id}/restaurar`;
+      await apiFetch(ruta, keycloak.token, { method: "POST" });
+      setUltimaNovedad(`«${nombre}» restaurado a las ${horaActual()}`);
+      await Promise.all([cargarArchivados(), cargarDatos()]);
+    } catch (error: unknown) {
+      setErrorPagina(
+        error instanceof Error ? error.message : `No se pudo restaurar «${nombre}»`,
+      );
+    }
+  };
+
+  // BL-398 (parte 3): eliminar definitivamente (solo sin historial). Se
+  // confirma en EliminarDefinitivoDialog, que muestra un 409 si lo hay.
+  const eliminarDefinitivo = async ({ tipo, id, nombre }: ArchivarObjetivo) => {
+    const keycloak = getKeycloak();
+    const ruta =
+      tipo === "item" ? `/admin/menu/item/${id}` : `/admin/menu/categoria/${id}`;
+    await apiFetch(ruta, keycloak.token, { method: "DELETE" });
+    setUltimaNovedad(`«${nombre}» eliminado a las ${horaActual()}`);
+    await cargarArchivados();
+  };
+
+  const cambiarVisibilidad = async (categoriaId: string, actual: boolean) => {
+    setErrorPagina(null);
+    setCategorias((prev) => conVisibilidad(prev, categoriaId, !actual));
+    try {
+      const keycloak = getKeycloak();
+      const actualizada = await apiFetch<CategoriaGestion>(
+        `/admin/menu/categoria/${categoriaId}`,
+        keycloak.token,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ activo: !actual }),
+        },
+      );
+      setCategorias((prev) =>
+        conVersionCategoria(prev, categoriaId, actualizada?.updatedAt),
+      );
+    } catch (error: unknown) {
+      setCategorias((prev) => conVisibilidad(prev, categoriaId, actual));
+      setErrorPagina(
         error instanceof Error
           ? error.message
-          : "Error al actualizar la categoría";
-      alert(message);
+          : "No se pudo actualizar la categoría",
+      );
     }
   };
 
-  const openCreateModal = (categoriaId: string, categoriaNombre: string) => {
-    setSelectedCategoria({ id: categoriaId, nombre: categoriaNombre });
+  // Contador del encabezado según lo que se está viendo.
+  const textoDelContador = () => {
+    if (verArchivados) return textoArchivados(archivadosVisibles);
+    if (conFiltros) return textoResultadoFiltros(categoriasVisibles, categorias);
+    return textoContadorCarta(categorias);
+  };
+
+  const abrirNuevoItem = (categoria: CategoriaGestion) => {
+    setSelectedCategoria({ id: categoria.id, nombre: categoria.nombre });
     setItemToEdit(null);
     setModalOpen(true);
   };
 
-  const openEditModal = (
-    categoriaId: string,
-    categoriaNombre: string,
-    item: Item,
-  ) => {
-    setSelectedCategoria({ id: categoriaId, nombre: categoriaNombre });
+  const abrirEditarItem = (categoria: CategoriaGestion, item: ItemGestion) => {
+    setSelectedCategoria({ id: categoria.id, nombre: categoria.nombre });
     setItemToEdit(item);
     setModalOpen(true);
   };
 
-  if (loading) {
-    return (
-      <div className="p-6 max-w-5xl mx-auto space-y-6">
-        <div className="h-8 w-48 bg-[#79767D]/10 rounded animate-pulse" />
-        {[1, 2].map((i) => (
-          <div
-            key={i}
-            className="border rounded-xl p-6 space-y-4 animate-pulse"
-          >
-            <div className="h-6 w-32 bg-[#79767D]/10 rounded" />
-            <div className="h-20 bg-[#79767D]/5 rounded" />
-          </div>
-        ))}
-      </div>
-    );
-  }
-
   return (
-    <div className="p-6 max-w-5xl mx-auto space-y-6">
-      <div className="flex justify-between items-center border-b pb-4">
+    // BL-398: a todo el ancho del área de contenido, como Usuarios y el mapa
+    // de mesas (BL-339, BL-364).
+    <div className="w-full space-y-6 p-4 md:p-6">
+      <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
         <div>
-          <h1 className="text-3xl font-bold text-[#7C7296]">
-            Gestión de Carta
-          </h1>
-          <p className="text-[#79767D] mt-1">
-            Administra categorías, ítems y disponibilidad en tiempo real.
+          <h1 className="text-headline-lg text-primary">Gestión de Carta</h1>
+          <p className="text-body-md text-on-surface-variant">
+            {puedeEditarCarta
+              ? "Categorías, ítems y disponibilidad de la carta, en tiempo real."
+              : "Marcá los ítems agotados o disponibles, en tiempo real."}
           </p>
         </div>
-        <div className="flex gap-2">
+        {puedeEditarCarta && (
           <button
             type="button"
-            onClick={() => setCategoriaModalOpen(true)}
-            className="px-4 py-2 bg-[#8069BF] text-white rounded-lg hover:bg-[#8069BF]/90 transition-colors shadow-sm flex items-center gap-2"
+            onClick={() => setCategoriaEnDialogo({ modo: "crear" })}
+            className="flex min-h-12 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-body-md font-medium text-on-primary hover:opacity-90"
           >
-            <svg
-              className="w-4 h-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="2"
-                d="M12 4v16m8-8H4"
-              />
-            </svg>
+            <span className="material-symbols-outlined text-[20px]" aria-hidden="true">
+              add
+            </span>
             <span>Nueva categoría</span>
           </button>
-          <button
-            type="button"
-            onClick={cargarDatos}
-            className="px-4 py-2 bg-white border border-[#79767D]/30 rounded-lg text-sm font-medium text-[#7C7296] hover:bg-gray-50 transition-colors shadow-sm flex items-center gap-2"
-          >
-            <span>↻</span>
-            <span>Actualizar vista</span>
-          </button>
-        </div>
+        )}
       </div>
 
-      {lastUpdate && (
-        <div className="bg-[#8069BF]/10 border border-[#8069BF]/30 text-[#8069BF] px-4 py-2 rounded-lg text-sm flex items-center gap-2">
-          <span className="w-2 h-2 bg-[#8069BF] rounded-full animate-pulse" />
-          <span>{lastUpdate}</span>
+      {avisoSinConexion && (
+        <div
+          role="status"
+          className="flex flex-col gap-2 rounded-xl border border-error bg-error-container px-4 py-3 text-body-md text-on-error-container md:flex-row md:items-center md:justify-between"
+        >
+          <span className="flex items-start gap-2">
+            <span className="material-symbols-outlined" aria-hidden="true">
+              wifi_off
+            </span>
+            <span>
+              Sin conexión en tiempo real. La carta puede no estar actualizada.
+              Reconectando…
+            </span>
+          </span>
+          <button
+            type="button"
+            onClick={reintentarConexion}
+            className="min-h-12 rounded-lg px-4 font-medium hover:opacity-80"
+          >
+            Reintentar
+          </button>
         </div>
       )}
 
-      {categorias.length === 0 ? (
-        <div className="text-center py-12 bg-gray-50 rounded-xl">
-          <svg
-            className="w-16 h-16 mx-auto text-[#79767D]/30 mb-4"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="2"
-              d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
-            />
-          </svg>
-          <p className="text-[#79767D] mb-4">No hay categorías creadas.</p>
+      {errorPagina && (
+        <div
+          role="alert"
+          className="flex items-start justify-between gap-2 rounded-xl bg-error-container px-4 py-3 text-body-md text-on-error-container"
+        >
+          <span>{errorPagina}</span>
           <button
             type="button"
-            onClick={() => setCategoriaModalOpen(true)}
-            className="px-6 py-3 bg-[#8069BF] text-white rounded-lg hover:bg-[#8069BF]/90 transition-colors inline-flex items-center gap-2"
+            onClick={() => setErrorPagina(null)}
+            aria-label="Cerrar aviso"
+            className="-my-2 -mr-2 flex h-12 w-12 flex-none items-center justify-center rounded-full hover:opacity-80"
           >
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="2"
-                d="M12 4v16m8-8H4"
-              />
-            </svg>
-            Crear primera categoría
+            <span className="material-symbols-outlined text-[20px]" aria-hidden="true">
+              close
+            </span>
           </button>
         </div>
-      ) : (
-        categorias.map((cat) => (
-          <div
-            key={cat.id}
-            className={`border rounded-xl shadow-sm overflow-hidden transition-all duration-300 ${!cat.activo ? "opacity-60 bg-gray-50" : "bg-white"}`}
+      )}
+
+      {loading && (
+        <div className="flex justify-center py-12">
+          <span className="sr-only">Cargando la carta…</span>
+          <span className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+        </div>
+      )}
+
+      {!loading && categorias.length > 0 && (
+        // BL-398: barra fija arriba al desplazarse, para encontrar y marcar
+        // un faltante en pleno servicio sin recorrer toda la carta.
+        <div className="sticky top-0 z-10 -mx-4 border-b border-outline-variant bg-surface px-4 py-3 md:-mx-6 md:px-6">
+          <FiltrosCarta
+            filtros={filtros}
+            onChange={setFiltros}
+            categorias={verArchivados ? archivados : categorias}
+            esAdmin={puedeEditarCarta}
+          />
+        </div>
+      )}
+
+      {!loading && (
+        // Contador y última novedad: se anuncian al lector de pantalla
+        // cuando cambian, sin mover el foco (como en Usuarios, BL-363).
+        <p
+          className="text-body-md text-on-surface-variant"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          {textoDelContador()}
+          {ultimaNovedad && ` · ${ultimaNovedad}`}
+        </p>
+      )}
+
+      {!loading && categorias.length === 0 && (
+        <div className="rounded-xl border border-outline-variant bg-surface-container-lowest p-12 text-center">
+          <span className="material-symbols-outlined text-4xl text-on-surface-variant" aria-hidden="true">
+            restaurant_menu
+          </span>
+          <p className="mt-2 text-body-lg text-on-surface">
+            Todavía no hay categorías en la carta
+          </p>
+          {puedeEditarCarta && (
+            <button
+              type="button"
+              onClick={() => setCategoriaEnDialogo({ modo: "crear" })}
+              className="mt-4 min-h-12 rounded-lg px-4 text-body-md font-medium text-primary hover:bg-surface-container"
+            >
+              Crear la primera categoría
+            </button>
+          )}
+        </div>
+      )}
+
+      {!loading && verArchivados && cargandoArchivados && (
+        <div className="flex justify-center py-12">
+          <span className="sr-only">Cargando lo archivado…</span>
+          <span className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+        </div>
+      )}
+
+      {!loading && verArchivados && !cargandoArchivados && (
+        <ArchivadosCarta
+          categorias={archivadosVisibles}
+          onRestaurar={restaurar}
+          onEliminar={setAEliminar}
+        />
+      )}
+
+      {!loading && !verArchivados && conFiltros && categoriasVisibles.length === 0 && (
+        // Estado vacío propio cuando los filtros no dejan nada (como Usuarios).
+        <div className="rounded-xl border border-outline-variant bg-surface-container-lowest p-12 text-center">
+          <span className="material-symbols-outlined text-4xl text-on-surface-variant" aria-hidden="true">
+            search_off
+          </span>
+          <p className="mt-2 text-body-lg text-on-surface">
+            No hay ítems con esos filtros
+          </p>
+          <button
+            type="button"
+            onClick={() => setFiltros(FILTROS_CARTA_INICIALES)}
+            className="mt-4 min-h-12 rounded-lg px-4 text-body-md font-medium text-primary hover:bg-surface-container"
           >
-            <div className="px-6 py-4 bg-[#7C7296]/5 border-b flex justify-between items-center">
-              <div className="flex items-center gap-3">
-                <h2 className="text-xl font-semibold text-[#7C7296]">
+            Quitar los filtros
+          </button>
+        </div>
+      )}
+
+      {!loading &&
+        !verArchivados &&
+        categoriasVisibles.map((cat) => (
+          <section
+            key={cat.id}
+            aria-labelledby={`categoria-${cat.id}`}
+            className={`overflow-hidden rounded-xl border border-outline-variant ${
+              cat.activo ? "bg-surface-container-lowest" : "bg-surface-container"
+            }`}
+          >
+            <div className="flex flex-col gap-2 border-b border-outline-variant bg-surface-container-low px-4 py-3 md:flex-row md:items-center md:justify-between">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 id={`categoria-${cat.id}`} className="text-headline-sm text-on-surface">
                   {cat.nombre}
                 </h2>
-                {!cat.activo && <Badge variant="danger">Deshabilitada</Badge>}
-                <Badge variant="neutral">{cat.items.length} ítems</Badge>
+                {!cat.activo && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-surface-container-highest px-2.5 py-0.5 text-body-sm text-on-surface-variant">
+                    <span className="material-symbols-outlined text-[16px]" aria-hidden="true">
+                      visibility_off
+                    </span>
+                    Oculta
+                  </span>
+                )}
+                <span className="text-body-md text-on-surface-variant">
+                  {textoItemsDeCategoria(cat)}
+                </span>
+                {/* BL-393: subtítulo opcional de la categoría. */}
+                {cat.descripcion && (
+                  <p className="w-full text-body-md text-on-surface-variant">
+                    {cat.descripcion}
+                  </p>
+                )}
               </div>
-              <div className="flex items-center gap-3">
-                <span className="text-sm text-[#79767D]">Visible</span>
-                <Switch checked={cat.activo} onChange={() => toggleCategoria(cat.id, cat.activo)} label={`Habilitar categoría ${cat.nombre}`} />
-                
-                {/* NUEVO BOTÓN DE ELIMINAR CATEGORÍA */}
-                <button
-                  type="button"
-                  onClick={() => deleteCategoria(cat.id, cat.nombre)}
-                  className="text-[#79767D] hover:text-red-600 transition-colors p-1"
-                  title="Eliminar categoría"
-                  aria-label={`Eliminar categoría ${cat.nombre}`}
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-            <div className="divide-y divide-gray-100">
-              {cat.items.length === 0 ? (
-                <p className="px-6 py-8 text-center text-[#79767D] text-sm">
-                  No hay ítems en esta categoría.
-                </p>
-              ) : (
-                cat.items.map((item) => (
-                  <ItemRow
-                    key={item.id}
-                    item={item}
-                    catId={cat.id}
-                    catName={cat.nombre}
-                    onEdit={openEditModal}
-                    onToggle={toggleItem}
-                    onDelete={deleteItem}
+              {puedeEditarCarta && (
+                <div className="flex items-center gap-2">
+                  <span className="text-body-md text-on-surface-variant">Visible</span>
+                  <Switch
+                    checked={cat.activo}
+                    onChange={() => cambiarVisibilidad(cat.id, cat.activo)}
+                    label={`Categoría ${cat.nombre} visible en la carta`}
                   />
-                ))
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setCategoriaEnDialogo({ modo: "editar", categoria: cat })
+                    }
+                    className={`${CLASE_ACCION} hover:text-primary`}
+                    title="Editar categoría"
+                    aria-label={`Editar categoría ${cat.nombre}`}
+                  >
+                    <span className="material-symbols-outlined text-[20px]" aria-hidden="true">
+                      edit
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setAArchivar({
+                        tipo: "categoria",
+                        id: cat.id,
+                        nombre: cat.nombre,
+                      })
+                    }
+                    className={`${CLASE_ACCION} hover:text-primary`}
+                    title="Archivar categoría"
+                    aria-label={`Archivar categoría ${cat.nombre}`}
+                  >
+                    <span className="material-symbols-outlined text-[20px]" aria-hidden="true">
+                      archive
+                    </span>
+                  </button>
+                </div>
               )}
             </div>
-            <div className="px-6 py-3 bg-[#7C7296]/5 border-t flex justify-between items-center">
-              <button
-                type="button"
-                onClick={() => openCreateModal(cat.id, cat.nombre)}
-                disabled={!cat.activo}
-                className="text-sm font-medium text-[#8069BF] hover:text-[#8069BF]/80 flex items-center gap-1 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <svg
-                  className="w-4 h-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth="2"
-                    d="M12 4v16m8-8H4"
+
+            {cat.items.length === 0 ? (
+              <p className="px-4 py-8 text-center text-body-md text-on-surface-variant">
+                No hay ítems en esta categoría.
+              </p>
+            ) : (
+              // BL-398: en PC los ítems van en 2 o 3 columnas para aprovechar
+              // el ancho sin que cada tarjeta quede demasiado estirada.
+              <ul className="grid grid-cols-1 gap-3 p-4 lg:grid-cols-2 2xl:grid-cols-3">
+                {cat.items.map((item) => (
+                  <ItemCard
+                    key={item.id}
+                    item={item}
+                    categoria={cat}
+                    onEditar={abrirEditarItem}
+                    onCambiarDisponibilidad={cambiarDisponibilidad}
+                    onArchivar={(i) =>
+                      setAArchivar({ tipo: "item", id: i.id, nombre: i.nombre })
+                    }
+                    puedeEditar={puedeEditarCarta}
                   />
-                </svg>
-                Agregar ítem
-              </button>
-            </div>
-          </div>
-        ))
-      )}
+                ))}
+              </ul>
+            )}
+
+            {puedeEditarCarta && (
+              <div className="border-t border-outline-variant px-4 py-2">
+                <button
+                  type="button"
+                  onClick={() => abrirNuevoItem(cat)}
+                  className="flex min-h-12 items-center gap-1 rounded-lg px-2 text-body-md font-medium text-primary hover:bg-surface-container"
+                >
+                  <span className="material-symbols-outlined text-[20px]" aria-hidden="true">
+                    add
+                  </span>
+                  Agregar ítem
+                </button>
+              </div>
+            )}
+          </section>
+        ))}
 
       {modalOpen && selectedCategoria && (
         <ItemFormModal
@@ -546,96 +746,24 @@ export default function AdminMenuPage() {
         />
       )}
 
-      {categoriaModalOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full">
-            <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
-              <h2 className="text-xl font-bold text-[#7C7296]">
-                Nueva Categoría
-              </h2>
-              <button
-                type="button"
-                onClick={() => setCategoriaModalOpen(false)}
-                className="text-[#79767D] hover:text-[#7C7296] transition-colors"
-                aria-label="Cerrar modal"
-              >
-                <svg
-                  className="w-6 h-6"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth="2"
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                </svg>
-              </button>
-            </div>
-            <form onSubmit={crearCategoria} className="p-6 space-y-4">
-              <div>
-                <label
-                  htmlFor="cat-nombre"
-                  className="block text-sm font-medium text-[#7C7296] mb-2"
-                >
-                  Nombre de la categoría *
-                </label>
-                <input
-                  id="cat-nombre"
-                  type="text"
-                  value={nuevaCategoriaNombre}
-                  onChange={(e) => setNuevaCategoriaNombre(e.target.value)}
-                  required
-                  className="w-full px-4 py-2 border border-[#79767D]/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#8069BF] focus:border-transparent"
-                  placeholder="Ej: Entradas, Platos principales, Postres"
-                />
-              </div>
-              <div>
-                <label
-                  htmlFor="cat-orden"
-                  className="block text-sm font-medium text-[#7C7296] mb-2"
-                >
-                  Orden (opcional)
-                </label>
-                <input
-                  id="cat-orden"
-                  type="number"
-                  value={nuevaCategoriaOrden}
-                  onChange={(e) => setNuevaCategoriaOrden(e.target.value)}
-                  min="0"
-                  className="w-full px-4 py-2 border border-[#79767D]/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#8069BF] focus:border-transparent"
-                  placeholder="0"
-                />
-                <p className="text-xs text-[#79767D] mt-1">
-                  Las categorías se ordenan de menor a mayor. Deja 0 para que
-                  aparezca primero.
-                </p>
-              </div>
-              <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
-                <button
-                  type="button"
-                  onClick={() => setCategoriaModalOpen(false)}
-                  className="px-4 py-2 border border-[#79767D]/30 text-[#7C7296] rounded-lg hover:bg-gray-50 transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={creandoCategoria}
-                  className="px-6 py-2 bg-[#8069BF] text-white rounded-lg hover:bg-[#8069BF]/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                >
-                  {creandoCategoria && (
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  )}
-                  Crear categoría
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <ArchivarDialog
+        objetivo={aArchivar}
+        onClose={() => setAArchivar(null)}
+        onConfirmar={archivar}
+      />
+
+      <EliminarDefinitivoDialog
+        objetivo={aEliminar}
+        onClose={() => setAEliminar(null)}
+        onConfirmar={eliminarDefinitivo}
+      />
+
+      <CategoriaDialog
+        objetivo={categoriaEnDialogo}
+        onClose={() => setCategoriaEnDialogo(null)}
+        onGuardada={alGuardarCategoria}
+        onRecargar={() => void cargarDatos()}
+      />
     </div>
   );
 }

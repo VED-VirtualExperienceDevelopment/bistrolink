@@ -89,6 +89,36 @@ describe('MenuGateway', () => {
     });
   });
 
+  describe('emitItemRetirado (BL-394)', () => {
+    it('[TC-U-211] emite menu:item:retirado a la room del tenant', () => {
+      const tenantId = 'test-tenant-id';
+      const payload = { itemId: 'item-123' };
+
+      gateway.emitItemRetirado(tenantId, payload);
+
+      expect(mockServer.to).toHaveBeenCalledWith(`tenant_${tenantId}`);
+      expect(mockServer.emit).toHaveBeenCalledWith(
+        'menu:item:retirado',
+        payload,
+      );
+    });
+  });
+
+  describe('emitCategoriaRetirada (BL-394)', () => {
+    it('[TC-U-211] emite menu:categoria:retirada a la room del tenant', () => {
+      const tenantId = 'test-tenant-id';
+      const payload = { categoriaId: 'cat-123' };
+
+      gateway.emitCategoriaRetirada(tenantId, payload);
+
+      expect(mockServer.to).toHaveBeenCalledWith(`tenant_${tenantId}`);
+      expect(mockServer.emit).toHaveBeenCalledWith(
+        'menu:categoria:retirada',
+        payload,
+      );
+    });
+  });
+
   describe('handleConnection', () => {
     it('debe unir al cliente a la room del tenant si tenantId está presente', () => {
       const mockClient = {

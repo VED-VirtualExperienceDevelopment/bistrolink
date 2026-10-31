@@ -121,9 +121,14 @@ export default function ItemFormModal({
 
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+            // BL-395: mismo aviso que los diálogos de Usuarios (tokens del
+            // tema y role="alert" para el lector de pantalla).
+            <p
+              role="alert"
+              className="rounded-lg bg-error-container px-3 py-2 text-body-sm text-on-error-container"
+            >
               {error}
-            </div>
+            </p>
           )}
 
           <div>
