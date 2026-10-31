@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api-client";
 import { getKeycloak } from "@/lib/keycloak";
 import { useKeycloakAuth } from "@/components/providers/KeycloakProvider";
@@ -13,7 +13,13 @@ import {
   ArchivarDialog,
   type ArchivarObjetivo,
 } from "@/components/menu/ArchivarDialog";
+import { FiltrosCarta } from "@/components/menu/FiltrosCarta";
 import {
+  FILTROS_CARTA_INICIALES,
+  filtrarCarta,
+  hayFiltrosCarta,
+  textoResultadoFiltros,
+  type FiltrosCarta as Filtros,
   conDisponibilidad,
   conVisibilidad,
   sinCategoria,
@@ -184,6 +190,14 @@ export default function AdminMenuPage() {
   const [avisoSinConexion, setAvisoSinConexion] = useState(false);
   const huboConexionRef = useRef(false);
   const socketRef = useRef<Socket | null>(null);
+  // BL-398 (parte 2): búsqueda y filtros. Se aplican en el navegador sobre
+  // la carta ya cargada, así que no hay demora ni pedidos de más.
+  const [filtros, setFiltros] = useState<Filtros>(FILTROS_CARTA_INICIALES);
+  const categoriasVisibles = useMemo(
+    () => filtrarCarta(categorias, filtros),
+    [categorias, filtros],
+  );
+  const conFiltros = hayFiltrosCarta(filtros);
 
   const cargarDatos = useCallback(async () => {
     try {
@@ -459,6 +473,18 @@ export default function AdminMenuPage() {
         </div>
       )}
 
+      {!loading && categorias.length > 0 && (
+        // BL-398: barra fija arriba al desplazarse, para encontrar y marcar
+        // un faltante en pleno servicio sin recorrer toda la carta.
+        <div className="sticky top-0 z-10 -mx-4 border-b border-outline-variant bg-surface px-4 py-3 md:-mx-6 md:px-6">
+          <FiltrosCarta
+            filtros={filtros}
+            onChange={setFiltros}
+            categorias={categorias}
+          />
+        </div>
+      )}
+
       {!loading && (
         // Contador y última novedad: se anuncian al lector de pantalla
         // cuando cambian, sin mover el foco (como en Usuarios, BL-363).
@@ -467,7 +493,9 @@ export default function AdminMenuPage() {
           aria-live="polite"
           aria-atomic="true"
         >
-          {textoContadorCarta(categorias)}
+          {conFiltros
+            ? textoResultadoFiltros(categoriasVisibles, categorias)
+            : textoContadorCarta(categorias)}
           {ultimaNovedad && ` · ${ultimaNovedad}`}
         </p>
       )}
@@ -492,8 +520,27 @@ export default function AdminMenuPage() {
         </div>
       )}
 
+      {!loading && conFiltros && categoriasVisibles.length === 0 && (
+        // Estado vacío propio cuando los filtros no dejan nada (como Usuarios).
+        <div className="rounded-xl border border-outline-variant bg-surface-container-lowest p-12 text-center">
+          <span className="material-symbols-outlined text-4xl text-on-surface-variant" aria-hidden="true">
+            search_off
+          </span>
+          <p className="mt-2 text-body-lg text-on-surface">
+            No hay ítems con esos filtros
+          </p>
+          <button
+            type="button"
+            onClick={() => setFiltros(FILTROS_CARTA_INICIALES)}
+            className="mt-4 min-h-12 rounded-lg px-4 text-body-md font-medium text-primary hover:bg-surface-container"
+          >
+            Quitar los filtros
+          </button>
+        </div>
+      )}
+
       {!loading &&
-        categorias.map((cat) => (
+        categoriasVisibles.map((cat) => (
           <section
             key={cat.id}
             aria-labelledby={`categoria-${cat.id}`}

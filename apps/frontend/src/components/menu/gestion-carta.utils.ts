@@ -4,6 +4,8 @@
  * dentro de los efectos (regla de Sonar).
  */
 
+import { normalizarParaBuscar as normalizar } from "@/components/admin/usuarios/Usuarios.utils";
+
 export interface ItemGestion {
   readonly id: string;
   readonly nombre: string;
@@ -91,4 +93,93 @@ export function textoContadorCarta(categorias: Categorias): string {
 /** Contador de una categoría: «3 ítems». */
 export function textoItemsDeCategoria(categoria: CategoriaGestion): string {
   return cantidad(categoria.items.length, "ítem", "ítems");
+}
+
+// ── BL-398 (parte 2): búsqueda y filtros ────────────────────────────────────
+
+export type FiltroEstadoCarta =
+  "TODOS" | "DISPONIBLES" | "AGOTADOS" | "OCULTOS";
+
+export interface FiltrosCarta {
+  readonly busqueda: string;
+  readonly estado: FiltroEstadoCarta;
+  /** Id de la categoría, o "TODAS". */
+  readonly categoriaId: string;
+}
+
+export const FILTROS_CARTA_INICIALES: FiltrosCarta = {
+  busqueda: "",
+  estado: "TODOS",
+  categoriaId: "TODAS",
+};
+
+export function hayFiltrosCarta(filtros: FiltrosCarta): boolean {
+  return (
+    filtros.busqueda.trim() !== "" ||
+    filtros.estado !== FILTROS_CARTA_INICIALES.estado ||
+    filtros.categoriaId !== FILTROS_CARTA_INICIALES.categoriaId
+  );
+}
+
+function itemPasaElEstado(
+  item: ItemGestion,
+  estado: FiltroEstadoCarta,
+): boolean {
+  if (estado === "DISPONIBLES") return item.disponible;
+  if (estado === "AGOTADOS") return !item.disponible;
+  return true;
+}
+
+function categoriaPasaElEstado(
+  categoria: CategoriaGestion,
+  estado: FiltroEstadoCarta,
+): boolean {
+  // «Ocultos»: los ítems de las categorías que no se ven en la carta.
+  return estado === "OCULTOS" ? !categoria.activo : true;
+}
+
+/**
+ * Categorías con los ítems que cumplen los filtros. La búsqueda mira el
+ * nombre y la descripción del ítem, sin distinguir mayúsculas ni tildes, y
+ * también el nombre de la categoría (buscar «postres» trae todos sus
+ * ítems). Sin filtros devuelve todo, incluidas las categorías vacías; con
+ * filtros, solo las categorías que tienen algún ítem que coincide.
+ */
+export function filtrarCarta(
+  categorias: Categorias,
+  filtros: FiltrosCarta,
+): CategoriaGestion[] {
+  if (!hayFiltrosCarta(filtros)) return [...categorias];
+  const termino = normalizar(filtros.busqueda);
+  return categorias
+    .filter(
+      (cat) =>
+        (filtros.categoriaId === "TODAS" || cat.id === filtros.categoriaId) &&
+        categoriaPasaElEstado(cat, filtros.estado),
+    )
+    .map((cat) => {
+      const coincideCategoria =
+        termino !== "" && normalizar(cat.nombre).includes(termino);
+      const items = cat.items.filter(
+        (item) =>
+          itemPasaElEstado(item, filtros.estado) &&
+          (termino === "" ||
+            coincideCategoria ||
+            normalizar(`${item.nombre} ${item.descripcion ?? ""}`).includes(
+              termino,
+            )),
+      );
+      return { ...cat, items };
+    })
+    .filter((cat) => cat.items.length > 0);
+}
+
+/** Con filtros: «3 de 12 ítems». Lo que se anuncia al lector de pantalla. */
+export function textoResultadoFiltros(
+  filtradas: Categorias,
+  todas: Categorias,
+): string {
+  const encontrados = filtradas.flatMap((cat) => cat.items).length;
+  const total = todas.flatMap((cat) => cat.items).length;
+  return `${encontrados} de ${cantidad(total, "ítem", "ítems")}`;
 }
