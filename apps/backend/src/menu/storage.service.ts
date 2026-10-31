@@ -33,7 +33,7 @@ export class StorageService {
   // levantando igual — solo falla si de verdad se pide un ítem con imagen.
   private s3Client: S3Client | null = null;
 
-  private getClient(): S3Client {
+  private obtenerCliente(): S3Client {
     if (!this.s3Client) {
       this.s3Client = new S3Client({
         region: process.env.AWS_REGION || 'auto',
@@ -45,10 +45,11 @@ export class StorageService {
   }
 
   /**
-   * URL firmada de LECTURA con TTL (HU-001: las imágenes se sirven vía URLs
-   * firmadas con TTL, no URLs públicas permanentes).
+   * URL firmada de LECTURA con TTL. La usan el panel de administración y,
+   * cuando no hay CDN configurada (local, MinIO), también el menú del
+   * comensal (ver urlImagenPublica, BL-199).
    */
-  async getSignedImageUrl(key: string): Promise<string | null> {
+  async urlFirmadaDeLectura(key: string): Promise<string | null> {
     try {
       // BL-387: la respuesta de S3 la fija la firma, no lo que declaró quien
       // subió el archivo. Las imágenes procesadas son WebP; las viejas (antes
@@ -62,7 +63,7 @@ export class StorageService {
           ? { ResponseContentType: CONTENT_TYPE_IMAGEN_PUBLICADA }
           : {}),
       });
-      return await getSignedUrl(this.getClient(), command, {
+      return await getSignedUrl(this.obtenerCliente(), command, {
         expiresIn: TTL_URL_LECTURA_SEGUNDOS,
       });
     } catch (error) {
@@ -83,6 +84,27 @@ export class StorageService {
   }
 
   /**
+   * BL-199: URL de una imagen publicada para el menú del comensal.
+   *
+   * - Con IMAGES_CDN_URL definida (staging y producción): URL estable de
+   *   CloudFront, sin firma. La misma imagen tiene siempre la misma URL, así
+   *   que la caché de la CDN y del navegador funcionan.
+   * - Sin IMAGES_CDN_URL (local, MinIO): URL firmada, como antes.
+   * - Solo las keys {tenant}/menu/{uuid}.webp van por la CDN; la política del
+   *   bucket tampoco deja leer otra cosa (la cuarentena incoming/ sigue privada).
+   */
+  async urlImagenPublica(key: string): Promise<string | null> {
+    const cdn = sinBarraFinal(process.env.IMAGES_CDN_URL?.trim() ?? '');
+    const esPublicada = new RegExp(
+      String.raw`^[A-Za-z0-9-]+/menu/${PATRON_UUID}\.webp$`,
+    ).test(key);
+    if (cdn && esPublicada) {
+      return `${cdn}/${key}`;
+    }
+    return this.urlFirmadaDeLectura(key);
+  }
+
+  /**
    * URL firmada de SUBIDA directa desde el frontend (BL-54).
    *
    * - El tipo ya llega validado por el DTO (solo jpeg/png/webp).
@@ -95,7 +117,7 @@ export class StorageService {
    * solo controla el tipo declarado, no el contenido, así que lo subido no
    * se publica: la API lo verifica y lo reprocesa en la confirmación.
    */
-  async getPresignedPostUrl(
+  async urlFirmadaDeSubida(
     contentType: TipoImagenPermitido,
     fileSize: number,
     tenantId: string,
@@ -106,7 +128,7 @@ export class StorageService {
 
     const key = `${PREFIJO_CUARENTENA}/${tenantId}/${randomUUID()}`;
 
-    const { url, fields } = await createPresignedPost(this.getClient(), {
+    const { url, fields } = await createPresignedPost(this.obtenerCliente(), {
       Bucket: process.env.S3_BUCKET_IMAGES,
       Key: key,
       Conditions: [
@@ -148,7 +170,7 @@ export class StorageService {
 
     let tamanio: number | undefined;
     try {
-      const cabecera = await this.getClient().send(
+      const cabecera = await this.obtenerCliente().send(
         new HeadObjectCommand({ Bucket: bucket, Key: key }),
       );
       tamanio = cabecera.ContentLength;
@@ -165,7 +187,7 @@ export class StorageService {
       throw new PayloadTooLargeException('La imagen supera el máximo de 5 MB');
     }
 
-    const respuesta = await this.getClient().send(
+    const respuesta = await this.obtenerCliente().send(
       new GetObjectCommand({ Bucket: bucket, Key: key }),
     );
     if (!respuesta.Body) {
@@ -181,7 +203,7 @@ export class StorageService {
    * fija la API; nada de lo que declaró el navegador llega a este objeto.
    */
   async guardarImagenPublicada(key: string, contenido: Buffer): Promise<void> {
-    await this.getClient().send(
+    await this.obtenerCliente().send(
       new PutObjectCommand({
         Bucket: process.env.S3_BUCKET_IMAGES,
         Key: key,
@@ -216,7 +238,7 @@ export class StorageService {
    */
   async existeImagen(key: string): Promise<boolean> {
     try {
-      await this.getClient().send(
+      await this.obtenerCliente().send(
         new HeadObjectCommand({
           Bucket: process.env.S3_BUCKET_IMAGES,
           Key: key,
@@ -237,4 +259,10 @@ function escaparRegex(texto: string): string {
 function esNoEncontrado(error: unknown): boolean {
   const e = error as { name?: string; $metadata?: { httpStatusCode?: number } };
   return e?.name === 'NotFound' || e?.$metadata?.httpStatusCode === 404;
+}
+/** BL-199: saca las barras del final sin expresión regular (Sonar: backtracking). */
+function sinBarraFinal(texto: string): string {
+  let fin = texto.length;
+  while (fin > 0 && texto[fin - 1] === '/') fin--;
+  return texto.slice(0, fin);
 }

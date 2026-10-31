@@ -287,3 +287,20 @@ CVE-2026-91403
 # versión con guava >= 33.7.2.
 
 CVE-2026-102554
+
+# CVE-2026-119373 y CVE-2026-119586 (HIGH) — sqlite-libs 3.34.1-11.el9_8 del SO base
+
+# de la imagen oficial de Keycloak (quay.io/keycloak/keycloak:26.7.2, Red Hat UBI 9.8).
+
+# Estado "affected", sin fixed version publicada por Red Hat. Keycloak usa PostgreSQL
+
+# (keycloak-db) y no usa SQLite; la segunda afecta al comando .recover de la consola
+
+# sqlite3, que no se ejecuta en el contenedor. No es código propio ni una dependencia
+
+# que gestionemos. Agregada el 31/10/2026 (aparecieron en la base de Trivy del día).
+
+# Pendiente (BL-137): quitar cuando Keycloak publique una imagen con sqlite corregido.
+
+CVE-2026-119373
+CVE-2026-119586

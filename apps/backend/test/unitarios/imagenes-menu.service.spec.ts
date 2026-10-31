@@ -15,7 +15,7 @@ describe('ImagenesMenuService.confirmar (BL-386)', () => {
     uuidDeKeyDeCuarentena: jest.fn(),
     leerDeCuarentena: jest.fn(),
     guardarImagenPublicada: jest.fn(),
-    getSignedImageUrl: jest.fn(),
+    urlFirmadaDeLectura: jest.fn(),
   };
   const procesador = { procesar: jest.fn() };
   const servicio = new ImagenesMenuService(
@@ -32,7 +32,7 @@ describe('ImagenesMenuService.confirmar (BL-386)', () => {
     storage.leerDeCuarentena.mockResolvedValue(ORIGINAL);
     procesador.procesar.mockResolvedValue(PROCESADA);
     storage.guardarImagenPublicada.mockResolvedValue(undefined);
-    storage.getSignedImageUrl.mockResolvedValue('https://firmada.example');
+    storage.urlFirmadaDeLectura.mockResolvedValue('https://firmada.example');
   });
 
   it('publica la imagen procesada en {tenant}/menu/{uuid}.webp y devuelve key y URL', async () => {

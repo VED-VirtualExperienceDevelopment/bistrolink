@@ -49,7 +49,7 @@ export class ImagenesMenuService {
 
     return {
       key: keyFinal,
-      url: await this.storage.getSignedImageUrl(keyFinal),
+      url: await this.storage.urlFirmadaDeLectura(keyFinal),
     };
   }
 }

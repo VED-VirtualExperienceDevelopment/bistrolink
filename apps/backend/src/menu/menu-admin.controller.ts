@@ -50,7 +50,7 @@ export class MenuAdminController {
   @UseGuards(MenuAdminThrottlerGuard)
   @Throttle({ default: { limit: LIMITE_SUBIDAS_POR_MINUTO, ttl: 60_000 } })
   async getPresignedUrl(@Req() req: any, @Body() dto: PresignedUrlDto) {
-    return this.storageService.getPresignedPostUrl(
+    return this.storageService.urlFirmadaDeSubida(
       dto.contentType,
       dto.fileSize,
       req.user.tenantId,
