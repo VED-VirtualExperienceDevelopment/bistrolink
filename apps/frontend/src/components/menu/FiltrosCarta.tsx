@@ -10,13 +10,23 @@ interface Props {
   readonly filtros: Filtros;
   readonly onChange: (filtros: Filtros) => void;
   readonly categorias: readonly CategoriaGestion[];
+  /**
+   * BL-398: «En categorías ocultas» y «Archivados» son solo para el ADMIN,
+   * que es quien oculta y archiva. El MOZO solo filtra disponibles y
+   * agotados.
+   */
+  readonly esAdmin: boolean;
 }
 
 const OPCIONES_ESTADO: { valor: FiltroEstadoCarta; texto: string }[] = [
   { valor: 'TODOS', texto: 'Todos' },
   { valor: 'DISPONIBLES', texto: 'Disponibles' },
   { valor: 'AGOTADOS', texto: 'Agotados' },
+];
+
+const OPCIONES_DEL_ADMIN: { valor: FiltroEstadoCarta; texto: string }[] = [
   { valor: 'OCULTOS', texto: 'En categorías ocultas' },
+  { valor: 'ARCHIVADOS', texto: 'Archivados' },
 ];
 
 // Mismos controles que los filtros de Usuarios (BL-363): 48 px y etiqueta
@@ -29,7 +39,15 @@ const CLASE_CONTROL =
  * diseño que los de Usuarios. El filtrado se aplica mientras se escribe,
  * sin botón de enviar (role="search").
  */
-export function FiltrosCarta({ filtros, onChange, categorias }: Props) {
+export function FiltrosCarta({
+  filtros,
+  onChange,
+  categorias,
+  esAdmin,
+}: Props) {
+  const opcionesEstado = esAdmin
+    ? [...OPCIONES_ESTADO, ...OPCIONES_DEL_ADMIN]
+    : OPCIONES_ESTADO;
   return (
     <form
       role="search"
@@ -72,7 +90,7 @@ export function FiltrosCarta({ filtros, onChange, categorias }: Props) {
           }
           className={CLASE_CONTROL}
         >
-          {OPCIONES_ESTADO.map((opcion) => (
+          {opcionesEstado.map((opcion) => (
             <option key={opcion.valor} value={opcion.valor}>
               {opcion.texto}
             </option>

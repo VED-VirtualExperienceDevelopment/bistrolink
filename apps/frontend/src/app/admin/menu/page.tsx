@@ -14,11 +14,15 @@ import {
   type ArchivarObjetivo,
 } from "@/components/menu/ArchivarDialog";
 import { FiltrosCarta } from "@/components/menu/FiltrosCarta";
+import { ArchivadosCarta } from "@/components/menu/ArchivadosCarta";
+import { EliminarDefinitivoDialog } from "@/components/menu/EliminarDefinitivoDialog";
 import {
   FILTROS_CARTA_INICIALES,
   filtrarCarta,
   hayFiltrosCarta,
   textoResultadoFiltros,
+  soloArchivados,
+  textoArchivados,
   type FiltrosCarta as Filtros,
   conDisponibilidad,
   conVisibilidad,
@@ -198,6 +202,16 @@ export default function AdminMenuPage() {
     [categorias, filtros],
   );
   const conFiltros = hayFiltrosCarta(filtros);
+  // BL-398 (parte 3): «Archivados» trae aparte lo archivado
+  // (incluirArchivados=true) y lo muestra con Restaurar y Eliminar.
+  const verArchivados = filtros.estado === "ARCHIVADOS";
+  const [archivados, setArchivados] = useState<CategoriaGestion[]>([]);
+  const [cargandoArchivados, setCargandoArchivados] = useState(false);
+  const archivadosVisibles = useMemo(
+    () => filtrarCarta(archivados, { ...filtros, estado: "TODOS" }),
+    [archivados, filtros],
+  );
+  const [aEliminar, setAEliminar] = useState<ArchivarObjetivo | null>(null);
 
   const cargarDatos = useCallback(async () => {
     try {
@@ -216,6 +230,31 @@ export default function AdminMenuPage() {
       setLoading(false);
     }
   }, []);
+
+  const cargarArchivados = useCallback(async () => {
+    setCargandoArchivados(true);
+    try {
+      const keycloak = getKeycloak();
+      const restauranteId = keycloak.tokenParsed?.restaurante_id || "";
+      const data = await apiFetch<CategoriaGestion[]>(
+        `/admin/menu/categoria?restauranteId=${restauranteId}&incluirArchivados=true`,
+        keycloak.token,
+      );
+      setArchivados(soloArchivados(data || []));
+    } catch (error: unknown) {
+      setErrorPagina(
+        error instanceof Error
+          ? error.message
+          : "No se pudo cargar lo archivado",
+      );
+    } finally {
+      setCargandoArchivados(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (verArchivados) void cargarArchivados();
+  }, [verArchivados, cargarArchivados]);
 
   useEffect(() => {
     void cargarDatos();
@@ -365,6 +404,37 @@ export default function AdminMenuPage() {
     }
   };
 
+  // BL-398 (parte 3): restaurar vuelve a dejarlo en la carta. Un 409 (nombre
+  // ya usado, categoría archivada) se muestra en el aviso de la página.
+  const restaurar = async ({ tipo, id, nombre }: ArchivarObjetivo) => {
+    setErrorPagina(null);
+    try {
+      const keycloak = getKeycloak();
+      const ruta =
+        tipo === "item"
+          ? `/admin/menu/item/${id}/restaurar`
+          : `/admin/menu/categoria/${id}/restaurar`;
+      await apiFetch(ruta, keycloak.token, { method: "POST" });
+      setUltimaNovedad(`«${nombre}» restaurado a las ${horaActual()}`);
+      await Promise.all([cargarArchivados(), cargarDatos()]);
+    } catch (error: unknown) {
+      setErrorPagina(
+        error instanceof Error ? error.message : `No se pudo restaurar «${nombre}»`,
+      );
+    }
+  };
+
+  // BL-398 (parte 3): eliminar definitivamente (solo sin historial). Se
+  // confirma en EliminarDefinitivoDialog, que muestra un 409 si lo hay.
+  const eliminarDefinitivo = async ({ tipo, id, nombre }: ArchivarObjetivo) => {
+    const keycloak = getKeycloak();
+    const ruta =
+      tipo === "item" ? `/admin/menu/item/${id}` : `/admin/menu/categoria/${id}`;
+    await apiFetch(ruta, keycloak.token, { method: "DELETE" });
+    setUltimaNovedad(`«${nombre}» eliminado a las ${horaActual()}`);
+    await cargarArchivados();
+  };
+
   const cambiarVisibilidad = async (categoriaId: string, actual: boolean) => {
     setErrorPagina(null);
     setCategorias((prev) => conVisibilidad(prev, categoriaId, !actual));
@@ -382,6 +452,13 @@ export default function AdminMenuPage() {
           : "No se pudo actualizar la categoría",
       );
     }
+  };
+
+  // Contador del encabezado según lo que se está viendo.
+  const textoDelContador = () => {
+    if (verArchivados) return textoArchivados(archivadosVisibles);
+    if (conFiltros) return textoResultadoFiltros(categoriasVisibles, categorias);
+    return textoContadorCarta(categorias);
   };
 
   const abrirNuevoItem = (categoria: CategoriaGestion) => {
@@ -480,7 +557,8 @@ export default function AdminMenuPage() {
           <FiltrosCarta
             filtros={filtros}
             onChange={setFiltros}
-            categorias={categorias}
+            categorias={verArchivados ? archivados : categorias}
+            esAdmin={puedeEditarCarta}
           />
         </div>
       )}
@@ -493,9 +571,7 @@ export default function AdminMenuPage() {
           aria-live="polite"
           aria-atomic="true"
         >
-          {conFiltros
-            ? textoResultadoFiltros(categoriasVisibles, categorias)
-            : textoContadorCarta(categorias)}
+          {textoDelContador()}
           {ultimaNovedad && ` · ${ultimaNovedad}`}
         </p>
       )}
@@ -520,7 +596,22 @@ export default function AdminMenuPage() {
         </div>
       )}
 
-      {!loading && conFiltros && categoriasVisibles.length === 0 && (
+      {!loading && verArchivados && cargandoArchivados && (
+        <div className="flex justify-center py-12">
+          <span className="sr-only">Cargando lo archivado…</span>
+          <span className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+        </div>
+      )}
+
+      {!loading && verArchivados && !cargandoArchivados && (
+        <ArchivadosCarta
+          categorias={archivadosVisibles}
+          onRestaurar={restaurar}
+          onEliminar={setAEliminar}
+        />
+      )}
+
+      {!loading && !verArchivados && conFiltros && categoriasVisibles.length === 0 && (
         // Estado vacío propio cuando los filtros no dejan nada (como Usuarios).
         <div className="rounded-xl border border-outline-variant bg-surface-container-lowest p-12 text-center">
           <span className="material-symbols-outlined text-4xl text-on-surface-variant" aria-hidden="true">
@@ -540,6 +631,7 @@ export default function AdminMenuPage() {
       )}
 
       {!loading &&
+        !verArchivados &&
         categoriasVisibles.map((cat) => (
           <section
             key={cat.id}
@@ -649,6 +741,12 @@ export default function AdminMenuPage() {
         objetivo={aArchivar}
         onClose={() => setAArchivar(null)}
         onConfirmar={archivar}
+      />
+
+      <EliminarDefinitivoDialog
+        objetivo={aEliminar}
+        onClose={() => setAEliminar(null)}
+        onConfirmar={eliminarDefinitivo}
       />
 
       {/* El formulario de categoría pasa al diálogo del tema en la parte 4

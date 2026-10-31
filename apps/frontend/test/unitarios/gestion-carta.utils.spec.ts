@@ -1,4 +1,9 @@
 import {
+  sePuedeEliminarCategoria,
+  sePuedeEliminarItem,
+  soloArchivados,
+  textoArchivados,
+  textoFechaArchivo,
   FILTROS_CARTA_INICIALES,
   filtrarCarta,
   hayFiltrosCarta,
@@ -152,5 +157,58 @@ describe("Gestión de Carta: búsqueda y filtros (BL-398)", () => {
     expect(
       textoResultadoFiltros(filtrar({ estado: "AGOTADOS" }), CARTA_FILTROS),
     ).toBe("1 de 3 ítems");
+  });
+});
+
+describe("Gestión de Carta: archivados (BL-398)", () => {
+  const archivado = (id: string, tieneHistorial: boolean): ItemGestion => ({
+    ...item(id),
+    archivadoEn: "2026-10-31T15:00:00.000Z",
+    tieneHistorial,
+  });
+
+  const CON_ARCHIVADOS: CategoriaGestion[] = [
+    // Activa, con un ítem activo y uno archivado.
+    categoria("c1", [item("a"), archivado("b", true)]),
+    // Activa, sin nada archivado: no aparece.
+    categoria("c2", [item("c")]),
+    // Archivada y vacía.
+    { ...categoria("c3", []), archivadaEn: "2026-10-30T15:00:00.000Z" },
+  ];
+
+  it("[TC-U-238] deja solo lo archivado: ítems archivados y categorías archivadas", () => {
+    const resultado = soloArchivados(CON_ARCHIVADOS);
+    expect(resultado.map((c) => c.id)).toEqual(["c1", "c3"]);
+    expect(resultado[0].items.map((i) => i.id)).toEqual(["b"]);
+  });
+
+  it("[TC-U-239] cuenta lo archivado", () => {
+    expect(textoArchivados(soloArchivados(CON_ARCHIVADOS))).toBe(
+      "1 ítem y 1 categoría archivados",
+    );
+    expect(textoArchivados([categoria("c1", [archivado("b", false)])])).toBe(
+      "1 ítem archivado",
+    );
+    expect(textoArchivados([])).toBe("Nada archivado");
+  });
+
+  it("[TC-U-240] solo se ofrece eliminar lo que no tiene historial", () => {
+    expect(sePuedeEliminarItem(archivado("b", true))).toBe(false);
+    expect(sePuedeEliminarItem(archivado("b", false))).toBe(true);
+    // Sin el dato (respuesta vieja), no se ofrece.
+    expect(sePuedeEliminarItem(item("a"))).toBe(false);
+    expect(sePuedeEliminarCategoria(CON_ARCHIVADOS[2])).toBe(true);
+    expect(sePuedeEliminarCategoria(CON_ARCHIVADOS[0])).toBe(false);
+  });
+
+  it("[TC-U-241] la fecha de archivo, en hora de Uruguay", () => {
+    expect(textoFechaArchivo("2026-10-31T15:00:00.000Z", "o")).toBe(
+      "Archivado el 31/10/2026",
+    );
+    // 01:00 UTC del 1/11 todavía es 31/10 en Uruguay (UTC-3).
+    expect(textoFechaArchivo("2026-11-01T01:00:00.000Z", "a")).toBe(
+      "Archivada el 31/10/2026",
+    );
+    expect(textoFechaArchivo(null, "o")).toBeNull();
   });
 });

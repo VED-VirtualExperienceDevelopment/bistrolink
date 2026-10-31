@@ -16,6 +16,8 @@ export interface ItemGestion {
   readonly imagenUrl?: string | null;
   readonly categoriaId: string;
   readonly tieneHistorial?: boolean;
+  /** BL-394: fecha de archivo (ISO); null o ausente si está activo. */
+  readonly archivadoEn?: string | null;
 }
 
 export interface CategoriaGestion {
@@ -25,6 +27,8 @@ export interface CategoriaGestion {
   readonly activo: boolean;
   readonly orden: number;
   readonly items: readonly ItemGestion[];
+  /** BL-394: fecha de archivo (ISO); null o ausente si está activa. */
+  readonly archivadaEn?: string | null;
 }
 
 type Categorias = readonly CategoriaGestion[];
@@ -98,7 +102,12 @@ export function textoItemsDeCategoria(categoria: CategoriaGestion): string {
 // ── BL-398 (parte 2): búsqueda y filtros ────────────────────────────────────
 
 export type FiltroEstadoCarta =
-  "TODOS" | "DISPONIBLES" | "AGOTADOS" | "OCULTOS";
+  | "TODOS"
+  | "DISPONIBLES"
+  | "AGOTADOS"
+  | "OCULTOS"
+  // BL-398 (parte 3): lo archivado se carga aparte (incluirArchivados).
+  | "ARCHIVADOS";
 
 export interface FiltrosCarta {
   readonly busqueda: string;
@@ -182,4 +191,63 @@ export function textoResultadoFiltros(
   const encontrados = filtradas.flatMap((cat) => cat.items).length;
   const total = todas.flatMap((cat) => cat.items).length;
   return `${encontrados} de ${cantidad(total, "ítem", "ítems")}`;
+}
+
+// ── BL-398 (parte 3): archivados ────────────────────────────────────────────
+
+/**
+ * De la carta pedida con `incluirArchivados=true`, deja solo lo archivado:
+ * las categorías archivadas (con todos sus ítems) y, de las activas, los
+ * ítems archivados.
+ */
+export function soloArchivados(categorias: Categorias): CategoriaGestion[] {
+  return categorias
+    .map((cat) =>
+      cat.archivadaEn
+        ? cat
+        : { ...cat, items: cat.items.filter((item) => item.archivadoEn) },
+    )
+    .filter((cat) => cat.archivadaEn || cat.items.length > 0);
+}
+
+/** «3 ítems y 1 categoría archivados», o «Nada archivado». */
+export function textoArchivados(categorias: Categorias): string {
+  const items = categorias.flatMap((cat) => cat.items).length;
+  const cats = categorias.filter((cat) => cat.archivadaEn).length;
+  if (items === 0 && cats === 0) return "Nada archivado";
+  const partes = [
+    items > 0 ? cantidad(items, "ítem", "ítems") : null,
+    cats > 0 ? cantidad(cats, "categoría", "categorías") : null,
+  ].filter(Boolean);
+  const plural = items + cats > 1 ? "archivados" : "archivado";
+  return `${partes.join(" y ")} ${plural}`;
+}
+
+/**
+ * BL-394: un ítem se puede eliminar definitivamente si no figura en ningún
+ * pedido; una categoría, si no tiene ningún ítem (ni archivado). Si no, solo
+ * se ofrece «Restaurar». La API lo vuelve a verificar (409).
+ */
+export function sePuedeEliminarItem(item: ItemGestion): boolean {
+  return item.tieneHistorial === false;
+}
+
+export function sePuedeEliminarCategoria(categoria: CategoriaGestion): boolean {
+  return categoria.items.length === 0;
+}
+
+const FORMATO_FECHA_ARCHIVO = new Intl.DateTimeFormat("es-UY", {
+  timeZone: "America/Montevideo",
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+});
+
+/** «Archivado el 31/10/2026», en hora de Uruguay. */
+export function textoFechaArchivo(
+  iso: string | null | undefined,
+  genero: "o" | "a",
+): string | null {
+  if (!iso) return null;
+  return `Archivad${genero} el ${FORMATO_FECHA_ARCHIVO.format(new Date(iso))}`;
 }
