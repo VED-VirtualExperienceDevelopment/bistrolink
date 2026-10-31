@@ -41,7 +41,7 @@ function Acciones({
         <span className="material-symbols-outlined text-[20px]" aria-hidden="true">
           unarchive
         </span>
-        Restaurar
+        <span>Restaurar</span>
       </button>
       {/* BL-394: eliminar solo se ofrece si no hay historial; si no, no se
           muestra (y la API igual respondería 409). */}
@@ -55,7 +55,7 @@ function Acciones({
           <span className="material-symbols-outlined text-[20px]" aria-hidden="true">
             delete
           </span>
-          Eliminar
+          <span>Eliminar</span>
         </button>
       )}
     </div>

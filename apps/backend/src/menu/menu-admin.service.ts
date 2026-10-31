@@ -616,12 +616,16 @@ export class MenuAdminService {
       ) {
         throw new ConflictException(MENSAJE_ORDEN_DESACTUALIZADO);
       }
-      for (const [indice, id] of ids.entries()) {
-        await tx.categoriaCarta.update({
-          where: { id },
-          data: { orden: indice + 1 },
-        });
-      }
+      // Todas las actualizaciones en la misma transacción: se guardan
+      // juntas o ninguna.
+      await Promise.all(
+        ids.map((id, indice) =>
+          tx.categoriaCarta.update({
+            where: { id },
+            data: { orden: indice + 1 },
+          }),
+        ),
+      );
       this.menuGateway.emitCartaReordenada(tenantId);
       this.logger.log(`Categorías reordenadas: ${ids.length}`);
       return { ids };
@@ -647,12 +651,14 @@ export class MenuAdminService {
       ) {
         throw new ConflictException(MENSAJE_ORDEN_DESACTUALIZADO);
       }
-      for (const [indice, id] of ids.entries()) {
-        await tx.itemCarta.update({
-          where: { id },
-          data: { orden: indice + 1 },
-        });
-      }
+      await Promise.all(
+        ids.map((id, indice) =>
+          tx.itemCarta.update({
+            where: { id },
+            data: { orden: indice + 1 },
+          }),
+        ),
+      );
       this.menuGateway.emitCartaReordenada(tenantId);
       this.logger.log(`Ítems reordenados en ${categoriaId}: ${ids.length}`);
       return { ids };

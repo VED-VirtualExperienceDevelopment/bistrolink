@@ -126,7 +126,7 @@ function BadgeAgotado() {
       <span className="material-symbols-outlined text-[16px]" aria-hidden="true">
         block
       </span>
-      Agotado
+      <span>Agotado</span>
     </span>
   );
 }
@@ -720,8 +720,9 @@ export default function AdminMenuPage() {
       </div>
 
       {avisoSinConexion && (
-        <div
-          role="status"
+        // <output> en lugar de role="status" (Sonar): se anuncia igual al
+        // lector de pantalla.
+        <output
           className="flex flex-col gap-2 rounded-xl border border-error bg-error-container px-4 py-3 text-body-md text-on-error-container md:flex-row md:items-center md:justify-between"
         >
           <span className="flex items-start gap-2">
@@ -740,7 +741,7 @@ export default function AdminMenuPage() {
           >
             Reintentar
           </button>
-        </div>
+        </output>
       )}
 
       {errorPagina && (
@@ -919,7 +920,7 @@ export default function AdminMenuPage() {
                               <span className="material-symbols-outlined text-[16px]" aria-hidden="true">
                                 visibility_off
                               </span>
-                              Oculta
+                              <span>Oculta</span>
                             </span>
                           )}
                           <span className="text-body-md text-on-surface-variant">
@@ -1028,7 +1029,7 @@ export default function AdminMenuPage() {
                             <span className="material-symbols-outlined text-[20px]" aria-hidden="true">
                               add
                             </span>
-                            Agregar ítem
+                            <span>Agregar ítem</span>
                           </button>
                         </div>
                       )}
