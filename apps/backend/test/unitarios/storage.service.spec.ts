@@ -40,36 +40,37 @@ describe('StorageService', () => {
     delete process.env.S3_BUCKET_IMAGES;
     delete process.env.AWS_REGION;
     delete process.env.AWS_S3_ENDPOINT;
+    delete process.env.IMAGES_CDN_URL;
   });
 
-  describe('getSignedImageUrl', () => {
-    it('should return signed URL when successful', async () => {
+  describe('urlFirmadaDeLectura', () => {
+    it('devuelve la URL firmada', async () => {
       process.env.S3_BUCKET_IMAGES = 'test-bucket';
-      const mockSignedUrl = 'https://signed-url.example.com';
-      (getSignedUrl as jest.Mock).mockResolvedValue(mockSignedUrl);
+      const urlFirmada = 'https://signed-url.example.com';
+      (getSignedUrl as jest.Mock).mockResolvedValue(urlFirmada);
 
-      const result = await service.getSignedImageUrl('test-key.jpg');
+      const result = await service.urlFirmadaDeLectura('test-key.jpg');
 
-      expect(result).toBe(mockSignedUrl);
+      expect(result).toBe(urlFirmada);
       expect(getSignedUrl).toHaveBeenCalled();
     });
 
-    it('should return null when signing fails', async () => {
+    it('devuelve null si no se puede firmar', async () => {
       process.env.S3_BUCKET_IMAGES = 'test-bucket';
       (getSignedUrl as jest.Mock).mockRejectedValue(
         new Error('Signing failed'),
       );
 
-      const result = await service.getSignedImageUrl('test-key.jpg');
+      const result = await service.urlFirmadaDeLectura('test-key.jpg');
 
       expect(result).toBeNull();
     });
 
-    it('should use correct bucket from environment variable', async () => {
+    it('usa el bucket de la variable de entorno', async () => {
       process.env.S3_BUCKET_IMAGES = 'my-images-bucket';
       (getSignedUrl as jest.Mock).mockResolvedValue('https://example.com');
 
-      await service.getSignedImageUrl('test-key.jpg');
+      await service.urlFirmadaDeLectura('test-key.jpg');
 
       expect(GetObjectCommand).toHaveBeenCalledWith({
         Bucket: 'my-images-bucket',
@@ -79,11 +80,11 @@ describe('StorageService', () => {
     });
 
     // BL-387: el tipo de la respuesta lo fija la firma, no quien subió.
-    it('should force image/webp and inline for processed images', async () => {
+    it('fuerza image/webp e inline en las imágenes procesadas', async () => {
       process.env.S3_BUCKET_IMAGES = 'my-images-bucket';
       (getSignedUrl as jest.Mock).mockResolvedValue('https://example.com');
 
-      await service.getSignedImageUrl('tenant-1/menu/abc.webp');
+      await service.urlFirmadaDeLectura('tenant-1/menu/abc.webp');
 
       expect(GetObjectCommand).toHaveBeenCalledWith({
         Bucket: 'my-images-bucket',
@@ -94,11 +95,11 @@ describe('StorageService', () => {
     });
 
     // BL-54: la URL de lectura es temporal (1 hora), no permanente.
-    it('should sign the read URL with a 1 hour TTL', async () => {
+    it('firma la URL de lectura con un TTL de 1 hora', async () => {
       process.env.S3_BUCKET_IMAGES = 'test-bucket';
       (getSignedUrl as jest.Mock).mockResolvedValue('https://example.com');
 
-      await service.getSignedImageUrl('test-key.jpg');
+      await service.urlFirmadaDeLectura('test-key.jpg');
 
       expect(getSignedUrl).toHaveBeenCalledWith(
         expect.anything(),
@@ -108,7 +109,55 @@ describe('StorageService', () => {
     });
   });
 
-  describe('getPresignedPostUrl', () => {
+  describe('urlImagenPublica (BL-199)', () => {
+    const KEY = 'tenant-a/menu/0b6f2c1e-3c4d-4e5f-8a9b-0c1d2e3f4a5b.webp';
+
+    it('devuelve la URL de la CDN, sin firma, si IMAGES_CDN_URL está definida', async () => {
+      process.env.IMAGES_CDN_URL = 'https://d111111abcdef8.cloudfront.net/';
+
+      const url = await service.urlImagenPublica(KEY);
+
+      expect(url).toBe(`https://d111111abcdef8.cloudfront.net/${KEY}`);
+      expect(url).not.toContain('X-Amz-');
+      expect(getSignedUrl).not.toHaveBeenCalled();
+    });
+
+    it('la URL de una misma imagen es idéntica entre llamadas', async () => {
+      process.env.IMAGES_CDN_URL = 'https://d111111abcdef8.cloudfront.net';
+
+      const primera = await service.urlImagenPublica(KEY);
+      const segunda = await service.urlImagenPublica(KEY);
+
+      expect(segunda).toBe(primera);
+    });
+
+    it('sin IMAGES_CDN_URL firma la URL como antes (local y MinIO)', async () => {
+      process.env.S3_BUCKET_IMAGES = 'test-bucket';
+      (getSignedUrl as jest.Mock).mockResolvedValue('https://firmada.example');
+
+      await expect(service.urlImagenPublica(KEY)).resolves.toBe(
+        'https://firmada.example',
+      );
+    });
+
+    it('nunca arma una URL de la CDN fuera de {tenant}/menu/{uuid}.webp', async () => {
+      process.env.IMAGES_CDN_URL = 'https://cdn.example';
+      process.env.S3_BUCKET_IMAGES = 'test-bucket';
+      (getSignedUrl as jest.Mock).mockResolvedValue('https://firmada.example');
+
+      for (const key of [
+        'incoming/tenant-a/0b6f2c1e-3c4d-4e5f-8a9b-0c1d2e3f4a5b',
+        '../menu/0b6f2c1e-3c4d-4e5f-8a9b-0c1d2e3f4a5b.webp',
+        'tenant-a/items/milanesa.jpg',
+      ]) {
+        await expect(service.urlImagenPublica(key)).resolves.toBe(
+          'https://firmada.example',
+        );
+      }
+    });
+  });
+
+  describe('urlFirmadaDeSubida', () => {
     beforeEach(() => {
       process.env.S3_BUCKET_IMAGES = 'test-bucket';
       (createPresignedPost as jest.Mock).mockResolvedValue({
@@ -117,14 +166,14 @@ describe('StorageService', () => {
       });
     });
 
-    it('should return presigned POST URL with correct parameters', async () => {
+    it('devuelve la URL de subida con los parámetros correctos', async () => {
       const mockPresignedData = {
         url: 'https://s3.amazonaws.com/bucket',
         fields: { key: 'test-key' },
       };
       (createPresignedPost as jest.Mock).mockResolvedValue(mockPresignedData);
 
-      const result = await service.getPresignedPostUrl(
+      const result = await service.urlFirmadaDeSubida(
         'image/jpeg',
         UN_KB,
         'tenant-123',
@@ -139,9 +188,9 @@ describe('StorageService', () => {
     // BL-54 y BL-385: la key no usa el nombre del archivo del cliente; va a
     // la cuarentena como incoming/<tenant>/<uuid>, sin extensión.
     it.each<TipoImagenPermitido>(['image/jpeg', 'image/png', 'image/webp'])(
-      'should build the quarantine key as incoming/tenant/uuid for %s',
+      'arma la key de cuarentena como incoming/tenant/uuid para %s',
       async (contentType) => {
-        const result = await service.getPresignedPostUrl(
+        const result = await service.urlFirmadaDeSubida(
           contentType,
           UN_KB,
           'tenant-123',
@@ -153,16 +202,16 @@ describe('StorageService', () => {
       },
     );
 
-    it('should generate a different key on each call', async () => {
-      const a = await service.getPresignedPostUrl('image/png', UN_KB, 't');
-      const b = await service.getPresignedPostUrl('image/png', UN_KB, 't');
+    it('genera una key distinta en cada llamada', async () => {
+      const a = await service.urlFirmadaDeSubida('image/png', UN_KB, 't');
+      const b = await service.urlFirmadaDeSubida('image/png', UN_KB, 't');
 
       expect(a.key).not.toBe(b.key);
     });
 
     // BL-54: mínimo 1 byte (no se aceptan archivos vacíos), máximo 5 MB.
-    it('should set content length range from 1 byte to 5 MB', async () => {
-      await service.getPresignedPostUrl('image/jpeg', UN_KB, 'tenant-1');
+    it('fija el rango de tamaño entre 1 byte y 5 MB', async () => {
+      await service.urlFirmadaDeSubida('image/jpeg', UN_KB, 'tenant-1');
 
       expect(createPresignedPost).toHaveBeenCalledWith(
         expect.anything(),
@@ -174,8 +223,8 @@ describe('StorageService', () => {
       );
     });
 
-    it('should set correct expires time', async () => {
-      await service.getPresignedPostUrl('image/jpeg', UN_KB, 'tenant-1');
+    it('fija el vencimiento de la subida en 5 minutos', async () => {
+      await service.urlFirmadaDeSubida('image/jpeg', UN_KB, 'tenant-1');
 
       expect(createPresignedPost).toHaveBeenCalledWith(
         expect.anything(),
@@ -186,9 +235,9 @@ describe('StorageService', () => {
     // BL-257: si Content-Type está en Conditions pero no en Fields, el
     // formulario no lo envía y S3 rechaza la subida con 403 (Policy Condition failed).
     it.each<TipoImagenPermitido>(['image/jpeg', 'image/png', 'image/webp'])(
-      'should include Content-Type %s both in Conditions and in Fields',
+      'incluye el Content-Type %s en Conditions y en Fields',
       async (contentType) => {
-        await service.getPresignedPostUrl(contentType, UN_KB, 'tenant-1');
+        await service.urlFirmadaDeSubida(contentType, UN_KB, 'tenant-1');
 
         expect(createPresignedPost).toHaveBeenCalledWith(
           expect.anything(),
@@ -203,23 +252,23 @@ describe('StorageService', () => {
     );
 
     // BL-54: imágenes de más de 5 MB se rechazan con 413 sin firmar nada.
-    it('should throw PayloadTooLargeException (413) when the image exceeds 5 MB', async () => {
+    it('lanza PayloadTooLargeException (413) si la imagen supera 5 MB', async () => {
       await expect(
-        service.getPresignedPostUrl('image/jpeg', CINCO_MB + 1, 'tenant-1'),
+        service.urlFirmadaDeSubida('image/jpeg', CINCO_MB + 1, 'tenant-1'),
       ).rejects.toThrow(PayloadTooLargeException);
 
       expect(createPresignedPost).not.toHaveBeenCalled();
     });
 
-    it('should respond with HTTP status 413', async () => {
+    it('responde con el estado HTTP 413', async () => {
       await expect(
-        service.getPresignedPostUrl('image/jpeg', CINCO_MB + 1, 'tenant-1'),
+        service.urlFirmadaDeSubida('image/jpeg', CINCO_MB + 1, 'tenant-1'),
       ).rejects.toMatchObject({ status: 413 });
     });
 
-    it('should accept an image of exactly 5 MB', async () => {
+    it('acepta una imagen de exactamente 5 MB', async () => {
       await expect(
-        service.getPresignedPostUrl('image/jpeg', CINCO_MB, 'tenant-1'),
+        service.urlFirmadaDeSubida('image/jpeg', CINCO_MB, 'tenant-1'),
       ).resolves.toHaveProperty('key');
 
       expect(createPresignedPost).toHaveBeenCalledTimes(1);
@@ -230,7 +279,7 @@ describe('StorageService', () => {
   describe('esKeyDelTenant', () => {
     const UUID = '0b4f6a3e-1111-4c2d-9e8f-123456789abc';
 
-    it('should accept a processed image of the tenant', () => {
+    it('acepta una imagen procesada del tenant', () => {
       expect(
         service.esKeyDelTenant(`tenant-123/menu/${UUID}.webp`, 'tenant-123'),
       ).toBe(true);
@@ -246,7 +295,7 @@ describe('StorageService', () => {
       ['con barras extra', `tenant-123/menu/x/${UUID}.webp`],
       ['con path traversal', `tenant-123/menu/../otro-tenant/${UUID}.webp`],
       ['vacía', ''],
-    ])('should reject a key %s', (_caso, key) => {
+    ])('rechaza una key %s', (_caso, key) => {
       expect(service.esKeyDelTenant(key, 'tenant-123')).toBe(false);
     });
   });
@@ -374,7 +423,7 @@ describe('StorageService', () => {
         Key: 't/menu/u.webp',
         Body: contenido,
         ContentType: 'image/webp',
-        CacheControl: 'private, max-age=3600',
+        CacheControl: 'public, max-age=31536000, immutable',
       });
     });
   });
@@ -384,7 +433,7 @@ describe('StorageService', () => {
       process.env.S3_BUCKET_IMAGES = 'test-bucket';
     });
 
-    it('should return true when the object exists', async () => {
+    it('devuelve true si el objeto existe', async () => {
       mockS3Client.send.mockResolvedValue({ ContentLength: 100 });
 
       await expect(service.existeImagen('k.webp')).resolves.toBe(true);
@@ -394,7 +443,7 @@ describe('StorageService', () => {
       });
     });
 
-    it('should return false when S3 answers 404', async () => {
+    it('devuelve false si S3 responde 404', async () => {
       mockS3Client.send.mockRejectedValue({
         name: 'NotFound',
         $metadata: { httpStatusCode: 404 },
@@ -403,7 +452,7 @@ describe('StorageService', () => {
       await expect(service.existeImagen('k.webp')).resolves.toBe(false);
     });
 
-    it('should rethrow other S3 errors', async () => {
+    it('propaga otros errores de S3', async () => {
       mockS3Client.send.mockRejectedValue(new Error('AccessDenied'));
 
       await expect(service.existeImagen('k.webp')).rejects.toThrow(
@@ -412,13 +461,13 @@ describe('StorageService', () => {
     });
   });
 
-  describe('getClient', () => {
-    it('should create S3 client with correct configuration when env vars are set', () => {
+  describe('obtenerCliente', () => {
+    it('crea el cliente de S3 con la configuración de las variables de entorno', () => {
       process.env.AWS_REGION = 'us-east-1';
       process.env.AWS_S3_ENDPOINT = 'https://r2.example.com';
 
       const serviceWithEnv = new StorageService();
-      (serviceWithEnv as any).getClient();
+      (serviceWithEnv as any).obtenerCliente();
 
       expect(S3Client).toHaveBeenCalledWith({
         region: 'us-east-1',
@@ -427,13 +476,13 @@ describe('StorageService', () => {
       });
     });
 
-    it('should use default region when env vars are not provided', () => {
+    it('usa la región por defecto si no hay variables de entorno', () => {
       // Aseguramos que no existan
       delete process.env.AWS_REGION;
       delete process.env.AWS_S3_ENDPOINT;
 
       const serviceWithEnv = new StorageService();
-      (serviceWithEnv as any).getClient();
+      (serviceWithEnv as any).obtenerCliente();
 
       expect(S3Client).toHaveBeenCalledWith({
         region: 'auto',
@@ -442,10 +491,10 @@ describe('StorageService', () => {
       });
     });
 
-    it('should return cached client on subsequent calls', () => {
+    it('reutiliza el mismo cliente en las llamadas siguientes', () => {
       const serviceWithEnv = new StorageService();
-      const client1 = (serviceWithEnv as any).getClient();
-      const client2 = (serviceWithEnv as any).getClient();
+      const client1 = (serviceWithEnv as any).obtenerCliente();
+      const client2 = (serviceWithEnv as any).obtenerCliente();
 
       expect(client1).toBe(client2);
       expect(S3Client).toHaveBeenCalledTimes(1);

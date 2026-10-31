@@ -99,7 +99,7 @@ export class MenuService {
         items: await Promise.all(
           categoria.items.map(async (item) => {
             const imagenUrl = item.imagenKey
-              ? await this.storage.getSignedImageUrl(item.imagenKey)
+              ? await this.storage.urlImagenPublica(item.imagenKey)
               : null;
             return mapItemToDto(item, imagenUrl);
           }),
