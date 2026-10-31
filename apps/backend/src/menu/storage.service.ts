@@ -260,3 +260,9 @@ function esNoEncontrado(error: unknown): boolean {
   const e = error as { name?: string; $metadata?: { httpStatusCode?: number } };
   return e?.name === 'NotFound' || e?.$metadata?.httpStatusCode === 404;
 }
+/** BL-199: saca las barras del final sin expresión regular (Sonar: backtracking). */
+function sinBarraFinal(texto: string): string {
+  let fin = texto.length;
+  while (fin > 0 && texto[fin - 1] === '/') fin--;
+  return texto.slice(0, fin);
+}
