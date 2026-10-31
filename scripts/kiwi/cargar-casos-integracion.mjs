@@ -185,6 +185,14 @@ const cartaAdmin = (extra = {}) => ({
   ...extra,
   tags: ["HU-005", "BL-52", ...(extra.tags ?? [])],
 });
+// BL-402 (BL-392): Gestión de Carta contra la base real, en
+// gestion-carta.e2e-spec.ts. El ticket de cada caso es el que hizo el cambio.
+const gestionCarta = (ticket, extra = {}) => ({
+  component: "api",
+  requirement: "HU-005",
+  ...extra,
+  tags: ["HU-005", "BL-392", ticket, ...(extra.tags ?? [])],
+});
 const DATOS_INTEGRACION = {
   55: {
     category: "Funcional",
@@ -462,6 +470,36 @@ const DATOS_INTEGRACION = {
     category: "Seguridad",
     priority: "P1",
     tags: ["seguridad"],
+  }),
+  126: gestionCarta("BL-395", {
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["seguridad"],
+  }),
+  127: gestionCarta("BL-394", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["concurrencia"],
+  }),
+  128: gestionCarta("BL-397", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["pedidos", "integridad-datos"],
+  }),
+  129: gestionCarta("BL-394", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["integridad-datos"],
+  }),
+  130: gestionCarta("BL-399", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["concurrencia"],
+  }),
+  131: gestionCarta("BL-402", {
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["seguridad", "multi-tenant"],
   }),
 };
 /**

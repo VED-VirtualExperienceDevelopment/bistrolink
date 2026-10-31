@@ -1,5 +1,13 @@
 # Descripciones de los casos E2E (Kiwi TCMS)
 
+## Control de versiones
+
+| Versión | Fecha      | Modificación                                                                                           |
+| ------- | ---------- | ------------------------------------------------------------------------------------------------------ |
+| 1.0     | 27/10/2026 | Plantilla (BL-435).                                                                                    |
+| 1.1     | 28/10/2026 | TC-E-046 a 049: cobro en efectivo (BL-201), solicitud de efectivo (BL-442) y pedido del mozo (BL-209). |
+| 1.2     | 31/10/2026 | TC-E-007 y 008 cambian: la carta por URL muestra los agotados bloqueados, igual que el QR (BL-397).    |
+
 Plantilla para cargar en Kiwi la descripción de casos TC-E (Playwright)
 nuevos o que cambiaron (BL-435). La usa
 `cargar-casos-integracion.mjs --e2e --descripciones`.
@@ -112,3 +120,35 @@ Usuario de prueba MOZO (`TEST_MOZO_*`) y la mesa del seed abierta (la abre el fi
 1. El pedido se crea con canal `MOZO`.
 2. Aparece el aviso «Cobro registrado».
 3. El pedido aparece en el KDS.
+
+## TC-E-007
+
+### Precondición
+
+Mesa del seed con su QR (fixture) y, en la carta, al menos un ítem disponible y uno agotado («Agua con gas» del seed).
+
+### Pasos
+
+1. Pedir la carta por la API con el QR de la mesa y por la URL del restaurante.
+2. Abrir la carta por URL en el navegador.
+
+### Resultado esperado
+
+1. Las dos respuestas traen los mismos ítems.
+2. Se ven todos los ítems disponibles.
+3. Los agotados también se ven, con «No disponible» y bloqueados (`aria-disabled="true"`), como en la carta del QR (BL-397).
+
+## TC-E-008
+
+### Precondición
+
+Al menos un ítem disponible en la carta del restaurante.
+
+### Pasos
+
+1. Abrir la carta por URL.
+2. Tocar «Agregar» en el primer ítem disponible (los agotados se saltean: desde BL-397 la carta por URL también los muestra).
+
+### Resultado esperado
+
+El ítem queda en el carrito.
