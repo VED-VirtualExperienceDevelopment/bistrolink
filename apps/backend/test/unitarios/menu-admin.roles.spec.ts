@@ -3,7 +3,7 @@ import { Reflector } from '@nestjs/core';
 import { RolesGuard } from '../../src/auth/roles.guard';
 import { MenuAdminController } from '../../src/menu/menu-admin.controller';
 
-// BL-395 (BL-392): la carta la gestiona el ADMIN. El MOZO solo la ve y marca
+// BL-395 y BL-394 (BL-392): la carta la gestiona el ADMIN. El MOZO solo la ve y marca
 // ítems como agotados o disponibles. Cocina, el comensal y la plataforma no
 // entran. El controller declara @Roles('ADMIN') a nivel de clase y los dos
 // métodos del MOZO lo pisan con su propio @Roles (getAllAndOverride).
@@ -15,10 +15,14 @@ const DEL_MOZO: Metodo[] = ['findAllCategorias', 'cambiarDisponibilidad'];
 const SOLO_ADMIN: Metodo[] = [
   'createCategoria',
   'updateCategoria',
-  'deleteCategoria',
+  'archivarCategoria',
+  'restaurarCategoria',
+  'eliminarCategoria',
   'createItem',
   'updateItem',
-  'deleteItem',
+  'archivarItem',
+  'restaurarItem',
+  'eliminarItem',
   'getPresignedUrl',
   'confirmarImagen',
 ];

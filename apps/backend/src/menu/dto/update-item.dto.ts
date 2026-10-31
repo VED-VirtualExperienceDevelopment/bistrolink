@@ -1,4 +1,5 @@
 import {
+  IsISO8601,
   IsString,
   IsOptional,
   IsBoolean,
@@ -37,4 +38,10 @@ export class UpdateItemDto {
   @IsOptional()
   @IsString()
   imagenKey?: string;
+
+  // BL-394: bloqueo optimista. Versión (updatedAt) que cargó el formulario;
+  // si otra persona guardó después, la API responde 409.
+  @IsOptional()
+  @IsISO8601({}, { message: 'updatedAt tiene que ser una fecha ISO 8601' })
+  updatedAt?: string;
 }

@@ -9,6 +9,9 @@ import {
   UseGuards,
   Req,
   ParseUUIDPipe,
+  HttpCode,
+  HttpStatus,
+  Query,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { Throttle } from '@nestjs/throttler';
@@ -79,13 +82,18 @@ export class MenuAdminController {
 
   @Get('categoria')
   @Roles('ADMIN', 'MOZO')
-  async findAllCategorias(@Req() req: any) {
+  async findAllCategorias(
+    @Req() req: any,
+    @Query('incluirArchivados') incluirArchivados?: string,
+  ) {
     const restauranteId = req.query.restauranteId as string;
     const keycloakId = req.user.sub;
+    // BL-394: los archivados solo se listan si se piden (filtro «Archivados»).
     return this.menuAdminService.findAllCategorias(
       req.user.tenantId,
       restauranteId,
       keycloakId,
+      incluirArchivados === 'true',
     );
   }
 
@@ -110,12 +118,32 @@ export class MenuAdminController {
     return this.menuAdminService.updateCategoria(req.user.tenantId, id, dto);
   }
 
-  @Delete('categoria/:id')
-  async deleteCategoria(
+  /** BL-394: archivar (baja lógica). 409 si le quedan ítems activos. */
+  @Post('categoria/:id/archivar')
+  @HttpCode(HttpStatus.OK)
+  async archivarCategoria(
     @Req() req: any,
     @Param('id', ParseUUIDPipe) id: string,
   ) {
-    return this.menuAdminService.deleteCategoria(req.user.tenantId, id);
+    return this.menuAdminService.archivarCategoria(req.user.tenantId, id);
+  }
+
+  @Post('categoria/:id/restaurar')
+  @HttpCode(HttpStatus.OK)
+  async restaurarCategoria(
+    @Req() req: any,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.menuAdminService.restaurarCategoria(req.user.tenantId, id);
+  }
+
+  /** BL-394: eliminación definitiva. 409 si la categoría tiene ítems. */
+  @Delete('categoria/:id')
+  async eliminarCategoria(
+    @Req() req: any,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.menuAdminService.eliminarCategoria(req.user.tenantId, id);
   }
 
   // BL-387: el actor de la auditoría es el sub del token, nunca el body.
@@ -161,13 +189,22 @@ export class MenuAdminController {
     );
   }
 
+  /** BL-394: archivar (baja lógica); conserva el historial. */
+  @Post('item/:id/archivar')
+  @HttpCode(HttpStatus.OK)
+  async archivarItem(@Req() req: any, @Param('id', ParseUUIDPipe) id: string) {
+    return this.menuAdminService.archivarItem(req.user.tenantId, id);
+  }
+
+  @Post('item/:id/restaurar')
+  @HttpCode(HttpStatus.OK)
+  async restaurarItem(@Req() req: any, @Param('id', ParseUUIDPipe) id: string) {
+    return this.menuAdminService.restaurarItem(req.user.tenantId, id);
+  }
+
+  /** BL-394: eliminación definitiva. 409 si el ítem tiene pedidos. */
   @Delete('item/:id')
-  async deleteItem(@Req() req: any, @Param('id', ParseUUIDPipe) id: string) {
-    // HU-035 (BL-205): el actor de la auditoría es el sub del token.
-    return this.menuAdminService.deleteItem(
-      req.user.tenantId,
-      id,
-      req.user.sub,
-    );
+  async eliminarItem(@Req() req: any, @Param('id', ParseUUIDPipe) id: string) {
+    return this.menuAdminService.eliminarItem(req.user.tenantId, id);
   }
 }

@@ -66,6 +66,8 @@ const mockMenuGateway = {
   emitItemDataUpdated: jest.fn(),
   emitItemUpdated: jest.fn(),
   emitCategoriaUpdated: jest.fn(),
+  emitItemRetirado: jest.fn(),
+  emitCategoriaRetirada: jest.fn(),
 };
 
 const mockMenuAdminService = {
@@ -84,39 +86,16 @@ const mockMenuAdminService = {
 
     return updatedItem;
   }),
-  deleteItem: jest.fn().mockImplementation(async (tenantId, itemId) => {
-    const deletedItem = {
-      id: itemId,
-      tenantId,
-      disponible: false,
-      nombre: 'Item Eliminado',
-      updatedAt: new Date(),
-    };
-
-    mockMenuGateway.emitItemUpdated(tenantId, {
-      itemId,
-      disponible: false,
-    });
-
-    return deletedItem;
+  // BL-394: DELETE es la eliminación definitiva (solo sin historial).
+  eliminarItem: jest.fn().mockImplementation(async (tenantId, itemId) => {
+    mockMenuGateway.emitItemRetirado(tenantId, { itemId });
+    return { id: itemId, eliminado: true };
   }),
-  deleteCategoria: jest
+  eliminarCategoria: jest
     .fn()
     .mockImplementation(async (tenantId, categoriaId) => {
-      const deletedCategoria = {
-        id: categoriaId,
-        tenantId,
-        activo: false,
-        nombre: 'Categoría Eliminada',
-        updatedAt: new Date(),
-      };
-
-      mockMenuGateway.emitCategoriaUpdated(tenantId, {
-        categoriaId,
-        activo: false,
-      });
-
-      return deletedCategoria;
+      mockMenuGateway.emitCategoriaRetirada(tenantId, { categoriaId });
+      return { id: categoriaId, eliminada: true };
     }),
 };
 
@@ -313,9 +292,11 @@ describe('Menu Admin (BL-52/BL-53) - CRUD Completo con Soft Delete', () => {
     );
   });
 
-  describe('Soft Delete de Ítems (DELETE)', () => {
+  // BL-394: el «soft delete» pasó a ser «archivar» (POST …/archivar); DELETE
+  // elimina definitivamente, y el servicio responde 409 si hay historial.
+  describe('Eliminación definitiva de ítems (DELETE)', () => {
     itConAdmin(
-      '[TC-I-106] Menú: DELETE /admin/menu/item/:id: elimina lógicamente un ítem (200)',
+      '[TC-I-106] Menú: DELETE /admin/menu/item/:id: elimina definitivamente un ítem sin historial (200)',
       async () => {
         const token = await getToken(
           ADMIN_USER as string,
@@ -323,8 +304,7 @@ describe('Menu Admin (BL-52/BL-53) - CRUD Completo con Soft Delete', () => {
         );
 
         // Limpiar mocks
-        mockMenuGateway.emitItemUpdated.mockClear();
-        mockMenuGateway.emitItemDataUpdated.mockClear();
+        mockMenuGateway.emitItemRetirado.mockClear();
 
         const inicio = Date.now();
         const res = await request(app.getHttpServer())
@@ -335,21 +315,21 @@ describe('Menu Admin (BL-52/BL-53) - CRUD Completo con Soft Delete', () => {
         const duracionMs = Date.now() - inicio;
 
         expect(res.status).toBe(200);
-        expect(res.body.disponible).toBe(false);
+        expect(res.body).toEqual({ id: ITEM_ID, eliminado: true });
         expect(duracionMs).toBeLessThan(2000);
 
         // Verificar que se emitió el evento WebSocket
-        expect(mockMenuGateway.emitItemUpdated).toHaveBeenCalledWith(
+        expect(mockMenuGateway.emitItemRetirado).toHaveBeenCalledWith(
           expect.any(String),
-          { itemId: ITEM_ID, disponible: false },
+          { itemId: ITEM_ID },
         );
       },
     );
   });
 
-  describe('Soft Delete de Categorías (DELETE)', () => {
+  describe('Eliminación definitiva de categorías (DELETE)', () => {
     itConAdmin(
-      '[TC-I-107] Menú: DELETE /admin/menu/categoria/:id: elimina lógicamente una categoría (200)',
+      '[TC-I-107] Menú: DELETE /admin/menu/categoria/:id: elimina definitivamente una categoría sin ítems (200)',
       async () => {
         const token = await getToken(
           ADMIN_USER as string,
@@ -357,7 +337,7 @@ describe('Menu Admin (BL-52/BL-53) - CRUD Completo con Soft Delete', () => {
         );
 
         // Limpiar mocks
-        mockMenuGateway.emitCategoriaUpdated.mockClear();
+        mockMenuGateway.emitCategoriaRetirada.mockClear();
 
         const inicio = Date.now();
         const res = await request(app.getHttpServer())
@@ -368,13 +348,13 @@ describe('Menu Admin (BL-52/BL-53) - CRUD Completo con Soft Delete', () => {
         const duracionMs = Date.now() - inicio;
 
         expect(res.status).toBe(200);
-        expect(res.body.activo).toBe(false);
+        expect(res.body).toEqual({ id: CATEGORIA_ID, eliminada: true });
         expect(duracionMs).toBeLessThan(2000);
 
         // Verificar que se emitió el evento WebSocket
-        expect(mockMenuGateway.emitCategoriaUpdated).toHaveBeenCalledWith(
+        expect(mockMenuGateway.emitCategoriaRetirada).toHaveBeenCalledWith(
           expect.any(String),
-          { categoriaId: CATEGORIA_ID, activo: false },
+          { categoriaId: CATEGORIA_ID },
         );
       },
     );

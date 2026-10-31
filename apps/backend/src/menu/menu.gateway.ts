@@ -64,4 +64,16 @@ export class MenuGateway implements OnGatewayConnection, OnGatewayDisconnect {
       .to(`tenant_${tenantId}`)
       .emit('menu:item:data:updated', payload);
   }
+
+  // BL-394: un ítem se archivó o se eliminó; las pantallas lo sacan.
+  emitItemRetirado(tenantId: string, payload: { itemId: string }) {
+    this.server.to(`tenant_${tenantId}`).emit('menu:item:retirado', payload);
+  }
+
+  // BL-394: una categoría se archivó o se eliminó; las pantallas la sacan.
+  emitCategoriaRetirada(tenantId: string, payload: { categoriaId: string }) {
+    this.server
+      .to(`tenant_${tenantId}`)
+      .emit('menu:categoria:retirada', payload);
+  }
 }

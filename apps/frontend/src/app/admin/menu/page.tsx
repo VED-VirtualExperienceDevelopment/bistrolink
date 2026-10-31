@@ -3,11 +3,16 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api-client";
 import { getKeycloak } from "@/lib/keycloak";
+import { useKeycloakAuth } from "@/components/providers/KeycloakProvider";
 import { getMenuSocket } from "@/lib/socket";
 import Switch from "@/components/ui/Switch";
 import Badge from "@/components/ui/Badge";
 import ItemFormModal from "@/components/menu/ItemFormModal";
 import ItemImagen from "@/components/menu/ItemImagen";
+import {
+  ArchivarDialog,
+  type ArchivarObjetivo,
+} from "@/components/menu/ArchivarDialog";
 interface Item {
   readonly id: string;
   readonly nombre: string;
@@ -61,9 +66,19 @@ interface ItemRowProps {
   readonly onEdit: (catId: string, catName: string, item: Item) => void;
   readonly onToggle: (itemId: string, current: boolean) => void;
   readonly onDelete: (itemId: string, itemName: string) => void;
+  // BL-395: editar y eliminar son solo del ADMIN; el MOZO solo ve el switch.
+  readonly puedeEditar: boolean;
 }
 
-function ItemRow({ item, catId, catName, onEdit, onToggle, onDelete }: ItemRowProps) {
+function ItemRow({
+  item,
+  catId,
+  catName,
+  onEdit,
+  onToggle,
+  onDelete,
+  puedeEditar,
+}: ItemRowProps) {
   return (
     <div className="px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors group">
       <div className="flex items-center gap-4 flex-1">
@@ -99,38 +114,42 @@ function ItemRow({ item, catId, catName, onEdit, onToggle, onDelete }: ItemRowPr
           onChange={() => onToggle(item.id, item.disponible)}
           label={`Marcar ${item.nombre} como disponible`}
         />
-        <button
-          type="button"
-          onClick={() => onEdit(catId, catName, item)}
-          className="opacity-0 group-hover:opacity-100 transition-opacity text-[#79767D] hover:text-[#8069BF]"
-          title="Editar ítem"
-          aria-label={`Editar ${item.nombre}`}
-        >
-          <svg
-            className="w-5 h-5"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="2"
-              d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-            />
-          </svg>
-        </button>
-        <button
-          type="button"
-          onClick={() => onDelete(item.id, item.nombre)}
-          className="opacity-0 group-hover:opacity-100 transition-opacity text-[#79767D] hover:text-red-600"
-          title="Eliminar ítem"
-          aria-label={`Eliminar ${item.nombre}`}
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-          </svg>
-        </button>
+        {puedeEditar && (
+          <>
+            <button
+              type="button"
+              onClick={() => onEdit(catId, catName, item)}
+              className="opacity-0 group-hover:opacity-100 transition-opacity text-[#79767D] hover:text-[#8069BF]"
+              title="Editar ítem"
+              aria-label={`Editar ${item.nombre}`}
+            >
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                />
+              </svg>
+            </button>
+            <button
+              type="button"
+              onClick={() => onDelete(item.id, item.nombre)}
+              className="opacity-0 group-hover:opacity-100 transition-opacity text-[#79767D] hover:text-red-600"
+              title="Archivar ítem"
+              aria-label={`Archivar ${item.nombre}`}
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+              </svg>
+            </button>
+          </>
+        )}
       </div>
     </div>
   );
@@ -140,6 +159,10 @@ function ItemRow({ item, catId, catName, onEdit, onToggle, onDelete }: ItemRowPr
 // COMPONENTE PRINCIPAL
 // ============================================================================
 export default function AdminMenuPage() {
+  // BL-395: la carta la edita el ADMIN. El MOZO la ve y solo marca ítems
+  // como agotados o disponibles (la API le responde 403 en todo lo demás).
+  const { hasRole } = useKeycloakAuth();
+  const puedeEditarCarta = hasRole("ADMIN");
   const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastUpdate, setLastUpdate] = useState<string>("");
@@ -157,6 +180,11 @@ export default function AdminMenuPage() {
   // BL-395: el error del alta (por ejemplo, 409 por nombre repetido) se
   // muestra dentro del diálogo, como en Usuarios, y no con alert().
   const [errorCategoria, setErrorCategoria] = useState<string | null>(null);
+  // BL-394: archivar se confirma con un diálogo propio (no confirm()).
+  const [aArchivar, setAArchivar] = useState<ArchivarObjetivo | null>(null);
+  // BL-394: errores de las acciones sin diálogo (switches), en un aviso de la
+  // página con los tokens del tema, como Usuarios (no alert()).
+  const [errorPagina, setErrorPagina] = useState<string | null>(null);
 
   const cargarDatos = async () => {
     setLoading(true);
@@ -217,9 +245,28 @@ export default function AdminMenuPage() {
       },
     );
 
+    // BL-394: un ítem o una categoría se archivó o se eliminó en otra
+    // pantalla: se saca de la lista.
+    socket.on("menu:item:retirado", (data: { itemId: string }) => {
+      setCategorias((prev) =>
+        prev.map((cat) => ({
+          ...cat,
+          items: cat.items.filter((item) => item.id !== data.itemId),
+        })),
+      );
+    });
+
+    socket.on("menu:categoria:retirada", (data: { categoriaId: string }) => {
+      setCategorias((prev) =>
+        prev.filter((cat) => cat.id !== data.categoriaId),
+      );
+    });
+
     return () => {
       socket.off("menu:item:updated");
       socket.off("menu:categoria:updated");
+      socket.off("menu:item:retirado");
+      socket.off("menu:categoria:retirada");
     };
   }, []);
 
@@ -255,6 +302,7 @@ export default function AdminMenuPage() {
   };
 
   const toggleItem = async (itemId: string, current: boolean) => {
+    setErrorPagina(null);
     setCategorias((prev) =>
       prev.map((cat) => ({
         ...cat,
@@ -274,60 +322,41 @@ export default function AdminMenuPage() {
           items: updateItemAvailability(cat.items, itemId, current),
         })),
       );
-      const message =
-        error instanceof Error ? error.message : "Error al actualizar el ítem";
-      alert(message);
+      setErrorPagina(
+        error instanceof Error ? error.message : "No se pudo actualizar el ítem",
+      );
     }
   };
 
-  const deleteItem = async (itemId: string, itemName: string) => {
-    if (!confirm(`¿Estás seguro de que deseas eliminar "${itemName}"? Esta acción lo ocultará del menú público.`)) {
-      return;
-    }
-
-    setCategorias((prev) =>
-      prev.map((cat) => ({
-        ...cat,
-        items: cat.items.filter((item) => item.id !== itemId),
-      }))
-    );
-
-    try {
-      const keycloak = getKeycloak();
-      await apiFetch(`/admin/menu/item/${itemId}`, keycloak.token, {
-        method: 'DELETE',
-      });
-      setLastUpdate(`🗑️ Ítem eliminado — ${new Date().toLocaleTimeString('es-AR')}`);
-    } catch (error: unknown) {
-      await cargarDatos();
-      const message = error instanceof Error ? error.message : 'Error al eliminar el ítem';
-      alert(message);
-    }
-  };
-
-  const deleteCategoria = async (categoriaId: string, categoriaNombre: string) => {
-    if (!confirm(`¿Estás seguro de que deseas eliminar la categoría "${categoriaNombre}"? Los ítems asociados quedarán ocultos.`)) {
-      return;
-    }
-
-    // Actualización optimista
-    setCategorias((prev) => updateCategoriaActivo(prev, categoriaId, false));
-
-    try {
-      const keycloak = getKeycloak();
-      await apiFetch(`/admin/menu/categoria/${categoriaId}`, keycloak.token, {
-        method: 'DELETE',
-      });
-      setLastUpdate(`🗑️ Categoría eliminada — ${new Date().toLocaleTimeString('es-AR')}`);
-    } catch (error: unknown) {
-      // Revertir en caso de error
-      setCategorias((prev) => updateCategoriaActivo(prev, categoriaId, true));
-      const message = error instanceof Error ? error.message : 'Error al eliminar la categoría';
-      alert(message);
+  // BL-394: «Eliminar» pasa a ser «Archivar» (baja lógica que conserva el
+  // historial). Se confirma en ArchivarDialog; si la API responde 409, el
+  // diálogo muestra el motivo. La eliminación definitiva y «Restaurar»
+  // llegan con el filtro «Archivados» de BL-398.
+  const archivar = async ({ tipo, id }: ArchivarObjetivo) => {
+    const keycloak = getKeycloak();
+    const ruta =
+      tipo === "item"
+        ? `/admin/menu/item/${id}/archivar`
+        : `/admin/menu/categoria/${id}/archivar`;
+    await apiFetch(ruta, keycloak.token, { method: "POST" });
+    if (tipo === "item") {
+      setCategorias((prev) =>
+        prev.map((cat) => ({
+          ...cat,
+          items: cat.items.filter((item) => item.id !== id),
+        })),
+      );
+      setLastUpdate(`Ítem archivado — ${new Date().toLocaleTimeString("es-AR")}`);
+    } else {
+      setCategorias((prev) => prev.filter((cat) => cat.id !== id));
+      setLastUpdate(
+        `Categoría archivada — ${new Date().toLocaleTimeString("es-AR")}`,
+      );
     }
   };
 
   const toggleCategoria = async (categoriaId: string, current: boolean) => {
+    setErrorPagina(null);
     setCategorias((prev) => updateCategoriaActivo(prev, categoriaId, !current));
     try {
       const keycloak = getKeycloak();
@@ -339,11 +368,11 @@ export default function AdminMenuPage() {
       setCategorias((prev) =>
         updateCategoriaActivo(prev, categoriaId, current),
       );
-      const message =
+      setErrorPagina(
         error instanceof Error
           ? error.message
-          : "Error al actualizar la categoría";
-      alert(message);
+          : "No se pudo actualizar la categoría",
+      );
     }
   };
 
@@ -388,30 +417,34 @@ export default function AdminMenuPage() {
             Gestión de Carta
           </h1>
           <p className="text-[#79767D] mt-1">
-            Administra categorías, ítems y disponibilidad en tiempo real.
+            {puedeEditarCarta
+              ? "Administra categorías, ítems y disponibilidad en tiempo real."
+              : "Marcá los ítems agotados o disponibles en tiempo real."}
           </p>
         </div>
         <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => setCategoriaModalOpen(true)}
-            className="px-4 py-2 bg-[#8069BF] text-white rounded-lg hover:bg-[#8069BF]/90 transition-colors shadow-sm flex items-center gap-2"
-          >
-            <svg
-              className="w-4 h-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
+          {puedeEditarCarta && (
+            <button
+              type="button"
+              onClick={() => setCategoriaModalOpen(true)}
+              className="px-4 py-2 bg-[#8069BF] text-white rounded-lg hover:bg-[#8069BF]/90 transition-colors shadow-sm flex items-center gap-2"
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="2"
-                d="M12 4v16m8-8H4"
-              />
-            </svg>
-            <span>Nueva categoría</span>
-          </button>
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M12 4v16m8-8H4"
+                />
+              </svg>
+              <span>Nueva categoría</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={cargarDatos}
@@ -422,6 +455,25 @@ export default function AdminMenuPage() {
           </button>
         </div>
       </div>
+
+      {errorPagina && (
+        <div
+          role="alert"
+          className="flex items-start justify-between gap-2 rounded-xl bg-error-container px-4 py-3 text-body-md text-on-error-container"
+        >
+          <span>{errorPagina}</span>
+          <button
+            type="button"
+            onClick={() => setErrorPagina(null)}
+            aria-label="Cerrar aviso"
+            className="-my-2 -mr-2 flex h-12 w-12 flex-none items-center justify-center rounded-full hover:opacity-80"
+          >
+            <span className="material-symbols-outlined text-[20px]" aria-hidden="true">
+              close
+            </span>
+          </button>
+        </div>
+      )}
 
       {lastUpdate && (
         <div className="bg-[#8069BF]/10 border border-[#8069BF]/30 text-[#8069BF] px-4 py-2 rounded-lg text-sm flex items-center gap-2">
@@ -446,26 +498,28 @@ export default function AdminMenuPage() {
             />
           </svg>
           <p className="text-[#79767D] mb-4">No hay categorías creadas.</p>
-          <button
-            type="button"
-            onClick={() => setCategoriaModalOpen(true)}
-            className="px-6 py-3 bg-[#8069BF] text-white rounded-lg hover:bg-[#8069BF]/90 transition-colors inline-flex items-center gap-2"
-          >
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
+          {puedeEditarCarta && (
+            <button
+              type="button"
+              onClick={() => setCategoriaModalOpen(true)}
+              className="px-6 py-3 bg-[#8069BF] text-white rounded-lg hover:bg-[#8069BF]/90 transition-colors inline-flex items-center gap-2"
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="2"
-                d="M12 4v16m8-8H4"
-              />
-            </svg>
-            Crear primera categoría
-          </button>
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M12 4v16m8-8H4"
+                />
+              </svg>
+              Crear primera categoría
+            </button>
+          )}
         </div>
       ) : (
         categorias.map((cat) => (
@@ -481,23 +535,31 @@ export default function AdminMenuPage() {
                 {!cat.activo && <Badge variant="danger">Deshabilitada</Badge>}
                 <Badge variant="neutral">{cat.items.length} ítems</Badge>
               </div>
-              <div className="flex items-center gap-3">
-                <span className="text-sm text-[#79767D]">Visible</span>
-                <Switch checked={cat.activo} onChange={() => toggleCategoria(cat.id, cat.activo)} label={`Habilitar categoría ${cat.nombre}`} />
+              {puedeEditarCarta && (
+                <div className="flex items-center gap-3">
+                  <span className="text-sm text-[#79767D]">Visible</span>
+                  <Switch checked={cat.activo} onChange={() => toggleCategoria(cat.id, cat.activo)} label={`Habilitar categoría ${cat.nombre}`} />
                 
-                {/* NUEVO BOTÓN DE ELIMINAR CATEGORÍA */}
-                <button
-                  type="button"
-                  onClick={() => deleteCategoria(cat.id, cat.nombre)}
-                  className="text-[#79767D] hover:text-red-600 transition-colors p-1"
-                  title="Eliminar categoría"
-                  aria-label={`Eliminar categoría ${cat.nombre}`}
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                </button>
-              </div>
+                  {/* NUEVO BOTÓN DE ELIMINAR CATEGORÍA */}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setAArchivar({
+                        tipo: "categoria",
+                        id: cat.id,
+                        nombre: cat.nombre,
+                      })
+                    }
+                    className="text-[#79767D] hover:text-red-600 transition-colors p-1"
+                    title="Archivar categoría"
+                    aria-label={`Archivar categoría ${cat.nombre}`}
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                    </svg>
+                  </button>
+                </div>
+              )}
             </div>
             <div className="divide-y divide-gray-100">
               {cat.items.length === 0 ? (
@@ -513,34 +575,37 @@ export default function AdminMenuPage() {
                     catName={cat.nombre}
                     onEdit={openEditModal}
                     onToggle={toggleItem}
-                    onDelete={deleteItem}
+                    onDelete={(id, nombre) => setAArchivar({ tipo: "item", id, nombre })}
+                    puedeEditar={puedeEditarCarta}
                   />
                 ))
               )}
             </div>
-            <div className="px-6 py-3 bg-[#7C7296]/5 border-t flex justify-between items-center">
-              <button
-                type="button"
-                onClick={() => openCreateModal(cat.id, cat.nombre)}
-                disabled={!cat.activo}
-                className="text-sm font-medium text-[#8069BF] hover:text-[#8069BF]/80 flex items-center gap-1 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <svg
-                  className="w-4 h-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
+            {puedeEditarCarta && (
+              <div className="px-6 py-3 bg-[#7C7296]/5 border-t flex justify-between items-center">
+                <button
+                  type="button"
+                  onClick={() => openCreateModal(cat.id, cat.nombre)}
+                  disabled={!cat.activo}
+                  className="text-sm font-medium text-[#8069BF] hover:text-[#8069BF]/80 flex items-center gap-1 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth="2"
-                    d="M12 4v16m8-8H4"
-                  />
-                </svg>
-                Agregar ítem
-              </button>
-            </div>
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                      d="M12 4v16m8-8H4"
+                    />
+                  </svg>
+                  Agregar ítem
+                </button>
+              </div>
+            )}
           </div>
         ))
       )}
@@ -554,6 +619,12 @@ export default function AdminMenuPage() {
           itemToEdit={itemToEdit || undefined}
         />
       )}
+
+      <ArchivarDialog
+        objetivo={aArchivar}
+        onClose={() => setAArchivar(null)}
+        onConfirmar={archivar}
+      />
 
       {categoriaModalOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
