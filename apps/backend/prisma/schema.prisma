@@ -121,26 +121,26 @@ model Tenant {
 // ── 4.2 Restaurante ──────────────────────────────────────────────────────────
 
 model Restaurante {
-  id        String   @id @default(uuid()) @db.Uuid
+  id                 String   @id @default(uuid()) @db.Uuid
   // Único (BL-163): un tenant tiene un solo restaurante (ver
   // Tenant.restaurante). El índice único reemplaza al @@index([tenantId]).
-  tenantId  String   @unique @map("tenant_id") @db.Uuid
-  nombre    String
-  direccion String
-  timezone  String
+  tenantId           String   @unique @map("tenant_id") @db.Uuid
+  nombre             String
+  direccion          String
+  timezone           String
   // HU-028 (BL-173): elementos fijos (puerta, baño, cocina, caja, barra) y
   // zonas (salón, patio, calle) del plano del salón. Forma:
   // { elementos: [{ id, tipo, x, y, ancho, alto, rotacion }],
   //   zonas: [{ id, etiqueta, x, y, ancho, alto }] }
   // Nullable: null = plano sin elementos ni zonas (los layouts de HU-016,
   // que viven en mesa.layout, no cambian). Validado por PlanoDto.
-  plano     Json?
+  plano              Json?
   // HU-031 (BL-201): el local acepta efectivo. Columna mínima hasta HU-020
   // (BL-72, configuración del establecimiento), que la va a administrar.
   // Default true: los locales existentes siguen cobrando en efectivo.
-  efectivoHabilitado Boolean @default(true) @map("efectivo_habilitado")
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  efectivoHabilitado Boolean  @default(true) @map("efectivo_habilitado")
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   tenant     Tenant           @relation(fields: [tenantId], references: [id])
   usuarios   Usuario[]
@@ -182,12 +182,12 @@ model Usuario {
 // ── 4.4 Mesa ─────────────────────────────────────────────────────────────────
 
 model Mesa {
-  id            String     @id @default(uuid()) @db.Uuid
-  tenantId      String     @map("tenant_id") @db.Uuid
-  restauranteId String     @map("restaurante_id") @db.Uuid
-  numero        Int
-  estado        MesaEstado
-  esVirtual     Boolean    @default(false) @map("es_virtual")
+  id              String     @id @default(uuid()) @db.Uuid
+  tenantId        String     @map("tenant_id") @db.Uuid
+  restauranteId   String     @map("restaurante_id") @db.Uuid
+  numero          Int
+  estado          MesaEstado
+  esVirtual       Boolean    @default(false) @map("es_virtual")
   // HU-016: posición (x, y), forma, dimensiones (ancho, alto) y rotación de
   // la mesa en el editor visual del mapa. Nullable: las mesas creadas antes
   // de esta historia (o la mesa virtual de HU-003, que nunca se dibuja en el
@@ -196,12 +196,12 @@ model Mesa {
   // no se duplica dentro del JSON para no arriesgar que ambos queden
   // desincronizados; el endpoint de layout siempre devuelve `numero` como
   // campo hermano.
-  layout        Json?
+  layout          Json?
   // HU-034 (BL-204): versión del QR de la mesa. Va cifrada dentro del token
   // de la URL opaca (/q/<token>). Regenerar el QR suma 1: los tokens con una
   // versión anterior dejan de funcionar (410 Gone) sin guardar nada más.
   // Default 1: las mesas existentes quedan con un QR válido sin migrar datos.
-  qrVersion     Int        @default(1) @map("qr_version")
+  qrVersion       Int        @default(1) @map("qr_version")
   // HU-017 (BL-60): sesión de la mesa. La abre el mozo al recibir
   // comensales y la cierra cuando todo está entregado. Con la sesión
   // cerrada el QR impreso no sirve para pedir (410); con cada apertura
@@ -211,8 +211,8 @@ model Mesa {
   // queda afuera).
   sesionId        String?    @map("sesion_id") @db.Uuid
   sesionAbiertaEn DateTime?  @map("sesion_abierta_en") @db.Timestamptz(3)
-  createdAt     DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt     DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdAt       DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   restaurante Restaurante @relation(fields: [restauranteId], references: [id])
   pedidos     Pedido[]
@@ -225,14 +225,22 @@ model Mesa {
 // ── 4.5 CategoriaCarta / ItemCarta ───────────────────────────────────────────
 
 model CategoriaCarta {
-  id            String   @id @default(uuid()) @db.Uuid
-  tenantId      String   @map("tenant_id") @db.Uuid
-  restauranteId String   @map("restaurante_id") @db.Uuid
+  id            String    @id @default(uuid()) @db.Uuid
+  tenantId      String    @map("tenant_id") @db.Uuid
+  restauranteId String    @map("restaurante_id") @db.Uuid
   nombre        String
-  orden         Int      @default(0)
-  activo        Boolean  @default(true) // <-- ÚNICA LÍNEA AGREGADA: Permite deshabilitar categorías completas
-  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  orden         Int       @default(0)
+  // Visible en la carta del comensal (el switch «Visible»). Se mantiene el
+  // nombre `activo` para no romper la versión anterior de la API durante el
+  // deploy (expand/contract, BL-393).
+  activo        Boolean   @default(true)
+  // BL-393: subtítulo opcional («Para compartir», «Al mediodía»).
+  descripcion   String?   @db.VarChar(200)
+  // BL-393: baja lógica. Nulo = activa. Nombre único entre las no archivadas
+  // del restaurante: índice parcial creado con SQL en la migración.
+  archivadaEn   DateTime? @map("archivada_en") @db.Timestamptz(3)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   restaurante Restaurante @relation(fields: [restauranteId], references: [id])
   items       ItemCarta[]
@@ -242,47 +250,55 @@ model CategoriaCarta {
 }
 
 model ItemCarta {
-  id          String   @id @default(uuid()) @db.Uuid
-  tenantId    String   @map("tenant_id") @db.Uuid
-  categoriaId String   @map("categoria_id") @db.Uuid
+  id          String    @id @default(uuid()) @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  categoriaId String    @map("categoria_id") @db.Uuid
   nombre      String
   descripcion String?
-  precio      Decimal  @db.Decimal(10, 2)
-  disponible  Boolean  @default(true)
-  imagenKey   String?  @map("imagen_key")
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  precio      Decimal   @db.Decimal(10, 2)
+  disponible  Boolean   @default(true)
+  imagenKey   String?   @map("imagen_key")
+  // BL-393: orden manual dentro de la categoría. La migración lo completa con
+  // el orden alfabético que había, así la carta se ve igual.
+  orden       Int       @default(0)
+  // BL-393: baja lógica. Nulo = activo. Nombre único entre los no archivados
+  // de la categoría: índice parcial creado con SQL en la migración. El precio
+  // tiene CHECK (precio >= 0) en la base.
+  archivadoEn DateTime? @map("archivado_en") @db.Timestamptz(3)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   categoria    CategoriaCarta @relation(fields: [categoriaId], references: [id])
   lineasPedido LineaPedido[]
 
   @@index([tenantId])
+  @@index([tenantId, categoriaId, orden])
   @@map("item_carta")
 }
 
 // ── 4.6 Pedido ────────────────────────────────────────────────────────────────
 
 model Pedido {
-  id                 String       @id @default(uuid()) @db.Uuid
-  tenantId           String       @map("tenant_id") @db.Uuid
-  restauranteId      String       @map("restaurante_id") @db.Uuid
-  mesaId             String       @map("mesa_id") @db.Uuid
-  usuarioId          String?      @map("usuario_id") @db.Uuid
-  idempotencyKey     String       @unique @map("idempotency_key") @db.VarChar(64)
-  estado             PedidoEstado
-  canal              PedidoCanal
-  observacionGeneral String?      @map("observacion_general") @db.VarChar(500) // <-- NUEVO
+  id                   String       @id @default(uuid()) @db.Uuid
+  tenantId             String       @map("tenant_id") @db.Uuid
+  restauranteId        String       @map("restaurante_id") @db.Uuid
+  mesaId               String       @map("mesa_id") @db.Uuid
+  usuarioId            String?      @map("usuario_id") @db.Uuid
+  idempotencyKey       String       @unique @map("idempotency_key") @db.VarChar(64)
+  estado               PedidoEstado
+  canal                PedidoCanal
+  observacionGeneral   String?      @map("observacion_general") @db.VarChar(500) // <-- NUEVO
   // BL-311 (RD.05): SHA-256 del token de acceso de un pedido para retirar
   // (canal WEB, sin QR). El token en claro se devuelve una sola vez, al
   // crear el pedido; acá nunca se guarda. Null en los pedidos de mesa.
-  accesoTokenHash    String?      @map("acceso_token_hash") @db.Char(64)
+  accesoTokenHash      String?      @map("acceso_token_hash") @db.Char(64)
   // HU-031b (BL-442): el comensal de una mesa pidió pagar en efectivo
   // (cuándo, y con cuánto va a pagar si lo dijo). No es un pago: el pedido
   // sigue en PENDIENTE_PAGO hasta que el mozo registra el cobro (BL-201).
-  efectivoSolicitadoEn DateTime? @map("efectivo_solicitado_en") @db.Timestamptz(3)
-  efectivoPagaCon      Decimal?  @map("efectivo_paga_con") @db.Decimal(10, 2)
-  createdAt          DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt          DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+  efectivoSolicitadoEn DateTime?    @map("efectivo_solicitado_en") @db.Timestamptz(3)
+  efectivoPagaCon      Decimal?     @map("efectivo_paga_con") @db.Decimal(10, 2)
+  createdAt            DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   restaurante      Restaurante             @relation(fields: [restauranteId], references: [id])
   mesa             Mesa                    @relation(fields: [mesaId], references: [id])
@@ -341,7 +357,7 @@ model Pago {
   createdAt          DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt          DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  pedido       Pedido              @relation(fields: [pedidoId], references: [id])
+  pedido       Pedido                @relation(fields: [pedidoId], references: [id])
   comprobantes ComprobanteFiscal[]
   historial    PagoEstadoHistorial[]
 
@@ -355,15 +371,15 @@ model Pago {
 // (respuesta del cobro, webhook, conciliación o vencimiento). Solo se agrega:
 // la aplicación nunca actualiza ni borra filas. Con RLS, como pago.
 model PagoEstadoHistorial {
-  id             String      @id @default(uuid()) @db.Uuid
-  tenantId       String      @map("tenant_id") @db.Uuid
-  pagoId         String      @map("pago_id") @db.Uuid
-  estadoAnterior PagoEstado  @map("estado_anterior")
-  estadoNuevo    PagoEstado  @map("estado_nuevo")
+  id             String     @id @default(uuid()) @db.Uuid
+  tenantId       String     @map("tenant_id") @db.Uuid
+  pagoId         String     @map("pago_id") @db.Uuid
+  estadoAnterior PagoEstado @map("estado_anterior")
+  estadoNuevo    PagoEstado @map("estado_nuevo")
   origen         PagoOrigen
   // Detalle corto: motivo del rechazo, «REQUIERE_REEMBOLSO», etc.
-  detalle        String?     @db.VarChar(60)
-  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  detalle        String?    @db.VarChar(60)
+  createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
 
   pago Pago @relation(fields: [pagoId], references: [id])
 
