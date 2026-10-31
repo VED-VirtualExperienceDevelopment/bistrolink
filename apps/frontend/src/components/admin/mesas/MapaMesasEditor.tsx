@@ -1328,6 +1328,10 @@ export function MapaMesasEditor({
           mesaId={mesaSeleccionada.id}
           numero={mesaSeleccionada.numero}
           token={token}
+          abierta={
+            mesaSeleccionada.estado === "OCUPADA" ||
+            mesaSeleccionada.estado === "EN_PROCESO_DE_PAGO"
+          }
         />
       )}
 

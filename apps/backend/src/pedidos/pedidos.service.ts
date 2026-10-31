@@ -1,12 +1,14 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { PrismaClient, MesaEstado } from '@prisma/client';
+import { PrismaClient, MesaEstado, Prisma } from '@prisma/client';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
-import { CrearPedidoDto } from './dto/crear-pedido.dto';
+import { CrearPedidoDto, CrearPedidoItemDto } from './dto/crear-pedido.dto';
+import { CrearPedidoMozoDto } from './dto/crear-pedido-mozo.dto';
 import { MesaDelQr } from '../qr-mesa/qr-mesa-acceso.service';
 import { KdsGateway, LlamadoPagoEfectivo } from './kds.gateway';
 import { aPedidoKds, PedidoParaKds } from './pedido-kds.mapper';
@@ -16,6 +18,62 @@ import { generarTokenAcceso } from './token-acceso-pedido';
 // cocina. La transición a RECIBIDO la hace la confirmación del pago.
 export const ESTADO_INICIAL_PEDIDO = 'PENDIENTE_PAGO' as const;
 const NUMERO_MESA_VIRTUAL = 0;
+// usuario.keycloak_id es UUID: un actor que no lo es (un script) no se busca.
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const SELECT_PEDIDO_CARGADO = {
+  id: true,
+  canal: true,
+  estado: true,
+  createdAt: true,
+  mesa: { select: { id: true, numero: true, esVirtual: true } },
+  lineas: {
+    orderBy: { createdAt: 'asc' },
+    select: { id: true, nombreSnapshot: true, cantidad: true, subtotal: true },
+  },
+} satisfies Prisma.PedidoSelect;
+
+/**
+ * HU-039 (BL-209): el pedido que cargó el mozo, con la misma forma que un
+ * pedido de «Cobros pendientes» (BL-201): el frontend abre el cobro en
+ * efectivo directamente con esto.
+ */
+export interface PedidoCargadoPorMozo {
+  id: string;
+  canal: string;
+  estado: string;
+  createdAt: Date;
+  mesa: { id: string; numero: number; esVirtual: boolean };
+  total: string;
+  lineas: { id: string; nombre: string; cantidad: number; subtotal: string }[];
+  pagoEnCurso: boolean;
+  efectivoSolicitado: null;
+}
+
+function aPedidoCargado(
+  pedido: Prisma.PedidoGetPayload<{ select: typeof SELECT_PEDIDO_CARGADO }>,
+): PedidoCargadoPorMozo {
+  const total = pedido.lineas.reduce(
+    (acumulado, linea) => acumulado.plus(linea.subtotal),
+    new Prisma.Decimal(0),
+  );
+  return {
+    id: pedido.id,
+    canal: pedido.canal,
+    estado: pedido.estado,
+    createdAt: pedido.createdAt,
+    mesa: pedido.mesa,
+    total: total.toFixed(2),
+    lineas: pedido.lineas.map((linea) => ({
+      id: linea.id,
+      nombre: linea.nombreSnapshot,
+      cantidad: linea.cantidad,
+      subtotal: linea.subtotal.toFixed(2),
+    })),
+    pagoEnCurso: false,
+    efectivoSolicitado: null,
+  };
+}
 
 @Injectable()
 export class PedidosService {
@@ -57,24 +115,7 @@ export class PedidosService {
         const { mesa, restauranteId, esPedidoDeMesa } =
           await this.resolverMesaYRestaurante(tx, tenantId, dto, mesaQr);
 
-        const itemsCarta = await tx.itemCarta.findMany({
-          where: { id: { in: dto.items.map((i) => i.itemCartaId) } },
-        });
-
-        const itemsPorId = new Map(itemsCarta.map((i) => [i.id, i]));
-        for (const linea of dto.items) {
-          const item = itemsPorId.get(linea.itemCartaId);
-          if (!item) {
-            throw new BadRequestException(
-              `El ítem ${linea.itemCartaId} no existe en la carta de este restaurante`,
-            );
-          }
-          if (!item.disponible) {
-            throw new BadRequestException(
-              `"${item.nombre}" no está disponible`,
-            );
-          }
-        }
+        const lineas = await this.lineasDelPedido(tx, tenantId, dto.items);
 
         const nuevoPedido = await tx.pedido.create({
           data: {
@@ -88,20 +129,7 @@ export class PedidosService {
             canal: esPedidoDeMesa ? 'QR' : 'WEB',
             accesoTokenHash: esPedidoDeMesa ? null : acceso.hash,
             observacionGeneral: dto.observacionGeneral,
-            lineas: {
-              create: dto.items.map((linea) => {
-                const item = itemsPorId.get(linea.itemCartaId)!;
-                return {
-                  tenantId,
-                  itemCartaId: item.id,
-                  nombreSnapshot: item.nombre,
-                  precioUnitarioSnapshot: item.precio,
-                  cantidad: linea.cantidad,
-                  subtotal: item.precio.mul(linea.cantidad),
-                  observacion: linea.observacion,
-                };
-              }),
-            },
+            lineas: { create: lineas },
           },
           include: { lineas: true },
         });
@@ -240,6 +268,119 @@ export class PedidosService {
    *   upsert de la mesa 0 podía colgarse del restaurante de otro tenant: RLS
    *   no lo frena y la FK de Postgres no aplica RLS (BL-308).
    */
+  /**
+   * HU-039 (BL-209): el mozo (o el administrador) carga el pedido de un
+   * comensal sin celular, en una mesa abierta (HU-017).
+   *
+   * Mismo circuito que un pedido por QR: misma carta y mismas validaciones,
+   * queda en PENDIENTE_PAGO (prepago, RD.03) y llega a cocina recién con el
+   * cobro (en efectivo, HU-031). Queda identificado con el canal MOZO y con
+   * quién lo cargó (usuario_id). El cierre de la mesa lo trata igual que a
+   * los demás pedidos.
+   *
+   * Idempotente (RNF.03): con la misma clave devuelve el pedido ya creado.
+   */
+  async crearPorMozo(
+    tenantId: string,
+    actorKeycloakId: string,
+    dto: CrearPedidoMozoDto,
+  ): Promise<PedidoCargadoPorMozo> {
+    return this.tenantPrisma.runInTenantContext(tenantId, async (tx) => {
+      const existente = await tx.pedido.findUnique({
+        where: { idempotencyKey: dto.idempotencyKey },
+        select: SELECT_PEDIDO_CARGADO,
+      });
+      if (existente) {
+        if (existente.canal !== 'MOZO' || existente.mesa.id !== dto.mesaId) {
+          throw new ConflictException(
+            'La clave de idempotencia ya se usó en otro pedido',
+          );
+        }
+        return aPedidoCargado(existente);
+      }
+
+      const mesa = await tx.mesa.findUnique({
+        where: { id: dto.mesaId },
+        select: {
+          id: true,
+          restauranteId: true,
+          esVirtual: true,
+          sesionId: true,
+        },
+      });
+      if (!mesa || mesa.esVirtual) {
+        throw new NotFoundException(
+          'Mesa no encontrada para este establecimiento',
+        );
+      }
+      // HU-017: solo en una mesa con la sesión abierta (OCUPADA o cobrando).
+      if (!mesa.sesionId) {
+        throw new ConflictException(
+          'La mesa está cerrada: abrila para cargar un pedido',
+        );
+      }
+
+      const lineas = await this.lineasDelPedido(tx, tenantId, dto.items);
+      const usuario = UUID.test(actorKeycloakId)
+        ? await tx.usuario.findUnique({
+            where: { keycloakId: actorKeycloakId },
+            select: { id: true },
+          })
+        : null;
+
+      const pedido = await tx.pedido.create({
+        data: {
+          tenantId,
+          restauranteId: mesa.restauranteId,
+          mesaId: mesa.id,
+          usuarioId: usuario?.id ?? null,
+          idempotencyKey: dto.idempotencyKey,
+          estado: ESTADO_INICIAL_PEDIDO,
+          canal: 'MOZO',
+          observacionGeneral: dto.observacionGeneral,
+          lineas: { create: lineas },
+        },
+        select: SELECT_PEDIDO_CARGADO,
+      });
+      return aPedidoCargado(pedido);
+    });
+  }
+
+  /**
+   * Líneas del pedido con el nombre y el precio de la carta (snapshot). Un
+   * ítem que no existe en la carta del tenant (RLS) o no está disponible: 400.
+   */
+  private async lineasDelPedido(
+    tx: PrismaClient,
+    tenantId: string,
+    items: CrearPedidoItemDto[],
+  ) {
+    const itemsCarta = await tx.itemCarta.findMany({
+      where: { id: { in: items.map((i) => i.itemCartaId) } },
+    });
+    const itemsPorId = new Map(itemsCarta.map((i) => [i.id, i]));
+    return items.map((linea) => {
+      const item = itemsPorId.get(linea.itemCartaId);
+      if (!item) {
+        throw new BadRequestException(
+          `El ítem ${linea.itemCartaId} no existe en la carta de este restaurante`,
+        );
+      }
+      if (!item.disponible) {
+        throw new BadRequestException(`"${item.nombre}" no está disponible`);
+      }
+      return {
+        tenantId,
+        itemCartaId: item.id,
+        nombreSnapshot: item.nombre,
+        precioUnitarioSnapshot: item.precio,
+        cantidad: linea.cantidad,
+        subtotal: item.precio.mul(linea.cantidad),
+        observacion: linea.observacion,
+      };
+    });
+  }
+
   private async resolverMesaYRestaurante(
     tx: PrismaClient,
     tenantId: string,
