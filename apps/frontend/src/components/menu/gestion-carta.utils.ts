@@ -339,3 +339,64 @@ export function errorPrecioItem(precio: string): string | null {
   }
   return null;
 }
+
+// ── BL-399: ordenar con Subir / Bajar ───────────────────────────────────────
+
+/** Hacia dónde se mueve: -1 sube un lugar y 1 baja un lugar. */
+export type Desplazamiento = -1 | 1;
+
+/**
+ * Mueve un elemento un lugar hacia arriba o hacia abajo. Devuelve null si
+ * no está en la lista o si ya está en el borde (no hay nada que guardar).
+ */
+export function moverUnLugar<T extends { readonly id: string }>(
+  lista: readonly T[],
+  id: string,
+  desplazamiento: Desplazamiento,
+): T[] | null {
+  const desde = lista.findIndex((elemento) => elemento.id === id);
+  const hasta = desde + desplazamiento;
+  if (desde < 0 || hasta < 0 || hasta >= lista.length) return null;
+  const copia = [...lista];
+  [copia[desde], copia[hasta]] = [copia[hasta], copia[desde]];
+  return copia;
+}
+
+/**
+ * La carta con una categoría movida un lugar. `orden` queda igual a la
+ * posición (desde 1), como lo guarda la API.
+ */
+export function conCategoriaMovida(
+  categorias: Categorias,
+  categoriaId: string,
+  desplazamiento: Desplazamiento,
+): CategoriaGestion[] | null {
+  const movidas = moverUnLugar(categorias, categoriaId, desplazamiento);
+  if (!movidas) return null;
+  return movidas.map((cat, indice) => ({ ...cat, orden: indice + 1 }));
+}
+
+/** La carta con un ítem movido un lugar dentro de su categoría. */
+export function conItemMovido(
+  categorias: Categorias,
+  categoriaId: string,
+  itemId: string,
+  desplazamiento: Desplazamiento,
+): CategoriaGestion[] | null {
+  const categoria = categorias.find((cat) => cat.id === categoriaId);
+  if (!categoria) return null;
+  const items = moverUnLugar(categoria.items, itemId, desplazamiento);
+  if (!items) return null;
+  return categorias.map((cat) =>
+    cat.id === categoriaId ? { ...cat, items } : cat,
+  );
+}
+
+/** Lo que se anuncia al lector de pantalla después de mover. */
+export function textoPosicion(
+  nombre: string,
+  posicion: number,
+  total: number,
+): string {
+  return `«${nombre}» quedó en la posición ${posicion} de ${total}`;
+}

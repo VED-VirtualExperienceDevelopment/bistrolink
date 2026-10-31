@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { apiFetch } from "@/lib/api-client";
+import { ApiError, apiFetch } from "@/lib/api-client";
 import { getKeycloak } from "@/lib/keycloak";
 import { useKeycloakAuth } from "@/components/providers/KeycloakProvider";
 import type { Socket } from "socket.io-client";
@@ -14,7 +14,7 @@ import {
   type ArchivarObjetivo,
 } from "@/components/menu/ArchivarDialog";
 import { FiltrosCarta } from "@/components/menu/FiltrosCarta";
-import { MenuAcciones } from "@/components/menu/MenuAcciones";
+import { MenuAcciones, type AccionMenu } from "@/components/menu/MenuAcciones";
 import {
   IndiceCategorias,
   MINIMO_CATEGORIAS_INDICE,
@@ -44,6 +44,10 @@ import {
   sinItem,
   textoContadorCarta,
   textoItemsDeCategoria,
+  conCategoriaMovida,
+  conItemMovido,
+  textoPosicion,
+  type Desplazamiento,
   type CategoriaGestion,
   type ItemGestion,
 } from "@/components/menu/gestion-carta.utils";
@@ -62,6 +66,47 @@ const textoAvisoDeshacer = (objetivo: ArchivarObjetivo | null) => {
     ? `Ítem «${objetivo.nombre}» archivado`
     : `Categoría «${objetivo.nombre}» archivada`;
 };
+
+/**
+ * BL-399: «Subir» y «Bajar» en el menú «⋯», solo cuando hay adónde moverlo.
+ */
+function accionesDeOrden(
+  puedeSubir: boolean,
+  puedeBajar: boolean,
+  onMover: (desplazamiento: Desplazamiento) => void,
+): AccionMenu[] {
+  const acciones: AccionMenu[] = [];
+  if (puedeSubir) {
+    acciones.push({
+      id: "subir",
+      texto: "Subir",
+      icono: "arrow_upward",
+      onSelect: () => onMover(-1),
+    });
+  }
+  if (puedeBajar) {
+    acciones.push({
+      id: "bajar",
+      texto: "Bajar",
+      icono: "arrow_downward",
+      onSelect: () => onMover(1),
+    });
+  }
+  return acciones;
+}
+
+/**
+ * BL-399: al reordenar, React mueve el elemento en la página y el navegador
+ * puede perder el foco. Se lo devuelve al «⋯» de lo que se movió, para
+ * poder seguir subiendo o bajando con el teclado.
+ */
+function enfocarMenuDe(selector: string) {
+  requestAnimationFrame(() => {
+    document
+      .querySelector<HTMLButtonElement>(`${selector} button[aria-haspopup="menu"]`)
+      ?.focus();
+  });
+}
 
 // ============================================================================
 // AGOTADO
@@ -92,6 +137,10 @@ interface ItemCardProps {
   readonly onEditar: (categoria: CategoriaGestion, item: ItemGestion) => void;
   readonly onCambiarDisponibilidad: (itemId: string, actual: boolean) => void;
   readonly onArchivar: (item: ItemGestion) => void;
+  // BL-399: mover un lugar dentro de la categoría.
+  readonly onMover: (item: ItemGestion, desplazamiento: Desplazamiento) => void;
+  readonly puedeSubir: boolean;
+  readonly puedeBajar: boolean;
   // BL-395: editar y archivar son solo del ADMIN; el MOZO solo ve el switch.
   readonly puedeEditar: boolean;
 }
@@ -99,8 +148,8 @@ interface ItemCardProps {
 /**
  * BL-400: tarjeta simplificada. Nombre y precio en la misma línea, la
  * descripción debajo y el badge solo si está agotado. A la derecha, el
- * switch de disponibilidad y el menú «⋯» (Editar, Archivar). Para el ADMIN,
- * el nombre abre el formulario de edición.
+ * switch de disponibilidad y el menú «⋯» (Editar, Subir, Bajar, Archivar).
+ * Para el ADMIN, el nombre abre el formulario de edición.
  */
 function ItemCard({
   item,
@@ -108,10 +157,16 @@ function ItemCard({
   onEditar,
   onCambiarDisponibilidad,
   onArchivar,
+  onMover,
+  puedeSubir,
+  puedeBajar,
   puedeEditar,
 }: ItemCardProps) {
   return (
-    <li className="flex items-start gap-3 rounded-xl border border-outline-variant bg-surface-container-lowest p-3">
+    <li
+      data-acciones-item={item.id}
+      className="flex items-start gap-3 rounded-xl border border-outline-variant bg-surface-container-lowest p-3"
+    >
       <div className="h-14 w-14 flex-none overflow-hidden rounded-lg border border-outline-variant bg-surface-container">
         <ItemImagen
           url={item.imagenUrl}
@@ -168,6 +223,9 @@ function ItemCard({
                 icono: "edit",
                 onSelect: () => onEditar(categoria, item),
               },
+              ...accionesDeOrden(puedeSubir, puedeBajar, (d) =>
+                onMover(item, d),
+              ),
               {
                 id: "archivar",
                 texto: "Archivar",
@@ -242,6 +300,11 @@ export default function AdminMenuPage() {
     null,
   );
   const vencerAvisoDeshacer = useCallback(() => setUltimoArchivo(null), []);
+  // BL-399: con filtros la lista está incompleta y «subir un lugar» no sería
+  // claro, así que solo se reordena viendo la carta entera.
+  const puedeOrdenar = puedeEditarCarta && !conFiltros;
+  // Mientras se guarda un orden no se acepta otro, para que no se crucen.
+  const guardandoOrdenRef = useRef(false);
 
   const cargarDatos = useCallback(async () => {
     try {
@@ -315,6 +378,10 @@ export default function AdminMenuPage() {
       setCategorias((prev) => sinItem(prev, data.itemId));
     const alRetirarCategoria = (data: { categoriaId: string }) =>
       setCategorias((prev) => sinCategoria(prev, data.categoriaId));
+    // BL-399: alguien cambió el orden: se vuelve a cargar la carta.
+    const alReordenarCarta = () => {
+      void cargarDatos();
+    };
 
     // BL-398: al reconectar se vuelve a cargar la carta, porque pudieron
     // perderse cambios mientras no había conexión.
@@ -332,6 +399,7 @@ export default function AdminMenuPage() {
     socket.on("menu:categoria:updated", alActualizarCategoria);
     socket.on("menu:item:retirado", alRetirarItem);
     socket.on("menu:categoria:retirada", alRetirarCategoria);
+    socket.on("menu:carta:reordenada", alReordenarCarta);
     socket.on("connect", alConectar);
     socket.on("disconnect", alDesconectar);
     socket.on("connect_error", alFallarConexion);
@@ -341,6 +409,7 @@ export default function AdminMenuPage() {
       socket.off("menu:categoria:updated", alActualizarCategoria);
       socket.off("menu:item:retirado", alRetirarItem);
       socket.off("menu:categoria:retirada", alRetirarCategoria);
+      socket.off("menu:carta:reordenada", alReordenarCarta);
       socket.off("connect", alConectar);
       socket.off("disconnect", alDesconectar);
       socket.off("connect_error", alFallarConexion);
@@ -472,6 +541,75 @@ export default function AdminMenuPage() {
           : "No se pudo actualizar la categoría",
       );
     }
+  };
+
+  // BL-399: el cambio se ve enseguida y se guarda la lista completa de ids.
+  // Si falla, vuelve como estaba; si es 409 (la carta cambió en otra
+  // pantalla), además se trae la carta actual.
+  const guardarOrden = async (
+    anterior: CategoriaGestion[],
+    nuevas: CategoriaGestion[],
+    ruta: string,
+    ids: string[],
+    novedad: string,
+  ) => {
+    guardandoOrdenRef.current = true;
+    setErrorPagina(null);
+    setCategorias(nuevas);
+    setUltimaNovedad(novedad);
+    try {
+      const keycloak = getKeycloak();
+      await apiFetch(ruta, keycloak.token, {
+        method: "PUT",
+        body: JSON.stringify({ ids }),
+      });
+    } catch (error: unknown) {
+      setCategorias(anterior);
+      setErrorPagina(
+        error instanceof Error ? error.message : "No se pudo guardar el orden",
+      );
+      if (error instanceof ApiError && error.status === 409) void cargarDatos();
+    } finally {
+      guardandoOrdenRef.current = false;
+    }
+  };
+
+  const moverCategoria = (
+    categoria: CategoriaGestion,
+    desplazamiento: Desplazamiento,
+  ) => {
+    if (guardandoOrdenRef.current) return;
+    const nuevas = conCategoriaMovida(categorias, categoria.id, desplazamiento);
+    if (!nuevas) return;
+    const posicion = nuevas.findIndex((c) => c.id === categoria.id) + 1;
+    void guardarOrden(
+      categorias,
+      nuevas,
+      "/admin/menu/categorias/orden",
+      nuevas.map((c) => c.id),
+      textoPosicion(categoria.nombre, posicion, nuevas.length),
+    );
+    enfocarMenuDe(`[data-acciones-categoria="${categoria.id}"]`);
+  };
+
+  const moverItem = (
+    categoria: CategoriaGestion,
+    item: ItemGestion,
+    desplazamiento: Desplazamiento,
+  ) => {
+    if (guardandoOrdenRef.current) return;
+    const nuevas = conItemMovido(categorias, categoria.id, item.id, desplazamiento);
+    if (!nuevas) return;
+    const items = nuevas.find((c) => c.id === categoria.id)?.items ?? [];
+    const posicion = items.findIndex((i) => i.id === item.id) + 1;
+    void guardarOrden(
+      categorias,
+      nuevas,
+      `/admin/menu/categoria/${categoria.id}/orden`,
+      items.map((i) => i.id),
+      textoPosicion(item.nombre, posicion, items.length),
+    );
+    enfocarMenuDe(`[data-acciones-item="${item.id}"]`);
   };
 
   // Contador del encabezado según lo que se está viendo.
@@ -673,7 +811,7 @@ export default function AdminMenuPage() {
             </div>
           )}
           <div className="space-y-6">
-            {categoriasVisibles.map((cat) => (
+            {categoriasVisibles.map((cat, indiceCategoria) => (
               <section
                 key={cat.id}
                 id={idSeccionCategoria(cat.id)}
@@ -712,7 +850,10 @@ export default function AdminMenuPage() {
                     )}
                   </div>
                   {puedeEditarCarta && (
-                    <div className="flex items-center gap-2">
+                    <div
+                      data-acciones-categoria={cat.id}
+                      className="flex items-center gap-2"
+                    >
                       <span className="text-body-md text-on-surface-variant">Visible</span>
                       <Switch
                         checked={cat.activo}
@@ -732,6 +873,12 @@ export default function AdminMenuPage() {
                                 categoria: cat,
                               }),
                           },
+                          ...accionesDeOrden(
+                            puedeOrdenar && indiceCategoria > 0,
+                            puedeOrdenar &&
+                              indiceCategoria < categoriasVisibles.length - 1,
+                            (d) => moverCategoria(cat, d),
+                          ),
                           {
                             id: "archivar",
                             texto: "Archivar",
@@ -757,7 +904,7 @@ export default function AdminMenuPage() {
                   // BL-398: en PC los ítems van en 2 o 3 columnas para aprovechar
                   // el ancho sin que cada tarjeta quede demasiado estirada.
                   <ul className="grid grid-cols-1 gap-3 p-4 lg:grid-cols-2 2xl:grid-cols-3">
-                    {cat.items.map((item) => (
+                    {cat.items.map((item, indiceItem) => (
                       <ItemCard
                         key={item.id}
                         item={item}
@@ -766,6 +913,11 @@ export default function AdminMenuPage() {
                         onCambiarDisponibilidad={cambiarDisponibilidad}
                         onArchivar={(i) =>
                           setAArchivar({ tipo: "item", id: i.id, nombre: i.nombre })
+                        }
+                        onMover={(i, d) => moverItem(cat, i, d)}
+                        puedeSubir={puedeOrdenar && indiceItem > 0}
+                        puedeBajar={
+                          puedeOrdenar && indiceItem < cat.items.length - 1
                         }
                         puedeEditar={puedeEditarCarta}
                       />

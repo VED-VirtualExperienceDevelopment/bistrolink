@@ -1,4 +1,8 @@
 import {
+  conCategoriaMovida,
+  conItemMovido,
+  moverUnLugar,
+  textoPosicion,
   errorNombreItem,
   errorPrecioItem,
   normalizarPrecio,
@@ -281,5 +285,53 @@ describe("Gestión de Carta: formulario de ítem (BL-398)", () => {
         "Usá solo números, con hasta 2 decimales (por ejemplo, 590 o 590,50).",
       );
     }
+  });
+});
+
+describe("Gestión de Carta: ordenar con Subir y Bajar (BL-399)", () => {
+  const lista = [{ id: "a" }, { id: "b" }, { id: "c" }];
+
+  it("[TC-U-254] mueve un lugar hacia arriba o hacia abajo", () => {
+    expect(moverUnLugar(lista, "b", -1)?.map((x) => x.id)).toEqual([
+      "b",
+      "a",
+      "c",
+    ]);
+    expect(moverUnLugar(lista, "b", 1)?.map((x) => x.id)).toEqual([
+      "a",
+      "c",
+      "b",
+    ]);
+    // No cambia la lista original.
+    expect(lista.map((x) => x.id)).toEqual(["a", "b", "c"]);
+  });
+
+  it("[TC-U-254] en el borde o con un id que no está, no hay nada que mover", () => {
+    expect(moverUnLugar(lista, "a", -1)).toBeNull();
+    expect(moverUnLugar(lista, "c", 1)).toBeNull();
+    expect(moverUnLugar(lista, "x", 1)).toBeNull();
+  });
+
+  it("[TC-U-255] mueve una categoría y renumera el orden desde 1", () => {
+    const resultado = conCategoriaMovida(CARTA, "c2", -1);
+    expect(resultado?.map((c) => [c.id, c.orden])).toEqual([
+      ["c2", 1],
+      ["c1", 2],
+    ]);
+    expect(conCategoriaMovida(CARTA, "c1", -1)).toBeNull();
+  });
+
+  it("[TC-U-256] mueve un ítem solo dentro de su categoría", () => {
+    const resultado = conItemMovido(CARTA, "c1", "b", -1);
+    expect(resultado?.[0].items.map((i) => i.id)).toEqual(["b", "a"]);
+    expect(resultado?.[1]).toBe(CARTA[1]);
+    expect(conItemMovido(CARTA, "c1", "a", -1)).toBeNull();
+    expect(conItemMovido(CARTA, "zz", "a", 1)).toBeNull();
+  });
+
+  it("[TC-U-257] anuncia la posición nueva", () => {
+    expect(textoPosicion("Postres", 2, 5)).toBe(
+      "«Postres» quedó en la posición 2 de 5",
+    );
   });
 });
