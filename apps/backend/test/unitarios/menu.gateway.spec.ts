@@ -119,6 +119,15 @@ describe('MenuGateway', () => {
     });
   });
 
+  describe('emitCartaReordenada (BL-399)', () => {
+    it('[TC-U-253] emite menu:carta:reordenada a la room del tenant', () => {
+      gateway.emitCartaReordenada('test-tenant-id');
+
+      expect(mockServer.to).toHaveBeenCalledWith('tenant_test-tenant-id');
+      expect(mockServer.emit).toHaveBeenCalledWith('menu:carta:reordenada', {});
+    });
+  });
+
   describe('handleConnection', () => {
     it('debe unir al cliente a la room del tenant si tenantId está presente', () => {
       const mockClient = {

@@ -96,6 +96,20 @@ export const MENSAJE_CATEGORIA_ARCHIVADA =
 // BL-394: bloqueo optimista (propuesta v0.9, §3.3).
 export const MENSAJE_EDICION_CONCURRENTE =
   'Otra persona modificó este dato. Recargá para ver los cambios.';
+// BL-399: la lista para reordenar no coincide con la carta (por ejemplo,
+// otra persona agregó o archivó algo mientras tanto).
+export const MENSAJE_ORDEN_DESACTUALIZADO =
+  'La carta cambió mientras la ordenabas. Recargá e intentá de nuevo.';
+
+/** BL-399: los dos conjuntos de ids tienen exactamente los mismos elementos. */
+export function mismosIds(
+  pedidos: readonly string[],
+  actuales: readonly string[],
+): boolean {
+  if (pedidos.length !== actuales.length) return false;
+  const conjunto = new Set(actuales);
+  return pedidos.every((id) => conjunto.has(id));
+}
 
 function esErrorPrisma(err: unknown, codigo: string): boolean {
   return (
@@ -352,7 +366,8 @@ export class MenuAdminService {
             ...data,
             tenantId,
             restauranteId: finalRestauranteId,
-            orden: data.orden ?? 0,
+            // BL-399: la categoría nueva va al final de la carta.
+            orden: await this.siguienteOrdenCategoria(tx, finalRestauranteId),
           },
         }),
         MENSAJE_CATEGORIA_REPETIDA,
@@ -556,6 +571,91 @@ export class MenuAdminService {
       this.menuGateway.emitCategoriaRetirada(tenantId, { categoriaId });
       this.logger.log(`Categoría eliminada: ${categoriaId}`);
       return { id: categoriaId, eliminada: true };
+    });
+  }
+
+  /** BL-399: las categorías nuevas van al final de la carta. */
+  private async siguienteOrdenCategoria(
+    tx: PrismaClient,
+    restauranteId: string,
+  ): Promise<number> {
+    const { _max } = await tx.categoriaCarta.aggregate({
+      where: { restauranteId },
+      _max: { orden: true },
+    });
+    return (_max.orden ?? 0) + 1;
+  }
+
+  /**
+   * BL-399: guarda de una vez el orden de las categorías del restaurante
+   * (1, 2, 3… según la lista). La lista tiene que traer exactamente las
+   * categorías no archivadas; si no, 409 (la carta cambió mientras tanto) y
+   * no se guarda nada. Cambiar el orden no se audita (propuesta §3.2).
+   */
+  async reordenarCategorias(
+    tenantId: string,
+    restauranteId: string | undefined,
+    keycloakId: string,
+    ids: string[],
+  ) {
+    const finalRestauranteId = await this.resolveRestauranteId(
+      tenantId,
+      restauranteId,
+      keycloakId,
+    );
+    return this.prisma.runInTenantContext(tenantId, async (tx) => {
+      const actuales = await tx.categoriaCarta.findMany({
+        where: { restauranteId: finalRestauranteId, archivadaEn: null },
+        select: { id: true },
+      });
+      if (
+        !mismosIds(
+          ids,
+          actuales.map((c) => c.id),
+        )
+      ) {
+        throw new ConflictException(MENSAJE_ORDEN_DESACTUALIZADO);
+      }
+      for (const [indice, id] of ids.entries()) {
+        await tx.categoriaCarta.update({
+          where: { id },
+          data: { orden: indice + 1 },
+        });
+      }
+      this.menuGateway.emitCartaReordenada(tenantId);
+      this.logger.log(`Categorías reordenadas: ${ids.length}`);
+      return { ids };
+    });
+  }
+
+  /**
+   * BL-399: guarda de una vez el orden de los ítems de una categoría. La
+   * lista tiene que traer exactamente sus ítems no archivados; si no, 409.
+   */
+  async reordenarItems(tenantId: string, categoriaId: string, ids: string[]) {
+    return this.prisma.runInTenantContext(tenantId, async (tx) => {
+      await this.categoriaDelTenant(tx, tenantId, categoriaId);
+      const actuales = await tx.itemCarta.findMany({
+        where: { categoriaId, archivadoEn: null },
+        select: { id: true },
+      });
+      if (
+        !mismosIds(
+          ids,
+          actuales.map((i) => i.id),
+        )
+      ) {
+        throw new ConflictException(MENSAJE_ORDEN_DESACTUALIZADO);
+      }
+      for (const [indice, id] of ids.entries()) {
+        await tx.itemCarta.update({
+          where: { id },
+          data: { orden: indice + 1 },
+        });
+      }
+      this.menuGateway.emitCartaReordenada(tenantId);
+      this.logger.log(`Ítems reordenados en ${categoriaId}: ${ids.length}`);
+      return { ids };
     });
   }
 

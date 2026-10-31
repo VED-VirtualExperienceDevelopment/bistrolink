@@ -1,14 +1,12 @@
 import {
   IsISO8601,
   IsBoolean,
-  IsInt,
   IsNotEmpty,
   IsOptional,
   IsString,
   MaxLength,
-  Min,
 } from 'class-validator';
-import { Transform, Type } from 'class-transformer';
+import { Transform } from 'class-transformer';
 import {
   LARGO_MAXIMO_DESCRIPCION_CATEGORIA,
   LARGO_MAXIMO_NOMBRE_CATEGORIA,
@@ -34,11 +32,7 @@ export class UpdateCategoriaDto {
   })
   descripcion?: string;
 
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(0, { message: 'El orden no puede ser negativo' })
-  orden?: number;
+  // BL-399: sin «orden»; se cambia con PUT /admin/menu/categorias/orden.
 
   // Visible en la carta del comensal (el switch «Visible»).
   @IsOptional()

@@ -70,6 +70,11 @@ export class MenuGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.server.to(`tenant_${tenantId}`).emit('menu:item:retirado', payload);
   }
 
+  // BL-399: cambió el orden de la carta; las pantallas la vuelven a cargar.
+  emitCartaReordenada(tenantId: string) {
+    this.server.to(`tenant_${tenantId}`).emit('menu:carta:reordenada', {});
+  }
+
   // BL-394: una categoría se archivó o se eliminó; las pantallas la sacan.
   emitCategoriaRetirada(tenantId: string, payload: { categoriaId: string }) {
     this.server

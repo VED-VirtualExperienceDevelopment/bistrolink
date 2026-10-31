@@ -16,7 +16,9 @@ import {
   MENSAJE_ITEM_ARCHIVADO,
   MENSAJE_ITEM_CON_HISTORIAL,
   MENSAJE_ITEM_REPETIDO,
+  MENSAJE_ORDEN_DESACTUALIZADO,
   MenuAdminService,
+  mismosIds,
 } from '../../src/menu/menu-admin.service';
 import { TenantPrismaService } from '../../src/prisma/tenant-prisma.service';
 import { MenuGateway } from '../../src/menu/menu.gateway';
@@ -59,6 +61,8 @@ describe('MenuAdminService', () => {
       update: jest.fn(),
       findMany: jest.fn(),
       delete: jest.fn(),
+      // BL-399: orden de las categorías nuevas.
+      aggregate: jest.fn(),
     },
     itemCarta: {
       create: jest.fn(),
@@ -68,6 +72,8 @@ describe('MenuAdminService', () => {
       aggregate: jest.fn(),
       count: jest.fn(),
       delete: jest.fn(),
+      // BL-399: ítems de una categoría para reordenar.
+      findMany: jest.fn(),
     },
     lineaPedido: {
       count: jest.fn(),
@@ -89,6 +95,7 @@ describe('MenuAdminService', () => {
     emitItemDataUpdated: jest.fn(),
     emitItemRetirado: jest.fn(),
     emitCategoriaRetirada: jest.fn(),
+    emitCartaReordenada: jest.fn(),
   };
 
   const mockStorage = {
@@ -142,6 +149,9 @@ describe('MenuAdminService', () => {
     // BL-394: por defecto la categoría está vacía, el ítem no tiene pedidos y
     // un ítem nuevo va en la posición 1.
     mockTx.itemCarta.aggregate.mockResolvedValue({ _max: { orden: null } });
+    mockTx.categoriaCarta.aggregate.mockResolvedValue({
+      _max: { orden: null },
+    });
     mockTx.itemCarta.count.mockResolvedValue(0);
     mockTx.lineaPedido.count.mockResolvedValue(0);
   });
@@ -760,63 +770,35 @@ describe('MenuAdminService', () => {
     const restauranteId = 'rest-123';
     const keycloakId = 'user-123';
 
-    it('debe crear una categoría con orden personalizado', async () => {
-      const body = { nombre: 'Bebidas', orden: 5 };
-      const mockCategoria = {
+    it('[TC-U-249] BL-399: la categoría nueva va al final de la carta', async () => {
+      mockTx.categoriaCarta.aggregate.mockResolvedValue({ _max: { orden: 4 } });
+      mockTx.categoriaCarta.create.mockResolvedValue({
         id: 'cat-new',
-        ...body,
-        restauranteId,
-        tenantId,
-      };
+        nombre: 'Bebidas',
+        orden: 5,
+      });
 
-      mockTx.categoriaCarta.create.mockResolvedValue(mockCategoria);
+      await service.createCategoria(tenantId, restauranteId, keycloakId, {
+        nombre: 'Bebidas',
+      });
 
-      const result = await service.createCategoria(
-        tenantId,
-        restauranteId,
-        keycloakId,
-        body,
-      );
-
-      expect(result).toEqual(mockCategoria);
+      expect(mockTx.categoriaCarta.aggregate).toHaveBeenCalledWith({
+        where: { restauranteId },
+        _max: { orden: true },
+      });
       expect(mockTx.categoriaCarta.create).toHaveBeenCalledWith({
-        data: {
-          nombre: 'Bebidas',
-          orden: 5,
-          restauranteId,
-          tenantId,
-        },
+        data: { nombre: 'Bebidas', orden: 5, restauranteId, tenantId },
       });
     });
 
-    it('debe crear una categoría con orden por defecto (0) si no se especifica', async () => {
-      const body = { nombre: 'Postres' };
-      const mockCategoria = {
-        id: 'cat-new-2',
+    it('[TC-U-249] BL-399: la primera categoría del restaurante queda en 1, no en 0', async () => {
+      mockTx.categoriaCarta.create.mockResolvedValue({ id: 'cat-new' });
+
+      await service.createCategoria(tenantId, restauranteId, keycloakId, {
         nombre: 'Postres',
-        orden: 0,
-        restauranteId,
-        tenantId,
-      };
-
-      mockTx.categoriaCarta.create.mockResolvedValue(mockCategoria);
-
-      const result = await service.createCategoria(
-        tenantId,
-        restauranteId,
-        keycloakId,
-        body,
-      );
-
-      expect(result).toEqual(mockCategoria);
-      expect(mockTx.categoriaCarta.create).toHaveBeenCalledWith({
-        data: {
-          nombre: 'Postres',
-          orden: 0,
-          restauranteId,
-          tenantId,
-        },
       });
+
+      expect(mockTx.categoriaCarta.create.mock.calls[0][0].data.orden).toBe(1);
     });
   });
 
@@ -1611,7 +1593,7 @@ describe('MenuAdminService', () => {
       });
     });
 
-    it('[TC-U-220] cambiar solo el orden de una categoría no se audita', async () => {
+    it('[TC-U-220] guardar una categoría sin cambios no se audita', async () => {
       const antes = {
         id: 'cat-1',
         nombre: 'Picadas',
@@ -1621,9 +1603,14 @@ describe('MenuAdminService', () => {
         archivadaEn: null,
       };
       mockTx.categoriaCarta.findFirst.mockResolvedValue(antes);
-      mockTx.categoriaCarta.update.mockResolvedValue({ ...antes, orden: 3 });
+      mockTx.categoriaCarta.update.mockResolvedValue(antes);
 
-      await service.updateCategoria(tenantId, 'cat-1', { orden: 3 }, actor);
+      await service.updateCategoria(
+        tenantId,
+        'cat-1',
+        { nombre: 'Picadas' },
+        actor,
+      );
 
       expect(mockAuditLog.registrarEnTx).not.toHaveBeenCalled();
     });
@@ -1755,6 +1742,102 @@ describe('MenuAdminService', () => {
       await expect(
         service.updateItem(tenantId, 'item-1', { categoriaId: 'cat-2' }),
       ).rejects.toThrow(MENSAJE_CATEGORIA_ARCHIVADA);
+      expect(mockTx.itemCarta.update).not.toHaveBeenCalled();
+    });
+  });
+  describe('reordenar (BL-399)', () => {
+    const tenantId = 'test-tenant-id';
+    const C1 = 'cat-1';
+    const C2 = 'cat-2';
+    const C3 = 'cat-3';
+
+    it('[TC-U-250] mismosIds: mismos elementos en cualquier orden', () => {
+      expect(mismosIds([C2, C1], [C1, C2])).toBe(true);
+      expect(mismosIds([C1], [C1, C2])).toBe(false);
+      expect(mismosIds([C1, C3], [C1, C2])).toBe(false);
+    });
+
+    it('[TC-U-251] guarda el orden de las categorías como 1, 2, 3 y avisa a las pantallas', async () => {
+      mockTx.categoriaCarta.findMany.mockResolvedValue([
+        { id: C1 },
+        { id: C2 },
+        { id: C3 },
+      ]);
+
+      await service.reordenarCategorias(tenantId, 'rest-1', 'user-1', [
+        C3,
+        C1,
+        C2,
+      ]);
+
+      // Solo las no archivadas del restaurante.
+      expect(mockTx.categoriaCarta.findMany).toHaveBeenCalledWith({
+        where: { restauranteId: 'rest-1', archivadaEn: null },
+        select: { id: true },
+      });
+      expect(
+        mockTx.categoriaCarta.update.mock.calls.map(([args]) => [
+          args.where.id,
+          args.data.orden,
+        ]),
+      ).toEqual([
+        [C3, 1],
+        [C1, 2],
+        [C2, 3],
+      ]);
+      expect(mockMenuGateway.emitCartaReordenada).toHaveBeenCalledWith(
+        tenantId,
+      );
+    });
+
+    it('[TC-U-252] si la lista no coincide con la carta, 409 y no guarda nada', async () => {
+      mockTx.categoriaCarta.findMany.mockResolvedValue([
+        { id: C1 },
+        { id: C2 },
+      ]);
+
+      await expect(
+        service.reordenarCategorias(tenantId, 'rest-1', 'user-1', [C1]),
+      ).rejects.toThrow(MENSAJE_ORDEN_DESACTUALIZADO);
+      expect(mockTx.categoriaCarta.update).not.toHaveBeenCalled();
+      expect(mockMenuGateway.emitCartaReordenada).not.toHaveBeenCalled();
+    });
+
+    it('[TC-U-251] guarda el orden de los ítems de una categoría', async () => {
+      mockTx.categoriaCarta.findFirst.mockResolvedValue({ id: C1 });
+      mockTx.itemCarta.findMany.mockResolvedValue([
+        { id: 'i-1' },
+        { id: 'i-2' },
+      ]);
+
+      await service.reordenarItems(tenantId, C1, ['i-2', 'i-1']);
+
+      expect(mockTx.itemCarta.findMany).toHaveBeenCalledWith({
+        where: { categoriaId: C1, archivadoEn: null },
+        select: { id: true },
+      });
+      expect(
+        mockTx.itemCarta.update.mock.calls.map(([args]) => [
+          args.where.id,
+          args.data.orden,
+        ]),
+      ).toEqual([
+        ['i-2', 1],
+        ['i-1', 2],
+      ]);
+    });
+
+    it('[TC-U-252] ítems de otra categoría o de otro tenant: 404 o 409', async () => {
+      mockTx.categoriaCarta.findFirst.mockResolvedValueOnce(null);
+      await expect(
+        service.reordenarItems(tenantId, C1, ['i-1']),
+      ).rejects.toThrow(NotFoundException);
+
+      mockTx.categoriaCarta.findFirst.mockResolvedValue({ id: C1 });
+      mockTx.itemCarta.findMany.mockResolvedValue([{ id: 'i-1' }]);
+      await expect(
+        service.reordenarItems(tenantId, C1, ['i-otra-categoria']),
+      ).rejects.toThrow(MENSAJE_ORDEN_DESACTUALIZADO);
       expect(mockTx.itemCarta.update).not.toHaveBeenCalled();
     });
   });

@@ -4,6 +4,7 @@ import { validate } from 'class-validator';
 import { CreateCategoriaDto } from '../../src/menu/dto/create-categoria.dto';
 import { UpdateCategoriaDto } from '../../src/menu/dto/update-categoria.dto';
 import { CambiarDisponibilidadDto } from '../../src/menu/dto/cambiar-disponibilidad.dto';
+import { ReordenarDto } from '../../src/menu/dto/reordenar.dto';
 
 /** BL-395: DTOs de la categoría (hallazgo C6) y de la disponibilidad. */
 
@@ -11,12 +12,11 @@ const errores = async <T extends object>(clase: new () => T, plano: object) =>
   (await validate(plainToInstance(clase, plano))).map((e) => e.property);
 
 describe('CreateCategoriaDto (BL-395)', () => {
-  it('[TC-U-179] acepta nombre, descripción y orden', async () => {
+  it('[TC-U-179] acepta nombre y descripción', async () => {
     expect(
       await errores(CreateCategoriaDto, {
         nombre: 'Picadas',
         descripcion: 'Para compartir',
-        orden: 2,
       }),
     ).toEqual([]);
   });
@@ -47,12 +47,6 @@ describe('CreateCategoriaDto (BL-395)', () => {
         descripcion: 'a'.repeat(201),
       }),
     ).toEqual(['descripcion']);
-  });
-
-  it('[TC-U-180] rechaza un orden negativo', async () => {
-    expect(
-      await errores(CreateCategoriaDto, { nombre: 'Picadas', orden: -1 }),
-    ).toEqual(['orden']);
   });
 
   it('[TC-U-181] quita los espacios del principio y del final', () => {
@@ -100,4 +94,22 @@ describe('CambiarDisponibilidadDto (BL-395)', () => {
       ]);
     },
   );
+});
+
+describe('ReordenarDto (BL-399)', () => {
+  const A = '11111111-1111-1111-1111-111111111111';
+  const B = '22222222-2222-2222-2222-222222222222';
+
+  it('[TC-U-248] acepta la lista completa de ids, sin repetir', async () => {
+    expect(await errores(ReordenarDto, { ids: [A, B] })).toEqual([]);
+  });
+
+  it.each([
+    ['vacía', []],
+    ['con repetidos', [A, A]],
+    ['con algo que no es un UUID', [A, 'no-es-uuid']],
+    ['que no es una lista', A],
+  ])('[TC-U-248] rechaza una lista %s', async (_caso, ids) => {
+    expect(await errores(ReordenarDto, { ids })).toEqual(['ids']);
+  });
 });

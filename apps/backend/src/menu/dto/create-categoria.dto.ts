@@ -1,12 +1,5 @@
-import {
-  IsInt,
-  IsNotEmpty,
-  IsOptional,
-  IsString,
-  MaxLength,
-  Min,
-} from 'class-validator';
-import { Transform, Type } from 'class-transformer';
+import { IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import { Transform } from 'class-transformer';
 
 /** BL-395: los textos llegan sin espacios al principio ni al final. */
 export const sinEspaciosExtremos = ({ value }: { value: unknown }) =>
@@ -38,11 +31,6 @@ export class CreateCategoriaDto {
   })
   descripcion?: string;
 
-  // El formulario actual todavía lo manda. Sale cuando la vista ordene con
-  // Subir / Bajar (BL-398 y BL-399).
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(0, { message: 'El orden no puede ser negativo' })
-  orden?: number;
+  // BL-399: sin «orden». La categoría nueva va al final de la carta y el
+  // orden se cambia arrastrando (PUT /admin/menu/categorias/orden).
 }

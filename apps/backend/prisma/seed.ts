@@ -196,6 +196,9 @@ async function tenantA() {
       tenantId: TENANT_A_ID,
       categoriaId: CATEGORIA_PLATOS_ID,
       nombre: 'Milanesa a la napolitana',
+      // BL-399: el orden no tiene valor por defecto; es el primero de su
+      // categoría.
+      orden: 1,
       descripcion: 'Con papas fritas y ensalada mixta',
       precio: 590,
       disponible: true,
@@ -213,6 +216,9 @@ async function tenantA() {
       tenantId: TENANT_A_ID,
       categoriaId: CATEGORIA_BEBIDAS_ID,
       nombre: 'Agua con gas',
+      // BL-399: el orden no tiene valor por defecto; es el primero de su
+      // categoría.
+      orden: 1,
       descripcion: null,
       precio: 90,
       disponible: false,

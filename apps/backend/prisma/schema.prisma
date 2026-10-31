@@ -231,7 +231,9 @@ model CategoriaCarta {
   tenantId      String    @map("tenant_id") @db.Uuid
   restauranteId String    @map("restaurante_id") @db.Uuid
   nombre        String
-  orden         Int       @default(0)
+  // BL-399: la asigna siempre la API (al final al crear; 1, 2, 3… al
+  // reordenar). Sin valor por defecto, para que nunca quede un 0 silencioso.
+  orden         Int
   // Visible en la carta del comensal (el switch «Visible»). Se mantiene el
   // nombre `activo` para no romper la versión anterior de la API durante el
   // deploy (expand/contract, BL-393).
@@ -262,7 +264,8 @@ model ItemCarta {
   imagenKey   String?   @map("imagen_key")
   // BL-393: orden manual dentro de la categoría. La migración lo completa con
   // el orden alfabético que había, así la carta se ve igual.
-  orden       Int       @default(0)
+  // BL-399: sin valor por defecto (ver CategoriaCarta.orden).
+  orden       Int
   // BL-393: baja lógica. Nulo = activo. Nombre único entre los no archivados
   // de la categoría: índice parcial creado con SQL en la migración. El precio
   // tiene CHECK (precio >= 0) en la base.

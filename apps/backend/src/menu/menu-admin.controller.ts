@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Patch,
+  Put,
   Delete,
   Param,
   Body,
@@ -23,6 +24,7 @@ import { UpdateItemDto } from './dto/update-item.dto';
 import { UpdateCategoriaDto } from './dto/update-categoria.dto';
 import { CreateCategoriaDto } from './dto/create-categoria.dto';
 import { CambiarDisponibilidadDto } from './dto/cambiar-disponibilidad.dto';
+import { ReordenarDto } from './dto/reordenar.dto';
 import { PresignedUrlDto } from './dto/presigned-url.dto';
 import { ConfirmarImagenDto } from './dto/confirmar-imagen.dto';
 import { ImagenesMenuService } from './imagenes-menu.service';
@@ -107,6 +109,30 @@ export class MenuAdminController {
       keycloakId,
       dto,
     );
+  }
+
+  /**
+   * BL-399: orden nuevo de las categorías (lista completa de ids). 409 si la
+   * lista no coincide con las categorías no archivadas.
+   */
+  @Put('categorias/orden')
+  async reordenarCategorias(@Req() req: any, @Body() dto: ReordenarDto) {
+    return this.menuAdminService.reordenarCategorias(
+      req.user.tenantId,
+      req.user.restauranteId,
+      req.user.sub,
+      dto.ids,
+    );
+  }
+
+  /** BL-399: orden nuevo de los ítems de una categoría (lista completa). */
+  @Put('categoria/:id/orden')
+  async reordenarItems(
+    @Req() req: any,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ReordenarDto,
+  ) {
+    return this.menuAdminService.reordenarItems(req.user.tenantId, id, dto.ids);
   }
 
   @Patch('categoria/:id')

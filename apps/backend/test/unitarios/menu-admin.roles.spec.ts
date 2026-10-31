@@ -18,6 +18,8 @@ const SOLO_ADMIN: Metodo[] = [
   'archivarCategoria',
   'restaurarCategoria',
   'eliminarCategoria',
+  'reordenarCategorias',
+  'reordenarItems',
   'createItem',
   'updateItem',
   'archivarItem',

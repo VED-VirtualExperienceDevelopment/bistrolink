@@ -35,8 +35,8 @@ const CLASE_INPUT =
  * renombrar). Suma la descripción (BL-393) y manda la versión para el
  * bloqueo optimista (BL-394): si otra persona guardó antes, ofrece recargar.
  *
- * El campo «Posición» queda hasta que la carta se ordene con Subir / Bajar
- * (BL-399).
+ * BL-399: sin campo de posición. La categoría nueva va al final de la carta
+ * y el orden se cambia arrastrando.
  */
 export function CategoriaDialog({
   objetivo,
@@ -47,7 +47,6 @@ export function CategoriaDialog({
   const editando = objetivo?.modo === 'editar' ? objetivo.categoria : null;
   const [nombre, setNombre] = useState('');
   const [descripcion, setDescripcion] = useState('');
-  const [orden, setOrden] = useState('0');
   const [intentoGuardar, setIntentoGuardar] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -59,7 +58,6 @@ export function CategoriaDialog({
     if (!objetivo) return;
     setNombre(editando?.nombre ?? '');
     setDescripcion(editando?.descripcion ?? '');
-    setOrden(String(editando?.orden ?? 0));
     setIntentoGuardar(false);
     setError(null);
     setConflicto(false);
@@ -82,7 +80,6 @@ export function CategoriaDialog({
     const cuerpo = {
       nombre: nombre.trim(),
       descripcion: descripcion.trim(),
-      orden: Math.max(0, Number.parseInt(orden, 10) || 0),
     };
     try {
       const keycloak = getKeycloak();
@@ -163,25 +160,6 @@ export function CategoriaDialog({
           />
           <p id="categoria-descripcion-ayuda" className="mt-1 text-body-sm text-on-surface-variant">
             Se muestra debajo del nombre en la carta.
-          </p>
-        </div>
-
-        <div>
-          <label htmlFor="categoria-orden" className="mb-1 block text-label-md text-on-surface-variant">
-            Posición
-          </label>
-          <input
-            id="categoria-orden"
-            type="number"
-            min={0}
-            inputMode="numeric"
-            value={orden}
-            onChange={(e) => setOrden(e.target.value)}
-            aria-describedby="categoria-orden-ayuda"
-            className={`${CLASE_INPUT} border-outline-variant`}
-          />
-          <p id="categoria-orden-ayuda" className="mt-1 text-body-sm text-on-surface-variant">
-            Las categorías se muestran de menor a mayor.
           </p>
         </div>
 
