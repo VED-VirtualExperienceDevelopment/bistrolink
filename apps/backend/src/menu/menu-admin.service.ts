@@ -250,7 +250,8 @@ export class MenuAdminService {
           include: {
             items: {
               ...(incluirArchivados ? {} : { where: { archivadoEn: null } }),
-              orderBy: { nombre: 'asc' },
+              // BL-397: mismo orden que ve el comensal.
+              orderBy: [{ orden: 'asc' }, { nombre: 'asc' }],
               include: { _count: { select: { lineasPedido: true } } },
             },
           },

@@ -657,7 +657,7 @@ describe('MenuAdminService', () => {
         include: {
           items: {
             where: { archivadoEn: null },
-            orderBy: { nombre: 'asc' },
+            orderBy: [{ orden: 'asc' }, { nombre: 'asc' }],
             include: { _count: { select: { lineasPedido: true } } },
           },
         },

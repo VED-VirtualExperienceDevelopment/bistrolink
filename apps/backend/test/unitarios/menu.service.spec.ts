@@ -156,7 +156,7 @@ describe('MenuService - getMenuByRestaurante (HU-002)', () => {
       });
     });
 
-    it('debe devolver solo items disponibles', async () => {
+    it('[TC-U-212] BL-397: devuelve también los agotados, marcados con disponible=false', async () => {
       const tenantId = randomUUID();
       const restaurante = buildRestaurante({ tenantId });
       const categoria = buildCategoria({
@@ -174,9 +174,13 @@ describe('MenuService - getMenuByRestaurante (HU-002)', () => {
         restaurante.id,
       );
 
+      // BL-397: el frontend los muestra bloqueados, igual que en el QR.
       const itemsDevueltos = resultado.categorias[0].items;
-      expect(itemsDevueltos).toHaveLength(1);
-      expect(itemsDevueltos[0].nombre).toBe('Disponible');
+      expect(itemsDevueltos).toHaveLength(2);
+      expect(
+        itemsDevueltos.find((i: any) => i.nombre === 'No disponible')
+          ?.disponible,
+      ).toBe(false);
     });
 
     it('debe manejar múltiples categorías ordenadas correctamente', async () => {
@@ -274,31 +278,29 @@ describe('MenuService - getMenuByRestaurante (HU-002)', () => {
       expect(resultado.restaurante.id).toBe(restaurante.id);
     });
 
-    it('nunca debe devolver items con disponible=false', async () => {
+    it('[TC-U-213] BL-397: nunca pide archivados ni categorías ocultas o archivadas, y ordena por orden', async () => {
       const tenantId = randomUUID();
       const restaurante = buildRestaurante({ tenantId });
-      const categoria = buildCategoria({
-        items: [
-          buildItem({ disponible: true }),
-          buildItem({ disponible: false }),
-        ],
-      });
 
       mockTx.restaurante.findUnique.mockResolvedValue(restaurante);
-      mockCategoriaCartaFindMany([categoria]);
+      mockCategoriaCartaFindMany([]);
 
-      const resultado = await service.getMenuByRestaurante(
-        tenantId,
-        restaurante.id,
-      );
-      const todosLosItems = resultado.categorias.flatMap(
-        (cat: any) => cat.items,
-      );
-      const itemsNoDisponibles = todosLosItems.filter(
-        (item: any) => !item.disponible,
-      );
+      await service.getMenuByRestaurante(tenantId, restaurante.id);
 
-      expect(itemsNoDisponibles).toHaveLength(0);
+      expect(mockTx.categoriaCarta.findMany).toHaveBeenCalledWith({
+        where: {
+          restauranteId: restaurante.id,
+          activo: true,
+          archivadaEn: null,
+        },
+        orderBy: { orden: 'asc' },
+        include: {
+          items: {
+            where: { archivadoEn: null },
+            orderBy: [{ orden: 'asc' }, { nombre: 'asc' }],
+          },
+        },
+      });
     });
 
     it('debe preservar los precios como Decimal', async () => {
@@ -403,7 +405,7 @@ describe('MenuService - getMenuByMesa (HU-001)', () => {
       });
     });
 
-    it('debe filtrar solo categorías activas e items disponibles', async () => {
+    it('[TC-U-214] BL-397: usa el mismo filtro y orden que la URL directa', async () => {
       const tenantId = randomUUID();
       const mesaId = randomUUID();
       const restaurante = buildRestaurante({ tenantId });
@@ -419,22 +421,22 @@ describe('MenuService - getMenuByMesa (HU-001)', () => {
 
       await service.getMenuByMesa(tenantId, mesaId);
 
-      expect(mockTx.categoriaCarta.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: {
-            restauranteId: restaurante.id,
-            activo: true,
+      // HU-001 y BL-397: agotados incluidos (el frontend los bloquea);
+      // archivados y categorías ocultas o archivadas, nunca.
+      expect(mockTx.categoriaCarta.findMany).toHaveBeenCalledWith({
+        where: {
+          restauranteId: restaurante.id,
+          activo: true,
+          archivadaEn: null,
+        },
+        orderBy: { orden: 'asc' },
+        include: {
+          items: {
+            where: { archivadoEn: null },
+            orderBy: [{ orden: 'asc' }, { nombre: 'asc' }],
           },
-          orderBy: { orden: 'asc' },
-          include: {
-            items: {
-              // HU-001: devolver TODOS los items (disponibles y agotados)
-              // El frontend muestra los agotados bloqueados, no ocultos
-              orderBy: { nombre: 'asc' },
-            },
-          },
-        }),
-      );
+        },
+      });
     });
   });
 

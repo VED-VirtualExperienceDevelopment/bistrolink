@@ -224,6 +224,25 @@ describe('PedidosService.crear — validaciones y mesa virtual', () => {
     expect(mockTx.pedido.create).not.toHaveBeenCalled();
   });
 
+  it('[TC-U-215] BL-397: solo busca ítems no archivados de categorías visibles y no archivadas', async () => {
+    mockTx.mesa.findUnique.mockResolvedValue(mesaReal());
+    // Un ítem archivado o de una categoría oculta no vuelve de la consulta:
+    // el pedido se rechaza como si el ítem no existiera.
+    mockTx.itemCarta.findMany.mockResolvedValue([]);
+
+    await expect(service.crear(TENANT_ID, dtoBase(), MESA_QR)).rejects.toThrow(
+      BadRequestException,
+    );
+    expect(mockTx.itemCarta.findMany).toHaveBeenCalledWith({
+      where: {
+        id: { in: ['55555555-5555-5555-5555-555555555555'] },
+        archivadoEn: null,
+        categoria: { activo: true, archivadaEn: null },
+      },
+    });
+    expect(mockTx.pedido.create).not.toHaveBeenCalled();
+  });
+
   it('rechaza con 400 si el ítem existe pero no está disponible', async () => {
     mockTx.mesa.findUnique.mockResolvedValue(mesaReal());
     mockTx.itemCarta.findMany.mockResolvedValue([
