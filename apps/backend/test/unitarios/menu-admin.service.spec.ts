@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import {
+  cambiosDeCategoria,
   MENSAJE_CATEGORIA_ARCHIVADA,
   MENSAJE_CATEGORIA_CON_ITEMS,
   MENSAJE_CATEGORIA_CON_ITEMS_ACTIVOS,
@@ -303,10 +304,13 @@ describe('MenuAdminService', () => {
         });
       });
 
-      it('no audita el alta de un ítem sin imagen', async () => {
+      it('sin imagen no audita un cambio de imagen (solo el alta, BL-396)', async () => {
         await service.createItem(tenantId, createItemDto, 'sub-del-admin');
 
-        expect(mockAuditLog.registrarEnTx).not.toHaveBeenCalled();
+        const acciones = mockAuditLog.registrarEnTx.mock.calls.map(
+          ([, entrada]) => entrada.action,
+        );
+        expect(acciones).toEqual(['CARTA_ITEM_CREADO']);
       });
     });
   });
@@ -1454,6 +1458,200 @@ describe('MenuAdminService', () => {
         where: { id: 'item-123' },
         data: { precio: '950' },
       });
+    });
+  });
+  describe('auditoría de la carta (BL-396)', () => {
+    const tenantId = 'test-tenant-id';
+    const actor = 'sub-del-admin';
+
+    /** La entrada de auditoría de una acción, o undefined si no se registró. */
+    const registroDe = (accion: string) =>
+      mockAuditLog.registrarEnTx.mock.calls
+        .map(([tx, entrada]) => ({ tx, ...entrada }))
+        .find((e) => e.action === accion);
+
+    it('[TC-U-216] el alta de un ítem queda con precio y disponibilidad', async () => {
+      mockTx.categoriaCarta.findFirst.mockResolvedValue({
+        id: 'cat-1',
+        archivadaEn: null,
+      });
+      mockTx.itemCarta.create.mockResolvedValue({
+        id: 'item-1',
+        nombre: 'Tabla de quesos',
+        precio: '700',
+        disponible: true,
+        imagenKey: null,
+      });
+
+      await service.createItem(
+        tenantId,
+        { categoriaId: 'cat-1', nombre: 'Tabla de quesos', precio: '700' },
+        actor,
+      );
+
+      expect(registroDe('CARTA_ITEM_CREADO')).toEqual({
+        tx: mockTx,
+        action: 'CARTA_ITEM_CREADO',
+        tenantId,
+        actorKeycloakId: actor,
+        entidadId: 'item-1',
+        detalle: { nombre: 'Tabla de quesos' },
+        despues: { precio: '700', disponible: true },
+      });
+    });
+
+    it.each([
+      ['archivarItem', 'CARTA_ITEM_ARCHIVADO', null],
+      ['restaurarItem', 'CARTA_ITEM_RESTAURADO', new Date()],
+      ['eliminarItem', 'CARTA_ITEM_ELIMINADO', null],
+    ] as const)(
+      '[TC-U-217] %s queda como %s con el actor del token y el nombre',
+      async (metodo, accion, archivadoEn) => {
+        mockTx.itemCarta.findFirst.mockResolvedValue({
+          id: 'item-1',
+          nombre: 'Picada Completa',
+          categoriaId: 'cat-1',
+          archivadoEn,
+        });
+        mockTx.categoriaCarta.findFirst.mockResolvedValue({
+          id: 'cat-1',
+          archivadaEn: null,
+        });
+        mockTx.itemCarta.update.mockResolvedValue({ id: 'item-1' });
+
+        await service[metodo](tenantId, 'item-1', actor);
+
+        expect(registroDe(accion)).toEqual({
+          tx: mockTx,
+          action: accion,
+          tenantId,
+          actorKeycloakId: actor,
+          entidadId: 'item-1',
+          detalle: { nombre: 'Picada Completa' },
+        });
+      },
+    );
+
+    it.each([
+      ['archivarCategoria', 'CARTA_CATEGORIA_ARCHIVADA', null],
+      ['restaurarCategoria', 'CARTA_CATEGORIA_RESTAURADA', new Date()],
+      ['eliminarCategoria', 'CARTA_CATEGORIA_ELIMINADA', null],
+    ] as const)(
+      '[TC-U-218] %s queda como %s con el actor del token y el nombre',
+      async (metodo, accion, archivadaEn) => {
+        mockTx.categoriaCarta.findFirst.mockResolvedValue({
+          id: 'cat-1',
+          nombre: 'Picadas',
+          activo: true,
+          archivadaEn,
+        });
+        mockTx.categoriaCarta.update.mockResolvedValue({
+          id: 'cat-1',
+          nombre: 'Picadas',
+          activo: true,
+        });
+
+        await service[metodo](tenantId, 'cat-1', actor);
+
+        expect(registroDe(accion)).toEqual({
+          tx: mockTx,
+          action: accion,
+          tenantId,
+          actorKeycloakId: actor,
+          entidadId: 'cat-1',
+          detalle: { nombre: 'Picadas' },
+        });
+      },
+    );
+
+    it('[TC-U-219] el alta de una categoría queda con su nombre', async () => {
+      mockTx.categoriaCarta.create.mockResolvedValue({
+        id: 'cat-nueva',
+        nombre: 'Tablas',
+      });
+
+      await service.createCategoria(tenantId, 'rest-1', actor, {
+        nombre: 'Tablas',
+      });
+
+      expect(registroDe('CARTA_CATEGORIA_CREADA')).toMatchObject({
+        actorKeycloakId: actor,
+        entidadId: 'cat-nueva',
+        detalle: { nombre: 'Tablas' },
+      });
+    });
+
+    it('[TC-U-220] ocultar una categoría queda como cambio de visibilidad', async () => {
+      const antes = {
+        id: 'cat-1',
+        nombre: 'Picadas',
+        descripcion: null,
+        activo: true,
+        archivadaEn: null,
+      };
+      mockTx.categoriaCarta.findFirst.mockResolvedValue(antes);
+      mockTx.categoriaCarta.update.mockResolvedValue({
+        ...antes,
+        activo: false,
+      });
+
+      await service.updateCategoria(
+        tenantId,
+        'cat-1',
+        { activo: false },
+        actor,
+      );
+
+      expect(registroDe('CARTA_CATEGORIA_MODIFICADA')).toMatchObject({
+        actorKeycloakId: actor,
+        entidadId: 'cat-1',
+        detalle: { nombre: 'Picadas' },
+        antes: { visible: true },
+        despues: { visible: false },
+      });
+    });
+
+    it('[TC-U-220] cambiar solo el orden de una categoría no se audita', async () => {
+      const antes = {
+        id: 'cat-1',
+        nombre: 'Picadas',
+        descripcion: null,
+        activo: true,
+        orden: 1,
+        archivadaEn: null,
+      };
+      mockTx.categoriaCarta.findFirst.mockResolvedValue(antes);
+      mockTx.categoriaCarta.update.mockResolvedValue({ ...antes, orden: 3 });
+
+      await service.updateCategoria(tenantId, 'cat-1', { orden: 3 }, actor);
+
+      expect(mockAuditLog.registrarEnTx).not.toHaveBeenCalled();
+    });
+
+    it('[TC-U-221] cambiosDeCategoria devuelve solo lo que cambió', () => {
+      expect(
+        cambiosDeCategoria(
+          { nombre: 'Picadas', descripcion: null, activo: true },
+          { nombre: 'Tablas', descripcion: 'Para compartir', activo: true },
+        ),
+      ).toEqual({
+        antes: { nombre: 'Picadas', descripcion: null },
+        despues: { nombre: 'Tablas', descripcion: 'Para compartir' },
+      });
+    });
+
+    it('[TC-U-222] si la acción falla, no queda registro', async () => {
+      mockTx.itemCarta.findFirst.mockResolvedValue({
+        id: 'item-1',
+        nombre: 'Picada Completa',
+        archivadoEn: null,
+      });
+      mockTx.lineaPedido.count.mockResolvedValue(3);
+
+      await expect(
+        service.eliminarItem(tenantId, 'item-1', actor),
+      ).rejects.toThrow(ConflictException);
+      expect(mockAuditLog.registrarEnTx).not.toHaveBeenCalled();
     });
   });
   describe('casos límite de archivo y eliminación (BL-394)', () => {

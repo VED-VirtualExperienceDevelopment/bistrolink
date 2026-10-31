@@ -115,7 +115,13 @@ export class MenuAdminController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateCategoriaDto,
   ) {
-    return this.menuAdminService.updateCategoria(req.user.tenantId, id, dto);
+    // BL-396: el actor de la auditoría es el sub del token.
+    return this.menuAdminService.updateCategoria(
+      req.user.tenantId,
+      id,
+      dto,
+      req.user.sub,
+    );
   }
 
   /** BL-394: archivar (baja lógica). 409 si le quedan ítems activos. */
@@ -125,7 +131,11 @@ export class MenuAdminController {
     @Req() req: any,
     @Param('id', ParseUUIDPipe) id: string,
   ) {
-    return this.menuAdminService.archivarCategoria(req.user.tenantId, id);
+    return this.menuAdminService.archivarCategoria(
+      req.user.tenantId,
+      id,
+      req.user.sub,
+    );
   }
 
   @Post('categoria/:id/restaurar')
@@ -134,7 +144,11 @@ export class MenuAdminController {
     @Req() req: any,
     @Param('id', ParseUUIDPipe) id: string,
   ) {
-    return this.menuAdminService.restaurarCategoria(req.user.tenantId, id);
+    return this.menuAdminService.restaurarCategoria(
+      req.user.tenantId,
+      id,
+      req.user.sub,
+    );
   }
 
   /** BL-394: eliminación definitiva. 409 si la categoría tiene ítems. */
@@ -143,7 +157,11 @@ export class MenuAdminController {
     @Req() req: any,
     @Param('id', ParseUUIDPipe) id: string,
   ) {
-    return this.menuAdminService.eliminarCategoria(req.user.tenantId, id);
+    return this.menuAdminService.eliminarCategoria(
+      req.user.tenantId,
+      id,
+      req.user.sub,
+    );
   }
 
   // BL-387: el actor de la auditoría es el sub del token, nunca el body.
@@ -193,18 +211,30 @@ export class MenuAdminController {
   @Post('item/:id/archivar')
   @HttpCode(HttpStatus.OK)
   async archivarItem(@Req() req: any, @Param('id', ParseUUIDPipe) id: string) {
-    return this.menuAdminService.archivarItem(req.user.tenantId, id);
+    return this.menuAdminService.archivarItem(
+      req.user.tenantId,
+      id,
+      req.user.sub,
+    );
   }
 
   @Post('item/:id/restaurar')
   @HttpCode(HttpStatus.OK)
   async restaurarItem(@Req() req: any, @Param('id', ParseUUIDPipe) id: string) {
-    return this.menuAdminService.restaurarItem(req.user.tenantId, id);
+    return this.menuAdminService.restaurarItem(
+      req.user.tenantId,
+      id,
+      req.user.sub,
+    );
   }
 
   /** BL-394: eliminación definitiva. 409 si el ítem tiene pedidos. */
   @Delete('item/:id')
   async eliminarItem(@Req() req: any, @Param('id', ParseUUIDPipe) id: string) {
-    return this.menuAdminService.eliminarItem(req.user.tenantId, id);
+    return this.menuAdminService.eliminarItem(
+      req.user.tenantId,
+      id,
+      req.user.sub,
+    );
   }
 }

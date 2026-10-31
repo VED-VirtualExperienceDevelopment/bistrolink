@@ -49,6 +49,32 @@ export function camposCambiados(
   return { antes: a, despues: d };
 }
 
+/**
+ * BL-396: cambios de una categoría que quedan en la auditoría (nombre,
+ * descripción y visibilidad), solo los que cambiaron. `activo` se registra
+ * como `visible`, que es lo que ve el administrador.
+ */
+export function cambiosDeCategoria(
+  antes: { nombre: string; descripcion?: string | null; activo: boolean },
+  despues: { nombre: string; descripcion?: string | null; activo: boolean },
+): { antes: Record<string, unknown>; despues: Record<string, unknown> } {
+  const a: Record<string, unknown> = {};
+  const d: Record<string, unknown> = {};
+  if (antes.nombre !== despues.nombre) {
+    a.nombre = antes.nombre;
+    d.nombre = despues.nombre;
+  }
+  if ((antes.descripcion ?? null) !== (despues.descripcion ?? null)) {
+    a.descripcion = antes.descripcion ?? null;
+    d.descripcion = despues.descripcion ?? null;
+  }
+  if (antes.activo !== despues.activo) {
+    a.visible = antes.activo;
+    d.visible = despues.activo;
+  }
+  return { antes: a, despues: d };
+}
+
 const MENSAJE_IMAGEN_AJENA =
   'La imagen indicada no pertenece a este restaurante';
 export const MENSAJE_CATEGORIA_REPETIDA =
@@ -200,6 +226,33 @@ export class MenuAdminService {
     });
   }
 
+  /**
+   * BL-396: registro de una acción de la carta (alta, archivo, restauración,
+   * eliminación) en la misma transacción. El objeto se identifica por su id y
+   * su nombre; no lleva datos personales.
+   */
+  private auditarCarta(
+    tx: PrismaClient,
+    tenantId: string,
+    actorKeycloakId: string | undefined,
+    accion: AuditAction,
+    entidadId: string,
+    nombre: string,
+    cambios?: {
+      antes?: Record<string, unknown>;
+      despues?: Record<string, unknown>;
+    },
+  ): Promise<void> {
+    return this.auditLog.registrarEnTx(tx, {
+      action: accion,
+      tenantId,
+      actorKeycloakId: actorKeycloakId ?? 'desconocido',
+      entidadId,
+      detalle: { nombre },
+      ...cambios,
+    });
+  }
+
   private async resolveRestauranteId(
     tenantId: string,
     restauranteId: string | undefined,
@@ -304,6 +357,14 @@ export class MenuAdminService {
         }),
         MENSAJE_CATEGORIA_REPETIDA,
       );
+      await this.auditarCarta(
+        tx,
+        tenantId,
+        keycloakId,
+        AuditAction.CARTA_CATEGORIA_CREADA,
+        nuevaCategoria.id,
+        nuevaCategoria.nombre,
+      );
       this.logger.log(`Categoría creada: ${nuevaCategoria.id}`);
       return nuevaCategoria;
     });
@@ -313,6 +374,7 @@ export class MenuAdminService {
     tenantId: string,
     categoriaId: string,
     dto: UpdateCategoriaDto,
+    actorKeycloakId?: string,
   ) {
     return this.prisma.runInTenantContext(tenantId, async (tx) => {
       const existing = await tx.categoriaCarta.findFirst({
@@ -343,6 +405,21 @@ export class MenuAdminService {
         });
       }
 
+      // BL-396: nombre, descripción u ocultar/mostrar, con antes y después.
+      // Cambiar solo el orden no se audita.
+      const cambiosAuditados = cambiosDeCategoria(existing, updated);
+      if (Object.keys(cambiosAuditados.antes).length > 0) {
+        await this.auditarCarta(
+          tx,
+          tenantId,
+          actorKeycloakId,
+          AuditAction.CARTA_CATEGORIA_MODIFICADA,
+          categoriaId,
+          updated.nombre,
+          cambiosAuditados,
+        );
+      }
+
       this.logger.log(`Categoría actualizada: ${categoriaId}`);
       return updated;
     });
@@ -370,7 +447,11 @@ export class MenuAdminService {
    * activos: primero se archivan o se mueven. Si ya estaba archivada, no
    * hace nada.
    */
-  async archivarCategoria(tenantId: string, categoriaId: string) {
+  async archivarCategoria(
+    tenantId: string,
+    categoriaId: string,
+    actorKeycloakId?: string,
+  ) {
     return this.prisma.runInTenantContext(tenantId, async (tx) => {
       const existing = await this.categoriaDelTenant(tx, tenantId, categoriaId);
       if (existing.archivadaEn) return existing;
@@ -386,6 +467,14 @@ export class MenuAdminService {
         where: { id: categoriaId },
         data: { archivadaEn: new Date() },
       });
+      await this.auditarCarta(
+        tx,
+        tenantId,
+        actorKeycloakId,
+        AuditAction.CARTA_CATEGORIA_ARCHIVADA,
+        categoriaId,
+        existing.nombre,
+      );
       this.menuGateway.emitCategoriaRetirada(tenantId, { categoriaId });
       this.logger.log(`Categoría archivada: ${categoriaId}`);
       return updated;
@@ -396,7 +485,11 @@ export class MenuAdminService {
    * BL-394: restaurar una categoría archivada. Si mientras tanto se creó
    * otra con el mismo nombre, 409 (hay que renombrar una de las dos).
    */
-  async restaurarCategoria(tenantId: string, categoriaId: string) {
+  async restaurarCategoria(
+    tenantId: string,
+    categoriaId: string,
+    actorKeycloakId?: string,
+  ) {
     return this.prisma.runInTenantContext(tenantId, async (tx) => {
       const existing = await this.categoriaDelTenant(tx, tenantId, categoriaId);
       if (!existing.archivadaEn) return existing;
@@ -407,6 +500,14 @@ export class MenuAdminService {
           data: { archivadaEn: null },
         }),
         MENSAJE_CATEGORIA_REPETIDA,
+      );
+      await this.auditarCarta(
+        tx,
+        tenantId,
+        actorKeycloakId,
+        AuditAction.CARTA_CATEGORIA_RESTAURADA,
+        categoriaId,
+        existing.nombre,
       );
       this.menuGateway.emitCategoriaUpdated(tenantId, {
         categoriaId,
@@ -422,9 +523,13 @@ export class MenuAdminService {
    * ítem, ni siquiera archivado (si no, 409). La FK de item_carta también lo
    * impide si se cruza con un alta: se traduce al mismo 409.
    */
-  async eliminarCategoria(tenantId: string, categoriaId: string) {
+  async eliminarCategoria(
+    tenantId: string,
+    categoriaId: string,
+    actorKeycloakId?: string,
+  ) {
     return this.prisma.runInTenantContext(tenantId, async (tx) => {
-      await this.categoriaDelTenant(tx, tenantId, categoriaId);
+      const existing = await this.categoriaDelTenant(tx, tenantId, categoriaId);
 
       const items = await tx.itemCarta.count({ where: { categoriaId } });
       if (items > 0) {
@@ -439,6 +544,15 @@ export class MenuAdminService {
         }
         throw err;
       }
+      // El registro queda aunque la categoría ya no exista.
+      await this.auditarCarta(
+        tx,
+        tenantId,
+        actorKeycloakId,
+        AuditAction.CARTA_CATEGORIA_ELIMINADA,
+        categoriaId,
+        existing.nombre,
+      );
       this.menuGateway.emitCategoriaRetirada(tenantId, { categoriaId });
       this.logger.log(`Categoría eliminada: ${categoriaId}`);
       return { id: categoriaId, eliminada: true };
@@ -497,6 +611,22 @@ export class MenuAdminService {
         itemId: nuevoItem.id,
         data: nuevoItem as unknown as Record<string, unknown>,
       });
+
+      // BL-396: el alta, con el precio y la disponibilidad iniciales.
+      await this.auditarCarta(
+        tx,
+        tenantId,
+        actorKeycloakId,
+        AuditAction.CARTA_ITEM_CREADO,
+        nuevoItem.id,
+        nuevoItem.nombre,
+        {
+          despues: {
+            precio: nuevoItem.precio,
+            disponible: nuevoItem.disponible,
+          },
+        },
+      );
 
       if (nuevoItem.imagenKey) {
         await this.auditarCambioDeImagen(
@@ -669,9 +799,13 @@ export class MenuAdminService {
    * BL-394: archivar un ítem (baja lógica, reemplaza al «Eliminar» que lo
    * marcaba como agotado). Deja de verse en la carta y en Gestión de Carta
    * (salvo con el filtro «Archivados»), pero conserva su historial. Si ya
-   * estaba archivado, no hace nada. La auditoría llega con BL-396.
+   * estaba archivado, no hace nada. Queda en la auditoría (BL-396).
    */
-  async archivarItem(tenantId: string, itemId: string) {
+  async archivarItem(
+    tenantId: string,
+    itemId: string,
+    actorKeycloakId?: string,
+  ) {
     return this.prisma.runInTenantContext(tenantId, async (tx) => {
       const existing = await this.itemDelTenant(tx, tenantId, itemId);
       if (existing.archivadoEn) return existing;
@@ -680,6 +814,14 @@ export class MenuAdminService {
         where: { id: itemId },
         data: { archivadoEn: new Date() },
       });
+      await this.auditarCarta(
+        tx,
+        tenantId,
+        actorKeycloakId,
+        AuditAction.CARTA_ITEM_ARCHIVADO,
+        itemId,
+        existing.nombre,
+      );
       this.menuGateway.emitItemRetirado(tenantId, { itemId });
       this.logger.log(`Ítem archivado: ${itemId}`);
       return updated;
@@ -690,7 +832,11 @@ export class MenuAdminService {
    * BL-394: restaurar un ítem archivado. Su categoría tiene que estar activa
    * y su nombre libre entre los ítems activos de la categoría (si no, 409).
    */
-  async restaurarItem(tenantId: string, itemId: string) {
+  async restaurarItem(
+    tenantId: string,
+    itemId: string,
+    actorKeycloakId?: string,
+  ) {
     return this.prisma.runInTenantContext(tenantId, async (tx) => {
       const existing = await this.itemDelTenant(tx, tenantId, itemId);
       if (!existing.archivadoEn) return existing;
@@ -711,6 +857,14 @@ export class MenuAdminService {
         }),
         MENSAJE_ITEM_REPETIDO,
       );
+      await this.auditarCarta(
+        tx,
+        tenantId,
+        actorKeycloakId,
+        AuditAction.CARTA_ITEM_RESTAURADO,
+        itemId,
+        existing.nombre,
+      );
       this.menuGateway.emitItemDataUpdated(tenantId, {
         itemId,
         data: updated as unknown as Record<string, unknown>,
@@ -727,9 +881,13 @@ export class MenuAdminService {
    * de linea_pedido (RESTRICT) lo impide igual si se cruza con un pedido.
    * La imagen queda en S3 (el usuario de la app no tiene DeleteObject).
    */
-  async eliminarItem(tenantId: string, itemId: string) {
+  async eliminarItem(
+    tenantId: string,
+    itemId: string,
+    actorKeycloakId?: string,
+  ) {
     return this.prisma.runInTenantContext(tenantId, async (tx) => {
-      await this.itemDelTenant(tx, tenantId, itemId);
+      const existing = await this.itemDelTenant(tx, tenantId, itemId);
 
       const pedidos = await tx.lineaPedido.count({
         where: { itemCartaId: itemId },
@@ -746,6 +904,15 @@ export class MenuAdminService {
         }
         throw err;
       }
+      // El registro queda aunque el ítem ya no exista.
+      await this.auditarCarta(
+        tx,
+        tenantId,
+        actorKeycloakId,
+        AuditAction.CARTA_ITEM_ELIMINADO,
+        itemId,
+        existing.nombre,
+      );
       this.menuGateway.emitItemRetirado(tenantId, { itemId });
       this.logger.log(`Ítem eliminado: ${itemId}`);
       return { id: itemId, eliminado: true };
