@@ -4,6 +4,8 @@
  * en test/unitarios/cobros.utils.spec.ts).
  */
 
+import { formatearPrecio } from "@/components/pago/pago.utils";
+
 /** Un pedido que espera el pago (backend: PedidoPendienteDeCobro). */
 export interface PedidoPendienteDeCobro {
   id: string;
@@ -70,16 +72,12 @@ export function pendientesEnMesas(
   return pedidos.filter((p) => !p.mesa.esVirtual);
 }
 
-const FORMATO_MONTO = new Intl.NumberFormat("es-UY", {
-  style: "currency",
-  currency: "UYU",
-  minimumFractionDigits: 0,
-  maximumFractionDigits: 2,
-});
-
-/** «$ 590» o «$ 590,50». Sin redondear los centésimos del vuelto. */
+/**
+ * «$ 590» o «$ 590,50». Sin redondear los centésimos del vuelto. BL-398:
+ * usa el mismo formato que la carta y el pago (antes mostraba «$ 10,5»).
+ */
 export function formatearMonto(valor: string | number): string {
-  return FORMATO_MONTO.format(Number(valor));
+  return formatearPrecio(valor);
 }
 
 const FORMATO_HORA = new Intl.DateTimeFormat("es-UY", {
@@ -151,9 +149,7 @@ export function motivoSinEfectivo(
 }
 
 /** Aviso después de cobrar. */
-export function mensajeCobroRegistrado(
-  cobro: CobroEfectivoRegistrado,
-): string {
+export function mensajeCobroRegistrado(cobro: CobroEfectivoRegistrado): string {
   const codigo = codigoDelPedido(cobro.pedidoId);
   if (Number(cobro.vuelto) === 0) {
     return `Cobro registrado: pedido ${codigo}, sin vuelto. Ya está en cocina.`;

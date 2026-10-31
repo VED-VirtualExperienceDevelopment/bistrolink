@@ -1,4 +1,7 @@
 import {
+  errorNombreItem,
+  errorPrecioItem,
+  normalizarPrecio,
   conVersionCategoria,
   conVersionItem,
   errorNombreCategoria,
@@ -258,5 +261,25 @@ describe("Gestión de Carta: formularios (BL-398)", () => {
     expect(conVersionItem(CARTA, "a", undefined)[0].items[0]).toBe(
       CARTA[0].items[0],
     );
+  });
+});
+
+describe("Gestión de Carta: formulario de ítem (BL-398)", () => {
+  it("[TC-U-245] el nombre del ítem es obligatorio", () => {
+    expect(errorNombreItem("   ")).toBe("Ingresá el nombre del ítem.");
+    expect(errorNombreItem("Flan")).toBeNull();
+  });
+
+  it("[TC-U-246] el precio acepta coma o punto y hasta 2 decimales", () => {
+    expect(normalizarPrecio(" 590,50 ")).toBe("590.50");
+    expect(errorPrecioItem("590")).toBeNull();
+    expect(errorPrecioItem("590,5")).toBeNull();
+    expect(errorPrecioItem("0")).toBeNull();
+    expect(errorPrecioItem("")).toBe("Ingresá el precio.");
+    for (const invalido of ["-10", "590,555", "abc", "05", "1e3"]) {
+      expect(errorPrecioItem(invalido)).toBe(
+        "Usá solo números, con hasta 2 decimales (por ejemplo, 590 o 590,50).",
+      );
+    }
   });
 });

@@ -17,8 +17,8 @@ export interface ItemGestion {
   readonly categoriaId: string;
   readonly tieneHistorial?: boolean;
   /** BL-394: fecha de archivo (ISO); null o ausente si está activo. */
-  readonly archivadoEn?:
-    string | null; /** BL-394: versión para el bloqueo optimista al editar. */
+  readonly archivadoEn?: string | null;
+  /** BL-394: versión para el bloqueo optimista al editar. */
   readonly updatedAt?: string;
 }
 
@@ -30,8 +30,8 @@ export interface CategoriaGestion {
   readonly orden: number;
   readonly items: readonly ItemGestion[];
   /** BL-394: fecha de archivo (ISO); null o ausente si está activa. */
-  readonly archivadaEn?:
-    string | null; /** BL-394: versión para el bloqueo optimista al editar. */
+  readonly archivadaEn?: string | null;
+  /** BL-394: versión para el bloqueo optimista al editar. */
   readonly updatedAt?: string;
 }
 
@@ -312,4 +312,30 @@ export function conVersionItem(
       item.id === itemId ? { ...item, updatedAt } : item,
     ),
   }));
+}
+
+/** Error del nombre de un ítem, o null si es válido. */
+export function errorNombreItem(nombre: string): string | null {
+  return nombre.trim() ? null : "Ingresá el nombre del ítem.";
+}
+
+/**
+ * El precio se puede escribir con coma o con punto («590,50» o «590.50»).
+ * Se manda a la API con punto, sin espacios.
+ */
+export function normalizarPrecio(precio: string): string {
+  return precio.trim().replace(",", ".");
+}
+
+/** Misma regla que CreateItemDto en el backend: hasta 2 decimales, sin ceros a la izquierda. */
+const FORMATO_PRECIO = /^(0|[1-9]\d*)(\.\d{1,2})?$/;
+
+/** Error del precio, o null si es válido. */
+export function errorPrecioItem(precio: string): string | null {
+  const limpio = normalizarPrecio(precio);
+  if (!limpio) return "Ingresá el precio.";
+  if (!FORMATO_PRECIO.test(limpio)) {
+    return "Usá solo números, con hasta 2 decimales (por ejemplo, 590 o 590,50).";
+  }
+  return null;
 }

@@ -743,6 +743,7 @@ export default function AdminMenuPage() {
           onClose={() => setModalOpen(false)}
           onSuccess={cargarDatos}
           itemToEdit={itemToEdit || undefined}
+          onRecargar={() => void cargarDatos()}
         />
       )}
 
