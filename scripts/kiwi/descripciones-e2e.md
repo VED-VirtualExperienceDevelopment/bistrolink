@@ -7,6 +7,7 @@
 | 1.0     | 27/10/2026 | Plantilla (BL-435).                                                                                    |
 | 1.1     | 28/10/2026 | TC-E-046 a 049: cobro en efectivo (BL-201), solicitud de efectivo (BL-442) y pedido del mozo (BL-209). |
 | 1.2     | 31/10/2026 | TC-E-007 y 008 cambian: la carta por URL muestra los agotados bloqueados, igual que el QR (BL-397).    |
+| 1.3     | 31/10/2026 | TC-E-050 a 055: Gestión de Carta (BL-392 / BL-402).                                                    |
 
 Plantilla para cargar en Kiwi la descripción de casos TC-E (Playwright)
 nuevos o que cambiaron (BL-435). La usa
@@ -152,3 +153,105 @@ Al menos un ítem disponible en la carta del restaurante.
 ### Resultado esperado
 
 El ítem queda en el carrito.
+
+## TC-E-050
+
+### Precondición
+
+Usuario de prueba ADMIN (`TEST_ADMIN_*`). El test crea por la API una categoría «E2E carta …» vacía y al terminar la elimina.
+
+### Pasos
+
+1. En `/admin/menu`, tocar «Agregar ítem» en la categoría de prueba.
+2. Completar «Nombre» con «Chivito E2E» y «Precio» con «590,50» (con coma) y tocar «Guardar».
+
+### Resultado esperado
+
+El diálogo se cierra y la tarjeta del ítem muestra el precio con centésimos (590,50).
+
+## TC-E-051
+
+### Precondición
+
+Usuario de prueba ADMIN (`TEST_ADMIN_*`) y una categoría de prueba con el ítem «Flan E2E», creada por la API.
+
+### Pasos
+
+1. Abrir el menú «⋯» del ítem y elegir «Archivar».
+2. Confirmar en el diálogo.
+3. Tocar «Deshacer» en el aviso.
+
+### Resultado esperado
+
+1. El diálogo «Archivar ítem» se abre con el foco en «Cancelar».
+2. El ítem sale de la vista y aparece el aviso «Ítem «Flan E2E» archivado».
+3. El ítem vuelve a la carta.
+
+## TC-E-052
+
+### Precondición
+
+Usuario de prueba ADMIN (`TEST_ADMIN_*`) y una categoría de prueba con el ítem «Pancho E2E».
+
+### Pasos
+
+1. Apagar el switch «Pancho E2E disponible».
+2. Volver a abrir la carta.
+
+### Resultado esperado
+
+1. La tarjeta muestra «Agotado».
+2. El ítem sigue agotado: el cambio quedó guardado.
+
+## TC-E-053
+
+### Precondición
+
+Usuario de prueba ADMIN (`TEST_ADMIN_*`) y una categoría de prueba con «Primero E2E» y «Segundo E2E», en ese orden. La categoría nueva queda última en la carta.
+
+### Pasos
+
+1. Abrir el menú «⋯» de «Segundo E2E» y elegir «Subir».
+2. En la manija «Mover la categoría …» de la categoría de prueba: Espacio, flecha arriba, Espacio.
+3. Volver a abrir la carta.
+
+### Resultado esperado
+
+1. «Segundo E2E» queda primero y el foco vuelve a su «⋯».
+2. La categoría de prueba sube un lugar.
+3. Los dos cambios siguen: quedaron guardados.
+
+## TC-E-054
+
+### Precondición
+
+Usuario de prueba MOZO (`TEST_MOZO_*`) y la carta del seed.
+
+### Pasos
+
+1. Abrir `/admin/menu` como mozo.
+
+### Resultado esperado
+
+1. Se ven los switches de disponibilidad (por ejemplo, «Milanesa a la napolitana disponible»).
+2. No aparecen «Nueva categoría», «Agregar ítem», los menús «⋯» ni las manijas para ordenar.
+3. El filtro «Estado» no ofrece «En categorías ocultas» ni «Archivados».
+
+## TC-E-055
+
+### Precondición
+
+Usuario de prueba ADMIN (`TEST_ADMIN_*`) y una categoría de prueba con dos ítems.
+
+### Pasos
+
+En celular (390 px), tablet (768 px) y PC (1280 px), revisar con axe-core:
+
+1. La carta.
+2. El menú «⋯» de un ítem, abierto.
+3. Los diálogos «Nueva categoría», «Nuevo ítem» y «Archivar ítem» (se cierran con «Cancelar», sin guardar).
+4. La carta con una búsqueda escrita (aviso «Para cambiar el orden, quitá los filtros.»).
+
+### Resultado esperado
+
+Ninguna violación critical ni serious de WCAG 2.1 AA.

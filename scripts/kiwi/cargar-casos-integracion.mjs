@@ -679,6 +679,37 @@ const DATOS_E2E = {
     priority: "P1",
     tags: ["BL-209", "pedidos"],
   }),
+  // BL-402 (BL-392): Gestión de Carta en /admin/menu.
+  50: e2e("carta", "HU-005", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-392", "BL-398"],
+  }),
+  51: e2e("carta", "HU-005", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-392", "BL-394", "integridad-datos"],
+  }),
+  52: e2e("carta", "HU-005", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-392", "BL-398"],
+  }),
+  53: e2e("carta", "HU-005", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-392", "BL-399"],
+  }),
+  54: e2e("carta", "HU-005", {
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["BL-392", "BL-395", "seguridad"],
+  }),
+  55: e2e("carta", "HU-005", {
+    category: "Accesibilidad",
+    priority: "P1",
+    tags: ["BL-392", "BL-402", "responsive", ...axe],
+  }),
 };
 /**
  * Datos de los contratos PactJS (TC-C). Requirement con la HU que usa el
