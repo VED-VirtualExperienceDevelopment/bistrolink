@@ -59,6 +59,8 @@ enum PedidoCanal {
   WEB
   WHATSAPP
   VOZ
+  // HU-039 (BL-209): lo cargó el mozo para un comensal sin celular.
+  MOZO
 }
 
 enum PagoEstado {

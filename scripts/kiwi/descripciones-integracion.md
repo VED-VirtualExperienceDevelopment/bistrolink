@@ -12,6 +12,7 @@
 | 1.5     | 27/10/2026 | Se recupera el contenido que se perdió en el merge de BL-435 (TC-I-010 a 098). TC-I-099 a 108: CRUD de la carta (HU-005, BL-52/BL-53), antes `[TC-E-…]`. |
 | 1.6     | 28/10/2026 | TC-I-113 a 117 (cobro en efectivo, HU-031 / BL-201), para cargar con el script antes de mergear el PR.                                                   |
 | 1.7     | 28/10/2026 | TC-I-118 a 121 (solicitud de pago en efectivo del comensal, HU-031b / BL-442), para cargar con el script antes de mergear el PR.                         |
+| 1.8     | 28/10/2026 | TC-I-122 a 125 (pedido cargado por el mozo, HU-039 / BL-209), para cargar con el script antes de mergear el PR.                                          |
 
 Texto del campo de descripción de cada caso TC-I en Kiwi. Lo carga
 `cargar-casos-integracion.mjs --descripciones`: cada bloque `## TC-I-NNN`
@@ -229,3 +230,69 @@ Un pedido de la mesa de prueba en `PENDIENTE_PAGO`, el token del comensal (`POST
 2. 403 (el pedido es de otra mesa).
 3. 200, con `pagaCon` 600.00 y `avisado` true.
 4. 200 con `efectivo.disponible` true y `efectivo.pagaCon` 600.00.
+
+## TC-I-122
+
+### Precondición
+
+Tenant A del seed, la mesa de prueba 92 abierta (con sesión) y el usuario MOZO del seed.
+
+### Pasos
+
+1. Cargar un pedido con `PedidosService.crearPorMozo` (el mismo servicio que usa `POST /pedidos/mozo`) con el mozo como actor: 2 unidades de un ítem con nota y una nota general.
+2. Consultar los cobros pendientes.
+3. Cobrarlo en efectivo (BL-201).
+
+### Resultado esperado
+
+1. El pedido queda en `PENDIENTE_PAGO`, con canal `MOZO`, el `usuario_id` del mozo y la nota general.
+2. Aparece entre los cobros pendientes.
+3. Pasa a `RECIBIDO` con un único pago `EFECTIVO` / `APROBADO`.
+
+## TC-I-123
+
+### Precondición
+
+La mesa de prueba 92 abierta.
+
+### Pasos
+
+1. Cargar un pedido como mozo.
+2. Repetir la misma solicitud con el mismo `idempotencyKey` (doble toque o reintento).
+
+### Resultado esperado
+
+Las dos respuestas son el mismo pedido y en la base hay un único pedido con esa clave.
+
+## TC-I-124
+
+### Precondición
+
+La mesa de prueba 92 abierta.
+
+### Pasos
+
+1. Cargar un pedido como mozo y no cobrarlo.
+2. Cerrar la sesión de la mesa (`MesasService.cerrarSesion`).
+3. Intentar cargar otro pedido en la mesa cerrada.
+
+### Resultado esperado
+
+1. El cierre cancela también el pedido del mozo que no se pagó (queda `CANCELADO`).
+2. Con la mesa cerrada, la carga da 409.
+
+## TC-I-125
+
+### Precondición
+
+Usuarios de prueba MOZO y COCINA del tenant A (`TEST_MOZO_*`, `TEST_COCINA_*`) y la mesa de prueba 92 abierta.
+
+### Pasos
+
+1. `POST /pedidos/mozo` con el token de COCINA.
+2. `POST /pedidos/mozo` con el token del MOZO.
+
+### Resultado esperado
+
+1. 403: Cocina no puede cargar pedidos.
+2. 201 con el pedido en `PENDIENTE_PAGO`, canal `MOZO`, la mesa 92 y el usuario que lo cargó.

@@ -172,6 +172,13 @@ const solicitudEfectivo = (extra = {}) => ({
   ...extra,
   tags: ["HU-031b", "BL-442", "pagos", ...(extra.tags ?? [])],
 });
+// HU-039 (BL-209): pedido cargado por el mozo.
+const pedidoMozo = (extra = {}) => ({
+  component: "api",
+  requirement: "HU-039",
+  ...extra,
+  tags: ["HU-039", "BL-209", "pedidos", ...(extra.tags ?? [])],
+});
 const cartaAdmin = (extra = {}) => ({
   component: "api",
   requirement: "HU-005",
@@ -444,6 +451,18 @@ const DATOS_INTEGRACION = {
     priority: "P1",
     tags: ["seguridad", "qr"],
   }),
+  122: pedidoMozo({ category: "Funcional", priority: "P1", tags: ["BL-201"] }),
+  123: pedidoMozo({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["idempotencia"],
+  }),
+  124: pedidoMozo({ category: "Funcional", priority: "P1", tags: ["HU-017"] }),
+  125: pedidoMozo({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["seguridad"],
+  }),
 };
 /**
  * BL-435: datos de los E2E TC-E-017 en adelante, con los criterios de
@@ -616,6 +635,11 @@ const DATOS_E2E = {
     category: "Funcional",
     priority: "P2",
     tags: ["BL-442", "pagos"],
+  }),
+  49: e2e("mozo", "HU-039", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-209", "pedidos"],
   }),
 };
 /**
