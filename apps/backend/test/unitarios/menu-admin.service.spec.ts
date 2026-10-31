@@ -56,7 +56,7 @@ describe('MenuAdminService', () => {
   };
 
   const mockStorage = {
-    getSignedImageUrl: jest.fn(),
+    urlFirmadaDeLectura: jest.fn(),
     esKeyDelTenant: jest.fn(),
     existeImagen: jest.fn(),
   };
@@ -95,7 +95,7 @@ describe('MenuAdminService', () => {
     jest.clearAllMocks();
     // clearAllMocks no resetea implementaciones: se fija acá en cada test
     // para que un mockResolvedValue(null) de un test no se filtre al siguiente.
-    mockStorage.getSignedImageUrl.mockResolvedValue(URL_FIRMADA);
+    mockStorage.urlFirmadaDeLectura.mockResolvedValue(URL_FIRMADA);
     // BL-54: la regla real de esKeyDelTenant se prueba en storage.service.spec.
     // Acá alcanza con simularla: solo son propias las keys bajo el prefijo.
     mockStorage.esKeyDelTenant.mockImplementation(
@@ -696,8 +696,8 @@ describe('MenuAdminService', () => {
         keycloakId,
       );
 
-      expect(mockStorage.getSignedImageUrl).toHaveBeenCalledTimes(1);
-      expect(mockStorage.getSignedImageUrl).toHaveBeenCalledWith(
+      expect(mockStorage.urlFirmadaDeLectura).toHaveBeenCalledTimes(1);
+      expect(mockStorage.urlFirmadaDeLectura).toHaveBeenCalledWith(
         'tenant-1/menu/helado.jpg',
       );
       expect(result[0].items[0].imagenUrl).toBe(URL_FIRMADA);
@@ -707,8 +707,8 @@ describe('MenuAdminService', () => {
     });
 
     it('devuelve imagenUrl null si la firma falla (BL-257)', async () => {
-      // getSignedImageUrl ya captura el error de S3 y devuelve null.
-      mockStorage.getSignedImageUrl.mockResolvedValue(null);
+      // urlFirmadaDeLectura ya captura el error de S3 y devuelve null.
+      mockStorage.urlFirmadaDeLectura.mockResolvedValue(null);
       mockTx.categoriaCarta.findMany.mockResolvedValue([
         {
           id: 'cat-1',
@@ -756,7 +756,7 @@ describe('MenuAdminService', () => {
       await expect(
         service.findAllCategorias(tenantId, undefined, keycloakId),
       ).rejects.toThrow(UnauthorizedException);
-      expect(mockStorage.getSignedImageUrl).not.toHaveBeenCalled();
+      expect(mockStorage.urlFirmadaDeLectura).not.toHaveBeenCalled();
     });
   });
 

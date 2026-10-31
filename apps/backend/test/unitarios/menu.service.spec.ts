@@ -70,7 +70,7 @@ describe('MenuService - getMenuByRestaurante (HU-002)', () => {
     };
 
     mockStorage = {
-      getSignedImageUrl: jest.fn(),
+      urlImagenPublica: jest.fn(),
     } as any;
 
     const module: TestingModule = await Test.createTestingModule({
@@ -118,7 +118,7 @@ describe('MenuService - getMenuByRestaurante (HU-002)', () => {
 
       mockTx.restaurante.findUnique.mockResolvedValue(restaurante);
       mockCategoriaCartaFindMany([categoria]);
-      mockStorage.getSignedImageUrl.mockResolvedValue(
+      mockStorage.urlImagenPublica.mockResolvedValue(
         'https://s3.example.com/imagen.jpg',
       );
 
@@ -210,7 +210,7 @@ describe('MenuService - getMenuByRestaurante (HU-002)', () => {
 
       mockTx.restaurante.findUnique.mockResolvedValue(restaurante);
       mockCategoriaCartaFindMany([categoria]);
-      mockStorage.getSignedImageUrl.mockResolvedValue(
+      mockStorage.urlImagenPublica.mockResolvedValue(
         'https://s3.example.com/signed',
       );
 
@@ -226,7 +226,7 @@ describe('MenuService - getMenuByRestaurante (HU-002)', () => {
       expect(
         items.find((i: any) => i.nombre === 'Sin imagen')?.imagenUrl,
       ).toBeNull();
-      expect(mockStorage.getSignedImageUrl).toHaveBeenCalledTimes(1);
+      expect(mockStorage.urlImagenPublica).toHaveBeenCalledTimes(1);
     });
 
     it('debe devolver menú vacío cuando el restaurante no tiene categorías', async () => {
@@ -349,7 +349,7 @@ describe('MenuService - getMenuByMesa (HU-001)', () => {
     };
 
     mockStorage = {
-      getSignedImageUrl: jest.fn(),
+      urlImagenPublica: jest.fn(),
     } as any;
 
     const module: TestingModule = await Test.createTestingModule({
@@ -383,7 +383,7 @@ describe('MenuService - getMenuByMesa (HU-001)', () => {
 
       mockTx.mesa.findUnique.mockResolvedValue(mesa);
       mockTx.categoriaCarta.findMany.mockResolvedValue([categoria]);
-      mockStorage.getSignedImageUrl.mockResolvedValue(
+      mockStorage.urlImagenPublica.mockResolvedValue(
         'https://s3.example.com/imagen.jpg',
       );
 

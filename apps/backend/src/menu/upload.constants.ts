@@ -43,9 +43,15 @@ export const LADO_MAXIMO_IMAGEN_PX = 1600;
 /** Calidad del WebP publicado (0–100). */
 export const CALIDAD_WEBP = 82;
 
-/** Tipo y caché de la imagen publicada: los fija el servidor, no el cliente. */
+/**
+ * Tipo y caché de la imagen publicada: los fija el servidor, no el cliente.
+ * BL-199: cada imagen confirmada tiene una key nueva ({tenant}/menu/{uuid}.webp),
+ * así que nunca se sobrescribe y se puede cachear un año en la CDN y en el
+ * navegador sin invalidaciones.
+ */
 export const CONTENT_TYPE_IMAGEN_PUBLICADA = 'image/webp';
-export const CACHE_CONTROL_IMAGEN_PUBLICADA = 'private, max-age=3600';
+export const CACHE_CONTROL_IMAGEN_PUBLICADA =
+  'public, max-age=31536000, immutable';
 
 /** Límites por usuario (rate limiting) de la subida y la confirmación. */
 export const LIMITE_SUBIDAS_POR_MINUTO = 20;

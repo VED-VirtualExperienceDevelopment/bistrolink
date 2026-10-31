@@ -180,7 +180,7 @@ export class MenuAdminService {
 
     // Las imágenes se sirven con URL firmada (bucket privado, TTL de HU-001),
     // igual que en el menú público. Se firma fuera de la transacción para no
-    // mantenerla abierta. Si la firma falla, getSignedImageUrl devuelve null
+    // mantenerla abierta. Si la firma falla, urlFirmadaDeLectura devuelve null
     // y el frontend muestra el placeholder.
     return Promise.all(
       categorias.map(async (cat) => ({
@@ -189,7 +189,7 @@ export class MenuAdminService {
           cat.items.map(async (item) => ({
             ...item,
             imagenUrl: item.imagenKey
-              ? await this.storage.getSignedImageUrl(item.imagenKey)
+              ? await this.storage.urlFirmadaDeLectura(item.imagenKey)
               : null,
           })),
         ),
