@@ -154,6 +154,9 @@ export default function AdminMenuPage() {
   const [nuevaCategoriaNombre, setNuevaCategoriaNombre] = useState("");
   const [nuevaCategoriaOrden, setNuevaCategoriaOrden] = useState("0");
   const [creandoCategoria, setCreandoCategoria] = useState(false);
+  // BL-395: el error del alta (por ejemplo, 409 por nombre repetido) se
+  // muestra dentro del diálogo, como en Usuarios, y no con alert().
+  const [errorCategoria, setErrorCategoria] = useState<string | null>(null);
 
   const cargarDatos = async () => {
     setLoading(true);
@@ -223,6 +226,7 @@ export default function AdminMenuPage() {
   const crearCategoria = async (e: React.FormEvent) => {
     e.preventDefault();
     setCreandoCategoria(true);
+    setErrorCategoria(null);
     try {
       const keycloak = getKeycloak();
       await apiFetch("/admin/menu/categoria", keycloak.token, {
@@ -238,11 +242,16 @@ export default function AdminMenuPage() {
       await cargarDatos();
     } catch (error: unknown) {
       const message =
-        error instanceof Error ? error.message : "Error al crear la categoría";
-      alert(message);
+        error instanceof Error ? error.message : "No se pudo crear la categoría";
+      setErrorCategoria(message);
     } finally {
       setCreandoCategoria(false);
     }
+  };
+
+  const cerrarModalCategoria = () => {
+    setCategoriaModalOpen(false);
+    setErrorCategoria(null);
   };
 
   const toggleItem = async (itemId: string, current: boolean) => {
@@ -254,7 +263,7 @@ export default function AdminMenuPage() {
     );
     try {
       const keycloak = getKeycloak();
-      await apiFetch(`/admin/menu/item/${itemId}`, keycloak.token, {
+      await apiFetch(`/admin/menu/item/${itemId}/disponibilidad`, keycloak.token, {
         method: "PATCH",
         body: JSON.stringify({ disponible: !current }),
       });
@@ -555,7 +564,7 @@ export default function AdminMenuPage() {
               </h2>
               <button
                 type="button"
-                onClick={() => setCategoriaModalOpen(false)}
+                onClick={cerrarModalCategoria}
                 className="text-[#79767D] hover:text-[#7C7296] transition-colors"
                 aria-label="Cerrar modal"
               >
@@ -586,9 +595,14 @@ export default function AdminMenuPage() {
                   id="cat-nombre"
                   type="text"
                   value={nuevaCategoriaNombre}
-                  onChange={(e) => setNuevaCategoriaNombre(e.target.value)}
+                  onChange={(e) => {
+                    setNuevaCategoriaNombre(e.target.value);
+                    setErrorCategoria(null);
+                  }}
                   required
-                  className="w-full px-4 py-2 border border-[#79767D]/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#8069BF] focus:border-transparent"
+                  aria-invalid={errorCategoria ? true : undefined}
+                  aria-describedby={errorCategoria ? "cat-error" : undefined}
+                  className={`w-full px-4 py-2 border ${errorCategoria ? "border-error" : "border-[#79767D]/30"} rounded-lg focus:outline-none focus:ring-2 focus:ring-[#8069BF] focus:border-transparent`}
                   placeholder="Ej: Entradas, Platos principales, Postres"
                 />
               </div>
@@ -613,10 +627,19 @@ export default function AdminMenuPage() {
                   aparezca primero.
                 </p>
               </div>
+              {errorCategoria && (
+                <p
+                  id="cat-error"
+                  role="alert"
+                  className="rounded-lg bg-error-container px-3 py-2 text-body-sm text-on-error-container"
+                >
+                  {errorCategoria}
+                </p>
+              )}
               <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
                 <button
                   type="button"
-                  onClick={() => setCategoriaModalOpen(false)}
+                  onClick={cerrarModalCategoria}
                   className="px-4 py-2 border border-[#79767D]/30 text-[#7C7296] rounded-lg hover:bg-gray-50 transition-colors"
                 >
                   Cancelar

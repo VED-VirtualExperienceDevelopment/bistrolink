@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
@@ -10,6 +11,7 @@ import { MenuGateway } from './menu.gateway';
 import { CreateItemDto } from './dto/create-item.dto';
 import { UpdateItemDto } from './dto/update-item.dto';
 import { UpdateCategoriaDto } from './dto/update-categoria.dto';
+import { CreateCategoriaDto } from './dto/create-categoria.dto';
 import { StorageService } from './storage.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { AuditAction } from '../audit-log/audit-action.enum';
@@ -49,6 +51,32 @@ export function camposCambiados(
 
 const MENSAJE_IMAGEN_AJENA =
   'La imagen indicada no pertenece a este restaurante';
+export const MENSAJE_CATEGORIA_REPETIDA =
+  'Ya existe una categoría con ese nombre';
+export const MENSAJE_ITEM_REPETIDO =
+  'Ya existe un ítem con ese nombre en esta categoría';
+
+/**
+ * BL-393 y BL-395: los nombres de ítems y categorías no archivados son únicos
+ * (índices parciales de la migración, sin distinguir mayúsculas). Si se
+ * repite uno, la base responde P2002 y la API devuelve 409 en lugar de 500.
+ */
+async function conNombreUnico<T>(
+  operacion: Promise<T>,
+  mensaje: string,
+): Promise<T> {
+  try {
+    return await operacion;
+  } catch (err) {
+    if (
+      err instanceof Prisma.PrismaClientKnownRequestError &&
+      err.code === 'P2002'
+    ) {
+      throw new ConflictException(mensaje);
+    }
+    throw err;
+  }
+}
 const MENSAJE_IMAGEN_INEXISTENTE =
   'La imagen indicada no existe. Volvé a subirla.';
 
@@ -201,7 +229,7 @@ export class MenuAdminService {
     tenantId: string,
     restauranteId: string | undefined,
     keycloakId: string,
-    data: { nombre: string; orden?: number },
+    data: CreateCategoriaDto,
   ) {
     const finalRestauranteId = await this.resolveRestauranteId(
       tenantId,
@@ -210,14 +238,17 @@ export class MenuAdminService {
     );
 
     return this.prisma.runInTenantContext(tenantId, async (tx) => {
-      const nuevaCategoria = await tx.categoriaCarta.create({
-        data: {
-          ...data,
-          tenantId,
-          restauranteId: finalRestauranteId,
-          orden: data.orden ?? 0,
-        },
-      });
+      const nuevaCategoria = await conNombreUnico(
+        tx.categoriaCarta.create({
+          data: {
+            ...data,
+            tenantId,
+            restauranteId: finalRestauranteId,
+            orden: data.orden ?? 0,
+          },
+        }),
+        MENSAJE_CATEGORIA_REPETIDA,
+      );
       this.logger.log(`Categoría creada: ${nuevaCategoria.id}`);
       return nuevaCategoria;
     });
@@ -238,10 +269,13 @@ export class MenuAdminService {
         );
       }
 
-      const updated = await tx.categoriaCarta.update({
-        where: { id: categoriaId },
-        data: dto,
-      });
+      const updated = await conNombreUnico(
+        tx.categoriaCarta.update({
+          where: { id: categoriaId },
+          data: dto,
+        }),
+        MENSAJE_CATEGORIA_REPETIDA,
+      );
 
       if (dto.activo !== undefined) {
         this.menuGateway.emitCategoriaUpdated(tenantId, {
@@ -304,13 +338,16 @@ export class MenuAdminService {
         );
       }
 
-      const nuevoItem = await tx.itemCarta.create({
-        data: {
-          ...data,
-          tenantId,
-          disponible: data.disponible ?? true,
-        },
-      });
+      const nuevoItem = await conNombreUnico(
+        tx.itemCarta.create({
+          data: {
+            ...data,
+            tenantId,
+            disponible: data.disponible ?? true,
+          },
+        }),
+        MENSAJE_ITEM_REPETIDO,
+      );
 
       this.menuGateway.emitItemDataUpdated(tenantId, {
         itemId: nuevoItem.id,
@@ -370,10 +407,13 @@ export class MenuAdminService {
         await this.validarImagen(dto.imagenKey, tenantId);
       }
 
-      const updated = await tx.itemCarta.update({
-        where: { id: itemId },
-        data: dto,
-      });
+      const updated = await conNombreUnico(
+        tx.itemCarta.update({
+          where: { id: itemId },
+          data: dto,
+        }),
+        MENSAJE_ITEM_REPETIDO,
+      );
 
       this.menuGateway.emitItemDataUpdated(tenantId, {
         itemId,
@@ -400,6 +440,49 @@ export class MenuAdminService {
       }
 
       this.logger.log(`Ítem actualizado: ${itemId}`);
+      return updated;
+    });
+  }
+
+  /**
+   * BL-395: marcar un ítem como agotado o disponible (ADMIN y MOZO). Avisa a
+   * las otras pantallas de Gestión de Carta abiertas con el mismo evento que
+   * la baja, y queda en la auditoría como cambio de disponibilidad (HU-035).
+   */
+  async cambiarDisponibilidad(
+    tenantId: string,
+    itemId: string,
+    disponible: boolean,
+    actorKeycloakId?: string,
+  ) {
+    return this.prisma.runInTenantContext(tenantId, async (tx) => {
+      const existing = await tx.itemCarta.findFirst({
+        where: { id: itemId, tenantId },
+      });
+      if (!existing) {
+        throw new NotFoundException(
+          'Ítem no encontrado o no pertenece a este tenant',
+        );
+      }
+
+      const updated = await tx.itemCarta.update({
+        where: { id: itemId },
+        data: { disponible },
+      });
+
+      this.menuGateway.emitItemUpdated(tenantId, { itemId, disponible });
+
+      await this.auditarPrecioYDisponibilidad(
+        tx,
+        tenantId,
+        actorKeycloakId,
+        existing,
+        updated,
+      );
+
+      this.logger.log(
+        `Ítem ${disponible ? 'disponible' : 'agotado'}: ${itemId}`,
+      );
       return updated;
     });
   }

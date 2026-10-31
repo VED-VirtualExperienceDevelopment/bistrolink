@@ -18,6 +18,8 @@ import { StorageService } from './storage.service';
 import { CreateItemDto } from './dto/create-item.dto';
 import { UpdateItemDto } from './dto/update-item.dto';
 import { UpdateCategoriaDto } from './dto/update-categoria.dto';
+import { CreateCategoriaDto } from './dto/create-categoria.dto';
+import { CambiarDisponibilidadDto } from './dto/cambiar-disponibilidad.dto';
 import { PresignedUrlDto } from './dto/presigned-url.dto';
 import { ConfirmarImagenDto } from './dto/confirmar-imagen.dto';
 import { ImagenesMenuService } from './imagenes-menu.service';
@@ -33,7 +35,10 @@ import { SEGURIDAD_KEYCLOAK } from '../openapi';
 @ApiBearerAuth(SEGURIDAD_KEYCLOAK)
 @Controller('admin/menu')
 @UseGuards(AuthGuard('jwt'), RolesGuard)
-@Roles('ADMIN', 'MOZO')
+// BL-395: la carta la gestiona el ADMIN. El MOZO solo la ve y marca ítems
+// como agotados o disponibles: esos dos métodos declaran su propio @Roles,
+// que pisa al de la clase (getAllAndOverride en RolesGuard).
+@Roles('ADMIN')
 export class MenuAdminController {
   constructor(
     private readonly menuAdminService: MenuAdminService,
@@ -73,6 +78,7 @@ export class MenuAdminController {
   }
 
   @Get('categoria')
+  @Roles('ADMIN', 'MOZO')
   async findAllCategorias(@Req() req: any) {
     const restauranteId = req.query.restauranteId as string;
     const keycloakId = req.user.sub;
@@ -84,17 +90,14 @@ export class MenuAdminController {
   }
 
   @Post('categoria')
-  async createCategoria(
-    @Req() req: any,
-    @Body() body: { nombre: string; orden?: number },
-  ) {
+  async createCategoria(@Req() req: any, @Body() dto: CreateCategoriaDto) {
     const restauranteId = req.user.restauranteId;
     const keycloakId = req.user.sub;
     return this.menuAdminService.createCategoria(
       req.user.tenantId,
       restauranteId,
       keycloakId,
-      body,
+      dto,
     );
   }
 
@@ -135,6 +138,25 @@ export class MenuAdminController {
       req.user.tenantId,
       id,
       dto,
+      req.user.sub,
+    );
+  }
+
+  /**
+   * BL-395: marcar un ítem como agotado o disponible. Es lo único de la
+   * carta que también puede hacer el MOZO, durante el servicio.
+   */
+  @Patch('item/:id/disponibilidad')
+  @Roles('ADMIN', 'MOZO')
+  async cambiarDisponibilidad(
+    @Req() req: any,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CambiarDisponibilidadDto,
+  ) {
+    return this.menuAdminService.cambiarDisponibilidad(
+      req.user.tenantId,
+      id,
+      dto.disponible,
       req.user.sub,
     );
   }

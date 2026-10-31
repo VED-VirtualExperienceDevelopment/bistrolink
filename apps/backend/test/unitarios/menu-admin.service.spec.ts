@@ -1,10 +1,16 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   BadRequestException,
+  ConflictException,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { MenuAdminService } from '../../src/menu/menu-admin.service';
+import { Prisma } from '@prisma/client';
+import {
+  MENSAJE_CATEGORIA_REPETIDA,
+  MENSAJE_ITEM_REPETIDO,
+  MenuAdminService,
+} from '../../src/menu/menu-admin.service';
 import { TenantPrismaService } from '../../src/prisma/tenant-prisma.service';
 import { MenuGateway } from '../../src/menu/menu.gateway';
 import { StorageService } from '../../src/menu/storage.service';
@@ -22,6 +28,13 @@ const KEY_PROPIA =
 const KEY_AJENA = 'otro-tenant/menu/0b4f6a3e-2222-4c2d-9e8f-123456789abc.webp';
 const MENSAJE_IMAGEN_AJENA =
   'La imagen indicada no pertenece a este restaurante';
+
+// BL-395: lo que responde Prisma cuando se viola un índice único.
+const nombreRepetido = () =>
+  new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+    code: 'P2002',
+    clientVersion: '0.0.0',
+  });
 
 describe('MenuAdminService', () => {
   let service: MenuAdminService;
@@ -910,6 +923,153 @@ describe('MenuAdminService', () => {
       await expect(
         service.deleteCategoria(tenantId, categoriaId),
       ).rejects.toThrow('Categoría no encontrada o no pertenece a este tenant');
+    });
+  });
+  describe('cambiarDisponibilidad (BL-395)', () => {
+    const tenantId = 'test-tenant-id';
+    const itemId = 'item-123';
+    const actor = 'mozo-keycloak-id';
+    const existente = {
+      id: itemId,
+      nombre: 'Picada Completa',
+      precio: new Prisma.Decimal('890'),
+      disponible: true,
+      tenantId,
+    };
+
+    it('[TC-U-185] marca el ítem como agotado y avisa a las otras pantallas', async () => {
+      mockTx.itemCarta.findFirst.mockResolvedValue(existente);
+      mockTx.itemCarta.update.mockResolvedValue({
+        ...existente,
+        disponible: false,
+      });
+
+      const result = await service.cambiarDisponibilidad(
+        tenantId,
+        itemId,
+        false,
+        actor,
+      );
+
+      expect(result.disponible).toBe(false);
+      expect(mockTx.itemCarta.update).toHaveBeenCalledWith({
+        where: { id: itemId },
+        data: { disponible: false },
+      });
+      expect(mockMenuGateway.emitItemUpdated).toHaveBeenCalledWith(tenantId, {
+        itemId,
+        disponible: false,
+      });
+    });
+
+    it('[TC-U-185] solo cambia la disponibilidad, aunque el ítem tenga otros datos', async () => {
+      mockTx.itemCarta.findFirst.mockResolvedValue(existente);
+      mockTx.itemCarta.update.mockResolvedValue(existente);
+
+      await service.cambiarDisponibilidad(tenantId, itemId, true, actor);
+
+      expect(mockTx.itemCarta.update.mock.calls[0][0].data).toEqual({
+        disponible: true,
+      });
+    });
+
+    it('[TC-U-186] queda en la auditoría con el actor del token (HU-035)', async () => {
+      mockTx.itemCarta.findFirst.mockResolvedValue(existente);
+      mockTx.itemCarta.update.mockResolvedValue({
+        ...existente,
+        disponible: false,
+      });
+
+      await service.cambiarDisponibilidad(tenantId, itemId, false, actor);
+
+      expect(mockAuditLog.registrarEnTx).toHaveBeenCalledWith(
+        mockTx,
+        expect.objectContaining({
+          tenantId,
+          actorKeycloakId: actor,
+          entidadId: itemId,
+          antes: { disponible: true },
+          despues: { disponible: false },
+        }),
+      );
+    });
+
+    it('[TC-U-187] devuelve 404 si el ítem no existe o es de otro tenant', async () => {
+      mockTx.itemCarta.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.cambiarDisponibilidad(tenantId, itemId, false, actor),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockTx.itemCarta.update).not.toHaveBeenCalled();
+      expect(mockMenuGateway.emitItemUpdated).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('nombres repetidos (BL-393 y BL-395)', () => {
+    const tenantId = 'test-tenant-id';
+
+    it('[TC-U-188] crear una categoría con un nombre que ya existe devuelve 409', async () => {
+      mockTx.categoriaCarta.create.mockRejectedValueOnce(nombreRepetido());
+
+      const crear = service.createCategoria(tenantId, 'rest-123', 'user-123', {
+        nombre: 'Picadas',
+      });
+      await expect(crear).rejects.toThrow(ConflictException);
+      await expect(crear).rejects.toThrow(MENSAJE_CATEGORIA_REPETIDA);
+    });
+
+    it('[TC-U-188] renombrar una categoría a un nombre que ya existe devuelve 409', async () => {
+      mockTx.categoriaCarta.findFirst.mockResolvedValue({
+        id: 'cat-123',
+        nombre: 'Tablas',
+        tenantId,
+      });
+      mockTx.categoriaCarta.update.mockRejectedValueOnce(nombreRepetido());
+
+      await expect(
+        service.updateCategoria(tenantId, 'cat-123', { nombre: 'Picadas' }),
+      ).rejects.toThrow(MENSAJE_CATEGORIA_REPETIDA);
+    });
+
+    it('[TC-U-189] crear un ítem con un nombre que ya existe en la categoría devuelve 409', async () => {
+      mockTx.categoriaCarta.findFirst.mockResolvedValue({
+        id: 'cat-123',
+        tenantId,
+      });
+      mockTx.itemCarta.create.mockRejectedValueOnce(nombreRepetido());
+
+      await expect(
+        service.createItem(tenantId, {
+          categoriaId: 'cat-123',
+          nombre: 'Picada Completa',
+          precio: '890',
+        }),
+      ).rejects.toThrow(MENSAJE_ITEM_REPETIDO);
+    });
+
+    it('[TC-U-189] renombrar un ítem a un nombre que ya existe devuelve 409', async () => {
+      mockTx.itemCarta.findFirst.mockResolvedValue({
+        id: 'item-123',
+        nombre: 'Picada Chica',
+        categoriaId: 'cat-123',
+        imagenKey: null,
+        tenantId,
+      });
+      mockTx.itemCarta.update.mockRejectedValueOnce(nombreRepetido());
+
+      await expect(
+        service.updateItem(tenantId, 'item-123', { nombre: 'Picada Completa' }),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('[TC-U-190] otro error de la base no se convierte en 409', async () => {
+      mockTx.categoriaCarta.create.mockRejectedValueOnce(new Error('se cayó'));
+
+      await expect(
+        service.createCategoria(tenantId, 'rest-123', 'user-123', {
+          nombre: 'Picadas',
+        }),
+      ).rejects.toThrow('se cayó');
     });
   });
 });
