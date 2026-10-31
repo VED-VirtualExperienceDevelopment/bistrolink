@@ -14,6 +14,8 @@ import {
   type ArchivarObjetivo,
 } from "@/components/menu/ArchivarDialog";
 import { FiltrosCarta } from "@/components/menu/FiltrosCarta";
+import { MenuAcciones } from "@/components/menu/MenuAcciones";
+import { AvisoDeshacer } from "@/components/menu/AvisoDeshacer";
 import { ArchivadosCarta } from "@/components/menu/ArchivadosCarta";
 import { EliminarDefinitivoDialog } from "@/components/menu/EliminarDefinitivoDialog";
 import {
@@ -50,6 +52,14 @@ const CLASE_ACCION =
   "flex h-12 w-12 flex-none items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-high focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary";
 
 const horaActual = () => new Date().toLocaleTimeString("es-UY");
+
+/** BL-398 (parte 5): «Ítem «Flan» archivado» / «Categoría «Postres» archivada». */
+const textoAvisoDeshacer = (objetivo: ArchivarObjetivo | null) => {
+  if (!objetivo) return null;
+  return objetivo.tipo === "item"
+    ? `Ítem «${objetivo.nombre}» archivado`
+    : `Categoría «${objetivo.nombre}» archivada`;
+};
 
 // ============================================================================
 // ESTADO DE UN ÍTEM
@@ -132,7 +142,30 @@ function ItemCard({
           label={`${item.nombre} disponible`}
         />
         {puedeEditar && (
-          <div className="flex">
+          // BL-398 (parte 5): en el celular las acciones van en el menú «⋯»;
+          // desde 768 px, como botones de ícono.
+          <div className="md:hidden">
+            <MenuAcciones
+              etiqueta={`Acciones de ${item.nombre}`}
+              acciones={[
+                {
+                  id: "editar",
+                  texto: "Editar",
+                  icono: "edit",
+                  onSelect: () => onEditar(categoria, item),
+                },
+                {
+                  id: "archivar",
+                  texto: "Archivar",
+                  icono: "archive",
+                  onSelect: () => onArchivar(item),
+                },
+              ]}
+            />
+          </div>
+        )}
+        {puedeEditar && (
+          <div className="hidden md:flex">
             <button
               type="button"
               onClick={() => onEditar(categoria, item)}
@@ -214,6 +247,11 @@ export default function AdminMenuPage() {
     [archivados, filtros],
   );
   const [aEliminar, setAEliminar] = useState<ArchivarObjetivo | null>(null);
+  // BL-398 (parte 5): lo último que se archivó, para el aviso «Deshacer».
+  const [ultimoArchivo, setUltimoArchivo] = useState<ArchivarObjetivo | null>(
+    null,
+  );
+  const vencerAvisoDeshacer = useCallback(() => setUltimoArchivo(null), []);
 
   const cargarDatos = useCallback(async () => {
     try {
@@ -371,13 +409,15 @@ export default function AdminMenuPage() {
   // historial). Se confirma en ArchivarDialog; si la API responde 409, el
   // diálogo muestra el motivo. La eliminación definitiva y «Restaurar»
   // llegan con el filtro «Archivados» (BL-398, parte 3).
-  const archivar = async ({ tipo, id }: ArchivarObjetivo) => {
+  const archivar = async (objetivo: ArchivarObjetivo) => {
+    const { tipo, id } = objetivo;
     const keycloak = getKeycloak();
     const ruta =
       tipo === "item"
         ? `/admin/menu/item/${id}/archivar`
         : `/admin/menu/categoria/${id}/archivar`;
     await apiFetch(ruta, keycloak.token, { method: "POST" });
+    setUltimoArchivo(objetivo);
     if (tipo === "item") {
       setCategorias((prev) => sinItem(prev, id));
       setUltimaNovedad(`Ítem archivado a las ${horaActual()}`);
@@ -661,12 +701,40 @@ export default function AdminMenuPage() {
                     onChange={() => cambiarVisibilidad(cat.id, cat.activo)}
                     label={`Categoría ${cat.nombre} visible en la carta`}
                   />
+                  <div className="md:hidden">
+                    <MenuAcciones
+                      etiqueta={`Acciones de la categoría ${cat.nombre}`}
+                      acciones={[
+                        {
+                          id: "editar",
+                          texto: "Editar",
+                          icono: "edit",
+                          onSelect: () =>
+                            setCategoriaEnDialogo({
+                              modo: "editar",
+                              categoria: cat,
+                            }),
+                        },
+                        {
+                          id: "archivar",
+                          texto: "Archivar",
+                          icono: "archive",
+                          onSelect: () =>
+                            setAArchivar({
+                              tipo: "categoria",
+                              id: cat.id,
+                              nombre: cat.nombre,
+                            }),
+                        },
+                      ]}
+                    />
+                  </div>
                   <button
                     type="button"
                     onClick={() =>
                       setCategoriaEnDialogo({ modo: "editar", categoria: cat })
                     }
-                    className={`${CLASE_ACCION} hover:text-primary`}
+                    className={`${CLASE_ACCION} hidden hover:text-primary md:flex`}
                     title="Editar categoría"
                     aria-label={`Editar categoría ${cat.nombre}`}
                   >
@@ -683,7 +751,7 @@ export default function AdminMenuPage() {
                         nombre: cat.nombre,
                       })
                     }
-                    className={`${CLASE_ACCION} hover:text-primary`}
+                    className={`${CLASE_ACCION} hidden hover:text-primary md:flex`}
                     title="Archivar categoría"
                     aria-label={`Archivar categoría ${cat.nombre}`}
                   >
@@ -751,6 +819,16 @@ export default function AdminMenuPage() {
         objetivo={aArchivar}
         onClose={() => setAArchivar(null)}
         onConfirmar={archivar}
+      />
+
+      <AvisoDeshacer
+        texto={textoAvisoDeshacer(ultimoArchivo)}
+        onDeshacer={() => {
+          const objetivo = ultimoArchivo;
+          setUltimoArchivo(null);
+          if (objetivo) void restaurar(objetivo);
+        }}
+        onVencer={vencerAvisoDeshacer}
       />
 
       <EliminarDefinitivoDialog
