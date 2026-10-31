@@ -400,3 +400,82 @@ export function textoPosicion(
 ): string {
   return `«${nombre}» quedó en la posición ${posicion} de ${total}`;
 }
+// ── BL-399 (parte 2): arrastrar para ordenar ────────────────────────────────
+
+/**
+ * Lleva un elemento al lugar de otro, corriendo los del medio. Devuelve
+ * null si alguno no está o si se soltó en el mismo lugar.
+ */
+export function moverA<T extends { readonly id: string }>(
+  lista: readonly T[],
+  id: string,
+  destinoId: string,
+): T[] | null {
+  const desde = lista.findIndex((elemento) => elemento.id === id);
+  const hasta = lista.findIndex((elemento) => elemento.id === destinoId);
+  if (desde < 0 || hasta < 0 || desde === hasta) return null;
+  const copia = [...lista];
+  const [movido] = copia.splice(desde, 1);
+  copia.splice(hasta, 0, movido);
+  return copia;
+}
+
+/** La carta con una categoría llevada al lugar de otra. */
+export function conCategoriaEn(
+  categorias: Categorias,
+  categoriaId: string,
+  destinoId: string,
+): CategoriaGestion[] | null {
+  const movidas = moverA(categorias, categoriaId, destinoId);
+  if (!movidas) return null;
+  return movidas.map((cat, indice) => ({ ...cat, orden: indice + 1 }));
+}
+
+/** La carta con un ítem llevado al lugar de otro de su misma categoría. */
+export function conItemEn(
+  categorias: Categorias,
+  categoriaId: string,
+  itemId: string,
+  destinoId: string,
+): CategoriaGestion[] | null {
+  const categoria = categorias.find((cat) => cat.id === categoriaId);
+  if (!categoria) return null;
+  const items = moverA(categoria.items, itemId, destinoId);
+  if (!items) return null;
+  return categorias.map((cat) =>
+    cat.id === categoriaId ? { ...cat, items } : cat,
+  );
+}
+
+/** Instrucciones que el lector de pantalla lee al llegar a una manija. */
+export const INSTRUCCIONES_ARRASTRE =
+  "Para cambiar el orden, presioná Espacio para levantar. Usá las flechas para moverlo, Espacio para soltarlo o Escape para cancelar.";
+
+/** Avisos al lector de pantalla mientras se arrastra (en español). */
+export function anuncioLevantado(
+  nombre: string,
+  posicion: number,
+  total: number,
+): string {
+  return `Levantaste «${nombre}», en la posición ${posicion} de ${total}.`;
+}
+
+export function anuncioSobre(
+  nombre: string,
+  posicion: number,
+  total: number,
+): string {
+  return `«${nombre}» está sobre la posición ${posicion} de ${total}.`;
+}
+
+export function anuncioSoltado(
+  nombre: string,
+  posicion: number,
+  total: number,
+): string {
+  return `Soltaste «${nombre}» en la posición ${posicion} de ${total}.`;
+}
+
+export function anuncioCancelado(nombre: string): string {
+  return `Cancelaste. «${nombre}» volvió a su lugar.`;
+}

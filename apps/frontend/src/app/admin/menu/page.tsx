@@ -22,6 +22,7 @@ import {
   idTituloCategoria,
 } from "@/components/menu/IndiceCategorias";
 import { AvisoDeshacer } from "@/components/menu/AvisoDeshacer";
+import { ListaOrdenable, Ordenable } from "@/components/menu/ListaOrdenable";
 import { ArchivadosCarta } from "@/components/menu/ArchivadosCarta";
 import { EliminarDefinitivoDialog } from "@/components/menu/EliminarDefinitivoDialog";
 import {
@@ -46,6 +47,8 @@ import {
   textoItemsDeCategoria,
   conCategoriaMovida,
   conItemMovido,
+  conCategoriaEn,
+  conItemEn,
   textoPosicion,
   type Desplazamiento,
   type CategoriaGestion,
@@ -141,6 +144,8 @@ interface ItemCardProps {
   readonly onMover: (item: ItemGestion, desplazamiento: Desplazamiento) => void;
   readonly puedeSubir: boolean;
   readonly puedeBajar: boolean;
+  // BL-399 (parte 2): muestra la manija para arrastrar.
+  readonly puedeArrastrar: boolean;
   // BL-395: editar y archivar son solo del ADMIN; el MOZO solo ve el switch.
   readonly puedeEditar: boolean;
 }
@@ -149,7 +154,8 @@ interface ItemCardProps {
  * BL-400: tarjeta simplificada. Nombre y precio en la misma línea, la
  * descripción debajo y el badge solo si está agotado. A la derecha, el
  * switch de disponibilidad y el menú «⋯» (Editar, Subir, Bajar, Archivar).
- * Para el ADMIN, el nombre abre el formulario de edición.
+ * Para el ADMIN, el nombre abre el formulario de edición. A la izquierda, la
+ * manija «⠿» para arrastrarlo (BL-399).
  */
 function ItemCard({
   item,
@@ -160,83 +166,97 @@ function ItemCard({
   onMover,
   puedeSubir,
   puedeBajar,
+  puedeArrastrar,
   puedeEditar,
 }: ItemCardProps) {
   return (
-    <li
-      data-acciones-item={item.id}
-      className="flex items-start gap-3 rounded-xl border border-outline-variant bg-surface-container-lowest p-3"
+    <Ordenable
+      id={item.id}
+      etiqueta={`Mover ${item.nombre}`}
+      deshabilitado={!puedeArrastrar}
     >
-      <div className="h-14 w-14 flex-none overflow-hidden rounded-lg border border-outline-variant bg-surface-container">
-        <ItemImagen
-          url={item.imagenUrl}
-          alt={item.nombre}
-          className="h-full w-full object-cover"
-        />
-      </div>
-
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-baseline gap-x-2">
-          <h3 className="text-body-lg font-medium text-on-surface">
-            {puedeEditar ? (
-              <button
-                type="button"
-                onClick={() => onEditar(categoria, item)}
-                className="rounded text-left hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
-              >
-                <span className="sr-only">Editar </span>
-                {item.nombre}
-              </button>
-            ) : (
-              item.nombre
-            )}
-          </h3>
-          <span className="text-body-md font-semibold text-on-surface">
-            {formatearPrecio(item.precio)}
-          </span>
-        </div>
-        {item.descripcion && (
-          <p className="line-clamp-2 text-body-md text-on-surface-variant">
-            {item.descripcion}
-          </p>
-        )}
-        {!item.disponible && (
-          <div className="mt-1">
-            <BadgeAgotado />
+      {({ ref, style, arrastrando, manija }) => (
+        <li
+          ref={ref}
+          style={style}
+          data-acciones-item={item.id}
+          className={`flex items-start gap-3 rounded-xl border border-outline-variant bg-surface-container-lowest p-3 ${
+            arrastrando ? "shadow-lg ring-2 ring-primary" : ""
+          }`}
+        >
+          {manija && <div className="-my-1 -ml-2">{manija}</div>}
+          <div className="h-14 w-14 flex-none overflow-hidden rounded-lg border border-outline-variant bg-surface-container">
+            <ItemImagen
+              url={item.imagenUrl}
+              alt={item.nombre}
+              className="h-full w-full object-cover"
+            />
           </div>
-        )}
-      </div>
 
-      <div className="flex flex-none items-center gap-1">
-        <Switch
-          checked={item.disponible}
-          onChange={() => onCambiarDisponibilidad(item.id, item.disponible)}
-          label={`${item.nombre} disponible`}
-        />
-        {puedeEditar && (
-          <MenuAcciones
-            etiqueta={`Acciones de ${item.nombre}`}
-            acciones={[
-              {
-                id: "editar",
-                texto: "Editar",
-                icono: "edit",
-                onSelect: () => onEditar(categoria, item),
-              },
-              ...accionesDeOrden(puedeSubir, puedeBajar, (d) =>
-                onMover(item, d),
-              ),
-              {
-                id: "archivar",
-                texto: "Archivar",
-                icono: "archive",
-                onSelect: () => onArchivar(item),
-              },
-            ]}
-          />
-        )}
-      </div>
-    </li>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-baseline gap-x-2">
+              <h3 className="text-body-lg font-medium text-on-surface">
+                {puedeEditar ? (
+                  <button
+                    type="button"
+                    onClick={() => onEditar(categoria, item)}
+                    className="rounded text-left hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+                  >
+                    <span className="sr-only">Editar </span>
+                    {item.nombre}
+                  </button>
+                ) : (
+                  item.nombre
+                )}
+              </h3>
+              <span className="text-body-md font-semibold text-on-surface">
+                {formatearPrecio(item.precio)}
+              </span>
+            </div>
+            {item.descripcion && (
+              <p className="line-clamp-2 text-body-md text-on-surface-variant">
+                {item.descripcion}
+              </p>
+            )}
+            {!item.disponible && (
+              <div className="mt-1">
+                <BadgeAgotado />
+              </div>
+            )}
+          </div>
+
+          <div className="flex flex-none items-center gap-1">
+            <Switch
+              checked={item.disponible}
+              onChange={() => onCambiarDisponibilidad(item.id, item.disponible)}
+              label={`${item.nombre} disponible`}
+            />
+            {puedeEditar && (
+              <MenuAcciones
+                etiqueta={`Acciones de ${item.nombre}`}
+                acciones={[
+                  {
+                    id: "editar",
+                    texto: "Editar",
+                    icono: "edit",
+                    onSelect: () => onEditar(categoria, item),
+                  },
+                  ...accionesDeOrden(puedeSubir, puedeBajar, (d) =>
+                    onMover(item, d),
+                  ),
+                  {
+                    id: "archivar",
+                    texto: "Archivar",
+                    icono: "archive",
+                    onSelect: () => onArchivar(item),
+                  },
+                ]}
+              />
+            )}
+          </div>
+        </li>
+      )}
+    </Ordenable>
   );
 }
 
@@ -574,13 +594,11 @@ export default function AdminMenuPage() {
     }
   };
 
-  const moverCategoria = (
+  // BL-399: Subir / Bajar y arrastrar guardan igual: la lista completa.
+  const guardarOrdenCategorias = (
+    nuevas: CategoriaGestion[],
     categoria: CategoriaGestion,
-    desplazamiento: Desplazamiento,
   ) => {
-    if (guardandoOrdenRef.current) return;
-    const nuevas = conCategoriaMovida(categorias, categoria.id, desplazamiento);
-    if (!nuevas) return;
     const posicion = nuevas.findIndex((c) => c.id === categoria.id) + 1;
     void guardarOrden(
       categorias,
@@ -589,6 +607,32 @@ export default function AdminMenuPage() {
       nuevas.map((c) => c.id),
       textoPosicion(categoria.nombre, posicion, nuevas.length),
     );
+  };
+
+  const guardarOrdenItems = (
+    nuevas: CategoriaGestion[],
+    categoria: CategoriaGestion,
+    item: ItemGestion,
+  ) => {
+    const items = nuevas.find((c) => c.id === categoria.id)?.items ?? [];
+    const posicion = items.findIndex((i) => i.id === item.id) + 1;
+    void guardarOrden(
+      categorias,
+      nuevas,
+      `/admin/menu/categoria/${categoria.id}/orden`,
+      items.map((i) => i.id),
+      textoPosicion(item.nombre, posicion, items.length),
+    );
+  };
+
+  const moverCategoria = (
+    categoria: CategoriaGestion,
+    desplazamiento: Desplazamiento,
+  ) => {
+    if (guardandoOrdenRef.current) return;
+    const nuevas = conCategoriaMovida(categorias, categoria.id, desplazamiento);
+    if (!nuevas) return;
+    guardarOrdenCategorias(nuevas, categoria);
     enfocarMenuDe(`[data-acciones-categoria="${categoria.id}"]`);
   };
 
@@ -600,17 +644,34 @@ export default function AdminMenuPage() {
     if (guardandoOrdenRef.current) return;
     const nuevas = conItemMovido(categorias, categoria.id, item.id, desplazamiento);
     if (!nuevas) return;
-    const items = nuevas.find((c) => c.id === categoria.id)?.items ?? [];
-    const posicion = items.findIndex((i) => i.id === item.id) + 1;
-    void guardarOrden(
-      categorias,
-      nuevas,
-      `/admin/menu/categoria/${categoria.id}/orden`,
-      items.map((i) => i.id),
-      textoPosicion(item.nombre, posicion, items.length),
-    );
+    guardarOrdenItems(nuevas, categoria, item);
     enfocarMenuDe(`[data-acciones-item="${item.id}"]`);
   };
+
+  // BL-399 (parte 2): se soltó una categoría o un ítem en el lugar de otro.
+  // Con el teclado, dnd-kit devuelve el foco a la manija.
+  const soltarCategoria = (categoriaId: string, destinoId: string) => {
+    if (guardandoOrdenRef.current) return;
+    const categoria = categorias.find((c) => c.id === categoriaId);
+    const nuevas = conCategoriaEn(categorias, categoriaId, destinoId);
+    if (!categoria || !nuevas) return;
+    guardarOrdenCategorias(nuevas, categoria);
+  };
+
+  const soltarItem = (
+    categoria: CategoriaGestion,
+    itemId: string,
+    destinoId: string,
+  ) => {
+    if (guardandoOrdenRef.current) return;
+    const item = categoria.items.find((i) => i.id === itemId);
+    const nuevas = conItemEn(categorias, categoria.id, itemId, destinoId);
+    if (!item || !nuevas) return;
+    guardarOrdenItems(nuevas, categoria, item);
+  };
+
+  const nombreCategoria = (id: string) =>
+    categorias.find((c) => c.id === id)?.nombre ?? "";
 
   // Contador del encabezado según lo que se está viendo.
   const textoDelContador = () => {
@@ -741,6 +802,13 @@ export default function AdminMenuPage() {
         </p>
       )}
 
+      {!loading && puedeEditarCarta && conFiltros && !verArchivados && (
+        // BL-399: con filtros no aparecen la manija ni Subir / Bajar.
+        <p className="text-body-sm text-on-surface-variant">
+          Para cambiar el orden, quitá los filtros.
+        </p>
+      )}
+
       {!loading && categorias.length === 0 && (
         <div className="rounded-xl border border-outline-variant bg-surface-container-lowest p-12 text-center">
           <span className="material-symbols-outlined text-4xl text-on-surface-variant" aria-hidden="true">
@@ -810,138 +878,166 @@ export default function AdminMenuPage() {
               <IndiceCategorias categorias={categoriasVisibles} variante="lista" />
             </div>
           )}
-          <div className="space-y-6">
-            {categoriasVisibles.map((cat, indiceCategoria) => (
-              <section
-                key={cat.id}
-                id={idSeccionCategoria(cat.id)}
-                aria-labelledby={idTituloCategoria(cat.id)}
-                // BL-400: margen para que, al saltar desde el índice, el título
-                // no quede tapado por la barra fija.
-                className={`scroll-mt-64 overflow-hidden rounded-xl border border-outline-variant md:scroll-mt-44 xl:scroll-mt-28 ${
-                  cat.activo ? "bg-surface-container-lowest" : "bg-surface-container"
-                }`}
-              >
-                <div className="flex flex-col gap-2 border-b border-outline-variant bg-surface-container-low px-4 py-3 md:flex-row md:items-center md:justify-between">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h2
-                      id={idTituloCategoria(cat.id)}
-                      tabIndex={-1}
-                      className="text-headline-sm text-on-surface focus:outline-none"
+          <ListaOrdenable
+            ids={categoriasVisibles.map((c) => c.id)}
+            nombreDe={nombreCategoria}
+            disposicion="lista"
+            onSoltar={soltarCategoria}
+          >
+            <div className="space-y-6">
+              {categoriasVisibles.map((cat, indiceCategoria) => (
+                <Ordenable
+                  key={cat.id}
+                  id={cat.id}
+                  etiqueta={`Mover la categoría ${cat.nombre}`}
+                  deshabilitado={!puedeOrdenar}
+                >
+                  {({ ref, style, arrastrando, manija }) => (
+                    <section
+                      ref={ref}
+                      style={style}
+                      id={idSeccionCategoria(cat.id)}
+                      aria-labelledby={idTituloCategoria(cat.id)}
+                      // BL-400: margen para que, al saltar desde el índice, el título
+                      // no quede tapado por la barra fija.
+                      className={`scroll-mt-64 overflow-hidden rounded-xl border border-outline-variant md:scroll-mt-44 xl:scroll-mt-28 ${
+                        cat.activo ? "bg-surface-container-lowest" : "bg-surface-container"
+                      } ${arrastrando ? "shadow-lg ring-2 ring-primary" : ""}`}
                     >
-                      {cat.nombre}
-                    </h2>
-                    {!cat.activo && (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-surface-container-highest px-2.5 py-0.5 text-body-sm text-on-surface-variant">
-                        <span className="material-symbols-outlined text-[16px]" aria-hidden="true">
-                          visibility_off
-                        </span>
-                        Oculta
-                      </span>
-                    )}
-                    <span className="text-body-md text-on-surface-variant">
-                      {textoItemsDeCategoria(cat)}
-                    </span>
-                    {/* BL-393: subtítulo opcional de la categoría. */}
-                    {cat.descripcion && (
-                      <p className="w-full text-body-md text-on-surface-variant">
-                        {cat.descripcion}
-                      </p>
-                    )}
-                  </div>
-                  {puedeEditarCarta && (
-                    <div
-                      data-acciones-categoria={cat.id}
-                      className="flex items-center gap-2"
-                    >
-                      <span className="text-body-md text-on-surface-variant">Visible</span>
-                      <Switch
-                        checked={cat.activo}
-                        onChange={() => cambiarVisibilidad(cat.id, cat.activo)}
-                        label={`Categoría ${cat.nombre} visible en la carta`}
-                      />
-                      <MenuAcciones
-                        etiqueta={`Acciones de la categoría ${cat.nombre}`}
-                        acciones={[
-                          {
-                            id: "editar",
-                            texto: "Editar",
-                            icono: "edit",
-                            onSelect: () =>
-                              setCategoriaEnDialogo({
-                                modo: "editar",
-                                categoria: cat,
-                              }),
-                          },
-                          ...accionesDeOrden(
-                            puedeOrdenar && indiceCategoria > 0,
-                            puedeOrdenar &&
-                              indiceCategoria < categoriasVisibles.length - 1,
-                            (d) => moverCategoria(cat, d),
-                          ),
-                          {
-                            id: "archivar",
-                            texto: "Archivar",
-                            icono: "archive",
-                            onSelect: () =>
-                              setAArchivar({
-                                tipo: "categoria",
-                                id: cat.id,
-                                nombre: cat.nombre,
-                              }),
-                          },
-                        ]}
-                      />
-                    </div>
+                      <div className="flex flex-col gap-2 border-b border-outline-variant bg-surface-container-low px-4 py-3 md:flex-row md:items-center md:justify-between">
+                        <div className="flex flex-wrap items-center gap-2">
+                          {manija && <div className="-my-2 -ml-2">{manija}</div>}
+                          <h2
+                            id={idTituloCategoria(cat.id)}
+                            tabIndex={-1}
+                            className="text-headline-sm text-on-surface focus:outline-none"
+                          >
+                            {cat.nombre}
+                          </h2>
+                          {!cat.activo && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-surface-container-highest px-2.5 py-0.5 text-body-sm text-on-surface-variant">
+                              <span className="material-symbols-outlined text-[16px]" aria-hidden="true">
+                                visibility_off
+                              </span>
+                              Oculta
+                            </span>
+                          )}
+                          <span className="text-body-md text-on-surface-variant">
+                            {textoItemsDeCategoria(cat)}
+                          </span>
+                          {/* BL-393: subtítulo opcional de la categoría. */}
+                          {cat.descripcion && (
+                            <p className="w-full text-body-md text-on-surface-variant">
+                              {cat.descripcion}
+                            </p>
+                          )}
+                        </div>
+                        {puedeEditarCarta && (
+                          <div
+                            data-acciones-categoria={cat.id}
+                            className="flex items-center gap-2"
+                          >
+                            <span className="text-body-md text-on-surface-variant">Visible</span>
+                            <Switch
+                              checked={cat.activo}
+                              onChange={() => cambiarVisibilidad(cat.id, cat.activo)}
+                              label={`Categoría ${cat.nombre} visible en la carta`}
+                            />
+                            <MenuAcciones
+                              etiqueta={`Acciones de la categoría ${cat.nombre}`}
+                              acciones={[
+                                {
+                                  id: "editar",
+                                  texto: "Editar",
+                                  icono: "edit",
+                                  onSelect: () =>
+                                    setCategoriaEnDialogo({
+                                      modo: "editar",
+                                      categoria: cat,
+                                    }),
+                                },
+                                ...accionesDeOrden(
+                                  puedeOrdenar && indiceCategoria > 0,
+                                  puedeOrdenar &&
+                                    indiceCategoria < categoriasVisibles.length - 1,
+                                  (d) => moverCategoria(cat, d),
+                                ),
+                                {
+                                  id: "archivar",
+                                  texto: "Archivar",
+                                  icono: "archive",
+                                  onSelect: () =>
+                                    setAArchivar({
+                                      tipo: "categoria",
+                                      id: cat.id,
+                                      nombre: cat.nombre,
+                                    }),
+                                },
+                              ]}
+                            />
+                          </div>
+                        )}
+                      </div>
+
+                      {cat.items.length === 0 ? (
+                        <p className="px-4 py-8 text-center text-body-md text-on-surface-variant">
+                          No hay ítems en esta categoría.
+                        </p>
+                      ) : (
+                        // BL-398: en PC los ítems van en 2 o 3 columnas para aprovechar
+                        // el ancho sin que cada tarjeta quede demasiado estirada.
+                        <ListaOrdenable
+                          ids={cat.items.map((i) => i.id)}
+                          nombreDe={(id) =>
+                            cat.items.find((i) => i.id === id)?.nombre ?? ""
+                          }
+                          disposicion="grilla"
+                          onSoltar={(id, destinoId) => soltarItem(cat, id, destinoId)}
+                        >
+                          <ul className="grid grid-cols-1 gap-3 p-4 lg:grid-cols-2 2xl:grid-cols-3">
+                            {cat.items.map((item, indiceItem) => (
+                              <ItemCard
+                                key={item.id}
+                                item={item}
+                                categoria={cat}
+                                onEditar={abrirEditarItem}
+                                onCambiarDisponibilidad={cambiarDisponibilidad}
+                                onArchivar={(i) =>
+                                  setAArchivar({ tipo: "item", id: i.id, nombre: i.nombre })
+                                }
+                                onMover={(i, d) => moverItem(cat, i, d)}
+                                puedeSubir={puedeOrdenar && indiceItem > 0}
+                                puedeBajar={
+                                  puedeOrdenar && indiceItem < cat.items.length - 1
+                                }
+                                puedeArrastrar={puedeOrdenar}
+                                puedeEditar={puedeEditarCarta}
+                              />
+                            ))}
+                          </ul>
+                        </ListaOrdenable>
+                      )}
+
+                      {puedeEditarCarta && (
+                        <div className="border-t border-outline-variant px-4 py-2">
+                          <button
+                            type="button"
+                            onClick={() => abrirNuevoItem(cat)}
+                            className="flex min-h-12 items-center gap-1 rounded-lg px-2 text-body-md font-medium text-primary hover:bg-surface-container"
+                          >
+                            <span className="material-symbols-outlined text-[20px]" aria-hidden="true">
+                              add
+                            </span>
+                            Agregar ítem
+                          </button>
+                        </div>
+                      )}
+                    </section>
                   )}
-                </div>
-
-                {cat.items.length === 0 ? (
-                  <p className="px-4 py-8 text-center text-body-md text-on-surface-variant">
-                    No hay ítems en esta categoría.
-                  </p>
-                ) : (
-                  // BL-398: en PC los ítems van en 2 o 3 columnas para aprovechar
-                  // el ancho sin que cada tarjeta quede demasiado estirada.
-                  <ul className="grid grid-cols-1 gap-3 p-4 lg:grid-cols-2 2xl:grid-cols-3">
-                    {cat.items.map((item, indiceItem) => (
-                      <ItemCard
-                        key={item.id}
-                        item={item}
-                        categoria={cat}
-                        onEditar={abrirEditarItem}
-                        onCambiarDisponibilidad={cambiarDisponibilidad}
-                        onArchivar={(i) =>
-                          setAArchivar({ tipo: "item", id: i.id, nombre: i.nombre })
-                        }
-                        onMover={(i, d) => moverItem(cat, i, d)}
-                        puedeSubir={puedeOrdenar && indiceItem > 0}
-                        puedeBajar={
-                          puedeOrdenar && indiceItem < cat.items.length - 1
-                        }
-                        puedeEditar={puedeEditarCarta}
-                      />
-                    ))}
-                  </ul>
-                )}
-
-                {puedeEditarCarta && (
-                  <div className="border-t border-outline-variant px-4 py-2">
-                    <button
-                      type="button"
-                      onClick={() => abrirNuevoItem(cat)}
-                      className="flex min-h-12 items-center gap-1 rounded-lg px-2 text-body-md font-medium text-primary hover:bg-surface-container"
-                    >
-                      <span className="material-symbols-outlined text-[20px]" aria-hidden="true">
-                        add
-                      </span>
-                      Agregar ítem
-                    </button>
-                  </div>
-                )}
-              </section>
-            ))}
-          </div>
+                </Ordenable>
+              ))}
+            </div>
+          </ListaOrdenable>
         </div>
       )}
 

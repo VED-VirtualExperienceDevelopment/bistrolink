@@ -1,4 +1,11 @@
 import {
+  anuncioCancelado,
+  anuncioLevantado,
+  anuncioSobre,
+  anuncioSoltado,
+  conCategoriaEn,
+  conItemEn,
+  moverA,
   conCategoriaMovida,
   conItemMovido,
   moverUnLugar,
@@ -332,6 +339,61 @@ describe("Gestión de Carta: ordenar con Subir y Bajar (BL-399)", () => {
   it("[TC-U-257] anuncia la posición nueva", () => {
     expect(textoPosicion("Postres", 2, 5)).toBe(
       "«Postres» quedó en la posición 2 de 5",
+    );
+  });
+});
+
+describe("Gestión de Carta: arrastrar para ordenar (BL-399)", () => {
+  const lista = [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }];
+
+  it("[TC-U-258] lleva un elemento al lugar de otro y corre los del medio", () => {
+    expect(moverA(lista, "a", "c")?.map((x) => x.id)).toEqual([
+      "b",
+      "c",
+      "a",
+      "d",
+    ]);
+    expect(moverA(lista, "d", "b")?.map((x) => x.id)).toEqual([
+      "a",
+      "d",
+      "b",
+      "c",
+    ]);
+    expect(lista.map((x) => x.id)).toEqual(["a", "b", "c", "d"]);
+  });
+
+  it("[TC-U-258] soltar en el mismo lugar o con ids que no están no cambia nada", () => {
+    expect(moverA(lista, "b", "b")).toBeNull();
+    expect(moverA(lista, "x", "b")).toBeNull();
+    expect(moverA(lista, "a", "x")).toBeNull();
+  });
+
+  it("[TC-U-259] arrastra una categoría y renumera; un ítem, solo en su categoría", () => {
+    expect(
+      conCategoriaEn(CARTA, "c1", "c2")?.map((c) => [c.id, c.orden]),
+    ).toEqual([
+      ["c2", 1],
+      ["c1", 2],
+    ]);
+    const conItem = conItemEn(CARTA, "c1", "a", "b");
+    expect(conItem?.[0].items.map((i) => i.id)).toEqual(["b", "a"]);
+    expect(conItem?.[1]).toBe(CARTA[1]);
+    expect(conItemEn(CARTA, "zz", "a", "b")).toBeNull();
+    expect(conItemEn(CARTA, "c1", "a", "a")).toBeNull();
+  });
+
+  it("[TC-U-260] avisa en español qué pasa mientras se arrastra", () => {
+    expect(anuncioLevantado("Flan", 2, 4)).toBe(
+      "Levantaste «Flan», en la posición 2 de 4.",
+    );
+    expect(anuncioSobre("Flan", 3, 4)).toBe(
+      "«Flan» está sobre la posición 3 de 4.",
+    );
+    expect(anuncioSoltado("Flan", 3, 4)).toBe(
+      "Soltaste «Flan» en la posición 3 de 4.",
+    );
+    expect(anuncioCancelado("Flan")).toBe(
+      "Cancelaste. «Flan» volvió a su lugar.",
     );
   });
 });
