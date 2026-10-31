@@ -17,11 +17,17 @@ import { FiltrosCarta } from "@/components/menu/FiltrosCarta";
 import { ArchivadosCarta } from "@/components/menu/ArchivadosCarta";
 import { EliminarDefinitivoDialog } from "@/components/menu/EliminarDefinitivoDialog";
 import {
+  CategoriaDialog,
+  type CategoriaEnDialogo,
+} from "@/components/menu/CategoriaDialog";
+import {
   FILTROS_CARTA_INICIALES,
   filtrarCarta,
   hayFiltrosCarta,
   textoResultadoFiltros,
   soloArchivados,
+  conVersionCategoria,
+  conVersionItem,
   textoArchivados,
   type FiltrosCarta as Filtros,
   conDisponibilidad,
@@ -169,19 +175,15 @@ export default function AdminMenuPage() {
   // BL-398: última novedad, anunciada al lector de pantalla (aria-live).
   const [ultimaNovedad, setUltimaNovedad] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
-  const [categoriaModalOpen, setCategoriaModalOpen] = useState(false);
   const [selectedCategoria, setSelectedCategoria] = useState<{
     readonly id: string;
     readonly nombre: string;
   } | null>(null);
   const [itemToEdit, setItemToEdit] = useState<ItemGestion | null>(null);
 
-  const [nuevaCategoriaNombre, setNuevaCategoriaNombre] = useState("");
-  const [nuevaCategoriaOrden, setNuevaCategoriaOrden] = useState("0");
-  const [creandoCategoria, setCreandoCategoria] = useState(false);
-  // BL-395: el error del alta (por ejemplo, 409 por nombre repetido) se
-  // muestra dentro del diálogo, como en Usuarios, y no con alert().
-  const [errorCategoria, setErrorCategoria] = useState<string | null>(null);
+  // BL-398 (parte 4): crear o editar una categoría en CategoriaDialog.
+  const [categoriaEnDialogo, setCategoriaEnDialogo] =
+    useState<CategoriaEnDialogo | null>(null);
   // BL-394: archivar se confirma con un diálogo propio (no confirm()).
   const [aArchivar, setAArchivar] = useState<ArchivarObjetivo | null>(null);
   // BL-394: errores de las acciones sin diálogo (switches) y de la carga, en
@@ -336,35 +338,9 @@ export default function AdminMenuPage() {
     void cargarDatos();
   };
 
-  const crearCategoria = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setCreandoCategoria(true);
-    setErrorCategoria(null);
-    try {
-      const keycloak = getKeycloak();
-      await apiFetch("/admin/menu/categoria", keycloak.token, {
-        method: "POST",
-        body: JSON.stringify({
-          nombre: nuevaCategoriaNombre,
-          orden: Number.parseInt(nuevaCategoriaOrden, 10) || 0,
-        }),
-      });
-      setCategoriaModalOpen(false);
-      setNuevaCategoriaNombre("");
-      setNuevaCategoriaOrden("0");
-      await cargarDatos();
-    } catch (error: unknown) {
-      const message =
-        error instanceof Error ? error.message : "No se pudo crear la categoría";
-      setErrorCategoria(message);
-    } finally {
-      setCreandoCategoria(false);
-    }
-  };
-
-  const cerrarModalCategoria = () => {
-    setCategoriaModalOpen(false);
-    setErrorCategoria(null);
+  const alGuardarCategoria = (nombre: string) => {
+    setUltimaNovedad(`«${nombre}» guardada a las ${horaActual()}`);
+    void cargarDatos();
   };
 
   const cambiarDisponibilidad = async (itemId: string, actual: boolean) => {
@@ -372,10 +348,17 @@ export default function AdminMenuPage() {
     setCategorias((prev) => conDisponibilidad(prev, itemId, !actual));
     try {
       const keycloak = getKeycloak();
-      await apiFetch(`/admin/menu/item/${itemId}/disponibilidad`, keycloak.token, {
-        method: "PATCH",
-        body: JSON.stringify({ disponible: !actual }),
-      });
+      const actualizado = await apiFetch<ItemGestion>(
+        `/admin/menu/item/${itemId}/disponibilidad`,
+        keycloak.token,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ disponible: !actual }),
+        },
+      );
+      setCategorias((prev) =>
+        conVersionItem(prev, itemId, actualizado?.updatedAt),
+      );
     } catch (error: unknown) {
       setCategorias((prev) => conDisponibilidad(prev, itemId, actual));
       setErrorPagina(
@@ -440,10 +423,17 @@ export default function AdminMenuPage() {
     setCategorias((prev) => conVisibilidad(prev, categoriaId, !actual));
     try {
       const keycloak = getKeycloak();
-      await apiFetch(`/admin/menu/categoria/${categoriaId}`, keycloak.token, {
-        method: "PATCH",
-        body: JSON.stringify({ activo: !actual }),
-      });
+      const actualizada = await apiFetch<CategoriaGestion>(
+        `/admin/menu/categoria/${categoriaId}`,
+        keycloak.token,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ activo: !actual }),
+        },
+      );
+      setCategorias((prev) =>
+        conVersionCategoria(prev, categoriaId, actualizada?.updatedAt),
+      );
     } catch (error: unknown) {
       setCategorias((prev) => conVisibilidad(prev, categoriaId, actual));
       setErrorPagina(
@@ -489,7 +479,7 @@ export default function AdminMenuPage() {
         {puedeEditarCarta && (
           <button
             type="button"
-            onClick={() => setCategoriaModalOpen(true)}
+            onClick={() => setCategoriaEnDialogo({ modo: "crear" })}
             className="flex min-h-12 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-body-md font-medium text-on-primary hover:opacity-90"
           >
             <span className="material-symbols-outlined text-[20px]" aria-hidden="true">
@@ -587,7 +577,7 @@ export default function AdminMenuPage() {
           {puedeEditarCarta && (
             <button
               type="button"
-              onClick={() => setCategoriaModalOpen(true)}
+              onClick={() => setCategoriaEnDialogo({ modo: "crear" })}
               className="mt-4 min-h-12 rounded-lg px-4 text-body-md font-medium text-primary hover:bg-surface-container"
             >
               Crear la primera categoría
@@ -656,6 +646,12 @@ export default function AdminMenuPage() {
                 <span className="text-body-md text-on-surface-variant">
                   {textoItemsDeCategoria(cat)}
                 </span>
+                {/* BL-393: subtítulo opcional de la categoría. */}
+                {cat.descripcion && (
+                  <p className="w-full text-body-md text-on-surface-variant">
+                    {cat.descripcion}
+                  </p>
+                )}
               </div>
               {puedeEditarCarta && (
                 <div className="flex items-center gap-2">
@@ -665,6 +661,19 @@ export default function AdminMenuPage() {
                     onChange={() => cambiarVisibilidad(cat.id, cat.activo)}
                     label={`Categoría ${cat.nombre} visible en la carta`}
                   />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setCategoriaEnDialogo({ modo: "editar", categoria: cat })
+                    }
+                    className={`${CLASE_ACCION} hover:text-primary`}
+                    title="Editar categoría"
+                    aria-label={`Editar categoría ${cat.nombre}`}
+                  >
+                    <span className="material-symbols-outlined text-[20px]" aria-hidden="true">
+                      edit
+                    </span>
+                  </button>
                   <button
                     type="button"
                     onClick={() =>
@@ -749,112 +758,12 @@ export default function AdminMenuPage() {
         onConfirmar={eliminarDefinitivo}
       />
 
-      {/* El formulario de categoría pasa al diálogo del tema en la parte 4
-          de BL-398. */}
-      {categoriaModalOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full">
-            <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
-              <h2 className="text-xl font-bold text-[#7C7296]">
-                Nueva Categoría
-              </h2>
-              <button
-                type="button"
-                onClick={cerrarModalCategoria}
-                className="text-[#79767D] hover:text-[#7C7296] transition-colors"
-                aria-label="Cerrar modal"
-              >
-                <svg
-                  className="w-6 h-6"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth="2"
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                </svg>
-              </button>
-            </div>
-            <form onSubmit={crearCategoria} className="p-6 space-y-4">
-              <div>
-                <label
-                  htmlFor="cat-nombre"
-                  className="block text-sm font-medium text-[#7C7296] mb-2"
-                >
-                  Nombre de la categoría *
-                </label>
-                <input
-                  id="cat-nombre"
-                  type="text"
-                  value={nuevaCategoriaNombre}
-                  onChange={(e) => {
-                    setNuevaCategoriaNombre(e.target.value);
-                    setErrorCategoria(null);
-                  }}
-                  required
-                  aria-invalid={errorCategoria ? true : undefined}
-                  aria-describedby={errorCategoria ? "cat-error" : undefined}
-                  className={`w-full px-4 py-2 border ${errorCategoria ? "border-error" : "border-[#79767D]/30"} rounded-lg focus:outline-none focus:ring-2 focus:ring-[#8069BF] focus:border-transparent`}
-                  placeholder="Ej: Entradas, Platos principales, Postres"
-                />
-              </div>
-              <div>
-                <label
-                  htmlFor="cat-orden"
-                  className="block text-sm font-medium text-[#7C7296] mb-2"
-                >
-                  Orden (opcional)
-                </label>
-                <input
-                  id="cat-orden"
-                  type="number"
-                  value={nuevaCategoriaOrden}
-                  onChange={(e) => setNuevaCategoriaOrden(e.target.value)}
-                  min="0"
-                  className="w-full px-4 py-2 border border-[#79767D]/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#8069BF] focus:border-transparent"
-                  placeholder="0"
-                />
-                <p className="text-xs text-[#79767D] mt-1">
-                  Las categorías se ordenan de menor a mayor. Deja 0 para que
-                  aparezca primero.
-                </p>
-              </div>
-              {errorCategoria && (
-                <p
-                  id="cat-error"
-                  role="alert"
-                  className="rounded-lg bg-error-container px-3 py-2 text-body-sm text-on-error-container"
-                >
-                  {errorCategoria}
-                </p>
-              )}
-              <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
-                <button
-                  type="button"
-                  onClick={cerrarModalCategoria}
-                  className="px-4 py-2 border border-[#79767D]/30 text-[#7C7296] rounded-lg hover:bg-gray-50 transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={creandoCategoria}
-                  className="px-6 py-2 bg-[#8069BF] text-white rounded-lg hover:bg-[#8069BF]/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                >
-                  {creandoCategoria && (
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  )}
-                  Crear categoría
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <CategoriaDialog
+        objetivo={categoriaEnDialogo}
+        onClose={() => setCategoriaEnDialogo(null)}
+        onGuardada={alGuardarCategoria}
+        onRecargar={() => void cargarDatos()}
+      />
     </div>
   );
 }

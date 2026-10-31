@@ -1,4 +1,8 @@
 import {
+  conVersionCategoria,
+  conVersionItem,
+  errorNombreCategoria,
+  esConflictoDeEdicion,
   sePuedeEliminarCategoria,
   sePuedeEliminarItem,
   soloArchivados,
@@ -210,5 +214,49 @@ describe("Gestión de Carta: archivados (BL-398)", () => {
       "Archivada el 31/10/2026",
     );
     expect(textoFechaArchivo(null, "o")).toBeNull();
+  });
+});
+
+describe("Gestión de Carta: formularios (BL-398)", () => {
+  it("[TC-U-242] valida el nombre de la categoría como el backend", () => {
+    expect(errorNombreCategoria("  ")).toBe(
+      "Ingresá el nombre de la categoría.",
+    );
+    expect(errorNombreCategoria("a".repeat(61))).toBe(
+      "Tiene que tener 60 caracteres como máximo.",
+    );
+    expect(errorNombreCategoria(" Postres ")).toBeNull();
+  });
+
+  it("[TC-U-243] distingue el conflicto de edición del nombre repetido", () => {
+    const conEstado = (status: number, mensaje: string) =>
+      Object.assign(new Error(mensaje), { status });
+    expect(
+      esConflictoDeEdicion(
+        conEstado(
+          409,
+          "Otra persona modificó este dato. Recargá para ver los cambios.",
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      esConflictoDeEdicion(
+        conEstado(409, "Ya existe una categoría con ese nombre"),
+      ),
+    ).toBe(false);
+    expect(esConflictoDeEdicion(conEstado(400, "Otra persona modificó"))).toBe(
+      false,
+    );
+    expect(esConflictoDeEdicion("texto")).toBe(false);
+  });
+
+  it("[TC-U-244] guarda la versión nueva después de un cambio propio", () => {
+    const v = "2026-10-31T15:00:00.000Z";
+    expect(conVersionCategoria(CARTA, "c1", v)[0].updatedAt).toBe(v);
+    expect(conVersionItem(CARTA, "a", v)[0].items[0].updatedAt).toBe(v);
+    // Sin versión en la respuesta, no cambia nada.
+    expect(conVersionItem(CARTA, "a", undefined)[0].items[0]).toBe(
+      CARTA[0].items[0],
+    );
   });
 });

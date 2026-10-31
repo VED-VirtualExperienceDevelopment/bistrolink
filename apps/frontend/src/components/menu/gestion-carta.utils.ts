@@ -17,7 +17,9 @@ export interface ItemGestion {
   readonly categoriaId: string;
   readonly tieneHistorial?: boolean;
   /** BL-394: fecha de archivo (ISO); null o ausente si está activo. */
-  readonly archivadoEn?: string | null;
+  readonly archivadoEn?:
+    string | null; /** BL-394: versión para el bloqueo optimista al editar. */
+  readonly updatedAt?: string;
 }
 
 export interface CategoriaGestion {
@@ -28,7 +30,9 @@ export interface CategoriaGestion {
   readonly orden: number;
   readonly items: readonly ItemGestion[];
   /** BL-394: fecha de archivo (ISO); null o ausente si está activa. */
-  readonly archivadaEn?: string | null;
+  readonly archivadaEn?:
+    string | null; /** BL-394: versión para el bloqueo optimista al editar. */
+  readonly updatedAt?: string;
 }
 
 type Categorias = readonly CategoriaGestion[];
@@ -250,4 +254,62 @@ export function textoFechaArchivo(
 ): string | null {
   if (!iso) return null;
   return `Archivad${genero} el ${FORMATO_FECHA_ARCHIVO.format(new Date(iso))}`;
+}
+
+// ── BL-398 (parte 4): formularios ───────────────────────────────────────────
+
+/** Mismos límites que CreateCategoriaDto en el backend (BL-395). */
+export const LARGO_MAXIMO_NOMBRE_CATEGORIA = 60;
+export const LARGO_MAXIMO_DESCRIPCION_CATEGORIA = 200;
+
+/** Error del nombre de una categoría, o null si es válido. */
+export function errorNombreCategoria(nombre: string): string | null {
+  const limpio = nombre.trim();
+  if (!limpio) return "Ingresá el nombre de la categoría.";
+  if (limpio.length > LARGO_MAXIMO_NOMBRE_CATEGORIA) {
+    return `Tiene que tener ${LARGO_MAXIMO_NOMBRE_CATEGORIA} caracteres como máximo.`;
+  }
+  return null;
+}
+
+/**
+ * BL-394: la API responde 409 «Otra persona modificó este dato…» cuando el
+ * formulario manda una versión (`updatedAt`) vieja. Se distingue del 409 por
+ * nombre repetido para ofrecer «Recargar» en lugar de corregir el nombre.
+ */
+export function esConflictoDeEdicion(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const status = (error as { status?: number }).status;
+  return status === 409 && error.message.startsWith("Otra persona modificó");
+}
+
+/**
+ * BL-398: después de un cambio propio (switch de visibilidad o de
+ * disponibilidad) se guarda la versión nueva que devolvió la API. Si no, el
+ * formulario de edición mandaría una versión vieja y daría un conflicto
+ * falso.
+ */
+export function conVersionCategoria(
+  categorias: Categorias,
+  categoriaId: string,
+  updatedAt: string | undefined,
+): CategoriaGestion[] {
+  if (!updatedAt) return [...categorias];
+  return categorias.map((cat) =>
+    cat.id === categoriaId ? { ...cat, updatedAt } : cat,
+  );
+}
+
+export function conVersionItem(
+  categorias: Categorias,
+  itemId: string,
+  updatedAt: string | undefined,
+): CategoriaGestion[] {
+  if (!updatedAt) return [...categorias];
+  return categorias.map((cat) => ({
+    ...cat,
+    items: cat.items.map((item) =>
+      item.id === itemId ? { ...item, updatedAt } : item,
+    ),
+  }));
 }
