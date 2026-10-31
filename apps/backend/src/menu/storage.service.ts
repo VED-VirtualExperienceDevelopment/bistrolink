@@ -94,7 +94,7 @@ export class StorageService {
    *   bucket tampoco deja leer otra cosa (la cuarentena incoming/ sigue privada).
    */
   async urlImagenPublica(key: string): Promise<string | null> {
-    const cdn = process.env.IMAGES_CDN_URL?.trim().replace(/\/+$/, '');
+    const cdn = sinBarraFinal(process.env.IMAGES_CDN_URL?.trim() ?? '');
     const esPublicada = new RegExp(
       String.raw`^[A-Za-z0-9-]+/menu/${PATRON_UUID}\.webp$`,
     ).test(key);
