@@ -1456,4 +1456,108 @@ describe('MenuAdminService', () => {
       });
     });
   });
+  describe('casos límite de archivo y eliminación (BL-394)', () => {
+    const tenantId = 'test-tenant-id';
+
+    it('[TC-U-225] archivar una categoría ya archivada no hace nada', async () => {
+      const archivada = {
+        id: 'cat-1',
+        nombre: 'Picadas',
+        archivadaEn: new Date(),
+      };
+      mockTx.categoriaCarta.findFirst.mockResolvedValue(archivada);
+
+      const result = await service.archivarCategoria(tenantId, 'cat-1');
+
+      expect(result).toBe(archivada);
+      expect(mockTx.itemCarta.count).not.toHaveBeenCalled();
+      expect(mockTx.categoriaCarta.update).not.toHaveBeenCalled();
+    });
+
+    it('[TC-U-225] restaurar una categoría que no está archivada no hace nada', async () => {
+      const activa = { id: 'cat-1', nombre: 'Picadas', archivadaEn: null };
+      mockTx.categoriaCarta.findFirst.mockResolvedValue(activa);
+
+      const result = await service.restaurarCategoria(tenantId, 'cat-1');
+
+      expect(result).toBe(activa);
+      expect(mockTx.categoriaCarta.update).not.toHaveBeenCalled();
+    });
+
+    it('[TC-U-225] restaurar un ítem que no está archivado no hace nada', async () => {
+      const activo = { id: 'item-1', nombre: 'Picada', archivadoEn: null };
+      mockTx.itemCarta.findFirst.mockResolvedValue(activo);
+
+      const result = await service.restaurarItem(tenantId, 'item-1');
+
+      expect(result).toBe(activo);
+      expect(mockTx.itemCarta.update).not.toHaveBeenCalled();
+    });
+
+    it('[TC-U-226] restaurar una categoría con un nombre ya usado devuelve 409', async () => {
+      mockTx.categoriaCarta.findFirst.mockResolvedValue({
+        id: 'cat-1',
+        nombre: 'Picadas',
+        archivadaEn: new Date(),
+      });
+      mockTx.categoriaCarta.update.mockRejectedValueOnce(nombreRepetido());
+
+      await expect(
+        service.restaurarCategoria(tenantId, 'cat-1'),
+      ).rejects.toThrow(MENSAJE_CATEGORIA_REPETIDA);
+    });
+
+    it('[TC-U-227] si un ítem nuevo se cruza con el borrado de la categoría, la FK da el mismo 409', async () => {
+      mockTx.categoriaCarta.findFirst.mockResolvedValue({
+        id: 'cat-1',
+        nombre: 'Picadas',
+        archivadaEn: null,
+      });
+      mockTx.categoriaCarta.delete.mockRejectedValueOnce(tieneReferencias());
+
+      await expect(
+        service.eliminarCategoria(tenantId, 'cat-1'),
+      ).rejects.toThrow(MENSAJE_CATEGORIA_CON_ITEMS);
+    });
+
+    it('[TC-U-228] otro error de la base al eliminar no se convierte en 409', async () => {
+      mockTx.categoriaCarta.findFirst.mockResolvedValue({
+        id: 'cat-1',
+        nombre: 'Picadas',
+        archivadaEn: null,
+      });
+      mockTx.categoriaCarta.delete.mockRejectedValueOnce(new Error('se cayó'));
+      mockTx.itemCarta.findFirst.mockResolvedValue({
+        id: 'item-1',
+        nombre: 'Picada',
+        archivadoEn: null,
+      });
+      mockTx.itemCarta.delete.mockRejectedValueOnce(new Error('se cayó'));
+
+      await expect(
+        service.eliminarCategoria(tenantId, 'cat-1'),
+      ).rejects.toThrow('se cayó');
+      await expect(service.eliminarItem(tenantId, 'item-1')).rejects.toThrow(
+        'se cayó',
+      );
+    });
+
+    it('[TC-U-229] no se mueve un ítem a una categoría archivada', async () => {
+      mockTx.itemCarta.findFirst.mockResolvedValue({
+        id: 'item-1',
+        categoriaId: 'cat-1',
+        archivadoEn: null,
+        imagenKey: null,
+      });
+      mockTx.categoriaCarta.findFirst.mockResolvedValue({
+        id: 'cat-2',
+        archivadaEn: new Date(),
+      });
+
+      await expect(
+        service.updateItem(tenantId, 'item-1', { categoriaId: 'cat-2' }),
+      ).rejects.toThrow(MENSAJE_CATEGORIA_ARCHIVADA);
+      expect(mockTx.itemCarta.update).not.toHaveBeenCalled();
+    });
+  });
 });

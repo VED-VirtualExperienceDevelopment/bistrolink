@@ -29,6 +29,9 @@ export function ArchivarDialog({ objetivo, onClose, onConfirmar }: Props) {
   if (!objetivo) return null;
 
   const esCategoria = objetivo.tipo === 'categoria';
+  const mensajeDeError = esCategoria
+    ? 'No se pudo archivar la categoría'
+    : 'No se pudo archivar el ítem';
 
   const cerrar = () => {
     setError(null);
@@ -42,11 +45,7 @@ export function ArchivarDialog({ objetivo, onClose, onConfirmar }: Props) {
       await onConfirmar(objetivo);
       cerrar();
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : `No se pudo archivar ${esCategoria ? 'la categoría' : 'el ítem'}`,
-      );
+      setError(err instanceof Error ? err.message : mensajeDeError);
     } finally {
       setEnviando(false);
     }

@@ -56,6 +56,19 @@ const updateCategoriaActivo = (
   );
 };
 
+/**
+ * BL-394: saca un ítem archivado o eliminado de todas las categorías. Fuera
+ * del componente para no anidar funciones dentro del useEffect.
+ */
+const sinItem = (
+  categorias: readonly Categoria[],
+  itemId: string,
+): Categoria[] =>
+  categorias.map((cat) => ({
+    ...cat,
+    items: cat.items.filter((item) => item.id !== itemId),
+  }));
+
 // ============================================================================
 // COMPONENTE ITEM ROW
 // ============================================================================
@@ -248,12 +261,7 @@ export default function AdminMenuPage() {
     // BL-394: un ítem o una categoría se archivó o se eliminó en otra
     // pantalla: se saca de la lista.
     socket.on("menu:item:retirado", (data: { itemId: string }) => {
-      setCategorias((prev) =>
-        prev.map((cat) => ({
-          ...cat,
-          items: cat.items.filter((item) => item.id !== data.itemId),
-        })),
-      );
+      setCategorias((prev) => sinItem(prev, data.itemId));
     });
 
     socket.on("menu:categoria:retirada", (data: { categoriaId: string }) => {
@@ -340,12 +348,7 @@ export default function AdminMenuPage() {
         : `/admin/menu/categoria/${id}/archivar`;
     await apiFetch(ruta, keycloak.token, { method: "POST" });
     if (tipo === "item") {
-      setCategorias((prev) =>
-        prev.map((cat) => ({
-          ...cat,
-          items: cat.items.filter((item) => item.id !== id),
-        })),
-      );
+      setCategorias((prev) => sinItem(prev, id));
       setLastUpdate(`Ítem archivado — ${new Date().toLocaleTimeString("es-AR")}`);
     } else {
       setCategorias((prev) => prev.filter((cat) => cat.id !== id));
