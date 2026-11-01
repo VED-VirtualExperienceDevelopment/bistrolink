@@ -553,9 +553,11 @@ function SinMediosDePago({
       <h2 id="sin-medios" className="text-lg font-bold text-foreground">
         Pago en el local
       </h2>
-      <p role="status" className="text-sm text-[#5a575e] max-w-sm">
+      {/* <output> ya tiene el rol «status»: el lector de pantalla anuncia el
+          aviso sin mover el foco (Sonar S6819: etiqueta nativa antes que ARIA). */}
+      <output className="block text-sm text-[#5a575e] max-w-sm">
         {mensaje}
-      </p>
+      </output>
       {llamarMozo}
     </section>
   );
