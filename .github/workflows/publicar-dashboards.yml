@@ -135,7 +135,7 @@ jobs:
         run: node scripts/send-status-email.mjs
 
       - name: Enviar email de estado
-        uses: dawidd6/action-send-mail@v22
+        uses: dawidd6/action-send-mail@v23
         with:
           server_address: smtp.gmail.com
           server_port: 465
