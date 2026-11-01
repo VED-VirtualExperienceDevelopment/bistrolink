@@ -21,6 +21,14 @@ import { Prisma } from '@prisma/client';
 
 export const LEYENDA_REBAJA_17934 = 'Reducción IVA Ley N° 17.934';
 
+// Sin una nueva prórroga, la rebaja baja a 5 puntos (anunciado por el MEF
+// junto con el Decreto 235/026). Revisar antes del 30/04/2027.
+const SIN_PRORROGA = {
+  hasta: null,
+  puntos: 5,
+  norma: 'sin prórroga de los 9 puntos',
+} as const;
+
 /**
  * Puntos de IVA que se rebajan según la fecha de la operación. La tabla va
  * en el código (y no en una variable de entorno) para que cada prórroga
@@ -36,9 +44,7 @@ export const VIGENCIAS_REBAJA_17934: readonly {
   norma: string;
 }[] = [
   { hasta: '2027-04-30', puntos: 9, norma: 'Decreto 235/026' },
-  // Sin una nueva prórroga, la rebaja baja a 5 puntos (anunciado por el MEF
-  // junto con el Decreto 235/026). Revisar antes del 30/04/2027.
-  { hasta: null, puntos: 5, norma: 'sin prórroga de los 9 puntos' },
+  SIN_PRORROGA,
 ];
 
 /** IVA básico (22 %): los ítems del e-Ticket van con tasa básica (CfeService). */
@@ -85,10 +91,10 @@ function fechaEnUruguay(fecha: Date): string {
 
 export function puntosRebajaVigentes(fecha: Date): number {
   const dia = fechaEnUruguay(fecha);
-  // La última fila no tiene `hasta`: siempre hay una vigente.
+  // La última fila (SIN_PRORROGA) no tiene `hasta`: siempre hay una vigente.
   const vigente =
     VIGENCIAS_REBAJA_17934.find((v) => v.hasta === null || dia <= v.hasta) ??
-    VIGENCIAS_REBAJA_17934[VIGENCIAS_REBAJA_17934.length - 1];
+    SIN_PRORROGA;
   return vigente.puntos;
 }
 
