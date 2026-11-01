@@ -48,6 +48,20 @@ export default defineConfig({
     {
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
+      // BL-452: los specs que cambian la configuración del establecimiento
+      // corren aparte (proyecto de abajo).
+      testIgnore: /pago-medios\.spec\.ts/,
+    },
+    // BL-452: specs que cambian la configuración del establecimiento del seed
+    // (medios de pago). Mientras corren, un test de pago de otro spec vería
+    // esos medios apagados; por eso van en su propio proyecto, que arranca
+    // cuando termina `chromium`. En local, para correrlo solo:
+    //   npm run test:e2e -- --project=chromium-configuracion --no-deps
+    {
+      name: "chromium-configuracion",
+      use: { ...devices["Desktop Chrome"] },
+      testMatch: /pago-medios\.spec\.ts/,
+      dependencies: ["chromium"],
     },
     // HU-002 (subtask Testing): el criterio del ticket pide verificar el
     // acceso por URL directa en Chrome y Safari mobile; se suma Safari de

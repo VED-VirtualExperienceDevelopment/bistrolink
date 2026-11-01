@@ -738,6 +738,22 @@ const DATOS_E2E = {
     priority: "P1",
     tags: ["BL-392", "BL-402", "responsive", ...axe],
   }),
+  // BL-452: medios de pago del comensal según la configuración (HU-020).
+  56: e2e("comensal", "HU-020", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-452", "pagos"],
+  }),
+  57: e2e("comensal", "HU-020", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-452", "pagos"],
+  }),
+  58: e2e("comensal", "HU-020", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-452", "pagos"],
+  }),
 };
 /**
  * Datos de los contratos PactJS (TC-C). Requirement con la HU que usa el
