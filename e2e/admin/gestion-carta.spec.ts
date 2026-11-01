@@ -57,6 +57,9 @@ async function abrirCarta(page: Page): Promise<string> {
   await expect(
     page.getByRole("heading", { name: "Gestión de Carta" }),
   ).toBeVisible();
+  // El título se ve antes que la carta: se espera a que termine de cargar,
+  // para que las lecturas del orden no encuentren la lista vacía.
+  await expect(page.getByText("Cargando la carta…")).toHaveCount(0);
   return respuesta.request().headers()["authorization"];
 }
 
@@ -305,10 +308,20 @@ test.describe("BL-392 · Gestión de Carta", () => {
         "aria-pressed",
         "true",
       );
-      await page.keyboard.press("ArrowUp");
-      await expect(aviso, "la flecha arriba no la movió").toContainText(
-        `sobre la posición ${total - 1} de ${total}`,
-      );
+      // dnd-kit empieza a escuchar las flechas un instante después de
+      // levantar. Si la primera flecha llega antes, se pierde: se vuelve a
+      // presionar solo mientras la categoría siga en su lugar original, así
+      // nunca se mueve dos lugares.
+      await expect(async () => {
+        const texto = (await aviso.textContent()) ?? "";
+        if (!texto.includes(`posición ${total - 1} de ${total}`)) {
+          await page.keyboard.press("ArrowUp");
+        }
+        await expect(aviso).toContainText(
+          `sobre la posición ${total - 1} de ${total}`,
+          { timeout: 1_000 },
+        );
+      }, "la flecha arriba no la movió").toPass({ timeout: 8_000 });
       const guardado = page.waitForResponse(
         (r) =>
           r.url().endsWith("/admin/menu/categorias/orden") &&
@@ -385,8 +398,10 @@ test.describe("BL-392 · Gestión de Carta", () => {
           `carta (${ancho.nombre})`,
         ).toEqual([]);
 
-        // Menú «⋯» abierto.
-        const acciones = page.getByRole("button", {
+        // Menú «⋯» abierto. Dentro de la categoría de este test: si quedó
+        // otra «E2E carta …» de una corrida anterior, habría dos botones con
+        // el mismo nombre y el click fallaría por strict mode.
+        const acciones = seccion(page, categoria).getByRole("button", {
           name: "Acciones de Milhojas E2E",
         });
         await acciones.click();

@@ -20,16 +20,23 @@ export default defineConfig({
   testDir: "./e2e",
   fullyParallel: true,
   retries: process.env.CI ? 2 : 0,
-  // BL-182: reporter pasa de string a array. 'github' no hace nada fuera de
-  // GitHub Actions (chequea la env var internamente), así que queda
-  // seguro dejarlo siempre activo en vez de condicionarlo a process.env.CI
-  // como antes. 'junit' es el que consume el job "playwright" de ci.yml
-  // (paso "Upload results to Kiwi TCMS (e2e)", que lee
-  // playwright-report/junit.xml) y el artifact que sube a CI incluye
+  // En local el backend y el frontend (`next dev`) corren en la misma
+  // máquina que los navegadores: con el default de Playwright (la mitad de
+  // los núcleos) se saturan y fallan por tiempo tests que en staging pasan.
+  // 2 workers mantiene algo de paralelismo sin ahogar la PC. Se puede
+  // cambiar con E2E_WORKERS (p. ej. E2E_WORKERS=1) o con --workers.
+  // En CI se deja el default.
+  workers: process.env.CI ? undefined : Number(process.env.E2E_WORKERS ?? 2),
+  // BL-182: reporter pasa de string a array. 'junit' es el que consume el
+  // job "playwright" de ci.yml (paso "Upload results to Kiwi TCMS (e2e)",
+  // que lee playwright-report/junit.xml) y el artifact que sube a CI incluye
   // también el 'html' para inspección manual del run.
+  // 'github' solo en CI: en local también imprime cada error como una
+  // anotación «::error …» en una sola línea, que duplica el detalle del
+  // 'list' y ensucia la terminal.
   reporter: [
     ["list"],
-    ["github"],
+    ...(process.env.CI ? [["github"] as const] : []),
     ["junit", { outputFile: "playwright-report/junit.xml" }],
     ["html", { outputFolder: "playwright-report/html", open: "never" }],
   ],
