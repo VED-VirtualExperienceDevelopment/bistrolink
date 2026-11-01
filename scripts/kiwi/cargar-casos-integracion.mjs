@@ -753,6 +753,12 @@ const DATOS_CONTRATO = {
     priority: "P1",
     tags: ["BL-215", "BL-78", "webhook"],
   }),
+  // Surtec, facturación electrónica: autenticación y e-Ticket (BL-216).
+  10: contrato("HU-009", "surtec", { priority: "P1", tags: ["BL-216"] }),
+  11: contrato("HU-009", "surtec", { priority: "P2", tags: ["BL-216"] }),
+  12: contrato("HU-009", "surtec", { priority: "P1", tags: ["BL-216"] }),
+  13: contrato("HU-009", "surtec", { priority: "P2", tags: ["BL-216"] }),
+  14: contrato("HU-009", "surtec", { priority: "P2", tags: ["BL-216"] }),
 };
 const DATOS = CONTRATO ? DATOS_CONTRATO : E2E ? DATOS_E2E : DATOS_INTEGRACION;
 
