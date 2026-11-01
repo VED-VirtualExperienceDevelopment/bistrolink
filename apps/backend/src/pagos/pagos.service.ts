@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { PagoEstado, PedidoEstado, Prisma } from '@prisma/client';
+import { PagoEstado, PedidoEstado, Prisma, PrismaClient } from '@prisma/client';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { SolicitudPago } from './dto/crear-pago.dto';
 import { PagoGatewayFactory } from './gateways/pago-gateway.factory';
@@ -43,6 +43,12 @@ export interface EstadoPagoDelPedido {
     solicitadoEn: Date | null;
     pagaCon: string | null;
   };
+  /**
+   * BL-452: pago con tarjeta (Mercado Pago, la única pasarela). `disponible`
+   * si el local tiene Mercado Pago habilitado (HU-020): si no, la pantalla
+   * no ofrece la tarjeta y la API rechazaría el pago con 409.
+   */
+  tarjeta: { disponible: boolean };
 }
 
 // El pago que importa para el comensal: el que cobró (aprobado o después
@@ -55,6 +61,40 @@ const ESTADOS_COBRADOS: ReadonlySet<PagoEstado> = new Set<PagoEstado>([
 // La pasarela respondió con un error (datos de tarjeta inválidos, solicitud
 // rechazada): no hubo cobro.
 const MOTIVO_ERROR_PASARELA = 'ERROR_PASARELA';
+
+/**
+ * HU-020 (BL-72): columna de restaurante que habilita cada medio de pago
+ * digital y su nombre para el mensaje. El efectivo no pasa por acá: tiene
+ * su propio control en CobroEfectivoService (HU-031).
+ */
+const MEDIOS_DIGITALES = {
+  MERCADOPAGO: { campo: 'mercadoPagoHabilitado', nombre: 'Mercado Pago' },
+  PLEXO: { campo: 'plexoHabilitado', nombre: 'Plexo' },
+} as const;
+
+type MedioDigital = keyof typeof MEDIOS_DIGITALES;
+
+/**
+ * HU-020 (BL-72): 409 si el local apagó el medio de pago en su
+ * configuración. Solo un false explícito lo bloquea.
+ */
+async function validarMedioHabilitado(
+  tx: Pick<PrismaClient, 'restaurante'>,
+  tenantId: string,
+  medioPago: string,
+): Promise<void> {
+  const medio = MEDIOS_DIGITALES[medioPago as MedioDigital];
+  if (!medio) return; // el DTO y la factory ya rechazan los desconocidos
+  const restaurante = await tx.restaurante.findUnique({
+    where: { tenantId },
+    select: { mercadoPagoHabilitado: true, plexoHabilitado: true },
+  });
+  if (restaurante?.[medio.campo] === false) {
+    throw new ConflictException(
+      `Este local no acepta pagos con ${medio.nombre}`,
+    );
+  }
+}
 
 @Injectable()
 export class PagosService {
@@ -244,7 +284,7 @@ export class PagosService {
         }),
         restaurante: await tx.restaurante.findUnique({
           where: { tenantId },
-          select: { efectivoHabilitado: true },
+          select: { efectivoHabilitado: true, mercadoPagoHabilitado: true },
         }),
       }),
     );
@@ -281,6 +321,9 @@ export class PagosService {
         solicitadoEn: pedido.efectivoSolicitadoEn ?? null,
         pagaCon: pedido.efectivoPagaCon?.toFixed(2) ?? null,
       },
+      tarjeta: {
+        disponible: Boolean(datos.restaurante?.mercadoPagoHabilitado),
+      },
     };
   }
 
@@ -295,6 +338,11 @@ export class PagosService {
           if (existente) {
             return { existente };
           }
+
+          // HU-020 (BL-72): después de la idempotencia (un reintento de un
+          // pago ya creado devuelve ese pago aunque el medio se haya apagado
+          // después) y antes de tocar el pedido o la mesa.
+          await validarMedioHabilitado(tx, tenantId, dto.medioPago);
 
           const pedido = await tx.pedido.findUnique({
             where: { id: dto.pedidoId },

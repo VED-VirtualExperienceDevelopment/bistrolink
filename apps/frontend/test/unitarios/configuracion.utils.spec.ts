@@ -1,0 +1,103 @@
+import {
+  cambiosParaGuardar,
+  errorRazonSocial,
+  formularioDesde,
+  hayCambios,
+  leerPropinas,
+  sinMediosDePago,
+  type ConfiguracionEstablecimiento,
+} from "@/components/admin/configuracion/configuracion.utils";
+
+// HU-020 (BL-72): pantalla de configuración del establecimiento.
+
+const GUARDADA: ConfiguracionEstablecimiento = {
+  razonSocial: "Uno SRL",
+  rut: "219999990016",
+  efectivoHabilitado: true,
+  mercadoPagoHabilitado: true,
+  plexoHabilitado: false,
+  handyHabilitado: false,
+  propinasSugeridas: [10, 15],
+  cfeProveedor: "SURTEC",
+  mediosPagoDisponibles: ["EFECTIVO", "MERCADOPAGO"],
+  proveedoresCfeDisponibles: ["SURTEC"],
+};
+
+describe("propinas sugeridas", () => {
+  it("[TC-U-263] HU-020: lee porcentajes enteros separados por comas o espacios y los ordena", () => {
+    expect(leerPropinas("20, 10 15")).toEqual({ propinas: [10, 15, 20] });
+    expect(leerPropinas("10%, 15%")).toEqual({ propinas: [10, 15] });
+    expect(leerPropinas("   ")).toEqual({ propinas: [] });
+  });
+
+  it("[TC-U-264] HU-020: rechaza decimales, texto, valores fuera de 1 a 100, repetidos y más de 5", () => {
+    for (const texto of [
+      "12.5",
+      "diez",
+      "0",
+      "101",
+      "10, 10",
+      "5, 10, 15, 20, 25, 30",
+    ]) {
+      expect(leerPropinas(texto)).toHaveProperty("error");
+    }
+  });
+});
+
+describe("cambios para guardar", () => {
+  it("[TC-U-265] HU-020: manda solo lo que cambió, con la razón social limpia y las propinas como lista", () => {
+    const formulario = {
+      ...formularioDesde(GUARDADA),
+      razonSocial: "  Uno   y Cía SRL ",
+      efectivoHabilitado: false,
+      propinas: "15, 10, 20",
+    };
+
+    expect(cambiosParaGuardar(GUARDADA, formulario)).toEqual({
+      razonSocial: "Uno y Cía SRL",
+      efectivoHabilitado: false,
+      propinasSugeridas: [10, 15, 20],
+    });
+  });
+
+  it("sin cambios (aunque las propinas estén escritas de otra forma): nada que guardar", () => {
+    const formulario = { ...formularioDesde(GUARDADA), propinas: "15,10" };
+
+    const cambios = cambiosParaGuardar(GUARDADA, formulario);
+    expect(cambios).toEqual({});
+    expect(hayCambios(cambios)).toBe(false);
+  });
+
+  it("el formulario arranca con lo guardado", () => {
+    expect(formularioDesde(GUARDADA)).toEqual({
+      razonSocial: "Uno SRL",
+      efectivoHabilitado: true,
+      mercadoPagoHabilitado: true,
+      plexoHabilitado: false,
+      handyHabilitado: false,
+      propinas: "10, 15",
+      cfeProveedor: "SURTEC",
+    });
+  });
+});
+
+describe("validaciones", () => {
+  it("la razón social es obligatoria y tiene hasta 200 caracteres", () => {
+    expect(errorRazonSocial("Uno SRL")).toBeNull();
+    expect(errorRazonSocial("   ")).not.toBeNull();
+    expect(errorRazonSocial("a".repeat(201))).not.toBeNull();
+  });
+
+  it("avisa si no queda ningún medio de pago habilitado", () => {
+    const formulario = formularioDesde(GUARDADA);
+    expect(sinMediosDePago(formulario)).toBe(false);
+    expect(
+      sinMediosDePago({
+        ...formulario,
+        efectivoHabilitado: false,
+        mercadoPagoHabilitado: false,
+        plexoHabilitado: false,
+      }),
+    ).toBe(true);
+  });
+});

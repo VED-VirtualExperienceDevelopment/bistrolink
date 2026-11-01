@@ -193,6 +193,14 @@ const gestionCarta = (ticket, extra = {}) => ({
   ...extra,
   tags: ["HU-005", "BL-392", ticket, ...(extra.tags ?? [])],
 });
+// HU-020 (BL-72): configuración del establecimiento, en
+// configuracion-establecimiento.e2e-spec.ts.
+const configuracionEstablecimiento = (extra = {}) => ({
+  component: "api",
+  requirement: "HU-020",
+  ...extra,
+  tags: ["HU-020", "BL-72", ...(extra.tags ?? [])],
+});
 const DATOS_INTEGRACION = {
   55: {
     category: "Funcional",
@@ -501,6 +509,26 @@ const DATOS_INTEGRACION = {
     priority: "P1",
     tags: ["seguridad", "multi-tenant"],
   }),
+  132: configuracionEstablecimiento({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["auditoria", "pagos"],
+  }),
+  133: configuracionEstablecimiento({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["auditoria", "integridad-datos"],
+  }),
+  134: configuracionEstablecimiento({
+    category: "Funcional",
+    priority: "P2",
+    tags: ["integridad-datos"],
+  }),
+  135: configuracionEstablecimiento({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["seguridad"],
+  }),
 };
 /**
  * BL-435: datos de los E2E TC-E-017 en adelante, con los criterios de
@@ -709,6 +737,22 @@ const DATOS_E2E = {
     category: "Accesibilidad",
     priority: "P1",
     tags: ["BL-392", "BL-402", "responsive", ...axe],
+  }),
+  // BL-452: medios de pago del comensal según la configuración (HU-020).
+  56: e2e("comensal", "HU-020", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-452", "pagos"],
+  }),
+  57: e2e("comensal", "HU-020", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-452", "pagos"],
+  }),
+  58: e2e("comensal", "HU-020", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-452", "pagos"],
   }),
 };
 /**

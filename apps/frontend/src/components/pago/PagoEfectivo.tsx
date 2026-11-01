@@ -194,7 +194,8 @@ export function EsperandoMozo({
   readonly enviando: boolean;
   readonly onAvisarDeNuevo: () => void;
   readonly onConsultar: () => void;
-  readonly onPagarConTarjeta: () => void;
+  /** BL-452: sin tarjeta disponible no se ofrece cambiar de medio. */
+  readonly onPagarConTarjeta?: () => void;
 }) {
   return (
     <section
@@ -232,13 +233,15 @@ export function EsperandoMozo({
         >
           {enviando ? 'Avisando…' : 'Volver a avisar al mozo'}
         </button>
-        <button
-          type="button"
-          onClick={onPagarConTarjeta}
-          className="px-5 py-2.5 text-[#6e54ad] font-semibold underline-offset-4 hover:underline"
-        >
-          Prefiero pagar con tarjeta
-        </button>
+        {onPagarConTarjeta && (
+          <button
+            type="button"
+            onClick={onPagarConTarjeta}
+            className="px-5 py-2.5 text-[#6e54ad] font-semibold underline-offset-4 hover:underline"
+          >
+            Prefiero pagar con tarjeta
+          </button>
+        )}
       </div>
     </section>
   );

@@ -8,6 +8,7 @@
 | 1.1     | 28/10/2026 | TC-E-046 a 049: cobro en efectivo (BL-201), solicitud de efectivo (BL-442) y pedido del mozo (BL-209). |
 | 1.2     | 31/10/2026 | TC-E-007 y 008 cambian: la carta por URL muestra los agotados bloqueados, igual que el QR (BL-397).    |
 | 1.3     | 31/10/2026 | TC-E-050 a 055: Gestión de Carta (BL-392 / BL-402).                                                    |
+| 1.4     | 01/11/2026 | TC-E-056 a 058: medios de pago del comensal según la configuración del local (BL-452).                 |
 
 Plantilla para cargar en Kiwi la descripción de casos TC-E (Playwright)
 nuevos o que cambiaron (BL-435). La usa
@@ -255,3 +256,54 @@ En celular (390 px), tablet (768 px) y PC (1280 px), revisar con axe-core:
 ### Resultado esperado
 
 Ninguna violación critical ni serious de WCAG 2.1 AA.
+
+## TC-E-056
+
+### Precondición
+
+Usuario de prueba ADMIN (`TEST_ADMIN_*`) y la mesa del seed abierta. Corre en el proyecto `chromium-configuracion`.
+
+### Pasos
+
+1. Como admin, deshabilitar Mercado Pago y dejar el efectivo habilitado (`PATCH /admin/configuracion`).
+2. Como comensal, abrir la carta con el QR de la mesa, agregar un ítem y tocar «Continuar al pago».
+3. Al terminar, restaurar la configuración.
+
+### Resultado esperado
+
+1. Se muestra directo el pago en efectivo («¿Con cuánto vas a pagar?» y «Avisar al mozo»).
+2. No aparecen el formulario de tarjeta ni el selector de medios.
+
+## TC-E-057
+
+### Precondición
+
+Usuario de prueba ADMIN (`TEST_ADMIN_*`) y la mesa del seed abierta. Corre en el proyecto `chromium-configuracion`.
+
+### Pasos
+
+1. Como admin, deshabilitar el efectivo y dejar Mercado Pago habilitado.
+2. Como comensal, abrir la carta con el QR de la mesa, agregar un ítem y tocar «Continuar al pago».
+3. Al terminar, restaurar la configuración.
+
+### Resultado esperado
+
+1. Se muestra directo el formulario «Tarjeta de débito o crédito».
+2. No aparecen el selector de medios ni «Avisar al mozo».
+
+## TC-E-058
+
+### Precondición
+
+Usuario de prueba ADMIN (`TEST_ADMIN_*`) y la mesa del seed abierta. Corre en el proyecto `chromium-configuracion`.
+
+### Pasos
+
+1. Como admin, deshabilitar el efectivo y Mercado Pago.
+2. Como comensal, abrir la carta con el QR de la mesa, agregar un ítem y tocar «Continuar al pago».
+3. Al terminar, restaurar la configuración.
+
+### Resultado esperado
+
+1. Se ve el aviso «… Llamá al mozo para que te cobre.» con el botón «Llamar al mozo».
+2. No aparecen el formulario de tarjeta ni el de efectivo.
