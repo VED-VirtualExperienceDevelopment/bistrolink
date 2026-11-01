@@ -5,7 +5,13 @@ import { io, type Socket } from 'socket.io-client';
 import { useKeycloakAuth } from '@/components/providers/KeycloakProvider';
 import { OrderTicket } from './OrderTicket';
 import type { Pedido } from '@/types/pedido';
-import { agregarLlamado, textoLlamado, type LlamadoMozo } from './llamado.utils';
+import {
+  agregarLlamado,
+  combinarSnapshotLlamados,
+  quitarLlamadoDePedido,
+  textoLlamado,
+  type LlamadoMozo,
+} from './llamado.utils';
 
 const WS_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
@@ -50,6 +56,8 @@ export function KdsBoard() {
 
     socket.on('pedido:nuevo', (pedido: Pedido) => {
       setPedidos((prev) => (prev.some((p) => p.id === pedido.id) ? prev : [...prev, pedido]));
+      // BL-448: si era el pedido de un aviso de efectivo, ya se cobró.
+      setLlamados((prev) => quitarLlamadoDePedido(prev, pedido.id));
     });
 
     socket.on('pedido:actualizado', (payload: PedidoActualizadoPayload) => {
@@ -69,6 +77,11 @@ export function KdsBoard() {
     // HU-019/BL-68
     socket.on('llamado:nuevo', (llamado: LlamadoMozo) => {
       setLlamados((prev) => agregarLlamado(prev, llamado));
+    });
+
+    // BL-448: avisos de efectivo pendientes, al conectar o reconectar.
+    socket.on('llamados:snapshot', (snapshot: LlamadoMozo[]) => {
+      setLlamados((prev) => combinarSnapshotLlamados(prev, snapshot));
     });
 
     socket.on('llamado:resuelto', ({ mesaId }: { mesaId: string }) => {

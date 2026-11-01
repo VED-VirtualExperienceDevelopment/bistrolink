@@ -470,3 +470,22 @@ export function mensajeEsperandoMozo(
     ? `${base} Le dijimos que pagás con ${formatearPrecio(pagaCon)}, así trae el cambio.`
     : base;
 }
+
+/**
+ * Pantalla con la que abre «Pagar» según el estado real del pedido
+ * (HU-031b, BL-448). Importa sobre todo al retomar después de recargar:
+ * - «efectivo»: pedido de mesa en PENDIENTE_PAGO que ya avisó al mozo, sin
+ *   un pago con tarjeta en curso;
+ * - «verificando»: hay un pago con tarjeta PENDIENTE (no se ofrece pagar de
+ *   nuevo);
+ * - «formulario»: lo de siempre.
+ */
+export function pantallaAlAbrir(
+  estado: Pick<EstadoPagoDelPedido, "estadoPedido" | "pago" | "efectivo">,
+  esMesa: boolean,
+): "efectivo" | "verificando" | "formulario" {
+  if (estado.estadoPedido !== "PENDIENTE_PAGO") return "formulario";
+  if (estado.pago?.estado === "PENDIENTE") return "verificando";
+  if (esMesa && estado.efectivo?.solicitadoEn) return "efectivo";
+  return "formulario";
+}

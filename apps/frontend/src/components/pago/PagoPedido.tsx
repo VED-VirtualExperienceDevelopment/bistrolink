@@ -17,6 +17,7 @@ import {
   mensajeSinMedios,
   metodoSegunMedios,
   opcionesDePago,
+  pantallaAlAbrir,
   resultadoDeError,
   resultadoDeEstado,
   rutaPagos,
@@ -202,9 +203,14 @@ export function PagoPedido({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [verificando, pedidoId, accessToken, aplicarResultado]);
 
-  // Al abrir la pantalla: qué medios ofrece el local (BL-452) y, en un
-  // pedido de mesa, si el comensal ya había avisado que paga en efectivo
-  // (recargó la página): sigue esperando al mozo (HU-031b, BL-442).
+  // Al abrir la pantalla (también al retomar después de recargar, BL-448)
+  // se consulta el estado real del pedido:
+  // - BL-452: qué medios ofrece el local.
+  // - HU-031b (BL-442): en un pedido de mesa, si el comensal ya había
+  //   avisado que paga en efectivo, sigue esperando al mozo.
+  // - BL-448: si ya hay un pago con tarjeta en curso, se espera su resultado
+  //   en lugar de ofrecer pagar de nuevo (evita un doble cobro).
+  const esMesa = origen.tipo === 'mesa';
   useEffect(() => {
     let cancelado = false;
     apiFetch<EstadoPagoDelPedido>(rutaPagos(pedidoId), accessToken, { headers })
@@ -213,16 +219,19 @@ export function PagoPedido({
         const disponibles = mediosDisponibles(estado);
         setMedios(disponibles);
         setMetodo((actual) => metodoSegunMedios(disponibles, actual));
-        if (
-          estado.efectivo?.solicitadoEn &&
-          estado.estadoPedido === 'PENDIENTE_PAGO' &&
-          estado.pago?.estado !== 'PENDIENTE'
-        ) {
+        const pantallaInicial = pantallaAlAbrir(estado, esMesa);
+        if (pantallaInicial === 'efectivo') {
           setMetodo('efectivo');
           setPantalla({
             tipo: 'esperandoEfectivo',
-            pagaCon: estado.efectivo.pagaCon,
+            pagaCon: estado.efectivo?.pagaCon ?? null,
             aviso: null,
+            agotado: false,
+          });
+        } else if (pantallaInicial === 'verificando') {
+          setPantalla({
+            tipo: 'verificando',
+            mensaje: 'Estamos confirmando tu pago con tarjeta.',
             agotado: false,
           });
         }
@@ -237,7 +246,7 @@ export function PagoPedido({
     };
     // headers se arma en cada render con los mismos valores: no es dependencia.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pedidoId, accessToken]);
+  }, [esMesa, pedidoId, accessToken]);
 
   async function avisarAlMozo(pagaCon: string | null) {
     setAvisandoMozo(true);
