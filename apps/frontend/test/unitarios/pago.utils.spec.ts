@@ -22,6 +22,7 @@ import {
   seguirConsultando,
   tipoTarjeta,
   TOPE_CONSULTA_MS,
+  filasRebajaIva,
 } from "@/components/pago/pago.utils";
 import {
   HEADER_MESA_SESION,
@@ -311,6 +312,7 @@ describe("comprobante en la pantalla de pago aprobado", () => {
       tipo: "emitido",
       texto: "e-Ticket A-0001234",
       urlConsulta: "https://www.efactura.dgi.gub.uy/consultaQR/cfe?x",
+      rebaja: null,
     });
   });
 
@@ -323,6 +325,49 @@ describe("comprobante en la pantalla de pago aprobado", () => {
       tipo: "emitido",
       texto: "e-Ticket A-0000001",
       urlConsulta: null,
+      rebaja: null,
+    });
+  });
+
+  describe("HU-037 (BL-207): rebaja de IVA de la Ley 17.934", () => {
+    const REBAJA = {
+      ley: "17.934" as const,
+      puntos: 9,
+      totalSinReduccion: "1220.00",
+      reduccion: "90.00",
+      neto: "1130.00",
+      leyenda: "Reducción IVA Ley N° 17.934",
+    };
+
+    it("con rebaja: el comprobante la trae junto al número del e-Ticket", () => {
+      expect(
+        estadoComprobante({
+          comprobante: { serie: "A", numero: 7, urlConsulta: null },
+          rebajaIva: REBAJA,
+        }),
+      ).toMatchObject({
+        tipo: "emitido",
+        texto: "e-Ticket A-0000007",
+        rebaja: REBAJA,
+      });
+    });
+
+    it("sin CFE todavía: no se muestra la rebaja (el voucher necesita el número)", () => {
+      expect(
+        estadoComprobante({ comprobante: null, rebajaIva: REBAJA }),
+      ).toEqual({ tipo: "emitiendo" });
+    });
+
+    it("filas: total sin reducción, reducción con los puntos y neto", () => {
+      const filas = filasRebajaIva(REBAJA);
+      expect(filas.map((f) => f.etiqueta)).toEqual([
+        "Total sin reducción",
+        "Reducción de IVA (9 puntos)",
+        "Total neto",
+      ]);
+      expect(filas[0].valor).toMatch(/1\.220/);
+      expect(filas[1].valor).toMatch(/^− .*90/);
+      expect(filas[2].valor).toMatch(/1\.130/);
     });
   });
 

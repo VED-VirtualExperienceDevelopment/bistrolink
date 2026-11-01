@@ -211,6 +211,8 @@ export interface EstadoPagoDelPedido {
    * Mercado Pago habilitado (HU-020). Opcional: un backend anterior no lo trae.
    */
   tarjeta?: { disponible: boolean };
+  /** HU-037 (BL-207): opcional, un backend anterior no lo trae. */
+  rebajaIva?: RebajaIva | null;
 }
 
 /** Lo que la pantalla tiene que mostrar después de intentar pagar. */
@@ -315,9 +317,50 @@ export function etiquetaMarca(nombre: string | undefined): string | null {
 
 // ── Comprobante (CFE) en la pantalla de pago aprobado ────────────────────
 
+/**
+ * HU-037 (BL-207): rebaja de IVA de la Ley 17.934 que informa la API en un
+ * pago con tarjeta de un consumo en el local. Informativa: el comprobante va
+ * por el total y la reducción la descuenta la administradora del medio de
+ * pago.
+ */
+export interface RebajaIva {
+  ley: "17.934";
+  puntos: number;
+  totalSinReduccion: string;
+  reduccion: string;
+  neto: string;
+  leyenda: string;
+}
+
 export type EstadoComprobante =
-  | { tipo: "emitido"; texto: string; urlConsulta: string | null }
+  | {
+      tipo: "emitido";
+      texto: string;
+      urlConsulta: string | null;
+      /** HU-037 (BL-207): solo si el pago tiene la rebaja. */
+      rebaja: RebajaIva | null;
+    }
   | { tipo: "emitiendo" };
+
+/**
+ * HU-037 (BL-207): filas del detalle de la rebaja, como pide DGI para el
+ * comprobante del pago: total sin reducción, monto de la reducción y neto.
+ */
+export function filasRebajaIva(
+  rebaja: RebajaIva,
+): { etiqueta: string; valor: string }[] {
+  return [
+    {
+      etiqueta: "Total sin reducción",
+      valor: formatearPrecio(rebaja.totalSinReduccion),
+    },
+    {
+      etiqueta: `Reducción de IVA (${rebaja.puntos} puntos)`,
+      valor: `− ${formatearPrecio(rebaja.reduccion)}`,
+    },
+    { etiqueta: "Total neto", valor: formatearPrecio(rebaja.neto) },
+  ];
+}
 
 /**
  * Número del e-Ticket para mostrar: serie y número con 7 dígitos, como
@@ -344,7 +387,7 @@ export function urlConsultaSegura(
 
 /** Qué mostrar del comprobante según GET /pedidos/:id/pagos. */
 export function estadoComprobante(
-  estado: Pick<EstadoPagoDelPedido, "comprobante"> | null,
+  estado: Pick<EstadoPagoDelPedido, "comprobante" | "rebajaIva"> | null,
 ): EstadoComprobante {
   const c = estado?.comprobante;
   if (!c) return { tipo: "emitiendo" };
@@ -352,6 +395,7 @@ export function estadoComprobante(
     tipo: "emitido",
     texto: `e-Ticket ${numeroComprobante(c.serie, c.numero)}`,
     urlConsulta: urlConsultaSegura(c.urlConsulta),
+    rebaja: estado?.rebajaIva ?? null,
   };
 }
 

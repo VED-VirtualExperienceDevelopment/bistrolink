@@ -8,6 +8,7 @@ import type { LineaResumen } from './PagoPedido';
 import {
   codigoPedido,
   estadoComprobante,
+  filasRebajaIva,
   formatearPrecio,
   headersAccesoPedido,
   INTERVALO_CONSULTA_MS,
@@ -15,6 +16,7 @@ import {
   seguirConsultando,
   type EstadoComprobante,
   type EstadoPagoDelPedido,
+  type RebajaIva,
 } from './pago.utils';
 
 // Usa socket.io (solo en el navegador), igual que en la carta.
@@ -226,6 +228,30 @@ function Comprobante({
   );
 }
 
+/**
+ * HU-037 (BL-207): detalle de la rebaja de IVA de la Ley 17.934, como pide
+ * DGI para el comprobante del pago (junto al número del e-Ticket). La
+ * reducción la descuenta la administradora del medio de pago.
+ */
+function DetalleRebaja({ rebaja }: { readonly rebaja: RebajaIva }) {
+  return (
+    <div className="mt-3 rounded-[0.75rem] bg-culinary-background px-4 py-3 text-sm">
+      <dl className="flex flex-col gap-1">
+        {filasRebajaIva(rebaja).map((fila) => (
+          <div key={fila.etiqueta} className="flex items-center justify-between gap-3">
+            <dt className="text-[#5a575e]">{fila.etiqueta}</dt>
+            <dd className="font-semibold text-foreground">{fila.valor}</dd>
+          </div>
+        ))}
+      </dl>
+      <p className="mt-2 text-xs font-semibold text-[#6e54ad]">{rebaja.leyenda}</p>
+      <p className="mt-1 text-xs text-[#5a575e]">
+        La reducción la descuenta la administradora de tu medio de pago.
+      </p>
+    </div>
+  );
+}
+
 /** Emitido (con enlace a DGI), demorado (se puede volver a consultar) o emitiéndose. */
 function EstadoDelComprobante({
   comprobante,
@@ -242,6 +268,7 @@ function EstadoDelComprobante({
         <p className="mt-1 text-sm text-[#5a575e]">
           <span className="font-semibold text-foreground">{comprobante.texto}</span> · emitido
         </p>
+        {comprobante.rebaja && <DetalleRebaja rebaja={comprobante.rebaja} />}
         {comprobante.urlConsulta && (
           <a
             href={comprobante.urlConsulta}
