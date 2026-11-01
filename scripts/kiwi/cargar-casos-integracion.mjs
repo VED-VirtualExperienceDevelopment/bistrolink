@@ -546,6 +546,14 @@ const DATOS_INTEGRACION = {
     priority: "P1",
     tags: ["websocket", "reconexion"],
   }),
+  // HU-037 (BL-207): rebaja de IVA por pago electrónico (Ley 17.934).
+  138: {
+    category: "Funcional",
+    component: "api",
+    requirement: "HU-037",
+    priority: "P1",
+    tags: ["HU-037", "BL-207", "pagos", "cfe"],
+  },
 };
 /**
  * BL-435: datos de los E2E TC-E-017 en adelante, con los criterios de
