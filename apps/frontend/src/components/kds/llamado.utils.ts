@@ -52,7 +52,7 @@ export function combinarSnapshotLlamados(
   snapshot: LlamadoMozo[],
 ): LlamadoMozo[] {
   return snapshot.reduce(
-    agregarLlamado,
+    (acumulado, llamado) => agregarLlamado(acumulado, llamado),
     llamados.filter((l) => l.motivo !== "PAGO_EFECTIVO"),
   );
 }

@@ -261,7 +261,9 @@ export default function MenuDigital({
     if (!guardado) return;
     let cancelado = false;
 
-    consultarPedidoGuardado(origen, guardado).then(
+    // consultarPedidoGuardado nunca rechaza: cualquier error lo convierte
+    // en una decisión (descartar o conservar).
+    void consultarPedidoGuardado(origen, guardado).then(
       ({ retoma, accessToken }) => {
         if (cancelado) return;
         const pedido = {
@@ -576,10 +578,7 @@ export default function MenuDigital({
             className={`pt-20 px-4 md:px-8 max-w-[1440px] mx-auto flex flex-col gap-10 ${hayCarrito ? "lg:pr-[448px]" : ""}`}
           >
             {avisoRetoma && (
-              <div
-                role="status"
-                className="p-3 bg-amber-50 text-amber-900 rounded-lg text-sm font-medium flex items-start justify-between gap-3"
-              >
+              <output className="p-3 bg-amber-50 text-amber-900 rounded-lg text-sm font-medium flex items-start justify-between gap-3">
                 <span>{avisoRetoma}</span>
                 <button
                   type="button"
@@ -588,7 +587,7 @@ export default function MenuDigital({
                 >
                   Cerrar
                 </button>
-              </div>
+              </output>
             )}
             <section className="w-full">
               <div className="relative w-full h-[250px] md:h-[350px] rounded-[1rem] overflow-hidden group bg-foreground">
