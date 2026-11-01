@@ -1,6 +1,7 @@
 import {
   aplicaRebaja17934,
   calcularRebaja17934,
+  PUNTOS_SIN_PRORROGA,
   puntosRebajaVigentes,
   VIGENCIAS_REBAJA_17934,
 } from '../../src/cfe/rebaja-iva';
@@ -72,8 +73,10 @@ describe('rebaja de IVA de la Ley 17.934 (HU-037, BL-207)', () => {
       ).toMatchObject({ puntos: 5, reduccion: '50.00', neto: '1170.00' });
     });
 
-    it('la tabla termina en una fila sin fecha de fin (siempre hay una tasa vigente)', () => {
-      expect(VIGENCIAS_REBAJA_17934.at(-1)?.hasta).toBeNull();
+    it('la tabla de vigencias está ordenada por fecha (la primera que cubre el día es la que rige)', () => {
+      const fechas = VIGENCIAS_REBAJA_17934.map((v) => v.hasta);
+      expect([...fechas].sort()).toEqual(fechas);
+      expect(PUNTOS_SIN_PRORROGA).toBe(5);
     });
   });
 
