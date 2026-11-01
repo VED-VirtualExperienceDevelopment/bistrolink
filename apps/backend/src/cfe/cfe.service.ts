@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { SurtecClient, SurtecError } from './surtec.client';
+import { aplicaRebaja17934, LEYENDA_REBAJA_17934 } from './rebaja-iva';
 
 // Res. DGI 798/2012: los CFE se conservan 5 años.
 const ANIOS_RETENCION = 5;
@@ -17,6 +18,23 @@ export const ESPERAS_REINTENTO_CFE_MS = [5_000, 30_000];
  * Vale la pena reintentar: Surtec caído o lento (5xx, 429, timeout, red).
  * Un 4xx (ej. «no es un emisor válido») va a fallar igual: no se reintenta.
  */
+/**
+ * Adenda del e-Ticket: el pedido y, si el pago tiene la rebaja de IVA de la
+ * Ley 17.934 (HU-037, BL-207), la leyenda. El CFE va igual por el total, sin
+ * descontar la rebaja: la aplica la administradora del medio de pago.
+ */
+export function adendaDelPago(pago: {
+  pedidoId: string;
+  medioPago: string;
+  estado: string;
+  pedido: { canal: string };
+}): string {
+  const pedido = `Pedido ${pago.pedidoId.slice(0, 8)}`;
+  return aplicaRebaja17934({ ...pago, canal: pago.pedido.canal })
+    ? `${pedido}. ${LEYENDA_REBAJA_17934}`
+    : pedido;
+}
+
 export function esErrorTransitorio(error: unknown): boolean {
   if (error instanceof SurtecError && error.status !== undefined) {
     return error.status >= 500 || error.status === 429;
@@ -167,7 +185,7 @@ export class CfeService {
         cantidad: l.cantidad,
         precio: l.precioUnitarioSnapshot.toNumber(),
       })),
-      adenda: `Pedido ${pago.pedidoId.slice(0, 8)}`,
+      adenda: adendaDelPago(pago),
     });
 
     const ahora = new Date();

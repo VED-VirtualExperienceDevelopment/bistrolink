@@ -12,6 +12,7 @@ function pago(overrides: Record<string, unknown> = {}) {
     medioPago: 'MERCADOPAGO',
     monto: new Prisma.Decimal('590'),
     motivoRechazo: null,
+    createdAt: new Date('2026-11-01T15:00:00Z'),
     comprobantes: [],
     ...overrides,
   };
@@ -77,6 +78,7 @@ describe('PagosService.consultar (BL-311: estado del pago y comprobante para el 
       },
       efectivo: { disponible: false, solicitadoEn: null, pagaCon: null },
       tarjeta: { disponible: true },
+      rebajaIva: null,
     });
   });
 
@@ -122,6 +124,7 @@ describe('PagosService.consultar (BL-311: estado del pago y comprobante para el 
       comprobante: null,
       efectivo: { disponible: false, solicitadoEn: null, pagaCon: null },
       tarjeta: { disponible: true },
+      rebajaIva: null,
     });
   });
 
@@ -322,6 +325,49 @@ describe('PagosService.consultar (BL-311: estado del pago y comprobante para el 
 
       expect(r.tarjeta.disponible).toBe(true);
       expect(r.efectivo.disponible).toBe(false);
+    });
+  });
+
+  describe('HU-037 (BL-207): rebaja de IVA de la Ley 17.934', () => {
+    const pedidoCon = (
+      canal: string,
+      pagoDelPedido: Record<string, unknown>,
+    ) => ({
+      id: PEDIDO_ID,
+      estado: 'RECIBIDO',
+      canal,
+      pagos: [pago({ monto: new Prisma.Decimal('1220'), ...pagoDelPedido })],
+    });
+
+    it.each(['QR', 'MOZO'])(
+      'pago con tarjeta aprobado de un consumo en el local (%s): informa total, reducción de 9 puntos, neto y leyenda',
+      async (canal) => {
+        findUnique.mockResolvedValue(pedidoCon(canal, {}));
+
+        const estado = await service.consultar(TENANT_ID, PEDIDO_ID);
+
+        expect(estado.rebajaIva).toEqual({
+          ley: '17.934',
+          puntos: 9,
+          totalSinReduccion: '1220.00',
+          reduccion: '90.00',
+          neto: '1130.00',
+          leyenda: 'Reducción IVA Ley N° 17.934',
+        });
+      },
+    );
+
+    it.each([
+      ['efectivo', 'QR', { medioPago: 'EFECTIVO' }],
+      ['para retirar (Ley 19.210, no 17.934)', 'WEB', {}],
+      ['pago rechazado', 'QR', { estado: 'RECHAZADO' }],
+      ['pago pendiente', 'QR', { estado: 'PENDIENTE' }],
+    ])('%s: sin rebaja', async (_caso, canal, pagoDelPedido) => {
+      findUnique.mockResolvedValue(pedidoCon(canal, pagoDelPedido));
+
+      const estado = await service.consultar(TENANT_ID, PEDIDO_ID);
+
+      expect(estado.rebajaIva).toBeNull();
     });
   });
 });

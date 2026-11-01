@@ -13,6 +13,11 @@ import { ResultadoCobro } from './gateways/pago-gateway.interface';
 import { PagoRechazadoException } from './gateways/pago-rechazado.exception';
 import { PagoTemporalmenteNoDisponibleException } from './gateways/pago-temporalmente-no-disponible.exception';
 import { CfeService, ResumenComprobante } from '../cfe/cfe.service';
+import {
+  aplicaRebaja17934,
+  calcularRebaja17934,
+  RebajaIva,
+} from '../cfe/rebaja-iva';
 import { PedidosService } from '../pedidos/pedidos.service';
 import { PedidoParaKds } from '../pedidos/pedido-kds.mapper';
 import { registrarCambioPago, textoCorto } from './historial-pago';
@@ -49,6 +54,12 @@ export interface EstadoPagoDelPedido {
    * no ofrece la tarjeta y la API rechazaría el pago con 409.
    */
   tarjeta: { disponible: boolean };
+  /**
+   * HU-037 (BL-207): rebaja de IVA de la Ley 17.934, informativa (la aplica
+   * la administradora, no BistroLink). Solo en un pago electrónico cobrado
+   * de un consumo en el local; null en efectivo, para retirar o sin cobrar.
+   */
+  rebajaIva: RebajaIva | null;
 }
 
 // El pago que importa para el comensal: el que cobró (aprobado o después
@@ -273,6 +284,7 @@ export class PagosService {
                 medioPago: true,
                 monto: true,
                 motivoRechazo: true,
+                createdAt: true,
                 comprobantes: {
                   orderBy: { createdAt: 'asc' },
                   take: 1,
@@ -324,6 +336,10 @@ export class PagosService {
       tarjeta: {
         disponible: Boolean(datos.restaurante?.mercadoPagoHabilitado),
       },
+      rebajaIva:
+        pago && aplicaRebaja17934({ ...pago, canal: pedido.canal })
+          ? calcularRebaja17934({ total: pago.monto, fecha: pago.createdAt })
+          : null,
     };
   }
 
