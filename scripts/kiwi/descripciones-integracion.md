@@ -15,6 +15,7 @@
 | 1.8     | 28/10/2026 | TC-I-122 a 125 (pedido cargado por el mozo, HU-039 / BL-209), para cargar con el script antes de mergear el PR.                                          |
 | 1.9     | 31/10/2026 | TC-I-106 y 107: DELETE pasa a eliminar definitivamente (BL-394). TC-I-126 a 131: Gestión de Carta (BL-392 / BL-402).                                     |
 | 1.10    | 01/11/2026 | TC-I-132 a 135 (configuración del establecimiento, HU-020 / BL-72), para cargar con el script antes de mergear el PR.                                    |
+| 1.11    | 01/11/2026 | TC-I-133 y 135: Plexo queda fuera del MVP, igual que Handy (BL-452).                                                                                     |
 
 Texto del campo de descripción de cada caso TC-I en Kiwi. Lo carga
 `cargar-casos-integracion.mjs --descripciones`: cada bloque `## TC-I-NNN`
@@ -464,7 +465,7 @@ Restaurante del seed del tenant A. La auditoría falla al registrar (simulado en
 
 ### Pasos
 
-1. Cambiar la habilitación de Plexo con `ConfiguracionEstablecimientoService.actualizar`.
+1. Cambiar la habilitación de Mercado Pago con `ConfiguracionEstablecimientoService.actualizar`.
 
 ### Resultado esperado
 
@@ -494,12 +495,12 @@ Usuarios de prueba ADMIN y MOZO del tenant A (`TEST_ADMIN_*`, `TEST_MOZO_*`).
 
 1. Como admin, `GET /admin/configuracion`.
 2. Como admin, `PATCH /admin/configuracion` con `{ "propinasSugeridas": [20, 10] }`.
-3. Como admin, `PATCH` con `rut` y otro con `{ "handyHabilitado": true }`.
+3. Como admin, `PATCH` con `rut`, otro con `{ "handyHabilitado": true }` y otro con `{ "plexoHabilitado": true }`.
 4. Como mozo, `GET` y `PATCH /admin/configuracion`.
 
 ### Resultado esperado
 
-1. 200 con la razón social, el RUT, los medios de pago (disponibles: efectivo, Mercado Pago y Plexo) y los proveedores de CFE disponibles (Surtec).
+1. 200 con la razón social, el RUT, los medios de pago (disponibles: efectivo y Mercado Pago) y los proveedores de CFE disponibles (Surtec).
 2. 200 con las propinas guardadas de menor a mayor: `[10, 20]`.
-3. 400 en los dos: el RUT lo cambia solo la plataforma y Handy todavía no está disponible.
+3. 400 en los tres: el RUT lo cambia solo la plataforma, y Handy y Plexo todavía no están disponibles.
 4. 403 en los dos y la configuración sin cambios.

@@ -18,7 +18,7 @@ export interface ConfiguracionEstablecimiento {
   handyHabilitado: boolean;
   propinasSugeridas: number[];
   cfeProveedor: CfeProveedor;
-  /** Los que se pueden habilitar hoy (Handy, fuera del MVP). */
+  /** Los que se pueden habilitar hoy (Plexo y Handy, fuera del MVP). */
   mediosPagoDisponibles: MedioPago[];
   /** Los que se pueden elegir hoy (Biller, fuera del MVP). */
   proveedoresCfeDisponibles: CfeProveedor[];
@@ -75,7 +75,7 @@ export const MEDIOS_PAGO: ReadonlyArray<{
     codigo: "PLEXO",
     campo: "plexoHabilitado",
     nombre: "Plexo",
-    descripcion: "El comensal paga en el checkout de Plexo.",
+    descripcion: "Pago con Plexo.",
   },
   {
     codigo: "HANDY",

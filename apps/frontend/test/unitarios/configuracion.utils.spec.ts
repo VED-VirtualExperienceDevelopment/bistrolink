@@ -15,11 +15,11 @@ const GUARDADA: ConfiguracionEstablecimiento = {
   rut: "219999990016",
   efectivoHabilitado: true,
   mercadoPagoHabilitado: true,
-  plexoHabilitado: true,
+  plexoHabilitado: false,
   handyHabilitado: false,
   propinasSugeridas: [10, 15],
   cfeProveedor: "SURTEC",
-  mediosPagoDisponibles: ["EFECTIVO", "MERCADOPAGO", "PLEXO"],
+  mediosPagoDisponibles: ["EFECTIVO", "MERCADOPAGO"],
   proveedoresCfeDisponibles: ["SURTEC"],
 };
 
@@ -73,7 +73,7 @@ describe("cambios para guardar", () => {
       razonSocial: "Uno SRL",
       efectivoHabilitado: true,
       mercadoPagoHabilitado: true,
-      plexoHabilitado: true,
+      plexoHabilitado: false,
       handyHabilitado: false,
       propinas: "10, 15",
       cfeProveedor: "SURTEC",
