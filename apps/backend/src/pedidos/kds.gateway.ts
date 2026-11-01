@@ -93,11 +93,7 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         KdsGateway.name,
       );
 
-      const pedidosTransicion = await this.resolverPedidosTransicion();
-      const pendientes = await pedidosTransicion.listarPendientes(
-        user.tenantId,
-      );
-      client.emit('pedidos:snapshot', pendientes);
+      await this.enviarSnapshot(client, user.tenantId);
     } catch (err) {
       const esWsAuthError =
         err instanceof WsAuthError || (err as Error)?.name === 'WsAuthError';
@@ -180,9 +176,21 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
 
+    await this.enviarSnapshot(client, user.tenantId);
+  }
+
+  /**
+   * Estado actual para un KDS que se conecta o pide sincronizar: los pedidos
+   * activos y (BL-448) los avisos de efectivo pendientes, que de otro modo
+   * solo verían los KDS conectados al momento de la solicitud.
+   */
+  private async enviarSnapshot(client: Socket, tenantId: string) {
     const pedidosTransicion = await this.resolverPedidosTransicion();
-    const pendientes = await pedidosTransicion.listarPendientes(user.tenantId);
+    const pendientes = await pedidosTransicion.listarPendientes(tenantId);
     client.emit('pedidos:snapshot', pendientes);
+    const solicitudes =
+      await pedidosTransicion.listarSolicitudesEfectivo(tenantId);
+    client.emit('llamados:snapshot', solicitudes);
   }
 
   @SubscribeMessage('pedido:seguir')
@@ -254,9 +262,19 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       KdsGateway.name,
     );
 
+    this.emitirLlamadoResuelto(user.tenantId, body.mesaId);
+  }
+
+  /**
+   * Saca el banner de la mesa en todos los KDS del tenant: al aceptar o
+   * desestimar el llamado y (BL-448) al cerrar la mesa, que cancela los
+   * pedidos sin pagar. El cobro lo resuelve cada KDS al recibir el
+   * `pedido:nuevo` del pedido que tenía el aviso.
+   */
+  emitirLlamadoResuelto(tenantId: string, mesaId: string) {
     this.server
-      .to(this.salaTenant(user.tenantId))
-      .emit('llamado:resuelto', { mesaId: body.mesaId });
+      .to(this.salaTenant(tenantId))
+      .emit('llamado:resuelto', { mesaId });
   }
 
   emitirNuevoPedido(tenantId: string, pedido: unknown) {

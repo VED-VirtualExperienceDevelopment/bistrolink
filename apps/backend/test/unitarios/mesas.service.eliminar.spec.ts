@@ -76,7 +76,11 @@ describe('MesasService.guardarLayout — eliminar (BL-58)', () => {
     mockTenantPrisma = {
       runInTenantContext: jest.fn((_tenantId: string, cb: any) => cb(mockTx)),
     };
-    mockKdsGateway = { emitirLlamado: jest.fn(), emitirEstadoMesa: jest.fn() };
+    mockKdsGateway = {
+      emitirLlamado: jest.fn(),
+      emitirEstadoMesa: jest.fn(),
+      emitirLlamadoResuelto: jest.fn(),
+    };
     service = new MesasService(mockTenantPrisma, mockKdsGateway, mockAuditLog);
   });
 

@@ -79,7 +79,11 @@ describe('MesasService.obtenerLayout', () => {
     mockTenantPrisma = {
       runInTenantContext: jest.fn((_tenantId: string, cb: any) => cb(mockTx)),
     };
-    mockKdsGateway = { emitirLlamado: jest.fn(), emitirEstadoMesa: jest.fn() };
+    mockKdsGateway = {
+      emitirLlamado: jest.fn(),
+      emitirEstadoMesa: jest.fn(),
+      emitirLlamadoResuelto: jest.fn(),
+    };
     service = new MesasService(mockTenantPrisma, mockKdsGateway, mockAuditLog);
   });
 
@@ -130,7 +134,11 @@ describe('MesasService.guardarLayout', () => {
     mockTenantPrisma = {
       runInTenantContext: jest.fn((_tenantId: string, cb: any) => cb(mockTx)),
     };
-    mockKdsGateway = { emitirLlamado: jest.fn(), emitirEstadoMesa: jest.fn() };
+    mockKdsGateway = {
+      emitirLlamado: jest.fn(),
+      emitirEstadoMesa: jest.fn(),
+      emitirLlamadoResuelto: jest.fn(),
+    };
     service = new MesasService(mockTenantPrisma, mockKdsGateway, mockAuditLog);
   });
 
@@ -253,7 +261,11 @@ describe('MesasService.actualizarLayoutMesa', () => {
     mockTenantPrisma = {
       runInTenantContext: jest.fn((_tenantId: string, cb: any) => cb(mockTx)),
     };
-    mockKdsGateway = { emitirLlamado: jest.fn(), emitirEstadoMesa: jest.fn() };
+    mockKdsGateway = {
+      emitirLlamado: jest.fn(),
+      emitirEstadoMesa: jest.fn(),
+      emitirLlamadoResuelto: jest.fn(),
+    };
     service = new MesasService(mockTenantPrisma, mockKdsGateway, mockAuditLog);
   });
 
@@ -334,7 +346,11 @@ describe('MesasService: sesión de mesa (HU-017, BL-60)', () => {
     mockTenantPrisma = {
       runInTenantContext: jest.fn((_tenantId: string, cb: any) => cb(mockTx)),
     };
-    mockKdsGateway = { emitirLlamado: jest.fn(), emitirEstadoMesa: jest.fn() };
+    mockKdsGateway = {
+      emitirLlamado: jest.fn(),
+      emitirEstadoMesa: jest.fn(),
+      emitirLlamadoResuelto: jest.fn(),
+    };
     service = new MesasService(mockTenantPrisma, mockKdsGateway, mockAuditLog);
   });
 
@@ -451,6 +467,15 @@ describe('MesasService: sesión de mesa (HU-017, BL-60)', () => {
       );
       expect(resultado.estado).toBe(MesaEstado.REQUIERE_LIMPIEZA);
       expect(pedidosCancelados).toBe(0);
+    });
+
+    it('BL-448: al cerrar, saca el aviso de la mesa de todos los KDS', async () => {
+      await service.cerrarSesion(TENANT_ID, MESA_ID, MOZO_KEYCLOAK_ID);
+
+      expect(mockKdsGateway.emitirLlamadoResuelto).toHaveBeenCalledWith(
+        TENANT_ID,
+        MESA_ID,
+      );
     });
 
     it.each([

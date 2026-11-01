@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { PedidoEstado } from '@prisma/client';
+import { PedidoEstado, Prisma } from '@prisma/client';
 import { PedidosTransicionService } from '../../src/pedidos/pedidos-transicion.service';
 import { TenantPrismaService } from '../../src/prisma/tenant-prisma.service';
 
@@ -341,6 +341,71 @@ describe('PedidosTransicionService', () => {
       );
 
       expect(resultado).toBeNull();
+    });
+  });
+
+  describe('listarSolicitudesEfectivo (BL-448)', () => {
+    it('busca pedidos de mesa en PENDIENTE_PAGO con solicitud de efectivo y arma el aviso con total y con cuánto paga', async () => {
+      const solicitadoEn = new Date('2026-10-31T23:00:00Z');
+      tx().pedido.findMany.mockResolvedValue([
+        {
+          id: 'pedido-1',
+          efectivoSolicitadoEn: solicitadoEn,
+          efectivoPagaCon: new Prisma.Decimal('1000'),
+          mesa: { id: 'mesa-3', numero: 3 },
+          lineas: [
+            { subtotal: new Prisma.Decimal('180') },
+            { subtotal: new Prisma.Decimal('70.5') },
+          ],
+        },
+        {
+          id: 'pedido-2',
+          efectivoSolicitadoEn: solicitadoEn,
+          efectivoPagaCon: null,
+          mesa: { id: 'mesa-5', numero: 5 },
+          lineas: [{ subtotal: new Prisma.Decimal('590') }],
+        },
+      ]);
+
+      const solicitudes = await service.listarSolicitudesEfectivo(TENANT_ID);
+
+      expect(tx().pedido.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            estado: PedidoEstado.PENDIENTE_PAGO,
+            canal: 'QR',
+            efectivoSolicitadoEn: { not: null },
+          },
+        }),
+      );
+      expect(solicitudes).toEqual([
+        {
+          mesaId: 'mesa-3',
+          mesaNumero: 3,
+          ts: solicitadoEn.getTime(),
+          motivo: 'PAGO_EFECTIVO',
+          pedidoId: 'pedido-1',
+          total: '250.50',
+          pagaCon: '1000.00',
+        },
+        {
+          mesaId: 'mesa-5',
+          mesaNumero: 5,
+          ts: solicitadoEn.getTime(),
+          motivo: 'PAGO_EFECTIVO',
+          pedidoId: 'pedido-2',
+          total: '590.00',
+          pagaCon: null,
+        },
+      ]);
+    });
+
+    it('sin solicitudes pendientes devuelve una lista vacía', async () => {
+      tx().pedido.findMany.mockResolvedValue([]);
+
+      await expect(
+        service.listarSolicitudesEfectivo(TENANT_ID),
+      ).resolves.toEqual([]);
     });
   });
 });

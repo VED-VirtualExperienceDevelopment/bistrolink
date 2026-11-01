@@ -507,6 +507,9 @@ export class MesasService {
       resultado.mesa.id,
       resultado.mesa.estado,
     );
+    // BL-448: con la mesa cerrada no queda nada que atender (los pedidos sin
+    // pagar se cancelaron): se saca su aviso de todos los KDS.
+    this.kdsGateway.emitirLlamadoResuelto(tenantId, resultado.mesa.id);
     return resultado;
   }
 
