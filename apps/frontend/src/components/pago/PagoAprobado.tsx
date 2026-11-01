@@ -217,13 +217,18 @@ function Comprobante({
             Comprobante fiscal
           </h2>
 
-          <EstadoDelComprobante
-            comprobante={comprobante}
-            agotado={agotado}
-            onReintentar={onReintentar}
-          />
+          <EstadoDelComprobante comprobante={comprobante} agotado={agotado} />
         </div>
       </div>
+
+      {/* Fuera de la columna del título: el detalle de la rebaja y los
+          botones van de margen a margen de la tarjeta, alineados con el
+          ícono. */}
+      <AccionesDelComprobante
+        comprobante={comprobante}
+        agotado={agotado}
+        onReintentar={onReintentar}
+      />
     </section>
   );
 }
@@ -235,12 +240,12 @@ function Comprobante({
  */
 function DetalleRebaja({ rebaja }: { readonly rebaja: RebajaIva }) {
   return (
-    <div className="mt-3 rounded-[0.75rem] bg-culinary-background px-4 py-3 text-sm">
+    <div className="mt-4 rounded-[0.75rem] bg-culinary-background px-4 py-3 text-sm">
       <dl className="flex flex-col gap-1">
         {filasRebajaIva(rebaja).map((fila) => (
           <div key={fila.etiqueta} className="flex items-center justify-between gap-3">
             <dt className="text-[#5a575e]">{fila.etiqueta}</dt>
-            <dd className="font-semibold text-foreground">{fila.valor}</dd>
+            <dd className="font-semibold text-foreground whitespace-nowrap">{fila.valor}</dd>
           </div>
         ))}
       </dl>
@@ -252,57 +257,27 @@ function DetalleRebaja({ rebaja }: { readonly rebaja: RebajaIva }) {
   );
 }
 
-/** Emitido (con enlace a DGI), demorado (se puede volver a consultar) o emitiéndose. */
+/** Emitido, demorado (se puede volver a consultar) o emitiéndose: la línea debajo del título. */
 function EstadoDelComprobante({
   comprobante,
   agotado,
-  onReintentar,
 }: {
   readonly comprobante: EstadoComprobante;
   readonly agotado: boolean;
-  readonly onReintentar: () => void;
 }) {
   if (comprobante.tipo === 'emitido') {
     return (
-      <>
-        <p className="mt-1 text-sm text-[#5a575e]">
-          <span className="font-semibold text-foreground">{comprobante.texto}</span> · emitido
-        </p>
-        {comprobante.rebaja && <DetalleRebaja rebaja={comprobante.rebaja} />}
-        {comprobante.urlConsulta && (
-          <a
-            href={comprobante.urlConsulta}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-3 inline-flex items-center gap-2 px-4 py-2.5 bg-[#6e54ad] text-white font-semibold rounded-[0.5rem] hover:bg-[#5b468f] focus:outline-none focus:ring-4 focus:ring-[#6e54ad]/30 transition-colors"
-          >
-            Ver comprobante en DGI
-            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M15 3h6v6" />
-              <path d="M10 14 21 3" />
-              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-            </svg>
-            <span className="sr-only">(se abre en otra pestaña)</span>
-          </a>
-        )}
-      </>
+      <p className="mt-1 text-sm text-[#5a575e]">
+        <span className="font-semibold text-foreground">{comprobante.texto}</span> · emitido
+      </p>
     );
   }
   if (agotado) {
     return (
-      <>
-        <p className="mt-1 text-sm text-[#5a575e]">
-          Tu pago está aprobado. El comprobante todavía se está emitiendo:
-          volvé a consultar en unos minutos o pedíselo al personal del local.
-        </p>
-        <button
-          type="button"
-          onClick={onReintentar}
-          className="mt-3 px-4 py-2 bg-[#6e54ad]/10 text-[#6e54ad] font-semibold rounded-[0.5rem] hover:bg-[#6e54ad] hover:text-white transition-colors"
-        >
-          Volver a consultar
-        </button>
-      </>
+      <p className="mt-1 text-sm text-[#5a575e]">
+        Tu pago está aprobado. El comprobante todavía se está emitiendo:
+        volvé a consultar en unos minutos o pedíselo al personal del local.
+      </p>
     );
   }
   return (
@@ -314,4 +289,59 @@ function EstadoDelComprobante({
       Estamos emitiendo tu comprobante…
     </p>
   );
+}
+
+/**
+ * Debajo del encabezado, a todo el ancho de la tarjeta: el detalle de la
+ * rebaja de IVA (HU-037) y el enlace a DGI si ya se emitió, o «Volver a
+ * consultar» si se demora.
+ */
+function AccionesDelComprobante({
+  comprobante,
+  agotado,
+  onReintentar,
+}: {
+  readonly comprobante: EstadoComprobante;
+  readonly agotado: boolean;
+  readonly onReintentar: () => void;
+}) {
+  if (comprobante.tipo === 'emitido') {
+    return (
+      <>
+        {comprobante.rebaja && <DetalleRebaja rebaja={comprobante.rebaja} />}
+        {comprobante.urlConsulta && (
+          <div className="mt-4 flex justify-center">
+          <a
+            href={comprobante.urlConsulta}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#6e54ad] text-white font-semibold rounded-[0.5rem] hover:bg-[#5b468f] focus:outline-none focus:ring-4 focus:ring-[#6e54ad]/30 transition-colors"
+          >
+            Ver comprobante en DGI
+            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M15 3h6v6" />
+              <path d="M10 14 21 3" />
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+            </svg>
+            <span className="sr-only">(se abre en otra pestaña)</span>
+          </a>
+          </div>
+        )}
+      </>
+    );
+  }
+  if (agotado) {
+    return (
+      <div className="mt-4 flex justify-center">
+      <button
+        type="button"
+        onClick={onReintentar}
+        className="px-4 py-2 bg-[#6e54ad]/10 text-[#6e54ad] font-semibold rounded-[0.5rem] hover:bg-[#6e54ad] hover:text-white transition-colors"
+      >
+        Volver a consultar
+      </button>
+      </div>
+    );
+  }
+  return null;
 }
