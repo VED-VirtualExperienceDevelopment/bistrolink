@@ -76,6 +76,13 @@ function crearTx() {
     },
     // HU-032 (BL-202): historial de estados del pago.
     pagoEstadoHistorial: { create: jest.fn() },
+    // HU-020 (BL-72): medios de pago habilitados del local (default: todos).
+    restaurante: {
+      findUnique: jest.fn().mockResolvedValue({
+        mercadoPagoHabilitado: true,
+        plexoHabilitado: true,
+      }),
+    },
   };
 }
 
@@ -291,6 +298,58 @@ describe('PagosService.crear', () => {
       expect(tenantPrisma.runInTenantContext).not.toHaveBeenCalled();
       expect(tx.pago.create).not.toHaveBeenCalled();
       expect(tx.mesa.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('HU-020 (BL-72): medio de pago deshabilitado en la configuración del local', () => {
+    it.each([
+      ['MERCADOPAGO', 'mercadoPagoHabilitado', 'Mercado Pago'],
+      ['PLEXO', 'plexoHabilitado', 'Plexo'],
+    ])(
+      '%s apagado => 409 sin crear el pago, tocar la mesa ni cobrar',
+      async (medioPago, campo, nombre) => {
+        tx.restaurante.findUnique.mockResolvedValue({
+          mercadoPagoHabilitado: true,
+          plexoHabilitado: true,
+          [campo]: false,
+        });
+
+        await expect(
+          service.crear(TENANT_ID, { ...DTO, medioPago }),
+        ).rejects.toThrow(
+          new ConflictException(`Este local no acepta pagos con ${nombre}`),
+        );
+        expect(tx.restaurante.findUnique).toHaveBeenCalledWith({
+          where: { tenantId: TENANT_ID },
+          select: { mercadoPagoHabilitado: true, plexoHabilitado: true },
+        });
+        expect(tx.pago.create).not.toHaveBeenCalled();
+        expect(tx.mesa.update).not.toHaveBeenCalled();
+        expect(gateway.cobrar).not.toHaveBeenCalled();
+      },
+    );
+
+    it('apagar un medio no afecta a los otros', async () => {
+      tx.restaurante.findUnique.mockResolvedValue({
+        mercadoPagoHabilitado: true,
+        plexoHabilitado: false,
+      });
+
+      await service.crear(TENANT_ID, DTO); // DTO paga con MERCADOPAGO
+
+      expect(gateway.cobrar).toHaveBeenCalled();
+    });
+
+    it('el reintento de un pago ya creado lo devuelve aunque el medio se haya apagado después', async () => {
+      const existente = { id: PAGO_ID, estado: 'APROBADO' };
+      tx.pago.findUnique.mockResolvedValue(existente);
+      tx.restaurante.findUnique.mockResolvedValue({
+        mercadoPagoHabilitado: false,
+        plexoHabilitado: true,
+      });
+
+      await expect(service.crear(TENANT_ID, DTO)).resolves.toBe(existente);
+      expect(gateway.cobrar).not.toHaveBeenCalled();
     });
   });
 
