@@ -41,6 +41,8 @@ describe('SurtecClient', () => {
     delete process.env.SURTEC_USER;
     delete process.env.SURTEC_PASSWORD;
     delete process.env.SURTEC_SUCURSAL;
+    delete process.env.SURTEC_AUTH_URL;
+    delete process.env.SURTEC_API_URL;
   });
 
   it('configurado() depende de usuario y contraseña', () => {
@@ -97,6 +99,21 @@ describe('SurtecClient', () => {
       caeVencimiento: new Date('2030-12-31T00:00:00'),
       url: RESPUESTA_CFE.url,
     });
+  });
+
+  it('lee SURTEC_AUTH_URL y SURTEC_API_URL en cada llamada, no al cargar el módulo', async () => {
+    process.env.SURTEC_AUTH_URL = 'http://auth.local';
+    process.env.SURTEC_API_URL = 'http://api.local';
+    fetchMock
+      .mockReturnValueOnce(json({ access_token: 'AT' }))
+      .mockReturnValueOnce(json(RESPUESTA_CFE));
+
+    await client.emitirETicket(SOLICITUD);
+
+    expect(fetchMock.mock.calls[0][0]).toBe('http://auth.local/token');
+    expect(fetchMock.mock.calls[1][0]).toBe(
+      'http://api.local/comprobantes/crear',
+    );
   });
 
   it('usa la sucursal configurada y no manda adenda si no hay', async () => {
