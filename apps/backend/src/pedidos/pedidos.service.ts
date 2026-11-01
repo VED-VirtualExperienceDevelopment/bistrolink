@@ -349,6 +349,10 @@ export class PedidosService {
   /**
    * Líneas del pedido con el nombre y el precio de la carta (snapshot). Un
    * ítem que no existe en la carta del tenant (RLS) o no está disponible: 400.
+   *
+   * BL-397: solo cuentan los ítems que se ven en la carta: no archivados y de
+   * una categoría visible y no archivada. Los demás se tratan como
+   * inexistentes (400). Vale para el comensal (QR y URL) y para el mozo.
    */
   private async lineasDelPedido(
     tx: PrismaClient,
@@ -356,7 +360,11 @@ export class PedidosService {
     items: CrearPedidoItemDto[],
   ) {
     const itemsCarta = await tx.itemCarta.findMany({
-      where: { id: { in: items.map((i) => i.itemCartaId) } },
+      where: {
+        id: { in: items.map((i) => i.itemCartaId) },
+        archivadoEn: null,
+        categoria: { activo: true, archivadaEn: null },
+      },
     });
     const itemsPorId = new Map(itemsCarta.map((i) => [i.id, i]));
     return items.map((linea) => {

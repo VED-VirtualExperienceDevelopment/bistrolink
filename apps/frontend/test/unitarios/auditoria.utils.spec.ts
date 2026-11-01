@@ -5,6 +5,7 @@ import {
   fechaParaMostrar,
   FILTROS_AUDITORIA_INICIALES,
   hayFiltrosAuditoria,
+  objetoDelRegistro,
   rangoInvalido,
   rutaAuditoria,
 } from "@/components/admin/auditoria/auditoria.utils";
@@ -64,6 +65,28 @@ describe("cómo se muestra cada registro", () => {
       "Precio o disponibilidad de un ítem",
     );
     expect(etiquetaAccion("ALGO_NUEVO")).toBe("ALGO_NUEVO");
+  });
+
+  it("[TC-U-223] BL-396: las acciones de la carta tienen su texto", () => {
+    expect(etiquetaAccion("CARTA_ITEM_ARCHIVADO")).toBe("Ítem archivado");
+    expect(etiquetaAccion("CARTA_CATEGORIA_MODIFICADA")).toBe(
+      "Categoría modificada",
+    );
+    expect(
+      cambiosDelRegistro({
+        valoresAntes: { visible: true, nombre: "Picadas" },
+        valoresDespues: { visible: false, nombre: "Tablas" },
+      }),
+    ).toEqual(["Visible: sí → no", "Nombre: Picadas → Tablas"]);
+  });
+
+  it("[TC-U-224] BL-396: muestra sobre qué ítem o categoría fue la acción", () => {
+    expect(objetoDelRegistro({ detalle: { nombre: "Picada Completa" } })).toBe(
+      "«Picada Completa»",
+    );
+    expect(objetoDelRegistro({ detalle: null })).toBeNull();
+    expect(objetoDelRegistro({ detalle: { nombre: "  " } })).toBeNull();
+    expect(objetoDelRegistro({ detalle: { rol: "MOZO" } })).toBeNull();
   });
 
   it("la fecha en hora de Uruguay", () => {
