@@ -195,6 +195,13 @@ const gestionCarta = (ticket, extra = {}) => ({
 });
 // HU-020 (BL-72): configuración del establecimiento, en
 // configuracion-establecimiento.e2e-spec.ts.
+// BL-448: avisos de efectivo que no se pierden en el KDS (HU-031b).
+const avisoEfectivo = (extra = {}) => ({
+  component: "api",
+  requirement: "HU-031b",
+  ...extra,
+  tags: ["HU-031b", "BL-448", "pagos", "kds", ...(extra.tags ?? [])],
+});
 const configuracionEstablecimiento = (extra = {}) => ({
   component: "api",
   requirement: "HU-020",
@@ -529,6 +536,16 @@ const DATOS_INTEGRACION = {
     priority: "P1",
     tags: ["seguridad"],
   }),
+  136: avisoEfectivo({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["multi-tenant"],
+  }),
+  137: avisoEfectivo({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["websocket", "reconexion"],
+  }),
 };
 /**
  * BL-435: datos de los E2E TC-E-017 en adelante, con los criterios de
@@ -753,6 +770,22 @@ const DATOS_E2E = {
     category: "Funcional",
     priority: "P2",
     tags: ["BL-452", "pagos"],
+  }),
+  // BL-448: retomar el pago al recargar y aviso de efectivo en el KDS.
+  59: e2e("comensal", "HU-031b", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-448", "pagos"],
+  }),
+  60: e2e("comensal", "HU-007", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-448", "pagos", "seguridad"],
+  }),
+  61: e2e("kds", "HU-031b", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-448", "pagos"],
   }),
 };
 /**

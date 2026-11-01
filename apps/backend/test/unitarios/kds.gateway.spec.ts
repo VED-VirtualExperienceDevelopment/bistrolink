@@ -22,6 +22,7 @@ describe('KdsGateway', () => {
   let mockWsAuth: { verify: jest.Mock };
   let mockPedidosTransicion: {
     listarPendientes: jest.Mock;
+    listarSolicitudesEfectivo: jest.Mock;
     transicionar: jest.Mock;
     obtenerResumen: jest.Mock;
   };
@@ -30,6 +31,7 @@ describe('KdsGateway', () => {
   beforeEach(() => {
     mockPedidosTransicion = {
       listarPendientes: jest.fn().mockResolvedValue([]),
+      listarSolicitudesEfectivo: jest.fn().mockResolvedValue([]),
       transicionar: jest.fn(),
       obtenerResumen: jest.fn(),
     };
@@ -412,6 +414,86 @@ describe('KdsGateway', () => {
         pedidoId: 'pedido-1',
         total: '810.00',
         pagaCon: '1000.00',
+      });
+    });
+  });
+
+  describe('BL-448: avisos de efectivo pendientes', () => {
+    const SOLICITUD = {
+      mesaId: 'mesa-3',
+      mesaNumero: 3,
+      ts: 1_761_955_200_000,
+      motivo: 'PAGO_EFECTIVO',
+      pedidoId: 'pedido-1',
+      total: '250.00',
+      pagaCon: '1000.00',
+    };
+
+    it('al conectarse el staff, después del snapshot de pedidos manda llamados:snapshot con las solicitudes de su tenant', async () => {
+      mockWsAuth.verify.mockResolvedValue({
+        sub: 'mozo-1',
+        tenantId: TENANT_ID,
+        roles: ['MOZO'],
+      });
+      mockPedidosTransicion.listarSolicitudesEfectivo.mockResolvedValue([
+        SOLICITUD,
+      ]);
+      const client = mockClient();
+
+      await gateway.handleConnection(client as any);
+
+      expect(
+        mockPedidosTransicion.listarSolicitudesEfectivo,
+      ).toHaveBeenCalledWith(TENANT_ID);
+      expect(client.emit.mock.calls.map(([evento]) => evento)).toEqual([
+        'pedidos:snapshot',
+        'llamados:snapshot',
+      ]);
+      expect(client.emit).toHaveBeenCalledWith('llamados:snapshot', [
+        SOLICITUD,
+      ]);
+    });
+
+    it('pedidos:sync también reenvía las solicitudes pendientes', async () => {
+      mockWsAuth.verify.mockResolvedValue({
+        sub: 'cocina-1',
+        tenantId: TENANT_ID,
+        roles: ['COCINA'],
+      });
+      mockPedidosTransicion.listarSolicitudesEfectivo.mockResolvedValue([
+        SOLICITUD,
+      ]);
+      const client = mockClient();
+
+      await gateway.onSync(client as any);
+
+      expect(client.emit).toHaveBeenCalledWith('llamados:snapshot', [
+        SOLICITUD,
+      ]);
+    });
+
+    it('un COMENSAL no recibe las solicitudes del tenant', async () => {
+      mockWsAuth.verify.mockResolvedValue({
+        sub: 'comensal-x',
+        tenantId: TENANT_ID,
+        roles: ['COMENSAL'],
+      });
+      const client = mockClient();
+
+      await gateway.handleConnection(client as any);
+      await gateway.onSync(client as any);
+
+      expect(
+        mockPedidosTransicion.listarSolicitudesEfectivo,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('emitirLlamadoResuelto saca el aviso de la mesa en la sala del tenant', () => {
+      gateway.emitirLlamadoResuelto(TENANT_ID, 'mesa-3');
+
+      expect(mockServer.to).toHaveBeenCalledWith(`tenant:${TENANT_ID}`);
+      expect(mockServer.emit).toHaveBeenCalledWith('llamado:resuelto', {
+        mesaId: 'mesa-3',
       });
     });
   });

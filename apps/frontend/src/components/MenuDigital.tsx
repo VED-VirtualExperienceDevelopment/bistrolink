@@ -27,7 +27,24 @@ import {
   type OrigenMenu,
 } from "@/components/menu-digital.utils";
 import type { PedidoConfirmado } from "@/types/menu";
-import { firmaCarrito, formatearPrecio } from "@/components/pago/pago.utils";
+import {
+  firmaCarrito,
+  formatearPrecio,
+  headersAccesoPedido,
+  rutaPagos,
+  type EstadoPagoDelPedido,
+} from "@/components/pago/pago.utils";
+import {
+  almacenDelNavegador,
+  borrarPedidoEnCurso,
+  clavePedidoEnCurso,
+  decidirRetoma,
+  guardarPedidoEnCurso,
+  leerPedidoEnCurso,
+  retomaDeError,
+  type PedidoEnCurso,
+  type Retoma,
+} from "@/components/pago/pedido-en-curso.utils";
 
 const ItemNotaModal = dynamic(() => import("@/components/ItemNotaModal"), {
   ssr: false,
@@ -129,7 +146,33 @@ async function identificarComensal(origen: OrigenMenu): Promise<string> {
     ? MENSAJE_RESTAURANTE_NO_DISPONIBLE
     : (mensajeErrorQr(origen, authRes.status, codigoDeError(cuerpo)) ??
       "Error al identificarte para hacer el pedido.");
-  throw new ApiError(authRes.status, mensaje);
+  throw new ApiError(authRes.status, mensaje, codigoDeError(cuerpo));
+}
+
+/**
+ * BL-448: con lo guardado de un pedido en curso, pide un JWT nuevo (el
+ * anterior no se guarda) y consulta el estado real del pedido.
+ */
+async function consultarPedidoGuardado(
+  origen: OrigenMenu,
+  guardado: PedidoEnCurso,
+): Promise<{ retoma: Retoma; accessToken?: string }> {
+  try {
+    const accessToken = await identificarComensal(origen);
+    const estado = await apiFetch<EstadoPagoDelPedido>(
+      rutaPagos(guardado.pedidoId),
+      accessToken,
+      { headers: headersAccesoPedido(origen, guardado.tokenAcceso) },
+    );
+    return { retoma: decidirRetoma(estado), accessToken };
+  } catch (err) {
+    return {
+      retoma:
+        err instanceof ApiError
+          ? retomaDeError(err.status, err.codigo)
+          : { accion: "conservar" },
+    };
+  }
 }
 
 /**
@@ -204,6 +247,61 @@ export default function MenuDigital({
     lineas: ItemCarrito[];
     total: number;
   } | null>(null);
+
+  // BL-448: aviso en la carta si el pedido guardado ya no se pudo retomar
+  // (cancelado, mesa cerrada, inexistente).
+  const [avisoRetoma, setAvisoRetoma] = useState<string | null>(null);
+  const clave = clavePedidoEnCurso(origen);
+
+  // BL-448: al abrir la carta (por ejemplo, después de recargar), si había
+  // un pedido en curso en esta pestaña, se vuelve a donde estaba.
+  useEffect(() => {
+    const almacen = almacenDelNavegador();
+    const guardado = leerPedidoEnCurso(almacen, clave);
+    if (!guardado) return;
+    let cancelado = false;
+
+    // consultarPedidoGuardado nunca rechaza: cualquier error lo convierte
+    // en una decisión (descartar o conservar).
+    void consultarPedidoGuardado(origen, guardado).then(
+      ({ retoma, accessToken }) => {
+        if (cancelado) return;
+        const pedido = {
+          id: guardado.pedidoId,
+          estado: "PENDIENTE_PAGO" as const,
+          createdAt: "",
+          tokenAcceso: guardado.tokenAcceso,
+        };
+        const total = guardado.lineas.reduce(
+          (t, l) => t + l.precio * l.cantidad,
+          0,
+        );
+        if (retoma.accion === "pago" && accessToken) {
+          setCarrito(guardado.lineas);
+          setObservacionGeneral(guardado.observacionGeneral);
+          setPedidoPorPagar({ pedido, accessToken, firma: guardado.firma });
+          setVista("pago");
+        } else if (retoma.accion === "aprobado" && accessToken) {
+          guardarPedidoEnCurso(almacen, clave, { ...guardado, aprobado: true });
+          setPagoAprobado({
+            pedido,
+            accessToken,
+            lineas: guardado.lineas,
+            total,
+          });
+          setVista("aprobado");
+        } else if (retoma.accion === "descartar") {
+          borrarPedidoEnCurso(almacen, clave);
+          setAvisoRetoma(retoma.aviso);
+        }
+      },
+    );
+    return () => {
+      cancelado = true;
+    };
+    // Solo al montar: el origen de la carta no cambia mientras está abierta.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clave]);
 
   // BL-320: el panel "Tu pedido" es fijo y tapaba los botones "Agregar" de
   // los platos que quedaban debajo. Se mide su alto para reservar ese espacio
@@ -328,6 +426,16 @@ export default function MenuDigital({
       // BL-311: el pedido queda en PENDIENTE_PAGO; el carrito se conserva
       // hasta que el pago se apruebe.
       setPedidoPorPagar({ pedido, accessToken, firma });
+      // BL-448: para retomarlo si se recarga la página. Reemplaza al pedido
+      // anterior guardado (el carrito cambió).
+      guardarPedidoEnCurso(almacenDelNavegador(), clave, {
+        pedidoId: pedido.id,
+        tokenAcceso: pedido.tokenAcceso,
+        firma,
+        lineas: carrito,
+        observacionGeneral,
+      });
+      setAvisoRetoma(null);
       setEstadoPedido("idle");
       setVista("pago");
       window.scrollTo({ top: 0 });
@@ -342,6 +450,15 @@ export default function MenuDigital({
   // aprobado (código, estado en vivo y comprobante).
   const alAprobarPago = useCallback(() => {
     if (!pedidoPorPagar) return;
+    // BL-448: si recarga en la confirmación, vuelve a la confirmación.
+    guardarPedidoEnCurso(almacenDelNavegador(), clave, {
+      pedidoId: pedidoPorPagar.pedido.id,
+      tokenAcceso: pedidoPorPagar.pedido.tokenAcceso,
+      firma: pedidoPorPagar.firma,
+      lineas: carrito,
+      observacionGeneral,
+      aprobado: true,
+    });
     setPagoAprobado({
       pedido: pedidoPorPagar.pedido,
       accessToken: pedidoPorPagar.accessToken,
@@ -353,13 +470,16 @@ export default function MenuDigital({
     setObservacionGeneral("");
     setVista("aprobado");
     window.scrollTo({ top: 0 });
-  }, [pedidoPorPagar, carrito, totalCarrito]);
+  }, [pedidoPorPagar, carrito, totalCarrito, clave, observacionGeneral]);
 
   const hacerOtroPedido = useCallback(() => {
+    // BL-448: el pedido terminó; no queda nada guardado (ni el token de
+    // acceso de un pedido para retirar).
+    borrarPedidoEnCurso(almacenDelNavegador(), clave);
     setPagoAprobado(null);
     setVista("carta");
     window.scrollTo({ top: 0 });
-  }, []);
+  }, [clave]);
 
   // BL-320: mide el panel "Tu pedido" mientras está visible.
   useEffect(() => {
@@ -457,6 +577,18 @@ export default function MenuDigital({
           <main
             className={`pt-20 px-4 md:px-8 max-w-[1440px] mx-auto flex flex-col gap-10 ${hayCarrito ? "lg:pr-[448px]" : ""}`}
           >
+            {avisoRetoma && (
+              <output className="p-3 bg-amber-50 text-amber-900 rounded-lg text-sm font-medium flex items-start justify-between gap-3">
+                <span>{avisoRetoma}</span>
+                <button
+                  type="button"
+                  onClick={() => setAvisoRetoma(null)}
+                  className="shrink-0 font-semibold underline"
+                >
+                  Cerrar
+                </button>
+              </output>
+            )}
             <section className="w-full">
               <div className="relative w-full h-[250px] md:h-[350px] rounded-[1rem] overflow-hidden group bg-foreground">
                 {/* LCP de la página: <img> en vez de background-image para que el
