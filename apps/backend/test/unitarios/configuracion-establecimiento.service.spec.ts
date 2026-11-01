@@ -72,6 +72,7 @@ describe('ConfiguracionEstablecimientoService (HU-020, BL-72)', () => {
         razonSocial: RAZON_SOCIAL,
         rut: RUT,
         ...RESTAURANTE_ACTUAL,
+        mediosPagoDisponibles: ['EFECTIVO', 'MERCADOPAGO', 'PLEXO'],
         proveedoresCfeDisponibles: ['SURTEC'],
       });
     });
@@ -194,7 +195,7 @@ describe('ConfiguracionEstablecimientoService (HU-020, BL-72)', () => {
       tx.restaurante.findUnique.mockResolvedValue(null);
 
       await expect(
-        service.actualizar(TENANT_ID, { handyHabilitado: true }, ACTOR),
+        service.actualizar(TENANT_ID, { plexoHabilitado: false }, ACTOR),
       ).rejects.toBeInstanceOf(ConflictException);
       expect(tx.restaurante.update).not.toHaveBeenCalled();
       expect(auditLog.registrarEnTx).not.toHaveBeenCalled();

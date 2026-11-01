@@ -10,6 +10,8 @@ import { AuditLogService } from '../audit-log/audit-log.service';
 import { AuditAction } from '../audit-log/audit-action.enum';
 import {
   ActualizarConfiguracionDto,
+  MEDIOS_PAGO_DISPONIBLES,
+  MedioPagoConfigurable,
   PROVEEDORES_CFE_DISPONIBLES,
 } from './dto/actualizar-configuracion.dto';
 
@@ -23,6 +25,8 @@ export interface ConfiguracionEstablecimiento {
   mercadoPagoHabilitado: boolean;
   plexoHabilitado: boolean;
   handyHabilitado: boolean;
+  /** Los que se pueden habilitar hoy (Handy quedó fuera del MVP). */
+  mediosPagoDisponibles: MedioPagoConfigurable[];
   /** Porcentajes enteros, de menor a mayor. Vacío = sin sugerencias. */
   propinasSugeridas: number[];
   cfeProveedor: CfeProveedor;
@@ -210,6 +214,7 @@ function armarRespuesta(actual: Actual): ConfiguracionEstablecimiento {
     razonSocial: actual.razonSocial,
     rut: actual.rut,
     ...actual.restaurante,
+    mediosPagoDisponibles: [...MEDIOS_PAGO_DISPONIBLES],
     proveedoresCfeDisponibles: [...PROVEEDORES_CFE_DISPONIBLES],
   };
 }

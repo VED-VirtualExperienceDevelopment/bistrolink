@@ -22,7 +22,7 @@ describe('ActualizarConfiguracionDto (HU-020, BL-72)', () => {
         efectivoHabilitado: false,
         mercadoPagoHabilitado: true,
         plexoHabilitado: false,
-        handyHabilitado: true,
+        handyHabilitado: false,
         propinasSugeridas: [10, 15, 20],
         cfeProveedor: 'SURTEC',
       }),
@@ -43,6 +43,13 @@ describe('ActualizarConfiguracionDto (HU-020, BL-72)', () => {
     });
     expect(dto.razonSocial).toBe('Uno SRL');
     expect(await errores({ razonSocial: '   ' })).toEqual(['razonSocial']);
+  });
+
+  it('rechaza habilitar Handy: quedó fuera del MVP', async () => {
+    expect(await errores({ handyHabilitado: true })).toEqual([
+      'handyHabilitado',
+    ]);
+    expect(await errores({ handyHabilitado: false })).toEqual([]);
   });
 
   it('los medios de pago son verdadero o falso', async () => {

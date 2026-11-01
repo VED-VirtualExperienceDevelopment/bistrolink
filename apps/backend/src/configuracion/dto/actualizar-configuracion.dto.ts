@@ -30,6 +30,24 @@ export const PROVEEDORES_CFE_DISPONIBLES: readonly CfeProveedor[] = [
   CfeProveedor.SURTEC,
 ];
 
+/**
+ * HU-020 (BL-72): medios de pago que se pueden habilitar hoy. Handy quedó
+ * fuera del MVP: tiene su columna (handy_habilitado, en false) pero no se
+ * puede habilitar hasta que exista su integración. Para habilitarlo, alcanza
+ * con sumarlo acá; la pantalla toma la lista de GET /admin/configuracion.
+ */
+export const MEDIOS_PAGO_DISPONIBLES = [
+  'EFECTIVO',
+  'MERCADOPAGO',
+  'PLEXO',
+] as const;
+export type MedioPagoConfigurable =
+  (typeof MEDIOS_PAGO_DISPONIBLES)[number] | 'HANDY';
+
+const HANDY_DISPONIBLE = (
+  MEDIOS_PAGO_DISPONIBLES as readonly MedioPagoConfigurable[]
+).includes('HANDY');
+
 /** Ordena de menor a mayor (si es una lista de números), para guardar siempre igual. */
 const ordenarPropinas = ({ value }: { value: unknown }) =>
   Array.isArray(value) && value.every((v) => typeof v === 'number')
@@ -67,8 +85,12 @@ export class ActualizarConfiguracionDto {
   @IsBoolean({ message: 'plexoHabilitado debe ser verdadero o falso' })
   plexoHabilitado?: boolean;
 
+  // Handy, fuera del MVP: solo se acepta false hasta que esté disponible.
   @IsOptional()
   @IsBoolean({ message: 'handyHabilitado debe ser verdadero o falso' })
+  @IsIn(HANDY_DISPONIBLE ? [true, false] : [false], {
+    message: 'Handy todavía no está disponible: no se puede habilitar',
+  })
   handyHabilitado?: boolean;
 
   // Porcentajes enteros, sin repetir, de menor a mayor. La lista vacía
