@@ -43,6 +43,12 @@ export interface EstadoPagoDelPedido {
     solicitadoEn: Date | null;
     pagaCon: string | null;
   };
+  /**
+   * BL-452: pago con tarjeta (Mercado Pago, la única pasarela). `disponible`
+   * si el local tiene Mercado Pago habilitado (HU-020): si no, la pantalla
+   * no ofrece la tarjeta y la API rechazaría el pago con 409.
+   */
+  tarjeta: { disponible: boolean };
 }
 
 // El pago que importa para el comensal: el que cobró (aprobado o después
@@ -278,7 +284,7 @@ export class PagosService {
         }),
         restaurante: await tx.restaurante.findUnique({
           where: { tenantId },
-          select: { efectivoHabilitado: true },
+          select: { efectivoHabilitado: true, mercadoPagoHabilitado: true },
         }),
       }),
     );
@@ -314,6 +320,9 @@ export class PagosService {
           Boolean(datos.restaurante?.efectivoHabilitado),
         solicitadoEn: pedido.efectivoSolicitadoEn ?? null,
         pagaCon: pedido.efectivoPagaCon?.toFixed(2) ?? null,
+      },
+      tarjeta: {
+        disponible: Boolean(datos.restaurante?.mercadoPagoHabilitado),
       },
     };
   }
