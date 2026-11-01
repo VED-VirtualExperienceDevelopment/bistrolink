@@ -1,8 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 
-const AUTH_URL =
+// Las URLs se leen en cada llamada (no al cargar el módulo): así los tests
+// de contrato pueden apuntar el cliente al mock de Pact (BL-216).
+const authUrl = () =>
   process.env.SURTEC_AUTH_URL ?? 'https://auth-test.facturaelectronica.com.uy';
-const API_URL =
+const apiUrl = () =>
   process.env.SURTEC_API_URL ?? 'https://api-test.facturaelectronica.com.uy';
 
 // El token dura 12 h; se renueva antes de que venza.
@@ -78,7 +80,7 @@ export class SurtecClient {
     };
 
     const respuesta = await this.llamar(
-      `${API_URL}/comprobantes/crear`,
+      `${apiUrl()}/comprobantes/crear`,
       solicitud.rutEmisor,
       cuerpo,
     );
@@ -171,7 +173,7 @@ export class SurtecClient {
   private async pedirToken(
     cuerpo: { grant_type: string } & Record<string, unknown>,
   ) {
-    const respuesta = await fetch(`${AUTH_URL}/token`, {
+    const respuesta = await fetch(`${authUrl()}/token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(cuerpo),
