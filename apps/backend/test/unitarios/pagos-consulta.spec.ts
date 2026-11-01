@@ -25,9 +25,10 @@ describe('PagosService.consultar (BL-311: estado del pago y comprobante para el 
 
   beforeEach(() => {
     findUnique = jest.fn();
-    restauranteFindUnique = jest
-      .fn()
-      .mockResolvedValue({ efectivoHabilitado: true });
+    restauranteFindUnique = jest.fn().mockResolvedValue({
+      efectivoHabilitado: true,
+      mercadoPagoHabilitado: true,
+    });
     runInTenantContext = jest.fn((_tenantId, fn) =>
       fn({
         pedido: { findUnique },
@@ -75,6 +76,7 @@ describe('PagosService.consultar (BL-311: estado del pago y comprobante para el 
         urlConsulta: 'https://www.efactura.dgi.gub.uy/consultaQR/x',
       },
       efectivo: { disponible: false, solicitadoEn: null, pagaCon: null },
+      tarjeta: { disponible: true },
     });
   });
 
@@ -119,6 +121,7 @@ describe('PagosService.consultar (BL-311: estado del pago y comprobante para el 
       pago: null,
       comprobante: null,
       efectivo: { disponible: false, solicitadoEn: null, pagaCon: null },
+      tarjeta: { disponible: true },
     });
   });
 
@@ -245,7 +248,10 @@ describe('PagosService.consultar (BL-311: estado del pago y comprobante para el 
     });
 
     it('local sin efectivo habilitado: no disponible', async () => {
-      restauranteFindUnique.mockResolvedValue({ efectivoHabilitado: false });
+      restauranteFindUnique.mockResolvedValue({
+        efectivoHabilitado: false,
+        mercadoPagoHabilitado: true,
+      });
       findUnique.mockResolvedValue(pendiente());
 
       const r = await service.consultar(TENANT_ID, PEDIDO_ID);
@@ -269,6 +275,53 @@ describe('PagosService.consultar (BL-311: estado del pago y comprobante para el 
         solicitadoEn: cuando,
         pagaCon: '1000.00',
       });
+    });
+  });
+
+  describe('BL-452: pago con tarjeta (Mercado Pago)', () => {
+    beforeEach(() => {
+      findUnique.mockResolvedValue({
+        id: PEDIDO_ID,
+        estado: 'PENDIENTE_PAGO',
+        canal: 'QR',
+        pagos: [],
+      });
+    });
+
+    it('local con Mercado Pago habilitado: la tarjeta está disponible', async () => {
+      const r = await service.consultar(TENANT_ID, PEDIDO_ID);
+
+      expect(r.tarjeta).toEqual({ disponible: true });
+      expect(restauranteFindUnique).toHaveBeenCalledWith({
+        where: { tenantId: TENANT_ID },
+        select: { efectivoHabilitado: true, mercadoPagoHabilitado: true },
+      });
+    });
+
+    it('local con Mercado Pago deshabilitado: la tarjeta no está disponible y el efectivo sigue igual', async () => {
+      restauranteFindUnique.mockResolvedValue({
+        efectivoHabilitado: true,
+        mercadoPagoHabilitado: false,
+      });
+
+      const r = await service.consultar(TENANT_ID, PEDIDO_ID);
+
+      expect(r.tarjeta).toEqual({ disponible: false });
+      expect(r.efectivo.disponible).toBe(true);
+    });
+
+    it('pedido para retirar: la tarjeta depende solo de Mercado Pago (no del canal)', async () => {
+      findUnique.mockResolvedValue({
+        id: PEDIDO_ID,
+        estado: 'PENDIENTE_PAGO',
+        canal: 'WEB',
+        pagos: [],
+      });
+
+      const r = await service.consultar(TENANT_ID, PEDIDO_ID);
+
+      expect(r.tarjeta.disponible).toBe(true);
+      expect(r.efectivo.disponible).toBe(false);
     });
   });
 });

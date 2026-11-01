@@ -22,7 +22,7 @@ const RUT = '219999990016';
 const RESTAURANTE_ACTUAL = {
   efectivoHabilitado: true,
   mercadoPagoHabilitado: true,
-  plexoHabilitado: true,
+  plexoHabilitado: false,
   handyHabilitado: false,
   propinasSugeridas: [10],
   cfeProveedor: 'SURTEC',
@@ -72,7 +72,7 @@ describe('ConfiguracionEstablecimientoService (HU-020, BL-72)', () => {
         razonSocial: RAZON_SOCIAL,
         rut: RUT,
         ...RESTAURANTE_ACTUAL,
-        mediosPagoDisponibles: ['EFECTIVO', 'MERCADOPAGO', 'PLEXO'],
+        mediosPagoDisponibles: ['EFECTIVO', 'MERCADOPAGO'],
         proveedoresCfeDisponibles: ['SURTEC'],
       });
     });
@@ -187,7 +187,7 @@ describe('ConfiguracionEstablecimientoService (HU-020, BL-72)', () => {
       auditLog.registrarEnTx.mockRejectedValue(new Error('base caída'));
 
       await expect(
-        service.actualizar(TENANT_ID, { plexoHabilitado: false }, ACTOR),
+        service.actualizar(TENANT_ID, { mercadoPagoHabilitado: false }, ACTOR),
       ).rejects.toThrow('base caída');
     });
 
@@ -195,7 +195,7 @@ describe('ConfiguracionEstablecimientoService (HU-020, BL-72)', () => {
       tx.restaurante.findUnique.mockResolvedValue(null);
 
       await expect(
-        service.actualizar(TENANT_ID, { plexoHabilitado: false }, ACTOR),
+        service.actualizar(TENANT_ID, { mercadoPagoHabilitado: false }, ACTOR),
       ).rejects.toBeInstanceOf(ConflictException);
       expect(tx.restaurante.update).not.toHaveBeenCalled();
       expect(auditLog.registrarEnTx).not.toHaveBeenCalled();

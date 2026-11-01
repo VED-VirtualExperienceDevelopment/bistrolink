@@ -206,6 +206,11 @@ export interface EstadoPagoDelPedido {
     solicitadoEn: string | null;
     pagaCon: string | null;
   };
+  /**
+   * BL-452: pago con tarjeta (Mercado Pago). `disponible` si el local tiene
+   * Mercado Pago habilitado (HU-020). Opcional: un backend anterior no lo trae.
+   */
+  tarjeta?: { disponible: boolean };
 }
 
 /** Lo que la pantalla tiene que mostrar después de intentar pagar. */
@@ -367,6 +372,67 @@ export interface SolicitudEfectivo {
 }
 
 export type MetodoPago = "tarjeta" | "efectivo";
+
+/** BL-452: medios que el local ofrece para este pedido. */
+export interface MediosDisponibles {
+  tarjeta: boolean;
+  efectivo: boolean;
+}
+
+/**
+ * BL-452: medios disponibles según GET .../pagos. Si el backend no informa
+ * la tarjeta (versión anterior), se ofrece como antes: la API igual rechaza
+ * con 409 un pago con un medio deshabilitado.
+ */
+export function mediosDisponibles(
+  estado: Pick<EstadoPagoDelPedido, "tarjeta" | "efectivo">,
+): MediosDisponibles {
+  return {
+    tarjeta: estado.tarjeta?.disponible ?? true,
+    efectivo: estado.efectivo?.disponible ?? false,
+  };
+}
+
+/** Sin la consulta (error de red): solo la tarjeta, como antes de BL-452. */
+export const MEDIOS_SIN_CONSULTA: MediosDisponibles = {
+  tarjeta: true,
+  efectivo: false,
+};
+
+/**
+ * BL-452: qué muestra la pantalla de pago. Con los dos medios, el selector;
+ * con uno solo, ese medio directo (sin selector); sin ninguno, el aviso.
+ */
+export type OpcionesPago =
+  | { tipo: "selector" }
+  | { tipo: "solo"; metodo: MetodoPago }
+  | { tipo: "ninguno" };
+
+export function opcionesDePago(medios: MediosDisponibles): OpcionesPago {
+  if (medios.tarjeta && medios.efectivo) return { tipo: "selector" };
+  if (medios.tarjeta) return { tipo: "solo", metodo: "tarjeta" };
+  if (medios.efectivo) return { tipo: "solo", metodo: "efectivo" };
+  return { tipo: "ninguno" };
+}
+
+/** El método que queda elegido: el actual si sigue disponible. */
+export function metodoSegunMedios(
+  medios: MediosDisponibles,
+  actual: MetodoPago,
+): MetodoPago {
+  if (actual === "tarjeta" && !medios.tarjeta && medios.efectivo) {
+    return "efectivo";
+  }
+  if (actual === "efectivo" && !medios.efectivo) return "tarjeta";
+  return actual;
+}
+
+/** BL-452: aviso cuando el local no ofrece ningún medio para este pedido. */
+export function mensajeSinMedios(tipoOrigen: OrigenMenu["tipo"]): string {
+  return tipoOrigen === "mesa"
+    ? "Este local no tiene pagos desde el celular habilitados. Llamá al mozo para que te cobre."
+    : "Este local no tiene pagos en línea habilitados para pedidos para retirar. Acercate al local para pagar.";
+}
 
 /** Mientras se espera al mozo, se consulta cada 5 segundos... */
 export const INTERVALO_CONSULTA_EFECTIVO_MS = 5_000;

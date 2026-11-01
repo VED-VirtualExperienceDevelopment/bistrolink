@@ -31,22 +31,25 @@ export const PROVEEDORES_CFE_DISPONIBLES: readonly CfeProveedor[] = [
 ];
 
 /**
- * HU-020 (BL-72): medios de pago que se pueden habilitar hoy. Handy quedó
- * fuera del MVP: tiene su columna (handy_habilitado, en false) pero no se
- * puede habilitar hasta que exista su integración. Para habilitarlo, alcanza
- * con sumarlo acá; la pantalla toma la lista de GET /admin/configuracion.
+ * HU-020 (BL-72): medios de pago que se pueden habilitar hoy. Mercado Pago
+ * es la única pasarela (decisión del 17/10/2026, Anexo 2): Plexo y Handy
+ * quedaron fuera del MVP (BL-452). Tienen su columna (en false) pero no se
+ * pueden habilitar hasta que exista su integración. Para habilitar uno,
+ * alcanza con sumarlo acá; la pantalla toma la lista de GET
+ * /admin/configuracion.
  */
-export const MEDIOS_PAGO_DISPONIBLES = [
-  'EFECTIVO',
-  'MERCADOPAGO',
-  'PLEXO',
-] as const;
+export const MEDIOS_PAGO_DISPONIBLES = ['EFECTIVO', 'MERCADOPAGO'] as const;
 export type MedioPagoConfigurable =
-  (typeof MEDIOS_PAGO_DISPONIBLES)[number] | 'HANDY';
+  (typeof MEDIOS_PAGO_DISPONIBLES)[number] | 'PLEXO' | 'HANDY';
 
-const HANDY_DISPONIBLE = (
-  MEDIOS_PAGO_DISPONIBLES as readonly MedioPagoConfigurable[]
-).includes('HANDY');
+/** Valores aceptados para el flag de un medio: false si no está disponible. */
+function valoresPermitidos(medio: MedioPagoConfigurable): boolean[] {
+  return (MEDIOS_PAGO_DISPONIBLES as readonly MedioPagoConfigurable[]).includes(
+    medio,
+  )
+    ? [true, false]
+    : [false];
+}
 
 /** Ordena de menor a mayor (si es una lista de números), para guardar siempre igual. */
 const ordenarPropinas = ({ value }: { value: unknown }) =>
@@ -81,14 +84,18 @@ export class ActualizarConfiguracionDto {
   @IsBoolean({ message: 'mercadoPagoHabilitado debe ser verdadero o falso' })
   mercadoPagoHabilitado?: boolean;
 
+  // Plexo y Handy, fuera del MVP (BL-452): solo se acepta false hasta que
+  // estén disponibles.
   @IsOptional()
   @IsBoolean({ message: 'plexoHabilitado debe ser verdadero o falso' })
+  @IsIn(valoresPermitidos('PLEXO'), {
+    message: 'Plexo todavía no está disponible: no se puede habilitar',
+  })
   plexoHabilitado?: boolean;
 
-  // Handy, fuera del MVP: solo se acepta false hasta que esté disponible.
   @IsOptional()
   @IsBoolean({ message: 'handyHabilitado debe ser verdadero o falso' })
-  @IsIn(HANDY_DISPONIBLE ? [true, false] : [false], {
+  @IsIn(valoresPermitidos('HANDY'), {
     message: 'Handy todavía no está disponible: no se puede habilitar',
   })
   handyHabilitado?: boolean;

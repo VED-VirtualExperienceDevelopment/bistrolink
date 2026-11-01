@@ -25,7 +25,7 @@ export interface ConfiguracionEstablecimiento {
   mercadoPagoHabilitado: boolean;
   plexoHabilitado: boolean;
   handyHabilitado: boolean;
-  /** Los que se pueden habilitar hoy (Handy quedó fuera del MVP). */
+  /** Los que se pueden habilitar hoy (Plexo y Handy quedaron fuera del MVP). */
   mediosPagoDisponibles: MedioPagoConfigurable[];
   /** Porcentajes enteros, de menor a mayor. Vacío = sin sugerencias. */
   propinasSugeridas: number[];

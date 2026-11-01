@@ -152,10 +152,11 @@ model Restaurante {
   // los valores son pocos y fijos. La razón social y el RUT no van acá:
   // ya están en tenant.
   // Medios de pago digitales, un flag por medio como efectivoHabilitado
-  // (que es el de efectivo; no se duplica). Default: lo que hoy acepta la
-  // API (Mercado Pago y Plexo sí; Handy todavía no tiene integración).
+  // (que es el de efectivo; no se duplica). Mercado Pago es la única
+  // pasarela (decisión del 17/10/2026, Anexo 2): Plexo y Handy quedan en
+  // false y fuera del MVP hasta que se integren (BL-452).
   mercadoPagoHabilitado Boolean      @default(true) @map("mercadopago_habilitado")
-  plexoHabilitado       Boolean      @default(true) @map("plexo_habilitado")
+  plexoHabilitado       Boolean      @default(false) @map("plexo_habilitado")
   handyHabilitado       Boolean      @default(false) @map("handy_habilitado")
   // Porcentajes de propina sugeridos, enteros (ej. [10, 15, 20]). Vacío =
   // sin sugerencias. Entre 1 y 100 y hasta 5 valores: CHECK en la migración

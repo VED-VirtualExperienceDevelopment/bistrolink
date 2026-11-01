@@ -254,7 +254,7 @@ describe('HU-020 (BL-72): configuración del establecimiento', () => {
     await expect(
       configuracion.actualizar(
         TENANT_ID,
-        { plexoHabilitado: !original.plexoHabilitado },
+        { mercadoPagoHabilitado: !original.mercadoPagoHabilitado },
         { id: ACTOR_PRUEBA },
       ),
     ).rejects.toThrow('auditoría caída');
@@ -293,7 +293,7 @@ describe('HU-020 (BL-72): configuración del establecimiento', () => {
       expect(lectura.body).toMatchObject({
         razonSocial: original.razonSocial,
         efectivoHabilitado: original.efectivoHabilitado,
-        mediosPagoDisponibles: ['EFECTIVO', 'MERCADOPAGO', 'PLEXO'],
+        mediosPagoDisponibles: ['EFECTIVO', 'MERCADOPAGO'],
         proveedoresCfeDisponibles: ['SURTEC'],
       });
       expect(typeof lectura.body.rut).toBe('string');
@@ -314,6 +314,12 @@ describe('HU-020 (BL-72): configuración del establecimiento', () => {
         .patch('/admin/configuracion')
         .set('Authorization', `Bearer ${tokenAdmin}`)
         .send({ handyHabilitado: true })
+        .expect(400);
+      // BL-452: Plexo quedó fuera del MVP, igual que Handy.
+      await request(servidor)
+        .patch('/admin/configuracion')
+        .set('Authorization', `Bearer ${tokenAdmin}`)
+        .send({ plexoHabilitado: true })
         .expect(400);
 
       await request(servidor)

@@ -30,7 +30,7 @@ describe('ActualizarConfiguracionDto (HU-020, BL-72)', () => {
   });
 
   it('acepta cambiar un solo campo', async () => {
-    expect(await errores({ plexoHabilitado: false })).toEqual([]);
+    expect(await errores({ mercadoPagoHabilitado: false })).toEqual([]);
   });
 
   it('rechaza el RUT: lo cambia solo la plataforma (BL-412)', async () => {
@@ -45,12 +45,13 @@ describe('ActualizarConfiguracionDto (HU-020, BL-72)', () => {
     expect(await errores({ razonSocial: '   ' })).toEqual(['razonSocial']);
   });
 
-  it('rechaza habilitar Handy: quedó fuera del MVP', async () => {
-    expect(await errores({ handyHabilitado: true })).toEqual([
-      'handyHabilitado',
-    ]);
-    expect(await errores({ handyHabilitado: false })).toEqual([]);
-  });
+  it.each(['plexoHabilitado', 'handyHabilitado'])(
+    'rechaza habilitar %s: quedó fuera del MVP (BL-452)',
+    async (campo) => {
+      expect(await errores({ [campo]: true })).toEqual([campo]);
+      expect(await errores({ [campo]: false })).toEqual([]);
+    },
+  );
 
   it('los medios de pago son verdadero o falso', async () => {
     expect(await errores({ efectivoHabilitado: 'no' })).toEqual([
