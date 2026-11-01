@@ -89,6 +89,44 @@ describe('CfeService.intentarEmitir', () => {
     });
   });
 
+  it('HU-037 (BL-207): pago con tarjeta de un consumo en el local: la adenda lleva la leyenda de la rebaja y el CFE va por el total', async () => {
+    tx.pago.findUnique.mockResolvedValue(
+      pagoBd({
+        medioPago: 'MERCADOPAGO',
+        pedido: { ...pagoBd().pedido, canal: 'QR' },
+      }),
+    );
+
+    await service.intentarEmitir(TENANT_ID, PAGO_ID);
+
+    const solicitud = surtec.emitirETicket.mock.calls[0][0];
+    expect(solicitud.adenda).toBe(
+      'Pedido 3cdf1dad. Reducción IVA Ley N° 17.934',
+    );
+    // Sin descuento: las líneas van con su precio.
+    expect(solicitud.items).toEqual([
+      { concepto: 'Milanesa a la napolitana', cantidad: 2, precio: 295 },
+    ]);
+  });
+
+  it.each([
+    ['efectivo', 'EFECTIVO', 'QR'],
+    ['para retirar', 'MERCADOPAGO', 'WEB'],
+  ])(
+    'HU-037 (BL-207): %s: la adenda no lleva la leyenda',
+    async (_caso, medioPago, canal) => {
+      tx.pago.findUnique.mockResolvedValue(
+        pagoBd({ medioPago, pedido: { ...pagoBd().pedido, canal } }),
+      );
+
+      await service.intentarEmitir(TENANT_ID, PAGO_ID);
+
+      expect(surtec.emitirETicket.mock.calls[0][0].adenda).toBe(
+        'Pedido 3cdf1dad',
+      );
+    },
+  );
+
   it('guarda serie, número, hash, CAE y URL de DGI, y retiene 5 años', async () => {
     const resumen = await service.intentarEmitir(TENANT_ID, PAGO_ID);
 
