@@ -193,6 +193,14 @@ const gestionCarta = (ticket, extra = {}) => ({
   ...extra,
   tags: ["HU-005", "BL-392", ticket, ...(extra.tags ?? [])],
 });
+// HU-020 (BL-72): configuración del establecimiento, en
+// configuracion-establecimiento.e2e-spec.ts.
+const configuracionEstablecimiento = (extra = {}) => ({
+  component: "api",
+  requirement: "HU-020",
+  ...extra,
+  tags: ["HU-020", "BL-72", ...(extra.tags ?? [])],
+});
 const DATOS_INTEGRACION = {
   55: {
     category: "Funcional",
@@ -500,6 +508,26 @@ const DATOS_INTEGRACION = {
     category: "Seguridad",
     priority: "P1",
     tags: ["seguridad", "multi-tenant"],
+  }),
+  132: configuracionEstablecimiento({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["auditoria", "pagos"],
+  }),
+  133: configuracionEstablecimiento({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["auditoria", "integridad-datos"],
+  }),
+  134: configuracionEstablecimiento({
+    category: "Funcional",
+    priority: "P2",
+    tags: ["integridad-datos"],
+  }),
+  135: configuracionEstablecimiento({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["seguridad"],
   }),
 };
 /**

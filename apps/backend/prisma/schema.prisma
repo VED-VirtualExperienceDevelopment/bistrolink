@@ -82,6 +82,12 @@ enum PagoOrigen {
   VENCIMIENTO
 }
 
+// HU-020 (BL-72): proveedor de facturación electrónica (CFE) del local.
+enum CfeProveedor {
+  SURTEC
+  BILLER
+}
+
 // ── 4.1 Tenant ───────────────────────────────────────────────────────────────
 // Raíz del aislamiento multi-tenant. NO lleva RLS (es la raíz, no un dato
 // dependiente de un tenant).
@@ -123,26 +129,42 @@ model Tenant {
 // ── 4.2 Restaurante ──────────────────────────────────────────────────────────
 
 model Restaurante {
-  id                 String   @id @default(uuid()) @db.Uuid
+  id                    String       @id @default(uuid()) @db.Uuid
   // Único (BL-163): un tenant tiene un solo restaurante (ver
   // Tenant.restaurante). El índice único reemplaza al @@index([tenantId]).
-  tenantId           String   @unique @map("tenant_id") @db.Uuid
-  nombre             String
-  direccion          String
-  timezone           String
+  tenantId              String       @unique @map("tenant_id") @db.Uuid
+  nombre                String
+  direccion             String
+  timezone              String
   // HU-028 (BL-173): elementos fijos (puerta, baño, cocina, caja, barra) y
   // zonas (salón, patio, calle) del plano del salón. Forma:
   // { elementos: [{ id, tipo, x, y, ancho, alto, rotacion }],
   //   zonas: [{ id, etiqueta, x, y, ancho, alto }] }
   // Nullable: null = plano sin elementos ni zonas (los layouts de HU-016,
   // que viven en mesa.layout, no cambian). Validado por PlanoDto.
-  plano              Json?
+  plano                 Json?
   // HU-031 (BL-201): el local acepta efectivo. Columna mínima hasta HU-020
   // (BL-72, configuración del establecimiento), que la va a administrar.
   // Default true: los locales existentes siguen cobrando en efectivo.
-  efectivoHabilitado Boolean  @default(true) @map("efectivo_habilitado")
-  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  efectivoHabilitado    Boolean      @default(true) @map("efectivo_habilitado")
+  // HU-020 (BL-72): configuración del establecimiento. Columnas directas en
+  // restaurante (sin tabla aparte): un tenant tiene un solo restaurante y
+  // los valores son pocos y fijos. La razón social y el RUT no van acá:
+  // ya están en tenant.
+  // Medios de pago digitales, un flag por medio como efectivoHabilitado
+  // (que es el de efectivo; no se duplica). Default: lo que hoy acepta la
+  // API (Mercado Pago y Plexo sí; Handy todavía no tiene integración).
+  mercadoPagoHabilitado Boolean      @default(true) @map("mercadopago_habilitado")
+  plexoHabilitado       Boolean      @default(true) @map("plexo_habilitado")
+  handyHabilitado       Boolean      @default(false) @map("handy_habilitado")
+  // Porcentajes de propina sugeridos, enteros (ej. [10, 15, 20]). Vacío =
+  // sin sugerencias. Entre 1 y 100 y hasta 5 valores: CHECK en la migración
+  // (Prisma no los declara); el DTO valida lo mismo con mensajes claros.
+  propinasSugeridas     Int[]        @default([]) @map("propinas_sugeridas")
+  // Default SURTEC: es el proveedor que emite hoy (CfeService).
+  cfeProveedor          CfeProveedor @default(SURTEC) @map("cfe_proveedor")
+  createdAt             DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   tenant     Tenant           @relation(fields: [tenantId], references: [id])
   usuarios   Usuario[]

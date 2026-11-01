@@ -14,6 +14,7 @@
 | 1.7     | 28/10/2026 | TC-I-118 a 121 (solicitud de pago en efectivo del comensal, HU-031b / BL-442), para cargar con el script antes de mergear el PR.                         |
 | 1.8     | 28/10/2026 | TC-I-122 a 125 (pedido cargado por el mozo, HU-039 / BL-209), para cargar con el script antes de mergear el PR.                                          |
 | 1.9     | 31/10/2026 | TC-I-106 y 107: DELETE pasa a eliminar definitivamente (BL-394). TC-I-126 a 131: Gestión de Carta (BL-392 / BL-402).                                     |
+| 1.10    | 01/11/2026 | TC-I-132 a 135 (configuración del establecimiento, HU-020 / BL-72), para cargar con el script antes de mergear el PR.                                    |
 
 Texto del campo de descripción de cada caso TC-I en Kiwi. Lo carga
 `cargar-casos-integracion.mjs --descripciones`: cada bloque `## TC-I-NNN`
@@ -434,3 +435,71 @@ Usuario de prueba ADMIN del tenant B (`TEST_TENANT_B_*`) y la categoría de prue
 
 1. La respuesta no trae la categoría de A (RLS).
 2. 404 en todas: para otro tenant, la carta de A no existe.
+
+## TC-I-132
+
+### Precondición
+
+Restaurante del seed del tenant A con la configuración por defecto (efectivo y Mercado Pago habilitados).
+
+### Pasos
+
+1. Con `ConfiguracionEstablecimientoService.actualizar`, apagar el efectivo y Mercado Pago y definir las propinas `[10, 15, 20]`.
+2. Leer la configuración y el registro de auditoría de la acción `ESTABLECIMIENTO_CONFIGURACION_MODIFICADA`.
+3. Intentar registrar un cobro en efectivo.
+4. Intentar crear un pago con Mercado Pago.
+
+### Resultado esperado
+
+1. La respuesta trae los valores nuevos.
+2. La base tiene los valores nuevos y hay un registro de auditoría con el actor, la entidad `establecimiento`, los valores anteriores en `valores_antes` y los nuevos en `valores_despues`.
+3. 409 «El cobro en efectivo no está habilitado en este establecimiento».
+4. 409 «Este local no acepta pagos con Mercado Pago», sin reservar el pago.
+
+## TC-I-133
+
+### Precondición
+
+Restaurante del seed del tenant A. La auditoría falla al registrar (simulado en el test).
+
+### Pasos
+
+1. Cambiar la habilitación de Plexo con `ConfiguracionEstablecimientoService.actualizar`.
+
+### Resultado esperado
+
+1. La operación falla, la configuración queda como estaba y no hay registro de auditoría: el cambio y la auditoría van en la misma transacción.
+
+## TC-I-134
+
+### Precondición
+
+Restaurante del seed del tenant A.
+
+### Pasos
+
+1. Escribir directamente en la base `propinas_sugeridas = [0, 150]`, sin pasar por la API.
+
+### Resultado esperado
+
+1. La base lo rechaza por el CHECK `restaurante_propinas_sugeridas_validas` y las propinas quedan como estaban.
+
+## TC-I-135
+
+### Precondición
+
+Usuarios de prueba ADMIN y MOZO del tenant A (`TEST_ADMIN_*`, `TEST_MOZO_*`).
+
+### Pasos
+
+1. Como admin, `GET /admin/configuracion`.
+2. Como admin, `PATCH /admin/configuracion` con `{ "propinasSugeridas": [20, 10] }`.
+3. Como admin, `PATCH` con `rut` y otro con `{ "handyHabilitado": true }`.
+4. Como mozo, `GET` y `PATCH /admin/configuracion`.
+
+### Resultado esperado
+
+1. 200 con la razón social, el RUT, los medios de pago (disponibles: efectivo, Mercado Pago y Plexo) y los proveedores de CFE disponibles (Surtec).
+2. 200 con las propinas guardadas de menor a mayor: `[10, 20]`.
+3. 400 en los dos: el RUT lo cambia solo la plataforma y Handy todavía no está disponible.
+4. 403 en los dos y la configuración sin cambios.

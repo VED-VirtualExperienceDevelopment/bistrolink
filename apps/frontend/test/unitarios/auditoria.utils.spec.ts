@@ -116,6 +116,50 @@ describe("cómo se muestra cada registro", () => {
     ).toEqual([]);
   });
 
+  it("[TC-U-261] HU-020: la configuración del establecimiento tiene su texto y sus campos legibles", () => {
+    expect(etiquetaAccion("ESTABLECIMIENTO_CONFIGURACION_MODIFICADA")).toBe(
+      "Configuración del establecimiento modificada",
+    );
+    expect(
+      cambiosDelRegistro({
+        valoresAntes: {
+          efectivoHabilitado: true,
+          propinasSugeridas: [],
+          cfeProveedor: "SURTEC",
+        },
+        valoresDespues: {
+          efectivoHabilitado: false,
+          propinasSugeridas: [10, 15, 20],
+          cfeProveedor: "BILLER",
+        },
+        detalle: {
+          campos: ["efectivoHabilitado", "propinasSugeridas", "cfeProveedor"],
+        },
+      }),
+    ).toEqual([
+      "Efectivo: sí → no",
+      "Propinas sugeridas (%): — → 10, 15, 20",
+      "Proveedor de CFE: Surtec → Biller",
+    ]);
+  });
+
+  it("[TC-U-262] HU-020: un campo auditado sin el valor (la razón social) se muestra como modificado", () => {
+    expect(
+      cambiosDelRegistro({
+        valoresAntes: { plexoHabilitado: true },
+        valoresDespues: { plexoHabilitado: false },
+        detalle: { campos: ["razonSocial", "plexoHabilitado"] },
+      }),
+    ).toEqual(["Plexo: sí → no", "Razón social: modificado"]);
+    expect(
+      cambiosDelRegistro({
+        valoresAntes: null,
+        valoresDespues: null,
+        detalle: { campos: ["razonSocial", "rut"], origen: "PLATAFORMA" },
+      }),
+    ).toEqual(["Razón social: modificado", "RUT: modificado"]);
+  });
+
   it("el autor: el usuario del local, un proceso automático o la plataforma", () => {
     expect(
       autorDelRegistro({
