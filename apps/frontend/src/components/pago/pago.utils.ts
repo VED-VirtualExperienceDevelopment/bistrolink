@@ -33,14 +33,33 @@ export function headersAccesoPedido(
   return tokenAcceso ? { [HEADER_PEDIDO_TOKEN]: tokenAcceso } : {};
 }
 
-/** Precio en pesos uruguayos, sin decimales (mismo formato que la carta). */
+const FORMATO_PESOS_ENTEROS = new Intl.NumberFormat("es-UY", {
+  style: "currency",
+  currency: "UYU",
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 0,
+});
+
+const FORMATO_PESOS_CON_CENTESIMOS = new Intl.NumberFormat("es-UY", {
+  style: "currency",
+  currency: "UYU",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+/**
+ * Precio en pesos uruguayos: «$ 590» si es entero y «$ 590,50» si tiene
+ * centésimos. BL-398: antes se redondeaba siempre a pesos enteros, y un
+ * ítem de $ 590,50 se mostraba como $ 591 aunque se cobrara $ 590,50.
+ * Se redondea a centésimos antes de decidir, para que un total calculado en
+ * el navegador (590,1 + 0,2) no muestre decimales de más.
+ */
 export function formatearPrecio(valor: number | string): string {
-  return new Intl.NumberFormat("es-UY", {
-    style: "currency",
-    currency: "UYU",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(Number(valor));
+  const centesimos = Math.round(Number(valor) * 100);
+  const pesos = centesimos / 100;
+  return centesimos % 100 === 0
+    ? FORMATO_PESOS_ENTEROS.format(pesos)
+    : FORMATO_PESOS_CON_CENTESIMOS.format(pesos);
 }
 
 /**
@@ -123,7 +142,10 @@ export function documentoParaMercadoPago(
   valor: string,
 ): { identificationType: string; identificationNumber: string } {
   return tipo === "CI"
-    ? { identificationType: "CI", identificationNumber: normalizarDocumento(valor) }
+    ? {
+        identificationType: "CI",
+        identificationNumber: normalizarDocumento(valor),
+      }
     : { identificationType: "OTRO", identificationNumber: valor.trim() };
 }
 
@@ -304,7 +326,9 @@ export function numeroComprobante(serie: string, numero: number): string {
  * Solo enlaces https: la URL de consulta la manda el proveedor de CFE y se
  * pone en un <a href>; un «javascript:» o un «http:» no se muestra.
  */
-export function urlConsultaSegura(url: string | null | undefined): string | null {
+export function urlConsultaSegura(
+  url: string | null | undefined,
+): string | null {
   if (!url) return null;
   try {
     return new URL(url).protocol === "https:" ? url : null;

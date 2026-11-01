@@ -28,7 +28,17 @@ export enum AuditAction {
   ESTABLECIMIENTO_ELIMINADO = 'ESTABLECIMIENTO_ELIMINADO', // BL-418 (solo sin actividad; con el RUT y las cuentas de Keycloak que quedaron)
   CARTA_ITEM_IMAGEN_CAMBIADA = 'CARTA_ITEM_IMAGEN_CAMBIADA', // BL-387 (alta, cambio o quita de la imagen de un ítem)
   CARTA_ITEM_MODIFICADO = 'CARTA_ITEM_MODIFICADO', // BL-205 (HU-005: precio o disponibilidad, con antes y después)
-  CARTA_ITEM_DADO_DE_BAJA = 'CARTA_ITEM_DADO_DE_BAJA', // BL-205 (baja de un ítem: pasa a no disponible)
+  CARTA_ITEM_DADO_DE_BAJA = 'CARTA_ITEM_DADO_DE_BAJA', // BL-205 (baja de un ítem: pasa a no disponible). Ya no se genera desde BL-394; queda para los registros anteriores
+  // BL-396 (Gestión de Carta, BL-392): con el nombre en el detalle, sin datos personales.
+  CARTA_ITEM_CREADO = 'CARTA_ITEM_CREADO', // con precio y disponibilidad iniciales
+  CARTA_ITEM_ARCHIVADO = 'CARTA_ITEM_ARCHIVADO',
+  CARTA_ITEM_RESTAURADO = 'CARTA_ITEM_RESTAURADO',
+  CARTA_ITEM_ELIMINADO = 'CARTA_ITEM_ELIMINADO', // solo ítems sin pedidos
+  CARTA_CATEGORIA_CREADA = 'CARTA_CATEGORIA_CREADA',
+  CARTA_CATEGORIA_MODIFICADA = 'CARTA_CATEGORIA_MODIFICADA', // nombre, descripción o visibilidad, con antes y después
+  CARTA_CATEGORIA_ARCHIVADA = 'CARTA_CATEGORIA_ARCHIVADA',
+  CARTA_CATEGORIA_RESTAURADA = 'CARTA_CATEGORIA_RESTAURADA',
+  CARTA_CATEGORIA_ELIMINADA = 'CARTA_CATEGORIA_ELIMINADA', // solo categorías sin ítems
   MESA_PEDIDOS_CANCELADOS = 'MESA_PEDIDOS_CANCELADOS', // BL-205 (al cerrar la mesa se cancelan los pedidos sin pagar, HU-017)
   PAGO_EFECTIVO_REGISTRADO = 'PAGO_EFECTIVO_REGISTRADO', // BL-201 (HU-031: cobro en efectivo, con monto recibido y vuelto)
 }

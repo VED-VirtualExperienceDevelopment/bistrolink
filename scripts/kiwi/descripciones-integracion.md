@@ -13,6 +13,7 @@
 | 1.6     | 28/10/2026 | TC-I-113 a 117 (cobro en efectivo, HU-031 / BL-201), para cargar con el script antes de mergear el PR.                                                   |
 | 1.7     | 28/10/2026 | TC-I-118 a 121 (solicitud de pago en efectivo del comensal, HU-031b / BL-442), para cargar con el script antes de mergear el PR.                         |
 | 1.8     | 28/10/2026 | TC-I-122 a 125 (pedido cargado por el mozo, HU-039 / BL-209), para cargar con el script antes de mergear el PR.                                          |
+| 1.9     | 31/10/2026 | TC-I-106 y 107: DELETE pasa a eliminar definitivamente (BL-394). TC-I-126 a 131: Gestión de Carta (BL-392 / BL-402).                                     |
 
 Texto del campo de descripción de cada caso TC-I en Kiwi. Lo carga
 `cargar-casos-integracion.mjs --descripciones`: cada bloque `## TC-I-NNN`
@@ -296,3 +297,140 @@ Usuarios de prueba MOZO y COCINA del tenant A (`TEST_MOZO_*`, `TEST_COCINA_*`) y
 
 1. 403: Cocina no puede cargar pedidos.
 2. 201 con el pedido en `PENDIENTE_PAGO`, canal `MOZO`, la mesa 92 y el usuario que lo cargó.
+
+## TC-I-106
+
+### Precondición
+
+Usuario de prueba ADMIN (`TEST_ADMIN_*`). El servicio de la carta está simulado: el caso prueba la ruta, el rol y el aviso en tiempo real.
+
+### Pasos
+
+1. `DELETE /admin/menu/item/:id` con el token del ADMIN.
+
+### Resultado esperado
+
+1. 200 con `{ id, eliminado: true }` en menos de 2 segundos.
+2. Se emite `menu:item:retirado` con el id del ítem.
+
+Desde BL-394, DELETE elimina definitivamente (solo sin historial). Sacar un ítem de la carta y conservarlo es «archivar» (`POST …/archivar`). El 409 con historial lo prueba TC-I-129.
+
+## TC-I-107
+
+### Precondición
+
+Usuario de prueba ADMIN (`TEST_ADMIN_*`). El servicio de la carta está simulado: el caso prueba la ruta, el rol y el aviso en tiempo real.
+
+### Pasos
+
+1. `DELETE /admin/menu/categoria/:id` con el token del ADMIN.
+
+### Resultado esperado
+
+1. 200 con `{ id, eliminada: true }` en menos de 2 segundos.
+2. Se emite `menu:categoria:retirada` con el id de la categoría.
+
+Desde BL-394, DELETE elimina definitivamente (solo sin ítems). El 409 con ítems lo prueba TC-I-129.
+
+## TC-I-126
+
+### Precondición
+
+Usuarios de prueba ADMIN y MOZO del tenant A (`TEST_ADMIN_*`, `TEST_MOZO_*`). El test crea su propia categoría «BL-402 …» con dos ítems.
+
+### Pasos
+
+1. Como MOZO, `GET /admin/menu/categoria`.
+2. Como MOZO, marcar un ítem agotado y otra vez disponible (`PATCH /admin/menu/item/:id/disponibilidad`).
+3. Como MOZO, crear y editar una categoría, crear, editar, archivar y eliminar un ítem, y reordenar la carta.
+
+### Resultado esperado
+
+1. 200: el mozo ve la carta.
+2. 200 en los dos cambios.
+3. 403 en todas: editar la carta es solo del ADMIN (BL-395).
+
+## TC-I-127
+
+### Precondición
+
+Usuario de prueba ADMIN (`TEST_ADMIN_*`) y la categoría de prueba.
+
+### Pasos
+
+1. `PATCH /admin/menu/categoria/:id` con un `updatedAt` viejo.
+2. Repetir con el `updatedAt` actual (el que devuelve `GET /admin/menu/categoria`).
+
+### Resultado esperado
+
+1. 409 «Otra persona modificó este dato. Recargá para ver los cambios.» y no se guarda nada.
+2. 200: se guarda (bloqueo optimista, BL-394).
+
+## TC-I-128
+
+### Precondición
+
+Usuario de prueba ADMIN (`TEST_ADMIN_*`) y la categoría de prueba con dos ítems.
+
+### Pasos
+
+1. Crear un pedido para retirar con el primer ítem.
+2. Archivar el segundo ítem y crear un pedido con él.
+3. Ocultar la categoría (`activo: false`) y crear un pedido con el primer ítem.
+4. Volver a mostrar la categoría.
+
+### Resultado esperado
+
+1. El pedido se crea.
+2. 400 «no existe en la carta»: un ítem archivado no se puede pedir.
+3. 400 «no existe en la carta»: tampoco un ítem de una categoría oculta (BL-397, un solo criterio para el comensal y el mozo).
+
+## TC-I-129
+
+### Precondición
+
+Usuario de prueba ADMIN (`TEST_ADMIN_*`). El primer ítem de la categoría de prueba tiene un pedido (TC-I-128) y el segundo está archivado.
+
+### Pasos
+
+1. `DELETE /admin/menu/item/:id` del ítem con pedido.
+2. `DELETE /admin/menu/categoria/:id` de la categoría de prueba.
+
+### Resultado esperado
+
+1. 409 «El ítem tiene pedidos y no se puede eliminar. Archivalo para sacarlo de la carta.»
+2. 409 «La categoría tiene ítems y no se puede eliminar…»: cuenta también el ítem archivado (BL-394).
+
+## TC-I-130
+
+### Precondición
+
+Usuario de prueba ADMIN (`TEST_ADMIN_*`). La categoría de prueba quedó al final de la carta (la API asigna el orden, BL-399).
+
+### Pasos
+
+1. `PUT /admin/menu/categorias/orden` con la lista sin una categoría.
+2. Repetir con la lista completa en orden inverso y leer la carta.
+3. Volver a dejar el orden original.
+
+### Resultado esperado
+
+1. 409 «La carta cambió mientras la ordenabas. Recargá e intentá de nuevo.» y el orden no cambia.
+2. 200 y la carta vuelve en el orden nuevo.
+3. 200.
+
+## TC-I-131
+
+### Precondición
+
+Usuario de prueba ADMIN del tenant B (`TEST_TENANT_B_*`) y la categoría de prueba del tenant A.
+
+### Pasos
+
+1. Como admin de B, `GET /admin/menu/categoria` con el restaurante de A.
+2. Como admin de B, editar, archivar, eliminar y reordenar la categoría de A, y marcar agotado y archivar uno de sus ítems.
+
+### Resultado esperado
+
+1. La respuesta no trae la categoría de A (RLS).
+2. 404 en todas: para otro tenant, la carta de A no existe.

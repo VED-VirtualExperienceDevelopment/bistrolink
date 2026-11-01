@@ -10,6 +10,7 @@ import {
   cambiosDelRegistro,
   ETIQUETAS_ACCION,
   etiquetaAccion,
+  objetoDelRegistro,
   fechaParaMostrar,
   FILTROS_AUDITORIA_INICIALES,
   hayFiltrosAuditoria,
@@ -238,6 +239,7 @@ export default function AuditoriaPage() {
         >
           {registros.map((r) => {
             const cambios = cambiosDelRegistro(r);
+            const objeto = objetoDelRegistro(r);
             return (
               <li
                 key={r.id}
@@ -246,6 +248,13 @@ export default function AuditoriaPage() {
                 <div className="flex flex-col gap-1 md:flex-row md:items-baseline md:justify-between">
                   <p className="text-body-lg font-medium text-on-surface">
                     {etiquetaAccion(r.accion)}
+                    {/* BL-396: sobre qué ítem o categoría. */}
+                    {objeto && (
+                      <span className="font-normal text-on-surface-variant">
+                        {" "}
+                        {objeto}
+                      </span>
+                    )}
                   </p>
                   <p className="text-body-md text-on-surface-variant">
                     <time dateTime={r.fecha}>{fechaParaMostrar(r.fecha)}</time>

@@ -62,6 +62,16 @@ export const ETIQUETAS_ACCION: Record<string, string> = {
   CARTA_ITEM_IMAGEN_CAMBIADA: "Imagen de un ítem",
   CARTA_ITEM_MODIFICADO: "Precio o disponibilidad de un ítem",
   CARTA_ITEM_DADO_DE_BAJA: "Ítem dado de baja",
+  // BL-396: Gestión de Carta (BL-392).
+  CARTA_ITEM_CREADO: "Alta de un ítem de la carta",
+  CARTA_ITEM_ARCHIVADO: "Ítem archivado",
+  CARTA_ITEM_RESTAURADO: "Ítem restaurado",
+  CARTA_ITEM_ELIMINADO: "Ítem eliminado",
+  CARTA_CATEGORIA_CREADA: "Alta de una categoría de la carta",
+  CARTA_CATEGORIA_MODIFICADA: "Categoría modificada",
+  CARTA_CATEGORIA_ARCHIVADA: "Categoría archivada",
+  CARTA_CATEGORIA_RESTAURADA: "Categoría restaurada",
+  CARTA_CATEGORIA_ELIMINADA: "Categoría eliminada",
   MESA_PEDIDOS_CANCELADOS: "Pedidos cancelados al cerrar la mesa",
   PAGO_EFECTIVO_REGISTRADO: "Cobro en efectivo",
 };
@@ -120,6 +130,10 @@ const NOMBRE_CAMPO: Record<string, string> = {
   monto: "Total",
   montoRecibido: "Recibido",
   vuelto: "Vuelto",
+  // BL-396: categorías de la carta.
+  nombre: "Nombre",
+  descripcion: "Descripción",
+  visible: "Visible",
 };
 
 function valorParaMostrar(valor: unknown): string {
@@ -127,7 +141,8 @@ function valorParaMostrar(valor: unknown): string {
   if (valor === true) return "sí";
   if (valor === false) return "no";
   if (typeof valor === "string") return valor;
-  if (typeof valor === "number" || typeof valor === "bigint") return valor.toString();
+  if (typeof valor === "number" || typeof valor === "bigint")
+    return valor.toString();
   return JSON.stringify(valor);
 }
 
@@ -146,6 +161,20 @@ export function cambiosDelRegistro(
     (campo) =>
       `${NOMBRE_CAMPO[campo] ?? campo}: ${valorParaMostrar(antes[campo])} → ${valorParaMostrar(despues[campo])}`,
   );
+}
+
+/**
+ * BL-396: sobre qué se hizo la acción, cuando el registro lo dice (por
+ * ejemplo, el nombre del ítem o la categoría de la carta). Va entre comillas
+ * angulares, como en el resto de los textos.
+ */
+export function objetoDelRegistro(
+  registro: Pick<RegistroAuditoria, "detalle">,
+): string | null {
+  const nombre = registro.detalle?.nombre;
+  return typeof nombre === "string" && nombre.trim() !== ""
+    ? `«${nombre}»`
+    : null;
 }
 
 /** Quién hizo la acción, para mostrar. */

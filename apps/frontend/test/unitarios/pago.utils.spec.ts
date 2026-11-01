@@ -73,14 +73,28 @@ describe("rutas y headers del pago", () => {
 });
 
 describe("formato", () => {
-  it("precio en pesos uruguayos sin decimales", () => {
+  it("precio en pesos uruguayos: sin decimales si es entero", () => {
     const texto = formatearPrecio(48500).replace(/\s/g, " ");
     expect(texto).toContain("48.500");
     expect(texto).not.toContain(",");
   });
 
+  it("[TC-U-247] BL-398: con centésimos, siempre 2 decimales y sin redondear a pesos", () => {
+    const sinEspacios = (v: number | string) =>
+      formatearPrecio(v).replace(/\s/g, " ");
+    expect(sinEspacios("590.50")).toBe("$ 590,50");
+    expect(sinEspacios(590.5)).toBe("$ 590,50");
+    expect(sinEspacios("10.05")).toBe("$ 10,05");
+    expect(sinEspacios("590.00")).toBe("$ 590");
+    // Un total sumado en el navegador no muestra decimales de más.
+    expect(sinEspacios(0.1 + 0.2)).toBe("$ 0,30");
+    expect(sinEspacios(590.1 + 0.9)).toBe("$ 591");
+  });
+
   it("código corto del pedido: 6 caracteres del id en mayúsculas", () => {
-    expect(codigoPedido("3cdf1dad-31d6-43c9-9739-11485e0e23f8")).toBe("#3CDF1D");
+    expect(codigoPedido("3cdf1dad-31d6-43c9-9739-11485e0e23f8")).toBe(
+      "#3CDF1D",
+    );
   });
 });
 
@@ -91,13 +105,19 @@ describe("firma del carrito (reusar el pedido si no cambió nada)", () => {
   ];
 
   it("mismo carrito y misma nota: misma firma", () => {
-    expect(firmaCarrito(items, "nota")).toBe(firmaCarrito([...items], " nota "));
+    expect(firmaCarrito(items, "nota")).toBe(
+      firmaCarrito([...items], " nota "),
+    );
   });
 
   it("cambia la cantidad, la nota de un plato o la nota general: otra firma", () => {
     const base = firmaCarrito(items, "nota");
-    expect(firmaCarrito([{ ...items[0], cantidad: 3 }, items[1]], "nota")).not.toBe(base);
-    expect(firmaCarrito([{ ...items[0], observacion: "con sal" }, items[1]], "nota")).not.toBe(base);
+    expect(
+      firmaCarrito([{ ...items[0], cantidad: 3 }, items[1]], "nota"),
+    ).not.toBe(base);
+    expect(
+      firmaCarrito([{ ...items[0], observacion: "con sal" }, items[1]], "nota"),
+    ).not.toBe(base);
     expect(firmaCarrito(items, "otra")).not.toBe(base);
   });
 });
@@ -189,10 +209,14 @@ describe("otros campos", () => {
 describe("resultado del pago", () => {
   it("402 (tarjeta rechazada): rechazado, con el mensaje del backend", () => {
     expect(
-      resultadoDeError(402, "Tu tarjeta no tiene fondos suficientes. No se realizó ningún cargo."),
+      resultadoDeError(
+        402,
+        "Tu tarjeta no tiene fondos suficientes. No se realizó ningún cargo.",
+      ),
     ).toEqual({
       tipo: "rechazado",
-      mensaje: "Tu tarjeta no tiene fondos suficientes. No se realizó ningún cargo.",
+      mensaje:
+        "Tu tarjeta no tiene fondos suficientes. No se realizó ningún cargo.",
     });
   });
 
@@ -207,7 +231,9 @@ describe("resultado del pago", () => {
   );
 
   it("400 (datos de tarjeta inválidos): error con el mensaje del backend", () => {
-    expect(resultadoDeError(400, "Los datos de la tarjeta no son válidos")).toEqual({
+    expect(
+      resultadoDeError(400, "Los datos de la tarjeta no son válidos"),
+    ).toEqual({
       tipo: "error",
       mensaje: "Los datos de la tarjeta no son válidos",
     });
@@ -266,7 +292,9 @@ describe("comprobante en la pantalla de pago aprobado", () => {
   });
 
   it("sin comprobante todavía: emitiendo", () => {
-    expect(estadoComprobante({ comprobante: null })).toEqual({ tipo: "emitiendo" });
+    expect(estadoComprobante({ comprobante: null })).toEqual({
+      tipo: "emitiendo",
+    });
     expect(estadoComprobante(null)).toEqual({ tipo: "emitiendo" });
   });
 
@@ -288,8 +316,14 @@ describe("comprobante en la pantalla de pago aprobado", () => {
 
   it("comprobante sin enlace: se muestra igual, sin botón", () => {
     expect(
-      estadoComprobante({ comprobante: { serie: "A", numero: 1, urlConsulta: null } }),
-    ).toEqual({ tipo: "emitido", texto: "e-Ticket A-0000001", urlConsulta: null });
+      estadoComprobante({
+        comprobante: { serie: "A", numero: 1, urlConsulta: null },
+      }),
+    ).toEqual({
+      tipo: "emitido",
+      texto: "e-Ticket A-0000001",
+      urlConsulta: null,
+    });
   });
 
   it.each([

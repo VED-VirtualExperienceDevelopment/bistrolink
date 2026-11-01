@@ -66,18 +66,24 @@ test.describe("HU-002: menú vía URL directa (verificado en mobile)", () => {
     await expect(page.getByText("Pedido desde fuera del local")).toBeVisible();
   });
 
-  test("[TC-E-007] HU-002: muestra exactamente los items disponibles y oculta los agotados", async ({
+  test("[TC-E-007] HU-002: muestra los mismos ítems que el QR, con los agotados bloqueados", async ({
     page,
     request,
     qrMesas,
   }) => {
-    // Fuente de verdad de agotados: el endpoint QR (HU-001) devuelve TODOS
-    // los items con su flag disponible. La invariante de HU-002 es que la
-    // URL directa muestra solo los disponibles. BL-204: el endpoint QR es
-    // /menu/qr/<token>.
+    // BL-397 (decisión 2 de la carta): la URL directa y el QR muestran lo
+    // mismo; los agotados se ven marcados y bloqueados, como en HU-001.
+    // BL-204: el endpoint QR es /menu/qr/<token>.
     const menuQr = await obtenerMenu(
       request,
       `${API_URL}/menu/qr/${qrMesas.token(MESA_ID)}`,
+    );
+    const menuUrl = await obtenerMenu(
+      request,
+      `${API_URL}/menu/tenant/${TENANT_ID}/restaurante/${RESTAURANTE_ID}`,
+    );
+    expect(itemsDe(menuUrl).map((i) => i.nombre)).toEqual(
+      itemsDe(menuQr).map((i) => i.nombre),
     );
     const disponibles = itemsDe(menuQr).filter((i) => i.disponible);
     const agotados = itemsDe(menuQr).filter((i) => !i.disponible);
@@ -101,11 +107,12 @@ test.describe("HU-002: menú vía URL directa (verificado en mobile)", () => {
       ).toBeVisible();
     }
 
-    // Y todo item agotado queda oculto (invariante de HU-002).
+    // Y todo item agotado se ve, pero marcado y bloqueado (BL-397).
     for (const item of agotados) {
-      await expect(
-        page.getByRole("heading", { name: item.nombre }),
-      ).toHaveCount(0);
+      const tarjeta = page.locator("article", { hasText: item.nombre });
+      await expect(tarjeta).toBeVisible();
+      await expect(tarjeta.getByText("No disponible")).toBeVisible();
+      await expect(tarjeta).toHaveAttribute("aria-disabled", "true");
     }
   });
 
@@ -117,8 +124,13 @@ test.describe("HU-002: menú vía URL directa (verificado en mobile)", () => {
       request,
       `${API_URL}/menu/tenant/${TENANT_ID}/restaurante/${RESTAURANTE_ID}`,
     );
-    const primerItem = itemsDe(menu)[0];
-    test.skip(!primerItem, "Fixture sin items disponibles");
+    // BL-397: el menú por URL ahora incluye los agotados; se toma el primero
+    // que se pueda pedir.
+    const primerItem = itemsDe(menu).find((i) => i.disponible);
+    if (!primerItem) {
+      test.skip(true, "Fixture sin items disponibles");
+      return;
+    }
 
     await page.goto(MENU_URL_PATH);
 

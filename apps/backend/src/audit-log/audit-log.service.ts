@@ -46,6 +46,7 @@ const ENTIDAD_POR_PREFIJO: ReadonlyArray<[string, string]> = [
   ['USUARIO_', 'usuario'],
   ['ESTABLECIMIENTO_', 'establecimiento'],
   ['CARTA_ITEM_', 'item_carta'],
+  ['CARTA_CATEGORIA_', 'categoria_carta'], // BL-396
   ['MESA_', 'mesa'],
   ['PAGO_', 'pago'],
 ];
