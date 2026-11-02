@@ -251,9 +251,8 @@ export default function ComprobantesPage() {
                           rel="noopener noreferrer"
                           className="text-primary underline"
                         >
-                          Ver en DGI
+                          Ver en DGI{" "}
                           <span className="sr-only">
-                            {" "}
                             ({f.tipo} {f.numero}, se abre en otra pestaña)
                           </span>
                         </a>
