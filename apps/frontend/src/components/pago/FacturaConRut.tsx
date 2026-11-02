@@ -39,6 +39,9 @@ export function FacturaConRut({
   readonly rutaPrivacidad: string;
   readonly deshabilitado: boolean;
 }) {
+  const idQuiere = useId();
+  const idAyudaQuiere = useId();
+  const idConsentimiento = useId();
   const idAyudaRut = useId();
   const idErrorRut = useId();
   const idErrorRazon = useId();
@@ -57,23 +60,30 @@ export function FacturaConRut({
       <h2 id="titulo-factura" className="sr-only">
         Comprobante fiscal
       </h2>
-      <label className="flex items-start gap-3 cursor-pointer">
+      {/* Label con htmlFor y el texto directo (Sonar S6853): la ayuda va
+          aparte, asociada con aria-describedby. */}
+      <div className="flex items-start gap-3">
         <input
+          id={idQuiere}
           type="checkbox"
           checked={valor.quiere}
           disabled={deshabilitado}
           onChange={(e) => cambiar("quiere", e.target.checked)}
+          aria-describedby={idAyudaQuiere}
           className="mt-0.5 h-5 w-5 shrink-0 accent-[#6e54ad]"
         />
-        <span className="flex flex-col">
-          <span className="font-semibold text-foreground">
+        <div className="flex flex-col">
+          <label
+            htmlFor={idQuiere}
+            className="font-semibold text-foreground cursor-pointer"
+          >
             Quiero e-Factura con RUT
-          </span>
-          <span className="text-xs text-[#5a575e]">
+          </label>
+          <p id={idAyudaQuiere} className="text-xs text-[#5a575e]">
             Si no la pedís, te damos un e-Ticket (consumidor final).
-          </span>
-        </span>
-      </label>
+          </p>
+        </div>
+      </div>
 
       {valor.quiere && (
         <div className="mt-5 flex flex-col gap-4">
@@ -144,8 +154,10 @@ export function FacturaConRut({
             )}
           </div>
 
-          <label className="flex items-start gap-3 cursor-pointer">
+          {/* El enlace va fuera del label: tocarlo no marca la casilla. */}
+          <div className="flex items-start gap-3">
             <input
+              id={idConsentimiento}
               type="checkbox"
               checked={valor.consentimiento}
               disabled={deshabilitado}
@@ -153,17 +165,19 @@ export function FacturaConRut({
               aria-describedby={idAviso}
               className="mt-0.5 h-5 w-5 shrink-0 accent-[#6e54ad]"
             />
-            <span className="text-sm text-foreground">
-              Acepto que el local guarde mi RUT y mi razón social para emitir la
-              e-Factura.{" "}
+            <p className="text-sm text-foreground">
+              <label htmlFor={idConsentimiento} className="cursor-pointer">
+                Acepto que el local guarde mi RUT y mi razón social para emitir
+                la e-Factura.
+              </label>{" "}
               <a
                 href={rutaPrivacidad}
                 className="underline hover:text-[#6e54ad]"
               >
                 Política de privacidad
               </a>
-            </span>
-          </label>
+            </p>
+          </div>
           <p id={idAviso} className="text-xs text-[#5a575e]" aria-live="polite">
             {facturaSinConsentimiento(valor)
               ? "Sin aceptar, no guardamos estos datos y te damos un e-Ticket."

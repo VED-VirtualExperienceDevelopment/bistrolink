@@ -82,7 +82,7 @@ export function receptorParaEnviar(
   if (!seEmiteEFactura(f) || facturaBloqueaElPago(f)) return null;
   return {
     rut: normalizarRut(f.rut),
-    razonSocial: f.razonSocial.trim().split(/\s+/).join(" "),
+    razonSocial: f.razonSocial.trim().replaceAll(/\s+/g, " "),
     consentimiento: true,
   };
 }

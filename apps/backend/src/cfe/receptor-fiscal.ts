@@ -50,7 +50,7 @@ export function normalizarRut(rut: string): string {
 
 /** Razón social sin espacios de más; vacía si no tiene texto. */
 export function normalizarRazonSocial(razonSocial: string): string {
-  return razonSocial.trim().split(/\s+/).join(' ');
+  return razonSocial.trim().replaceAll(/\s+/g, ' ');
 }
 
 /**
