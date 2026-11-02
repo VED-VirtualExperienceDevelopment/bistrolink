@@ -79,6 +79,43 @@ describe('SolicitudEfectivoService (HU-031b, BL-442)', () => {
     });
   });
 
+  it('HU-009 (BL-453): con e-Factura y consentimiento guarda RUT y razón social junto a la solicitud', async () => {
+    await solicitar({
+      receptorFiscal: {
+        rut: '21.999983.001-9',
+        razonSocial: 'Comensal Ejemplo SAS',
+        consentimiento: true,
+      },
+    });
+
+    expect(tx.pedido.update).toHaveBeenCalledWith({
+      where: { id: PEDIDO },
+      data: {
+        efectivoSolicitadoEn: AHORA,
+        efectivoPagaCon: null,
+        receptorRut: '219999830019',
+        receptorRazonSocial: 'Comensal Ejemplo SAS',
+        receptorConsentidoEn: AHORA,
+      },
+    });
+  });
+
+  it('HU-009 (BL-453): sin aceptar el aviso no guarda RUT ni razón social', async () => {
+    await solicitar({
+      receptorFiscal: {
+        rut: '219999830019',
+        razonSocial: 'Comensal Ejemplo SAS',
+        consentimiento: false,
+      },
+    });
+
+    expect(tx.pedido.update.mock.calls[0][0].data).toMatchObject({
+      receptorRut: null,
+      receptorRazonSocial: null,
+      receptorConsentidoEn: null,
+    });
+  });
+
   it('avisa al staff con la mesa, el total y con cuánto paga, después de guardar', async () => {
     const r = await solicitar({ pagaCon: '1000' });
 
