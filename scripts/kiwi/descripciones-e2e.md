@@ -10,6 +10,7 @@
 | 1.3     | 31/10/2026 | TC-E-050 a 055: Gestión de Carta (BL-392 / BL-402).                                                                                         |
 | 1.4     | 01/11/2026 | TC-E-056 a 058: medios de pago del comensal según la configuración del local (BL-452).                                                      |
 | 1.5     | 01/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-059 a 061: retomar el pago al recargar y aviso de efectivo en el KDS (BL-448). |
+| 1.6     | 01/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-062: política de privacidad desde la carta y el pago (BL-206).                 |
 
 Plantilla para cargar en Kiwi la descripción de casos TC-E (Playwright)
 nuevos o que cambiaron (BL-435). La usa
@@ -54,58 +55,20 @@ Reglas:
 
 ## Casos para cargar
 
-## TC-E-059
+## TC-E-062
 
 ### Precondición
 
-Mesa del seed abierta con su QR, efectivo habilitado en el establecimiento y el usuario de prueba MOZO (`TEST_MOZO_*`).
+Carta web del establecimiento del seed y mesa del seed abierta con su QR.
 
 ### Pasos
 
-1. El comensal escanea el QR, agrega un ítem y va a pagar.
-2. Elige «Efectivo», escribe que paga con $ 10.000 y toca «Avisar al mozo».
-3. Recarga la página.
-4. El mozo cobra el pedido desde «Cobros pendientes».
+1. Desde la carta web, tocar «Política de privacidad».
+2. Desde el QR de la mesa, agregar un ítem e ir a pagar.
+3. En la pantalla de pago, tocar «Política de privacidad».
 
 ### Resultado esperado
 
-1. Se crea el pedido y aparece «Pagá tu pedido».
-2. Aparece «Esperando al mozo».
-3. Después de recargar sigue en «Esperando al mozo», con el mismo código de pedido, y no se crea otro pedido.
-4. La pantalla del comensal pasa sola a «¡Tu pedido ya está en cocina!».
-
-## TC-E-060
-
-### Precondición
-
-Carta web del establecimiento del seed (pedido para retirar) con un ítem disponible.
-
-### Pasos
-
-1. El comensal agrega un ítem y va a pagar.
-2. Recarga la página en la pantalla de pago con tarjeta.
-3. Revisar lo que quedó guardado en el navegador (sessionStorage).
-
-### Resultado esperado
-
-1. Aparece «Pagá tu pedido» con el formulario de tarjeta.
-2. Vuelve a «Pagá tu pedido» con el mismo código de pedido y el formulario de tarjeta, sin crear otro pedido.
-3. Está el id del pedido, pero no el token del comensal (JWT) ni datos de la tarjeta.
-
-## TC-E-061
-
-### Precondición
-
-Mesa del seed abierta con su QR, efectivo habilitado y el usuario de prueba MOZO (`TEST_MOZO_*`).
-
-### Pasos
-
-1. El comensal pide pagar en efectivo con $ 7.777.
-2. Después de la solicitud, el mozo abre (o recarga) el KDS.
-3. Al terminar, el mozo cobra el pedido y lo entrega.
-
-### Resultado esperado
-
-1. Aparece «Esperando al mozo».
-2. En el KDS aparece el aviso «Mesa N quiere pagar en efectivo», con el monto de $ 7.777, aunque el KDS no estaba abierto cuando el comensal avisó.
-3. El pedido no queda pendiente ni con el aviso abierto.
+1. Se abre la política con los datos del local (razón social y RUT) y la sección «Tus derechos».
+2. Debajo del formulario de tarjeta aparece el aviso de que el correo y el documento se envían a Mercado Pago y BistroLink no los guarda.
+3. Se abre la misma política, por el QR de la mesa, con los datos del local.
