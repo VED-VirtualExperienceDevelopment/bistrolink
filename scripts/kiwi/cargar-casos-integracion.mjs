@@ -562,6 +562,22 @@ const DATOS_INTEGRACION = {
     priority: "P2",
     tags: ["HU-036", "BL-206", "privacidad", "multi-tenant"],
   },
+  // HU-009 (BL-453): e-Factura con RUT y razón social, consentimiento y
+  // anonimización.
+  140: {
+    category: "Seguridad",
+    component: "api",
+    requirement: "HU-009",
+    priority: "P1",
+    tags: ["HU-009", "BL-453", "cfe", "privacidad"],
+  },
+  141: {
+    category: "Seguridad",
+    component: "api",
+    requirement: "HU-009",
+    priority: "P1",
+    tags: ["HU-009", "BL-453", "privacidad", "auditoria"],
+  },
 };
 /**
  * BL-435: datos de los E2E TC-E-017 en adelante, con los criterios de
@@ -809,6 +825,17 @@ const DATOS_E2E = {
     priority: "P2",
     tags: ["BL-206", "privacidad"],
   }),
+  // HU-009 (BL-453): e-Factura desde la pantalla de pago.
+  63: e2e("comensal", "HU-009", {
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["BL-453", "privacidad", "cfe"],
+  }),
+  64: e2e("comensal", "HU-009", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-453", "cfe"],
+  }),
 };
 /**
  * Datos de los contratos PactJS (TC-C). Requirement con la HU que usa el
@@ -858,6 +885,9 @@ const DATOS_CONTRATO = {
   12: contrato("HU-009", "surtec", { priority: "P1", tags: ["BL-216"] }),
   13: contrato("HU-009", "surtec", { priority: "P2", tags: ["BL-216"] }),
   14: contrato("HU-009", "surtec", { priority: "P2", tags: ["BL-216"] }),
+  // Surtec: emisión de e-Factura (BL-453).
+  15: contrato("HU-009", "surtec", { priority: "P1", tags: ["BL-453"] }),
+  16: contrato("HU-009", "surtec", { priority: "P2", tags: ["BL-453"] }),
 };
 const DATOS = CONTRATO ? DATOS_CONTRATO : E2E ? DATOS_E2E : DATOS_INTEGRACION;
 
