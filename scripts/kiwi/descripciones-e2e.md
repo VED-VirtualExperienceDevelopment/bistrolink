@@ -13,6 +13,7 @@
 | 1.6     | 01/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-062: política de privacidad desde la carta y el pago (BL-206).                          |
 | 1.7     | 02/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-063 y 064: e-Factura con RUT y razón social desde la pantalla de pago (HU-009, BL-453). |
 | 1.8     | 02/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-063 cambia: sin aceptar el aviso no se avisa al mozo (BL-453, ajuste de staging).       |
+| 1.9     | 03/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-065: comprobantes del administrador y su estado ante la DGI (HU-009, BL-455).           |
 
 Plantilla para cargar en Kiwi la descripción de casos TC-E (Playwright)
 nuevos o que cambiaron (BL-435). La usa
@@ -57,21 +58,22 @@ Reglas:
 
 ## Casos para cargar
 
-## TC-E-063
+## TC-E-065
 
 ### Precondición
 
-Mesa del seed abierta con su QR y efectivo habilitado en el establecimiento.
+Administrador del establecimiento del seed logueado en el panel.
 
 ### Pasos
 
-1. Desde el QR de la mesa, agregar un ítem, ir a pagar y elegir «Efectivo».
-2. Marcar «Quiero e-Factura con RUT» y completar un RUT válido y la razón social.
-3. No marcar «Acepto que el local guarde mi RUT y mi razón social…» y tocar «Avisar al mozo».
-4. Desmarcar «Quiero e-Factura con RUT» y tocar «Avisar al mozo».
+1. Desde el menú, abrir «Comprobantes».
+2. Filtrar por estado ante la DGI «Rechazado».
+3. Poner «Desde» posterior a «Hasta».
+4. Revisar la pantalla con axe-core (WCAG 2.1 AA).
 
 ### Resultado esperado
 
-1. El aviso tiene el enlace a la política de privacidad.
-2. En el paso 3 no se envía la solicitud: aparece el mensaje «Para emitir la e-Factura tenés que aceptar que el local guarde tus datos…», que explica que se puede aceptar, borrar los datos o desmarcar la e-Factura, y el foco va a la casilla del aviso.
-3. En el paso 4 la solicitud de efectivo sale con `receptorFiscal: null`, sin el RUT ni la razón social, y la pantalla pasa a «Esperando al mozo». Al terminar, el mozo cobra el pedido y se entrega desde el KDS.
+1. Se abre la pantalla «Comprobantes» con los filtros de fecha (hoy) y estado.
+2. La API responde 200 y solo trae comprobantes RECHAZADOS; se ve la tabla o el aviso «No hay comprobantes con esos filtros».
+3. Aparece el aviso de que «Desde» tiene que ser anterior o igual a «Hasta».
+4. Sin errores graves ni críticos de accesibilidad.
