@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { LlamarMozoButton } from '@/components/LlamarMozoButton';
 import { etiquetaMesa, type OrigenMenu } from '@/components/menu-digital.utils';
+import { rutaPrivacidad } from '@/components/privacidad/privacidad.utils';
 import { FormularioTarjeta, IconoCandado, type DatosTarjeta } from './FormularioTarjeta';
 import { EsperandoMozo, FormularioEfectivo, SelectorMetodoPago } from './PagoEfectivo';
 import {
@@ -424,6 +425,14 @@ export function PagoPedido({
                   }
                   onPagar={pagar}
                 />
+                {/* HU-036 (BL-206): aviso antes de pedir correo y documento. */}
+                <p className="mt-4 text-xs text-[#5a575e]">
+                  Tu correo y tu documento se envían a Mercado Pago para procesar el pago
+                  y enviarte el comprobante; BistroLink no los guarda.{' '}
+                  <a href={rutaPrivacidad(origen)} className="underline hover:text-[#6e54ad]">
+                    Política de privacidad
+                  </a>
+                </p>
               </section>
             }
             efectivo={

@@ -10,6 +10,7 @@ import {
 } from "react";
 import dynamic from "next/dynamic";
 import ItemImagen from "@/components/menu/ItemImagen";
+import { rutaPrivacidad } from "@/components/privacidad/privacidad.utils";
 import { LlamarMozoButton } from "@/components/LlamarMozoButton";
 import { apiFetch, ApiError } from "@/lib/api-client";
 import {
@@ -778,6 +779,16 @@ export default function MenuDigital({
                 />
               </div>
             )}
+
+            {/* HU-036 (BL-206): política de privacidad del local. */}
+            <footer className="pb-4 text-center text-sm text-[#5a575e]">
+              <a
+                href={rutaPrivacidad(origen)}
+                className="underline hover:text-[#6e54ad]"
+              >
+                Política de privacidad
+              </a>
+            </footer>
           </main>
 
           {hayCarrito && (
