@@ -111,6 +111,10 @@ describe("HU-036 (BL-206): correo de privacidad", () => {
     expect(errorEmailPrivacidad("privacidad@uno.com.uy")).toBeNull();
     expect(errorEmailPrivacidad("privacidad@uno")).not.toBeNull();
     expect(errorEmailPrivacidad("no es un correo")).not.toBeNull();
+    expect(errorEmailPrivacidad("a@@b.uy")).not.toBeNull();
+    expect(errorEmailPrivacidad("@uno.com.uy")).not.toBeNull();
+    expect(errorEmailPrivacidad("a@.uy")).not.toBeNull();
+    expect(errorEmailPrivacidad("a@uno.")).not.toBeNull();
     expect(errorEmailPrivacidad(`${"a".repeat(250)}@b.uy`)).not.toBeNull();
   });
 

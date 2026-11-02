@@ -180,9 +180,23 @@ export function errorEmailPrivacidad(email: string): string | null {
   if (limpio.length > LARGO_MAXIMO_EMAIL) {
     return `El correo puede tener hasta ${LARGO_MAXIMO_EMAIL} caracteres.`;
   }
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(limpio)
+  return pareceEmail(limpio)
     ? null
     : "Revisá el correo: por ejemplo, privacidad@tulocal.com.uy.";
+}
+
+/**
+ * Una sola arroba, algo antes, y un dominio con un punto que no esté ni al
+ * principio ni al final; sin espacios. Sin una expresión regular compuesta,
+ * para no tener backtracking (Sonar S8786).
+ */
+function pareceEmail(email: string): boolean {
+  if (/\s/.test(email)) return false;
+  const partes = email.split("@");
+  if (partes.length !== 2) return false;
+  const [usuario, dominio] = partes;
+  const punto = dominio.lastIndexOf(".");
+  return usuario.length > 0 && punto > 0 && punto < dominio.length - 1;
 }
 
 /**
