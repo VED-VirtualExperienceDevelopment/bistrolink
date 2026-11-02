@@ -88,6 +88,16 @@ enum CfeProveedor {
   BILLER
 }
 
+// HU-009 (BL-455): estado del CFE ante la DGI, según la consulta a Surtec.
+// PENDIENTE hasta que DGI responde: AE = ACEPTADO, BE = RECHAZADO,
+// CE = OBSERVADO.
+enum CfeEstadoDgi {
+  PENDIENTE
+  ACEPTADO
+  RECHAZADO
+  OBSERVADO
+}
+
 // ── 4.1 Tenant ───────────────────────────────────────────────────────────────
 // Raíz del aislamiento multi-tenant. NO lleva RLS (es la raíz, no un dato
 // dependiente de un tenant).
@@ -431,36 +441,44 @@ model PagoEstadoHistorial {
 // ── 4.9 ComprobanteFiscal ─────────────────────────────────────────────────────
 
 model ComprobanteFiscal {
-  id             String    @id @default(uuid()) @db.Uuid
-  tenantId       String    @map("tenant_id") @db.Uuid
-  pedidoId       String    @map("pedido_id") @db.Uuid
-  pagoId         String?   @map("pago_id") @db.Uuid
-  tipoCfe        String    @map("tipo_cfe")
-  serie          String
-  numero         Int
+  id                     String       @id @default(uuid()) @db.Uuid
+  tenantId               String       @map("tenant_id") @db.Uuid
+  pedidoId               String       @map("pedido_id") @db.Uuid
+  pagoId                 String?      @map("pago_id") @db.Uuid
+  tipoCfe                String       @map("tipo_cfe")
+  serie                  String
+  numero                 Int
   // Nulos hasta HU-009/BL-92 (XML y PDF a S3/R2).
-  urlXml         String?   @map("url_xml")
-  urlPdf         String?   @map("url_pdf")
+  urlXml                 String?      @map("url_xml")
+  urlPdf                 String?      @map("url_pdf")
   // Hash que informa el proveedor (Surtec lo devuelve en Base64, 44 chars).
-  hashSha256     String?   @unique @map("hash_sha256") @db.VarChar(64)
+  hashSha256             String?      @unique @map("hash_sha256") @db.VarChar(64)
   // Facturación electrónica (Surtec/FEU): trazabilidad del proveedor.
-  proveedor      String    @default("SURTEC")
-  proveedorRef   String?   @map("proveedor_ref")
+  proveedor              String       @default("SURTEC")
+  proveedorRef           String?      @map("proveedor_ref")
   // Clave de idempotencia enviada al proveedor ("bl-<pagoId>").
-  idExterno      String?   @unique @map("id_externo")
-  caeNumero      String?   @map("cae_numero")
-  caeVencimiento DateTime? @map("cae_vencimiento") @db.Date
+  idExterno              String?      @unique @map("id_externo")
+  caeNumero              String?      @map("cae_numero")
+  caeVencimiento         DateTime?    @map("cae_vencimiento") @db.Date
   // URL de consulta QR de DGI.
-  urlConsulta    String?   @map("url_consulta")
-  fechaEmision   DateTime  @map("fecha_emision") @db.Timestamptz(3)
-  retencionHasta DateTime  @map("retencion_hasta") @db.Date
-  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  urlConsulta            String?      @map("url_consulta")
+  // HU-009 (BL-455): estado ante la DGI. Lo actualiza EstadoDgiJob hasta que
+  // es definitivo (todos menos PENDIENTE); el motivo, si DGI lo informa.
+  estadoDgi              CfeEstadoDgi @default(PENDIENTE) @map("estado_dgi")
+  estadoDgiMotivo        String?      @map("estado_dgi_motivo") @db.VarChar(200)
+  estadoDgiActualizadoEn DateTime?    @map("estado_dgi_actualizado_en") @db.Timestamptz(3)
+  fechaEmision           DateTime     @map("fecha_emision") @db.Timestamptz(3)
+  retencionHasta         DateTime     @map("retencion_hasta") @db.Date
+  createdAt              DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt              DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   pedido Pedido @relation(fields: [pedidoId], references: [id])
   pago   Pago?  @relation(fields: [pagoId], references: [id])
 
   @@index([tenantId])
+  // BL-455: el job busca los PENDIENTE y el listado filtra por fecha.
+  @@index([tenantId, estadoDgi])
+  @@index([tenantId, fechaEmision])
   @@map("comprobante_fiscal")
 }
 
