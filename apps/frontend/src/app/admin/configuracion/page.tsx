@@ -7,10 +7,12 @@ import Switch from "@/components/ui/Switch";
 import { apiFetch, ApiError } from "@/lib/api-client";
 import {
   cambiosParaGuardar,
+  errorEmailPrivacidad,
   errorRazonSocial,
   formularioDesde,
   hayCambios,
   leerPropinas,
+  LARGO_MAXIMO_EMAIL,
   LARGO_MAXIMO_RAZON_SOCIAL,
   MAXIMO_PROPINAS,
   MEDIOS_PAGO,
@@ -98,6 +100,9 @@ export default function ConfiguracionPage() {
   const errorRazon = formulario
     ? errorRazonSocial(formulario.razonSocial)
     : null;
+  const errorEmail = formulario
+    ? errorEmailPrivacidad(formulario.emailPrivacidad)
+    : null;
   const cambios =
     guardada && formulario ? cambiosParaGuardar(guardada, formulario) : {};
   const conCambios = hayCambios(cambios);
@@ -107,10 +112,11 @@ export default function ConfiguracionPage() {
     e.preventDefault();
     setIntentoGuardar(true);
     // Con un error, el foco va al primer campo mal cargado.
-    if (errorRazon || errorPropinas) {
-      document
-        .getElementById(errorRazon ? "razon-social" : "propinas")
-        ?.focus();
+    if (errorRazon || errorPropinas || errorEmail) {
+      let campo = "email-privacidad";
+      if (errorRazon) campo = "razon-social";
+      else if (errorPropinas) campo = "propinas";
+      document.getElementById(campo)?.focus();
       return;
     }
     if (!guardada || !conCambios) return;
@@ -149,6 +155,7 @@ export default function ConfiguracionPage() {
   // Los errores de los campos se muestran al escribir mal o al intentar
   // guardar (no con el campo recién vacío por primera vez).
   const mostrarErrorRazon = errorRazon !== null && intentoGuardar;
+  const mostrarErrorEmail = errorEmail !== null && intentoGuardar;
 
   return (
     <div className="w-full max-w-3xl space-y-6 p-4 md:p-6">
@@ -347,6 +354,52 @@ export default function ConfiguracionPage() {
               {errorPropinas && (
                 <p id="propinas-error" className="mt-1 text-body-sm text-error">
                   {errorPropinas}
+                </p>
+              )}
+            </div>
+          </section>
+
+          {/* HU-036 (BL-206): contacto para los derechos sobre los datos. */}
+          <section
+            aria-labelledby="titulo-privacidad"
+            className={CLASE_TARJETA}
+          >
+            <h2 id="titulo-privacidad" className={CLASE_TITULO_TARJETA}>
+              Privacidad
+            </h2>
+            <div>
+              <label htmlFor="email-privacidad" className={CLASE_ETIQUETA}>
+                Correo para consultas de privacidad
+              </label>
+              <input
+                id="email-privacidad"
+                type="email"
+                inputMode="email"
+                autoComplete="email"
+                placeholder="privacidad@tulocal.com.uy"
+                maxLength={LARGO_MAXIMO_EMAIL}
+                value={formulario.emailPrivacidad}
+                onChange={(e) => cambiar("emailPrivacidad", e.target.value)}
+                aria-invalid={mostrarErrorEmail}
+                aria-describedby={
+                  mostrarErrorEmail
+                    ? "email-privacidad-ayuda email-privacidad-error"
+                    : "email-privacidad-ayuda"
+                }
+                className={CLASE_CONTROL}
+              />
+              <p id="email-privacidad-ayuda" className={`mt-1 ${CLASE_AYUDA}`}>
+                Aparece en la política de privacidad de tu local, para que los
+                comensales pidan acceso, corrección o eliminación de sus datos
+                (Ley 18.331). Si lo dejás vacío, la política les indica
+                pedírselo al personal.
+              </p>
+              {mostrarErrorEmail && (
+                <p
+                  id="email-privacidad-error"
+                  className="mt-1 text-body-sm text-error"
+                >
+                  {errorEmail}
                 </p>
               )}
             </div>

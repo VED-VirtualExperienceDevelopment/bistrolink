@@ -4,13 +4,16 @@ import {
   ArrayUnique,
   IsArray,
   IsBoolean,
+  IsEmail,
   IsIn,
   IsInt,
   IsOptional,
   IsString,
   Length,
   Max,
+  MaxLength,
   Min,
+  ValidateIf,
 } from 'class-validator';
 import { CfeProveedor } from '@prisma/client';
 import { limpiarEspacios } from '../../usuarios/dto/create-usuario.dto';
@@ -50,6 +53,16 @@ function valoresPermitidos(medio: MedioPagoConfigurable): boolean[] {
     ? [true, false]
     : [false];
 }
+
+/** HU-036 (BL-206): largo máximo de un correo (RFC 5321) y de la columna. */
+export const LARGO_MAXIMO_EMAIL = 254;
+
+/** Sin espacios y en minúsculas; vacío = quitarlo (null). */
+const normalizarEmail = ({ value }: { value: unknown }) => {
+  if (typeof value !== 'string') return value;
+  const limpio = value.trim().toLowerCase();
+  return limpio === '' ? null : limpio;
+};
 
 /** Ordena de menor a mayor (si es una lista de números), para guardar siempre igual. */
 const ordenarPropinas = ({ value }: { value: unknown }) =>
@@ -128,4 +141,15 @@ export class ActualizarConfiguracionDto {
     message: `Proveedor de CFE no disponible. Hoy se puede elegir: ${PROVEEDORES_CFE_DISPONIBLES.join(', ')}`,
   })
   cfeProveedor?: CfeProveedor;
+
+  // HU-036 (BL-206): correo para que los comensales ejerzan sus derechos
+  // sobre sus datos personales (Ley 18.331). Vacío o null lo quita.
+  @IsOptional()
+  @Transform(normalizarEmail)
+  @ValidateIf((_dto, valor) => valor !== null)
+  @IsEmail({}, { message: 'El correo de privacidad no es válido' })
+  @MaxLength(LARGO_MAXIMO_EMAIL, {
+    message: `El correo de privacidad puede tener hasta ${LARGO_MAXIMO_EMAIL} caracteres`,
+  })
+  emailPrivacidad?: string | null;
 }

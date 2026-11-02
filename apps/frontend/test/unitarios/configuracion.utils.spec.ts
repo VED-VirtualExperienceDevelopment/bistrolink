@@ -1,5 +1,6 @@
 import {
   cambiosParaGuardar,
+  errorEmailPrivacidad,
   errorRazonSocial,
   formularioDesde,
   hayCambios,
@@ -77,6 +78,7 @@ describe("cambios para guardar", () => {
       handyHabilitado: false,
       propinas: "10, 15",
       cfeProveedor: "SURTEC",
+      emailPrivacidad: "",
     });
   });
 });
@@ -99,5 +101,42 @@ describe("validaciones", () => {
         plexoHabilitado: false,
       }),
     ).toBe(true);
+  });
+});
+
+describe("HU-036 (BL-206): correo de privacidad", () => {
+  it("es opcional: vacío vale; valida el formato y el largo", () => {
+    expect(errorEmailPrivacidad("")).toBeNull();
+    expect(errorEmailPrivacidad("  ")).toBeNull();
+    expect(errorEmailPrivacidad("privacidad@uno.com.uy")).toBeNull();
+    expect(errorEmailPrivacidad("privacidad@uno")).not.toBeNull();
+    expect(errorEmailPrivacidad("no es un correo")).not.toBeNull();
+    expect(errorEmailPrivacidad("a@@b.uy")).not.toBeNull();
+    expect(errorEmailPrivacidad("@uno.com.uy")).not.toBeNull();
+    expect(errorEmailPrivacidad("a@.uy")).not.toBeNull();
+    expect(errorEmailPrivacidad("a@uno.")).not.toBeNull();
+    expect(errorEmailPrivacidad(`${"a".repeat(250)}@b.uy`)).not.toBeNull();
+  });
+
+  it("manda el correo sin espacios y en minúsculas; vaciarlo manda null; igual al guardado no se manda", () => {
+    const conCorreo = { ...GUARDADA, emailPrivacidad: "privacidad@uno.com.uy" };
+
+    expect(
+      cambiosParaGuardar(GUARDADA, {
+        ...formularioDesde(GUARDADA),
+        emailPrivacidad: " Privacidad@Uno.com.UY ",
+      }),
+    ).toEqual({ emailPrivacidad: "privacidad@uno.com.uy" });
+    expect(
+      cambiosParaGuardar(conCorreo, {
+        ...formularioDesde(conCorreo),
+        emailPrivacidad: "",
+      }),
+    ).toEqual({ emailPrivacidad: null });
+    expect(cambiosParaGuardar(conCorreo, formularioDesde(conCorreo))).toEqual(
+      {},
+    );
+    // Un backend anterior no trae el campo: vacío no es un cambio.
+    expect(cambiosParaGuardar(GUARDADA, formularioDesde(GUARDADA))).toEqual({});
   });
 });

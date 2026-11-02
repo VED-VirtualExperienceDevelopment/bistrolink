@@ -554,6 +554,14 @@ const DATOS_INTEGRACION = {
     priority: "P1",
     tags: ["HU-037", "BL-207", "pagos", "cfe"],
   },
+  // HU-036 (BL-206): privacidad y datos personales (Ley 18.331).
+  139: {
+    category: "Seguridad",
+    component: "api",
+    requirement: "HU-036",
+    priority: "P2",
+    tags: ["HU-036", "BL-206", "privacidad", "multi-tenant"],
+  },
 };
 /**
  * BL-435: datos de los E2E TC-E-017 en adelante, con los criterios de
@@ -794,6 +802,12 @@ const DATOS_E2E = {
     category: "Funcional",
     priority: "P1",
     tags: ["BL-448", "pagos"],
+  }),
+  // HU-036 (BL-206): política de privacidad.
+  62: e2e("comensal", "HU-036", {
+    category: "Seguridad",
+    priority: "P2",
+    tags: ["BL-206", "privacidad"],
   }),
 };
 /**

@@ -457,3 +457,67 @@ describe('MenuService - getMenuByMesa (HU-001)', () => {
     });
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TESTS: getPrivacidad (HU-036, BL-206)
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('MenuService - getPrivacidad (HU-036, BL-206)', () => {
+  const TENANT_ID = randomUUID();
+  const RESTAURANTE_ID = randomUUID();
+  let findUnique: jest.Mock;
+  let contextos: string[];
+  let service: MenuService;
+
+  beforeEach(() => {
+    contextos = [];
+    findUnique = jest.fn().mockResolvedValue({
+      id: RESTAURANTE_ID,
+      nombre: 'La Pasiva',
+      direccion: 'Av. 18 de Julio 1234',
+      emailPrivacidad: 'privacidad@lapasiva.com.uy',
+      tenant: { razonSocial: 'La Pasiva SRL', rut: '219999990016' },
+    });
+    const tenantPrisma = {
+      runInTenantContext: jest.fn((tenantId: string, fn: any) => {
+        contextos.push(tenantId);
+        return fn({ restaurante: { findUnique } });
+      }),
+    };
+    service = new MenuService(tenantPrisma as any, {} as any);
+  });
+
+  it('devuelve el responsable de los datos y el correo para los derechos, en el contexto del tenant', async () => {
+    await expect(
+      service.getPrivacidad(TENANT_ID, RESTAURANTE_ID),
+    ).resolves.toEqual({
+      establecimiento: {
+        nombre: 'La Pasiva',
+        razonSocial: 'La Pasiva SRL',
+        rut: '219999990016',
+        direccion: 'Av. 18 de Julio 1234',
+        emailPrivacidad: 'privacidad@lapasiva.com.uy',
+      },
+    });
+    expect(contextos).toEqual([TENANT_ID]);
+    expect(findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { tenantId: TENANT_ID } }),
+    );
+  });
+
+  it('desde el QR no hace falta el restaurante (sale del tenant del token)', async () => {
+    await expect(service.getPrivacidad(TENANT_ID)).resolves.toMatchObject({
+      establecimiento: { nombre: 'La Pasiva' },
+    });
+  });
+
+  it('restaurante de otro establecimiento o inexistente: 404 genérico', async () => {
+    await expect(
+      service.getPrivacidad(TENANT_ID, randomUUID()),
+    ).rejects.toThrow(NotFoundException);
+    findUnique.mockResolvedValue(null);
+    await expect(service.getPrivacidad(TENANT_ID)).rejects.toThrow(
+      NotFoundException,
+    );
+  });
+});

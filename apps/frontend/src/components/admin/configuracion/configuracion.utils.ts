@@ -22,6 +22,11 @@ export interface ConfiguracionEstablecimiento {
   mediosPagoDisponibles: MedioPago[];
   /** Los que se pueden elegir hoy (Biller, fuera del MVP). */
   proveedoresCfeDisponibles: CfeProveedor[];
+  /**
+   * HU-036 (BL-206): correo para los derechos sobre los datos personales.
+   * Opcional en el tipo: un backend anterior no lo trae.
+   */
+  emailPrivacidad?: string | null;
 }
 
 export type CampoMedioPago =
@@ -40,18 +45,21 @@ export interface FormularioConfiguracion {
   /** Texto del campo, por ejemplo «10, 15, 20». */
   propinas: string;
   cfeProveedor: CfeProveedor;
+  /** HU-036 (BL-206): vacío = sin correo. */
+  emailPrivacidad: string;
 }
 
 /** Body de PATCH /admin/configuracion: solo lo que cambió. */
 export type CambiosConfiguracion = Partial<
-  Omit<FormularioConfiguracion, "propinas">
-> & { propinasSugeridas?: number[] };
+  Omit<FormularioConfiguracion, "propinas" | "emailPrivacidad">
+> & { propinasSugeridas?: number[]; emailPrivacidad?: string | null };
 
 /** Mismos límites que el backend (ActualizarConfiguracionDto). */
 export const MAXIMO_PROPINAS = 5;
 export const PROPINA_MINIMA = 1;
 export const PROPINA_MAXIMA = 100;
 export const LARGO_MAXIMO_RAZON_SOCIAL = 200;
+export const LARGO_MAXIMO_EMAIL = 254;
 
 export const MEDIOS_PAGO: ReadonlyArray<{
   codigo: MedioPago;
@@ -104,6 +112,7 @@ export function formularioDesde(
     handyHabilitado: configuracion.handyHabilitado,
     propinas: textoDePropinas(configuracion.propinasSugeridas),
     cfeProveedor: configuracion.cfeProveedor,
+    emailPrivacidad: configuracion.emailPrivacidad ?? "",
   };
 }
 
@@ -154,10 +163,46 @@ export function errorRazonSocial(razonSocial: string): string | null {
   return null;
 }
 
+/** HU-036 (BL-206): sin espacios y en minúsculas; vacío = null. */
+function normalizarEmail(email: string): string | null {
+  const limpio = email.trim().toLowerCase();
+  return limpio === "" ? null : limpio;
+}
+
+/**
+ * HU-036 (BL-206): error del correo de privacidad, o null si está bien. Es
+ * opcional (vacío vale). Mismo control básico que el backend; el detalle lo
+ * valida la API.
+ */
+export function errorEmailPrivacidad(email: string): string | null {
+  const limpio = email.trim();
+  if (limpio === "") return null;
+  if (limpio.length > LARGO_MAXIMO_EMAIL) {
+    return `El correo puede tener hasta ${LARGO_MAXIMO_EMAIL} caracteres.`;
+  }
+  return pareceEmail(limpio)
+    ? null
+    : "Revisá el correo: por ejemplo, privacidad@tulocal.com.uy.";
+}
+
+/**
+ * Una sola arroba, algo antes, y un dominio con un punto que no esté ni al
+ * principio ni al final; sin espacios. Sin una expresión regular compuesta,
+ * para no tener backtracking (Sonar S8786).
+ */
+function pareceEmail(email: string): boolean {
+  if (/\s/.test(email)) return false;
+  const partes = email.split("@");
+  if (partes.length !== 2) return false;
+  const [usuario, dominio] = partes;
+  const punto = dominio.lastIndexOf(".");
+  return usuario.length > 0 && punto > 0 && punto < dominio.length - 1;
+}
+
 /**
  * Lo que hay que mandar en el PATCH: solo los campos que cambiaron respecto
  * de lo guardado. Vacío si no cambió nada. Supone que el formulario ya pasó
- * las validaciones (leerPropinas y errorRazonSocial).
+ * las validaciones (leerPropinas, errorRazonSocial y errorEmailPrivacidad).
  */
 export function cambiosParaGuardar(
   guardada: ConfiguracionEstablecimiento,
@@ -179,6 +224,10 @@ export function cambiosParaGuardar(
   }
   if (formulario.cfeProveedor !== guardada.cfeProveedor) {
     cambios.cfeProveedor = formulario.cfeProveedor;
+  }
+  const email = normalizarEmail(formulario.emailPrivacidad);
+  if (email !== (guardada.emailPrivacidad ?? null)) {
+    cambios.emailPrivacidad = email;
   }
   return cambios;
 }
