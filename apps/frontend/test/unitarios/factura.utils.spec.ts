@@ -2,7 +2,7 @@ import {
   erroresFactura,
   FACTURA_VACIA,
   facturaBloqueaElPago,
-  facturaSinConsentimiento,
+  MENSAJE_FALTA_CONSENTIMIENTO,
   nombreDelComprobante,
   receptorParaEnviar,
   type FormularioFactura,
@@ -24,7 +24,6 @@ describe("factura.utils (HU-009, BL-453)", () => {
     expect(erroresFactura(FACTURA_VACIA)).toEqual({});
     expect(facturaBloqueaElPago(FACTURA_VACIA)).toBe(false);
     expect(receptorParaEnviar(FACTURA_VACIA)).toBeNull();
-    expect(facturaSinConsentimiento(FACTURA_VACIA)).toBe(false);
   });
 
   it("datos válidos con el aviso aceptado: manda RUT y razón social normalizados", () => {
@@ -36,12 +35,36 @@ describe("factura.utils (HU-009, BL-453)", () => {
     });
   });
 
-  it("sin aceptar el aviso: no bloquea el pago, no manda los datos y avisa que recibe un e-Ticket", () => {
-    const sinAviso = { ...completo, rut: "123", consentimiento: false };
-    expect(erroresFactura(sinAviso)).toEqual({});
-    expect(facturaBloqueaElPago(sinAviso)).toBe(false);
+  it("cargó datos y no aceptó el aviso: bloquea el pago hasta aceptar, borrar los datos o desmarcar la e-Factura", () => {
+    const sinAviso = { ...completo, consentimiento: false };
+    expect(erroresFactura(sinAviso)).toEqual({
+      consentimiento: MENSAJE_FALTA_CONSENTIMIENTO,
+    });
+    expect(facturaBloqueaElPago(sinAviso)).toBe(true);
     expect(receptorParaEnviar(sinAviso)).toBeNull();
-    expect(facturaSinConsentimiento(sinAviso)).toBe(true);
+
+    // Con un solo campo cargado también bloquea.
+    expect(
+      facturaBloqueaElPago({ ...sinAviso, rut: "", razonSocial: "Algo SA" }),
+    ).toBe(true);
+
+    // Borró los datos: es como no pedirla.
+    const borrados = { ...sinAviso, rut: " ", razonSocial: "" };
+    expect(facturaBloqueaElPago(borrados)).toBe(false);
+    expect(receptorParaEnviar(borrados)).toBeNull();
+
+    // Desmarcó la e-Factura: no bloquea aunque los datos sigan escritos.
+    const desmarcada = { ...sinAviso, quiere: false };
+    expect(facturaBloqueaElPago(desmarcada)).toBe(false);
+    expect(receptorParaEnviar(desmarcada)).toBeNull();
+  });
+
+  it("el mensaje explica las tres salidas", () => {
+    expect(MENSAJE_FALTA_CONSENTIMIENTO).toMatch(/aceptar/);
+    expect(MENSAJE_FALTA_CONSENTIMIENTO).toMatch(
+      /borrá el RUT y la razón social/,
+    );
+    expect(MENSAJE_FALTA_CONSENTIMIENTO).toMatch(/desmarcá/);
   });
 
   it("con el aviso aceptado y el RUT inválido: bloquea el pago y explica el error", () => {

@@ -7,7 +7,12 @@ import { etiquetaMesa, type OrigenMenu } from '@/components/menu-digital.utils';
 import { rutaPrivacidad } from '@/components/privacidad/privacidad.utils';
 import { FormularioTarjeta, IconoCandado, type DatosTarjeta } from './FormularioTarjeta';
 import { EsperandoMozo, FormularioEfectivo, SelectorMetodoPago } from './PagoEfectivo';
-import { FacturaConRut, ID_RAZON_SOCIAL_FACTURA, ID_RUT_FACTURA } from './FacturaConRut';
+import {
+  FacturaConRut,
+  ID_CONSENTIMIENTO_FACTURA,
+  ID_RAZON_SOCIAL_FACTURA,
+  ID_RUT_FACTURA,
+} from './FacturaConRut';
 import {
   erroresFactura,
   FACTURA_VACIA,
@@ -126,17 +131,19 @@ export function PagoPedido({
   const headers = headersAccesoPedido(origen, tokenAcceso);
 
   /**
-   * HU-009 (BL-453): antes de pagar o de avisar al mozo. Si pidió e-Factura
-   * con el aviso aceptado y faltan datos, se muestran los errores, el foco
-   * va al primer campo con error y no se paga.
+   * HU-009 (BL-453): antes de pagar o de avisar al mozo. Si cargó datos de
+   * la e-Factura sin aceptar el aviso, o con el aviso aceptado faltan datos,
+   * se muestran los errores, el foco va al primero y no se paga.
    */
   function facturaLista(): boolean {
     const errores = erroresFactura(factura);
-    if (!errores.rut && !errores.razonSocial) return true;
+    let campo: string | null = null;
+    if (errores.consentimiento) campo = ID_CONSENTIMIENTO_FACTURA;
+    else if (errores.rut) campo = ID_RUT_FACTURA;
+    else if (errores.razonSocial) campo = ID_RAZON_SOCIAL_FACTURA;
+    if (!campo) return true;
     setErroresFacturaVisibles(true);
-    document
-      .getElementById(errores.rut ? ID_RUT_FACTURA : ID_RAZON_SOCIAL_FACTURA)
-      ?.focus();
+    document.getElementById(campo)?.focus();
     return false;
   }
   const cantidadItems = lineas.reduce((acc, l) => acc + l.cantidad, 0);

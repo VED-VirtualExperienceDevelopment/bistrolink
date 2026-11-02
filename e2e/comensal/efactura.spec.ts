@@ -7,9 +7,10 @@ import { continuarAlPago } from "../support/pago";
 // HU-009 (BL-453): el comensal pide e-Factura con RUT y razón social en la
 // pantalla de pago.
 //
-// - Sin aceptar el aviso de privacidad, el RUT y la razón social no se
-//   mandan (receptorFiscal: null): el pedido queda sin esos datos y se
-//   emite un e-Ticket.
+// - Con el RUT y la razón social cargados y sin aceptar el aviso de
+//   privacidad, no se avisa al mozo: tiene que aceptarlo, borrar los datos
+//   o desmarcar la e-Factura. Al desmarcarla, los datos no se mandan
+//   (receptorFiscal: null) y se emite un e-Ticket.
 // - Con el aviso aceptado y un RUT inválido, no se avisa al mozo hasta
 //   corregirlo.
 //
@@ -71,7 +72,7 @@ async function cobrarEnEfectivo(
 }
 
 test.describe("BL-453: e-Factura con RUT y razón social", () => {
-  test("[TC-E-063] HU-009: el comensal pide e-Factura con RUT y razón social pero no acepta el aviso de privacidad: no se envían ni se guardan y se avisa que recibe un e-Ticket", async ({
+  test("[TC-E-063] HU-009: con RUT y razón social cargados y sin aceptar el aviso de privacidad no se avisa al mozo; al desmarcar la e-Factura se avisa sin enviar los datos", async ({
     page,
     kdsPageMozo,
     qrMesas,
@@ -83,8 +84,7 @@ test.describe("BL-453: e-Factura con RUT y razón social", () => {
       pedidoId = await pedidoEnEfectivo(page, qrMesas.ruta(MESA_ID));
       await completarFactura(page, RUT_VALIDO);
 
-      // El aviso tiene el enlace a la política y, sin aceptarlo, explica
-      // que no se guardan los datos.
+      // El aviso tiene el enlace a la política y empieza sin aceptar.
       const aviso = page.getByRole("checkbox", {
         name: /Acepto que el local guarde mi RUT/,
       });
@@ -92,12 +92,27 @@ test.describe("BL-453: e-Factura con RUT y razón social", () => {
       await expect(
         page.getByRole("link", { name: "Política de privacidad" }).first(),
       ).toHaveAttribute("href", /\/privacidad\?/);
-      await expect(
-        page.getByText(
-          "Sin aceptar, no guardamos estos datos y te damos un e-Ticket.",
-        ),
-      ).toBeVisible();
 
+      // Sin aceptar: no sale la solicitud, se explica qué hacer y el foco
+      // va a la casilla.
+      const solicitudes: string[] = [];
+      page.on("request", (req) => {
+        if (req.url().endsWith("/solicitud-efectivo")) {
+          solicitudes.push(req.url());
+        }
+      });
+      await page.getByRole("button", { name: "Avisar al mozo" }).click();
+      await expect(
+        page.getByRole("alert").filter({ hasText: /tenés que aceptar/ }),
+      ).toBeVisible();
+      await expect(aviso).toBeFocused();
+      await expect(aviso).toHaveAttribute("aria-invalid", "true");
+      expect(solicitudes).toHaveLength(0);
+
+      // Desmarca la e-Factura: ahora sí avisa, sin el RUT ni la razón social.
+      await page
+        .getByRole("checkbox", { name: /Quiero e-Factura con RUT/ })
+        .uncheck();
       const [solicitud] = await Promise.all([
         page.waitForRequest(
           (req) =>
@@ -110,7 +125,6 @@ test.describe("BL-453: e-Factura con RUT y razón social", () => {
       ]);
       avisado = true;
 
-      // Ni el RUT ni la razón social salen del navegador.
       const cuerpo = solicitud.postData() ?? "";
       expect(JSON.parse(cuerpo)).toMatchObject({ receptorFiscal: null });
       expect(cuerpo).not.toContain("999983");

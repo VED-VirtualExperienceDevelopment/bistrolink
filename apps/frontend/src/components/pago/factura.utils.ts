@@ -6,12 +6,17 @@
  * que el comensal la pide antes de pagar. Los datos viajan en el mismo
  * POST del pago (o del aviso de efectivo) como `receptorFiscal`.
  *
- * Reglas (las vuelve a aplicar el backend, que es quien decide):
- * - Sin aceptar el aviso de privacidad (HU-036) no se mandan los datos y se
- *   emite un e-Ticket. No bloquea el pago.
- * - Con el aviso aceptado, el RUT y la razón social tienen que ser válidos:
- *   mientras no lo sean, el botón de pagar queda deshabilitado (si no, el
- *   comensal recibiría un e-Ticket sin darse cuenta del error).
+ * Reglas de la pantalla (BL-453, ajuste después de probar en staging):
+ * - Si cargó el RUT o la razón social y no aceptó el aviso de privacidad
+ *   (HU-036), no se paga: tiene que aceptarlo, o borrar los datos o
+ *   desmarcar «Quiero e-Factura con RUT» (y recibe un e-Ticket). Así nunca
+ *   recibe un e-Ticket sin darse cuenta.
+ * - Con el aviso aceptado, el RUT y la razón social tienen que ser válidos.
+ * - Marcó la e-Factura pero dejó los dos campos vacíos y sin aceptar: es lo
+ *   mismo que no pedirla (borró los datos).
+ *
+ * El backend sigue siendo quien decide: sin consentimiento no guarda nada
+ * y emite un e-Ticket (receptorParaGuardar).
  */
 import { errorDeRut, normalizarRut } from "@/lib/rut";
 
@@ -44,6 +49,16 @@ export interface ReceptorFiscal {
 export interface ErroresFactura {
   rut?: string;
   razonSocial?: string;
+  /** Cargó datos y no aceptó el aviso de privacidad. */
+  consentimiento?: string;
+}
+
+export const MENSAJE_FALTA_CONSENTIMIENTO =
+  "Para emitir la e-Factura tenés que aceptar que el local guarde tus datos. Si no querés, borrá el RUT y la razón social o desmarcá «Quiero e-Factura con RUT» y te damos un e-Ticket.";
+
+/** Escribió algo en el RUT o en la razón social. */
+function cargoDatos(f: FormularioFactura): boolean {
+  return f.rut.trim().length > 0 || f.razonSocial.trim().length > 0;
 }
 
 /** Hay que validar los datos: pidió e-Factura y aceptó el aviso. */
@@ -52,7 +67,12 @@ function seEmiteEFactura(f: FormularioFactura): boolean {
 }
 
 export function erroresFactura(f: FormularioFactura): ErroresFactura {
-  if (!seEmiteEFactura(f)) return {};
+  if (!f.quiere) return {};
+  if (!f.consentimiento) {
+    return cargoDatos(f)
+      ? { consentimiento: MENSAJE_FALTA_CONSENTIMIENTO }
+      : {};
+  }
   const errores: ErroresFactura = {};
   const errorRut = errorDeRut(f.rut);
   if (errorRut) errores.rut = errorRut;
@@ -62,14 +82,9 @@ export function erroresFactura(f: FormularioFactura): ErroresFactura {
   return errores;
 }
 
-/** Pidió e-Factura con el aviso aceptado, pero faltan datos o no son válidos. */
+/** Faltan datos, no son válidos o falta aceptar el aviso: no se paga. */
 export function facturaBloqueaElPago(f: FormularioFactura): boolean {
   return Object.keys(erroresFactura(f)).length > 0;
-}
-
-/** Pidió e-Factura y no aceptó el aviso: se le avisa que recibe un e-Ticket. */
-export function facturaSinConsentimiento(f: FormularioFactura): boolean {
-  return f.quiere && !f.consentimiento;
 }
 
 /**
