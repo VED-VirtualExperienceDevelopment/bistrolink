@@ -26,6 +26,40 @@ export interface SolicitudEmision {
   adenda?: string;
 }
 
+/** Tipos de CFE que emite BistroLink (códigos de DGI). */
+export const TIPO_CFE = {
+  E_TICKET: 101,
+  E_FACTURA: 111,
+} as const;
+
+/** HU-009 (BL-453): receptor de la e-Factura, ya validado. */
+export interface ReceptorEFactura {
+  /** 12 dígitos, sin separadores. */
+  rut: string;
+  razonSocial: string;
+}
+
+// Objeto `cliente` de POST /comprobantes/crear (guía de la API de Surtec).
+interface ClienteCfe {
+  tipo_doc: number;
+  cod_pais_doc: string;
+  nro_doc: string;
+  denominacion: string;
+}
+
+/**
+ * Campos con datos del receptor que no van al mensaje del error (termina en
+ * los logs): si Surtec los repite en su respuesta, se ocultan.
+ */
+const CAMPOS_DEL_RECEPTOR = new Set(['cliente', 'nro_doc', 'denominacion']);
+
+/** El cuerpo de un error de Surtec, para el log, sin datos del receptor. */
+export function cuerpoParaLog(datos: unknown): string {
+  return JSON.stringify(datos, (clave, valor: unknown) =>
+    CAMPOS_DEL_RECEPTOR.has(clave) ? '[oculto]' : valor,
+  );
+}
+
 export interface CfeEmitido {
   id: string;
   serie: string;
@@ -61,14 +95,41 @@ export class SurtecClient {
     return Boolean(process.env.SURTEC_USER && process.env.SURTEC_PASSWORD);
   }
 
-  async emitirETicket(solicitud: SolicitudEmision): Promise<CfeEmitido> {
+  /** e-Ticket (101): consumidor final, sin datos del receptor. */
+  emitirETicket(solicitud: SolicitudEmision): Promise<CfeEmitido> {
+    return this.emitir(TIPO_CFE.E_TICKET, solicitud);
+  }
+
+  /**
+   * HU-009 (BL-453): e-Factura (111) a nombre del RUT del comensal. Surtec
+   * exige el objeto `cliente` con el documento y la denominación; dirección
+   * y ciudad son opcionales (Surtec pone «N/D»).
+   */
+  emitirEFactura(
+    solicitud: SolicitudEmision,
+    receptor: ReceptorEFactura,
+  ): Promise<CfeEmitido> {
+    return this.emitir(TIPO_CFE.E_FACTURA, solicitud, {
+      tipo_doc: 2, // RUT
+      cod_pais_doc: 'UY',
+      nro_doc: receptor.rut,
+      denominacion: receptor.razonSocial,
+    });
+  }
+
+  private async emitir(
+    tipoComprobante: number,
+    solicitud: SolicitudEmision,
+    cliente?: ClienteCfe,
+  ): Promise<CfeEmitido> {
     const cuerpo = {
       sucursal: Number(process.env.SURTEC_SUCURSAL ?? 1),
-      tipo_comprobante: 101, // eTicket: consumidor final
+      tipo_comprobante: tipoComprobante,
       forma_pago: 1, // contado
       moneda: 'UYU',
       cod_montos_brutos: 1, // los precios incluyen IVA
       id_externo: solicitud.idExterno,
+      ...(cliente ? { cliente } : {}),
       items: solicitud.items.map((i) => ({
         cantidad: i.cantidad,
         concepto: i.concepto,
@@ -135,7 +196,7 @@ export class SurtecClient {
     >;
     if (!respuesta.ok) {
       throw new SurtecError(
-        `Surtec rechazó la emisión (HTTP ${respuesta.status}): ${JSON.stringify(datos)}`,
+        `Surtec rechazó la emisión (HTTP ${respuesta.status}): ${cuerpoParaLog(datos)}`,
         respuesta.status,
       );
     }

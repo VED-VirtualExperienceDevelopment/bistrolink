@@ -1,4 +1,8 @@
-import { SurtecClient, SurtecError } from '../../src/cfe/surtec.client';
+import {
+  cuerpoParaLog,
+  SurtecClient,
+  SurtecError,
+} from '../../src/cfe/surtec.client';
 
 const RESPUESTA_CFE = {
   id: 541759,
@@ -277,6 +281,89 @@ describe('SurtecClient', () => {
 
     await expect(client.emitirETicket(SOLICITUD)).rejects.toMatchObject({
       status: 502,
+    });
+  });
+
+  describe('HU-009 (BL-453): e-Factura', () => {
+    const RECEPTOR = {
+      rut: '219999830019',
+      razonSocial: 'Comensal Ejemplo SAS',
+    };
+
+    it('emite una e-Factura (111) con el cliente: RUT (tipo_doc 2), país UY, número y denominación', async () => {
+      fetchMock
+        .mockReturnValueOnce(json({ access_token: 'AT' }))
+        .mockReturnValueOnce(json(RESPUESTA_CFE));
+
+      const cfe = await client.emitirEFactura(SOLICITUD, RECEPTOR);
+
+      const cuerpo = JSON.parse(fetchMock.mock.calls[1][1].body);
+      expect(cuerpo).toMatchObject({
+        tipo_comprobante: 111,
+        forma_pago: 1,
+        moneda: 'UYU',
+        cod_montos_brutos: 1,
+        id_externo: 'bl-pago-1',
+        cliente: {
+          tipo_doc: 2,
+          cod_pais_doc: 'UY',
+          nro_doc: '219999830019',
+          denominacion: 'Comensal Ejemplo SAS',
+        },
+        adenda: { texto: 'Pedido 1' },
+      });
+      expect(cfe.serie).toBe('A');
+    });
+
+    it('el e-Ticket no lleva cliente', async () => {
+      fetchMock
+        .mockReturnValueOnce(json({ access_token: 'AT' }))
+        .mockReturnValueOnce(json(RESPUESTA_CFE));
+
+      await client.emitirETicket(SOLICITUD);
+
+      expect(JSON.parse(fetchMock.mock.calls[1][1].body)).not.toHaveProperty(
+        'cliente',
+      );
+    });
+
+    it('si Surtec rechaza y repite el cliente en la respuesta, el error no lleva el RUT ni la razón social', async () => {
+      fetchMock
+        .mockReturnValueOnce(json({ access_token: 'AT' }))
+        .mockReturnValueOnce(
+          json(
+            {
+              mensaje: 'El receptor no es contribuyente',
+              cliente: {
+                nro_doc: RECEPTOR.rut,
+                denominacion: RECEPTOR.razonSocial,
+              },
+            },
+            400,
+          ),
+        );
+
+      const error = await client
+        .emitirEFactura(SOLICITUD, RECEPTOR)
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(SurtecError);
+      expect((error as SurtecError).status).toBe(400);
+      expect((error as SurtecError).message).toContain('no es contribuyente');
+      expect((error as SurtecError).message).not.toContain(RECEPTOR.rut);
+      expect((error as SurtecError).message).not.toContain(
+        RECEPTOR.razonSocial,
+      );
+    });
+
+    it('cuerpoParaLog oculta nro_doc y denominacion en cualquier nivel', () => {
+      expect(
+        cuerpoParaLog({
+          errores: [{ nro_doc: '1', denominacion: 'X', campo: 'y' }],
+        }),
+      ).toBe(
+        '{"errores":[{"nro_doc":"[oculto]","denominacion":"[oculto]","campo":"y"}]}',
+      );
     });
   });
 });
