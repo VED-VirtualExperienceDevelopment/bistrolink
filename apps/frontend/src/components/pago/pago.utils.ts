@@ -8,6 +8,7 @@
  */
 import type { OrigenMenu } from "@/components/menu-digital.utils";
 import { headersMesaQr } from "@/components/menu-digital.utils";
+import { nombreDelComprobante } from "./factura.utils";
 
 /** Header con el token de acceso de un pedido para retirar (backend: HEADER_PEDIDO_TOKEN). */
 export const HEADER_PEDIDO_TOKEN = "X-Pedido-Token";
@@ -193,6 +194,8 @@ export interface EstadoPagoDelPedido {
     motivoRechazo?: string | null;
   } | null;
   comprobante: {
+    /** HU-009 (BL-453): '101' e-Ticket o '111' e-Factura. Opcional: un backend anterior no lo trae. */
+    tipoCfe?: string;
     serie: string;
     numero: number;
     urlConsulta: string | null;
@@ -363,7 +366,7 @@ export function filasRebajaIva(
 }
 
 /**
- * Número del e-Ticket para mostrar: serie y número con 7 dígitos, como
+ * Número del comprobante (e-Ticket o e-Factura) para mostrar: serie y número con 7 dígitos, como
  * figura en el CFE impreso («A-0001234»).
  */
 export function numeroComprobante(serie: string, numero: number): string {
@@ -393,7 +396,7 @@ export function estadoComprobante(
   if (!c) return { tipo: "emitiendo" };
   return {
     tipo: "emitido",
-    texto: `e-Ticket ${numeroComprobante(c.serie, c.numero)}`,
+    texto: `${nombreDelComprobante(c.tipoCfe)} ${numeroComprobante(c.serie, c.numero)}`,
     urlConsulta: urlConsultaSegura(c.urlConsulta),
     rebaja: estado?.rebajaIva ?? null,
   };
