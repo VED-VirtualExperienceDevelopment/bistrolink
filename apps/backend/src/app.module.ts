@@ -3,6 +3,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { HealthController } from './health.controller';
 import { LoggerModule } from 'nestjs-pino';
+import { CAMPOS_PERSONALES_EN_LOGS } from './logs-datos-personales';
 import { AuthModule } from './auth/auth.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { TestController } from './test/test.controller';
@@ -51,10 +52,13 @@ const configuracionLog = construirConfiguracionLog(process.env);
           return 'info';
         },
         redact: {
+          // HU-036 (BL-206): además de credenciales, datos personales que
+          // podrían llegar a un log como campo de un objeto (Ley 18.331).
           paths: [
             'req.headers.authorization',
             'req.headers.cookie',
             'res.headers["set-cookie"]',
+            ...CAMPOS_PERSONALES_EN_LOGS,
           ],
           censor: '[REDACTED]',
         },

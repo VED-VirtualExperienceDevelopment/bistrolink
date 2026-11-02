@@ -96,4 +96,34 @@ describe('ActualizarConfiguracionDto (HU-020, BL-72)', () => {
       ]);
     });
   });
+
+  describe('HU-036 (BL-206): correo de privacidad', () => {
+    it('acepta un correo válido y lo guarda sin espacios y en minúsculas', async () => {
+      const dto = plainToInstance(ActualizarConfiguracionDto, {
+        emailPrivacidad: '  Privacidad@Uno.com.UY ',
+      });
+      expect(await validate(dto)).toEqual([]);
+      expect(dto.emailPrivacidad).toBe('privacidad@uno.com.uy');
+    });
+
+    it.each([[''], ['   '], [null]])(
+      'vacío o null (%p) lo quita',
+      async (valor) => {
+        const dto = plainToInstance(ActualizarConfiguracionDto, {
+          emailPrivacidad: valor,
+        });
+        expect(await validate(dto)).toEqual([]);
+        expect(dto.emailPrivacidad).toBeNull();
+      },
+    );
+
+    it.each([['no-es-un-correo'], ['a@b'], [123]])(
+      'rechaza %p',
+      async (valor) => {
+        expect(await errores({ emailPrivacidad: valor })).toEqual([
+          'emailPrivacidad',
+        ]);
+      },
+    );
+  });
 });

@@ -149,6 +149,24 @@ describe('ConfiguracionEstablecimientoService (HU-020, BL-72)', () => {
       expect(configuracion.rut).toBe(RUT);
     });
 
+    it('HU-036 (BL-206): correo de privacidad: lo guarda en restaurante y lo audita sin el valor', async () => {
+      const configuracion = await service.actualizar(
+        TENANT_ID,
+        { emailPrivacidad: 'privacidad@uno.com.uy' },
+        ACTOR,
+      );
+
+      expect(tx.restaurante.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: { emailPrivacidad: 'privacidad@uno.com.uy' },
+        }),
+      );
+      const [, entrada] = auditLog.registrarEnTx.mock.calls[0];
+      expect(entrada.detalle).toEqual({ campos: ['emailPrivacidad'] });
+      expect(JSON.stringify(entrada)).not.toContain('privacidad@');
+      expect(configuracion.emailPrivacidad).toBe('privacidad@uno.com.uy');
+    });
+
     it('el proveedor de CFE queda en el diff', async () => {
       tx.restaurante.findUnique.mockResolvedValue({
         ...RESTAURANTE_ACTUAL,

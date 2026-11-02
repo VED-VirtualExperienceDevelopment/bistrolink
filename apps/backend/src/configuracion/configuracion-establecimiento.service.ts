@@ -32,6 +32,8 @@ export interface ConfiguracionEstablecimiento {
   cfeProveedor: CfeProveedor;
   /** Los que se pueden elegir hoy (Biller quedó fuera del MVP). */
   proveedoresCfeDisponibles: CfeProveedor[];
+  /** HU-036 (BL-206): contacto para los derechos de los titulares de datos. */
+  emailPrivacidad: string | null;
 }
 
 /** Campos de la configuración que viven en restaurante. */
@@ -42,6 +44,7 @@ const SELECT_RESTAURANTE = {
   handyHabilitado: true,
   propinasSugeridas: true,
   cfeProveedor: true,
+  emailPrivacidad: true,
 } satisfies Prisma.RestauranteSelect;
 
 type ConfiguracionDelRestaurante = Prisma.RestauranteGetPayload<{
@@ -49,6 +52,15 @@ type ConfiguracionDelRestaurante = Prisma.RestauranteGetPayload<{
 }>;
 type CampoDelRestaurante = keyof ConfiguracionDelRestaurante;
 type CampoConfiguracion = keyof ActualizarConfiguracionDto;
+
+/**
+ * Campos cuyo valor no va a la auditoría (solo que cambiaron): mismo criterio
+ * que la razón social. El correo de privacidad (HU-036) puede ser el de una
+ * persona.
+ */
+const SIN_VALOR_EN_AUDITORIA: ReadonlySet<CampoDelRestaurante> = new Set([
+  'emailPrivacidad',
+]);
 
 const CAMPOS_DEL_RESTAURANTE = Object.keys(
   SELECT_RESTAURANTE,
@@ -203,6 +215,7 @@ function calcularCambios(
     if (nuevo === undefined || igual(nuevo, anterior)) continue;
     cambios.campos.push(campo);
     (cambios.restaurante as Record<string, unknown>)[campo] = nuevo;
+    if (SIN_VALOR_EN_AUDITORIA.has(campo)) continue;
     cambios.antes[campo] = anterior;
     cambios.despues[campo] = nuevo;
   }

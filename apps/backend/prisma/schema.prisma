@@ -164,6 +164,9 @@ model Restaurante {
   propinasSugeridas     Int[]        @default([]) @map("propinas_sugeridas")
   // Default SURTEC: es el proveedor que emite hoy (CfeService).
   cfeProveedor          CfeProveedor @default(SURTEC) @map("cfe_proveedor")
+  // HU-036 (BL-206): contacto para los derechos de los titulares de datos
+  // (Ley 18.331). Se muestra en la política de privacidad del local.
+  emailPrivacidad       String?      @map("email_privacidad") @db.VarChar(254)
   createdAt             DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt             DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
 
