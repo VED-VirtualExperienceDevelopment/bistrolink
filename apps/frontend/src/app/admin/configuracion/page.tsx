@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useKeycloakAuth } from "@/components/providers/KeycloakProvider";
 import Switch from "@/components/ui/Switch";
 import { apiFetch, ApiError } from "@/lib/api-client";
+import AnonimizarDatosFactura from "@/components/admin/configuracion/AnonimizarDatosFactura";
 import {
   cambiosParaGuardar,
   errorEmailPrivacidad,
@@ -442,6 +443,10 @@ export default function ConfiguracionPage() {
           </div>
         </form>
       )}
+
+      {/* HU-009 (BL-453): fuera del formulario (no se guarda con «Guardar
+          cambios»). */}
+      {formulario && token && <AnonimizarDatosFactura token={token} />}
     </div>
   );
 }

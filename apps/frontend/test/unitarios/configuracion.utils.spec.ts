@@ -7,6 +7,7 @@ import {
   leerPropinas,
   sinMediosDePago,
   type ConfiguracionEstablecimiento,
+  mensajeAnonimizacion,
 } from "@/components/admin/configuracion/configuracion.utils";
 
 // HU-020 (BL-72): pantalla de configuración del establecimiento.
@@ -138,5 +139,17 @@ describe("HU-036 (BL-206): correo de privacidad", () => {
     );
     // Un backend anterior no trae el campo: vacío no es un cambio.
     expect(cambiosParaGuardar(GUARDADA, formularioDesde(GUARDADA))).toEqual({});
+  });
+});
+
+describe("mensajeAnonimizacion (HU-009, BL-453)", () => {
+  it("dice cuántos pedidos se anonimizaron, o que no había ninguno", () => {
+    expect(mensajeAnonimizacion({ pedidos: 0 })).toMatch(/No hay pedidos/);
+    expect(mensajeAnonimizacion({ pedidos: 1 })).toBe(
+      "Listo: se anonimizó 1 pedido.",
+    );
+    expect(mensajeAnonimizacion({ pedidos: 3 })).toBe(
+      "Listo: se anonimizaron 3 pedidos.",
+    );
   });
 });

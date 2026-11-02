@@ -1,4 +1,14 @@
-import { Body, Controller, Get, Patch, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Patch,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { RolesGuard, Roles } from '../auth/roles.guard';
@@ -6,6 +16,8 @@ import { AuthenticatedUser } from '../auth/keycloak-jwt.strategy';
 import { SEGURIDAD_KEYCLOAK } from '../openapi';
 import { ConfiguracionEstablecimientoService } from './configuracion-establecimiento.service';
 import { ActualizarConfiguracionDto } from './dto/actualizar-configuracion.dto';
+import { AnonimizarReceptorService } from './anonimizar-receptor.service';
+import { AnonimizarReceptorDto } from './dto/anonimizar-receptor.dto';
 
 /**
  * HU-020 (BL-72): el Administrador consulta y cambia la configuración de su
@@ -23,6 +35,7 @@ import { ActualizarConfiguracionDto } from './dto/actualizar-configuracion.dto';
 export class ConfiguracionController {
   constructor(
     private readonly configuracion: ConfiguracionEstablecimientoService,
+    private readonly anonimizarReceptor: AnonimizarReceptorService,
   ) {}
 
   @Get()
@@ -37,6 +50,21 @@ export class ConfiguracionController {
     @Body() dto: ActualizarConfiguracionDto,
   ) {
     return this.configuracion.actualizar(req.user.tenantId, dto, {
+      id: req.user.sub,
+    });
+  }
+
+  /**
+   * HU-009 (BL-453): anonimiza el RUT y la razón social de la e-Factura en
+   * los pedidos del local con ese RUT. Los CFE y los montos no cambian.
+   */
+  @Post('privacidad/anonimizar-receptor')
+  @HttpCode(HttpStatus.OK)
+  anonimizar(
+    @Req() req: { user: AuthenticatedUser },
+    @Body() dto: AnonimizarReceptorDto,
+  ) {
+    return this.anonimizarReceptor.anonimizar(req.user.tenantId, dto.rut, {
       id: req.user.sub,
     });
   }

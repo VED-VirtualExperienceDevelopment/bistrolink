@@ -11,14 +11,19 @@ const req = {
 
 describe('ConfiguracionController (HU-020, BL-72)', () => {
   let configuracion: { obtener: jest.Mock; actualizar: jest.Mock };
+  let anonimizar: { anonimizar: jest.Mock };
   let controller: ConfiguracionController;
 
   beforeEach(() => {
+    anonimizar = { anonimizar: jest.fn().mockResolvedValue({ pedidos: 2 }) };
     configuracion = {
       obtener: jest.fn().mockResolvedValue({ rut: '219999990016' }),
       actualizar: jest.fn().mockResolvedValue({ plexoHabilitado: false }),
     };
-    controller = new ConfiguracionController(configuracion as any);
+    controller = new ConfiguracionController(
+      configuracion as any,
+      anonimizar as any,
+    );
   });
 
   it('solo ADMIN, con el token de Keycloak', () => {
@@ -46,6 +51,17 @@ describe('ConfiguracionController (HU-020, BL-72)', () => {
     expect(configuracion.actualizar).toHaveBeenCalledWith(
       TENANT_ID,
       { plexoHabilitado: false },
+      { id: 'kc-admin-1' },
+    );
+  });
+
+  it('HU-009 (BL-453): anonimizar usa el establecimiento y el actor del token', async () => {
+    await expect(
+      controller.anonimizar(req, { rut: '219999830019' }),
+    ).resolves.toEqual({ pedidos: 2 });
+    expect(anonimizar.anonimizar).toHaveBeenCalledWith(
+      TENANT_ID,
+      '219999830019',
       { id: 'kc-admin-1' },
     );
   });
