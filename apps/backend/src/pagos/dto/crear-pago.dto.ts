@@ -1,3 +1,4 @@
+import { Type } from 'class-transformer';
 import {
   IsIn,
   IsObject,
@@ -5,7 +6,9 @@ import {
   IsString,
   Length,
   Matches,
+  ValidateNested,
 } from 'class-validator';
+import { ReceptorFiscalDto } from '../../cfe/receptor-fiscal';
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -30,6 +33,15 @@ export class CrearPagoDto {
 
   @IsObject()
   datosPasarela: Record<string, unknown>;
+
+  /**
+   * HU-009 (BL-453): e-Factura con RUT y razón social. Sin el campo, el
+   * pedido queda como estaba; null lo borra (ver receptorParaGuardar).
+   */
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ReceptorFiscalDto)
+  receptorFiscal?: ReceptorFiscalDto | null;
 }
 
 /** BL-311: lo que recibe PagosService: el body más el pedidoId de la ruta. */

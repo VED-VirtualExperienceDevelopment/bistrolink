@@ -17,6 +17,11 @@ const CAMPOS = [
   'identificationNumber',
   'documento',
   'emailPrivacidad',
+  // HU-009 (BL-453): receptor de la e-Factura (en el pedido y en Surtec).
+  'receptorRut',
+  'receptorRazonSocial',
+  'nro_doc',
+  'denominacion',
 ] as const;
 
 export const CAMPOS_PERSONALES_EN_LOGS: string[] = CAMPOS.flatMap((campo) => [

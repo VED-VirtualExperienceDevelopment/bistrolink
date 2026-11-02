@@ -3,11 +3,14 @@
 // Fija solo lo que SurtecClient envía y lee hoy:
 //   - POST {SURTEC_AUTH_URL}/token: entrar con usuario y contraseña y renovar
 //     con el refresh token. Leemos access_token y refresh_token.
-//   - POST {SURTEC_API_URL}/comprobantes/crear: emitir un e-Ticket (tipo 101).
-//     Leemos id, serie, numero, hash, cae_numero, cae_vencimiento y url.
+//   - POST {SURTEC_API_URL}/comprobantes/crear: emitir un e-Ticket (tipo 101)
+//     y, desde HU-009 (BL-453), una e-Factura (tipo 111) con el objeto
+//     `cliente`. Leemos id, serie, numero, hash, cae_numero, cae_vencimiento
+//     y url.
 //
 // Qué NO cubre todavía (cada contrato se suma con la historia que lo usa):
-//   - e-Factura, consulta de estado y nota de crédito: HU-009, HU-023, HU-024.
+//   - Descarga del PDF y XML, consulta de estado y nota de crédito: HU-009
+//     (BL-454 y BL-455), HU-023, HU-024.
 //   - Integración con el POS: BL-100.
 //
 // Las dos URLs apuntan al mismo mock: los paths no se pisan. Cada test lleva
@@ -75,6 +78,25 @@ function cuerpoETicket(sucursal = 1) {
       unidad: 'Un',
     }),
     adenda: { texto: like('Pedido 1') },
+  };
+}
+
+// HU-009 (BL-453): receptor de ejemplo, con dígito verificador válido.
+const RECEPTOR = { rut: '219999830019', razonSocial: 'Comensal Ejemplo SAS' };
+
+// Cuerpo de la e-Factura: el del e-Ticket con tipo 111 y el cliente. El
+// campo es `denominacion` (tabla de la guía de Surtec; el ejemplo JSON de la
+// guía dice `nombre`, a confirmar en el sandbox).
+function cuerpoEFactura() {
+  return {
+    ...cuerpoETicket(),
+    tipo_comprobante: 111,
+    cliente: {
+      tipo_doc: 2,
+      cod_pais_doc: 'UY',
+      nro_doc: regex(RUT, RECEPTOR.rut),
+      denominacion: like(RECEPTOR.razonSocial),
+    },
   };
 }
 
@@ -266,6 +288,70 @@ describe('Contrato Surtec — facturación electrónica (BL-216)', () => {
           expect(error).toBeInstanceOf(SurtecError);
           expect(error.status).toBe(400);
           expect(error.message).not.toContain(CLAVE);
+        });
+    });
+  });
+
+  describe('POST /comprobantes/crear — emitir la e-Factura (HU-009, BL-453)', () => {
+    it('[TC-C-015] Surtec CFE: POST /comprobantes/crear de una e-Factura (111) con el cliente (RUT y denominación) responde 200 con serie, número, hash, CAE y URL de DGI', async () => {
+      loginConUsuario(pact.addInteraction());
+      await pact
+        .addInteraction()
+        .given('el emisor está habilitado en Surtec para emitir e-Facturas')
+        .uponReceiving('una emisión de e-Factura a un RUT que Surtec acepta')
+        .withRequest('POST', '/comprobantes/crear', (b) => {
+          b.headers({
+            Authorization: regex('^Bearer \\S+$', `Bearer ${TOKEN_1}`),
+            'X-Emisor': regex(RUT, RUT_EMISOR),
+            'Content-Type': 'application/json',
+          }).jsonBody(cuerpoEFactura());
+        })
+        .willRespondWith(200, (b) => {
+          b.jsonBody(RESPUESTA_ETICKET);
+        })
+        .executeTest(async (mock) => {
+          const cfe = await clienteContra(mock.url).emitirEFactura(
+            SOLICITUD,
+            RECEPTOR,
+          );
+
+          expect(cfe).toMatchObject({
+            serie: 'A',
+            numero: 49,
+            caeNumero: '90191275538',
+            url: 'https://www.efactura.dgi.gub.uy/consultaQR/cfe?x',
+          });
+        });
+    });
+
+    it('[TC-C-016] Surtec CFE: POST /comprobantes/crear de una e-Factura a un RUT que DGI no tiene como contribuyente responde 4xx y BistroLink lanza SurtecError sin el RUT ni la razón social en el mensaje', async () => {
+      loginConUsuario(pact.addInteraction());
+      await pact
+        .addInteraction()
+        .given('el RUT del receptor no figura como contribuyente en DGI')
+        .uponReceiving(
+          'una emisión de e-Factura a un RUT que no es contribuyente',
+        )
+        .withRequest('POST', '/comprobantes/crear', (b) => {
+          b.headers({
+            Authorization: regex('^Bearer \\S+$', `Bearer ${TOKEN_1}`),
+            'X-Emisor': regex(RUT, RUT_EMISOR),
+            'Content-Type': 'application/json',
+          }).jsonBody(cuerpoEFactura());
+        })
+        // Solo el status: con un 4xx, CfeService emite un e-Ticket.
+        .willRespondWith(400)
+        .executeTest(async (mock) => {
+          const error = await clienteContra(mock.url)
+            .emitirEFactura(SOLICITUD, RECEPTOR)
+            .catch((e: unknown) => e);
+
+          expect(error).toBeInstanceOf(SurtecError);
+          expect((error as SurtecError).status).toBe(400);
+          expect((error as SurtecError).message).not.toContain(RECEPTOR.rut);
+          expect((error as SurtecError).message).not.toContain(
+            RECEPTOR.razonSocial,
+          );
         });
     });
   });

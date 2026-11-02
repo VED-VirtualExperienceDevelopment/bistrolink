@@ -69,6 +69,8 @@ function crearTx() {
           { subtotal: new Prisma.Decimal('190') },
         ],
       }),
+      // HU-009 (BL-453): receptor de la e-Factura.
+      update: jest.fn(),
     },
     mesa: {
       update: jest.fn(),
@@ -159,6 +161,52 @@ describe('PagosService.crear', () => {
         estado: 'APROBADO',
         pasarelaReferencia: 'ORD1',
       });
+    });
+
+    it('HU-009 (BL-453): e-Factura con consentimiento: guarda RUT y razón social en el pedido, en la transacción de la reserva', async () => {
+      await service.crear(TENANT_ID, {
+        ...DTO,
+        receptorFiscal: {
+          rut: '219999830019',
+          razonSocial: 'Comensal Ejemplo SAS',
+          consentimiento: true,
+        },
+      });
+
+      expect(tx.pedido.update).toHaveBeenCalledWith({
+        where: { id: PEDIDO_ID },
+        data: {
+          receptorRut: '219999830019',
+          receptorRazonSocial: 'Comensal Ejemplo SAS',
+          receptorConsentidoEn: expect.any(Date),
+        },
+      });
+    });
+
+    it('HU-009 (BL-453): sin aceptar el aviso: el pedido queda sin RUT ni razón social', async () => {
+      await service.crear(TENANT_ID, {
+        ...DTO,
+        receptorFiscal: {
+          rut: '219999830019',
+          razonSocial: 'Comensal Ejemplo SAS',
+          consentimiento: false,
+        },
+      });
+
+      expect(tx.pedido.update).toHaveBeenCalledWith({
+        where: { id: PEDIDO_ID },
+        data: {
+          receptorRut: null,
+          receptorRazonSocial: null,
+          receptorConsentidoEn: null,
+        },
+      });
+    });
+
+    it('HU-009 (BL-453): sin receptorFiscal no toca el pedido', async () => {
+      await service.crear(TENANT_ID, DTO);
+
+      expect(tx.pedido.update).not.toHaveBeenCalled();
     });
 
     it('BL-90: el monto se calcula en el backend sumando las líneas del pedido', async () => {

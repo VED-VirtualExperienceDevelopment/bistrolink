@@ -52,6 +52,7 @@ describe('PagosService.consultar (BL-311: estado del pago y comprobante para el 
         pago({
           comprobantes: [
             {
+              tipoCfe: '111',
               serie: 'A',
               numero: 1234,
               urlConsulta: 'https://www.efactura.dgi.gub.uy/consultaQR/x',
@@ -72,6 +73,7 @@ describe('PagosService.consultar (BL-311: estado del pago y comprobante para el 
         motivoRechazo: null,
       },
       comprobante: {
+        tipoCfe: '111',
         serie: 'A',
         numero: 1234,
         urlConsulta: 'https://www.efactura.dgi.gub.uy/consultaQR/x',
@@ -167,7 +169,9 @@ describe('PagosService.consultar (BL-311: estado del pago y comprobante para el 
       estado: 'RECIBIDO',
       pagos: [
         pago({
-          comprobantes: [{ serie: 'A', numero: 1, urlConsulta: null }],
+          comprobantes: [
+            { tipoCfe: '101', serie: 'A', numero: 1, urlConsulta: null },
+          ],
         }),
       ],
     });
@@ -181,15 +185,18 @@ describe('PagosService.consultar (BL-311: estado del pago y comprobante para el 
       'monto',
       'motivoRechazo',
     ]);
+    // HU-009 (BL-453): tipoCfe dice si es e-Ticket o e-Factura.
     expect(Object.keys(r.comprobante!).sort()).toEqual([
       'numero',
       'serie',
+      'tipoCfe',
       'urlConsulta',
     ]);
     // La consulta ni siquiera pide esos campos a la base.
     const { select } = findUnique.mock.calls[0][0];
     expect(select.pagos.select).not.toHaveProperty('pasarelaReferencia');
     expect(select.pagos.select.comprobantes.select).toEqual({
+      tipoCfe: true,
       serie: true,
       numero: true,
       urlConsulta: true,

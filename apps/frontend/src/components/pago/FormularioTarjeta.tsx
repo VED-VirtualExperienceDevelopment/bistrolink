@@ -35,6 +35,12 @@ interface FormularioTarjetaProps {
   readonly procesando: boolean;
   readonly textoBoton?: string;
   readonly onPagar: (datos: DatosTarjeta) => void;
+  /**
+   * HU-009 (BL-453): se consulta antes de pedir el token de la tarjeta (es
+   * de un solo uso). Si devuelve false, no se paga: la pantalla ya mostró
+   * qué falta (por ejemplo, el RUT de la e-Factura).
+   */
+  readonly puedePagar?: () => boolean;
 }
 
 const PUBLIC_KEY = process.env.NEXT_PUBLIC_MP_PUBLIC_KEY;
@@ -98,6 +104,7 @@ export function FormularioTarjeta({
   procesando,
   textoBoton,
   onPagar,
+  puedePagar,
 }: FormularioTarjetaProps) {
   const id = useId();
   // sin-clave: falta NEXT_PUBLIC_MP_PUBLIC_KEY. error: no se pudo descargar
@@ -223,6 +230,7 @@ export function FormularioTarjeta({
     setIntentoEnviar(true);
     setErrorTarjeta(null);
     if (errores.titular || errores.documento || errores.email) return;
+    if (puedePagar && !puedePagar()) return;
     if (!metodo) {
       setErrorTarjeta('Revisá el número de la tarjeta.');
       return;

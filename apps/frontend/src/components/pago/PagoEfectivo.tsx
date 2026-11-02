@@ -95,11 +95,14 @@ export function FormularioEfectivo({
   enviando,
   error,
   onAvisar,
+  puedeAvisar,
 }: {
   readonly total: number;
   readonly enviando: boolean;
   readonly error: string | null;
   readonly onAvisar: (pagaCon: string | null) => void;
+  /** HU-009 (BL-453): false si falta algo de la e-Factura (ya se muestra). */
+  readonly puedeAvisar?: () => boolean;
 }) {
   const [texto, setTexto] = useState('');
   const [intentado, setIntentado] = useState(false);
@@ -131,6 +134,7 @@ export function FormularioEfectivo({
           e.preventDefault();
           setIntentado(true);
           if (estado.tipo === 'invalido' || estado.tipo === 'insuficiente') return;
+          if (puedeAvisar && !puedeAvisar()) return;
           onAvisar(estado.tipo === 'ok' ? estado.monto : null);
         }}
       >

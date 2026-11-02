@@ -310,26 +310,34 @@ model ItemCarta {
 // ── 4.6 Pedido ────────────────────────────────────────────────────────────────
 
 model Pedido {
-  id                   String       @id @default(uuid()) @db.Uuid
-  tenantId             String       @map("tenant_id") @db.Uuid
-  restauranteId        String       @map("restaurante_id") @db.Uuid
-  mesaId               String       @map("mesa_id") @db.Uuid
-  usuarioId            String?      @map("usuario_id") @db.Uuid
-  idempotencyKey       String       @unique @map("idempotency_key") @db.VarChar(64)
-  estado               PedidoEstado
-  canal                PedidoCanal
-  observacionGeneral   String?      @map("observacion_general") @db.VarChar(500) // <-- NUEVO
+  id                    String       @id @default(uuid()) @db.Uuid
+  tenantId              String       @map("tenant_id") @db.Uuid
+  restauranteId         String       @map("restaurante_id") @db.Uuid
+  mesaId                String       @map("mesa_id") @db.Uuid
+  usuarioId             String?      @map("usuario_id") @db.Uuid
+  idempotencyKey        String       @unique @map("idempotency_key") @db.VarChar(64)
+  estado                PedidoEstado
+  canal                 PedidoCanal
+  observacionGeneral    String?      @map("observacion_general") @db.VarChar(500) // <-- NUEVO
   // BL-311 (RD.05): SHA-256 del token de acceso de un pedido para retirar
   // (canal WEB, sin QR). El token en claro se devuelve una sola vez, al
   // crear el pedido; acá nunca se guarda. Null en los pedidos de mesa.
-  accesoTokenHash      String?      @map("acceso_token_hash") @db.Char(64)
+  accesoTokenHash       String?      @map("acceso_token_hash") @db.Char(64)
   // HU-031b (BL-442): el comensal de una mesa pidió pagar en efectivo
   // (cuándo, y con cuánto va a pagar si lo dijo). No es un pago: el pedido
   // sigue en PENDIENTE_PAGO hasta que el mozo registra el cobro (BL-201).
-  efectivoSolicitadoEn DateTime?    @map("efectivo_solicitado_en") @db.Timestamptz(3)
-  efectivoPagaCon      Decimal?     @map("efectivo_paga_con") @db.Decimal(10, 2)
-  createdAt            DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt            DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+  efectivoSolicitadoEn  DateTime?    @map("efectivo_solicitado_en") @db.Timestamptz(3)
+  efectivoPagaCon       Decimal?     @map("efectivo_paga_con") @db.Decimal(10, 2)
+  // HU-009 (BL-453): el comensal pidió e-Factura (tipo 111) en lugar del
+  // e-Ticket. Solo se guardan si aceptó el aviso de privacidad (HU-036):
+  // sin aceptar, quedan nulos y se emite un e-Ticket. El administrador los
+  // puede anonimizar (receptorAnonimizadoEn); el CFE emitido no cambia.
+  receptorRut           String?      @map("receptor_rut") @db.VarChar(12)
+  receptorRazonSocial   String?      @map("receptor_razon_social") @db.VarChar(150)
+  receptorConsentidoEn  DateTime?    @map("receptor_consentido_en") @db.Timestamptz(3)
+  receptorAnonimizadoEn DateTime?    @map("receptor_anonimizado_en") @db.Timestamptz(3)
+  createdAt             DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   restaurante      Restaurante             @relation(fields: [restauranteId], references: [id])
   mesa             Mesa                    @relation(fields: [mesaId], references: [id])
@@ -344,6 +352,8 @@ model Pedido {
   // del tenant (compatibles con el predicado de RLS).
   @@index([tenantId, createdAt])
   @@index([tenantId, estado])
+  // BL-453: buscar los pedidos de un RUT para anonimizarlos.
+  @@index([tenantId, receptorRut])
   @@map("pedido")
 }
 
