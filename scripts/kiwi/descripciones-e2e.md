@@ -12,6 +12,7 @@
 | 1.5     | 01/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-059 a 061: retomar el pago al recargar y aviso de efectivo en el KDS (BL-448).          |
 | 1.6     | 01/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-062: política de privacidad desde la carta y el pago (BL-206).                          |
 | 1.7     | 02/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-063 y 064: e-Factura con RUT y razón social desde la pantalla de pago (HU-009, BL-453). |
+| 1.8     | 02/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-063 cambia: sin aceptar el aviso no se avisa al mozo (BL-453, ajuste de staging).       |
 
 Plantilla para cargar en Kiwi la descripción de casos TC-E (Playwright)
 nuevos o que cambiaron (BL-435). La usa
@@ -66,27 +67,11 @@ Mesa del seed abierta con su QR y efectivo habilitado en el establecimiento.
 
 1. Desde el QR de la mesa, agregar un ítem, ir a pagar y elegir «Efectivo».
 2. Marcar «Quiero e-Factura con RUT» y completar un RUT válido y la razón social.
-3. No marcar «Acepto que el local guarde mi RUT y mi razón social…».
-4. Tocar «Avisar al mozo».
+3. No marcar «Acepto que el local guarde mi RUT y mi razón social…» y tocar «Avisar al mozo».
+4. Desmarcar «Quiero e-Factura con RUT» y tocar «Avisar al mozo».
 
 ### Resultado esperado
 
-1. El aviso tiene el enlace a la política de privacidad y, sin aceptarlo, dice «Sin aceptar, no guardamos estos datos y te damos un e-Ticket.».
-2. La solicitud de efectivo sale con `receptorFiscal: null`, sin el RUT ni la razón social.
-3. La pantalla pasa a «Esperando al mozo». Al terminar, el mozo cobra el pedido y se entrega desde el KDS.
-
-## TC-E-064
-
-### Precondición
-
-Mesa del seed abierta con su QR y efectivo habilitado en el establecimiento.
-
-### Pasos
-
-1. Desde el QR de la mesa, agregar un ítem, ir a pagar y elegir «Efectivo».
-2. Marcar «Quiero e-Factura con RUT», completar un RUT con el dígito verificador incorrecto y la razón social, y aceptar el aviso.
-3. Tocar «Avisar al mozo».
-
-### Resultado esperado
-
-El campo RUT queda marcado con error («el último dígito (verificador) no corresponde») y con el foco. No se envía la solicitud de efectivo.
+1. El aviso tiene el enlace a la política de privacidad.
+2. En el paso 3 no se envía la solicitud: aparece el mensaje «Para emitir la e-Factura tenés que aceptar que el local guarde tus datos…», que explica que se puede aceptar, borrar los datos o desmarcar la e-Factura, y el foco va a la casilla del aviso.
+3. En el paso 4 la solicitud de efectivo sale con `receptorFiscal: null`, sin el RUT ni la razón social, y la pantalla pasa a «Esperando al mozo». Al terminar, el mozo cobra el pedido y se entrega desde el KDS.
