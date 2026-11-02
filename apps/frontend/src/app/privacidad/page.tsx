@@ -107,7 +107,8 @@ export default async function PoliticaPrivacidadPage({ searchParams }: PageProps
           <li className={LI}>
             <strong>e-Factura:</strong> si la pedís, ingresás el RUT y la razón
             social. Solo se guardan si aceptás este aviso, junto al pedido, para
-            emitir la e-Factura a ese nombre; si no lo aceptás, recibís un
+            emitir la e-Factura a ese nombre. Sin aceptarlo no se emite la
+            e-Factura: podés borrar los datos o desmarcarla y recibís un
             e-Ticket. Los datos figuran en la e-Factura, que se conserva 5 años
             por la normativa fiscal. Si pedís que se eliminen, el local los
             anonimiza en sus registros; la e-Factura ya emitida no cambia.

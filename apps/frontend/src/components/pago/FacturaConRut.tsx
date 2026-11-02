@@ -3,7 +3,6 @@
 import { useId } from "react";
 import {
   erroresFactura,
-  facturaSinConsentimiento,
   LARGO_MAXIMO_RAZON_SOCIAL_RECEPTOR,
   type FormularioFactura,
 } from "./factura.utils";
@@ -11,6 +10,7 @@ import {
 /** Ids de los campos, para llevar el foco al primero con error. */
 export const ID_RUT_FACTURA = "factura-rut";
 export const ID_RAZON_SOCIAL_FACTURA = "factura-razon-social";
+export const ID_CONSENTIMIENTO_FACTURA = "factura-consentimiento";
 
 const CLASE_INPUT =
   "w-full h-12 px-3 rounded-lg border bg-white text-foreground placeholder:text-[#79767d] focus:outline-none transition-colors";
@@ -22,8 +22,9 @@ const CLASE_INPUT_ERROR = "border-[#BA1A1A] bg-[#FFDAD6]/40";
  * HU-009 (BL-453): el comensal pide e-Factura con su RUT y su razón social,
  * antes de pagar (el CFE se emite cuando se aprueba el pago).
  *
- * HU-036 (BL-206): el aviso de privacidad va antes de guardar los datos. Sin
- * aceptarlo no se mandan y se emite un e-Ticket; se le dice al comensal.
+ * HU-036 (BL-206): el aviso de privacidad va antes de guardar los datos. Si
+ * cargó datos y no lo aceptó, no se paga hasta que lo acepte, borre los
+ * datos o desmarque la e-Factura (BL-453, ajuste de staging).
  */
 export function FacturaConRut({
   valor,
@@ -41,11 +42,11 @@ export function FacturaConRut({
 }) {
   const idQuiere = useId();
   const idAyudaQuiere = useId();
-  const idConsentimiento = useId();
   const idAyudaRut = useId();
   const idErrorRut = useId();
   const idErrorRazon = useId();
   const idAviso = useId();
+  const idErrorConsentimiento = useId();
   const errores = mostrarErrores ? erroresFactura(valor) : {};
   const cambiar = <K extends keyof FormularioFactura>(
     campo: K,
@@ -157,16 +158,24 @@ export function FacturaConRut({
           {/* El enlace va fuera del label: tocarlo no marca la casilla. */}
           <div className="flex items-start gap-3">
             <input
-              id={idConsentimiento}
+              id={ID_CONSENTIMIENTO_FACTURA}
               type="checkbox"
               checked={valor.consentimiento}
               disabled={deshabilitado}
               onChange={(e) => cambiar("consentimiento", e.target.checked)}
-              aria-describedby={idAviso}
+              aria-invalid={Boolean(errores.consentimiento)}
+              aria-describedby={
+                errores.consentimiento
+                  ? `${idAviso} ${idErrorConsentimiento}`
+                  : idAviso
+              }
               className="mt-0.5 h-5 w-5 shrink-0 accent-[#6e54ad]"
             />
             <p className="text-sm text-foreground">
-              <label htmlFor={idConsentimiento} className="cursor-pointer">
+              <label
+                htmlFor={ID_CONSENTIMIENTO_FACTURA}
+                className="cursor-pointer"
+              >
                 Acepto que el local guarde mi RUT y mi razón social para emitir
                 la e-Factura.
               </label>{" "}
@@ -178,11 +187,19 @@ export function FacturaConRut({
               </a>
             </p>
           </div>
-          <p id={idAviso} className="text-xs text-[#5a575e]" aria-live="polite">
-            {facturaSinConsentimiento(valor)
-              ? "Sin aceptar, no guardamos estos datos y te damos un e-Ticket."
-              : "Figuran en la e-Factura, que se conserva 5 años por obligación fiscal."}
+          <p id={idAviso} className="text-xs text-[#5a575e]">
+            Figuran en la e-Factura, que se conserva 5 años por obligación
+            fiscal.
           </p>
+          {errores.consentimiento && (
+            <p
+              id={idErrorConsentimiento}
+              role="alert"
+              className="p-3 rounded-lg bg-[#FFDAD6]/60 text-sm font-semibold text-[#93000a]"
+            >
+              {errores.consentimiento}
+            </p>
+          )}
         </div>
       )}
     </section>

@@ -9,6 +9,7 @@
 | ------- | ---------- | ------------------------------------------------------------------------------------------------- |
 | 1.0     | 01/11/2026 | Primera versión: roles, datos que trata el sistema, registro ante la URCDP y pedidos de derechos. |
 | 1.1     | 02/11/2026 | HU-009 (BL-453): RUT y razón social de la e-Factura, consentimiento y anonimización.              |
+| 1.2     | 02/11/2026 | BL-453: sin aceptar el aviso, la pantalla no deja pagar con datos de la e-Factura cargados.       |
 
 ## 1. Roles
 
@@ -37,7 +38,10 @@ El e-Ticket se emite a consumidor final, sin datos personales.
 **e-Factura (HU-009, BL-453):** el comensal la pide en la pantalla de pago,
 antes de pagar. El RUT y la razón social solo se guardan si acepta el aviso
 (con enlace a `/privacidad`); queda la fecha en `pedido.receptor_consentido_en`.
-Sin aceptarlo, no se guardan y se emite un e-Ticket. Los datos viajan a
+Si cargó el RUT o la razón social y no aceptó el aviso, la pantalla no deja
+pagar hasta que lo acepte, borre los datos o desmarque la e-Factura (en ese
+caso recibe un e-Ticket). El backend, igual, sin consentimiento no guarda
+nada y emite un e-Ticket. Los datos viajan a
 Surtec para emitir el CFE (tipo 111) y quedan en el CFE ante DGI.
 
 **Pendiente:** el pedido para retirar (HU-040) va a guardar el nombre y el
@@ -102,7 +106,8 @@ HU-027).
 
 - La política se abre desde la carta (web y QR) y desde el formulario de
   pago (TC-E-062), también desde el aviso de la e-Factura.
-- e-Factura sin aceptar el aviso: el pedido queda sin RUT ni razón social
-  (TC-E-063) y se emite un e-Ticket.
+- e-Factura con datos cargados y sin aceptar el aviso: la pantalla no deja
+  pagar; al desmarcarla, el pedido queda sin RUT ni razón social y se emite
+  un e-Ticket (TC-E-063).
 - Buscar en los logs de `bistrolink-api` de staging correos, RUT o teléfonos
   en texto plano después de hacer un pedido y un pago (no tiene que haber).
