@@ -578,6 +578,21 @@ const DATOS_INTEGRACION = {
     priority: "P1",
     tags: ["HU-009", "BL-453", "privacidad", "auditoria"],
   },
+  // HU-009 (BL-455): estado de los CFE ante la DGI y listado del admin.
+  142: {
+    category: "Funcional",
+    component: "api",
+    requirement: "HU-009",
+    priority: "P1",
+    tags: ["HU-009", "BL-455", "cfe", "multi-tenant"],
+  },
+  143: {
+    category: "Seguridad",
+    component: "api",
+    requirement: "HU-009",
+    priority: "P1",
+    tags: ["HU-009", "BL-455", "cfe", "multi-tenant"],
+  },
 };
 /**
  * BL-435: datos de los E2E TC-E-017 en adelante, con los criterios de
@@ -836,6 +851,12 @@ const DATOS_E2E = {
     priority: "P2",
     tags: ["BL-453", "cfe"],
   }),
+  // HU-009 (BL-455): comprobantes del administrador.
+  65: e2e("admin", "HU-009", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-455", "cfe", ...axe],
+  }),
 };
 /**
  * Datos de los contratos PactJS (TC-C). Requirement con la HU que usa el
@@ -888,6 +909,9 @@ const DATOS_CONTRATO = {
   // Surtec: emisión de e-Factura (BL-453).
   15: contrato("HU-009", "surtec", { priority: "P1", tags: ["BL-453"] }),
   16: contrato("HU-009", "surtec", { priority: "P2", tags: ["BL-453"] }),
+  // Surtec: estado de los CFE ante la DGI (BL-455).
+  17: contrato("HU-009", "surtec", { priority: "P1", tags: ["BL-455"] }),
+  18: contrato("HU-009", "surtec", { priority: "P2", tags: ["BL-455"] }),
 };
 const DATOS = CONTRATO ? DATOS_CONTRATO : E2E ? DATOS_E2E : DATOS_INTEGRACION;
 

@@ -2,11 +2,12 @@
 
 ## Control de versiones
 
-| Versión | Fecha      | Modificación                                                                                                             |
-| ------- | ---------- | ------------------------------------------------------------------------------------------------------------------------ |
-| 1.0     | 27/10/2026 | TC-C-001 a 009: contratos de Mercado Pago (API Orders y notificación de webhook, BL-215), plan nuevo «Contract-PactJS».  |
-| 1.1     | 31/10/2026 | TC-C-010 a 014: contratos de Surtec (autenticación y emisión de e-Ticket, BL-216).                                       |
-| 1.2     | 02/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-C-015 y 016: emisión de e-Factura en Surtec (HU-009, BL-453). |
+| Versión | Fecha      | Modificación                                                                                                                                   |
+| ------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1.0     | 27/10/2026 | TC-C-001 a 009: contratos de Mercado Pago (API Orders y notificación de webhook, BL-215), plan nuevo «Contract-PactJS».                        |
+| 1.1     | 31/10/2026 | TC-C-010 a 014: contratos de Surtec (autenticación y emisión de e-Ticket, BL-216).                                                             |
+| 1.2     | 02/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-C-015 y 016: emisión de e-Factura en Surtec (HU-009, BL-453).                       |
+| 1.3     | 03/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-C-017 y 018: consulta del estado de los CFE ante la DGI en Surtec (HU-009, BL-455). |
 
 Texto del campo de descripción de cada caso TC-C en Kiwi. Lo carga
 `cargar-casos-integracion.mjs --contrato --descripciones`: cada bloque
@@ -33,30 +34,30 @@ repositorio es público.
 
 ## Casos para cargar
 
-## TC-C-015
+## TC-C-017
 
 ### Precondición
 
-El emisor está habilitado en Surtec para emitir e-Facturas.
+El emisor tiene CFE emitidos en el rango de fechas y la DGI ya respondió por ellos.
 
 ### Pasos
 
-1. BistroLink pide POST /comprobantes/crear con el header X-Emisor (RUT del restaurante), tipo de comprobante 111 (e-Factura), forma de pago contado, moneda UYU, montos con IVA incluido, el id externo del pago, los ítems del pedido y el objeto cliente: tipo de documento 2 (RUT), país UY, número de RUT de 12 dígitos y denominación (razón social).
+1. BistroLink pide GET /consulta/comprobantes/emitidos con el header X-Emisor (RUT del restaurante) y los parámetros FechaDesde y FechaHasta (AAAA-MM-DD, hora de Uruguay) y Sucursal.
 
 ### Resultado esperado
 
-Surtec responde 200 con id, serie, número, hash, número y vencimiento del CAE y la URL de consulta de DGI. BistroLink devuelve el CFE emitido con esos datos y lo guarda como tipo 111.
+Surtec responde 200 con la lista de CFE (`comprobante`), cada uno con id, serie, número y `estado_dgi` con su código (AE, BE o CE). BistroLink devuelve cada CFE con el código de DGI para actualizar su estado.
 
-## TC-C-016
+## TC-C-018
 
 ### Precondición
 
-El RUT del receptor no figura como contribuyente en DGI.
+El emisor no tiene CFE emitidos en el rango de fechas.
 
 ### Pasos
 
-1. BistroLink pide POST /comprobantes/crear de una e-Factura (tipo 111) a ese RUT.
+1. BistroLink pide GET /consulta/comprobantes/emitidos con un rango sin comprobantes.
 
 ### Resultado esperado
 
-Surtec responde con un error 4xx. BistroLink lanza SurtecError con ese status y sin el RUT ni la razón social del receptor en el mensaje (va a los logs). Con un 4xx, CfeService emite un e-Ticket para que el pago no quede sin comprobante.
+Surtec responde 200 con la lista vacía. BistroLink no actualiza ningún comprobante.

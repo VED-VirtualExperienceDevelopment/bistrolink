@@ -8,9 +8,13 @@
 //     `cliente`. Leemos id, serie, numero, hash, cae_numero, cae_vencimiento
 //     y url.
 //
+//   - GET {SURTEC_API_URL}/consulta/comprobantes/emitidos: estado ante la DGI
+//     de los CFE emitidos en un rango de fechas (HU-009, BL-455). Leemos id,
+//     serie, numero y estado_dgi (código y motivo).
+//
 // Qué NO cubre todavía (cada contrato se suma con la historia que lo usa):
-//   - Descarga del PDF y XML, consulta de estado y nota de crédito: HU-009
-//     (BL-454 y BL-455), HU-023, HU-024.
+//   - Nota de crédito: HU-024. La API no tiene descarga de PDF ni XML
+//     (BL-454).
 //   - Integración con el POS: BL-100.
 //
 // Las dos URLs apuntan al mismo mock: los paths no se pisan. Cada test lleva
@@ -352,6 +356,92 @@ describe('Contrato Surtec — facturación electrónica (BL-216)', () => {
           expect((error as SurtecError).message).not.toContain(
             RECEPTOR.razonSocial,
           );
+        });
+    });
+  });
+
+  describe('GET /consulta/comprobantes/emitidos — estado ante la DGI (HU-009, BL-455)', () => {
+    const CONSULTA = {
+      rutEmisor: RUT_EMISOR,
+      fechaDesde: '2026-11-01',
+      fechaHasta: '2026-11-03',
+    };
+    const FECHA = '^\\d{4}-\\d{2}-\\d{2}$';
+
+    function consultaEmitidos(i: V4UnconfiguredInteraction) {
+      return i.withRequest('GET', '/consulta/comprobantes/emitidos', (b) => {
+        b.headers({
+          Authorization: regex('^Bearer \\S+$', `Bearer ${TOKEN_1}`),
+          'X-Emisor': regex(RUT, RUT_EMISOR),
+        }).query({
+          FechaDesde: regex(FECHA, '2026-11-01'),
+          FechaHasta: regex(FECHA, '2026-11-03'),
+          Sucursal: regex('^\\d+$', '1'),
+        });
+      });
+    }
+
+    it('[TC-C-017] Surtec CFE: GET /consulta/comprobantes/emitidos con un rango de fechas responde 200 con cada CFE (id, serie, número) y su estado ante la DGI', async () => {
+      loginConUsuario(pact.addInteraction());
+      await consultaEmitidos(
+        pact
+          .addInteraction()
+          .given(
+            'el emisor tiene CFE emitidos en el rango con respuesta de DGI',
+          )
+          .uponReceiving(
+            'una consulta de los CFE emitidos en un rango de fechas',
+          ),
+      )
+        // Nombres de la tabla de la guía de Surtec (`comprobante` y
+        // `estado_dgi`); el ejemplo de la guía usa `comprobantes` y
+        // `estado`. SurtecClient acepta los dos (leerEmitidos).
+        .willRespondWith(200, (b) => {
+          b.jsonBody({
+            comprobante: eachLike({
+              id: like(541759),
+              serie: regex('^[A-Z]{1,2}$', 'A'),
+              numero: like(49),
+              estado_dgi: {
+                codigo: regex('^(AE|BE|CE)$', 'AE'),
+              },
+            }),
+          });
+        })
+        .executeTest(async (mock) => {
+          const emitidos = await clienteContra(mock.url).consultarEmitidos(
+            CONSULTA,
+          );
+
+          expect(emitidos).toEqual([
+            {
+              id: '541759',
+              serie: 'A',
+              numero: 49,
+              codigoDgi: 'AE',
+              motivoDgi: null,
+            },
+          ]);
+        });
+    });
+
+    it('[TC-C-018] Surtec CFE: GET /consulta/comprobantes/emitidos sin CFE en el rango responde 200 con la lista vacía y BistroLink no actualiza nada', async () => {
+      loginConUsuario(pact.addInteraction());
+      await consultaEmitidos(
+        pact
+          .addInteraction()
+          .given('el emisor no tiene CFE emitidos en el rango')
+          .uponReceiving(
+            'una consulta de CFE emitidos en un rango sin comprobantes',
+          ),
+      )
+        .willRespondWith(200, (b) => {
+          b.jsonBody({ comprobante: [] });
+        })
+        .executeTest(async (mock) => {
+          await expect(
+            clienteContra(mock.url).consultarEmitidos(CONSULTA),
+          ).resolves.toEqual([]);
         });
     });
   });

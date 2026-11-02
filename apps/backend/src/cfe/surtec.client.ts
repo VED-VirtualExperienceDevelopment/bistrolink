@@ -51,13 +51,71 @@ interface ClienteCfe {
  * Campos con datos del receptor que no van al mensaje del error (termina en
  * los logs): si Surtec los repite en su respuesta, se ocultan.
  */
-const CAMPOS_DEL_RECEPTOR = new Set(['cliente', 'nro_doc', 'denominacion']);
+const CAMPOS_DEL_RECEPTOR = new Set([
+  'cliente',
+  'receptor',
+  'nro_doc',
+  'denominacion',
+]);
 
 /** El cuerpo de un error de Surtec, para el log, sin datos del receptor. */
 export function cuerpoParaLog(datos: unknown): string {
   return JSON.stringify(datos, (clave, valor: unknown) =>
     CAMPOS_DEL_RECEPTOR.has(clave) ? '[oculto]' : valor,
   );
+}
+
+/** HU-009 (BL-455): consulta de los CFE emitidos por un emisor. */
+export interface ConsultaEmitidos {
+  rutEmisor: string;
+  /** Fechas de emisión, AAAA-MM-DD (hora de Uruguay). */
+  fechaDesde: string;
+  fechaHasta: string;
+}
+
+/** Lo que BistroLink lee de cada CFE de la consulta (sin datos del receptor). */
+export interface CfeEmitidoConEstado {
+  id: string;
+  serie: string;
+  numero: number;
+  /** AE, BE o CE; null si DGI todavía no respondió. */
+  codigoDgi: string | null;
+  motivoDgi: string | null;
+}
+
+/**
+ * Lee la respuesta de la consulta. La guía de Surtec no es consistente con
+ * los nombres: la tabla dice `comprobante` (array) y `estado_dgi`, y el
+ * ejemplo usa `comprobantes` y `estado`. Se aceptan las dos formas; lo que
+ * no tiene id, serie o número se descarta.
+ */
+export function leerEmitidos(datos: unknown): CfeEmitidoConEstado[] {
+  const raiz = (datos ?? {}) as Record<string, unknown>;
+  const lista = Array.isArray(datos)
+    ? datos
+    : (raiz.comprobantes ?? raiz.comprobante);
+  if (!Array.isArray(lista)) return [];
+  return lista.flatMap((c: Record<string, any>) => {
+    if (c?.id === undefined || !c.serie || c.numero === undefined) return [];
+    const estado = (c.estado_dgi ?? c.estado ?? {}) as Record<string, unknown>;
+    const codigo = typeof estado === 'string' ? estado : estado.codigo;
+    const motivo = estado.motivo ?? estado.razon ?? estado.descripcion;
+    return [
+      {
+        id: String(c.id),
+        serie: String(c.serie),
+        numero: Number(c.numero),
+        codigoDgi:
+          typeof codigo === 'string' && codigo.trim() !== ''
+            ? codigo.trim().toUpperCase()
+            : null,
+        motivoDgi:
+          typeof motivo === 'string' && motivo.trim() !== ''
+            ? motivo.trim()
+            : null,
+      },
+    ];
+  });
 }
 
 export interface CfeEmitido {
@@ -165,22 +223,43 @@ export class SurtecClient {
     };
   }
 
+  /**
+   * HU-009 (BL-455): CFE emitidos en un rango de fechas de emisión, con su
+   * estado ante la DGI (GET /consulta/comprobantes/emitidos). La API no
+   * filtra por id: se pide el rango y se empareja del lado de BistroLink.
+   */
+  async consultarEmitidos(
+    consulta: ConsultaEmitidos,
+  ): Promise<CfeEmitidoConEstado[]> {
+    const parametros = new URLSearchParams({
+      FechaDesde: consulta.fechaDesde,
+      FechaHasta: consulta.fechaHasta,
+      Sucursal: String(Number(process.env.SURTEC_SUCURSAL ?? 1)),
+    });
+    const datos = await this.llamar(
+      `${apiUrl()}/consulta/comprobantes/emitidos?${parametros.toString()}`,
+      consulta.rutEmisor,
+    );
+    return leerEmitidos(datos);
+  }
+
   // Si el token fue rechazado (401) se pide uno nuevo y se reintenta una vez.
+  // Con cuerpo es un POST (emisión); sin cuerpo, un GET (consulta).
   private async llamar(
     url: string,
     rutEmisor: string,
-    cuerpo: unknown,
+    cuerpo?: unknown,
     reintento = true,
-  ) {
+  ): Promise<Record<string, any>> {
     const token = await this.token();
     const respuesta = await fetch(url, {
-      method: 'POST',
+      method: cuerpo === undefined ? 'GET' : 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
         'X-Emisor': rutEmisor,
-        'Content-Type': 'application/json',
+        ...(cuerpo === undefined ? {} : { 'Content-Type': 'application/json' }),
       },
-      body: JSON.stringify(cuerpo),
+      ...(cuerpo === undefined ? {} : { body: JSON.stringify(cuerpo) }),
       signal: AbortSignal.timeout(20_000),
     });
 
@@ -196,7 +275,7 @@ export class SurtecClient {
     >;
     if (!respuesta.ok) {
       throw new SurtecError(
-        `Surtec rechazó la emisión (HTTP ${respuesta.status}): ${cuerpoParaLog(datos)}`,
+        `Surtec rechazó ${cuerpo === undefined ? 'la consulta' : 'la emisión'} (HTTP ${respuesta.status}): ${cuerpoParaLog(datos)}`,
         respuesta.status,
       );
     }
