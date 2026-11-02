@@ -2,10 +2,11 @@
 
 ## Control de versiones
 
-| Versión | Fecha      | Modificación                                                                                                            |
-| ------- | ---------- | ----------------------------------------------------------------------------------------------------------------------- |
-| 1.0     | 27/10/2026 | TC-C-001 a 009: contratos de Mercado Pago (API Orders y notificación de webhook, BL-215), plan nuevo «Contract-PactJS». |
-| 1.1     | 31/10/2026 | TC-C-010 a 014: contratos de Surtec (autenticación y emisión de e-Ticket, BL-216).                                      |
+| Versión | Fecha      | Modificación                                                                                                             |
+| ------- | ---------- | ------------------------------------------------------------------------------------------------------------------------ |
+| 1.0     | 27/10/2026 | TC-C-001 a 009: contratos de Mercado Pago (API Orders y notificación de webhook, BL-215), plan nuevo «Contract-PactJS».  |
+| 1.1     | 31/10/2026 | TC-C-010 a 014: contratos de Surtec (autenticación y emisión de e-Ticket, BL-216).                                       |
+| 1.2     | 02/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-C-015 y 016: emisión de e-Factura en Surtec (HU-009, BL-453). |
 
 Texto del campo de descripción de cada caso TC-C en Kiwi. Lo carga
 `cargar-casos-integracion.mjs --contrato --descripciones`: cada bloque
@@ -32,78 +33,30 @@ repositorio es público.
 
 ## Casos para cargar
 
-## TC-C-010
+## TC-C-015
 
 ### Precondición
 
-El usuario de la API de Surtec está habilitado.
+El emisor está habilitado en Surtec para emitir e-Facturas.
 
 ### Pasos
 
-1. BistroLink emite un e-Ticket sin tener un token guardado.
-2. SurtecClient pide el token con POST /token, grant_type «password», usuario y contraseña.
+1. BistroLink pide POST /comprobantes/crear con el header X-Emisor (RUT del restaurante), tipo de comprobante 111 (e-Factura), forma de pago contado, moneda UYU, montos con IVA incluido, el id externo del pago, los ítems del pedido y el objeto cliente: tipo de documento 2 (RUT), país UY, número de RUT de 12 dígitos y denominación (razón social).
 
 ### Resultado esperado
 
-Surtec responde 200 con access_token y refresh_token. BistroLink usa el access_token como Bearer en la emisión y guarda el refresh_token para renovarlo.
+Surtec responde 200 con id, serie, número, hash, número y vencimiento del CAE y la URL de consulta de DGI. BistroLink devuelve el CFE emitido con esos datos y lo guarda como tipo 111.
 
-## TC-C-011
+## TC-C-016
 
 ### Precondición
 
-El refresh token emitido por Surtec sigue vigente y el access token venció (pasaron las 11 horas de vida que le da BistroLink).
+El RUT del receptor no figura como contribuyente en DGI.
 
 ### Pasos
 
-1. BistroLink emite un e-Ticket (login con usuario y contraseña).
-2. Pasa el tiempo de vida del token.
-3. BistroLink emite otro e-Ticket.
+1. BistroLink pide POST /comprobantes/crear de una e-Factura (tipo 111) a ese RUT.
 
 ### Resultado esperado
 
-Antes de la segunda emisión, SurtecClient pide POST /token con grant_type «refresh_token» y el refresh token guardado. Surtec responde 200 con un token nuevo y la emisión se hace con ese token, sin volver a mandar la contraseña.
-
-## TC-C-012
-
-### Precondición
-
-El emisor está habilitado en Surtec para emitir e-Tickets.
-
-### Pasos
-
-1. BistroLink pide POST /comprobantes/crear con el header X-Emisor (RUT del restaurante), tipo de comprobante 101 (e-Ticket), forma de pago contado, moneda UYU, montos con IVA incluido, el id externo del pago y los ítems del pedido con IVA tasa básica.
-
-### Resultado esperado
-
-Surtec responde 200 con id, serie, número, hash, número y vencimiento del CAE y la URL de consulta de DGI. BistroLink devuelve el CFE emitido con esos datos.
-
-## TC-C-013
-
-### Precondición
-
-El token de acceso que BistroLink tiene guardado venció del lado de Surtec, y el refresh token sigue vigente.
-
-### Pasos
-
-1. BistroLink pide POST /comprobantes/crear con el token vencido.
-2. Surtec responde 401.
-3. SurtecClient descarta el token y pide uno nuevo con el refresh token.
-4. Repite la misma emisión con el token nuevo.
-
-### Resultado esperado
-
-La segunda emisión responde 200 con el comprobante. BistroLink reintenta una sola vez: un segundo 401 seguido es un error, no un bucle.
-
-## TC-C-014
-
-### Precondición
-
-El emisor no tiene dada de alta en Surtec la sucursal que pide BistroLink (99).
-
-### Pasos
-
-1. BistroLink pide POST /comprobantes/crear con sucursal 99.
-
-### Resultado esperado
-
-Surtec responde con un error 4xx. BistroLink lanza SurtecError con ese status y el cuerpo de la respuesta en el mensaje, sin la contraseña. El pago queda APROBADO sin comprobante y, como un 4xx no es transitorio, no se reintenta en segundo plano: queda para la conciliación (HU-023).
+Surtec responde con un error 4xx. BistroLink lanza SurtecError con ese status y sin el RUT ni la razón social del receptor en el mensaje (va a los logs). Con un 4xx, CfeService emite un e-Ticket para que el pago no quede sin comprobante.
