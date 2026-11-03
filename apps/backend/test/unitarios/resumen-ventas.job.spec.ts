@@ -70,6 +70,7 @@ describe('ResumenVentasJob', () => {
 
   afterEach(() => {
     process.env = entornoOriginal;
+    jest.useRealTimers();
     jest.restoreAllMocks();
   });
 
@@ -134,6 +135,24 @@ describe('ResumenVentasJob', () => {
     while (!terminar) await Promise.resolve();
     terminar();
     await expect(primera).resolves.toEqual({ establecimientos: 1, errores: 0 });
+  });
+
+  it('[TC-U-311] habilitado programa el timer con el intervalo, corre el job en cada vuelta y se apaga al cerrar', async () => {
+    jest.useFakeTimers();
+    const job = crearJob({ REPORTES_RESUMEN_INTERVALO_MIN: '5' });
+    const ejecutar = jest.spyOn(job, 'ejecutar').mockResolvedValue(null);
+
+    job.onApplicationBootstrap();
+    jest.advanceTimersByTime(5 * 60_000);
+
+    expect(ejecutar).toHaveBeenCalledTimes(1);
+    expect(Logger.prototype.log).toHaveBeenCalledWith(
+      expect.stringContaining('cada 5 min'),
+    );
+
+    job.onModuleDestroy();
+    jest.advanceTimersByTime(5 * 60_000);
+    expect(ejecutar).toHaveBeenCalledTimes(1);
   });
 
   it('[TC-U-286] deshabilitado no programa el timer', () => {

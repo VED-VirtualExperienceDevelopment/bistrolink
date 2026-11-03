@@ -1,167 +1,119 @@
-import { Logger } from '@nestjs/common';
-import { ResumenVentasJob } from '../../src/reportes/resumen-ventas.job';
-import { configuracionResumenVentas } from '../../src/reportes/configuracion-resumen-ventas';
+import {
+  HORA_MS,
+  ResumenVentasService,
+  truncarHora,
+  ventanaReciente,
+} from '../../src/reportes/resumen-ventas.service';
 
-// HU-012 (BL-219): job periódico que mantiene el resumen de ventas.
+// HU-012 (BL-219): resumen de ventas por hora para el dashboard. Las
+// consultas contra la base se prueban en la integración
+// (reportes.e2e-spec); acá, el orden, la ventana y los parámetros.
 
-describe('configuracionResumenVentas', () => {
-  it('[TC-U-280] por defecto: habilitado, cada 15 min, últimas 48 h; en los tests apagado salvo a propósito', () => {
-    expect(configuracionResumenVentas({ NODE_ENV: 'production' })).toEqual({
-      habilitado: true,
-      intervaloMs: 900_000,
-      ventanaHoras: 48,
+const TENANT_ID = '11111111-1111-1111-1111-111111111111';
+
+describe('ventanas de horas del resumen de ventas', () => {
+  it('[TC-U-275] truncarHora va al comienzo de la hora en UTC y ventanaReciente incluye la hora en curso completa', () => {
+    const ahora = new Date('2026-11-02T15:42:10.500Z');
+
+    expect(truncarHora(ahora).toISOString()).toBe('2026-11-02T15:00:00.000Z');
+    expect(ventanaReciente(ahora, 2)).toEqual({
+      desde: new Date('2026-11-02T14:00:00.000Z'),
+      hasta: new Date('2026-11-02T16:00:00.000Z'),
     });
-    expect(
-      configuracionResumenVentas({ REPORTES_RESUMEN_HABILITADO: 'false' })
-        .habilitado,
-    ).toBe(false);
-    expect(configuracionResumenVentas({ NODE_ENV: 'test' }).habilitado).toBe(
-      false,
-    );
-    expect(
-      configuracionResumenVentas({
-        NODE_ENV: 'test',
-        REPORTES_RESUMEN_HABILITADO: 'TRUE',
-      }).habilitado,
-    ).toBe(true);
-  });
-
-  it('[TC-U-281] toma los valores de las variables; los inválidos usan los de por defecto', () => {
-    expect(
-      configuracionResumenVentas({
-        REPORTES_RESUMEN_INTERVALO_MIN: '5',
-        REPORTES_RESUMEN_VENTANA_HORAS: '24',
-      }),
-    ).toMatchObject({ intervaloMs: 300_000, ventanaHoras: 24 });
-    expect(
-      configuracionResumenVentas({
-        REPORTES_RESUMEN_INTERVALO_MIN: 'abc',
-        REPORTES_RESUMEN_VENTANA_HORAS: '-3',
-      }),
-    ).toMatchObject({ intervaloMs: 900_000, ventanaHoras: 48 });
+    const { desde, hasta } = ventanaReciente(ahora, 48);
+    expect(hasta.getTime() - desde.getTime()).toBe(48 * HORA_MS);
   });
 });
 
-describe('ResumenVentasJob', () => {
-  const entornoOriginal = process.env;
-  let moduleRef: { resolve: jest.Mock };
-  let servicio: { recalcularVentana: jest.Mock };
-  let prisma: { tenant: { findMany: jest.Mock } };
+describe('ResumenVentasService', () => {
+  let tx: { $executeRaw: jest.Mock };
+  let tenantPrisma: { runInTenantContext: jest.Mock };
+  let service: ResumenVentasService;
 
-  function crearJob(env: NodeJS.ProcessEnv = {}): ResumenVentasJob {
-    process.env = { ...entornoOriginal, NODE_ENV: 'production', ...env };
-    return new ResumenVentasJob(moduleRef as any, prisma as any);
+  /** El SQL (sin parámetros) y los parámetros de la llamada n. */
+  function consulta(n: number): { sql: string; values: unknown[] } {
+    const [sql] = tx.$executeRaw.mock.calls[n];
+    return { sql: sql.sql.replace(/\s+/g, ' '), values: sql.values };
   }
 
   beforeEach(() => {
-    jest.spyOn(Logger.prototype, 'log').mockImplementation();
-    jest.spyOn(Logger.prototype, 'warn').mockImplementation();
-    jest.spyOn(Logger.prototype, 'error').mockImplementation();
-    servicio = {
-      recalcularVentana: jest.fn().mockResolvedValue({ ventas: 1, platos: 2 }),
+    // Lo que devuelve cada llamada: candado, borrar, insertar ventas,
+    // borrar, insertar platos.
+    tx = {
+      $executeRaw: jest
+        .fn()
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(4)
+        .mockResolvedValueOnce(3)
+        .mockResolvedValueOnce(9)
+        .mockResolvedValueOnce(7),
     };
-    moduleRef = { resolve: jest.fn().mockResolvedValue(servicio) };
-    prisma = {
-      tenant: {
-        findMany: jest.fn().mockResolvedValue([{ id: 't1' }, { id: 't2' }]),
-      },
+    tenantPrisma = {
+      runInTenantContext: jest.fn((_tenantId: string, fn: any) => fn(tx)),
     };
+    service = new ResumenVentasService(tenantPrisma as any);
   });
 
-  afterEach(() => {
-    process.env = entornoOriginal;
-    jest.useRealTimers();
-    jest.restoreAllMocks();
-  });
-
-  it('[TC-U-282] recalcula las últimas horas de todos los establecimientos, resolviendo el servicio una sola vez', async () => {
-    const job = crearJob({ REPORTES_RESUMEN_VENTANA_HORAS: '3' });
-    const ahora = new Date('2026-11-02T15:42:00.000Z');
-
-    const corrida = await job.ejecutar(ahora);
-    await job.ejecutar(ahora);
-
-    const ventana = {
-      desde: new Date('2026-11-02T13:00:00.000Z'),
-      hasta: new Date('2026-11-02T16:00:00.000Z'),
-    };
-    expect(servicio.recalcularVentana).toHaveBeenCalledWith('t1', ventana);
-    expect(servicio.recalcularVentana).toHaveBeenCalledWith('t2', ventana);
-    expect(corrida).toEqual({ establecimientos: 2, errores: 0 });
-    expect(moduleRef.resolve).toHaveBeenCalledTimes(1);
-    // Sin errores no escribe en el log.
-    expect(Logger.prototype.warn).not.toHaveBeenCalled();
-  });
-
-  it('[TC-U-283] un establecimiento que falla no frena a los demás y queda en el log', async () => {
-    servicio.recalcularVentana
-      .mockRejectedValueOnce(new Error('base caída'))
-      .mockResolvedValueOnce({ ventas: 0, platos: 0 });
-    const job = crearJob();
-
-    const corrida = await job.ejecutar();
-
-    expect(servicio.recalcularVentana).toHaveBeenCalledTimes(2);
-    expect(corrida).toEqual({ establecimientos: 1, errores: 1 });
-    expect(Logger.prototype.error).toHaveBeenCalled();
-    expect(Logger.prototype.warn).toHaveBeenCalled();
-  });
-
-  it('[TC-U-284] nunca lanza: si no puede listar los establecimientos, lo deja en el log', async () => {
-    prisma.tenant.findMany.mockRejectedValue(new Error('sin conexión'));
-    const job = crearJob();
-
-    await expect(job.ejecutar()).resolves.toEqual({
-      establecimientos: 0,
-      errores: 0,
+  it('[TC-U-276] recalcularVentana: en el contexto del tenant, con candado, borra y vuelve a calcular las dos tablas', async () => {
+    await service.recalcularVentana(TENANT_ID, {
+      desde: new Date('2026-11-01T10:30:00.000Z'),
+      hasta: new Date('2026-11-01T13:00:00.000Z'),
     });
-    expect(Logger.prototype.error).toHaveBeenCalled();
-  });
 
-  it('[TC-U-285] si una corrida sigue en curso, la siguiente se saltea', async () => {
-    let terminar!: () => void;
-    servicio.recalcularVentana.mockReturnValue(
-      new Promise((resolve) => {
-        terminar = () => resolve({ ventas: 0, platos: 0 });
-      }),
+    expect(tenantPrisma.runInTenantContext).toHaveBeenCalledWith(
+      TENANT_ID,
+      expect.any(Function),
     );
-    prisma.tenant.findMany.mockResolvedValue([{ id: 't1' }]);
-    const job = crearJob();
-
-    const primera = job.ejecutar();
-    await Promise.resolve();
-    await expect(job.ejecutar()).resolves.toBeNull();
-    // Hay que esperar a que la primera llegue al servicio para terminarla.
-    while (!terminar) await Promise.resolve();
-    terminar();
-    await expect(primera).resolves.toEqual({ establecimientos: 1, errores: 0 });
+    expect(tx.$executeRaw).toHaveBeenCalledTimes(5);
+    expect(consulta(0).sql).toContain('pg_advisory_xact_lock');
+    expect(consulta(0).values).toEqual([`resumen_ventas:${TENANT_ID}`]);
+    expect(consulta(1).sql).toContain('DELETE FROM resumen_ventas_hora');
+    expect(consulta(2).sql).toContain('INSERT INTO resumen_ventas_hora');
+    expect(consulta(2).sql).toContain("pg.estado = 'APROBADO'");
+    expect(consulta(3).sql).toContain('DELETE FROM resumen_platos_hora');
+    expect(consulta(4).sql).toContain('INSERT INTO resumen_platos_hora');
+    expect(consulta(4).sql).toContain("estado = 'APROBADO'");
   });
 
-  it('[TC-U-311] habilitado programa el timer con el intervalo, corre el job en cada vuelta y se apaga al cerrar', async () => {
-    jest.useFakeTimers();
-    const job = crearJob({ REPORTES_RESUMEN_INTERVALO_MIN: '5' });
-    const ejecutar = jest.spyOn(job, 'ejecutar').mockResolvedValue(null);
+  it('[TC-U-277] recalcularVentana: el tenant y la ventana (truncada a horas) van como parámetros, nunca en el texto', async () => {
+    await service.recalcularVentana(TENANT_ID, {
+      desde: new Date('2026-11-01T10:30:00.000Z'),
+      hasta: new Date('2026-11-01T13:00:00.000Z'),
+    });
 
-    job.onApplicationBootstrap();
-    jest.advanceTimersByTime(5 * 60_000);
+    for (let n = 1; n <= 4; n++) {
+      const { sql, values } = consulta(n);
+      expect(sql).not.toContain(TENANT_ID);
+      expect(values).toEqual(
+        expect.arrayContaining([
+          TENANT_ID,
+          '2026-11-01T10:00:00.000Z',
+          '2026-11-01T13:00:00.000Z',
+        ]),
+      );
+    }
+  });
 
-    expect(ejecutar).toHaveBeenCalledTimes(1);
-    expect(Logger.prototype.log).toHaveBeenCalledWith(
-      expect.stringContaining('cada 5 min'),
+  it('[TC-U-278] recalcularVentana devuelve las filas que quedaron en cada tabla', async () => {
+    const resultado = await service.recalcularVentana(TENANT_ID, {
+      desde: new Date('2026-11-01T10:00:00.000Z'),
+      hasta: new Date('2026-11-01T11:00:00.000Z'),
+    });
+
+    expect(resultado).toEqual({ ventas: 3, platos: 7 });
+  });
+
+  it('[TC-U-279] recalcularRecientes: la hora en curso y la anterior (el pago se reserva antes de aprobarse)', async () => {
+    const espia = jest.spyOn(service, 'recalcularVentana');
+
+    await service.recalcularRecientes(
+      TENANT_ID,
+      new Date('2026-11-02T15:05:00.000Z'),
     );
 
-    job.onModuleDestroy();
-    jest.advanceTimersByTime(5 * 60_000);
-    expect(ejecutar).toHaveBeenCalledTimes(1);
-  });
-
-  it('[TC-U-286] deshabilitado no programa el timer', () => {
-    const espia = jest.spyOn(global, 'setInterval');
-    const job = crearJob({ REPORTES_RESUMEN_HABILITADO: 'false' });
-
-    job.onApplicationBootstrap();
-
-    expect(espia).not.toHaveBeenCalled();
-    job.onModuleDestroy();
+    expect(espia).toHaveBeenCalledWith(TENANT_ID, {
+      desde: new Date('2026-11-02T14:00:00.000Z'),
+      hasta: new Date('2026-11-02T16:00:00.000Z'),
+    });
   });
 });
