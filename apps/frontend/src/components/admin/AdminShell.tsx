@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import { useKeycloakAuth } from '@/components/providers/KeycloakProvider';
 import UsuarioSesion from '@/components/sesion/UsuarioSesion';
+import CampanaStock from '@/components/admin/stock/CampanaStock';
 
 const NAV_ITEMS = [
   // `roles: undefined` = visible para cualquier staff (ADMIN o MOZO).
@@ -263,9 +264,8 @@ export default function AdminShell({
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined rounded-full p-2 text-on-surface-variant transition-colors hover:bg-surface-container-low">
-              notifications
-            </span>
+            {/* HU-015 (BL-120): alertas de stock, solo el Administrador. */}
+            {hasRole('ADMIN') && <CampanaStock />}
             {/* BL-350: quién inició sesión. «Cerrar sesión» del menú lateral
                 se mantiene; este también lo ofrece. */}
             <UsuarioSesion />

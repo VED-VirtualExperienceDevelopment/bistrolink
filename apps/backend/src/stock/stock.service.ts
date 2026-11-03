@@ -72,7 +72,7 @@ function aItemStock(fila: FilaItemStock): ItemStock {
  * HU-015 (BL-120): stock de la jornada y alertas de stock bajo.
  *
  * - Solo el Administrador lo usa (el controller lo restringe).
- * - Todo dentro del contexto del tenant (RLS) y con tenantId en el filtro.
+ * - dentro del contexto del tenant (RLS) y con tenantId en el filtro.
  * - Un ajuste y su auditoría van en la misma transacción (HU-035): si una
  *   falla, no queda ninguna de las dos.
  * - Con control de stock, la disponibilidad sigue al stock: en 0 el ítem no
