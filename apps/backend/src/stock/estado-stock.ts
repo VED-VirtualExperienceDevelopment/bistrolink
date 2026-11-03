@@ -44,3 +44,28 @@ export function compararAlertas(
   if (a.tipo !== b.tipo) return a.tipo === 'AGOTADO' ? -1 : 1;
   return a.stockActual - b.stockActual || a.nombre.localeCompare(b.nombre);
 }
+
+/** Las cantidades pedidas de cada ítem (un ítem puede venir en varias líneas). */
+export function cantidadesPorItem(
+  lineas: readonly { itemCartaId: string; cantidad: number }[],
+): Map<string, number> {
+  const cantidades = new Map<string, number>();
+  for (const { itemCartaId, cantidad } of lineas) {
+    cantidades.set(itemCartaId, (cantidades.get(itemCartaId) ?? 0) + cantidad);
+  }
+  return cantidades;
+}
+
+/**
+ * El mensaje del 409 si el stock no alcanza para lo pedido, o null si
+ * alcanza (o el ítem no controla stock). D3: se verifica antes de cobrar.
+ */
+export function faltaStock(
+  item: StockDeItem & { nombre: string },
+  cantidad: number,
+): string | null {
+  if (!item.controlaStock || item.stockActual >= cantidad) return null;
+  return item.stockActual > 0
+    ? `No hay stock suficiente de "${item.nombre}": quedan ${item.stockActual}`
+    : `"${item.nombre}" está agotado`;
+}

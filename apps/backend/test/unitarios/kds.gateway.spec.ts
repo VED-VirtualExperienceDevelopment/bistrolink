@@ -65,6 +65,27 @@ describe('KdsGateway', () => {
       expect(client.emit).toHaveBeenCalledWith('pedidos:snapshot', []);
     });
 
+    it('[TC-U-340] HU-015: el administrador también entra a la sala de administradores; el mozo no', async () => {
+      mockWsAuth.verify.mockResolvedValueOnce({
+        sub: 'usuario-admin',
+        tenantId: TENANT_ID,
+        roles: ['ADMIN'],
+      });
+      const admin = mockClient();
+      await gateway.handleConnection(admin as any);
+
+      mockWsAuth.verify.mockResolvedValueOnce({
+        sub: 'usuario-mozo',
+        tenantId: TENANT_ID,
+        roles: ['MOZO'],
+      });
+      const mozo = mockClient();
+      await gateway.handleConnection(mozo as any);
+
+      expect(admin.join).toHaveBeenCalledWith(`admin:${TENANT_ID}`);
+      expect(mozo.join).not.toHaveBeenCalledWith(`admin:${TENANT_ID}`);
+    });
+
     it('sin token o token invalido: rechaza y desconecta, sin unir a ninguna sala', async () => {
       mockWsAuth.verify.mockRejectedValue(
         new WsAuthError('Token no provisto en el handshake'),
@@ -495,6 +516,23 @@ describe('KdsGateway', () => {
       expect(mockServer.emit).toHaveBeenCalledWith('llamado:resuelto', {
         mesaId: 'mesa-3',
       });
+    });
+  });
+
+  describe('emitirAlertaStock', () => {
+    it('[TC-U-341] HU-015: la alerta de stock va solo a la sala de administradores del tenant', () => {
+      const alerta = {
+        itemId: 'i1',
+        nombre: 'Milanesa',
+        stockActual: 3,
+        umbralAlerta: 5,
+        tipo: 'STOCK_CRITICO',
+      };
+
+      gateway.emitirAlertaStock(TENANT_ID, alerta);
+
+      expect(mockServer.to).toHaveBeenCalledWith(`admin:${TENANT_ID}`);
+      expect(mockServer.emit).toHaveBeenCalledWith('stock:alerta', alerta);
     });
   });
 

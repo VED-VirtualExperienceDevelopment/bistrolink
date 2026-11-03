@@ -56,6 +56,7 @@ describe('CobroEfectivoService (HU-031, BL-201)', () => {
   let tenantPrisma: { runInTenantContext: jest.Mock };
   let pedidos: {
     confirmarPagoEnTx: jest.Mock;
+    verificarStockEnTx: jest.Mock;
     notificarPedidoConfirmado: jest.Mock;
   };
   let cfe: { emitirEnSegundoPlano: jest.Mock };
@@ -90,6 +91,8 @@ describe('CobroEfectivoService (HU-031, BL-201)', () => {
     };
     pedidos = {
       confirmarPagoEnTx: jest.fn().mockResolvedValue(PEDIDO_KDS),
+      // HU-015 (BL-120): el stock alcanza (se prueba en descuento-stock).
+      verificarStockEnTx: jest.fn().mockResolvedValue(undefined),
       notificarPedidoConfirmado: jest.fn(),
     };
     cfe = { emitirEnSegundoPlano: jest.fn() };

@@ -84,6 +84,7 @@ describe('PedidosService.crearPorMozo (HU-039, BL-209)', () => {
       { runInTenantContext: jest.fn((_t, fn) => fn(tx)) } as any,
       {} as any,
       {} as any,
+      {} as any,
     );
   });
 

@@ -6,6 +6,7 @@ import { TenantPrismaService } from '../../src/prisma/tenant-prisma.service';
 import { KdsGateway } from '../../src/pedidos/kds.gateway';
 import { CrearPedidoDto } from '../../src/pedidos/dto/crear-pedido.dto';
 import { ResumenVentasService } from '../../src/reportes/resumen-ventas.service';
+import { DescuentoStockService } from '../../src/stock/descuento-stock.service';
 
 // BL-204: pedido desde la mesa del QR, tal como lo deja MesaQrGuard en
 // request.mesaQr (el body ya no lleva mesaId).
@@ -62,6 +63,18 @@ describe('Pedidos Observaciones - Integración (BL-41)', () => {
         {
           provide: ResumenVentasService,
           useValue: { recalcularRecientes: jest.fn().mockResolvedValue({}) },
+        },
+        // HU-015 (BL-120): sin ítems con control de stock no hay nada que
+        // descontar (se prueba en descuento-stock.service.spec).
+        {
+          provide: DescuentoStockService,
+          useValue: {
+            descontarEnTx: jest
+              .fn()
+              .mockResolvedValue({ alertas: [], agotados: [] }),
+            verificarPedidoEnTx: jest.fn(),
+            avisar: jest.fn(),
+          },
         },
       ],
     }).compile();
