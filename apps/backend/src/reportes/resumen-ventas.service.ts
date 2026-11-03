@@ -75,9 +75,11 @@ export class ResumenVentasService {
     const desde = truncarHora(ventana.desde).toISOString();
     const hasta = truncarHora(ventana.hasta).toISOString();
 
+    const candado = `resumen_ventas:${tenantId}`;
+
     return this.tenantPrisma.runInTenantContext(tenantId, async (tx) => {
       await tx.$executeRaw(
-        Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`resumen_ventas:${tenantId}`}))`,
+        Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${candado}))`,
       );
 
       await tx.$executeRaw(Prisma.sql`

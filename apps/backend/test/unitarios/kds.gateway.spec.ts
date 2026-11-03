@@ -498,6 +498,17 @@ describe('KdsGateway', () => {
     });
   });
 
+  describe('emitirReportesActualizados', () => {
+    it('[TC-U-310] HU-012: avisa a la sala del tenant que cambió el resumen de ventas, sin datos de ventas', () => {
+      gateway.emitirReportesActualizados(TENANT_ID);
+
+      expect(mockServer.to).toHaveBeenCalledWith(`tenant:${TENANT_ID}`);
+      expect(mockServer.emit).toHaveBeenCalledWith('reportes:actualizado', {
+        ts: expect.any(String),
+      });
+    });
+  });
+
   describe('emitirEstadoMesa', () => {
     it('emite el cambio de estado de mesa a la sala del tenant', () => {
       gateway.emitirEstadoMesa(TENANT_ID, 'mesa-1', MesaEstado.OCUPADA);

@@ -64,15 +64,22 @@ export interface ReporteVentas {
   rotacionMesas: RotacionMesas;
 }
 
+/** Un número que viene de la base: SUM y AVG llegan como Decimal (o null). */
+type NumeroDeLaBase = Prisma.Decimal | number | null;
+
+/** Columnas de fecha por las que se filtra el período. */
+const COLUMNA_HORA = Prisma.raw('hora');
+const COLUMNA_CERRADA_EN = Prisma.raw('cerrada_en');
+
 interface FilaCanal {
   canal: PedidoCanal;
-  monto: Prisma.Decimal | number | null;
+  monto: NumeroDeLaBase;
   pedidos: number | null;
 }
 
 interface FilaHora {
   hora: number;
-  monto: Prisma.Decimal | number | null;
+  monto: NumeroDeLaBase;
   pedidos: number | null;
 }
 
@@ -80,16 +87,16 @@ interface FilaPlato {
   item_carta_id: string;
   nombre: string;
   cantidad: number;
-  recaudado: Prisma.Decimal | number | null;
+  recaudado: NumeroDeLaBase;
 }
 
 interface FilaRotacion {
   sesiones: number;
-  minutos: Prisma.Decimal | number | null;
+  minutos: NumeroDeLaBase;
 }
 
 /** Pesos con 2 decimales (los SUM de la base llegan como Decimal). */
-function pesos(valor: Prisma.Decimal | number | null): number {
+function pesos(valor: NumeroDeLaBase): number {
   return Math.round(Number(valor ?? 0) * 100) / 100;
 }
 
@@ -217,7 +224,7 @@ class ConsultaReportes {
       SELECT canal, SUM(monto) AS monto, SUM(pedidos)::int AS pedidos
       FROM resumen_ventas_hora
       WHERE tenant_id = ${this.tenantId}::uuid
-        AND ${this.enRango(Prisma.sql`hora`, rango)}
+        AND ${this.enRango(COLUMNA_HORA, rango)}
       GROUP BY canal`);
   }
 
@@ -231,7 +238,7 @@ class ConsultaReportes {
              SUM(pedidos)::int AS pedidos
       FROM resumen_ventas_hora
       WHERE tenant_id = ${this.tenantId}::uuid
-        AND ${this.enRango(Prisma.sql`hora`, rango)}
+        AND ${this.enRango(COLUMNA_HORA, rango)}
         ${this.delCanal(canales)}
       GROUP BY 1
       ORDER BY 1`);
@@ -253,7 +260,7 @@ class ConsultaReportes {
              SUM(recaudado) AS recaudado
       FROM resumen_platos_hora
       WHERE tenant_id = ${this.tenantId}::uuid
-        AND ${this.enRango(Prisma.sql`hora`, rango)}
+        AND ${this.enRango(COLUMNA_HORA, rango)}
         ${this.delCanal(canales)}
       GROUP BY item_carta_id`);
     return filas.map((f) => ({
@@ -271,7 +278,7 @@ class ConsultaReportes {
              AVG(EXTRACT(EPOCH FROM cerrada_en - abierta_en)) / 60 AS minutos
       FROM sesion_mesa
       WHERE tenant_id = ${this.tenantId}::uuid
-        AND ${this.enRango(Prisma.sql`cerrada_en`, rango)}`);
+        AND ${this.enRango(COLUMNA_CERRADA_EN, rango)}`);
     const mesas = await this.tx.mesa.count({
       where: { tenantId: this.tenantId, esVirtual: false },
     });
