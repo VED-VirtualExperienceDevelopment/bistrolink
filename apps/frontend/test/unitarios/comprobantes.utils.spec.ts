@@ -1,5 +1,7 @@
 import {
   claseEstadoDgi,
+  DETALLE_PENDIENTE,
+  detalleEstadoDgi,
   etiquetaEstadoDgi,
   filaComprobante,
   filtrosIniciales,
@@ -83,6 +85,7 @@ describe("comprobantes.utils (HU-009, BL-455)", () => {
       origen: "Mesa 5",
       monto: expect.stringContaining("1.220"),
       estado: "Rechazado",
+      detalle: "Firma inválida",
       enlaceDgi: "https://www.efactura.dgi.gub.uy/consultaQR/cfe?x",
     });
     expect(filaComprobante(COMPROBANTE).fecha).toContain("11:05");
@@ -100,5 +103,23 @@ describe("comprobantes.utils (HU-009, BL-455)", () => {
       tipo: "e-Ticket",
       enlaceDgi: null,
     });
+  });
+
+  it("detalle del estado: el motivo de la DGI o, si está pendiente, la explicación", () => {
+    expect(detalleEstadoDgi(COMPROBANTE)).toBe("Firma inválida");
+    expect(
+      detalleEstadoDgi({
+        ...COMPROBANTE,
+        estadoDgi: "PENDIENTE",
+        estadoDgiMotivo: null,
+      }),
+    ).toBe(DETALLE_PENDIENTE);
+    expect(
+      detalleEstadoDgi({
+        ...COMPROBANTE,
+        estadoDgi: "ACEPTADO",
+        estadoDgiMotivo: null,
+      }),
+    ).toBeNull();
   });
 });

@@ -237,9 +237,9 @@ export default function ComprobantesPage() {
                       >
                         {f.estado}
                       </span>
-                      {c.estadoDgiMotivo && (
+                      {f.detalle && (
                         <span className="mt-1 block text-body-sm text-on-surface-variant">
-                          {c.estadoDgiMotivo}
+                          {f.detalle}
                         </span>
                       )}
                     </td>

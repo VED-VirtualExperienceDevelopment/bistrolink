@@ -4,7 +4,13 @@ import { configuracionEstadoDgi } from '../../src/cfe/estado-dgi/configuracion-e
 
 // HU-009 (BL-455): job periódico del estado de los CFE ante la DGI.
 
-const RESUMEN = { revisados: 3, actualizados: 2, rechazados: 1 };
+const RESUMEN = {
+  revisados: 3,
+  actualizados: 2,
+  rechazados: 1,
+  noEncontrados: 0,
+  sinRespuestaDgi: 1,
+};
 
 describe('configuracionEstadoDgi', () => {
   it('por defecto: habilitada, cada 10 min, los de los últimos 7 días', () => {
@@ -84,10 +90,18 @@ describe('EstadoDgiJob', () => {
 
     expect(servicio.actualizarTenant).toHaveBeenCalledWith('t1', 5, ahora);
     expect(servicio.actualizarTenant).toHaveBeenCalledWith('t2', 5, ahora);
-    expect(total).toEqual({ revisados: 6, actualizados: 4, rechazados: 2 });
+    expect(total).toEqual({
+      revisados: 6,
+      actualizados: 4,
+      rechazados: 2,
+      noEncontrados: 0,
+      sinRespuestaDgi: 2,
+    });
     expect(Logger.prototype.log).toHaveBeenCalledWith(
       expect.objectContaining({
-        message: expect.stringContaining('2 rechazados'),
+        message: expect.stringContaining(
+          '2 rechazados, 2 sin respuesta de DGI, 0 no encontrados en Surtec',
+        ),
       }),
     );
   });
@@ -121,6 +135,8 @@ describe('EstadoDgiJob', () => {
       revisados: 0,
       actualizados: 0,
       rechazados: 0,
+      noEncontrados: 0,
+      sinRespuestaDgi: 0,
     });
     expect(Logger.prototype.error).toHaveBeenCalled();
   });
@@ -130,6 +146,8 @@ describe('EstadoDgiJob', () => {
       revisados: 0,
       actualizados: 0,
       rechazados: 0,
+      noEncontrados: 0,
+      sinRespuestaDgi: 0,
     });
 
     await crearJob().ejecutar();
