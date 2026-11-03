@@ -19,6 +19,7 @@ import { construirConfiguracionLog } from './logger/destinos-log';
 import { AuditoriaModule } from './audit-log/auditoria.module';
 import { ConfiguracionModule } from './configuracion/configuracion.module';
 import { ComprobantesModule } from './comprobantes/comprobantes.module';
+import { ReportesModule } from './reportes/reportes.module';
 import { ContextoAuditoriaMiddleware } from './audit-log/contexto-auditoria';
 
 // BL-273: destinos y formato de los logs según el entorno (ver
@@ -82,6 +83,8 @@ const configuracionLog = construirConfiguracionLog(process.env);
     // HU-020 (BL-72): GET y PATCH /admin/configuracion, solo ADMIN.
     ConfiguracionModule,
     ComprobantesModule, // BL-455
+    // HU-012 (BL-108): GET /admin/reportes, solo ADMIN.
+    ReportesModule,
   ],
   controllers: [AppController, HealthController, TestController],
   providers: [AppService],
