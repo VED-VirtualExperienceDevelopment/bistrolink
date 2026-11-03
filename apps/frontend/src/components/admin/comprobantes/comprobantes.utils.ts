@@ -118,6 +118,19 @@ const FORMATO_FECHA = new Intl.DateTimeFormat("es-UY", {
   hour12: false,
 });
 
+/**
+ * Debajo del estado: el motivo que informó la DGI o, si sigue pendiente,
+ * por qué. Surtec manda los CFE a la DGI por tandas: un comprobante recién
+ * emitido puede estar un rato «no enviado» (código NE).
+ */
+export const DETALLE_PENDIENTE =
+  "Todavía no enviado a la DGI o sin respuesta. Se actualiza solo.";
+
+export function detalleEstadoDgi(c: Comprobante): string | null {
+  if (c.estadoDgiMotivo) return c.estadoDgiMotivo;
+  return c.estadoDgi === "PENDIENTE" ? DETALLE_PENDIENTE : null;
+}
+
 /** Lo que muestra cada fila, ya formateado. */
 export function filaComprobante(c: Comprobante) {
   return {
@@ -128,6 +141,7 @@ export function filaComprobante(c: Comprobante) {
     origen: c.mesa === null ? "Para retirar" : `Mesa ${c.mesa}`,
     monto: formatearPrecio(c.monto),
     estado: etiquetaEstadoDgi(c.estadoDgi),
+    detalle: detalleEstadoDgi(c),
     enlaceDgi: urlConsultaSegura(c.urlConsulta),
   };
 }
