@@ -1,4 +1,4 @@
-=import { Logger } from '@nestjs/common';
+import { Logger } from '@nestjs/common';
 import { ResumenVentasJob } from '../../src/reportes/resumen-ventas.job';
 import { configuracionResumenVentas } from '../../src/reportes/configuracion-resumen-ventas';
 
