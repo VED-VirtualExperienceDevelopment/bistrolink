@@ -12,6 +12,11 @@ import { hashTokenAcceso } from '../../src/pedidos/token-acceso-pedido';
 import { CrearPedidoDto } from '../../src/pedidos/dto/crear-pedido.dto';
 
 const TENANT_ID = '11111111-1111-1111-1111-111111111111';
+// HU-012 (BL-219): al confirmar un pago se recalcula el resumen de ventas.
+// Solo lo usa notificarPedidoConfirmado; el resto de los tests no lo toca.
+const mockResumenVentas = {
+  recalcularRecientes: jest.fn().mockResolvedValue({ ventas: 1, platos: 1 }),
+} as any;
 const RESTAURANTE_ID = '22222222-2222-2222-2222-222222222222';
 const MESA_ID = '33333333-3333-3333-3333-333333333333';
 
@@ -98,7 +103,11 @@ describe('PedidosService.crear - idempotencia', () => {
     };
     mockKdsGateway = { emitirNuevoPedido: jest.fn() };
 
-    service = new PedidosService(mockTenantPrisma, mockKdsGateway);
+    service = new PedidosService(
+      mockTenantPrisma,
+      mockKdsGateway,
+      mockResumenVentas,
+    );
   });
 
   it('NO crea un pedido nuevo si la idempotencyKey ya existe, devuelve el existente', async () => {
@@ -198,7 +207,11 @@ describe('PedidosService.crear — validaciones y mesa virtual', () => {
       ),
     };
     mockKdsGateway = { emitirNuevoPedido: jest.fn() };
-    service = new PedidosService(mockTenantPrisma, mockKdsGateway);
+    service = new PedidosService(
+      mockTenantPrisma,
+      mockKdsGateway,
+      mockResumenVentas,
+    );
 
     mockTx.pedido.findUnique.mockResolvedValue(null);
     // BL-308: el restaurante del pedido para retirar es de este tenant.
@@ -338,7 +351,11 @@ describe('PedidosService.crear — mesa y restaurante (BL-309)', () => {
       ),
     };
     mockKdsGateway = { emitirNuevoPedido: jest.fn() };
-    service = new PedidosService(mockTenantPrisma, mockKdsGateway);
+    service = new PedidosService(
+      mockTenantPrisma,
+      mockKdsGateway,
+      mockResumenVentas,
+    );
 
     mockTx.pedido.findUnique.mockResolvedValue(null);
     // BL-308: el restaurante del pedido para retirar es de este tenant.
@@ -457,7 +474,11 @@ describe('PedidosService.crear — QR de mesa y restaurante del tenant (BL-204)'
       ),
     };
     mockKdsGateway = { emitirNuevoPedido: jest.fn() };
-    service = new PedidosService(mockTenantPrisma, mockKdsGateway);
+    service = new PedidosService(
+      mockTenantPrisma,
+      mockKdsGateway,
+      mockResumenVentas,
+    );
 
     mockTx.pedido.findUnique.mockResolvedValue(null);
     mockTx.itemCarta.findMany.mockResolvedValue([
@@ -652,8 +673,10 @@ describe('PedidosService.confirmarPagoEnTx / notificarPedidoConfirmado (BL-311, 
       emitirNuevoPedido: jest.fn(),
       emitirActualizacionPedido: jest.fn(),
       emitirEstadoMesa: jest.fn(),
+      emitirReportesActualizados: jest.fn(),
     };
-    service = new PedidosService({} as any, mockKdsGateway);
+    mockResumenVentas.recalcularRecientes.mockClear();
+    service = new PedidosService({} as any, mockKdsGateway, mockResumenVentas);
   });
 
   it('pasa el pedido de PENDIENTE_PAGO a RECIBIDO solo si sigue en PENDIENTE_PAGO', async () => {
@@ -767,6 +790,31 @@ describe('PedidosService.confirmarPagoEnTx / notificarPedidoConfirmado (BL-311, 
         actualizadoEn: '2026-10-10T23:45:00.000Z',
       },
     );
+  });
+
+  it('[TC-U-273] HU-012 notificarPedidoConfirmado: recalcula el resumen de ventas y avisa a los dashboards', async () => {
+    service.notificarPedidoConfirmado(TENANT_ID, pedidoConfirmado as any);
+    // El recálculo corre en segundo plano: se espera a que termine.
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(mockResumenVentas.recalcularRecientes).toHaveBeenCalledTimes(1);
+    expect(mockResumenVentas.recalcularRecientes).toHaveBeenCalledWith(
+      TENANT_ID,
+    );
+    expect(mockKdsGateway.emitirReportesActualizados).toHaveBeenCalledWith(
+      TENANT_ID,
+    );
+  });
+
+  it('[TC-U-274] HU-012 actualizarReportes: si el recálculo falla, no lanza ni avisa a los dashboards', async () => {
+    mockResumenVentas.recalcularRecientes.mockRejectedValueOnce(
+      new Error('base caída'),
+    );
+
+    await expect(
+      service.actualizarReportes(TENANT_ID),
+    ).resolves.toBeUndefined();
+    expect(mockKdsGateway.emitirReportesActualizados).not.toHaveBeenCalled();
   });
 
   it('HU-017 (BL-60) notificarEstadoMesa: avisa al mapa de mesas el nuevo estado de la mesa', () => {

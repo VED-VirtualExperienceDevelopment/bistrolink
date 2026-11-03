@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaClient, MesaEstado, Prisma } from '@prisma/client';
@@ -13,6 +14,7 @@ import { MesaDelQr } from '../qr-mesa/qr-mesa-acceso.service';
 import { KdsGateway, LlamadoPagoEfectivo } from './kds.gateway';
 import { aPedidoKds, PedidoParaKds } from './pedido-kds.mapper';
 import { generarTokenAcceso } from './token-acceso-pedido';
+import { ResumenVentasService } from '../reportes/resumen-ventas.service';
 
 // BL-311 (RD.03, prepago): el pedido espera el pago aprobado antes de ir a
 // cocina. La transición a RECIBIDO la hace la confirmación del pago.
@@ -77,9 +79,12 @@ function aPedidoCargado(
 
 @Injectable()
 export class PedidosService {
+  private readonly logger = new Logger(PedidosService.name);
+
   constructor(
     private readonly tenantPrisma: TenantPrismaService,
     private readonly kdsGateway: KdsGateway,
+    private readonly resumenVentas: ResumenVentasService,
   ) {}
 
   /**
@@ -251,6 +256,25 @@ export class PedidosService {
       estado: pedido.estado,
       actualizadoEn: (pedido.updatedAt ?? new Date()).toISOString(),
     });
+    // HU-012 (BL-219): el dashboard de reportes se actualiza con el cobro.
+    // En segundo plano: el pago ya está confirmado y no espera al resumen.
+    void this.actualizarReportes(tenantId);
+  }
+
+  /**
+   * HU-012 (BL-219): recalcula el resumen de ventas de las últimas horas y
+   * avisa a los dashboards abiertos. Nunca lanza: si falla, el job lo
+   * recalcula en la próxima corrida (ResumenVentasJob).
+   */
+  async actualizarReportes(tenantId: string): Promise<void> {
+    try {
+      await this.resumenVentas.recalcularRecientes(tenantId);
+      this.kdsGateway.emitirReportesActualizados(tenantId);
+    } catch (error) {
+      this.logger.warn(
+        `Resumen de ventas: no se pudo recalcular al cobrar (tenant ${tenantId}): ${(error as Error).message}`,
+      );
+    }
   }
 
   /**
