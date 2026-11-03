@@ -70,7 +70,7 @@ export default function CampanaStock() {
     if (devolverFoco) botonRef.current?.focus();
   }
 
-  function alPresionar(e: KeyboardEvent<HTMLDivElement>) {
+  function alPresionar(e: KeyboardEvent<HTMLUListElement>) {
     if (e.key === "Escape") {
       e.preventDefault();
       cerrar(true);
@@ -119,7 +119,6 @@ export default function CampanaStock() {
       {abierto && (
         <div
           id={idMenu}
-          onKeyDown={alPresionar}
           className="absolute right-0 top-full z-50 mt-2 w-80 max-w-[calc(100vw-1rem)] rounded-xl border border-outline-variant bg-surface-container-lowest shadow-lg"
         >
           <p className="border-b border-outline-variant px-4 py-3 text-label-md text-on-surface-variant">
@@ -133,6 +132,7 @@ export default function CampanaStock() {
           <ul
             role="menu"
             aria-label="Alertas de stock"
+            onKeyDown={alPresionar}
             className="max-h-96 overflow-y-auto py-1"
           >
             {alertas.map((alerta, i) => (
@@ -157,7 +157,7 @@ export default function CampanaStock() {
                     <span className="block text-body-sm text-on-surface-variant">
                       {textoUnidades(alerta)}
                     </span>
-                    {sinStock[alerta.itemId] && (
+                    {(sinStock[alerta.itemId] ?? 0) > 0 && (
                       <span className="block text-body-sm text-error">
                         {textoSinStock(sinStock[alerta.itemId])}
                       </span>
@@ -188,7 +188,7 @@ export default function CampanaStock() {
                 <span aria-hidden="true" className="material-symbols-outlined">
                   inventory_2
                 </span>
-                Ver el stock de la jornada
+                <span>Ver el stock de la jornada</span>
               </Link>
             </li>
           </ul>

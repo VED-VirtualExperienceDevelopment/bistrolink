@@ -89,7 +89,7 @@ export default function StockPage() {
         </p>
       )}
 
-      {items && items.length === 0 && (
+      {items?.length === 0 && (
         <p className="rounded-xl border border-outline-variant bg-surface-container-lowest px-4 py-6 text-center text-body-md text-on-surface-variant">
           La carta no tiene ítems todavía. Agregalos en Gestión de Carta.
         </p>

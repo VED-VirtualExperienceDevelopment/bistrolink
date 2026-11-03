@@ -34,6 +34,9 @@ export default function ReponerStockDialog({
     setGuardando(false);
   }, [alerta?.itemId]);
 
+  // Con error, el campo también lo anuncia.
+  const describidoPor = error ? `${id}-ayuda ${id}-error` : `${id}-ayuda`;
+
   async function guardar(e: FormEvent) {
     e.preventDefault();
     if (!alerta) return;
@@ -81,7 +84,7 @@ export default function ReponerStockDialog({
                 setError(null);
               }}
               aria-invalid={error !== null}
-              aria-describedby={`${id}-ayuda${error ? ` ${id}-error` : ""}`}
+              aria-describedby={describidoPor}
               className="min-h-12 w-full rounded-lg border border-outline-variant bg-surface-container-lowest px-3 text-body-md text-on-surface focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 aria-[invalid=true]:border-error"
             />
             <p

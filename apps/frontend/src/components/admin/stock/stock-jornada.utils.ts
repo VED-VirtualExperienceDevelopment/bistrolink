@@ -111,23 +111,38 @@ export function ajustesParaGuardar(
   const ajustes: AjusteStock[] = [];
   for (const item of items) {
     const fila = formulario[item.id];
-    if (!fila) continue;
-    const ajuste: AjusteStock = { itemId: item.id };
-    if (fila.controlaStock !== item.controlaStock) {
-      ajuste.controlaStock = fila.controlaStock;
-    }
-    if (fila.controlaStock) {
-      const stock = leerUnidades(fila.stock);
-      const umbral = leerUnidades(fila.umbral);
-      if (!stock.ok || !umbral.ok) continue;
-      if (stock.valor !== item.stockActual) ajuste.stockActual = stock.valor;
-      if (umbral.valor !== item.umbralAlerta) {
-        ajuste.umbralAlerta = umbral.valor;
-      }
-    }
-    if (Object.keys(ajuste).length > 1) ajustes.push(ajuste);
+    const ajuste = fila ? ajusteDeItem(item, fila) : null;
+    if (ajuste) ajustes.push(ajuste);
   }
   return ajustes;
+}
+
+/** Lo que cambió de un ítem, o null si no cambió nada o la fila tiene error. */
+function ajusteDeItem(item: ItemStock, fila: FilaStock): AjusteStock | null {
+  const ajuste: AjusteStock = { itemId: item.id };
+  if (fila.controlaStock !== item.controlaStock) {
+    ajuste.controlaStock = fila.controlaStock;
+  }
+  if (fila.controlaStock) {
+    const unidades = unidadesCambiadas(item, fila);
+    if (!unidades) return null;
+    Object.assign(ajuste, unidades);
+  }
+  return Object.keys(ajuste).length > 1 ? ajuste : null;
+}
+
+/** Unidades y aviso que cambiaron, o null si alguno está mal cargado. */
+function unidadesCambiadas(
+  item: ItemStock,
+  fila: FilaStock,
+): Pick<AjusteStock, "stockActual" | "umbralAlerta"> | null {
+  const stock = leerUnidades(fila.stock);
+  const umbral = leerUnidades(fila.umbral);
+  if (!stock.ok || !umbral.ok) return null;
+  const cambios: Pick<AjusteStock, "stockActual" | "umbralAlerta"> = {};
+  if (stock.valor !== item.stockActual) cambios.stockActual = stock.valor;
+  if (umbral.valor !== item.umbralAlerta) cambios.umbralAlerta = umbral.valor;
+  return cambios;
 }
 
 /**
