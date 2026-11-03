@@ -22,6 +22,8 @@ const NAV_ITEMS = [
   { href: '/admin/cobros', label: 'Cobros pendientes', icon: 'payments' },
   // Gestión de Carta - Administración del menú (categorías, ítems, disponibilidad)
   { href: '/admin/menu', label: 'Gestión de Carta', icon: 'restaurant_menu' },
+  // HU-015 (BL-120): stock de la jornada y alertas de stock bajo; solo Administrador.
+  { href: '/admin/stock', label: 'Stock', icon: 'inventory_2', roles: ['ADMIN'] },
   // HU-035 (BL-205): registro de auditoría, solo Administrador.
   { href: '/admin/auditoria', label: 'Auditoría', icon: 'history', roles: ['ADMIN'] },
   // HU-009 (BL-455): comprobantes fiscales y su estado ante la DGI; solo Administrador.

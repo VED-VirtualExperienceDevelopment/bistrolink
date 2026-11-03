@@ -1,11 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { io } from "socket.io-client";
 import { useKeycloakAuth } from "@/components/providers/KeycloakProvider";
 import { apiFetch, ApiError } from "@/lib/api-client";
-import { esDesconexionInesperada } from "@/components/admin/mesas/mapa-mesas.utils";
-import { crearRefrescoDiferido } from "@/components/admin/reportes/reportes.utils";
+import { abrirSocketStock } from "./socket-stock";
 import {
   acumularSinStock,
   anuncioAlerta,
@@ -13,10 +11,7 @@ import {
   type AlertaStock,
 } from "./stock.utils";
 
-const WS_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 const ALERTAS_PATH = "/admin/stock/alertas";
-/** Espera desde el último evento antes de volver a pedir la lista. */
-const DEMORA_RECARGA_MS = 1000;
 
 export interface EstadoAlertasStock {
   alertas: AlertaStock[];
@@ -72,42 +67,16 @@ export function useAlertasStock(habilitado: boolean): EstadoAlertasStock {
 
   useEffect(() => {
     if (!token || !habilitado) return;
-    const recarga = crearRefrescoDiferido(() => {
-      void cargarRef.current();
-    }, DEMORA_RECARGA_MS);
-    const socket = io(WS_URL, {
-      auth: { token },
-      reconnection: true,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
+    return abrirSocketStock(token, {
+      alAlerta: (alerta) => {
+        const texto = anuncioAlerta(alertasRef.current, alerta);
+        if (texto) setAnuncio(texto);
+        setSinStock((actual) => acumularSinStock(actual, alerta));
+      },
+      alCambiar: () => {
+        void cargarRef.current();
+      },
     });
-    let huboConexion = false;
-
-    socket.on("stock:alerta", (alerta: AlertaStock) => {
-      const texto = anuncioAlerta(alertasRef.current, alerta);
-      if (texto) setAnuncio(texto);
-      setSinStock((actual) => acumularSinStock(actual, alerta));
-      recarga.programar();
-    });
-    socket.on("stock:actualizado", recarga.programar);
-    socket.on("connect", () => {
-      if (huboConexion) recarga.programar();
-      huboConexion = true;
-    });
-    socket.on("disconnect", (motivo) => {
-      // Si lo cortó el servidor, socket.io no reintenta solo.
-      if (
-        esDesconexionInesperada(motivo) &&
-        motivo === "io server disconnect"
-      ) {
-        socket.connect();
-      }
-    });
-
-    return () => {
-      recarga.cancelar();
-      socket.disconnect();
-    };
   }, [token, habilitado]);
 
   const reponer = useCallback(

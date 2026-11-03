@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import Link from "next/link";
 import ReponerStockDialog from "./ReponerStockDialog";
 import { useAlertasStock } from "./useAlertasStock";
 import {
@@ -19,6 +20,8 @@ const CLASE_BADGE = {
   ambar: "bg-amber-400 text-amber-950",
   rojo: "bg-error text-on-error",
 } as const;
+const CLASE_OPCION =
+  "hover:bg-surface-container-low focus:bg-surface-container-low focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary";
 const CLASE_ESTADO = {
   STOCK_CRITICO: "bg-amber-100 text-amber-900",
   AGOTADO: "bg-error-container text-on-error-container",
@@ -32,7 +35,8 @@ const CLASE_ESTADO = {
  *   ámbar (por agotarse) o rojo (algún agotado).
  * - Menú con flechas, Inicio y Fin; Escape lo cierra y devuelve el foco a la
  *   campana; Tab o un clic afuera lo cierran.
- * - Cada alerta abre «Reponer stock» sin salir de la pantalla.
+ * - Cada alerta abre «Reponer stock» sin salir de la pantalla; al final,
+ *   «Ver el stock de la jornada» lleva a /admin/stock.
  * - Las alertas nuevas se anuncian en una región aria-live, sin mover el
  *   foco.
  */
@@ -42,7 +46,7 @@ export default function CampanaStock() {
   const [reponiendo, setReponiendo] = useState<AlertaStock | null>(null);
   const botonRef = useRef<HTMLButtonElement>(null);
   const contenedorRef = useRef<HTMLDivElement>(null);
-  const itemsRef = useRef<(HTMLButtonElement | null)[]>([]);
+  const itemsRef = useRef<(HTMLElement | null)[]>([]);
   const idMenu = useId();
   const color = colorBadge(alertas);
 
@@ -77,9 +81,10 @@ export default function CampanaStock() {
       return;
     }
     const actual = itemsRef.current.indexOf(
-      document.activeElement as HTMLButtonElement,
+      document.activeElement as HTMLElement,
     );
-    const siguiente = siguienteIndice(actual, alertas.length, e.key);
+    // Las alertas y, al final, el enlace a la pantalla de stock.
+    const siguiente = siguienteIndice(actual, alertas.length + 1, e.key);
     if (siguiente !== null) {
       e.preventDefault();
       itemsRef.current[siguiente]?.focus();
@@ -120,57 +125,73 @@ export default function CampanaStock() {
           <p className="border-b border-outline-variant px-4 py-3 text-label-md text-on-surface-variant">
             Stock
           </p>
-          {alertas.length === 0 ? (
+          {alertas.length === 0 && (
             <p className="px-4 py-6 text-center text-body-md text-on-surface-variant">
               No hay ítems por agotarse.
             </p>
-          ) : (
-            <ul
-              role="menu"
-              aria-label="Alertas de stock"
-              className="max-h-96 overflow-y-auto py-1"
-            >
-              {alertas.map((alerta, i) => (
-                <li key={alerta.itemId} role="none">
-                  <button
-                    ref={(el) => {
-                      itemsRef.current[i] = el;
-                    }}
-                    type="button"
-                    role="menuitem"
-                    tabIndex={-1}
-                    onClick={() => {
-                      setReponiendo(alerta);
-                      setAbierto(false);
-                    }}
-                    className="flex w-full items-start gap-3 px-4 py-3 text-left hover:bg-surface-container-low focus:bg-surface-container-low focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary"
-                  >
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-body-md text-on-surface">
-                        {alerta.nombre}
-                      </span>
-                      <span className="block text-body-sm text-on-surface-variant">
-                        {textoUnidades(alerta)}
-                      </span>
-                      {sinStock[alerta.itemId] && (
-                        <span className="block text-body-sm text-error">
-                          {textoSinStock(sinStock[alerta.itemId])}
-                        </span>
-                      )}
-                      <span className="mt-1 block text-body-sm text-primary">
-                        Reponer stock
-                      </span>
-                    </span>
-                    <span
-                      className={`flex-none rounded-full px-2 py-0.5 text-label-sm ${CLASE_ESTADO[alerta.tipo]}`}
-                    >
-                      {ETIQUETA_TIPO[alerta.tipo]}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
           )}
+          <ul
+            role="menu"
+            aria-label="Alertas de stock"
+            className="max-h-96 overflow-y-auto py-1"
+          >
+            {alertas.map((alerta, i) => (
+              <li key={alerta.itemId} role="none">
+                <button
+                  ref={(el) => {
+                    itemsRef.current[i] = el;
+                  }}
+                  type="button"
+                  role="menuitem"
+                  tabIndex={-1}
+                  onClick={() => {
+                    setReponiendo(alerta);
+                    setAbierto(false);
+                  }}
+                  className={`flex w-full items-start gap-3 px-4 py-3 text-left ${CLASE_OPCION}`}
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-body-md text-on-surface">
+                      {alerta.nombre}
+                    </span>
+                    <span className="block text-body-sm text-on-surface-variant">
+                      {textoUnidades(alerta)}
+                    </span>
+                    {sinStock[alerta.itemId] && (
+                      <span className="block text-body-sm text-error">
+                        {textoSinStock(sinStock[alerta.itemId])}
+                      </span>
+                    )}
+                    <span className="mt-1 block text-body-sm text-primary">
+                      Reponer stock
+                    </span>
+                  </span>
+                  <span
+                    className={`flex-none rounded-full px-2 py-0.5 text-label-sm ${CLASE_ESTADO[alerta.tipo]}`}
+                  >
+                    {ETIQUETA_TIPO[alerta.tipo]}
+                  </span>
+                </button>
+              </li>
+            ))}
+            <li role="none" className="border-t border-outline-variant">
+              <Link
+                ref={(el) => {
+                  itemsRef.current[alertas.length] = el;
+                }}
+                href="/admin/stock"
+                role="menuitem"
+                tabIndex={-1}
+                onClick={() => setAbierto(false)}
+                className={`flex min-h-12 items-center gap-2 px-4 text-body-md text-primary ${CLASE_OPCION}`}
+              >
+                <span aria-hidden="true" className="material-symbols-outlined">
+                  inventory_2
+                </span>
+                Ver el stock de la jornada
+              </Link>
+            </li>
+          </ul>
         </div>
       )}
 

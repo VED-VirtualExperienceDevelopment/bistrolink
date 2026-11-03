@@ -77,6 +77,9 @@ export const ETIQUETAS_ACCION: Record<string, string> = {
   CARTA_CATEGORIA_ELIMINADA: "Categoría eliminada",
   MESA_PEDIDOS_CANCELADOS: "Pedidos cancelados al cerrar la mesa",
   PAGO_EFECTIVO_REGISTRADO: "Cobro en efectivo",
+  // HU-015 (BL-120): stock de la jornada.
+  CARTA_ITEM_STOCK_AJUSTADO: "Stock de un ítem ajustado",
+  CARTA_ITEM_VENDIDO_SIN_STOCK: "Venta sin stock",
 };
 
 export function etiquetaAccion(accion: string): string {
@@ -150,6 +153,10 @@ const NOMBRE_CAMPO: Record<string, string> = {
   plan: "Plan",
   restauranteNombre: "Nombre del restaurante",
   restauranteDireccion: "Dirección del restaurante",
+  // HU-015 (BL-120): stock de la jornada.
+  controlaStock: "Controla stock",
+  stockActual: "Unidades",
+  umbralAlerta: "Aviso con",
 };
 
 /** HU-020 (BL-72): valores de un campo que se muestran con otro texto. */
@@ -210,7 +217,13 @@ export function cambiosDelRegistro(
   const sinValor = camposSinValor(registro.detalle, new Set(campos)).map(
     (campo) => `${NOMBRE_CAMPO[campo] ?? campo}: modificado`,
   );
-  return [...conValor, ...sinValor];
+  // HU-015 (BL-120): unidades que se vendieron sin stock (ADR 0009).
+  const unidadesDeMas = registro.detalle?.unidadesDeMas;
+  const sinStock =
+    typeof unidadesDeMas === "number"
+      ? [`Unidades vendidas sin stock: ${unidadesDeMas}`]
+      : [];
+  return [...conValor, ...sinValor, ...sinStock];
 }
 
 /**
@@ -232,7 +245,11 @@ export function autorDelRegistro(
   registro: Pick<RegistroAuditoria, "usuario" | "actorKeycloakId">,
 ): string {
   if (registro.usuario) return registro.usuario.nombre;
-  if (registro.actorKeycloakId.startsWith("script:"))
+  // HU-015 (BL-120): «sistema:» es el descuento de stock al confirmar un pago.
+  if (
+    registro.actorKeycloakId.startsWith("script:") ||
+    registro.actorKeycloakId.startsWith("sistema:")
+  )
     return "Proceso automático";
   return "Plataforma o usuario eliminado";
 }
