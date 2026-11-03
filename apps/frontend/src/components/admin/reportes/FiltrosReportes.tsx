@@ -1,5 +1,6 @@
 "use client";
 
+import { Fragment } from "react";
 import {
   CANALES,
   PERIODOS,
@@ -106,31 +107,34 @@ export default function FiltrosReportes({
         <legend className={CLASE_LEYENDA}>Canal de venta</legend>
         <div className="flex flex-wrap gap-2">
           {CANALES.map(({ valor, etiqueta, descripcion, proximamente }) => (
-            <label
-              key={valor}
-              title={descripcion}
-              className={claseChip(filtros.canal === valor, proximamente)}
-            >
-              <input
-                type="radio"
-                name="canal"
-                value={valor}
-                checked={filtros.canal === valor}
-                disabled={proximamente}
-                aria-describedby={`canal-${valor}-ayuda`}
-                onChange={() => onCambiar({ ...filtros, canal: valor })}
-                className="sr-only"
-              />
-              {etiqueta}
-              {proximamente && (
-                <span className="rounded-full bg-surface-container-high px-2 py-0.5 text-label-sm text-on-surface-variant">
-                  Próximamente
-                </span>
-              )}
+            // La descripción va afuera del label: así el nombre accesible del
+            // radio es solo el canal («Web») y la descripción se lee aparte.
+            <Fragment key={valor}>
+              <label
+                title={descripcion}
+                className={claseChip(filtros.canal === valor, proximamente)}
+              >
+                <input
+                  type="radio"
+                  name="canal"
+                  value={valor}
+                  checked={filtros.canal === valor}
+                  disabled={proximamente}
+                  aria-describedby={`canal-${valor}-ayuda`}
+                  onChange={() => onCambiar({ ...filtros, canal: valor })}
+                  className="sr-only"
+                />
+                {etiqueta}
+                {proximamente && (
+                  <span className="rounded-full bg-surface-container-high px-2 py-0.5 text-label-sm text-on-surface-variant">
+                    Próximamente
+                  </span>
+                )}
+              </label>
               <span id={`canal-${valor}-ayuda`} className="sr-only">
                 {descripcion}
               </span>
-            </label>
+            </Fragment>
           ))}
         </div>
         <p className={`mt-2 ${CLASE_AYUDA}`}>

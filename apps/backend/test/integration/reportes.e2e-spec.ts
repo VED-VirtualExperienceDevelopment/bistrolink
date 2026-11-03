@@ -281,7 +281,7 @@ describe('HU-012 (BL-108): reportes de ventas', () => {
   }, 30000);
 
   itConAdmin(
-    '[TC-I-140] HU-012: el administrador ve las ventas del día con todos los canales: totales, horas del local, platos, dentro y fuera del local y rotación',
+    '[TC-I-144] HU-012: el administrador ve las ventas del día con todos los canales: totales, horas del local, platos, dentro y fuera del local y rotación',
     async () => {
       const token = await getToken(ADMIN_USER as string, ADMIN_PASS as string);
 
@@ -329,7 +329,7 @@ describe('HU-012 (BL-108): reportes de ventas', () => {
   );
 
   itConAdmin(
-    '[TC-I-141] HU-012: desglose por canal: en el local (QR y mozo), Web y WhatsApp; la rotación solo aplica en el local',
+    '[TC-I-145] HU-012: desglose por canal: en el local (QR y mozo), Web y WhatsApp; la rotación solo aplica en el local',
     async () => {
       const token = await getToken(ADMIN_USER as string, ADMIN_PASS as string);
       const pedir = (canal: string) =>
@@ -362,12 +362,12 @@ describe('HU-012 (BL-108): reportes de ventas', () => {
     },
   );
 
-  it('[TC-I-142] HU-012: sin token, 401', async () => {
+  it('[TC-I-146] HU-012: sin token, 401', async () => {
     await request(app.getHttpServer()).get('/admin/reportes').expect(401);
   });
 
   itConMozo(
-    '[TC-I-143] HU-012: el mozo no accede a los reportes (403)',
+    '[TC-I-147] HU-012: el mozo no accede a los reportes (403)',
     async () => {
       const token = await getToken(MOZO_USER as string, MOZO_PASS as string);
 
@@ -379,7 +379,7 @@ describe('HU-012 (BL-108): reportes de ventas', () => {
   );
 
   itConCocina(
-    '[TC-I-144] HU-012: cocina no accede a los reportes (403)',
+    '[TC-I-148] HU-012: cocina no accede a los reportes (403)',
     async () => {
       const token = await getToken(
         COCINA_USER as string,
@@ -394,7 +394,7 @@ describe('HU-012 (BL-108): reportes de ventas', () => {
   );
 
   itConAdmin(
-    '[TC-I-145] HU-012: un rango en el futuro da un reporte vacío; filtros inválidos dan 400, nunca 5xx',
+    '[TC-I-149] HU-012: un rango en el futuro da un reporte vacío; filtros inválidos dan 400, nunca 5xx',
     async () => {
       const token = await getToken(ADMIN_USER as string, ADMIN_PASS as string);
       const pedir = (query: string) =>
@@ -425,7 +425,7 @@ describe('HU-012 (BL-108): reportes de ventas', () => {
     },
   );
 
-  it('[TC-I-146] BL-219: el resumen solo cuenta pagos aprobados y recalcularlo de nuevo deja lo mismo', async () => {
+  it('[TC-I-150] BL-219: el resumen solo cuenta pagos aprobados y recalcularlo de nuevo deja lo mismo', async () => {
     const leer = () =>
       enTenant<unknown[]>(TENANT_A, (tx) =>
         tx.resumenVentasHora.findMany({
@@ -456,7 +456,7 @@ describe('HU-012 (BL-108): reportes de ventas', () => {
     ]);
   });
 
-  it('[TC-I-147] BL-110: otro establecimiento no ve el resumen ni las métricas del tenant A (RLS)', async () => {
+  it('[TC-I-151] BL-110: otro establecimiento no ve el resumen ni las métricas del tenant A (RLS)', async () => {
     const filasDeA = await enTenant<number>(TENANT_B, (tx) =>
       tx.resumenVentasHora.count({
         where: {
@@ -476,7 +476,7 @@ describe('HU-012 (BL-108): reportes de ventas', () => {
     expect(reporteB.rotacionMesas).toMatchObject({ sesiones: 0 });
   });
 
-  it('[TC-I-148] BL-109: el reporte del último mes, con 3 sprints de datos, responde en menos de 2 s', async () => {
+  it('[TC-I-152] BL-109: el reporte del último mes, con 3 sprints de datos, responde en menos de 2 s', async () => {
     // 6 semanas × 12 horas de venta × 3 canales × 2 medios, y 20 platos por
     // hora y canal.
     const ventas: Prisma.ResumenVentasHoraCreateManyInput[] = [];

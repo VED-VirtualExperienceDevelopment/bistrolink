@@ -14,6 +14,7 @@
 | 1.7     | 02/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-063 y 064: e-Factura con RUT y razón social desde la pantalla de pago (HU-009, BL-453). |
 | 1.8     | 02/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-063 cambia: sin aceptar el aviso no se avisa al mozo (BL-453, ajuste de staging).       |
 | 1.9     | 03/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-065: comprobantes del administrador y su estado ante la DGI (HU-009, BL-455).           |
+| 1.10    | 03/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-066 a 068: dashboard de reportes del administrador (HU-012, BL-108).                    |
 
 Plantilla para cargar en Kiwi la descripción de casos TC-E (Playwright)
 nuevos o que cambiaron (BL-435). La usa
@@ -58,7 +59,7 @@ Reglas:
 
 ## Casos para cargar
 
-## TC-E-065
+## TC-E-066
 
 ### Precondición
 
@@ -66,14 +67,48 @@ Administrador del establecimiento del seed logueado en el panel.
 
 ### Pasos
 
-1. Desde el menú, abrir «Comprobantes».
-2. Filtrar por estado ante la DGI «Rechazado».
-3. Poner «Desde» posterior a «Hasta».
-4. Revisar la pantalla con axe-core (WCAG 2.1 AA).
+1. Desde el menú, abrir «Reportes».
+2. Elegir el período «Últimos 7 días».
+3. Elegir el canal «Web».
+4. Mirar el canal WhatsApp.
+5. Revisar la pantalla con axe-core (WCAG 2.1 AA).
 
 ### Resultado esperado
 
-1. Se abre la pantalla «Comprobantes» con los filtros de fecha (hoy) y estado.
-2. La API responde 200 y solo trae comprobantes RECHAZADOS; se ve la tabla o el aviso «No hay comprobantes con esos filtros».
-3. Aparece el aviso de que «Desde» tiene que ser anterior o igual a «Hasta».
-4. Sin errores graves ni críticos de accesibilidad.
+1. Se abre «Reportes» con el período de hoy: la API responde 200, se ven las tarjetas (Total vendido, …) y las tablas equivalentes de los gráficos están en la página.
+2. La API responde 200 con los últimos 7 días y el chip queda elegido.
+3. La API responde 200 y la rotación de mesas dice «No aplica».
+4. Está deshabilitado, con «Próximamente».
+5. Sin errores graves ni críticos de accesibilidad.
+
+## TC-E-067
+
+### Precondición
+
+Administrador logueado en «Reportes».
+
+### Pasos
+
+1. Elegir el período «Personalizado».
+2. Poner «Desde» 31/12/2026 y «Hasta» 01/01/2026.
+
+### Resultado esperado
+
+1. Aparecen los campos «Desde» y «Hasta».
+2. Aparece el aviso de que hay que elegir las dos fechas con «desde» igual o anterior a «hasta», los campos quedan marcados como inválidos y no se consulta la API con esas fechas.
+
+## TC-E-068
+
+### Precondición
+
+Mozo del establecimiento del seed logueado en el panel.
+
+### Pasos
+
+1. Mirar el menú lateral.
+2. Entrar directo a /admin/reportes.
+
+### Resultado esperado
+
+1. No aparece «Reportes».
+2. Vuelve al mapa de mesas.
