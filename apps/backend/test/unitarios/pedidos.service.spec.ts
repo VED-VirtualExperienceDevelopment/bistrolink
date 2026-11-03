@@ -886,6 +886,26 @@ describe('PedidosService.confirmarPagoEnTx / notificarPedidoConfirmado (BL-311, 
     expect(mockDescuentoStock.avisar).toHaveBeenCalledWith(TENANT_ID, avisos);
   });
 
+  it('[TC-U-370] HU-015: verificarStockEnTx verifica en la misma transacción y el 409 llega a quien cobra', async () => {
+    mockDescuentoStock.verificarPedidoEnTx.mockClear();
+
+    await service.verificarStockEnTx(mockTx, 'pedido-nuevo');
+
+    expect(mockDescuentoStock.verificarPedidoEnTx).toHaveBeenCalledTimes(1);
+    expect(mockDescuentoStock.verificarPedidoEnTx).toHaveBeenCalledWith(
+      mockTx,
+      'pedido-nuevo',
+    );
+
+    mockDescuentoStock.verificarPedidoEnTx.mockRejectedValueOnce(
+      new ConflictException('"Milanesa" está agotado'),
+    );
+
+    await expect(
+      service.verificarStockEnTx(mockTx, 'pedido-nuevo'),
+    ).rejects.toThrow('"Milanesa" está agotado');
+  });
+
   it('[TC-U-273] HU-012 notificarPedidoConfirmado: recalcula el resumen de ventas y avisa a los dashboards', async () => {
     service.notificarPedidoConfirmado(TENANT_ID, pedidoConfirmado as any);
     // El recálculo corre en segundo plano: se espera a que termine.
