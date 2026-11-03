@@ -18,6 +18,7 @@ import {
   calcularRebaja17934,
   RebajaIva,
 } from '../cfe/rebaja-iva';
+import { receptorParaGuardar } from '../cfe/receptor-fiscal';
 import { PedidosService } from '../pedidos/pedidos.service';
 import { PedidoParaKds } from '../pedidos/pedido-kds.mapper';
 import { registrarCambioPago, textoCorto } from './historial-pago';
@@ -288,7 +289,12 @@ export class PagosService {
                 comprobantes: {
                   orderBy: { createdAt: 'asc' },
                   take: 1,
-                  select: { serie: true, numero: true, urlConsulta: true },
+                  select: {
+                    tipoCfe: true,
+                    serie: true,
+                    numero: true,
+                    urlConsulta: true,
+                  },
                 },
               },
             },
@@ -322,6 +328,7 @@ export class PagosService {
         motivoRechazo: pago.motivoRechazo,
       },
       comprobante: comprobante && {
+        tipoCfe: comprobante.tipoCfe,
         serie: comprobante.serie,
         numero: comprobante.numero,
         urlConsulta: comprobante.urlConsulta,
@@ -389,6 +396,16 @@ export class PagosService {
           );
           if (monto.lessThanOrEqualTo(0)) {
             throw new BadRequestException('El pedido no tiene monto a cobrar');
+          }
+
+          // HU-009 (BL-453): e-Factura. En la misma transacción que el
+          // pago: el CFE se emite cuando se aprueba y lee el pedido.
+          const receptor = receptorParaGuardar(dto.receptorFiscal, new Date());
+          if (receptor) {
+            await tx.pedido.update({
+              where: { id: pedido.id },
+              data: receptor,
+            });
           }
 
           await tx.mesa.update({

@@ -316,6 +316,15 @@ describe("comprobante en la pantalla de pago aprobado", () => {
     });
   });
 
+  it("HU-009 (BL-453): una e-Factura (111) se muestra como e-Factura; 101 como e-Ticket", () => {
+    const con = (tipoCfe: string) =>
+      estadoComprobante({
+        comprobante: { tipoCfe, serie: "A", numero: 7, urlConsulta: null },
+      });
+    expect(con("111")).toMatchObject({ texto: "e-Factura A-0000007" });
+    expect(con("101")).toMatchObject({ texto: "e-Ticket A-0000007" });
+  });
+
   it("comprobante sin enlace: se muestra igual, sin botón", () => {
     expect(
       estadoComprobante({

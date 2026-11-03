@@ -4,6 +4,7 @@ import {
   CfeService,
   ESPERAS_REINTENTO_CFE_MS,
   esErrorTransitorio,
+  esRechazoDeLaEFactura,
 } from '../../src/cfe/cfe.service';
 import { SurtecError } from '../../src/cfe/surtec.client';
 
@@ -47,7 +48,11 @@ describe('CfeService.intentarEmitir', () => {
     comprobanteFiscal: { upsert: jest.Mock };
   };
   let tenantPrisma: { runInTenantContext: jest.Mock };
-  let surtec: { configurado: jest.Mock; emitirETicket: jest.Mock };
+  let surtec: {
+    configurado: jest.Mock;
+    emitirETicket: jest.Mock;
+    emitirEFactura: jest.Mock;
+  };
   let service: CfeService;
 
   beforeEach(() => {
@@ -70,11 +75,107 @@ describe('CfeService.intentarEmitir', () => {
     surtec = {
       configurado: jest.fn().mockReturnValue(true),
       emitirETicket: jest.fn().mockResolvedValue(EMITIDO),
+      emitirEFactura: jest.fn().mockResolvedValue(EMITIDO),
     };
     service = new CfeService(tenantPrisma as any, surtec as any);
   });
 
   afterEach(() => jest.restoreAllMocks());
+
+  describe('HU-009 (BL-453): e-Factura', () => {
+    const conReceptor = () =>
+      pagoBd({
+        pedido: {
+          ...pagoBd().pedido,
+          receptorRut: '219999830019',
+          receptorRazonSocial: 'Comensal Ejemplo SAS',
+        },
+      });
+
+    it('el pedido tiene RUT y razón social: emite la e-Factura (111) con ese receptor y la guarda como 111', async () => {
+      tx.pago.findUnique.mockResolvedValue(conReceptor());
+
+      const resumen = await service.intentarEmitir(TENANT_ID, PAGO_ID);
+
+      expect(surtec.emitirETicket).not.toHaveBeenCalled();
+      expect(surtec.emitirEFactura).toHaveBeenCalledWith(
+        expect.objectContaining({
+          rutEmisor: '214198620015',
+          idExterno: `bl-${PAGO_ID}`,
+          adenda: 'Pedido 3cdf1dad',
+        }),
+        { rut: '219999830019', razonSocial: 'Comensal Ejemplo SAS' },
+      );
+      const { create, where } = tx.comprobanteFiscal.upsert.mock.calls[0][0];
+      expect(where).toEqual({ idExterno: `bl-${PAGO_ID}` });
+      expect(create).toMatchObject({ tipoCfe: '111' });
+      expect(resumen).toMatchObject({ tipoCfe: '111', serie: 'A' });
+    });
+
+    it('la rebaja de IVA (HU-037) sigue en la adenda de la e-Factura', async () => {
+      tx.pago.findUnique.mockResolvedValue(
+        pagoBd({
+          medioPago: 'MERCADOPAGO',
+          pedido: { ...conReceptor().pedido, canal: 'QR' },
+        }),
+      );
+
+      await service.intentarEmitir(TENANT_ID, PAGO_ID);
+
+      expect(surtec.emitirEFactura.mock.calls[0][0].adenda).toBe(
+        'Pedido 3cdf1dad. Reducción IVA Ley N° 17.934',
+      );
+    });
+
+    it.each([
+      ['sin RUT', { receptorRut: null, receptorRazonSocial: 'Ejemplo SAS' }],
+      [
+        'sin razón social',
+        { receptorRut: '219999830019', receptorRazonSocial: null },
+      ],
+      ['anonimizado', { receptorRut: null, receptorRazonSocial: null }],
+    ])('%s: emite un e-Ticket', async (_caso, receptor) => {
+      tx.pago.findUnique.mockResolvedValue(
+        pagoBd({ pedido: { ...pagoBd().pedido, ...receptor } }),
+      );
+
+      await service.intentarEmitir(TENANT_ID, PAGO_ID);
+
+      expect(surtec.emitirEFactura).not.toHaveBeenCalled();
+      expect(surtec.emitirETicket).toHaveBeenCalledTimes(1);
+      expect(tx.comprobanteFiscal.upsert.mock.calls[0][0].create.tipoCfe).toBe(
+        '101',
+      );
+    });
+
+    it('Surtec rechaza la e-Factura (400): emite un e-Ticket con otra clave y sin el RUT en el log', async () => {
+      tx.pago.findUnique.mockResolvedValue(conReceptor());
+      surtec.emitirEFactura.mockRejectedValue(
+        new SurtecError('Surtec rechazó la emisión (HTTP 400): {}', 400),
+      );
+
+      const resumen = await service.intentarEmitir(TENANT_ID, PAGO_ID);
+
+      expect(surtec.emitirETicket).toHaveBeenCalledWith(
+        expect.objectContaining({ idExterno: `bl-${PAGO_ID}-et` }),
+      );
+      const { create, where } = tx.comprobanteFiscal.upsert.mock.calls[0][0];
+      expect(where).toEqual({ idExterno: `bl-${PAGO_ID}-et` });
+      expect(create).toMatchObject({ tipoCfe: '101' });
+      expect(resumen).toMatchObject({ tipoCfe: '101' });
+      const logs = JSON.stringify((Logger.warn as jest.Mock).mock.calls);
+      expect(logs).not.toContain('219999830019');
+      expect(logs).not.toContain('Comensal Ejemplo SAS');
+    });
+
+    it('Surtec caído (503) con la e-Factura: no cambia a e-Ticket (se reintenta la e-Factura)', async () => {
+      tx.pago.findUnique.mockResolvedValue(conReceptor());
+      surtec.emitirEFactura.mockRejectedValue(new SurtecError('caído', 503));
+
+      expect(await service.intentarEmitir(TENANT_ID, PAGO_ID)).toBeNull();
+      expect(surtec.emitirETicket).not.toHaveBeenCalled();
+    });
+  });
 
   it('emite el eTicket con el RUT del tenant, el id del pago como id_externo y las líneas del pedido', async () => {
     await service.intentarEmitir(TENANT_ID, PAGO_ID);
@@ -149,6 +250,7 @@ describe('CfeService.intentarEmitir', () => {
       create.retencionHasta.getFullYear() - create.fechaEmision.getFullYear(),
     ).toBe(5);
     expect(resumen).toEqual({
+      tipoCfe: '101',
       serie: 'A',
       numero: 49,
       urlConsulta: EMITIDO.url,
@@ -175,7 +277,9 @@ describe('CfeService.intentarEmitir', () => {
   it('si el pago ya tiene comprobante, lo devuelve y NO vuelve a emitir', async () => {
     tx.pago.findUnique.mockResolvedValue(
       pagoBd({
-        comprobantes: [{ serie: 'A', numero: 7, urlConsulta: 'https://x' }],
+        comprobantes: [
+          { tipoCfe: '111', serie: 'A', numero: 7, urlConsulta: 'https://x' },
+        ],
       }),
     );
 
@@ -183,6 +287,7 @@ describe('CfeService.intentarEmitir', () => {
 
     expect(surtec.emitirETicket).not.toHaveBeenCalled();
     expect(resumen).toEqual({
+      tipoCfe: '111',
       serie: 'A',
       numero: 7,
       urlConsulta: 'https://x',
@@ -300,6 +405,7 @@ describe('CfeService.emitirConReintentos (BL-311)', () => {
     const resumen = await service.emitirConReintentos(TENANT_ID, PAGO_ID);
 
     expect(resumen).toEqual({
+      tipoCfe: '101',
       serie: 'A',
       numero: 49,
       urlConsulta: EMITIDO.url,
@@ -368,5 +474,18 @@ describe('CfeService.emitirConReintentos (BL-311)', () => {
     surtec.emitirETicket.mockRejectedValue(new SurtecError('x', 400));
 
     expect(service.emitirEnSegundoPlano(TENANT_ID, PAGO_ID)).toBeUndefined();
+  });
+});
+
+describe('esRechazoDeLaEFactura (HU-009, BL-453)', () => {
+  it.each([
+    [new SurtecError('rechazo', 400), true],
+    [new SurtecError('rechazo', 422), true],
+    [new SurtecError('demasiadas', 429), false],
+    [new SurtecError('caído', 503), false],
+    [new SurtecError('sin status'), false],
+    [new Error('fetch failed'), false],
+  ])('%s => %s', (error, esperado) => {
+    expect(esRechazoDeLaEFactura(error)).toBe(esperado);
   });
 });

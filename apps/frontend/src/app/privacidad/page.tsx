@@ -44,8 +44,8 @@ const LI = 'text-[15px] leading-relaxed text-[#3d3a42]';
  * HU-036 (BL-206): política de privacidad (Ley 18.331 y Decreto 414/009).
  * El responsable de los datos es el establecimiento; BistroLink es la
  * plataforma que los trata por su cuenta. El texto describe lo que el
- * sistema hace hoy: si cambia (por ejemplo, la e-Factura de HU-009), se
- * actualiza junto con la funcionalidad.
+ * sistema hace hoy: si cambia, se actualiza junto con la funcionalidad
+ * (HU-009, BL-453: e-Factura con RUT y razón social).
  */
 export default async function PoliticaPrivacidadPage({ searchParams }: PageProps) {
   const datos = await obtenerDatos(await searchParams);
@@ -75,7 +75,8 @@ export default async function PoliticaPrivacidadPage({ searchParams }: PageProps
         ) : (
           <p className={P}>
             El responsable es el local donde hacés el pedido: su razón social y
-            su RUT figuran en el comprobante fiscal (e-Ticket) de tu compra.
+            su RUT figuran en el comprobante fiscal (e-Ticket o e-Factura) de
+            tu compra.
           </p>
         )}
         <p className={P}>
@@ -104,6 +105,15 @@ export default async function PoliticaPrivacidadPage({ searchParams }: PageProps
             porque lo exige la normativa fiscal (DGI).
           </li>
           <li className={LI}>
+            <strong>e-Factura:</strong> si la pedís, ingresás el RUT y la razón
+            social. Solo se guardan si aceptás este aviso, junto al pedido, para
+            emitir la e-Factura a ese nombre. Sin aceptarlo no se emite la
+            e-Factura: podés borrar los datos o desmarcarla y recibís un
+            e-Ticket. Los datos figuran en la e-Factura, que se conserva 5 años
+            por la normativa fiscal. Si pedís que se eliminen, el local los
+            anonimiza en sus registros; la e-Factura ya emitida no cambia.
+          </li>
+          <li className={LI}>
             <strong>Tu navegador:</strong> mientras pagás, la pestaña guarda el
             pedido en curso para que puedas retomarlo si recargás la página. No
             guarda datos de la tarjeta y se borra al cerrar la pestaña.
@@ -115,7 +125,8 @@ export default async function PoliticaPrivacidadPage({ searchParams }: PageProps
           <li className={LI}>Mercado Pago, para procesar los pagos con tarjeta.</li>
           <li className={LI}>
             El proveedor de facturación electrónica habilitado por la DGI, para
-            emitir el comprobante.
+            emitir el comprobante (y, si pedís e-Factura, con tu RUT y tu razón
+            social, que también recibe la DGI).
           </li>
           <li className={LI}>
             Los proveedores de infraestructura en la nube donde funciona

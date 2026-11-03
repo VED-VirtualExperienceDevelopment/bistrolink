@@ -240,3 +240,26 @@ export function hayCambios(cambios: CambiosConfiguracion): boolean {
 export function sinMediosDePago(formulario: FormularioConfiguracion): boolean {
   return MEDIOS_PAGO.every(({ campo }) => !formulario[campo]);
 }
+
+// ── HU-009 (BL-453): anonimizar los datos de la e-Factura de un comensal ──
+
+/** POST: anonimiza el RUT y la razón social en los pedidos con ese RUT. */
+export const RUTA_ANONIMIZAR_RECEPTOR =
+  "/admin/configuracion/privacidad/anonimizar-receptor";
+
+/** Respuesta del POST: cuántos pedidos tenían ese RUT. */
+export interface ResultadoAnonimizacion {
+  pedidos: number;
+}
+
+/** Mensaje para el administrador después de anonimizar. */
+export function mensajeAnonimizacion({
+  pedidos,
+}: ResultadoAnonimizacion): string {
+  if (pedidos === 0) {
+    return "No hay pedidos con ese RUT: no había datos para anonimizar.";
+  }
+  return pedidos === 1
+    ? "Listo: se anonimizó 1 pedido."
+    : `Listo: se anonimizaron ${pedidos} pedidos.`;
+}

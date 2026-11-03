@@ -2,15 +2,18 @@
 
 ## Control de versiones
 
-| Versión | Fecha      | Modificación                                                                                                                                |
-| ------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1.0     | 27/10/2026 | Plantilla (BL-435).                                                                                                                         |
-| 1.1     | 28/10/2026 | TC-E-046 a 049: cobro en efectivo (BL-201), solicitud de efectivo (BL-442) y pedido del mozo (BL-209).                                      |
-| 1.2     | 31/10/2026 | TC-E-007 y 008 cambian: la carta por URL muestra los agotados bloqueados, igual que el QR (BL-397).                                         |
-| 1.3     | 31/10/2026 | TC-E-050 a 055: Gestión de Carta (BL-392 / BL-402).                                                                                         |
-| 1.4     | 01/11/2026 | TC-E-056 a 058: medios de pago del comensal según la configuración del local (BL-452).                                                      |
-| 1.5     | 01/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-059 a 061: retomar el pago al recargar y aviso de efectivo en el KDS (BL-448). |
-| 1.6     | 01/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-062: política de privacidad desde la carta y el pago (BL-206).                 |
+| Versión | Fecha      | Modificación                                                                                                                                         |
+| ------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1.0     | 27/10/2026 | Plantilla (BL-435).                                                                                                                                  |
+| 1.1     | 28/10/2026 | TC-E-046 a 049: cobro en efectivo (BL-201), solicitud de efectivo (BL-442) y pedido del mozo (BL-209).                                               |
+| 1.2     | 31/10/2026 | TC-E-007 y 008 cambian: la carta por URL muestra los agotados bloqueados, igual que el QR (BL-397).                                                  |
+| 1.3     | 31/10/2026 | TC-E-050 a 055: Gestión de Carta (BL-392 / BL-402).                                                                                                  |
+| 1.4     | 01/11/2026 | TC-E-056 a 058: medios de pago del comensal según la configuración del local (BL-452).                                                               |
+| 1.5     | 01/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-059 a 061: retomar el pago al recargar y aviso de efectivo en el KDS (BL-448).          |
+| 1.6     | 01/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-062: política de privacidad desde la carta y el pago (BL-206).                          |
+| 1.7     | 02/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-063 y 064: e-Factura con RUT y razón social desde la pantalla de pago (HU-009, BL-453). |
+| 1.8     | 02/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-063 cambia: sin aceptar el aviso no se avisa al mozo (BL-453, ajuste de staging).       |
+| 1.9     | 03/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-065: comprobantes del administrador y su estado ante la DGI (HU-009, BL-455).           |
 
 Plantilla para cargar en Kiwi la descripción de casos TC-E (Playwright)
 nuevos o que cambiaron (BL-435). La usa
@@ -55,20 +58,22 @@ Reglas:
 
 ## Casos para cargar
 
-## TC-E-062
+## TC-E-065
 
 ### Precondición
 
-Carta web del establecimiento del seed y mesa del seed abierta con su QR.
+Administrador del establecimiento del seed logueado en el panel.
 
 ### Pasos
 
-1. Desde la carta web, tocar «Política de privacidad».
-2. Desde el QR de la mesa, agregar un ítem e ir a pagar.
-3. En la pantalla de pago, tocar «Política de privacidad».
+1. Desde el menú, abrir «Comprobantes».
+2. Filtrar por estado ante la DGI «Rechazado».
+3. Poner «Desde» posterior a «Hasta».
+4. Revisar la pantalla con axe-core (WCAG 2.1 AA).
 
 ### Resultado esperado
 
-1. Se abre la política con los datos del local (razón social y RUT) y la sección «Tus derechos».
-2. Debajo del formulario de tarjeta aparece el aviso de que el correo y el documento se envían a Mercado Pago y BistroLink no los guarda.
-3. Se abre la misma política, por el QR de la mesa, con los datos del local.
+1. Se abre la pantalla «Comprobantes» con los filtros de fecha (hoy) y estado.
+2. La API responde 200 y solo trae comprobantes RECHAZADOS; se ve la tabla o el aviso «No hay comprobantes con esos filtros».
+3. Aparece el aviso de que «Desde» tiene que ser anterior o igual a «Hasta».
+4. Sin errores graves ni críticos de accesibilidad.

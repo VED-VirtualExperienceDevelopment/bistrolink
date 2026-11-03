@@ -54,4 +54,31 @@ describe('logs sin datos personales (HU-036, BL-206)', () => {
     // Lo que no es personal se sigue viendo.
     expect(texto).toContain('pedido-1');
   });
+
+  it('HU-009 (BL-453): reemplaza el receptor de la e-Factura (pedido y cliente de Surtec)', () => {
+    const { log, salida } = logger();
+
+    log.info(
+      {
+        pedido: {
+          receptorRut: '211234560012',
+          receptorRazonSocial: 'Comensal Ejemplo SAS',
+        },
+        cliente: { nro_doc: '219999830019', denominacion: 'Otra Ejemplo SRL' },
+        pagoId: 'pago-1',
+      },
+      'emisión de e-Factura',
+    );
+
+    const texto = salida();
+    for (const dato of [
+      '211234560012',
+      'Comensal Ejemplo SAS',
+      '219999830019',
+      'Otra Ejemplo SRL',
+    ]) {
+      expect(texto).not.toContain(dato);
+    }
+    expect(texto).toContain('pago-1');
+  });
 });

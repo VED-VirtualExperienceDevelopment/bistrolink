@@ -293,6 +293,653 @@
       "type": "Synchronous/HTTP"
     },
     {
+      "description": "una consulta de CFE emitidos en un rango sin comprobantes",
+      "pending": false,
+      "providerStates": [
+        {
+          "name": "el emisor no tiene CFE emitidos en el rango"
+        }
+      ],
+      "request": {
+        "headers": {
+          "Authorization": [
+            "Bearer token-acceso-contrato-1"
+          ],
+          "X-Emisor": [
+            "219999990019"
+          ]
+        },
+        "matchingRules": {
+          "header": {
+            "Authorization": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^Bearer \\S+$"
+                }
+              ]
+            },
+            "X-Emisor": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^\\d{12}$"
+                }
+              ]
+            }
+          },
+          "query": {
+            "FechaDesde": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^\\d{4}-\\d{2}-\\d{2}$"
+                }
+              ]
+            },
+            "FechaHasta": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^\\d{4}-\\d{2}-\\d{2}$"
+                }
+              ]
+            },
+            "Sucursal": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^\\d+$"
+                }
+              ]
+            }
+          }
+        },
+        "method": "GET",
+        "path": "/consulta/comprobantes/emitidos",
+        "query": {
+          "FechaDesde": [
+            "2026-11-01"
+          ],
+          "FechaHasta": [
+            "2026-11-03"
+          ],
+          "Sucursal": [
+            "1"
+          ]
+        }
+      },
+      "response": {
+        "body": {
+          "content": {
+            "comprobante": []
+          },
+          "contentType": "application/json",
+          "encoded": false
+        },
+        "headers": {
+          "Content-Type": [
+            "application/json"
+          ]
+        },
+        "status": 200
+      },
+      "type": "Synchronous/HTTP"
+    },
+    {
+      "description": "una consulta de los CFE emitidos en un rango de fechas",
+      "pending": false,
+      "providerStates": [
+        {
+          "name": "el emisor tiene CFE emitidos en el rango con respuesta de DGI"
+        }
+      ],
+      "request": {
+        "headers": {
+          "Authorization": [
+            "Bearer token-acceso-contrato-1"
+          ],
+          "X-Emisor": [
+            "219999990019"
+          ]
+        },
+        "matchingRules": {
+          "header": {
+            "Authorization": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^Bearer \\S+$"
+                }
+              ]
+            },
+            "X-Emisor": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^\\d{12}$"
+                }
+              ]
+            }
+          },
+          "query": {
+            "FechaDesde": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^\\d{4}-\\d{2}-\\d{2}$"
+                }
+              ]
+            },
+            "FechaHasta": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^\\d{4}-\\d{2}-\\d{2}$"
+                }
+              ]
+            },
+            "Sucursal": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^\\d+$"
+                }
+              ]
+            }
+          }
+        },
+        "method": "GET",
+        "path": "/consulta/comprobantes/emitidos",
+        "query": {
+          "FechaDesde": [
+            "2026-11-01"
+          ],
+          "FechaHasta": [
+            "2026-11-03"
+          ],
+          "Sucursal": [
+            "1"
+          ]
+        }
+      },
+      "response": {
+        "body": {
+          "content": {
+            "comprobante": [
+              {
+                "estado_dgi": {
+                  "codigo": "AE"
+                },
+                "id": 541759,
+                "numero": 49,
+                "serie": "A"
+              }
+            ]
+          },
+          "contentType": "application/json",
+          "encoded": false
+        },
+        "headers": {
+          "Content-Type": [
+            "application/json"
+          ]
+        },
+        "matchingRules": {
+          "body": {
+            "$.comprobante": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.comprobante[*].estado_dgi.codigo": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^(AE|BE|CE)$"
+                }
+              ]
+            },
+            "$.comprobante[*].id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.comprobante[*].numero": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.comprobante[*].serie": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^[A-Z]{1,2}$"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      },
+      "type": "Synchronous/HTTP"
+    },
+    {
+      "description": "una emisión de e-Factura a un RUT que Surtec acepta",
+      "pending": false,
+      "providerStates": [
+        {
+          "name": "el emisor está habilitado en Surtec para emitir e-Facturas"
+        }
+      ],
+      "request": {
+        "body": {
+          "content": {
+            "adenda": {
+              "texto": "Pedido 1"
+            },
+            "cliente": {
+              "cod_pais_doc": "UY",
+              "denominacion": "Comensal Ejemplo SAS",
+              "nro_doc": "219999830019",
+              "tipo_doc": 2
+            },
+            "cod_montos_brutos": 1,
+            "forma_pago": 1,
+            "id_externo": "bl-pago-contrato-1",
+            "items": [
+              {
+                "cantidad": 1,
+                "concepto": "Milanesa",
+                "indicador_facturacion": 3,
+                "precio": 590,
+                "unidad": "Un"
+              }
+            ],
+            "moneda": "UYU",
+            "sucursal": 1,
+            "tipo_comprobante": 111
+          },
+          "contentType": "application/json",
+          "encoded": false
+        },
+        "headers": {
+          "Authorization": [
+            "Bearer token-acceso-contrato-1"
+          ],
+          "Content-Type": [
+            "application/json"
+          ],
+          "X-Emisor": [
+            "219999990019"
+          ]
+        },
+        "matchingRules": {
+          "body": {
+            "$.adenda.texto": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.cliente.denominacion": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.cliente.nro_doc": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^\\d{12}$"
+                }
+              ]
+            },
+            "$.id_externo": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.items": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.items[*].cantidad": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.items[*].concepto": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.items[*].precio": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.sucursal": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          },
+          "header": {
+            "Authorization": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^Bearer \\S+$"
+                }
+              ]
+            },
+            "X-Emisor": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^\\d{12}$"
+                }
+              ]
+            }
+          }
+        },
+        "method": "POST",
+        "path": "/comprobantes/crear"
+      },
+      "response": {
+        "body": {
+          "content": {
+            "cae_numero": 90191275538,
+            "cae_vencimiento": "2030-12-31T00:00:00",
+            "hash": "YuFjLi8FhjlpqbniSfBS0OfmpPFErwiODpihtMqCyYs=",
+            "id": 541759,
+            "numero": 49,
+            "serie": "A",
+            "url": "https://www.efactura.dgi.gub.uy/consultaQR/cfe?x"
+          },
+          "contentType": "application/json",
+          "encoded": false
+        },
+        "headers": {
+          "Content-Type": [
+            "application/json"
+          ]
+        },
+        "matchingRules": {
+          "body": {
+            "$.cae_numero": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.cae_vencimiento": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}"
+                }
+              ]
+            },
+            "$.hash": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.numero": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.serie": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^[A-Z]{1,2}$"
+                }
+              ]
+            },
+            "$.url": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^https://"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      },
+      "type": "Synchronous/HTTP"
+    },
+    {
+      "description": "una emisión de e-Factura a un RUT que no es contribuyente",
+      "pending": false,
+      "providerStates": [
+        {
+          "name": "el RUT del receptor no figura como contribuyente en DGI"
+        }
+      ],
+      "request": {
+        "body": {
+          "content": {
+            "adenda": {
+              "texto": "Pedido 1"
+            },
+            "cliente": {
+              "cod_pais_doc": "UY",
+              "denominacion": "Comensal Ejemplo SAS",
+              "nro_doc": "219999830019",
+              "tipo_doc": 2
+            },
+            "cod_montos_brutos": 1,
+            "forma_pago": 1,
+            "id_externo": "bl-pago-contrato-1",
+            "items": [
+              {
+                "cantidad": 1,
+                "concepto": "Milanesa",
+                "indicador_facturacion": 3,
+                "precio": 590,
+                "unidad": "Un"
+              }
+            ],
+            "moneda": "UYU",
+            "sucursal": 1,
+            "tipo_comprobante": 111
+          },
+          "contentType": "application/json",
+          "encoded": false
+        },
+        "headers": {
+          "Authorization": [
+            "Bearer token-acceso-contrato-1"
+          ],
+          "Content-Type": [
+            "application/json"
+          ],
+          "X-Emisor": [
+            "219999990019"
+          ]
+        },
+        "matchingRules": {
+          "body": {
+            "$.adenda.texto": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.cliente.denominacion": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.cliente.nro_doc": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^\\d{12}$"
+                }
+              ]
+            },
+            "$.id_externo": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.items": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.items[*].cantidad": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.items[*].concepto": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.items[*].precio": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.sucursal": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          },
+          "header": {
+            "Authorization": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^Bearer \\S+$"
+                }
+              ]
+            },
+            "X-Emisor": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^\\d{12}$"
+                }
+              ]
+            }
+          }
+        },
+        "method": "POST",
+        "path": "/comprobantes/crear"
+      },
+      "response": {
+        "status": 400
+      },
+      "type": "Synchronous/HTTP"
+    },
+    {
       "description": "una emisión de e-Ticket con un token vencido",
       "pending": false,
       "providerStates": [
