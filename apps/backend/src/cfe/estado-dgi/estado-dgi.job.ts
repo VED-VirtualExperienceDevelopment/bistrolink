@@ -93,6 +93,8 @@ export class EstadoDgiJob implements OnApplicationBootstrap, OnModuleDestroy {
           total.revisados += resumen.revisados;
           total.actualizados += resumen.actualizados;
           total.rechazados += resumen.rechazados;
+          total.noEncontrados += resumen.noEncontrados;
+          total.sinRespuestaDgi += resumen.sinRespuestaDgi;
         } catch (error) {
           errores++;
           this.logger.error(
@@ -103,7 +105,7 @@ export class EstadoDgiJob implements OnApplicationBootstrap, OnModuleDestroy {
 
       if (total.revisados > 0 || errores > 0) {
         this.logger.log({
-          message: `Estado de los CFE ante la DGI: ${total.revisados} revisados, ${total.actualizados} actualizados, ${total.rechazados} rechazados, ${errores} establecimientos con error`,
+          message: `Estado de los CFE ante la DGI: ${total.revisados} revisados, ${total.actualizados} actualizados, ${total.rechazados} rechazados, ${total.sinRespuestaDgi} sin respuesta de DGI, ${total.noEncontrados} no encontrados en Surtec, ${errores} establecimientos con error`,
           ...total,
           errores,
         });

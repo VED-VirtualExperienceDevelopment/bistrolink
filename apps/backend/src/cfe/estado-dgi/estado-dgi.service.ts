@@ -18,10 +18,20 @@ export interface ResumenEstadoDgi {
   actualizados: number;
   /** De esos, rechazados por DGI. */
   rechazados: number;
+  /** Pendientes que Surtec no devolvió en la consulta (ni por id ni por serie y número). */
+  noEncontrados: number;
+  /** Pendientes que Surtec devolvió sin respuesta de DGI todavía. */
+  sinRespuestaDgi: number;
 }
 
 export function resumenEstadoDgiVacio(): ResumenEstadoDgi {
-  return { revisados: 0, actualizados: 0, rechazados: 0 };
+  return {
+    revisados: 0,
+    actualizados: 0,
+    rechazados: 0,
+    noEncontrados: 0,
+    sinRespuestaDgi: 0,
+  };
 }
 
 /**
@@ -96,15 +106,30 @@ export class EstadoDgiService {
       emitidos.map((e) => [claveSerieNumero(e.serie, e.numero), e]),
     );
 
+    const noEncontrados: string[] = [];
     const cambios = pendientes.flatMap((c) => {
       const emitido: CfeEmitidoConEstado | undefined =
         (c.proveedorRef ? porId.get(c.proveedorRef) : undefined) ??
         porSerieNumero.get(claveSerieNumero(c.serie, c.numero));
-      const estado = estadoDgiDesdeCodigo(emitido?.codigoDgi);
-      return esEstadoDefinitivo(estado)
-        ? [{ id: c.id, estado, motivo: emitido?.motivoDgi ?? null }]
-        : [];
+      if (!emitido) {
+        noEncontrados.push(`${c.serie}-${c.numero}`);
+        return [];
+      }
+      const estado = estadoDgiDesdeCodigo(emitido.codigoDgi);
+      if (!esEstadoDefinitivo(estado)) {
+        resumen.sinRespuestaDgi++;
+        return [];
+      }
+      return [{ id: c.id, estado, motivo: emitido.motivoDgi }];
     });
+    resumen.noEncontrados = noEncontrados.length;
+    // Para diagnosticar en staging sin correr nada a mano: qué devolvió
+    // Surtec y qué no se encontró (serie y número, sin datos personales).
+    if (noEncontrados.length > 0) {
+      this.logger.warn(
+        `Estado DGI del tenant ${tenantId}: Surtec devolvió ${emitidos.length} CFE y no están ${noEncontrados.slice(0, 10).join(', ')}${noEncontrados.length > 10 ? '…' : ''}`,
+      );
+    }
     if (cambios.length === 0) return resumen;
 
     const aplicados = await this.tenantPrisma.runInTenantContext(

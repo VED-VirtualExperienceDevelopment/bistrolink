@@ -3,7 +3,9 @@ import { CfeEstadoDgi } from '@prisma/client';
 /**
  * HU-009 (BL-455): códigos de DGI que informa Surtec en la consulta de
  * emitidos. Cualquier otro valor (o ninguno) es que DGI todavía no
- * respondió: el CFE sigue PENDIENTE y se vuelve a consultar.
+ * respondió: el CFE sigue PENDIENTE y se vuelve a consultar. En el ambiente
+ * de pruebas de Surtec se vio «NE» (no enviado): Surtec manda los CFE a la
+ * DGI por tandas, no apenas se emiten.
  */
 const POR_CODIGO: Readonly<Record<string, CfeEstadoDgi>> = {
   AE: 'ACEPTADO', // Comprobante recibido

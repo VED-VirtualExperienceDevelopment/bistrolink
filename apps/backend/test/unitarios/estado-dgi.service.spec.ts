@@ -18,6 +18,8 @@ describe('estado-dgi (helpers)', () => {
     ['BE', 'RECHAZADO'],
     ['CE', 'OBSERVADO'],
     [' ae ', 'ACEPTADO'],
+    // «No enviado»: Surtec todavía no lo mandó a la DGI (visto en staging).
+    ['NE', 'PENDIENTE'],
     ['XX', 'PENDIENTE'],
     [null, 'PENDIENTE'],
     [undefined, 'PENDIENTE'],
@@ -138,7 +140,13 @@ describe('EstadoDgiService.actualizarTenant', () => {
         estadoDgiActualizadoEn: AHORA,
       },
     });
-    expect(resumen).toEqual({ revisados: 1, actualizados: 1, rechazados: 0 });
+    expect(resumen).toEqual({
+      revisados: 1,
+      actualizados: 1,
+      rechazados: 0,
+      noEncontrados: 0,
+      sinRespuestaDgi: 0,
+    });
   });
 
   it('sin id de Surtec, empareja por serie y número', async () => {
@@ -184,7 +192,17 @@ describe('EstadoDgiService.actualizarTenant', () => {
     const resumen = await service.actualizarTenant(TENANT_ID, 7, AHORA);
 
     expect(tx.comprobanteFiscal.updateMany).not.toHaveBeenCalled();
-    expect(resumen).toEqual({ revisados: 2, actualizados: 0, rechazados: 0 });
+    expect(resumen).toEqual({
+      revisados: 2,
+      actualizados: 0,
+      rechazados: 0,
+      noEncontrados: 1,
+      sinRespuestaDgi: 1,
+    });
+    // El que no está se avisa con serie y número, para diagnosticar.
+    expect(Logger.prototype.warn).toHaveBeenCalledWith(
+      expect.stringMatching(/devolvió 1 CFE y no están A-2/),
+    );
   });
 
   it('si otra corrida ya lo actualizó (count 0), no lo cuenta dos veces', async () => {
@@ -208,7 +226,13 @@ describe('EstadoDgiService.actualizarTenant', () => {
     surtec.configurado.mockReturnValueOnce(false);
     await expect(
       service.actualizarTenant(TENANT_ID, 7, AHORA),
-    ).resolves.toEqual({ revisados: 0, actualizados: 0, rechazados: 0 });
+    ).resolves.toEqual({
+      revisados: 0,
+      actualizados: 0,
+      rechazados: 0,
+      noEncontrados: 0,
+      sinRespuestaDgi: 0,
+    });
 
     expect(surtec.consultarEmitidos).not.toHaveBeenCalled();
   });
