@@ -536,6 +536,17 @@ describe('KdsGateway', () => {
     });
   });
 
+  describe('emitirStockActualizado', () => {
+    it('[TC-U-350] HU-015: avisa solo a los administradores que el stock cambió, sin datos', () => {
+      gateway.emitirStockActualizado(TENANT_ID);
+
+      expect(mockServer.to).toHaveBeenCalledWith(`admin:${TENANT_ID}`);
+      expect(mockServer.emit).toHaveBeenCalledWith('stock:actualizado', {
+        ts: expect.any(String),
+      });
+    });
+  });
+
   describe('emitirReportesActualizados', () => {
     it('[TC-U-310] HU-012: avisa a la sala del tenant que cambió el resumen de ventas, sin datos de ventas', () => {
       gateway.emitirReportesActualizados(TENANT_ID);

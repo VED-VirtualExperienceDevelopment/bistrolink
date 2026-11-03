@@ -341,6 +341,16 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.server.to(this.salaAdmin(tenantId)).emit('stock:alerta', alerta);
   }
 
+  /**
+   * HU-015 (BL-120): el administrador ajustó el stock (jornada o
+   * reposición). Las campanas abiertas vuelven a pedir las alertas.
+   */
+  emitirStockActualizado(tenantId: string) {
+    this.server
+      .to(this.salaAdmin(tenantId))
+      .emit('stock:actualizado', { ts: new Date().toISOString() });
+  }
+
   private salaAdmin(tenantId: string): string {
     return `admin:${tenantId}`;
   }
