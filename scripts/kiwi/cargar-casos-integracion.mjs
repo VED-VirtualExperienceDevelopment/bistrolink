@@ -208,6 +208,13 @@ const configuracionEstablecimiento = (extra = {}) => ({
   ...extra,
   tags: ["HU-020", "BL-72", ...(extra.tags ?? [])],
 });
+// HU-012 (BL-108 y BL-219): dashboard de reportes, en reportes.e2e-spec.ts.
+const reportes = (ticket, extra = {}) => ({
+  component: "api",
+  requirement: "HU-012",
+  ...extra,
+  tags: ["HU-012", ticket, "reportes", ...(extra.tags ?? [])],
+});
 const DATOS_INTEGRACION = {
   55: {
     category: "Funcional",
@@ -592,7 +599,24 @@ const DATOS_INTEGRACION = {
     requirement: "HU-009",
     priority: "P1",
     tags: ["HU-009", "BL-455", "cfe", "multi-tenant"],
-  },
+  }, // HU-012 (BL-108): dashboard de reportes de ventas.
+  144: reportes("BL-108", { category: "Funcional", priority: "P1" }),
+  145: reportes("BL-108", { category: "Funcional", priority: "P1" }),
+  146: reportes("BL-110", { category: "Seguridad", priority: "P1" }),
+  147: reportes("BL-110", { category: "Seguridad", priority: "P1" }),
+  148: reportes("BL-109", { category: "Seguridad", priority: "P1" }),
+  149: reportes("BL-109", { category: "Funcional", priority: "P2" }),
+  150: reportes("BL-219", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["integridad-datos"],
+  }),
+  151: reportes("BL-110", {
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["multi-tenant"],
+  }),
+  152: reportes("BL-109", { category: "Performance", priority: "P1" }),
 };
 /**
  * BL-435: datos de los E2E TC-E-017 en adelante, con los criterios de
@@ -856,6 +880,21 @@ const DATOS_E2E = {
     category: "Funcional",
     priority: "P2",
     tags: ["BL-455", "cfe", ...axe],
+  }), // HU-012 (BL-108): dashboard de reportes del administrador.
+  66: e2e("admin", "HU-012", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-108", "reportes", ...axe],
+  }),
+  67: e2e("admin", "HU-012", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-108", "reportes"],
+  }),
+  68: e2e("admin", "HU-012", {
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["BL-108", "BL-110", "reportes"],
   }),
 };
 /**

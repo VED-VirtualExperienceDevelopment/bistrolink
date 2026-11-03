@@ -415,6 +415,9 @@ model Pago {
   @@index([tenantId])
   // BL-213: pagos de un pedido (cobro, webhook, consulta del comensal).
   @@index([pedidoId])
+  // HU-012 (BL-219): pagos de un tenant por fecha, para recalcular el
+  // resumen de ventas de una ventana de horas.
+  @@index([tenantId, createdAt])
   @@map("pago")
 }
 
@@ -528,4 +531,57 @@ model PedidoEstadoHistorial {
 
   @@index([tenantId])
   @@map("pedido_estado_historial")
+}
+
+// ── HU-012 (BL-108) SesionMesa ────────────────────────────────────────────────
+// Historial de sesiones de mesa (HU-017) para medir la rotación de mesas.
+// MesasService escribe una fila al abrir la sesión (id = mesa.sesionId) y le
+// pone cerrada_en al cerrarla. Sin clave foránea a mesa a propósito: el
+// historial no tiene que impedir borrar una mesa del mapa. Con RLS.
+model SesionMesa {
+  id        String    @id @db.Uuid
+  tenantId  String    @map("tenant_id") @db.Uuid
+  mesaId    String    @map("mesa_id") @db.Uuid
+  abiertaEn DateTime  @map("abierta_en") @db.Timestamptz(3)
+  cerradaEn DateTime? @map("cerrada_en") @db.Timestamptz(3)
+
+  // Rotación: sesiones cerradas de un tenant en un período.
+  @@index([tenantId, cerradaEn])
+  @@map("sesion_mesa")
+}
+
+// ── HU-012 (BL-219) Resumen de ventas ─────────────────────────────────────────
+// Carga analítica separada de la transaccional: el dashboard lee de estas
+// tablas y no de pago ni de linea_pedido. Las escribe el job de agregación
+// (borra y vuelve a insertar una ventana de horas: idempotente). Una venta
+// es un pago APROBADO; `hora` es la hora del pago truncada, en UTC. Tablas y
+// no vistas materializadas, porque PostgreSQL no aplica RLS sobre vistas
+// materializadas. Sin claves foráneas: son datos derivados. Con RLS.
+
+model ResumenVentasHora {
+  tenantId      String      @map("tenant_id") @db.Uuid
+  hora          DateTime    @db.Timestamptz(3)
+  canal         PedidoCanal
+  medioPago     String      @map("medio_pago")
+  pedidos       Int
+  monto         Decimal     @db.Decimal(12, 2)
+  actualizadoEn DateTime    @default(now()) @map("actualizado_en") @db.Timestamptz(3)
+
+  @@id([tenantId, hora, canal, medioPago])
+  @@map("resumen_ventas_hora")
+}
+
+model ResumenPlatosHora {
+  tenantId      String      @map("tenant_id") @db.Uuid
+  hora          DateTime    @db.Timestamptz(3)
+  canal         PedidoCanal
+  itemCartaId   String      @map("item_carta_id") @db.Uuid
+  // Último nombre con el que se vendió (nombre_snapshot de la línea).
+  nombre        String
+  cantidad      Int
+  recaudado     Decimal     @db.Decimal(12, 2)
+  actualizadoEn DateTime    @default(now()) @map("actualizado_en") @db.Timestamptz(3)
+
+  @@id([tenantId, hora, canal, itemCartaId])
+  @@map("resumen_platos_hora")
 }

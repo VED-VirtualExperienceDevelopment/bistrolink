@@ -8,10 +8,19 @@ import { WsAuthService } from './ws-auth.service';
 import { PedidosTransicionService } from './pedidos-transicion.service';
 import { QrMesaModule } from '../qr-mesa/qr-mesa.module';
 import { TenantEstadoModule } from '../tenant-estado/tenant-estado.module';
+import { ResumenVentasModule } from '../reportes/resumen-ventas.module';
 
 @Module({
   // BL-413: TenantEstadoModule, para WsAuthService.
-  imports: [PrismaModule, AuthModule, QrMesaModule, TenantEstadoModule],
+  // HU-012 (BL-219): ResumenVentasModule, para recalcular el resumen de
+  // ventas al aprobarse un pago.
+  imports: [
+    PrismaModule,
+    AuthModule,
+    QrMesaModule,
+    TenantEstadoModule,
+    ResumenVentasModule,
+  ],
   controllers: [PedidosController],
   providers: [
     PedidosService,

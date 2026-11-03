@@ -281,6 +281,17 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.server.to(this.salaTenant(tenantId)).emit('pedido:nuevo', pedido);
   }
 
+  /**
+   * HU-012 (BL-219): el resumen de ventas cambió (se aprobó un pago). El
+   * dashboard de reportes vuelve a pedir los datos; el evento no lleva datos
+   * de ventas, solo la hora.
+   */
+  emitirReportesActualizados(tenantId: string) {
+    this.server
+      .to(this.salaTenant(tenantId))
+      .emit('reportes:actualizado', { ts: new Date().toISOString() });
+  }
+
   // BL-311: avisa al comensal que sigue el pedido (sala del pedido, la que
   // se une con pedido:seguir) que el pedido cambió de estado.
   emitirActualizacionPedido(pedidoId: string, actualizado: unknown) {
