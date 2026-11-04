@@ -12,6 +12,9 @@
 //     de los CFE emitidos en un rango de fechas (HU-009, BL-455). Leemos id,
 //     serie, numero y estado_dgi (código y motivo).
 //
+//   - HU-023 (BL-96): emisión con Surtec no disponible (5xx): BistroLink la
+//     trata como transitoria y la concilia después.
+//
 // Qué NO cubre todavía (cada contrato se suma con la historia que lo usa):
 //   - Nota de crédito: HU-024. La API no tiene descarga de PDF ni XML
 //     (BL-454).
@@ -31,6 +34,7 @@ import {
   SurtecClient,
   SurtecError,
 } from '../../src/cfe/surtec.client';
+import { esErrorTransitorio } from '../../src/cfe/cfe.service';
 
 const { like, regex, eachLike } = MatchersV3;
 
@@ -442,6 +446,34 @@ describe('Contrato Surtec — facturación electrónica (BL-216)', () => {
           await expect(
             clienteContra(mock.url).consultarEmitidos(CONSULTA),
           ).resolves.toEqual([]);
+        });
+    });
+  });
+
+  describe('POST /comprobantes/crear — Surtec no disponible (HU-023, BL-96)', () => {
+    it('[TC-C-019] Surtec CFE: POST /comprobantes/crear con el servicio no disponible responde 503 y BistroLink lanza un SurtecError transitorio (se concilia después)', async () => {
+      loginConUsuario(pact.addInteraction());
+      await pact
+        .addInteraction()
+        .given('el servicio de emisión de Surtec no está disponible')
+        .uponReceiving('una emisión de e-Ticket con Surtec no disponible')
+        .withRequest('POST', '/comprobantes/crear', (b) => {
+          b.headers({
+            Authorization: regex('^Bearer \\S+$', `Bearer ${TOKEN_1}`),
+            'X-Emisor': regex(RUT, RUT_EMISOR),
+            'Content-Type': 'application/json',
+          }).jsonBody(cuerpoETicket());
+        })
+        // Solo el status: el cuerpo de un 5xx no se interpreta.
+        .willRespondWith(503)
+        .executeTest(async (mock) => {
+          const error = await clienteContra(mock.url)
+            .emitirETicket(SOLICITUD)
+            .catch((e: unknown) => e);
+
+          expect(error).toBeInstanceOf(SurtecError);
+          expect((error as SurtecError).status).toBe(503);
+          expect(esErrorTransitorio(error)).toBe(true);
         });
     });
   });

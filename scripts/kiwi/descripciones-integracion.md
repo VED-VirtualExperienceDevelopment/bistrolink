@@ -23,6 +23,7 @@
 | 1.16    | 03/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-I-142 y 143: estado de los CFE ante la DGI y listado de comprobantes del administrador (HU-009 / BL-455), para cargar con el script antes de mergear el PR.                    |
 | 1.17    | 03/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-I-144 a 152: dashboard de reportes de ventas y resumen por hora (HU-012 / BL-108, BL-109, BL-110 y BL-219), para cargar con el script antes de mergear el PR.                  |
 | 1.18    | 03/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-I-153 a 160: stock de la jornada, alertas de stock bajo y descuento al confirmar el pago (HU-015 / BL-120, BL-121 y BL-122), para cargar con el script antes de mergear el PR. |
+| 1.19    | 04/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-I-161 y 162: conciliación de CFE pendientes y pendientes de emisión del administrador (HU-023 / BL-96), para cargar con el script antes de mergear el PR.                      |
 
 Texto del campo de descripción de cada caso TC-I en Kiwi. Lo carga
 `cargar-casos-integracion.mjs --descripciones`: cada bloque `## TC-I-NNN`
@@ -34,126 +35,44 @@ esperado`, igual que los casos cargados a mano desde TC-I-029.
 
 ## Casos para cargar
 
-## TC-I-153
+## TC-I-161
 
 ### Precondición
 
-Tenant A del seed. Un ítem de prueba en la categoría Platos, sin control de stock. Usuario administrador.
+Tenant A del seed. Tres pagos APROBADOS sin comprobante: dos de hace 10 minutos (Surtec falso emite para uno y responde 503 para el otro) y uno de hace 5 días.
 
 ### Pasos
 
-1. Como administrador, mandar PATCH /admin/stock con ese ítem: control de stock activado, 4 unidades y aviso en 5.
-2. Pedir GET /admin/stock.
-3. Pedir GET /admin/stock/alertas.
+1. Correr la conciliación de CFE para el tenant B.
+2. Correrla para el tenant A.
+3. Correrla otra vez enseguida.
+4. Con Surtec de vuelta, correrla 6 minutos después.
 
 ### Resultado esperado
 
-1. Responde 200 con el ítem: control de stock activado, 4 unidades, aviso en 5, disponible y alerta «STOCK_CRITICO».
-2. El ítem aparece con 4 unidades.
-3. El ítem aparece con 4 unidades, aviso en 5 y tipo «STOCK_CRITICO». La alerta solo lleva nombre y cantidades.
+1. No se emite nada de los pagos del tenant A (RLS).
+2. El primero queda con su CFE (tipo 101, id externo `bl-<pagoId>`). El segundo queda sin CFE, con 1 intento fallido y el error guardado. El de hace 5 días no se toca.
+3. El segundo no se reintenta (espera 5 minutos después del primer fallo).
+4. El segundo queda con su CFE y el primero no se vuelve a emitir.
 
-## TC-I-154
+## TC-I-162
 
 ### Precondición
 
-El ítem de prueba de TC-I-153. Usuario administrador.
+Tenant A del seed. Dos pagos APROBADOS sin comprobante: uno de hace 10 minutos y otro de hace 5 días.
 
 ### Pasos
 
-1. Mandar PATCH /admin/stock con: un aviso de -1; un stock de -5; un stock de 2,5; un stock de 3 con un campo tenantId de más.
+1. Consultar los pendientes de emisión del tenant A y del tenant B.
+2. Reintentar el de hace 5 días desde el tenant B.
+3. Reintentarlo desde el tenant A (Surtec falso emite) y volver a consultar.
+4. Reintentarlo otra vez.
+5. Leer el registro de auditoría.
 
 ### Resultado esperado
 
-1. Cada pedido responde 400 y el stock no cambia.
-
-## TC-I-155
-
-### Precondición
-
-API levantada.
-
-### Pasos
-
-1. Pedir GET /admin/stock/alertas sin token.
-2. Mandar PATCH /admin/stock sin token.
-
-### Resultado esperado
-
-1. Responde 401.
-2. Responde 401.
-
-## TC-I-156
-
-### Precondición
-
-Usuarios mozo y cocina del tenant A.
-
-### Pasos
-
-1. Con cada uno, pedir GET /admin/stock/alertas.
-2. Con cada uno, mandar PATCH /admin/stock con 99 unidades.
-
-### Resultado esperado
-
-1. Responde 403: el stock es solo del administrador.
-2. Responde 403 y el stock no cambia.
-
-## TC-I-157
-
-### Precondición
-
-El ítem de prueba con control de stock, 7 unidades y aviso en 5. Un pedido en espera de pago con 3 unidades del ítem.
-
-### Pasos
-
-1. Confirmar el pago del pedido.
-
-### Resultado esperado
-
-1. En la misma transacción el stock baja a 4 y el ítem sigue disponible. Se avisa a los administradores del tenant A (`stock:alerta`) con el ítem, 4 unidades, aviso en 5 y tipo «STOCK_CRITICO», en menos de 5 segundos.
-
-## TC-I-158
-
-### Precondición
-
-El ítem de prueba con control de stock, 2 unidades y aviso en 5. Un pedido en espera de pago con 2 unidades del ítem.
-
-### Pasos
-
-1. Confirmar el pago del pedido.
-2. Crear otro pedido con 1 unidad del ítem y verificar el stock antes de cobrarlo.
-
-### Resultado esperado
-
-1. El stock queda en 0 y el ítem no disponible. Se avisa a los administradores con tipo «AGOTADO» y a la carta del comensal que el ítem no está disponible.
-2. Responde 409: el ítem está agotado y no se cobra.
-
-## TC-I-159
-
-### Precondición
-
-El ítem de prueba con control de stock y 1 unidad. Dos pedidos en espera de pago con 1 unidad cada uno, que ya pasaron la verificación de stock.
-
-### Pasos
-
-1. Confirmar los dos pagos a la vez.
-
-### Resultado esperado
-
-1. Los dos pagos se confirman (el dinero ya se cobró, ADR 0009). El stock queda en 0, nunca negativo, y el ítem no disponible. Se avisa una sola vez «1 vendida sin stock» y queda un registro «CARTA_ITEM_VENDIDO_SIN_STOCK» en la auditoría.
-
-## TC-I-160
-
-### Precondición
-
-El ítem de prueba del tenant A agotado (0 unidades). Tenant B del seed.
-
-### Pasos
-
-1. Pedir las alertas y el stock con el contexto del tenant B.
-2. Pedir las alertas con el contexto del tenant A.
-
-### Resultado esperado
-
-1. El ítem del tenant A no aparece (RLS).
-2. El ítem aparece.
+1. En el tenant A aparecen los dos: el reciente con 0 intentos y próximo intento, el de hace 5 días como «requiere atención» y sin próximo intento. En el tenant B no aparecen.
+2. 404.
+3. Se emite el CFE y el pago ya no está entre los pendientes.
+4. 409: ya tiene su comprobante.
+5. Un registro PAGO_CFE_REINTENTADO del pago con el resultado EMITIDO.

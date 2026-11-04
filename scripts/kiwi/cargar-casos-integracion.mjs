@@ -642,6 +642,21 @@ const DATOS_INTEGRACION = {
     priority: "P1",
     tags: ["multi-tenant"],
   }),
+  // HU-023 (BL-96): conciliación de CFE pendientes.
+  161: {
+    category: "Funcional",
+    component: "api",
+    requirement: "HU-023",
+    priority: "P1",
+    tags: ["HU-023", "BL-96", "cfe", "resiliencia"],
+  },
+  162: {
+    category: "Seguridad",
+    component: "api",
+    requirement: "HU-023",
+    priority: "P1",
+    tags: ["HU-023", "BL-96", "cfe", "multi-tenant", "auditoria"],
+  },
 };
 /**
  * BL-435: datos de los E2E TC-E-017 en adelante, con los criterios de
@@ -937,6 +952,12 @@ const DATOS_E2E = {
     priority: "P1",
     tags: ["BL-122", "stock"],
   }),
+  // HU-023 (BL-96): pendientes de emisión de comprobantes.
+  72: e2e("admin", "HU-023", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-96", "cfe", ...axe],
+  }),
 };
 /**
  * Datos de los contratos PactJS (TC-C). Requirement con la HU que usa el
@@ -992,6 +1013,8 @@ const DATOS_CONTRATO = {
   // Surtec: estado de los CFE ante la DGI (BL-455).
   17: contrato("HU-009", "surtec", { priority: "P1", tags: ["BL-455"] }),
   18: contrato("HU-009", "surtec", { priority: "P2", tags: ["BL-455"] }),
+  // Surtec: emisión con el servicio no disponible (BL-96).
+  19: contrato("HU-023", "surtec", { priority: "P1", tags: ["BL-96"] }),
 };
 const DATOS = CONTRATO ? DATOS_CONTRATO : E2E ? DATOS_E2E : DATOS_INTEGRACION;
 
