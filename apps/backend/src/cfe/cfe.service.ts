@@ -182,9 +182,9 @@ export class CfeService {
           },
         }),
       );
-    } catch (falla) {
+    } catch (error_) {
       Logger.warn(
-        `CFE: no se pudo registrar el intento fallido del pago ${pagoId}: ${mensajeDe(falla)}`,
+        `CFE: no se pudo registrar el intento fallido del pago ${pagoId}: ${mensajeDe(error_)}`,
         CfeService.name,
       );
     }

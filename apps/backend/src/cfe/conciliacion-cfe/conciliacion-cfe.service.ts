@@ -48,8 +48,7 @@ export class ConciliacionCfeService {
     >,
     ahora: Date = new Date(),
   ): Promise<ResumenConciliacionCfe> {
-    const resumen = resumenConciliacionCfeVacio();
-    if (!this.cfe.configurado()) return resumen;
+    if (!this.cfe.configurado()) return resumenConciliacionCfeVacio();
 
     const candidatos = await this.tenantPrisma.runInTenantContext(
       tenantId,
@@ -81,15 +80,18 @@ export class ConciliacionCfeService {
       .slice(0, configuracion.lote);
 
     // Secuencial a propósito: no mandarle ráfagas a Surtec.
+    let emitidos = 0;
     for (const { id } of aReintentar) {
-      resumen.revisados++;
       const { comprobante } = await /* NOSONAR */ this.cfe.reintentar(
         tenantId,
         id,
       );
-      if (comprobante) resumen.emitidos++;
-      else resumen.fallidos++;
+      if (comprobante) emitidos++;
     }
-    return resumen;
+    return {
+      revisados: aReintentar.length,
+      emitidos,
+      fallidos: aReintentar.length - emitidos,
+    };
   }
 }
