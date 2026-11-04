@@ -276,14 +276,15 @@ jobs:
 
   # ── JOB 3: TESTS DE CONTRATO (PactJS) ────────────────────────────────────
   # BL-215 (RNF.04, EDT 1.6.2): contratos del consumidor contra Mercado Pago
-  # (API Orders + notificación del webhook). Los pacts generados se
+  # (API Orders + notificación del webhook) y, desde BL-216, contra Surtec
+  # (autenticación + emisión del e-Ticket). Los pacts generados se
   # versionan en apps/backend/pacts. El job falla — y bloquea el merge vía
   # "build" (needs) — en dos casos:
   #   1. Un test de contrato falla: el código dejó de cumplir lo que el
-  #      contrato dice que mandamos/esperamos de Mercado Pago.
+  #      contrato dice que mandamos/esperamos del proveedor.
   #   2. El pact regenerado difiere del versionado: el contrato cambió y no
   #      se commiteó (hay que revisarlo y commitearlo a propósito).
-  # Alcance: detecta cambios NUESTROS. Un cambio unilateral de Mercado Pago
+  # Alcance: detecta cambios NUESTROS. Un cambio unilateral del proveedor
   # se detecta verificando el pact contra el sandbox (job aparte, pendiente).
   pact:
     name: 🤝 Tests de contrato (PactJS)
@@ -316,7 +317,7 @@ jobs:
         run: |
           if ! git diff --exit-code -- apps/backend/pacts \
              || [ -n "$(git status --porcelain -- apps/backend/pacts)" ]; then
-            echo "::error::El contrato con Mercado Pago cambió y no está commiteado. Corré 'npm run test:pact --workspace=backend', revisá el diff de apps/backend/pacts y commitealo."
+            echo "::error::Un contrato con un proveedor (Mercado Pago o Surtec) cambió y no está commiteado. Corré 'npm run test:pact --workspace=backend', revisá el diff de apps/backend/pacts y commitealo."
             exit 1
           fi
 

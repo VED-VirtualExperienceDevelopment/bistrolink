@@ -3,9 +3,22 @@ import {
   BadRequestException,
   NotFoundException,
 } from '@nestjs/common';
-import { PedidoEstado } from '@prisma/client';
+import { PedidoEstado, Prisma } from '@prisma/client';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { aPedidoKds } from './pedido-kds.mapper';
+import type { LlamadoPagoEfectivo } from './kds.gateway';
+
+/**
+ * BL-448: un aviso de «Mesa N quiere pagar en efectivo» pendiente, con la
+ * misma forma que el evento en vivo `llamado:nuevo` (KdsGateway.emitirLlamado).
+ */
+export interface SolicitudEfectivoPendiente extends LlamadoPagoEfectivo {
+  mesaId: string;
+  mesaNumero: number;
+  /** Cuándo lo pidió el comensal (ms), como el `ts` del evento en vivo. */
+  ts: number;
+  motivo: 'PAGO_EFECTIVO';
+}
 
 // Subconjunto de transiciones que el KDS puede disparar (RF.03/RNF.05).
 // El resto de la máquina de estados (RECIBIDO viene de HU-003, ENTREGADO lo
@@ -193,6 +206,52 @@ export class PedidosTransicionService {
       // BL-244: mismo mapper que usa pedido:nuevo (PedidosService.crear),
       // para que el snapshot y el evento en vivo tengan la misma forma.
       return pedidos.map(aPedidoKds);
+    });
+  }
+
+  /**
+   * BL-448: avisos de efectivo que siguen pendientes, para el KDS que se
+   * conecta o se reconecta después de la solicitud (el evento en vivo solo
+   * lo reciben los que ya estaban conectados).
+   *
+   * Pendiente = pedido de mesa en PENDIENTE_PAGO con efectivo_solicitado_en.
+   * Cobrado (RECIBIDO o después) o cancelado (al cerrar la mesa) ya no
+   * aparece. RLS limita la consulta al tenant.
+   */
+  async listarSolicitudesEfectivo(
+    tenantId: string,
+  ): Promise<SolicitudEfectivoPendiente[]> {
+    return this.tenantPrisma.runInTenantContext(tenantId, async (tx) => {
+      const pedidos = await tx.pedido.findMany({
+        where: {
+          estado: PedidoEstado.PENDIENTE_PAGO,
+          canal: 'QR',
+          efectivoSolicitadoEn: { not: null },
+        },
+        select: {
+          id: true,
+          efectivoSolicitadoEn: true,
+          efectivoPagaCon: true,
+          mesa: { select: { id: true, numero: true } },
+          lineas: { select: { subtotal: true } },
+        },
+        orderBy: { efectivoSolicitadoEn: 'asc' },
+      });
+
+      return pedidos.map((pedido) => ({
+        mesaId: pedido.mesa.id,
+        mesaNumero: pedido.mesa.numero,
+        ts: (pedido.efectivoSolicitadoEn as Date).getTime(),
+        motivo: 'PAGO_EFECTIVO' as const,
+        pedidoId: pedido.id,
+        total: pedido.lineas
+          .reduce(
+            (acumulado, linea) => acumulado.plus(linea.subtotal),
+            new Prisma.Decimal(0),
+          )
+          .toFixed(2),
+        pagaCon: pedido.efectivoPagaCon?.toFixed(2) ?? null,
+      }));
     });
   }
 }

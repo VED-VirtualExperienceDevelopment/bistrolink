@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { PagoEstado, PedidoEstado, Prisma } from '@prisma/client';
+import { PagoEstado, PedidoEstado, Prisma, PrismaClient } from '@prisma/client';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { SolicitudPago } from './dto/crear-pago.dto';
 import { PagoGatewayFactory } from './gateways/pago-gateway.factory';
@@ -13,6 +13,12 @@ import { ResultadoCobro } from './gateways/pago-gateway.interface';
 import { PagoRechazadoException } from './gateways/pago-rechazado.exception';
 import { PagoTemporalmenteNoDisponibleException } from './gateways/pago-temporalmente-no-disponible.exception';
 import { CfeService, ResumenComprobante } from '../cfe/cfe.service';
+import {
+  aplicaRebaja17934,
+  calcularRebaja17934,
+  RebajaIva,
+} from '../cfe/rebaja-iva';
+import { receptorParaGuardar } from '../cfe/receptor-fiscal';
 import { PedidosService } from '../pedidos/pedidos.service';
 import { PedidoParaKds } from '../pedidos/pedido-kds.mapper';
 import { registrarCambioPago, textoCorto } from './historial-pago';
@@ -43,6 +49,18 @@ export interface EstadoPagoDelPedido {
     solicitadoEn: Date | null;
     pagaCon: string | null;
   };
+  /**
+   * BL-452: pago con tarjeta (Mercado Pago, la única pasarela). `disponible`
+   * si el local tiene Mercado Pago habilitado (HU-020): si no, la pantalla
+   * no ofrece la tarjeta y la API rechazaría el pago con 409.
+   */
+  tarjeta: { disponible: boolean };
+  /**
+   * HU-037 (BL-207): rebaja de IVA de la Ley 17.934, informativa (la aplica
+   * la administradora, no BistroLink). Solo en un pago electrónico cobrado
+   * de un consumo en el local; null en efectivo, para retirar o sin cobrar.
+   */
+  rebajaIva: RebajaIva | null;
 }
 
 // El pago que importa para el comensal: el que cobró (aprobado o después
@@ -55,6 +73,40 @@ const ESTADOS_COBRADOS: ReadonlySet<PagoEstado> = new Set<PagoEstado>([
 // La pasarela respondió con un error (datos de tarjeta inválidos, solicitud
 // rechazada): no hubo cobro.
 const MOTIVO_ERROR_PASARELA = 'ERROR_PASARELA';
+
+/**
+ * HU-020 (BL-72): columna de restaurante que habilita cada medio de pago
+ * digital y su nombre para el mensaje. El efectivo no pasa por acá: tiene
+ * su propio control en CobroEfectivoService (HU-031).
+ */
+const MEDIOS_DIGITALES = {
+  MERCADOPAGO: { campo: 'mercadoPagoHabilitado', nombre: 'Mercado Pago' },
+  PLEXO: { campo: 'plexoHabilitado', nombre: 'Plexo' },
+} as const;
+
+type MedioDigital = keyof typeof MEDIOS_DIGITALES;
+
+/**
+ * HU-020 (BL-72): 409 si el local apagó el medio de pago en su
+ * configuración. Solo un false explícito lo bloquea.
+ */
+async function validarMedioHabilitado(
+  tx: Pick<PrismaClient, 'restaurante'>,
+  tenantId: string,
+  medioPago: string,
+): Promise<void> {
+  const medio = MEDIOS_DIGITALES[medioPago as MedioDigital];
+  if (!medio) return; // el DTO y la factory ya rechazan los desconocidos
+  const restaurante = await tx.restaurante.findUnique({
+    where: { tenantId },
+    select: { mercadoPagoHabilitado: true, plexoHabilitado: true },
+  });
+  if (restaurante?.[medio.campo] === false) {
+    throw new ConflictException(
+      `Este local no acepta pagos con ${medio.nombre}`,
+    );
+  }
+}
 
 @Injectable()
 export class PagosService {
@@ -233,10 +285,16 @@ export class PagosService {
                 medioPago: true,
                 monto: true,
                 motivoRechazo: true,
+                createdAt: true,
                 comprobantes: {
                   orderBy: { createdAt: 'asc' },
                   take: 1,
-                  select: { serie: true, numero: true, urlConsulta: true },
+                  select: {
+                    tipoCfe: true,
+                    serie: true,
+                    numero: true,
+                    urlConsulta: true,
+                  },
                 },
               },
             },
@@ -244,7 +302,7 @@ export class PagosService {
         }),
         restaurante: await tx.restaurante.findUnique({
           where: { tenantId },
-          select: { efectivoHabilitado: true },
+          select: { efectivoHabilitado: true, mercadoPagoHabilitado: true },
         }),
       }),
     );
@@ -270,6 +328,7 @@ export class PagosService {
         motivoRechazo: pago.motivoRechazo,
       },
       comprobante: comprobante && {
+        tipoCfe: comprobante.tipoCfe,
         serie: comprobante.serie,
         numero: comprobante.numero,
         urlConsulta: comprobante.urlConsulta,
@@ -281,6 +340,13 @@ export class PagosService {
         solicitadoEn: pedido.efectivoSolicitadoEn ?? null,
         pagaCon: pedido.efectivoPagaCon?.toFixed(2) ?? null,
       },
+      tarjeta: {
+        disponible: Boolean(datos.restaurante?.mercadoPagoHabilitado),
+      },
+      rebajaIva:
+        pago && aplicaRebaja17934({ ...pago, canal: pedido.canal })
+          ? calcularRebaja17934({ total: pago.monto, fecha: pago.createdAt })
+          : null,
     };
   }
 
@@ -295,6 +361,11 @@ export class PagosService {
           if (existente) {
             return { existente };
           }
+
+          // HU-020 (BL-72): después de la idempotencia (un reintento de un
+          // pago ya creado devuelve ese pago aunque el medio se haya apagado
+          // después) y antes de tocar el pedido o la mesa.
+          await validarMedioHabilitado(tx, tenantId, dto.medioPago);
 
           const pedido = await tx.pedido.findUnique({
             where: { id: dto.pedidoId },
@@ -325,6 +396,19 @@ export class PagosService {
           );
           if (monto.lessThanOrEqualTo(0)) {
             throw new BadRequestException('El pedido no tiene monto a cobrar');
+          }
+          // HU-015 (BL-120): antes de cobrar, 409 si el stock ya no alcanza
+          // (D3, ADR 0009). Se descuenta recién al aprobarse el pago.
+          await this.pedidos.verificarStockEnTx(tx, pedido.id);
+
+          // HU-009 (BL-453): e-Factura. En la misma transacción que el
+          // pago: el CFE se emite cuando se aprueba y lee el pedido.
+          const receptor = receptorParaGuardar(dto.receptorFiscal, new Date());
+          if (receptor) {
+            await tx.pedido.update({
+              where: { id: pedido.id },
+              data: receptor,
+            });
           }
 
           await tx.mesa.update({

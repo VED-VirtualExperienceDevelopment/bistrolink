@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaClient, MesaEstado, Prisma } from '@prisma/client';
@@ -13,10 +14,22 @@ import { MesaDelQr } from '../qr-mesa/qr-mesa-acceso.service';
 import { KdsGateway, LlamadoPagoEfectivo } from './kds.gateway';
 import { aPedidoKds, PedidoParaKds } from './pedido-kds.mapper';
 import { generarTokenAcceso } from './token-acceso-pedido';
+import { ResumenVentasService } from '../reportes/resumen-ventas.service';
+import {
+  DescuentoStockService,
+  type AvisosStock,
+} from '../stock/descuento-stock.service';
+import { cantidadesPorItem, faltaStock } from '../stock/estado-stock';
 
 // BL-311 (RD.03, prepago): el pedido espera el pago aprobado antes de ir a
 // cocina. La transición a RECIBIDO la hace la confirmación del pago.
 export const ESTADO_INICIAL_PEDIDO = 'PENDIENTE_PAGO' as const;
+
+/**
+ * HU-015 (BL-120): el pedido recién confirmado, con lo que hay que avisar
+ * del stock después del commit (notificarPedidoConfirmado).
+ */
+export type PedidoConfirmado = PedidoParaKds & { avisosStock?: AvisosStock };
 const NUMERO_MESA_VIRTUAL = 0;
 // usuario.keycloak_id es UUID: un actor que no lo es (un script) no se busca.
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -77,9 +90,13 @@ function aPedidoCargado(
 
 @Injectable()
 export class PedidosService {
+  private readonly logger = new Logger(PedidosService.name);
+
   constructor(
     private readonly tenantPrisma: TenantPrismaService,
     private readonly kdsGateway: KdsGateway,
+    private readonly resumenVentas: ResumenVentasService,
+    private readonly descuentoStock: DescuentoStockService,
   ) {}
 
   /**
@@ -173,7 +190,7 @@ export class PedidosService {
     tenantId: string,
     pedidoId: string,
     usuarioId: string | null = null,
-  ): Promise<PedidoParaKds | null> {
+  ): Promise<PedidoConfirmado | null> {
     const { count } = await tx.pedido.updateMany({
       where: { id: pedidoId, estado: 'PENDIENTE_PAGO' },
       data: { estado: 'RECIBIDO' },
@@ -192,7 +209,15 @@ export class PedidosService {
       },
     });
 
-    return tx.pedido.findUniqueOrThrow({
+    // HU-015 (BL-120): el stock se descuenta al confirmarse el pago (RF.04,
+    // RD.09, ADR 0009), en esta misma transacción.
+    const avisosStock = await this.descuentoStock.descontarEnTx(
+      tx,
+      tenantId,
+      pedidoId,
+    );
+
+    const pedido = await tx.pedido.findUniqueOrThrow({
       where: { id: pedidoId },
       select: {
         id: true,
@@ -211,6 +236,7 @@ export class PedidosService {
         },
       },
     });
+    return { ...pedido, avisosStock };
   }
 
   /**
@@ -243,7 +269,7 @@ export class PedidosService {
    */
   notificarPedidoConfirmado(
     tenantId: string,
-    pedido: PedidoParaKds & { updatedAt?: Date },
+    pedido: PedidoConfirmado & { updatedAt?: Date },
   ) {
     this.kdsGateway.emitirNuevoPedido(tenantId, aPedidoKds(pedido));
     this.kdsGateway.emitirActualizacionPedido(pedido.id, {
@@ -251,6 +277,38 @@ export class PedidosService {
       estado: pedido.estado,
       actualizadoEn: (pedido.updatedAt ?? new Date()).toISOString(),
     });
+    // HU-012 (BL-219): el dashboard de reportes se actualiza con el cobro.
+    // En segundo plano: el pago ya está confirmado y no espera al resumen.
+    void this.actualizarReportes(tenantId);
+    // HU-015 (BL-120): alertas de stock al administrador y agotados a la
+    // carta del comensal, recién con el pago confirmado.
+    if (pedido.avisosStock) {
+      this.descuentoStock.avisar(tenantId, pedido.avisosStock);
+    }
+  }
+
+  /**
+   * HU-015 (BL-120): antes de cobrar (reservar el pago con tarjeta o
+   * registrar el efectivo), 409 si el stock ya no alcanza para el pedido.
+   */
+  verificarStockEnTx(tx: PrismaClient, pedidoId: string): Promise<void> {
+    return this.descuentoStock.verificarPedidoEnTx(tx, pedidoId);
+  }
+
+  /**
+   * HU-012 (BL-219): recalcula el resumen de ventas de las últimas horas y
+   * avisa a los dashboards abiertos. Nunca lanza: si falla, el job lo
+   * recalcula en la próxima corrida (ResumenVentasJob).
+   */
+  async actualizarReportes(tenantId: string): Promise<void> {
+    try {
+      await this.resumenVentas.recalcularRecientes(tenantId);
+      this.kdsGateway.emitirReportesActualizados(tenantId);
+    } catch (error) {
+      this.logger.warn(
+        `Resumen de ventas: no se pudo recalcular al cobrar (tenant ${tenantId}): ${(error as Error).message}`,
+      );
+    }
   }
 
   /**
@@ -367,6 +425,14 @@ export class PedidosService {
       },
     });
     const itemsPorId = new Map(itemsCarta.map((i) => [i.id, i]));
+    // HU-015 (BL-120): con control de stock, 409 si no alcanza para lo
+    // pedido (sumando las líneas del mismo ítem). No se reserva: se vuelve a
+    // verificar al cobrar y se descuenta al confirmarse el pago.
+    for (const [itemId, cantidad] of cantidadesPorItem(items)) {
+      const item = itemsPorId.get(itemId);
+      const mensaje = item?.disponible ? faltaStock(item, cantidad) : null;
+      if (mensaje) throw new ConflictException(mensaje);
+    }
     return items.map((linea) => {
       const item = itemsPorId.get(linea.itemCartaId);
       if (!item) {

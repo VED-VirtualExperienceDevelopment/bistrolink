@@ -116,6 +116,50 @@ describe("cómo se muestra cada registro", () => {
     ).toEqual([]);
   });
 
+  it("[TC-U-261] HU-020: la configuración del establecimiento tiene su texto y sus campos legibles", () => {
+    expect(etiquetaAccion("ESTABLECIMIENTO_CONFIGURACION_MODIFICADA")).toBe(
+      "Configuración del establecimiento modificada",
+    );
+    expect(
+      cambiosDelRegistro({
+        valoresAntes: {
+          efectivoHabilitado: true,
+          propinasSugeridas: [],
+          cfeProveedor: "SURTEC",
+        },
+        valoresDespues: {
+          efectivoHabilitado: false,
+          propinasSugeridas: [10, 15, 20],
+          cfeProveedor: "BILLER",
+        },
+        detalle: {
+          campos: ["efectivoHabilitado", "propinasSugeridas", "cfeProveedor"],
+        },
+      }),
+    ).toEqual([
+      "Efectivo: sí → no",
+      "Propinas sugeridas (%): — → 10, 15, 20",
+      "Proveedor de CFE: Surtec → Biller",
+    ]);
+  });
+
+  it("[TC-U-262] HU-020: un campo auditado sin el valor (la razón social) se muestra como modificado", () => {
+    expect(
+      cambiosDelRegistro({
+        valoresAntes: { plexoHabilitado: true },
+        valoresDespues: { plexoHabilitado: false },
+        detalle: { campos: ["razonSocial", "plexoHabilitado"] },
+      }),
+    ).toEqual(["Plexo: sí → no", "Razón social: modificado"]);
+    expect(
+      cambiosDelRegistro({
+        valoresAntes: null,
+        valoresDespues: null,
+        detalle: { campos: ["razonSocial", "rut"], origen: "PLATAFORMA" },
+      }),
+    ).toEqual(["Razón social: modificado", "RUT: modificado"]);
+  });
+
   it("el autor: el usuario del local, un proceso automático o la plataforma", () => {
     expect(
       autorDelRegistro({
@@ -129,5 +173,48 @@ describe("cómo se muestra cada registro", () => {
     expect(autorDelRegistro({ usuario: null, actorKeycloakId: "k" })).toBe(
       "Plataforma o usuario eliminado",
     );
+  });
+
+  it("[TC-U-369] HU-015: los ajustes de stock y las ventas sin stock tienen su texto, sus campos y su autor", () => {
+    expect(etiquetaAccion("CARTA_ITEM_STOCK_AJUSTADO")).toBe(
+      "Stock de un ítem ajustado",
+    );
+    expect(etiquetaAccion("CARTA_ITEM_VENDIDO_SIN_STOCK")).toBe(
+      "Venta sin stock",
+    );
+    expect(
+      cambiosDelRegistro({
+        valoresAntes: {
+          controlaStock: false,
+          stockActual: 0,
+          umbralAlerta: 5,
+          disponible: true,
+        },
+        valoresDespues: {
+          controlaStock: true,
+          stockActual: 12,
+          umbralAlerta: 3,
+          disponible: true,
+        },
+      }),
+    ).toEqual([
+      "Controla stock: no → sí",
+      "Unidades: 0 → 12",
+      "Aviso con: 5 → 3",
+      "Disponible: sí → sí",
+    ]);
+    expect(
+      cambiosDelRegistro({
+        valoresAntes: null,
+        valoresDespues: null,
+        detalle: { nombre: "Flan", pedidoId: "p", unidadesDeMas: 1 },
+      }),
+    ).toEqual(["Unidades vendidas sin stock: 1"]);
+    expect(
+      autorDelRegistro({
+        usuario: null,
+        actorKeycloakId: "sistema:confirmacion-de-pago",
+      }),
+    ).toBe("Proceso automático");
   });
 });

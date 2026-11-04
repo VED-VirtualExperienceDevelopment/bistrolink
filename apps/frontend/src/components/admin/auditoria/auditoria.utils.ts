@@ -59,6 +59,9 @@ export const ETIQUETAS_ACCION: Record<string, string> = {
     "Contraseña de administrador restablecida",
   ESTABLECIMIENTO_ADMIN_CREADO: "Administrador agregado",
   ESTABLECIMIENTO_ELIMINADO: "Establecimiento eliminado",
+  // HU-020 (BL-72): medios de pago, propinas, proveedor de CFE y razón social.
+  ESTABLECIMIENTO_CONFIGURACION_MODIFICADA:
+    "Configuración del establecimiento modificada",
   CARTA_ITEM_IMAGEN_CAMBIADA: "Imagen de un ítem",
   CARTA_ITEM_MODIFICADO: "Precio o disponibilidad de un ítem",
   CARTA_ITEM_DADO_DE_BAJA: "Ítem dado de baja",
@@ -74,6 +77,9 @@ export const ETIQUETAS_ACCION: Record<string, string> = {
   CARTA_CATEGORIA_ELIMINADA: "Categoría eliminada",
   MESA_PEDIDOS_CANCELADOS: "Pedidos cancelados al cerrar la mesa",
   PAGO_EFECTIVO_REGISTRADO: "Cobro en efectivo",
+  // HU-015 (BL-120): stock de la jornada.
+  CARTA_ITEM_STOCK_AJUSTADO: "Stock de un ítem ajustado",
+  CARTA_ITEM_VENDIDO_SIN_STOCK: "Venta sin stock",
 };
 
 export function etiquetaAccion(accion: string): string {
@@ -134,33 +140,90 @@ const NOMBRE_CAMPO: Record<string, string> = {
   nombre: "Nombre",
   descripcion: "Descripción",
   visible: "Visible",
+  // HU-020 (BL-72): configuración del establecimiento.
+  razonSocial: "Razón social",
+  efectivoHabilitado: "Efectivo",
+  mercadoPagoHabilitado: "Mercado Pago",
+  plexoHabilitado: "Plexo",
+  handyHabilitado: "Handy",
+  propinasSugeridas: "Propinas sugeridas (%)",
+  cfeProveedor: "Proveedor de CFE",
+  // BL-412: datos del establecimiento que cambia la plataforma.
+  rut: "RUT",
+  plan: "Plan",
+  restauranteNombre: "Nombre del restaurante",
+  restauranteDireccion: "Dirección del restaurante",
+  // HU-015 (BL-120): stock de la jornada.
+  controlaStock: "Controla stock",
+  stockActual: "Unidades",
+  umbralAlerta: "Aviso con",
 };
 
-function valorParaMostrar(valor: unknown): string {
+/** HU-020 (BL-72): valores de un campo que se muestran con otro texto. */
+const VALOR_POR_CAMPO: Record<string, Record<string, string>> = {
+  cfeProveedor: { SURTEC: "Surtec", BILLER: "Biller" },
+};
+
+function valorParaMostrar(valor: unknown, campo = ""): string {
   if (valor === null || valor === undefined || valor === "") return "—";
   if (valor === true) return "sí";
   if (valor === false) return "no";
-  if (typeof valor === "string") return valor;
+  if (typeof valor === "string")
+    return VALOR_POR_CAMPO[campo]?.[valor] ?? valor;
   if (typeof valor === "number" || typeof valor === "bigint")
     return valor.toString();
+  // HU-020 (BL-72): una lista simple (las propinas) como «10, 15, 20».
+  if (
+    Array.isArray(valor) &&
+    valor.every((v) => typeof v === "number" || typeof v === "string")
+  )
+    return valor.length === 0 ? "—" : valor.join(", ");
   return JSON.stringify(valor);
+}
+
+/**
+ * HU-020 (BL-72): campos que cambiaron pero se auditan sin el valor (por
+ * ejemplo, la razón social), listados en `detalle.campos`.
+ */
+function camposSinValor(
+  detalle: RegistroAuditoria["detalle"] | undefined,
+  conValor: Set<string>,
+): string[] {
+  const campos = detalle?.campos;
+  if (!Array.isArray(campos)) return [];
+  return campos.filter(
+    (campo): campo is string =>
+      typeof campo === "string" && !conValor.has(campo),
+  );
 }
 
 /**
  * Cambios de un registro como «Precio: 12.50 → 14.00». Toma los campos que
  * aparecen antes o después (uno de los dos puede faltar: un alta no tiene
- * valor anterior).
+ * valor anterior). Los que cambiaron sin guardar el valor (HU-020, BL-72)
+ * van al final como «Razón social: modificado».
  */
 export function cambiosDelRegistro(
-  registro: Pick<RegistroAuditoria, "valoresAntes" | "valoresDespues">,
+  registro: Pick<RegistroAuditoria, "valoresAntes" | "valoresDespues"> &
+    Partial<Pick<RegistroAuditoria, "detalle">>,
 ): string[] {
   const antes = registro.valoresAntes ?? {};
   const despues = registro.valoresDespues ?? {};
   const campos = [...new Set([...Object.keys(antes), ...Object.keys(despues)])];
-  return campos.map(
+  const conValor = campos.map(
     (campo) =>
-      `${NOMBRE_CAMPO[campo] ?? campo}: ${valorParaMostrar(antes[campo])} → ${valorParaMostrar(despues[campo])}`,
+      `${NOMBRE_CAMPO[campo] ?? campo}: ${valorParaMostrar(antes[campo], campo)} → ${valorParaMostrar(despues[campo], campo)}`,
   );
+  const sinValor = camposSinValor(registro.detalle, new Set(campos)).map(
+    (campo) => `${NOMBRE_CAMPO[campo] ?? campo}: modificado`,
+  );
+  // HU-015 (BL-120): unidades que se vendieron sin stock (ADR 0009).
+  const unidadesDeMas = registro.detalle?.unidadesDeMas;
+  const sinStock =
+    typeof unidadesDeMas === "number"
+      ? [`Unidades vendidas sin stock: ${unidadesDeMas}`]
+      : [];
+  return [...conValor, ...sinValor, ...sinStock];
 }
 
 /**
@@ -182,7 +245,11 @@ export function autorDelRegistro(
   registro: Pick<RegistroAuditoria, "usuario" | "actorKeycloakId">,
 ): string {
   if (registro.usuario) return registro.usuario.nombre;
-  if (registro.actorKeycloakId.startsWith("script:"))
+  // HU-015 (BL-120): «sistema:» es el descuento de stock al confirmar un pago.
+  if (
+    registro.actorKeycloakId.startsWith("script:") ||
+    registro.actorKeycloakId.startsWith("sistema:")
+  )
     return "Proceso automático";
   return "Plataforma o usuario eliminado";
 }

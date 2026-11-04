@@ -145,6 +145,9 @@ export class EliminacionEstablecimientoService {
 
           await tx.itemCarta.deleteMany({ where: { tenantId } });
           await tx.categoriaCarta.deleteMany({ where: { tenantId } });
+          // HU-012 (BL-108): el historial de sesiones de mesa (sin pedidos
+          // puede haber mesas que se abrieron y cerraron).
+          await tx.sesionMesa.deleteMany({ where: { tenantId } });
           await tx.mesa.deleteMany({ where: { tenantId } });
           await tx.usuario.deleteMany({ where: { tenantId } });
           await tx.restaurante.deleteMany({ where: { tenantId } });

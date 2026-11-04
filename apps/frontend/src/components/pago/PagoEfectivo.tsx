@@ -95,11 +95,14 @@ export function FormularioEfectivo({
   enviando,
   error,
   onAvisar,
+  puedeAvisar,
 }: {
   readonly total: number;
   readonly enviando: boolean;
   readonly error: string | null;
   readonly onAvisar: (pagaCon: string | null) => void;
+  /** HU-009 (BL-453): false si falta algo de la e-Factura (ya se muestra). */
+  readonly puedeAvisar?: () => boolean;
 }) {
   const [texto, setTexto] = useState('');
   const [intentado, setIntentado] = useState(false);
@@ -131,6 +134,7 @@ export function FormularioEfectivo({
           e.preventDefault();
           setIntentado(true);
           if (estado.tipo === 'invalido' || estado.tipo === 'insuficiente') return;
+          if (puedeAvisar && !puedeAvisar()) return;
           onAvisar(estado.tipo === 'ok' ? estado.monto : null);
         }}
       >
@@ -194,7 +198,8 @@ export function EsperandoMozo({
   readonly enviando: boolean;
   readonly onAvisarDeNuevo: () => void;
   readonly onConsultar: () => void;
-  readonly onPagarConTarjeta: () => void;
+  /** BL-452: sin tarjeta disponible no se ofrece cambiar de medio. */
+  readonly onPagarConTarjeta?: () => void;
 }) {
   return (
     <section
@@ -232,13 +237,15 @@ export function EsperandoMozo({
         >
           {enviando ? 'Avisando…' : 'Volver a avisar al mozo'}
         </button>
-        <button
-          type="button"
-          onClick={onPagarConTarjeta}
-          className="px-5 py-2.5 text-[#6e54ad] font-semibold underline-offset-4 hover:underline"
-        >
-          Prefiero pagar con tarjeta
-        </button>
+        {onPagarConTarjeta && (
+          <button
+            type="button"
+            onClick={onPagarConTarjeta}
+            className="px-5 py-2.5 text-[#6e54ad] font-semibold underline-offset-4 hover:underline"
+          >
+            Prefiero pagar con tarjeta
+          </button>
+        )}
       </div>
     </section>
   );
