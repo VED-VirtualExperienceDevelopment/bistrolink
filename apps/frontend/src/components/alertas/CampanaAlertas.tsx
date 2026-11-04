@@ -11,6 +11,14 @@ import { etiquetaCampana, textoContador } from './alertas.utils';
 const DURACION_ANIMACION_MS = 2500;
 const RUTA_ALERTAS = '/admin/alertas';
 
+// Posición de la vista rápida, de abajo hacia arriba (mobile first): por
+// defecto va fija, de borde a borde y debajo del encabezado; desde 1024 px
+// pasa a colgar de la campana. No se usan variantes `max-*`: con la pantalla
+// `touch` (raw) que agrega tailwind.config.ts, Tailwind 3 no las aplica y el
+// panel quedaba en el flujo, empujando el encabezado hacia arriba.
+const CLASES_VISTA_RAPIDA =
+  'z-30 flex max-h-[70vh] flex-col rounded-xl border border-outline-variant bg-surface-container-lowest shadow-xl fixed inset-x-2 top-[72px] lg:absolute lg:left-auto lg:right-0 lg:top-full lg:mt-2 lg:w-[360px]';
+
 /**
  * BL-441: campana del encabezado. Muestra el contador de pendientes y abre una
  * vista rápida de las alertas, para aceptarlas o desestimarlas sin salir de la
@@ -116,7 +124,7 @@ export function CampanaAlertas() {
         <section
           id="vista-rapida-alertas"
           aria-label="Alertas pendientes"
-          className="z-30 flex max-h-[70vh] flex-col rounded-xl border border-outline-variant bg-surface-container-lowest shadow-xl max-lg:fixed max-lg:inset-x-2 max-lg:top-[72px] lg:absolute lg:right-0 lg:top-full lg:mt-2 lg:w-[360px]"
+          className={CLASES_VISTA_RAPIDA}
         >
           <h2 className="shrink-0 border-b border-outline-variant px-4 py-3 text-headline-sm text-on-surface">
             Alertas

@@ -10,7 +10,7 @@ import {
 
 // BL-441: el personal del salón recibe los llamados de las mesas en la campana
 // del encabezado (vista rápida) y en la pantalla Alertas del menú, y puede
-// aceptarlos desde ahí.
+// aceptarlos desde ahí. El tablero del KDS no los muestra.
 //
 // Usa solo la sesión de ADMIN (kdsPageAdmin): ve la misma campana y la misma
 // pantalla que el mozo, y de ahí sale también el token para crear la mesa. No
@@ -82,11 +82,13 @@ test.describe("BL-441: Alertas del mozo", () => {
       await expect(campana).toBeVisible({ timeout: 5000 });
       await expect(campana).toHaveAttribute("aria-expanded", "false");
 
-      // Un solo socket: el tablero muestra el aviso con el mismo estado.
+      // Los llamados se atienden desde la campana y la pantalla Alertas: el
+      // tablero no los muestra. Como la campana ya tiene el contador, el
+      // evento ya llegó a esta página y la ausencia en el tablero es firme.
       const titulo = new RegExp(`Mesa ${mesa.numero} solicita atención`, "i");
       await expect(
         page.getByRole("alert").filter({ hasText: titulo }),
-      ).toBeVisible();
+      ).toHaveCount(0);
 
       // La campana abre una vista rápida con la alerta de la mesa.
       await campana.click();

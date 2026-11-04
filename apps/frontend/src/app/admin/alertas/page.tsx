@@ -5,6 +5,10 @@ import { ListaAlertas } from '@/components/alertas/ListaAlertas';
 // botones que la vista rápida de la campana. El estado sale de
 // AlertasProvider (el único socket del staff dentro de /admin/*), sin guard de
 // rol propio porque hereda el de admin/layout.tsx (ADMIN o MOZO).
+//
+// El ancho máximo de la lista lo pone ListaAlertas en la lista misma: así el
+// aviso de «no hay alertas» se centra en todo el contenido y no en una
+// columna angosta pegada a la izquierda.
 export default function AdminAlertasPage() {
   return (
     <div className="flex h-full flex-col gap-4 p-6">
@@ -15,9 +19,7 @@ export default function AdminAlertasPage() {
           antigua primero.
         </p>
       </div>
-      <div className="w-full max-w-2xl">
-        <ListaAlertas />
-      </div>
+      <ListaAlertas />
     </div>
   );
 }

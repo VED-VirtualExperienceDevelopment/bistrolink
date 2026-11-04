@@ -41,7 +41,12 @@ export function KdsBoard() {
   const socketRef = useRef<Socket | null>(null);
 
   const conectado = alertas ? alertas.conectado : conectadoPropio;
-  const llamados = alertas ? alertas.llamados : llamadosPropios;
+  // BL-441: los llamados de las mesas («Mesa N solicita atención») se atienden
+  // desde la campana y la pantalla Alertas, no desde este tablero. El tablero
+  // conserva solo los avisos de pago en efectivo (BL-442 / BL-448).
+  const llamados = (alertas ? alertas.llamados : llamadosPropios).filter(
+    (llamado) => llamado.motivo === 'PAGO_EFECTIVO',
+  );
 
   const puedeOperarTransiciones = Boolean(hasRole('MOZO') || hasRole('ADMIN'));
 
