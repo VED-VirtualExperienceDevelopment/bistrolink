@@ -8,7 +8,13 @@ import {
   hoyEnUruguay,
   rangoInvalido,
   rutaComprobantes,
+  estadoPendiente,
+  filaPendiente,
+  mensajeReintento,
+  rutaPendientes,
+  rutaReintentar,
   type Comprobante,
+  type PendienteEmision,
 } from "@/components/admin/comprobantes/comprobantes.utils";
 
 // HU-009 (BL-455): pantalla de comprobantes del administrador.
@@ -121,5 +127,95 @@ describe("comprobantes.utils (HU-009, BL-455)", () => {
         estadoDgiMotivo: null,
       }),
     ).toBeNull();
+  });
+});
+
+describe("pendientes de emisión (HU-023, BL-96)", () => {
+  const PENDIENTE: PendienteEmision = {
+    pagoId: "pago-1",
+    pedidoId: "3cdf1dad-31d6-43c9-9739-11485e0e23f8",
+    mesa: 4,
+    canal: "QR",
+    monto: "590.00",
+    medioPago: "EFECTIVO",
+    fecha: "2026-11-03T17:00:00.000Z",
+    intentos: 2,
+    ultimoIntentoEn: "2026-11-03T17:10:00.000Z",
+    ultimoError: "Surtec rechazó la emisión (HTTP 503): {}",
+    requiereAtencion: false,
+    proximoIntentoEn: "2026-11-03T17:25:00.000Z",
+  };
+
+  it("rutas", () => {
+    expect(rutaPendientes()).toBe("/admin/comprobantes/pendientes");
+    expect(rutaPendientes(3)).toBe("/admin/comprobantes/pendientes?pagina=3");
+    expect(rutaReintentar("pago 1")).toBe(
+      "/admin/comprobantes/pendientes/pago%201/reintentar",
+    );
+  });
+
+  it("estado: reintentando con la hora del próximo intento (Uruguay), recién pagado o requiere atención", () => {
+    expect(estadoPendiente(PENDIENTE)).toBe(
+      "Reintentando · próximo intento 14:25",
+    );
+    expect(estadoPendiente({ ...PENDIENTE, intentos: 0 })).toBe(
+      "Se emite en unos minutos",
+    );
+    expect(
+      estadoPendiente({
+        ...PENDIENTE,
+        requiereAtencion: true,
+        proximoIntentoEn: null,
+      }),
+    ).toBe("Requiere atención");
+  });
+
+  it("fila: pedido, origen, monto, medio e intentos", () => {
+    expect(filaPendiente(PENDIENTE)).toMatchObject({
+      pedido: "#3CDF1D",
+      origen: "Mesa 4",
+      monto: expect.stringContaining("590"),
+      medio: "Efectivo",
+      intentos: "2 intentos fallidos",
+    });
+    expect(
+      filaPendiente({
+        ...PENDIENTE,
+        mesa: null,
+        intentos: 1,
+        medioPago: "OTRO",
+      }),
+    ).toMatchObject({
+      origen: "Para retirar",
+      intentos: "1 intento fallido",
+      medio: "OTRO",
+    });
+  });
+
+  it("mensaje del reintento: emitido, con error o sin emitir", () => {
+    expect(
+      mensajeReintento({
+        emitido: true,
+        comprobante: { tipoCfe: "111", serie: "A", numero: 7 },
+        error: null,
+      }),
+    ).toBe("Listo: se emitió la e-Factura A-0000007.");
+    expect(
+      mensajeReintento({
+        emitido: true,
+        comprobante: { tipoCfe: "101", serie: "A", numero: 8 },
+        error: null,
+      }),
+    ).toBe("Listo: se emitió el e-Ticket A-0000008.");
+    expect(
+      mensajeReintento({
+        emitido: false,
+        comprobante: null,
+        error: "HTTP 503",
+      }),
+    ).toBe("No se pudo emitir: HTTP 503");
+    expect(
+      mensajeReintento({ emitido: false, comprobante: null, error: null }),
+    ).toMatch(/Probá de nuevo/);
   });
 });

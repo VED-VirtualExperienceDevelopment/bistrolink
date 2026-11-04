@@ -80,6 +80,10 @@ export const ETIQUETAS_ACCION: Record<string, string> = {
   // HU-015 (BL-120): stock de la jornada.
   CARTA_ITEM_STOCK_AJUSTADO: "Stock de un ítem ajustado",
   CARTA_ITEM_VENDIDO_SIN_STOCK: "Venta sin stock",
+  // HU-009 (BL-453): supresión de los datos de la e-Factura de un comensal.
+  PEDIDO_RECEPTOR_ANONIMIZADO: "Datos de facturación anonimizados",
+  // HU-023 (BL-96): reintento manual de la emisión de un CFE.
+  PAGO_CFE_REINTENTADO: "Reintento de emisión de comprobante",
 };
 
 export function etiquetaAccion(accion: string): string {
