@@ -940,6 +940,139 @@
       "type": "Synchronous/HTTP"
     },
     {
+      "description": "una emisión de e-Ticket con Surtec no disponible",
+      "pending": false,
+      "providerStates": [
+        {
+          "name": "el servicio de emisión de Surtec no está disponible"
+        }
+      ],
+      "request": {
+        "body": {
+          "content": {
+            "adenda": {
+              "texto": "Pedido 1"
+            },
+            "cod_montos_brutos": 1,
+            "forma_pago": 1,
+            "id_externo": "bl-pago-contrato-1",
+            "items": [
+              {
+                "cantidad": 1,
+                "concepto": "Milanesa",
+                "indicador_facturacion": 3,
+                "precio": 590,
+                "unidad": "Un"
+              }
+            ],
+            "moneda": "UYU",
+            "sucursal": 1,
+            "tipo_comprobante": 101
+          },
+          "contentType": "application/json",
+          "encoded": false
+        },
+        "headers": {
+          "Authorization": [
+            "Bearer token-acceso-contrato-1"
+          ],
+          "Content-Type": [
+            "application/json"
+          ],
+          "X-Emisor": [
+            "219999990019"
+          ]
+        },
+        "matchingRules": {
+          "body": {
+            "$.adenda.texto": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.id_externo": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.items": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.items[*].cantidad": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.items[*].concepto": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.items[*].precio": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.sucursal": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          },
+          "header": {
+            "Authorization": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^Bearer \\S+$"
+                }
+              ]
+            },
+            "X-Emisor": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^\\d{12}$"
+                }
+              ]
+            }
+          }
+        },
+        "method": "POST",
+        "path": "/comprobantes/crear"
+      },
+      "response": {
+        "status": 503
+      },
+      "type": "Synchronous/HTTP"
+    },
+    {
       "description": "una emisión de e-Ticket con un token vencido",
       "pending": false,
       "providerStates": [

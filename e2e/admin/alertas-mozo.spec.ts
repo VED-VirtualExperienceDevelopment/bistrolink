@@ -53,7 +53,7 @@ async function llamarAlMozo(context: BrowserContext, mesa: MesaTemporal) {
 }
 
 test.describe("BL-441: Alertas del mozo", () => {
-  test("[TC-E-071] HU-019: el administrador ve el llamado de la mesa en la campana y en la pantalla Alertas, lo acepta y no hay errores graves de accesibilidad", async ({
+  test("[TC-E-073] HU-019: el administrador ve el llamado de la mesa en la campana y en la pantalla Alertas, lo acepta y no hay errores graves de accesibilidad", async ({
     context,
     kdsPageAdmin: page,
   }) => {
@@ -148,7 +148,7 @@ test.describe("BL-441: Alertas del mozo", () => {
     }
   });
 
-  test("[TC-E-072] HU-019: la alerta sin atender sigue en la pantalla Alertas después de recargar la página, y una alerta aceptada no vuelve", async ({
+  test("[TC-E-074] HU-019: la alerta sin atender sigue en la pantalla Alertas después de recargar la página, y una alerta aceptada no vuelve", async ({
     context,
     kdsPageAdmin: page,
   }) => {

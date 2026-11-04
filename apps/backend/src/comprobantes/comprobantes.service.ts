@@ -1,7 +1,20 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { CfeEstadoDgi, Prisma } from '@prisma/client';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { fechaUruguay } from '../cfe/estado-dgi/estado-dgi';
+import { CfeService, ResumenComprobante } from '../cfe/cfe.service';
+import { configuracionConciliacionCfe } from '../cfe/conciliacion-cfe/configuracion-conciliacion-cfe';
+import {
+  proximoIntento,
+  requiereAtencion,
+} from '../cfe/conciliacion-cfe/reintentos-cfe';
+import { AuditLogService } from '../audit-log/audit-log.service';
+import { AuditAction } from '../audit-log/audit-action.enum';
 import { ConsultarComprobantesDto } from './dto/consultar-comprobantes.dto';
 
 export const TAMANO_PAGINA_COMPROBANTES = 50;
@@ -38,6 +51,40 @@ export interface PaginaComprobantes {
   hayMas: boolean;
 }
 
+/** HU-023 (BL-96): un pago aprobado sin CFE (pendiente de emisión). */
+export interface PendienteEmisionVista {
+  pagoId: string;
+  pedidoId: string;
+  mesa: number | null;
+  canal: string;
+  monto: string;
+  medioPago: string;
+  /** Cuándo se registró el pago. */
+  fecha: string;
+  intentos: number;
+  ultimoIntentoEn: string | null;
+  /** Sin datos personales (ver CfeService). */
+  ultimoError: string | null;
+  /** Ya no se reintenta solo: más de N intentos o de N días. */
+  requiereAtencion: boolean;
+  /** Próximo intento automático; null si requiere atención. */
+  proximoIntentoEn: string | null;
+}
+
+export interface PaginaPendientesEmision {
+  pendientes: PendienteEmisionVista[];
+  /** Total de pagos aprobados sin CFE (para el contador de la pestaña). */
+  total: number;
+  pagina: number;
+  hayMas: boolean;
+}
+
+export interface ResultadoReintentoVista {
+  emitido: boolean;
+  comprobante: ResumenComprobante | null;
+  error: string | null;
+}
+
 /**
  * Inicio del día AAAA-MM-DD en Uruguay. Una fecha que no existe (31/02) da
  * una fecha inválida: el motor de JS la «corre» al mes siguiente, así que se
@@ -58,7 +105,119 @@ function inicioDelDia(fecha: string): Date {
  */
 @Injectable()
 export class ComprobantesService {
-  constructor(private readonly tenantPrisma: TenantPrismaService) {}
+  constructor(
+    private readonly tenantPrisma: TenantPrismaService,
+    private readonly cfe: CfeService,
+    private readonly auditLog: AuditLogService,
+  ) {}
+
+  /**
+   * HU-023 (BL-96): pagos APROBADOS sin comprobante, del más viejo al más
+   * nuevo, con los intentos, el último error y si requiere atención.
+   */
+  async consultarPendientes(
+    tenantId: string,
+    pagina = 1,
+    ahora: Date = new Date(),
+  ): Promise<PaginaPendientesEmision> {
+    const limites = configuracionConciliacionCfe(process.env);
+    const where: Prisma.PagoWhereInput = {
+      estado: 'APROBADO',
+      comprobantes: { none: {} },
+    };
+    return this.tenantPrisma.runInTenantContext(tenantId, async (tx) => {
+      const [total, filas] = await Promise.all([
+        tx.pago.count({ where }),
+        tx.pago.findMany({
+          where,
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+          skip: (pagina - 1) * TAMANO_PAGINA_COMPROBANTES,
+          take: TAMANO_PAGINA_COMPROBANTES + 1,
+          select: {
+            id: true,
+            pedidoId: true,
+            monto: true,
+            medioPago: true,
+            createdAt: true,
+            cfeIntentos: true,
+            cfeUltimoIntentoEn: true,
+            cfeUltimoError: true,
+            pedido: {
+              select: {
+                canal: true,
+                mesa: { select: { numero: true, esVirtual: true } },
+              },
+            },
+          },
+        }),
+      ]);
+      return {
+        total,
+        pagina,
+        hayMas: filas.length > TAMANO_PAGINA_COMPROBANTES,
+        pendientes: filas.slice(0, TAMANO_PAGINA_COMPROBANTES).map((p) => {
+          const proximo = proximoIntento(p, limites, ahora);
+          return {
+            pagoId: p.id,
+            pedidoId: p.pedidoId,
+            mesa: p.pedido.mesa.esVirtual ? null : p.pedido.mesa.numero,
+            canal: p.pedido.canal,
+            monto: p.monto.toFixed(2),
+            medioPago: p.medioPago,
+            fecha: p.createdAt.toISOString(),
+            intentos: p.cfeIntentos,
+            ultimoIntentoEn: p.cfeUltimoIntentoEn?.toISOString() ?? null,
+            ultimoError: p.cfeUltimoError,
+            requiereAtencion: requiereAtencion(p, limites, ahora),
+            proximoIntentoEn: proximo?.toISOString() ?? null,
+          };
+        }),
+      };
+    });
+  }
+
+  /**
+   * HU-023 (BL-96): «Reintentar ahora» del administrador, también para los
+   * que requieren atención. Solo pagos del tenant (RLS), APROBADOS y sin
+   * comprobante. Queda en la auditoría con el resultado.
+   */
+  async reintentar(
+    tenantId: string,
+    pagoId: string,
+    actor: { id: string },
+  ): Promise<ResultadoReintentoVista> {
+    const pago = await this.tenantPrisma.runInTenantContext(tenantId, (tx) =>
+      tx.pago.findUnique({
+        where: { id: pagoId },
+        select: { estado: true, _count: { select: { comprobantes: true } } },
+      }),
+    );
+    if (!pago) throw new NotFoundException('Pago no encontrado');
+    if (pago.estado !== 'APROBADO') {
+      throw new ConflictException('Solo se emite el CFE de un pago aprobado');
+    }
+    if (pago._count.comprobantes > 0) {
+      throw new ConflictException('Este pago ya tiene su comprobante');
+    }
+    if (!this.cfe.configurado()) {
+      throw new ConflictException(
+        'La facturación electrónica no está configurada',
+      );
+    }
+
+    const { comprobante, error } = await this.cfe.reintentar(tenantId, pagoId);
+    let resultado = 'SIN_EMITIR';
+    if (comprobante) resultado = 'EMITIDO';
+    else if (error) resultado = 'FALLIDO';
+    this.auditLog.registrar({
+      action: AuditAction.PAGO_CFE_REINTENTADO,
+      tenantId,
+      actorKeycloakId: actor.id,
+      entidadId: pagoId,
+      detalle: { resultado },
+    });
+    return { emitido: Boolean(comprobante), comprobante, error };
+  }
 
   async consultar(
     tenantId: string,

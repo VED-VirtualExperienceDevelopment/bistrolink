@@ -397,6 +397,9 @@ export class PagosService {
           if (monto.lessThanOrEqualTo(0)) {
             throw new BadRequestException('El pedido no tiene monto a cobrar');
           }
+          // HU-015 (BL-120): antes de cobrar, 409 si el stock ya no alcanza
+          // (D3, ADR 0009). Se descuenta recién al aprobarse el pago.
+          await this.pedidos.verificarStockEnTx(tx, pedido.id);
 
           // HU-009 (BL-453): e-Factura. En la misma transacción que el
           // pago: el CFE se emite cuando se aprueba y lee el pedido.

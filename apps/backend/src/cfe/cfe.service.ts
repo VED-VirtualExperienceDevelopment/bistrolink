@@ -82,6 +82,17 @@ export function esRechazoDeLaEFactura(error: unknown): boolean {
  */
 export const SUFIJO_ETICKET_DE_RESPALDO = '-et';
 
+/** HU-023 (BL-96): tope del error guardado en pago.cfe_ultimo_error. */
+export const LARGO_MAXIMO_ERROR_CFE = 300;
+
+/** HU-023 (BL-96): resultado de un reintento de emisión. */
+export interface ResultadoReintentoCfe {
+  /** El comprobante emitido (o el que ya tenía); null si no se emitió. */
+  comprobante: ResumenComprobante | null;
+  /** Por qué falló, sin datos personales; null si no hubo error. */
+  error: string | null;
+}
+
 @Injectable()
 export class CfeService {
   // Emisiones en curso por pago: si el POST del comensal y el webhook de
@@ -96,6 +107,11 @@ export class CfeService {
     private readonly surtec: SurtecClient,
   ) {}
 
+  /** HU-023 (BL-96): sin Surtec configurado no hay nada que conciliar. */
+  configurado(): boolean {
+    return this.surtec.configurado();
+  }
+
   // Emite el eTicket de un pago APROBADO. Nunca lanza: el cobro ya se hizo y
   // no puede fallar porque falle la facturación. Si no se pudo emitir, el
   // pago queda APROBADO sin comprobante y se reintenta (mismo id_externo, así
@@ -104,11 +120,73 @@ export class CfeService {
     tenantId: string,
     pagoId: string,
   ): Promise<ResumenComprobante | null> {
+    return (await this.reintentar(tenantId, pagoId)).comprobante;
+  }
+
+  /**
+   * HU-023 (BL-96): un intento de emisión, sin esperas, que dice qué pasó.
+   * Lo usan la conciliación y el «Reintentar ahora» del administrador.
+   * Nunca lanza. Si falla, queda registrado en el pago (cfe_intentos,
+   * cfe_ultimo_intento_en y cfe_ultimo_error) para espaciar los reintentos.
+   * Si ya hay una emisión en curso para el pago, espera esa.
+   */
+  async reintentar(
+    tenantId: string,
+    pagoId: string,
+  ): Promise<ResultadoReintentoCfe> {
+    const actual = this.enCurso.get(pagoId);
+    if (actual !== undefined) {
+      const comprobante = await actual;
+      return {
+        comprobante,
+        error: comprobante ? null : 'La emisión en curso no se completó',
+      };
+    }
+    const intento = this.emitir(tenantId, pagoId).then(
+      (comprobante): ResultadoReintentoCfe => ({ comprobante, error: null }),
+      async (error: unknown): Promise<ResultadoReintentoCfe> => {
+        registrarFallo(pagoId, error);
+        await this.registrarIntentoFallido(tenantId, pagoId, error);
+        return { comprobante: null, error: textoDelError(error) };
+      },
+    );
+    this.enCurso.set(
+      pagoId,
+      intento.then((r) => r.comprobante),
+    );
     try {
-      return await this.emitir(tenantId, pagoId);
-    } catch (error) {
-      registrarFallo(pagoId, error);
-      return null;
+      return await intento;
+    } finally {
+      this.enCurso.delete(pagoId);
+    }
+  }
+
+  /**
+   * HU-023 (BL-96): deja en el pago que la emisión falló. Nunca lanza: si no
+   * se puede escribir, solo queda en el log (la conciliación lo reintenta
+   * igual, sin espaciar).
+   */
+  private async registrarIntentoFallido(
+    tenantId: string,
+    pagoId: string,
+    error: unknown,
+  ): Promise<void> {
+    try {
+      await this.tenantPrisma.runInTenantContext(tenantId, (tx) =>
+        tx.pago.update({
+          where: { id: pagoId },
+          data: {
+            cfeIntentos: { increment: 1 },
+            cfeUltimoIntentoEn: new Date(),
+            cfeUltimoError: textoDelError(error),
+          },
+        }),
+      );
+    } catch (error_) {
+      Logger.warn(
+        `CFE: no se pudo registrar el intento fallido del pago ${pagoId}: ${mensajeDe(error_)}`,
+        CfeService.name,
+      );
     }
   }
 
@@ -153,6 +231,8 @@ export class CfeService {
       const espera = ESPERAS_REINTENTO_CFE_MS[intento];
       if (espera === undefined || !esErrorTransitorio(error)) {
         registrarFallo(pagoId, error);
+        // HU-023 (BL-96): la tanda de reintentos cuenta como un intento.
+        await this.registrarIntentoFallido(tenantId, pagoId, error);
         return null;
       }
       Logger.warn(
@@ -315,6 +395,11 @@ function esperar(ms: number): Promise<void> {
 
 function mensajeDe(error: unknown): string {
   return error instanceof Error ? error.message : JSON.stringify(error);
+}
+
+/** El error para guardar en el pago: ya sin datos del receptor (cuerpoParaLog). */
+function textoDelError(error: unknown): string {
+  return mensajeDe(error).slice(0, LARGO_MAXIMO_ERROR_CFE);
 }
 
 function registrarFallo(pagoId: string, error: unknown): void {

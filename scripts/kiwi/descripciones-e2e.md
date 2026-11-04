@@ -15,7 +15,9 @@
 | 1.8     | 02/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-063 cambia: sin aceptar el aviso no se avisa al mozo (BL-453, ajuste de staging).       |
 | 1.9     | 03/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-065: comprobantes del administrador y su estado ante la DGI (HU-009, BL-455).           |
 | 1.10    | 03/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-066 a 068: dashboard de reportes del administrador (HU-012, BL-108).                    |
-| 1.11    | 04/11/2026 | TC-E-071 y 072: alertas del mozo (campana, pantalla Alertas y recarga con alertas pendientes) (BL-441).                                              |
+| 1.11    | 03/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-069 a 071: stock de la jornada y campana de alertas de stock (HU-015, BL-120).          |
+| 1.12    | 04/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-072: pendientes de emisión de comprobantes (HU-023, BL-96).                             |
+| 1.13    | 04/11/2026 | TC-E-073 y 074: alertas del mozo (campana, pantalla Alertas y recarga con alertas pendientes) (BL-441).                                              |
 
 Plantilla para cargar en Kiwi la descripción de casos TC-E (Playwright)
 nuevos o que cambiaron (BL-435). La usa
@@ -60,7 +62,7 @@ Reglas:
 
 ## Casos para cargar
 
-## TC-E-066
+## TC-E-072
 
 ### Precondición
 
@@ -68,53 +70,17 @@ Administrador del establecimiento del seed logueado en el panel.
 
 ### Pasos
 
-1. Desde el menú, abrir «Reportes».
-2. Elegir el período «Últimos 7 días».
-3. Elegir el canal «Web».
-4. Mirar el canal WhatsApp.
-5. Revisar la pantalla con axe-core (WCAG 2.1 AA).
+1. Abrir «Comprobantes».
+2. Tocar la pestaña «Pendientes de emisión».
+3. Revisar la pantalla con axe-core (WCAG 2.1 AA).
 
 ### Resultado esperado
 
-1. Se abre «Reportes» con el período de hoy: la API responde 200, se ven las tarjetas (Total vendido, …) y las tablas equivalentes de los gráficos están en la página.
-2. La API responde 200 con los últimos 7 días y el chip queda elegido.
-3. La API responde 200 y la rotación de mesas dice «No aplica».
-4. Está deshabilitado, con «Próximamente».
-5. Sin errores graves ni críticos de accesibilidad.
+1. Se abre en la pestaña «Emitidos».
+2. La API responde 200 y se ve la tabla de pagos sin comprobante, con «Reintentar ahora», o el aviso «No hay pagos sin comprobante». No se reintenta nada (emitiría un CFE en staging).
+3. Sin errores graves ni críticos de accesibilidad.
 
-## TC-E-067
-
-### Precondición
-
-Administrador logueado en «Reportes».
-
-### Pasos
-
-1. Elegir el período «Personalizado».
-2. Poner «Desde» 31/12/2026 y «Hasta» 01/01/2026.
-
-### Resultado esperado
-
-1. Aparecen los campos «Desde» y «Hasta».
-2. Aparece el aviso de que hay que elegir las dos fechas con «desde» igual o anterior a «hasta», los campos quedan marcados como inválidos y no se consulta la API con esas fechas.
-
-## TC-E-068
-
-### Precondición
-
-Mozo del establecimiento del seed logueado en el panel.
-
-### Pasos
-
-1. Mirar el menú lateral.
-2. Entrar directo a /admin/reportes.
-
-### Resultado esperado
-
-1. No aparece «Reportes».
-2. Vuelve al mapa de mesas.
-
-## TC-E-071
+## TC-E-073
 
 ### Precondición
 
@@ -132,13 +98,13 @@ Administrador del establecimiento del seed logueado en el panel. El test crea un
 ### Resultado esperado
 
 1. Se ve el tablero y la campana del encabezado.
-2. El comensal ve «Avisamos al mozo». La campana muestra el contador y el tablero el aviso de la mesa.
+2. El comensal ve «Avisamos al mozo». La campana muestra el contador y el tablero no muestra el aviso de la mesa: los llamados se atienden desde la campana y la pantalla «Alertas».
 3. Se abre la vista rápida con «Mesa N solicita atención» (N es el número de la mesa de prueba), sin errores graves ni críticos de accesibilidad.
 4. La vista rápida se cierra y el foco vuelve a la campana.
 5. Se abre la pantalla «Alertas», marcada como la página actual del menú, con la alerta de la mesa y los botones «Aceptar» y «Desestimar», sin errores graves ni críticos de accesibilidad.
 6. La alerta sale de la lista.
 
-## TC-E-072
+## TC-E-074
 
 ### Precondición
 

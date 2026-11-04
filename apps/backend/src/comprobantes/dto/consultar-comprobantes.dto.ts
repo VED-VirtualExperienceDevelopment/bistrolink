@@ -30,3 +30,13 @@ export class ConsultarComprobantesDto {
   @Max(1000)
   pagina?: number;
 }
+
+/** HU-023 (BL-96): GET /admin/comprobantes/pendientes. */
+export class ConsultarPendientesDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(1000)
+  pagina?: number;
+}

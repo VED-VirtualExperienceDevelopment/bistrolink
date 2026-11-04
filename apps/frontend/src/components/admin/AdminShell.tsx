@@ -7,6 +7,7 @@ import UsuarioSesion from '@/components/sesion/UsuarioSesion';
 import { AlertasProvider } from '@/components/alertas/AlertasProvider';
 import { CampanaAlertas } from '@/components/alertas/CampanaAlertas';
 import { ContadorMenuAlertas } from '@/components/alertas/ContadorMenuAlertas';
+import CampanaStock from '@/components/admin/stock/CampanaStock';
 
 // BL-441: la pantalla de alertas.
 const HREF_ALERTAS = '/admin/alertas';
@@ -30,6 +31,8 @@ const NAV_ITEMS = [
   { href: '/admin/cobros', label: 'Cobros pendientes', icon: 'payments' },
   // Gestión de Carta - Administración del menú (categorías, ítems, disponibilidad)
   { href: '/admin/menu', label: 'Gestión de Carta', icon: 'restaurant_menu' },
+  // HU-015 (BL-120): stock de la jornada y alertas de stock bajo; solo Administrador.
+  { href: '/admin/stock', label: 'Stock', icon: 'inventory_2', roles: ['ADMIN'] },
   // HU-035 (BL-205): registro de auditoría, solo Administrador.
   { href: '/admin/auditoria', label: 'Auditoría', icon: 'history', roles: ['ADMIN'] },
   // HU-009 (BL-455): comprobantes fiscales y su estado ante la DGI; solo Administrador.
@@ -276,6 +279,8 @@ export default function AdminShell({
               </div>
             </div>
             <div className="flex items-center gap-2">
+              {/* HU-015 (BL-120): alertas de stock, solo el Administrador. */}
+              {hasRole('ADMIN') && <CampanaStock />}
               <CampanaAlertas />
               {/* BL-350: quién inició sesión. «Cerrar sesión» del menú lateral
                   se mantiene; este también lo ofrece. */}

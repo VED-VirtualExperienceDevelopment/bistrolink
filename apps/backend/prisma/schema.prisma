@@ -290,24 +290,32 @@ model CategoriaCarta {
 }
 
 model ItemCarta {
-  id          String    @id @default(uuid()) @db.Uuid
-  tenantId    String    @map("tenant_id") @db.Uuid
-  categoriaId String    @map("categoria_id") @db.Uuid
-  nombre      String
-  descripcion String?
-  precio      Decimal   @db.Decimal(10, 2)
-  disponible  Boolean   @default(true)
-  imagenKey   String?   @map("imagen_key")
+  id            String    @id @default(uuid()) @db.Uuid
+  tenantId      String    @map("tenant_id") @db.Uuid
+  categoriaId   String    @map("categoria_id") @db.Uuid
+  nombre        String
+  descripcion   String?
+  precio        Decimal   @db.Decimal(10, 2)
+  disponible    Boolean   @default(true)
+  imagenKey     String?   @map("imagen_key")
   // BL-393: orden manual dentro de la categoría. La migración lo completa con
   // el orden alfabético que había, así la carta se ve igual.
   // BL-399: sin valor por defecto (ver CategoriaCarta.orden).
-  orden       Int
+  orden         Int
   // BL-393: baja lógica. Nulo = activo. Nombre único entre los no archivados
   // de la categoría: índice parcial creado con SQL en la migración. El precio
   // tiene CHECK (precio >= 0) en la base.
-  archivadoEn DateTime? @map("archivado_en") @db.Timestamptz(3)
-  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  archivadoEn   DateTime? @map("archivado_en") @db.Timestamptz(3)
+  // HU-015 (BL-120): stock de la jornada. Solo cuenta si controlaStock: el
+  // stock se descuenta al confirmarse el pago (RF.04, RD.09) y en 0 el ítem
+  // queda no disponible. umbralAlerta: con stockActual en o debajo, el
+  // administrador recibe la alerta «Por agotarse». CHECK (>= 0) de las dos
+  // cantidades en la migración.
+  controlaStock Boolean   @default(false) @map("controla_stock")
+  stockActual   Int       @default(0) @map("stock_actual")
+  umbralAlerta  Int       @default(5) @map("umbral_alerta")
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   categoria    CategoriaCarta @relation(fields: [categoriaId], references: [id])
   lineasPedido LineaPedido[]
@@ -405,6 +413,12 @@ model Pago {
   // HU-032 (BL-202): por qué quedó RECHAZADO («VENCIDO» si venció sin
   // confirmación, o el status_detail de la pasarela). Null en los demás.
   motivoRechazo      String?    @map("motivo_rechazo") @db.VarChar(60)
+  // HU-023 (BL-96): intentos fallidos de emitir el CFE de un pago APROBADO
+  // (el que no tiene comprobante). Los usa la conciliación de CFE para
+  // espaciar los reintentos; el error va sin datos personales.
+  cfeIntentos        Int        @default(0) @map("cfe_intentos")
+  cfeUltimoIntentoEn DateTime?  @map("cfe_ultimo_intento_en") @db.Timestamptz(3)
+  cfeUltimoError     String?    @map("cfe_ultimo_error") @db.VarChar(300)
   createdAt          DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt          DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -415,6 +429,8 @@ model Pago {
   @@index([tenantId])
   // BL-213: pagos de un pedido (cobro, webhook, consulta del comensal).
   @@index([pedidoId])
+  // HU-023 (BL-96): la conciliación busca los APROBADOS sin CFE por fecha.
+  @@index([tenantId, estado, createdAt])
   // HU-012 (BL-219): pagos de un tenant por fecha, para recalcular el
   // resumen de ventas de una ventana de horas.
   @@index([tenantId, createdAt])
