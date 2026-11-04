@@ -413,6 +413,12 @@ model Pago {
   // HU-032 (BL-202): por qué quedó RECHAZADO («VENCIDO» si venció sin
   // confirmación, o el status_detail de la pasarela). Null en los demás.
   motivoRechazo      String?    @map("motivo_rechazo") @db.VarChar(60)
+  // HU-023 (BL-96): intentos fallidos de emitir el CFE de un pago APROBADO
+  // (el que no tiene comprobante). Los usa la conciliación de CFE para
+  // espaciar los reintentos; el error va sin datos personales.
+  cfeIntentos        Int        @default(0) @map("cfe_intentos")
+  cfeUltimoIntentoEn DateTime?  @map("cfe_ultimo_intento_en") @db.Timestamptz(3)
+  cfeUltimoError     String?    @map("cfe_ultimo_error") @db.VarChar(300)
   createdAt          DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt          DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -423,6 +429,8 @@ model Pago {
   @@index([tenantId])
   // BL-213: pagos de un pedido (cobro, webhook, consulta del comensal).
   @@index([pedidoId])
+  // HU-023 (BL-96): la conciliación busca los APROBADOS sin CFE por fecha.
+  @@index([tenantId, estado, createdAt])
   // HU-012 (BL-219): pagos de un tenant por fecha, para recalcular el
   // resumen de ventas de una ventana de horas.
   @@index([tenantId, createdAt])

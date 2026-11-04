@@ -489,3 +489,122 @@ describe('esRechazoDeLaEFactura (HU-009, BL-453)', () => {
     expect(esRechazoDeLaEFactura(error)).toBe(esperado);
   });
 });
+
+describe('CfeService.reintentar (HU-023, BL-96)', () => {
+  let tx: {
+    pago: { findUnique: jest.Mock; update: jest.Mock };
+    tenant: { findUnique: jest.Mock };
+    comprobanteFiscal: { upsert: jest.Mock };
+  };
+  let tenantPrisma: { runInTenantContext: jest.Mock };
+  let surtec: { configurado: jest.Mock; emitirETicket: jest.Mock };
+  let service: CfeService;
+
+  beforeEach(() => {
+    jest.spyOn(Logger, 'warn').mockImplementation();
+    jest.spyOn(Logger, 'error').mockImplementation();
+    tx = {
+      pago: {
+        findUnique: jest.fn().mockResolvedValue(pagoBd()),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      tenant: {
+        findUnique: jest.fn().mockResolvedValue({ rut: '214198620015' }),
+      },
+      comprobanteFiscal: {
+        upsert: jest
+          .fn()
+          .mockImplementation(({ create }) => Promise.resolve(create)),
+      },
+    };
+    tenantPrisma = {
+      runInTenantContext: jest.fn((_t, callback) => callback(tx)),
+    };
+    surtec = {
+      configurado: jest.fn().mockReturnValue(true),
+      emitirETicket: jest.fn().mockResolvedValue(EMITIDO),
+    };
+    service = new CfeService(tenantPrisma as any, surtec as any);
+  });
+
+  afterEach(() => jest.restoreAllMocks());
+
+  it('emite y responde el comprobante, sin registrar intentos', async () => {
+    await expect(service.reintentar(TENANT_ID, PAGO_ID)).resolves.toEqual({
+      comprobante: expect.objectContaining({ serie: 'A', numero: 49 }),
+      error: null,
+    });
+    expect(tx.pago.update).not.toHaveBeenCalled();
+    expect(service.configurado()).toBe(true);
+  });
+
+  it('si falla, responde el error (un solo intento, sin esperas) y lo registra en el pago', async () => {
+    surtec.emitirETicket.mockRejectedValue(
+      new SurtecError('Surtec rechazó la emisión (HTTP 400): {}', 400),
+    );
+
+    const r = await service.reintentar(TENANT_ID, PAGO_ID);
+
+    expect(r).toEqual({
+      comprobante: null,
+      error: 'Surtec rechazó la emisión (HTTP 400): {}',
+    });
+    expect(surtec.emitirETicket).toHaveBeenCalledTimes(1);
+    expect(tx.pago.update).toHaveBeenCalledWith({
+      where: { id: PAGO_ID },
+      data: {
+        cfeIntentos: { increment: 1 },
+        cfeUltimoIntentoEn: expect.any(Date),
+        cfeUltimoError: 'Surtec rechazó la emisión (HTTP 400): {}',
+      },
+    });
+  });
+
+  it('el error guardado se corta a 300 caracteres', async () => {
+    surtec.emitirETicket.mockRejectedValue(new Error('x'.repeat(500)));
+
+    await service.reintentar(TENANT_ID, PAGO_ID);
+
+    expect(tx.pago.update.mock.calls[0][0].data.cfeUltimoError).toHaveLength(
+      300,
+    );
+  });
+
+  it('si no puede registrar el intento, no lanza (queda en el log)', async () => {
+    surtec.emitirETicket.mockRejectedValue(new Error('fetch failed'));
+    tx.pago.update.mockRejectedValue(new Error('base caída'));
+
+    await expect(service.reintentar(TENANT_ID, PAGO_ID)).resolves.toMatchObject(
+      { comprobante: null, error: 'fetch failed' },
+    );
+    expect(Logger.warn).toHaveBeenCalled();
+  });
+
+  it('con una emisión en curso para el pago, espera esa en lugar de emitir de nuevo', async () => {
+    let terminar!: () => void;
+    surtec.emitirETicket.mockReturnValue(
+      new Promise((resolve) => {
+        terminar = () => resolve(EMITIDO);
+      }),
+    );
+
+    const primera = service.reintentar(TENANT_ID, PAGO_ID);
+    const segunda = service.reintentar(TENANT_ID, PAGO_ID);
+    while (!terminar) await Promise.resolve();
+    terminar();
+
+    await expect(primera).resolves.toMatchObject({ error: null });
+    await expect(segunda).resolves.toMatchObject({ error: null });
+    expect(surtec.emitirETicket).toHaveBeenCalledTimes(1);
+  });
+
+  it('la emisión en segundo plano que agota los reintentos cuenta como un intento', async () => {
+    surtec.emitirETicket.mockRejectedValue(
+      new SurtecError('no es un emisor válido', 400),
+    );
+
+    await service.emitirConReintentos(TENANT_ID, PAGO_ID);
+
+    expect(tx.pago.update).toHaveBeenCalledTimes(1);
+  });
+});
