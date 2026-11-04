@@ -113,9 +113,8 @@ export function CampanaAlertas() {
       </button>
 
       {abierta && (
-        <div
+        <section
           id="vista-rapida-alertas"
-          role="region"
           aria-label="Alertas pendientes"
           className="z-30 flex max-h-[70vh] flex-col rounded-xl border border-outline-variant bg-surface-container-lowest shadow-xl max-lg:fixed max-lg:inset-x-2 max-lg:top-[72px] lg:absolute lg:right-0 lg:top-full lg:mt-2 lg:w-[360px]"
         >
@@ -135,7 +134,7 @@ export function CampanaAlertas() {
               </Link>
             </div>
           )}
-        </div>
+        </section>
       )}
     </div>
   );

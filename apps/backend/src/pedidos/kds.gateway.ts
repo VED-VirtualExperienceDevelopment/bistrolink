@@ -14,6 +14,11 @@ import { MesaEstado, PedidoEstado } from '@prisma/client';
 import { WsAuthService, WsAuthError } from './ws-auth.service';
 import { PedidosTransicionService } from './pedidos-transicion.service';
 import { origenesPermitidos } from '../seguridad-http';
+import { AlertasPendientes } from './alertas-pendientes';
+
+/** Qué hizo el mozo con la alerta: la atendió o la descartó. */
+export type AccionLlamado = 'aceptado' | 'desestimado';
+const ACCIONES_LLAMADO: readonly string[] = ['aceptado', 'desestimado'];
 
 /** HU-031b (BL-442): datos del llamado de una mesa que quiere pagar en efectivo. */
 export interface LlamadoPagoEfectivo {
@@ -35,6 +40,10 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   @WebSocketServer()
   server: Server;
+
+  // BL-441: alertas pendientes por establecimiento, para que sobrevivan a un
+  // refresco, una reconexión o una pestaña cerrada. Ver alertas-pendientes.ts.
+  private readonly alertas = new AlertasPendientes();
 
   constructor(
     private readonly wsAuth: WsAuthService,
@@ -181,8 +190,8 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   /**
    * Estado actual para un KDS que se conecta o pide sincronizar: los pedidos
-   * activos y (BL-448) los avisos de efectivo pendientes, que de otro modo
-   * solo verían los KDS conectados al momento de la solicitud.
+   * activos y las alertas pendientes (BL-441): los llamados guardados en el
+   * servidor más los avisos de efectivo (BL-448) que el mozo todavía no atendió.
    */
   private async enviarSnapshot(client: Socket, tenantId: string) {
     const pedidosTransicion = await this.resolverPedidosTransicion();
@@ -190,7 +199,10 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     client.emit('pedidos:snapshot', pendientes);
     const solicitudes =
       await pedidosTransicion.listarSolicitudesEfectivo(tenantId);
-    client.emit('llamados:snapshot', solicitudes);
+    client.emit(
+      'llamados:snapshot',
+      this.alertas.snapshot(tenantId, solicitudes),
+    );
   }
 
   @SubscribeMessage('pedido:seguir')
@@ -237,7 +249,7 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('llamado:resolver')
   async onResolverLlamado(
     @ConnectedSocket() client: Socket,
-    @MessageBody() body: { mesaId: string; accion: 'aceptado' | 'desestimado' },
+    @MessageBody() body: { mesaId: string; accion: AccionLlamado },
   ) {
     let user;
     try {
@@ -257,27 +269,66 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
 
+    if (
+      typeof body?.mesaId !== 'string' ||
+      body.mesaId.length === 0 ||
+      !ACCIONES_LLAMADO.includes(body.accion)
+    ) {
+      client.emit('error', { message: 'Solicitud de alerta inválida.' });
+      return;
+    }
+
+    // Se loguea la acción y la mesa, nunca quién la hizo (privacidad).
     Logger.log(
       `Llamado ${body.accion}: mesa=${body.mesaId} tenant=${user.tenantId}`,
       KdsGateway.name,
     );
 
-    this.emitirLlamadoResuelto(user.tenantId, body.mesaId);
+    const quitada = this.alertas.resolver(user.tenantId, body.mesaId);
+    if (!quitada?.pedidoId) {
+      // Si la mesa tiene un aviso de efectivo que viene de la base, hay que
+      // anotarlo como atendido o volvería a aparecer al refrescar.
+      await this.marcarEfectivoAtendido(user.tenantId, body.mesaId);
+    }
+
+    this.server
+      .to(this.salaTenant(user.tenantId))
+      .emit('llamado:resuelto', { mesaId: body.mesaId, accion: body.accion });
+  }
+
+  private async marcarEfectivoAtendido(tenantId: string, mesaId: string) {
+    try {
+      const pedidosTransicion = await this.resolverPedidosTransicion();
+      const solicitudes =
+        await pedidosTransicion.listarSolicitudesEfectivo(tenantId);
+      const delaMesa = solicitudes.find((s) => s.mesaId === mesaId);
+      if (delaMesa) this.alertas.resolver(tenantId, mesaId, delaMesa.pedidoId);
+    } catch (err) {
+      Logger.warn(
+        `No se pudo revisar el efectivo pendiente de la mesa ${mesaId}: ${(err as Error).message}`,
+        KdsGateway.name,
+      );
+    }
   }
 
   /**
-   * Saca el banner de la mesa en todos los KDS del tenant: al aceptar o
-   * desestimar el llamado y (BL-448) al cerrar la mesa, que cancela los
-   * pedidos sin pagar. El cobro lo resuelve cada KDS al recibir el
-   * `pedido:nuevo` del pedido que tenía el aviso.
+   * La mesa se cerró (BL-448): cancela los pedidos sin pagar, así que no
+   * queda alerta que atender. Se saca del almacén y de todos los KDS del
+   * tenant. Aceptar o desestimar pasa por `llamado:resolver`.
    */
   emitirLlamadoResuelto(tenantId: string, mesaId: string) {
+    this.alertas.cerrarMesa(tenantId, mesaId);
     this.server
       .to(this.salaTenant(tenantId))
       .emit('llamado:resuelto', { mesaId });
   }
 
   emitirNuevoPedido(tenantId: string, pedido: unknown) {
+    // El pedido llega confirmado y cobrado: su aviso de efectivo ya no aplica.
+    const pedidoId = (pedido as { id?: unknown } | null)?.id;
+    if (typeof pedidoId === 'string') {
+      this.alertas.pedidoCobrado(tenantId, pedidoId);
+    }
     this.server.to(this.salaTenant(tenantId)).emit('pedido:nuevo', pedido);
   }
 
@@ -311,12 +362,16 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     mesaNumero: number,
     pago?: LlamadoPagoEfectivo,
   ) {
-    this.server.to(this.salaTenant(tenantId)).emit('llamado:nuevo', {
+    const llamado = {
       mesaId,
       mesaNumero,
       ts: Date.now(),
-      ...(pago && { motivo: 'PAGO_EFECTIVO', ...pago }),
-    });
+      ...(pago && { motivo: 'PAGO_EFECTIVO' as const, ...pago }),
+    };
+    // BL-441: se guarda antes de emitir, así un KDS que se conecta justo
+    // después lo recibe en el snapshot.
+    this.alertas.agregar(tenantId, llamado);
+    this.server.to(this.salaTenant(tenantId)).emit('llamado:nuevo', llamado);
   }
 
   // HU-016/HU-017: punto de entrada único para propagar un cambio de estado

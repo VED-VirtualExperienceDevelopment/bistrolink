@@ -15,6 +15,7 @@
 | 1.8     | 02/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-063 cambia: sin aceptar el aviso no se avisa al mozo (BL-453, ajuste de staging).       |
 | 1.9     | 03/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-065: comprobantes del administrador y su estado ante la DGI (HU-009, BL-455).           |
 | 1.10    | 03/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-066 a 068: dashboard de reportes del administrador (HU-012, BL-108).                    |
+| 1.11    | 04/11/2026 | TC-E-071 y 072: alertas del mozo (campana, pantalla Alertas y recarga con alertas pendientes) (BL-441).                                              |
 
 Plantilla para cargar en Kiwi la descripción de casos TC-E (Playwright)
 nuevos o que cambiaron (BL-435). La usa
@@ -112,3 +113,49 @@ Mozo del establecimiento del seed logueado en el panel.
 
 1. No aparece «Reportes».
 2. Vuelve al mapa de mesas.
+
+## TC-E-071
+
+### Precondición
+
+Administrador del establecimiento del seed logueado en el panel. El test crea una mesa propia y la borra al terminar.
+
+### Pasos
+
+1. Abrir «Pedidos activos» del panel de administración.
+2. Desde el QR de la mesa de prueba, presionar «Llamar al mozo».
+3. En el encabezado, abrir la campana y revisar la vista rápida con axe-core (WCAG 2.1 AA).
+4. Presionar Esc.
+5. Desde el menú, abrir «Alertas» y revisar la pantalla con axe-core (WCAG 2.1 AA).
+6. Aceptar la alerta de la mesa de prueba.
+
+### Resultado esperado
+
+1. Se ve el tablero y la campana del encabezado.
+2. El comensal ve «Avisamos al mozo». La campana muestra el contador y el tablero el aviso de la mesa.
+3. Se abre la vista rápida con «Mesa N solicita atención» (N es el número de la mesa de prueba), sin errores graves ni críticos de accesibilidad.
+4. La vista rápida se cierra y el foco vuelve a la campana.
+5. Se abre la pantalla «Alertas», marcada como la página actual del menú, con la alerta de la mesa y los botones «Aceptar» y «Desestimar», sin errores graves ni críticos de accesibilidad.
+6. La alerta sale de la lista.
+
+## TC-E-072
+
+### Precondición
+
+Administrador del establecimiento del seed logueado en el panel. El test crea dos mesas propias y las borra al terminar.
+
+### Pasos
+
+1. Abrir «Alertas» desde el menú.
+2. Desde el QR de cada una de las dos mesas de prueba (A y B), presionar «Llamar al mozo».
+3. Recargar la página.
+4. Aceptar la alerta de la mesa A.
+5. Recargar la página otra vez.
+
+### Resultado esperado
+
+1. Se abre la pantalla «Alertas».
+2. Las dos mesas aparecen en la lista como «Mesa N solicita atención».
+3. Las dos alertas siguen en la lista, aunque nadie las atendió.
+4. La alerta de la mesa A sale de la lista.
+5. La alerta de la mesa B sigue en la lista y la de la mesa A no vuelve.

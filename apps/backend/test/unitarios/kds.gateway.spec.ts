@@ -541,6 +541,7 @@ describe('KdsGateway', () => {
       expect(mockServer.to).toHaveBeenCalledWith(`tenant:${TENANT_ID}`);
       expect(mockServer.emit).toHaveBeenCalledWith('llamado:resuelto', {
         mesaId: 'mesa-1',
+        accion: 'aceptado',
       });
     });
 
@@ -559,6 +560,7 @@ describe('KdsGateway', () => {
 
       expect(mockServer.emit).toHaveBeenCalledWith('llamado:resuelto', {
         mesaId: 'mesa-1',
+        accion: 'desestimado',
       });
     });
 
@@ -597,6 +599,213 @@ describe('KdsGateway', () => {
         message: 'Sesion invalida o expirada - reconecta.',
       });
       expect(client.disconnect).toHaveBeenCalledWith(true);
+    });
+
+    it('BL-441: un body inválido (sin mesaId o con acción desconocida) se rechaza sin propagar nada', async () => {
+      mockWsAuth.verify.mockResolvedValue({
+        sub: 'usuario-1',
+        tenantId: TENANT_ID,
+        roles: ['MOZO'],
+      });
+      const client = mockClient();
+
+      await gateway.onResolverLlamado(client as any, {
+        mesaId: '',
+        accion: 'aceptado',
+      });
+      await gateway.onResolverLlamado(client as any, {
+        mesaId: 'mesa-1',
+        accion: 'borrar' as any,
+      });
+      await gateway.onResolverLlamado(client as any, undefined as any);
+
+      expect(mockServer.to).not.toHaveBeenCalled();
+      expect(client.emit).toHaveBeenCalledTimes(3);
+      expect(client.emit).toHaveBeenCalledWith('error', {
+        message: 'Solicitud de alerta inválida.',
+      });
+    });
+  });
+
+  describe('BL-441: alertas que sobreviven al refresco', () => {
+    const MOZO = { sub: 'mozo-1', tenantId: TENANT_ID, roles: ['MOZO'] };
+
+    async function conectar() {
+      const client = mockClient();
+      await gateway.handleConnection(client as any);
+      return client;
+    }
+
+    function snapshotDe(client: ReturnType<typeof mockClient>) {
+      const llamada = client.emit.mock.calls.filter(
+        ([evento]) => evento === 'llamados:snapshot',
+      );
+      return llamada[llamada.length - 1][1];
+    }
+
+    beforeEach(() => {
+      mockWsAuth.verify.mockResolvedValue(MOZO);
+    });
+
+    it('un llamado de mesa sin atender vuelve en el snapshot al reconectar', async () => {
+      gateway.emitirLlamado(TENANT_ID, 'mesa-1', 1);
+
+      const client = await conectar();
+
+      expect(snapshotDe(client)).toEqual([
+        expect.objectContaining({ mesaId: 'mesa-1', mesaNumero: 1 }),
+      ]);
+    });
+
+    it('el snapshot viene con la alerta más antigua primero', async () => {
+      jest.spyOn(Date, 'now').mockReturnValue(Date.now() - 60_000);
+      gateway.emitirLlamado(TENANT_ID, 'mesa-vieja', 7);
+      jest.spyOn(Date, 'now').mockRestore();
+      gateway.emitirLlamado(TENANT_ID, 'mesa-nueva', 2);
+
+      const client = await conectar();
+
+      expect(snapshotDe(client).map((a: any) => a.mesaId)).toEqual([
+        'mesa-vieja',
+        'mesa-nueva',
+      ]);
+    });
+
+    it('una mesa que vuelve a llamar sigue siendo una sola alerta', async () => {
+      gateway.emitirLlamado(TENANT_ID, 'mesa-1', 1);
+      gateway.emitirLlamado(TENANT_ID, 'mesa-1', 1);
+
+      const client = await conectar();
+
+      expect(snapshotDe(client)).toHaveLength(1);
+    });
+
+    it('al aceptar o desestimar, la alerta no vuelve al reconectar', async () => {
+      gateway.emitirLlamado(TENANT_ID, 'mesa-1', 1);
+      gateway.emitirLlamado(TENANT_ID, 'mesa-2', 2);
+      await gateway.onResolverLlamado(mockClient() as any, {
+        mesaId: 'mesa-1',
+        accion: 'aceptado',
+      });
+      await gateway.onResolverLlamado(mockClient() as any, {
+        mesaId: 'mesa-2',
+        accion: 'desestimado',
+      });
+
+      const client = await conectar();
+
+      expect(snapshotDe(client)).toEqual([]);
+    });
+
+    it('un aviso de efectivo aceptado (guardado) no vuelve aunque siga en la base', async () => {
+      const efectivo = {
+        pedidoId: 'pedido-1',
+        total: '250.00',
+        pagaCon: '1000.00',
+      };
+      gateway.emitirLlamado(TENANT_ID, 'mesa-3', 3, efectivo);
+      mockPedidosTransicion.listarSolicitudesEfectivo.mockResolvedValue([
+        {
+          mesaId: 'mesa-3',
+          mesaNumero: 3,
+          ts: 1,
+          motivo: 'PAGO_EFECTIVO',
+          ...efectivo,
+        },
+      ]);
+      await gateway.onResolverLlamado(mockClient() as any, {
+        mesaId: 'mesa-3',
+        accion: 'aceptado',
+      });
+
+      const client = await conectar();
+
+      expect(snapshotDe(client)).toEqual([]);
+    });
+
+    it('un aviso de efectivo que solo está en la base (el servidor se reinició) también se anota como atendido', async () => {
+      const solicitud = {
+        mesaId: 'mesa-3',
+        mesaNumero: 3,
+        ts: Date.now(),
+        motivo: 'PAGO_EFECTIVO',
+        pedidoId: 'pedido-1',
+        total: '250.00',
+        pagaCon: null,
+      };
+      mockPedidosTransicion.listarSolicitudesEfectivo.mockResolvedValue([
+        solicitud,
+      ]);
+
+      await gateway.onResolverLlamado(mockClient() as any, {
+        mesaId: 'mesa-3',
+        accion: 'aceptado',
+      });
+      const client = await conectar();
+
+      expect(snapshotDe(client)).toEqual([]);
+    });
+
+    it('si falla la consulta del efectivo al resolver, igual se propaga la resolución', async () => {
+      mockPedidosTransicion.listarSolicitudesEfectivo.mockRejectedValue(
+        new Error('base caída'),
+      );
+
+      await gateway.onResolverLlamado(mockClient() as any, {
+        mesaId: 'mesa-1',
+        accion: 'aceptado',
+      });
+
+      expect(mockServer.emit).toHaveBeenCalledWith('llamado:resuelto', {
+        mesaId: 'mesa-1',
+        accion: 'aceptado',
+      });
+    });
+
+    it('cerrar la mesa saca la alerta y no vuelve al reconectar', async () => {
+      gateway.emitirLlamado(TENANT_ID, 'mesa-1', 1);
+
+      gateway.emitirLlamadoResuelto(TENANT_ID, 'mesa-1');
+      const client = await conectar();
+
+      expect(snapshotDe(client)).toEqual([]);
+    });
+
+    it('cuando llega pedido:nuevo del pedido cobrado, su aviso de efectivo se saca', async () => {
+      gateway.emitirLlamado(TENANT_ID, 'mesa-3', 3, {
+        pedidoId: 'pedido-1',
+        total: '250.00',
+        pagaCon: null,
+      });
+
+      gateway.emitirNuevoPedido(TENANT_ID, { id: 'pedido-1' });
+      const client = await conectar();
+
+      expect(snapshotDe(client)).toEqual([]);
+    });
+
+    it('emitirNuevoPedido tolera un pedido sin id', () => {
+      expect(() => gateway.emitirNuevoPedido(TENANT_ID, null)).not.toThrow();
+      expect(() => gateway.emitirNuevoPedido(TENANT_ID, {})).not.toThrow();
+    });
+
+    it('las alertas de un establecimiento no aparecen en el de otro', async () => {
+      gateway.emitirLlamado(TENANT_ID_AJENO, 'mesa-ajena', 9);
+
+      const client = await conectar();
+
+      expect(snapshotDe(client)).toEqual([]);
+    });
+
+    it('pedidos:sync también devuelve las alertas guardadas', async () => {
+      gateway.emitirLlamado(TENANT_ID, 'mesa-1', 1);
+      const client = mockClient();
+
+      await gateway.onSync(client as any);
+
+      expect(snapshotDe(client)).toEqual([
+        expect.objectContaining({ mesaId: 'mesa-1' }),
+      ]);
     });
   });
 });

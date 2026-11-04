@@ -43,3 +43,29 @@ export async function intentarEntregarPedido(
     // Lo que quede abierto lo levanta la limpieza de BL-285.
   }
 }
+
+/**
+ * BL-441: las alertas del mozo se guardan en el servidor hasta que alguien las
+ * atiende, así que un test que presiona «Llamar al mozo» las deja pendientes
+ * en el panel de cualquier mozo (y en staging, entre las alertas reales).
+ * Esto las desestima desde el tablero del KDS al terminar el test.
+ *
+ * Es "best effort", como `intentarEntregarPedido`: si la alerta no está (el
+ * test falló antes de llamar) no tapa el error original del test.
+ */
+export async function intentarDesestimarLlamado(
+  kdsPage: Page,
+  mesaNumero: number,
+): Promise<void> {
+  try {
+    const alerta = kdsPage
+      .getByRole("alert")
+      .filter({ hasText: new RegExp(`Mesa ${mesaNumero} solicita atención`, "i") });
+    await alerta.getByRole("button", { name: "Desestimar" }).click({
+      timeout: 5000,
+    });
+    await expect(alerta).toBeHidden({ timeout: 5000 });
+  } catch {
+    // Lo que quede pendiente lo limpia el cierre de la mesa o su aceptación.
+  }
+}
