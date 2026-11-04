@@ -26,6 +26,7 @@ export enum AuditAction {
   ESTABLECIMIENTO_ADMIN_CONTRASENA_RESTABLECIDA = 'ESTABLECIMIENTO_ADMIN_CONTRASENA_RESTABLECIDA', // BL-414 (la plataforma, nunca con la contraseña)
   ESTABLECIMIENTO_ADMIN_CREADO = 'ESTABLECIMIENTO_ADMIN_CREADO', // BL-414 (Administrador nuevo creado por la plataforma)
   ESTABLECIMIENTO_ELIMINADO = 'ESTABLECIMIENTO_ELIMINADO', // BL-418 (solo sin actividad; con el RUT y las cuentas de Keycloak que quedaron)
+  ESTABLECIMIENTO_CONFIGURACION_MODIFICADA = 'ESTABLECIMIENTO_CONFIGURACION_MODIFICADA', // BL-72 (HU-020: medios de pago, propinas y proveedor de CFE con antes y después; la razón social, sin el valor)
   CARTA_ITEM_IMAGEN_CAMBIADA = 'CARTA_ITEM_IMAGEN_CAMBIADA', // BL-387 (alta, cambio o quita de la imagen de un ítem)
   CARTA_ITEM_MODIFICADO = 'CARTA_ITEM_MODIFICADO', // BL-205 (HU-005: precio o disponibilidad, con antes y después)
   CARTA_ITEM_DADO_DE_BAJA = 'CARTA_ITEM_DADO_DE_BAJA', // BL-205 (baja de un ítem: pasa a no disponible). Ya no se genera desde BL-394; queda para los registros anteriores
@@ -34,6 +35,8 @@ export enum AuditAction {
   CARTA_ITEM_ARCHIVADO = 'CARTA_ITEM_ARCHIVADO',
   CARTA_ITEM_RESTAURADO = 'CARTA_ITEM_RESTAURADO',
   CARTA_ITEM_ELIMINADO = 'CARTA_ITEM_ELIMINADO', // solo ítems sin pedidos
+  CARTA_ITEM_STOCK_AJUSTADO = 'CARTA_ITEM_STOCK_AJUSTADO', // BL-120 (HU-015: control de stock, unidades, umbral y disponibilidad, con antes y después)
+  CARTA_ITEM_VENDIDO_SIN_STOCK = 'CARTA_ITEM_VENDIDO_SIN_STOCK', // BL-120 (ADR 0009: dos pagos casi simultáneos se llevaron las últimas unidades; con el pedido y cuántas de más)
   CARTA_CATEGORIA_CREADA = 'CARTA_CATEGORIA_CREADA',
   CARTA_CATEGORIA_MODIFICADA = 'CARTA_CATEGORIA_MODIFICADA', // nombre, descripción o visibilidad, con antes y después
   CARTA_CATEGORIA_ARCHIVADA = 'CARTA_CATEGORIA_ARCHIVADA',
@@ -41,4 +44,5 @@ export enum AuditAction {
   CARTA_CATEGORIA_ELIMINADA = 'CARTA_CATEGORIA_ELIMINADA', // solo categorías sin ítems
   MESA_PEDIDOS_CANCELADOS = 'MESA_PEDIDOS_CANCELADOS', // BL-205 (al cerrar la mesa se cancelan los pedidos sin pagar, HU-017)
   PAGO_EFECTIVO_REGISTRADO = 'PAGO_EFECTIVO_REGISTRADO', // BL-201 (HU-031: cobro en efectivo, con monto recibido y vuelto)
+  PEDIDO_RECEPTOR_ANONIMIZADO = 'PEDIDO_RECEPTOR_ANONIMIZADO', // BL-453 (HU-009: RUT y razón social de la e-Factura anonimizados; con la cantidad de pedidos, nunca el RUT)
 }

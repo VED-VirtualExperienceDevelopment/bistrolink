@@ -1,4 +1,9 @@
-import { SurtecClient, SurtecError } from '../../src/cfe/surtec.client';
+import {
+  cuerpoParaLog,
+  leerEmitidos,
+  SurtecClient,
+  SurtecError,
+} from '../../src/cfe/surtec.client';
 
 const RESPUESTA_CFE = {
   id: 541759,
@@ -41,6 +46,8 @@ describe('SurtecClient', () => {
     delete process.env.SURTEC_USER;
     delete process.env.SURTEC_PASSWORD;
     delete process.env.SURTEC_SUCURSAL;
+    delete process.env.SURTEC_AUTH_URL;
+    delete process.env.SURTEC_API_URL;
   });
 
   it('configurado() depende de usuario y contraseña', () => {
@@ -97,6 +104,21 @@ describe('SurtecClient', () => {
       caeVencimiento: new Date('2030-12-31T00:00:00'),
       url: RESPUESTA_CFE.url,
     });
+  });
+
+  it('lee SURTEC_AUTH_URL y SURTEC_API_URL en cada llamada, no al cargar el módulo', async () => {
+    process.env.SURTEC_AUTH_URL = 'http://auth.local';
+    process.env.SURTEC_API_URL = 'http://api.local';
+    fetchMock
+      .mockReturnValueOnce(json({ access_token: 'AT' }))
+      .mockReturnValueOnce(json(RESPUESTA_CFE));
+
+    await client.emitirETicket(SOLICITUD);
+
+    expect(fetchMock.mock.calls[0][0]).toBe('http://auth.local/token');
+    expect(fetchMock.mock.calls[1][0]).toBe(
+      'http://api.local/comprobantes/crear',
+    );
   });
 
   it('usa la sucursal configurada y no manda adenda si no hay', async () => {
@@ -260,6 +282,200 @@ describe('SurtecClient', () => {
 
     await expect(client.emitirETicket(SOLICITUD)).rejects.toMatchObject({
       status: 502,
+    });
+  });
+
+  describe('HU-009 (BL-453): e-Factura', () => {
+    const RECEPTOR = {
+      rut: '219999830019',
+      razonSocial: 'Comensal Ejemplo SAS',
+    };
+
+    it('emite una e-Factura (111) con el cliente: RUT (tipo_doc 2), país UY, número y denominación', async () => {
+      fetchMock
+        .mockReturnValueOnce(json({ access_token: 'AT' }))
+        .mockReturnValueOnce(json(RESPUESTA_CFE));
+
+      const cfe = await client.emitirEFactura(SOLICITUD, RECEPTOR);
+
+      const cuerpo = JSON.parse(fetchMock.mock.calls[1][1].body);
+      expect(cuerpo).toMatchObject({
+        tipo_comprobante: 111,
+        forma_pago: 1,
+        moneda: 'UYU',
+        cod_montos_brutos: 1,
+        id_externo: 'bl-pago-1',
+        cliente: {
+          tipo_doc: 2,
+          cod_pais_doc: 'UY',
+          nro_doc: '219999830019',
+          denominacion: 'Comensal Ejemplo SAS',
+        },
+        adenda: { texto: 'Pedido 1' },
+      });
+      expect(cfe.serie).toBe('A');
+    });
+
+    it('el e-Ticket no lleva cliente', async () => {
+      fetchMock
+        .mockReturnValueOnce(json({ access_token: 'AT' }))
+        .mockReturnValueOnce(json(RESPUESTA_CFE));
+
+      await client.emitirETicket(SOLICITUD);
+
+      expect(JSON.parse(fetchMock.mock.calls[1][1].body)).not.toHaveProperty(
+        'cliente',
+      );
+    });
+
+    it('si Surtec rechaza y repite el cliente en la respuesta, el error no lleva el RUT ni la razón social', async () => {
+      fetchMock
+        .mockReturnValueOnce(json({ access_token: 'AT' }))
+        .mockReturnValueOnce(
+          json(
+            {
+              mensaje: 'El receptor no es contribuyente',
+              cliente: {
+                nro_doc: RECEPTOR.rut,
+                denominacion: RECEPTOR.razonSocial,
+              },
+            },
+            400,
+          ),
+        );
+
+      const error = await client
+        .emitirEFactura(SOLICITUD, RECEPTOR)
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(SurtecError);
+      expect((error as SurtecError).status).toBe(400);
+      expect((error as SurtecError).message).toContain('no es contribuyente');
+      expect((error as SurtecError).message).not.toContain(RECEPTOR.rut);
+      expect((error as SurtecError).message).not.toContain(
+        RECEPTOR.razonSocial,
+      );
+    });
+
+    it('cuerpoParaLog oculta nro_doc y denominacion en cualquier nivel', () => {
+      expect(
+        cuerpoParaLog({
+          errores: [{ nro_doc: '1', denominacion: 'X', campo: 'y' }],
+        }),
+      ).toBe(
+        '{"errores":[{"nro_doc":"[oculto]","denominacion":"[oculto]","campo":"y"}]}',
+      );
+    });
+  });
+
+  describe('HU-009 (BL-455): consulta de emitidos', () => {
+    const CONSULTA = {
+      rutEmisor: '214198620015',
+      fechaDesde: '2026-11-01',
+      fechaHasta: '2026-11-03',
+    };
+
+    it('GET con el rango de fechas, la sucursal y X-Emisor, sin cuerpo', async () => {
+      process.env.SURTEC_SUCURSAL = '2';
+      fetchMock
+        .mockReturnValueOnce(json({ access_token: 'AT' }))
+        .mockReturnValueOnce(
+          json({
+            comprobantes: [
+              {
+                id: 541759,
+                serie: 'A',
+                numero: 49,
+                estado_dgi: { codigo: 'AE', motivo: 'Recibido' },
+              },
+            ],
+          }),
+        );
+
+      const emitidos = await client.consultarEmitidos(CONSULTA);
+
+      const [url, opts] = fetchMock.mock.calls[1];
+      const consulta = new URL(url);
+      expect(consulta.pathname).toBe('/consulta/comprobantes/emitidos');
+      expect(Object.fromEntries(consulta.searchParams)).toEqual({
+        FechaDesde: '2026-11-01',
+        FechaHasta: '2026-11-03',
+        Sucursal: '2',
+      });
+      expect(opts.method).toBe('GET');
+      expect(opts.body).toBeUndefined();
+      expect(opts.headers).toEqual({
+        Authorization: 'Bearer AT',
+        'X-Emisor': '214198620015',
+      });
+      expect(emitidos).toEqual([
+        {
+          id: '541759',
+          serie: 'A',
+          numero: 49,
+          codigoDgi: 'AE',
+          motivoDgi: 'Recibido',
+        },
+      ]);
+    });
+
+    it('un error de la consulta lanza SurtecError con el status y sin datos del receptor', async () => {
+      fetchMock
+        .mockReturnValueOnce(json({ access_token: 'AT' }))
+        .mockReturnValueOnce(
+          json({ receptor: { nro_doc: '219999830019' } }, 503),
+        );
+
+      const error = await client
+        .consultarEmitidos(CONSULTA)
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(SurtecError);
+      expect((error as SurtecError).status).toBe(503);
+      expect((error as SurtecError).message).toContain('la consulta');
+      expect((error as SurtecError).message).not.toContain('219999830019');
+    });
+  });
+
+  describe('leerEmitidos (BL-455)', () => {
+    it('acepta `comprobante` o `comprobantes`, y `estado_dgi` o `estado`', () => {
+      const uno = { id: 1, serie: 'A', numero: 1, estado: { codigo: 'be' } };
+      expect(leerEmitidos({ comprobante: [uno] })).toEqual([
+        { id: '1', serie: 'A', numero: 1, codigoDgi: 'BE', motivoDgi: null },
+      ]);
+      expect(leerEmitidos({ comprobantes: [uno] })).toHaveLength(1);
+      expect(leerEmitidos([uno])).toHaveLength(1);
+    });
+
+    it('estado como texto, motivo en `razon`, o sin estado (DGI no respondió)', () => {
+      expect(
+        leerEmitidos({
+          comprobantes: [
+            { id: 1, serie: 'A', numero: 1, estado_dgi: 'CE' },
+            {
+              id: 2,
+              serie: 'A',
+              numero: 2,
+              estado_dgi: { codigo: 'BE', razon: 'Firma inválida' },
+            },
+            { id: 3, serie: 'A', numero: 3 },
+          ],
+        }).map((e) => [e.codigoDgi, e.motivoDgi]),
+      ).toEqual([
+        ['CE', null],
+        ['BE', 'Firma inválida'],
+        [null, null],
+      ]);
+    });
+
+    it('descarta lo que no tiene id, serie o número, y una respuesta sin lista', () => {
+      expect(
+        leerEmitidos({
+          comprobantes: [{ serie: 'A', numero: 1 }, { id: 1, numero: 1 }, null],
+        }),
+      ).toEqual([]);
+      expect(leerEmitidos({})).toEqual([]);
+      expect(leerEmitidos(null)).toEqual([]);
     });
   });
 });

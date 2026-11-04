@@ -79,7 +79,11 @@ describe('MesasService.obtenerLayout', () => {
     mockTenantPrisma = {
       runInTenantContext: jest.fn((_tenantId: string, cb: any) => cb(mockTx)),
     };
-    mockKdsGateway = { emitirLlamado: jest.fn(), emitirEstadoMesa: jest.fn() };
+    mockKdsGateway = {
+      emitirLlamado: jest.fn(),
+      emitirEstadoMesa: jest.fn(),
+      emitirLlamadoResuelto: jest.fn(),
+    };
     service = new MesasService(mockTenantPrisma, mockKdsGateway, mockAuditLog);
   });
 
@@ -130,7 +134,11 @@ describe('MesasService.guardarLayout', () => {
     mockTenantPrisma = {
       runInTenantContext: jest.fn((_tenantId: string, cb: any) => cb(mockTx)),
     };
-    mockKdsGateway = { emitirLlamado: jest.fn(), emitirEstadoMesa: jest.fn() };
+    mockKdsGateway = {
+      emitirLlamado: jest.fn(),
+      emitirEstadoMesa: jest.fn(),
+      emitirLlamadoResuelto: jest.fn(),
+    };
     service = new MesasService(mockTenantPrisma, mockKdsGateway, mockAuditLog);
   });
 
@@ -253,7 +261,11 @@ describe('MesasService.actualizarLayoutMesa', () => {
     mockTenantPrisma = {
       runInTenantContext: jest.fn((_tenantId: string, cb: any) => cb(mockTx)),
     };
-    mockKdsGateway = { emitirLlamado: jest.fn(), emitirEstadoMesa: jest.fn() };
+    mockKdsGateway = {
+      emitirLlamado: jest.fn(),
+      emitirEstadoMesa: jest.fn(),
+      emitirLlamadoResuelto: jest.fn(),
+    };
     service = new MesasService(mockTenantPrisma, mockKdsGateway, mockAuditLog);
   });
 
@@ -330,11 +342,19 @@ describe('MesasService: sesión de mesa (HU-017, BL-60)', () => {
       },
       usuario: { findUnique: jest.fn().mockResolvedValue({ id: 'usuario-1' }) },
       pedidoEstadoHistorial: { createMany: jest.fn() },
+      sesionMesa: {
+        create: jest.fn().mockResolvedValue({}),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
     };
     mockTenantPrisma = {
       runInTenantContext: jest.fn((_tenantId: string, cb: any) => cb(mockTx)),
     };
-    mockKdsGateway = { emitirLlamado: jest.fn(), emitirEstadoMesa: jest.fn() };
+    mockKdsGateway = {
+      emitirLlamado: jest.fn(),
+      emitirEstadoMesa: jest.fn(),
+      emitirLlamadoResuelto: jest.fn(),
+    };
     service = new MesasService(mockTenantPrisma, mockKdsGateway, mockAuditLog);
   });
 
@@ -397,6 +417,29 @@ describe('MesasService: sesión de mesa (HU-017, BL-60)', () => {
       expect(mockKdsGateway.emitirEstadoMesa).not.toHaveBeenCalled();
     });
 
+    it('[TC-U-269] HU-012: registra la sesión en el historial con el mismo id y hora de apertura', async () => {
+      await service.abrirSesion(TENANT_ID, MESA_ID);
+
+      const { data } = mockTx.mesa.updateMany.mock.calls[0][0];
+      expect(mockTx.sesionMesa.create).toHaveBeenCalledWith({
+        data: {
+          id: data.sesionId,
+          tenantId: TENANT_ID,
+          mesaId: MESA_ID,
+          abiertaEn: data.sesionAbiertaEn,
+        },
+      });
+    });
+
+    it('[TC-U-270] HU-012: si otro mozo la abrió al mismo tiempo, no registra la sesión en el historial', async () => {
+      mockTx.mesa.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(service.abrirSesion(TENANT_ID, MESA_ID)).rejects.toThrow(
+        ConflictException,
+      );
+      expect(mockTx.sesionMesa.create).not.toHaveBeenCalled();
+    });
+
     it('404 si la mesa no es del tenant; 400 si es la mesa virtual', async () => {
       mockTx.mesa.findUnique.mockResolvedValueOnce(null);
       await expect(service.abrirSesion(TENANT_ID, MESA_ID)).rejects.toThrow(
@@ -453,6 +496,15 @@ describe('MesasService: sesión de mesa (HU-017, BL-60)', () => {
       expect(pedidosCancelados).toBe(0);
     });
 
+    it('BL-448: al cerrar, saca el aviso de la mesa de todos los KDS', async () => {
+      await service.cerrarSesion(TENANT_ID, MESA_ID, MOZO_KEYCLOAK_ID);
+
+      expect(mockKdsGateway.emitirLlamadoResuelto).toHaveBeenCalledWith(
+        TENANT_ID,
+        MESA_ID,
+      );
+    });
+
     it.each([
       [1, /Hay 1 pedido sin entregar/],
       [3, /Hay 3 pedidos sin entregar/],
@@ -498,6 +550,24 @@ describe('MesasService: sesión de mesa (HU-017, BL-60)', () => {
       ).rejects.toThrow(ConflictException);
       expect(mockTx.pedido.updateMany).not.toHaveBeenCalled();
       expect(mockKdsGateway.emitirEstadoMesa).not.toHaveBeenCalled();
+    });
+
+    it('[TC-U-271] HU-012: cierra la sesión en el historial', async () => {
+      await service.cerrarSesion(TENANT_ID, MESA_ID, MOZO_KEYCLOAK_ID);
+
+      expect(mockTx.sesionMesa.updateMany).toHaveBeenCalledWith({
+        where: { id: SESION, cerradaEn: null },
+        data: { cerradaEn: expect.any(Date) },
+      });
+    });
+
+    it('[TC-U-272] HU-012: si la mesa cambió mientras se cerraba, no toca el historial', async () => {
+      mockTx.mesa.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(
+        service.cerrarSesion(TENANT_ID, MESA_ID, MOZO_KEYCLOAK_ID),
+      ).rejects.toThrow(ConflictException);
+      expect(mockTx.sesionMesa.updateMany).not.toHaveBeenCalled();
     });
 
     it('cancela los pedidos que esperaban el pago, con su historial', async () => {

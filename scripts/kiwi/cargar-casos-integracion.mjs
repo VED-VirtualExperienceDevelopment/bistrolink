@@ -193,6 +193,36 @@ const gestionCarta = (ticket, extra = {}) => ({
   ...extra,
   tags: ["HU-005", "BL-392", ticket, ...(extra.tags ?? [])],
 });
+// HU-020 (BL-72): configuración del establecimiento, en
+// configuracion-establecimiento.e2e-spec.ts.
+// BL-448: avisos de efectivo que no se pierden en el KDS (HU-031b).
+const avisoEfectivo = (extra = {}) => ({
+  component: "api",
+  requirement: "HU-031b",
+  ...extra,
+  tags: ["HU-031b", "BL-448", "pagos", "kds", ...(extra.tags ?? [])],
+});
+const configuracionEstablecimiento = (extra = {}) => ({
+  component: "api",
+  requirement: "HU-020",
+  ...extra,
+  tags: ["HU-020", "BL-72", ...(extra.tags ?? [])],
+});
+// HU-012 (BL-108 y BL-219): dashboard de reportes, en reportes.e2e-spec.ts.
+const reportes = (ticket, extra = {}) => ({
+  component: "api",
+  requirement: "HU-012",
+  ...extra,
+  tags: ["HU-012", ticket, "reportes", ...(extra.tags ?? [])],
+});
+// HU-015 (BL-120 a BL-123): stock de la jornada y alertas de stock bajo, en
+// stock.e2e-spec.ts.
+const stock = (ticket, extra = {}) => ({
+  component: "api",
+  requirement: "HU-015",
+  ...extra,
+  tags: ["HU-015", ticket, "stock", ...(extra.tags ?? [])],
+});
 const DATOS_INTEGRACION = {
   55: {
     category: "Funcional",
@@ -501,6 +531,117 @@ const DATOS_INTEGRACION = {
     priority: "P1",
     tags: ["seguridad", "multi-tenant"],
   }),
+  132: configuracionEstablecimiento({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["auditoria", "pagos"],
+  }),
+  133: configuracionEstablecimiento({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["auditoria", "integridad-datos"],
+  }),
+  134: configuracionEstablecimiento({
+    category: "Funcional",
+    priority: "P2",
+    tags: ["integridad-datos"],
+  }),
+  135: configuracionEstablecimiento({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["seguridad"],
+  }),
+  136: avisoEfectivo({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["multi-tenant"],
+  }),
+  137: avisoEfectivo({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["websocket", "reconexion"],
+  }),
+  // HU-037 (BL-207): rebaja de IVA por pago electrónico (Ley 17.934).
+  138: {
+    category: "Funcional",
+    component: "api",
+    requirement: "HU-037",
+    priority: "P1",
+    tags: ["HU-037", "BL-207", "pagos", "cfe"],
+  },
+  // HU-036 (BL-206): privacidad y datos personales (Ley 18.331).
+  139: {
+    category: "Seguridad",
+    component: "api",
+    requirement: "HU-036",
+    priority: "P2",
+    tags: ["HU-036", "BL-206", "privacidad", "multi-tenant"],
+  },
+  // HU-009 (BL-453): e-Factura con RUT y razón social, consentimiento y
+  // anonimización.
+  140: {
+    category: "Seguridad",
+    component: "api",
+    requirement: "HU-009",
+    priority: "P1",
+    tags: ["HU-009", "BL-453", "cfe", "privacidad"],
+  },
+  141: {
+    category: "Seguridad",
+    component: "api",
+    requirement: "HU-009",
+    priority: "P1",
+    tags: ["HU-009", "BL-453", "privacidad", "auditoria"],
+  },
+  // HU-009 (BL-455): estado de los CFE ante la DGI y listado del admin.
+  142: {
+    category: "Funcional",
+    component: "api",
+    requirement: "HU-009",
+    priority: "P1",
+    tags: ["HU-009", "BL-455", "cfe", "multi-tenant"],
+  },
+  143: {
+    category: "Seguridad",
+    component: "api",
+    requirement: "HU-009",
+    priority: "P1",
+    tags: ["HU-009", "BL-455", "cfe", "multi-tenant"],
+  }, // HU-012 (BL-108): dashboard de reportes de ventas.
+  144: reportes("BL-108", { category: "Funcional", priority: "P1" }),
+  145: reportes("BL-108", { category: "Funcional", priority: "P1" }),
+  146: reportes("BL-110", { category: "Seguridad", priority: "P1" }),
+  147: reportes("BL-110", { category: "Seguridad", priority: "P1" }),
+  148: reportes("BL-109", { category: "Seguridad", priority: "P1" }),
+  149: reportes("BL-109", { category: "Funcional", priority: "P2" }),
+  150: reportes("BL-219", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["integridad-datos"],
+  }),
+  151: reportes("BL-110", {
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["multi-tenant"],
+  }),
+  152: reportes("BL-109", { category: "Performance", priority: "P1" }),
+  // HU-015 (BL-120): stock de la jornada y alertas de stock bajo.
+  153: stock("BL-120", { category: "Funcional", priority: "P1" }),
+  154: stock("BL-121", { category: "Funcional", priority: "P2" }),
+  155: stock("BL-122", { category: "Seguridad", priority: "P1" }),
+  156: stock("BL-122", { category: "Seguridad", priority: "P1" }),
+  157: stock("BL-121", { category: "Performance", priority: "P1" }),
+  158: stock("BL-121", { category: "Funcional", priority: "P1" }),
+  159: stock("BL-121", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["integridad-datos", "concurrencia"],
+  }),
+  160: stock("BL-122", {
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["multi-tenant"],
+  }),
 };
 /**
  * BL-435: datos de los E2E TC-E-017 en adelante, con los criterios de
@@ -710,6 +851,92 @@ const DATOS_E2E = {
     priority: "P1",
     tags: ["BL-392", "BL-402", "responsive", ...axe],
   }),
+  // BL-452: medios de pago del comensal según la configuración (HU-020).
+  56: e2e("comensal", "HU-020", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-452", "pagos"],
+  }),
+  57: e2e("comensal", "HU-020", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-452", "pagos"],
+  }),
+  58: e2e("comensal", "HU-020", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-452", "pagos"],
+  }),
+  // BL-448: retomar el pago al recargar y aviso de efectivo en el KDS.
+  59: e2e("comensal", "HU-031b", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-448", "pagos"],
+  }),
+  60: e2e("comensal", "HU-007", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-448", "pagos", "seguridad"],
+  }),
+  61: e2e("kds", "HU-031b", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-448", "pagos"],
+  }),
+  // HU-036 (BL-206): política de privacidad.
+  62: e2e("comensal", "HU-036", {
+    category: "Seguridad",
+    priority: "P2",
+    tags: ["BL-206", "privacidad"],
+  }),
+  // HU-009 (BL-453): e-Factura desde la pantalla de pago.
+  63: e2e("comensal", "HU-009", {
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["BL-453", "privacidad", "cfe"],
+  }),
+  64: e2e("comensal", "HU-009", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-453", "cfe"],
+  }),
+  // HU-009 (BL-455): comprobantes del administrador.
+  65: e2e("admin", "HU-009", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-455", "cfe", ...axe],
+  }), // HU-012 (BL-108): dashboard de reportes del administrador.
+  66: e2e("admin", "HU-012", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-108", "reportes", ...axe],
+  }),
+  67: e2e("admin", "HU-012", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-108", "reportes"],
+  }),
+  68: e2e("admin", "HU-012", {
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["BL-108", "BL-110", "reportes"],
+  }),
+  // HU-015 (BL-120): stock de la jornada y campana de alertas.
+  69: e2e("admin", "HU-015", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-120", "BL-121", "stock", ...axe],
+  }),
+  70: e2e("admin", "HU-015", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-120", "stock", "accesibilidad"],
+  }),
+  71: e2e("admin", "HU-015", {
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["BL-122", "stock"],
+  }),
 };
 /**
  * Datos de los contratos PactJS (TC-C). Requirement con la HU que usa el
@@ -753,6 +980,18 @@ const DATOS_CONTRATO = {
     priority: "P1",
     tags: ["BL-215", "BL-78", "webhook"],
   }),
+  // Surtec, facturación electrónica: autenticación y e-Ticket (BL-216).
+  10: contrato("HU-009", "surtec", { priority: "P1", tags: ["BL-216"] }),
+  11: contrato("HU-009", "surtec", { priority: "P2", tags: ["BL-216"] }),
+  12: contrato("HU-009", "surtec", { priority: "P1", tags: ["BL-216"] }),
+  13: contrato("HU-009", "surtec", { priority: "P2", tags: ["BL-216"] }),
+  14: contrato("HU-009", "surtec", { priority: "P2", tags: ["BL-216"] }),
+  // Surtec: emisión de e-Factura (BL-453).
+  15: contrato("HU-009", "surtec", { priority: "P1", tags: ["BL-453"] }),
+  16: contrato("HU-009", "surtec", { priority: "P2", tags: ["BL-453"] }),
+  // Surtec: estado de los CFE ante la DGI (BL-455).
+  17: contrato("HU-009", "surtec", { priority: "P1", tags: ["BL-455"] }),
+  18: contrato("HU-009", "surtec", { priority: "P2", tags: ["BL-455"] }),
 };
 const DATOS = CONTRATO ? DATOS_CONTRATO : E2E ? DATOS_E2E : DATOS_INTEGRACION;
 

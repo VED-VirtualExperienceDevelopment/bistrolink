@@ -1,6 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
-import { SurtecClient, SurtecError } from './surtec.client';
+import {
+  CfeEmitido,
+  SolicitudEmision,
+  SurtecClient,
+  SurtecError,
+  TIPO_CFE,
+} from './surtec.client';
+import { aplicaRebaja17934, LEYENDA_REBAJA_17934 } from './rebaja-iva';
 
 // Res. DGI 798/2012: los CFE se conservan 5 años.
 const ANIOS_RETENCION = 5;
@@ -17,6 +24,23 @@ export const ESPERAS_REINTENTO_CFE_MS = [5_000, 30_000];
  * Vale la pena reintentar: Surtec caído o lento (5xx, 429, timeout, red).
  * Un 4xx (ej. «no es un emisor válido») va a fallar igual: no se reintenta.
  */
+/**
+ * Adenda del e-Ticket: el pedido y, si el pago tiene la rebaja de IVA de la
+ * Ley 17.934 (HU-037, BL-207), la leyenda. El CFE va igual por el total, sin
+ * descontar la rebaja: la aplica la administradora del medio de pago.
+ */
+export function adendaDelPago(pago: {
+  pedidoId: string;
+  medioPago: string;
+  estado: string;
+  pedido: { canal: string };
+}): string {
+  const pedido = `Pedido ${pago.pedidoId.slice(0, 8)}`;
+  return aplicaRebaja17934({ ...pago, canal: pago.pedido.canal })
+    ? `${pedido}. ${LEYENDA_REBAJA_17934}`
+    : pedido;
+}
+
 export function esErrorTransitorio(error: unknown): boolean {
   if (error instanceof SurtecError && error.status !== undefined) {
     return error.status >= 500 || error.status === 429;
@@ -29,10 +53,34 @@ export function esErrorTransitorio(error: unknown): boolean {
 }
 
 export interface ResumenComprobante {
+  /** HU-009 (BL-453): '101' e-Ticket o '111' e-Factura. */
+  tipoCfe: string;
   serie: string;
   numero: number;
   urlConsulta: string | null;
 }
+
+/**
+ * HU-009 (BL-453): Surtec rechazó la e-Factura por los datos (4xx: por
+ * ejemplo, un RUT que DGI no tiene como contribuyente). No va a cambiar con
+ * un reintento: se emite un e-Ticket. Un 401 ya lo resolvió el cliente.
+ */
+export function esRechazoDeLaEFactura(error: unknown): boolean {
+  return (
+    error instanceof SurtecError &&
+    error.status !== undefined &&
+    error.status >= 400 &&
+    error.status < 500 &&
+    error.status !== 429
+  );
+}
+
+/**
+ * Clave de idempotencia del e-Ticket que reemplaza a una e-Factura
+ * rechazada: distinta de la de la e-Factura, por si Surtec guardó el
+ * intento rechazado con esa clave.
+ */
+export const SUFIJO_ETICKET_DE_RESPALDO = '-et';
 
 @Injectable()
 export class CfeService {
@@ -158,17 +206,21 @@ export class CfeService {
       return null;
     }
 
-    const idExterno = `bl-${pago.id}`;
-    const emitido = await this.surtec.emitirETicket({
+    const solicitud: SolicitudEmision = {
       rutEmisor: tenant.rut,
-      idExterno,
+      idExterno: `bl-${pago.id}`,
       items: pago.pedido.lineas.map((l) => ({
         concepto: l.nombreSnapshot.slice(0, 100),
         cantidad: l.cantidad,
         precio: l.precioUnitarioSnapshot.toNumber(),
       })),
-      adenda: `Pedido ${pago.pedidoId.slice(0, 8)}`,
-    });
+      adenda: adendaDelPago(pago),
+    };
+    const { emitido, tipoCfe, idExterno } = await this.emitirSegunReceptor(
+      solicitud,
+      pago.pedido,
+      pago.id,
+    );
 
     const ahora = new Date();
     const retencionHasta = new Date(ahora);
@@ -178,7 +230,7 @@ export class CfeService {
       tenantId,
       pedidoId: pago.pedidoId,
       pagoId: pago.id,
-      tipoCfe: '101',
+      tipoCfe,
       serie: emitido.serie,
       numero: emitido.numero,
       hashSha256: emitido.hash ?? null,
@@ -205,6 +257,53 @@ export class CfeService {
     );
     return resumir(guardado);
   }
+
+  /**
+   * HU-009 (BL-453): e-Factura si el pedido tiene RUT y razón social (el
+   * comensal la pidió y aceptó el aviso de privacidad); si no, e-Ticket. Si
+   * Surtec rechaza la e-Factura por los datos, se emite un e-Ticket para no
+   * dejar el pago sin comprobante.
+   */
+  private async emitirSegunReceptor(
+    solicitud: SolicitudEmision,
+    pedido: {
+      receptorRut: string | null;
+      receptorRazonSocial: string | null;
+    },
+    pagoId: string,
+  ): Promise<{ emitido: CfeEmitido; tipoCfe: string; idExterno: string }> {
+    const { receptorRut: rut, receptorRazonSocial: razonSocial } = pedido;
+    if (!rut || !razonSocial) {
+      return {
+        emitido: await this.surtec.emitirETicket(solicitud),
+        tipoCfe: String(TIPO_CFE.E_TICKET),
+        idExterno: solicitud.idExterno,
+      };
+    }
+    try {
+      return {
+        emitido: await this.surtec.emitirEFactura(solicitud, {
+          rut,
+          razonSocial,
+        }),
+        tipoCfe: String(TIPO_CFE.E_FACTURA),
+        idExterno: solicitud.idExterno,
+      };
+    } catch (error) {
+      if (!esRechazoDeLaEFactura(error)) throw error;
+      // El RUT no va al log (dato personal): alcanza con el pago.
+      Logger.warn(
+        `CFE: Surtec rechazó la e-Factura del pago ${pagoId}, se emite un e-Ticket: ${mensajeDe(error)}`,
+        CfeService.name,
+      );
+      const idExterno = `${solicitud.idExterno}${SUFIJO_ETICKET_DE_RESPALDO}`;
+      return {
+        emitido: await this.surtec.emitirETicket({ ...solicitud, idExterno }),
+        tipoCfe: String(TIPO_CFE.E_TICKET),
+        idExterno,
+      };
+    }
+  }
 }
 
 // unref: un reintento pendiente no impide que el proceso se apague.
@@ -227,9 +326,15 @@ function registrarFallo(pagoId: string, error: unknown): void {
 }
 
 function resumir(c: {
+  tipoCfe: string;
   serie: string;
   numero: number;
   urlConsulta: string | null;
 }): ResumenComprobante {
-  return { serie: c.serie, numero: c.numero, urlConsulta: c.urlConsulta };
+  return {
+    tipoCfe: c.tipoCfe,
+    serie: c.serie,
+    numero: c.numero,
+    urlConsulta: c.urlConsulta,
+  };
 }

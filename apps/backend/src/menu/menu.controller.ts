@@ -53,6 +53,30 @@ export class MenuController {
   }
 
   /**
+   * HU-036 (BL-206): datos del establecimiento para su política de
+   * privacidad (responsable y contacto para los derechos), desde la carta
+   * web. Público, como el menú; mismas defensas (UUID, RLS, 404 genérico).
+   * No exige que el local esté activo: la política se puede leer siempre.
+   */
+  @Get('tenant/:tenantId/restaurante/:restauranteId/privacidad')
+  getPrivacidadPublica(
+    @Param('tenantId', ParseUUIDPipe) tenantId: string,
+    @Param('restauranteId', ParseUUIDPipe) restauranteId: string,
+  ) {
+    return this.menuService.getPrivacidad(tenantId, restauranteId);
+  }
+
+  /**
+   * HU-036 (BL-206): lo mismo desde el QR de una mesa. Con la mesa cerrada
+   * la política se puede leer igual (no hace falta la sesión).
+   */
+  @Get('qr/:token/privacidad')
+  async getPrivacidadPorQr(@Param('token') token: string) {
+    const mesa = await this.qrMesaAcceso.resolver(token);
+    return this.menuService.getPrivacidad(mesa.tenantId);
+  }
+
+  /**
    * HU-034 (BL-204): menú de una mesa a partir del token opaco del QR
    * (/q/<token>). Público, como el resto del menú (HU-001: sin login).
    *

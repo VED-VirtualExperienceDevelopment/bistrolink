@@ -60,6 +60,7 @@ describe('EliminacionEstablecimientoService (BL-418)', () => {
       pedido: { findFirst: jest.fn().mockResolvedValue(null) },
       itemCarta: { deleteMany: borrar('itemCarta') },
       categoriaCarta: { deleteMany: borrar('categoriaCarta') },
+      sesionMesa: { deleteMany: borrar('sesionMesa') },
       mesa: { deleteMany: borrar('mesa') },
       usuario: { deleteMany: borrar('usuario') },
       restaurante: { deleteMany: borrar('restaurante') },
@@ -100,12 +101,16 @@ describe('EliminacionEstablecimientoService (BL-418)', () => {
     expect(borrados).toEqual([
       'itemCarta',
       'categoriaCarta',
+      'sesionMesa',
       'mesa',
       'usuario',
       'restaurante',
       'tenant',
     ]);
     expect(tx.mesa.deleteMany).toHaveBeenCalledWith({
+      where: { tenantId: TENANT_ID },
+    });
+    expect(tx.sesionMesa.deleteMany).toHaveBeenCalledWith({
       where: { tenantId: TENANT_ID },
     });
     expect(tx.tenant.delete).toHaveBeenCalledWith({ where: { id: TENANT_ID } });

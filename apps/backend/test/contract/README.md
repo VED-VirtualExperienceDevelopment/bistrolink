@@ -9,12 +9,12 @@ cambia, sin depender del sandbox del proveedor.
 | ------------------------ | ---------------------------------- | ------------------------------------------------ | -------------- | ------ |
 | Mercado Pago, API Orders | `mercadopago-orders.pact.spec.ts`  | `bistrolink-backend-mercadopago-orders-api.json` | TC-C-001 a 007 | BL-215 |
 | Mercado Pago, webhook    | `mercadopago-webhook.pact.spec.ts` | `bistrolink-backend-mercadopago-webhooks.json`   | TC-C-008 y 009 | BL-215 |
-| Surtec (CFE)             | (pendiente)                        | (pendiente)                                      | desde TC-C-010 | BL-216 |
+| Surtec (CFE)             | `surtec-cfe.pact.spec.ts`          | `bistrolink-backend-surtec-cfe-api.json`         | TC-C-010 a 014 | BL-216 |
 
 ## Cómo funcionan
 
 - **Consumidor:** `bistrolink-backend`. **Proveedor:** uno por API
-  (`mercadopago-orders-api`, `mercadopago-webhooks`).
+  (`mercadopago-orders-api`, `mercadopago-webhooks`, `surtec-cfe-api`).
 - **HTTP** (BistroLink llama al proveedor): `addInteraction()` con el mock
   server de Pact. El test llama al gateway real (por ejemplo,
   `MercadoPagoGateway`) apuntado al mock.
@@ -105,13 +105,13 @@ Por ejemplo: `[TC-C-002] Mercado Pago Orders: POST /v1/orders con rechazo del em
 
    La verificación tiene que decir «0 faltan» y «0 para actualizar».
 
-### Un proveedor nuevo (por ejemplo, Surtec en BL-216)
+### Un proveedor nuevo (por ejemplo, el POS en BL-100)
 
 - Un archivo `<proveedor>-<api>.pact.spec.ts` en esta carpeta, con su
   `PactV4` (`consumer: 'bistrolink-backend'`, `provider: '<proveedor>-<api>'`,
   `dir: apps/backend/pacts`).
-- Probar el cliente real del proveedor (por ejemplo, `surtec.client.ts`)
-  contra el mock, como se hace con `MercadoPagoGateway`.
+- Probar el cliente real del proveedor contra el mock, como se hace con
+  `MercadoPagoGateway` y `SurtecClient`.
 - Sus casos siguen la numeración `TC-C` y van al mismo plan, con el tag del
   proveedor.
 - Sumar una fila a la tabla de arriba.
