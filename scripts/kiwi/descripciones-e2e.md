@@ -15,6 +15,7 @@
 | 1.8     | 02/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-063 cambia: sin aceptar el aviso no se avisa al mozo (BL-453, ajuste de staging).       |
 | 1.9     | 03/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-065: comprobantes del administrador y su estado ante la DGI (HU-009, BL-455).           |
 | 1.10    | 03/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-066 a 068: dashboard de reportes del administrador (HU-012, BL-108).                    |
+| 1.11    | 03/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-069 a 071: stock de la jornada y campana de alertas de stock (HU-015, BL-120).          |
 
 Plantilla para cargar en Kiwi la descripción de casos TC-E (Playwright)
 nuevos o que cambiaron (BL-435). La usa
@@ -59,56 +60,64 @@ Reglas:
 
 ## Casos para cargar
 
-## TC-E-066
+## TC-E-069
 
 ### Precondición
 
-Administrador del establecimiento del seed logueado en el panel.
+Staging con el usuario administrador del seed. El test crea por la API una categoría «E2E stock …» con un ítem sin control de stock y la elimina al terminar.
 
 ### Pasos
 
-1. Desde el menú, abrir «Reportes».
-2. Elegir el período «Últimos 7 días».
-3. Elegir el canal «Web».
-4. Mirar el canal WhatsApp.
+1. Como administrador, abrir Stock desde el menú lateral.
+2. Revisar la fila del ítem de prueba.
+3. Activar «Controlar stock», cargar 2 unidades y cambiar el aviso de 5 a 3, y tocar Guardar.
+4. Abrir la campana del header.
 5. Revisar la pantalla con axe-core (WCAG 2.1 AA).
 
 ### Resultado esperado
 
-1. Se abre «Reportes» con el período de hoy: la API responde 200, se ven las tarjetas (Total vendido, …) y las tablas equivalentes de los gráficos están en la página.
-2. La API responde 200 con los últimos 7 días y el chip queda elegido.
-3. La API responde 200 y la rotación de mesas dice «No aplica».
-4. Está deshabilitado, con «Próximamente».
-5. Sin errores graves ni críticos de accesibilidad.
+1. Se abre «Stock de la jornada» y la API responde 200.
+2. Sin control de stock, los campos de unidades y aviso están deshabilitados y Guardar también.
+3. Se avisa «Hay 1 ítem con cambios sin guardar.»; al guardar, el PATCH responde 200 y lleva solo ese ítem con lo que cambió; se anuncia «Se guardó 1 ítem.» y la fila pasa a «Por agotarse».
+4. La campana muestra el ítem con «Quedan 2 · aviso en 3».
+5. Sin errores graves ni críticos.
 
-## TC-E-067
-
-### Precondición
-
-Administrador logueado en «Reportes».
-
-### Pasos
-
-1. Elegir el período «Personalizado».
-2. Poner «Desde» 31/12/2026 y «Hasta» 01/01/2026.
-
-### Resultado esperado
-
-1. Aparecen los campos «Desde» y «Hasta».
-2. Aparece el aviso de que hay que elegir las dos fechas con «desde» igual o anterior a «hasta», los campos quedan marcados como inválidos y no se consulta la API con esas fechas.
-
-## TC-E-068
+## TC-E-070
 
 ### Precondición
 
-Mozo del establecimiento del seed logueado en el panel.
+Staging con el usuario administrador del seed. El test crea por la API un ítem de prueba con control de stock, 0 unidades y aviso en 5, y lo elimina al terminar.
 
 ### Pasos
 
-1. Mirar el menú lateral.
-2. Entrar directo a /admin/reportes.
+1. Abrir la campana y cerrarla con Escape.
+2. Con el foco en la campana, abrirla con Enter y moverse con Fin e Inicio.
+3. Elegir el ítem de prueba: se abre «Reponer stock».
+4. Cargar «2,5» y guardar.
+5. Cargar 20 y guardar.
+6. Abrir la campana.
 
 ### Resultado esperado
 
-1. No aparece «Reportes».
+1. El ítem aparece como «Agotado»; con Escape se cierra y el foco vuelve a la campana.
+2. Enter abre el menú con el foco en la primera alerta; Fin va a «Ver el stock de la jornada» e Inicio vuelve a la primera alerta.
+3. El diálogo «Reponer stock: …» se abre con el foco en «Unidades disponibles ahora».
+4. Se muestra «Usá un número entero, sin decimales.» y el campo queda marcado como inválido.
+5. El PATCH responde 200, el diálogo se cierra y el foco vuelve a la campana.
+6. El ítem ya no está en las alertas.
+
+## TC-E-071
+
+### Precondición
+
+Staging con el usuario mozo del seed.
+
+### Pasos
+
+1. Como mozo, abrir /admin/mesas.
+2. Ir a /admin/stock por la URL.
+
+### Resultado esperado
+
+1. No hay campana de stock en el header ni «Stock» en el menú.
 2. Vuelve al mapa de mesas.

@@ -122,8 +122,9 @@ function resumenDelCobro(
  * ya ocurrió cuando se registra. Por eso la mesa no pasa por
  * EN_PROCESO_DE_PAGO: queda OCUPADA (el comensal pagó antes de comer).
  *
- * Stock: la carta todavía no maneja stock (solo «disponible», HU-005). Cuando
- * exista, se descuenta en confirmarPagoEnTx, que comparten todos los medios.
+ * Stock (HU-015, BL-120): antes de registrar el cobro se verifica que
+ * alcance (409 si no); se descuenta en confirmarPagoEnTx, que comparten todos
+ * los medios.
  */
 @Injectable()
 export class CobroEfectivoService {
@@ -305,6 +306,9 @@ export class CobroEfectivoService {
         `El monto recibido ($ ${recibido.toFixed(2)}) es menor que el total del pedido ($ ${monto.toFixed(2)})`,
       );
     }
+    // HU-015 (BL-120): el efectivo se cobra en mano: si el stock ya no
+    // alcanza, 409 antes de registrarlo (D3, ADR 0009).
+    await this.pedidos.verificarStockEnTx(tx, pedido.id);
 
     const usuario = UUID.test(actorKeycloakId)
       ? await tx.usuario.findUnique({

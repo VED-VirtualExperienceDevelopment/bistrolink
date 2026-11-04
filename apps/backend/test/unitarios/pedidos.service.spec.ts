@@ -1,6 +1,7 @@
 import { Decimal } from '@prisma/client/runtime/library';
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
@@ -16,6 +17,14 @@ const TENANT_ID = '11111111-1111-1111-1111-111111111111';
 // Solo lo usa notificarPedidoConfirmado; el resto de los tests no lo toca.
 const mockResumenVentas = {
   recalcularRecientes: jest.fn().mockResolvedValue({ ventas: 1, platos: 1 }),
+} as any;
+// HU-015 (BL-120): stock. Sin ítems con control de stock no hay nada que
+// descontar ni avisar (se prueba en descuento-stock.service.spec).
+const AVISOS_VACIOS = { alertas: [], agotados: [] };
+const mockDescuentoStock = {
+  descontarEnTx: jest.fn().mockResolvedValue(AVISOS_VACIOS),
+  verificarPedidoEnTx: jest.fn().mockResolvedValue(undefined),
+  avisar: jest.fn(),
 } as any;
 const RESTAURANTE_ID = '22222222-2222-2222-2222-222222222222';
 const MESA_ID = '33333333-3333-3333-3333-333333333333';
@@ -107,6 +116,7 @@ describe('PedidosService.crear - idempotencia', () => {
       mockTenantPrisma,
       mockKdsGateway,
       mockResumenVentas,
+      mockDescuentoStock,
     );
   });
 
@@ -211,6 +221,7 @@ describe('PedidosService.crear — validaciones y mesa virtual', () => {
       mockTenantPrisma,
       mockKdsGateway,
       mockResumenVentas,
+      mockDescuentoStock,
     );
 
     mockTx.pedido.findUnique.mockResolvedValue(null);
@@ -269,6 +280,34 @@ describe('PedidosService.crear — validaciones y mesa virtual', () => {
 
     await expect(service.crear(TENANT_ID, dtoBase(), MESA_QR)).rejects.toThrow(
       '"Milanesa a la napolitana" no está disponible',
+    );
+    expect(mockTx.pedido.create).not.toHaveBeenCalled();
+  });
+
+  it('[TC-U-339] HU-015: con control de stock, 409 si no alcanza para lo pedido (sumando las líneas del mismo ítem)', async () => {
+    mockTx.mesa.findUnique.mockResolvedValue(mesaReal());
+    mockTx.itemCarta.findMany.mockResolvedValue([
+      {
+        id: '55555555-5555-5555-5555-555555555555',
+        nombre: 'Milanesa a la napolitana',
+        precio: new Decimal('590'),
+        disponible: true,
+        controlaStock: true,
+        stockActual: 2,
+        umbralAlerta: 5,
+      },
+    ]);
+    const dosLineas = dtoBase({
+      items: [
+        { itemCartaId: '55555555-5555-5555-5555-555555555555', cantidad: 2 },
+        { itemCartaId: '55555555-5555-5555-5555-555555555555', cantidad: 1 },
+      ],
+    });
+
+    await expect(service.crear(TENANT_ID, dosLineas, MESA_QR)).rejects.toThrow(
+      new ConflictException(
+        'No hay stock suficiente de "Milanesa a la napolitana": quedan 2',
+      ),
     );
     expect(mockTx.pedido.create).not.toHaveBeenCalled();
   });
@@ -355,6 +394,7 @@ describe('PedidosService.crear — mesa y restaurante (BL-309)', () => {
       mockTenantPrisma,
       mockKdsGateway,
       mockResumenVentas,
+      mockDescuentoStock,
     );
 
     mockTx.pedido.findUnique.mockResolvedValue(null);
@@ -478,6 +518,7 @@ describe('PedidosService.crear — QR de mesa y restaurante del tenant (BL-204)'
       mockTenantPrisma,
       mockKdsGateway,
       mockResumenVentas,
+      mockDescuentoStock,
     );
 
     mockTx.pedido.findUnique.mockResolvedValue(null);
@@ -676,7 +717,12 @@ describe('PedidosService.confirmarPagoEnTx / notificarPedidoConfirmado (BL-311, 
       emitirReportesActualizados: jest.fn(),
     };
     mockResumenVentas.recalcularRecientes.mockClear();
-    service = new PedidosService({} as any, mockKdsGateway, mockResumenVentas);
+    service = new PedidosService(
+      {} as any,
+      mockKdsGateway,
+      mockResumenVentas,
+      mockDescuentoStock,
+    );
   });
 
   it('pasa el pedido de PENDIENTE_PAGO a RECIBIDO solo si sigue en PENDIENTE_PAGO', async () => {
@@ -722,7 +768,11 @@ describe('PedidosService.confirmarPagoEnTx / notificarPedidoConfirmado (BL-311, 
       'pedido-nuevo',
     );
 
-    expect(resultado).toBe(pedidoConfirmado);
+    // HU-015 (BL-120): con lo que hay que avisar del stock.
+    expect(resultado).toEqual({
+      ...pedidoConfirmado,
+      avisosStock: AVISOS_VACIOS,
+    });
   });
 
   it('idempotente: si ya no estaba en PENDIENTE_PAGO, no toca el historial y devuelve null', async () => {
@@ -790,6 +840,70 @@ describe('PedidosService.confirmarPagoEnTx / notificarPedidoConfirmado (BL-311, 
         actualizadoEn: '2026-10-10T23:45:00.000Z',
       },
     );
+  });
+
+  it('[TC-U-336] HU-015: confirmar el pago descuenta el stock en la misma transacción', async () => {
+    await service.confirmarPagoEnTx(mockTx, TENANT_ID, 'pedido-nuevo');
+
+    expect(mockDescuentoStock.descontarEnTx).toHaveBeenCalledWith(
+      mockTx,
+      TENANT_ID,
+      'pedido-nuevo',
+    );
+  });
+
+  it('[TC-U-337] HU-015: si el pedido ya estaba confirmado, no vuelve a descontar', async () => {
+    mockTx.pedido.updateMany.mockResolvedValue({ count: 0 });
+    mockDescuentoStock.descontarEnTx.mockClear();
+
+    await service.confirmarPagoEnTx(mockTx, TENANT_ID, 'pedido-nuevo');
+
+    expect(mockDescuentoStock.descontarEnTx).not.toHaveBeenCalled();
+  });
+
+  it('[TC-U-338] HU-015: notificarPedidoConfirmado avisa el stock solo si hay algo que avisar', () => {
+    const avisos = {
+      alertas: [
+        {
+          itemId: 'i1',
+          nombre: 'Milanesa',
+          stockActual: 0,
+          umbralAlerta: 5,
+          tipo: 'AGOTADO',
+        },
+      ],
+      agotados: ['i1'],
+    };
+    mockDescuentoStock.avisar.mockClear();
+
+    service.notificarPedidoConfirmado(TENANT_ID, pedidoConfirmado as any);
+    service.notificarPedidoConfirmado(TENANT_ID, {
+      ...pedidoConfirmado,
+      avisosStock: avisos,
+    } as any);
+
+    expect(mockDescuentoStock.avisar).toHaveBeenCalledTimes(1);
+    expect(mockDescuentoStock.avisar).toHaveBeenCalledWith(TENANT_ID, avisos);
+  });
+
+  it('[TC-U-370] HU-015: verificarStockEnTx verifica en la misma transacción y el 409 llega a quien cobra', async () => {
+    mockDescuentoStock.verificarPedidoEnTx.mockClear();
+
+    await service.verificarStockEnTx(mockTx, 'pedido-nuevo');
+
+    expect(mockDescuentoStock.verificarPedidoEnTx).toHaveBeenCalledTimes(1);
+    expect(mockDescuentoStock.verificarPedidoEnTx).toHaveBeenCalledWith(
+      mockTx,
+      'pedido-nuevo',
+    );
+
+    mockDescuentoStock.verificarPedidoEnTx.mockRejectedValueOnce(
+      new ConflictException('"Milanesa" está agotado'),
+    );
+
+    await expect(
+      service.verificarStockEnTx(mockTx, 'pedido-nuevo'),
+    ).rejects.toThrow('"Milanesa" está agotado');
   });
 
   it('[TC-U-273] HU-012 notificarPedidoConfirmado: recalcula el resumen de ventas y avisa a los dashboards', async () => {

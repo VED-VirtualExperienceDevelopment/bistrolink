@@ -96,6 +96,7 @@ describe('PagosService.crear', () => {
   let cfe: { emitirEnSegundoPlano: jest.Mock };
   let pedidos: {
     confirmarPagoEnTx: jest.Mock;
+    verificarStockEnTx: jest.Mock;
     notificarPedidoConfirmado: jest.Mock;
     notificarEstadoMesa: jest.Mock;
   };
@@ -115,6 +116,8 @@ describe('PagosService.crear', () => {
     cfe = { emitirEnSegundoPlano: jest.fn() };
     pedidos = {
       confirmarPagoEnTx: jest.fn().mockResolvedValue(PEDIDO_CONFIRMADO),
+      // HU-015 (BL-120): el stock alcanza (se prueba en descuento-stock).
+      verificarStockEnTx: jest.fn().mockResolvedValue(undefined),
       notificarPedidoConfirmado: jest.fn(),
       notificarEstadoMesa: jest.fn(),
     };

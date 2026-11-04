@@ -215,6 +215,14 @@ const reportes = (ticket, extra = {}) => ({
   ...extra,
   tags: ["HU-012", ticket, "reportes", ...(extra.tags ?? [])],
 });
+// HU-015 (BL-120 a BL-123): stock de la jornada y alertas de stock bajo, en
+// stock.e2e-spec.ts.
+const stock = (ticket, extra = {}) => ({
+  component: "api",
+  requirement: "HU-015",
+  ...extra,
+  tags: ["HU-015", ticket, "stock", ...(extra.tags ?? [])],
+});
 const DATOS_INTEGRACION = {
   55: {
     category: "Funcional",
@@ -617,6 +625,23 @@ const DATOS_INTEGRACION = {
     tags: ["multi-tenant"],
   }),
   152: reportes("BL-109", { category: "Performance", priority: "P1" }),
+  // HU-015 (BL-120): stock de la jornada y alertas de stock bajo.
+  153: stock("BL-120", { category: "Funcional", priority: "P1" }),
+  154: stock("BL-121", { category: "Funcional", priority: "P2" }),
+  155: stock("BL-122", { category: "Seguridad", priority: "P1" }),
+  156: stock("BL-122", { category: "Seguridad", priority: "P1" }),
+  157: stock("BL-121", { category: "Performance", priority: "P1" }),
+  158: stock("BL-121", { category: "Funcional", priority: "P1" }),
+  159: stock("BL-121", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["integridad-datos", "concurrencia"],
+  }),
+  160: stock("BL-122", {
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["multi-tenant"],
+  }),
 };
 /**
  * BL-435: datos de los E2E TC-E-017 en adelante, con los criterios de
@@ -895,6 +920,22 @@ const DATOS_E2E = {
     category: "Seguridad",
     priority: "P1",
     tags: ["BL-108", "BL-110", "reportes"],
+  }),
+  // HU-015 (BL-120): stock de la jornada y campana de alertas.
+  69: e2e("admin", "HU-015", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-120", "BL-121", "stock", ...axe],
+  }),
+  70: e2e("admin", "HU-015", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-120", "stock", "accesibilidad"],
+  }),
+  71: e2e("admin", "HU-015", {
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["BL-122", "stock"],
   }),
 };
 /**

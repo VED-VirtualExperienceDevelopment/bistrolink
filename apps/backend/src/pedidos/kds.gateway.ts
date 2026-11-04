@@ -87,6 +87,10 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       }
 
       await client.join(this.salaTenant(user.tenantId));
+      // HU-015 (BL-120): las alertas de stock son solo del administrador.
+      if (user.roles.includes('ADMIN')) {
+        await client.join(this.salaAdmin(user.tenantId));
+      }
 
       Logger.log(
         `WS conectado (staff): tenant=${user.tenantId} roles=${user.roles.join(',')}`,
@@ -327,6 +331,28 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.server
       .to(this.salaTenant(tenantId))
       .emit('mesa:estado_actualizado', { mesaId, estado, ts: Date.now() });
+  }
+
+  /**
+   * HU-015 (BL-120): alerta de stock bajo o agotado, solo a los
+   * administradores del tenant. Solo nombre y cantidades (BL-122).
+   */
+  emitirAlertaStock(tenantId: string, alerta: unknown) {
+    this.server.to(this.salaAdmin(tenantId)).emit('stock:alerta', alerta);
+  }
+
+  /**
+   * HU-015 (BL-120): el administrador ajustó el stock (jornada o
+   * reposición). Las campanas abiertas vuelven a pedir las alertas.
+   */
+  emitirStockActualizado(tenantId: string) {
+    this.server
+      .to(this.salaAdmin(tenantId))
+      .emit('stock:actualizado', { ts: new Date().toISOString() });
+  }
+
+  private salaAdmin(tenantId: string): string {
+    return `admin:${tenantId}`;
   }
 
   private salaTenant(tenantId: string): string {
