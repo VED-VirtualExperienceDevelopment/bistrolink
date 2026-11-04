@@ -18,7 +18,10 @@ import { AlertasPendientes } from './alertas-pendientes';
 
 /** Qué hizo el mozo con la alerta: la atendió o la descartó. */
 export type AccionLlamado = 'aceptado' | 'desestimado';
-const ACCIONES_LLAMADO: readonly string[] = ['aceptado', 'desestimado'];
+const ACCIONES_LLAMADO: ReadonlySet<string> = new Set([
+  'aceptado',
+  'desestimado',
+]);
 
 /** HU-031b (BL-442): datos del llamado de una mesa que quiere pagar en efectivo. */
 export interface LlamadoPagoEfectivo {
@@ -272,7 +275,7 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (
       typeof body?.mesaId !== 'string' ||
       body.mesaId.length === 0 ||
-      !ACCIONES_LLAMADO.includes(body.accion)
+      !ACCIONES_LLAMADO.has(body.accion)
     ) {
       client.emit('error', { message: 'Solicitud de alerta inválida.' });
       return;
