@@ -297,6 +297,13 @@ describe('ComprobantesService: pendientes de emisión (HU-023, BL-96)', () => {
     ]);
   });
 
+  it('sin página ni fecha: la primera página, calculada con la hora actual', async () => {
+    const r = await service.consultarPendientes(TENANT_ID);
+
+    expect(tx.pago.findMany.mock.calls[0][0].skip).toBe(0);
+    expect(r.pagina).toBe(1);
+  });
+
   it('con 10 intentos o más de 3 días, requiere atención y no tiene próximo intento', async () => {
     tx.pago.findMany.mockResolvedValue([
       pagoSinCfe({ cfeIntentos: 10 }),
@@ -353,6 +360,17 @@ describe('ComprobantesService: pendientes de emisión (HU-023, BL-96)', () => {
     });
     expect(auditLog.registrar.mock.calls[0][0].detalle).toEqual({
       resultado: 'FALLIDO',
+    });
+  });
+
+  it('reintentar: sin comprobante ni error (por ejemplo, el pago dejó de estar aprobado) audita SIN_EMITIR', async () => {
+    cfe.reintentar.mockResolvedValue({ comprobante: null, error: null });
+
+    const r = await service.reintentar(TENANT_ID, 'pago-1', { id: 'kc' });
+
+    expect(r).toEqual({ emitido: false, comprobante: null, error: null });
+    expect(auditLog.registrar.mock.calls[0][0].detalle).toEqual({
+      resultado: 'SIN_EMITIR',
     });
   });
 
