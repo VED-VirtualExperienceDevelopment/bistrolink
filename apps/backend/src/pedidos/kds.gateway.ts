@@ -158,19 +158,19 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     try {
       const pedidosTransicion = await this.resolverPedidosTransicion();
-      const actualizado = await pedidosTransicion.transicionar({
+      const { actualizado, promovidos } = await pedidosTransicion.transicionar({
         tenantId: user.tenantId,
         keycloakId: user.sub,
         pedidoId: body.pedidoId,
         nuevoEstado: body.nuevoEstado,
       });
 
-      this.server
-        .to(this.salaTenant(user.tenantId))
-        .emit('pedido:actualizado', actualizado);
-      this.server
-        .to(this.salaPedido(body.pedidoId))
-        .emit('pedido:actualizado', actualizado);
+      this.emitirPedidoActualizado(user.tenantId, actualizado);
+      // HU-042 (BL-463): los que la cola pasó a preparación al liberarse
+      // el lugar.
+      for (const promovido of promovidos) {
+        this.emitirPedidoActualizado(user.tenantId, promovido);
+      }
     } catch (err) {
       client.emit('error', { message: (err as Error).message });
     }
@@ -362,6 +362,20 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.server
       .to(this.salaTenant(tenantId))
       .emit('reportes:actualizado', { ts: new Date().toISOString() });
+  }
+
+  /**
+   * Un pedido cambió de estado: al staff del tenant (KDS y mozo) y al
+   * comensal que lo sigue (sala del pedido). HU-042 (BL-463): también lo
+   * usa la cola al pasar un pedido a preparación.
+   */
+  emitirPedidoActualizado(tenantId: string, actualizado: { id: string }) {
+    this.server
+      .to(this.salaTenant(tenantId))
+      .emit('pedido:actualizado', actualizado);
+    this.server
+      .to(this.salaPedido(actualizado.id))
+      .emit('pedido:actualizado', actualizado);
   }
 
   // BL-311: avisa al comensal que sigue el pedido (sala del pedido, la que

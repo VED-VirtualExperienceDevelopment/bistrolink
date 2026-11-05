@@ -246,7 +246,10 @@ describe('KdsGateway', () => {
         estado: PedidoEstado.EN_PREPARACION,
         actualizadoEn: '2026-08-30T12:00:00.000Z',
       };
-      mockPedidosTransicion.transicionar.mockResolvedValue(actualizado);
+      mockPedidosTransicion.transicionar.mockResolvedValue({
+        actualizado,
+        promovidos: [],
+      });
       const client = mockClient();
 
       await gateway.onTransicion(client as any, {
@@ -265,6 +268,42 @@ describe('KdsGateway', () => {
       expect(mockServer.emit).toHaveBeenCalledWith(
         'pedido:actualizado',
         actualizado,
+      );
+    });
+
+    it('[TC-U-379] HU-042 (BL-463): al liberarse un lugar, avisa también el pedido que la cola pasó a preparación', async () => {
+      mockWsAuth.verify.mockResolvedValue({
+        sub: 'usuario-1',
+        tenantId: TENANT_ID,
+        roles: ['MOZO'],
+      });
+      const actualizado = {
+        id: 'pedido-1',
+        estado: PedidoEstado.LISTO_PARA_ENTREGAR,
+        actualizadoEn: '2026-11-05T12:05:00.000Z',
+      };
+      const promovido = {
+        id: 'PED-101',
+        estado: PedidoEstado.EN_PREPARACION,
+        actualizadoEn: '2026-11-05T12:05:01.000Z',
+        mesaNumero: 7,
+        lineas: [],
+      };
+      mockPedidosTransicion.transicionar.mockResolvedValue({
+        actualizado,
+        promovidos: [promovido],
+      });
+      const client = mockClient();
+
+      await gateway.onTransicion(client as any, {
+        pedidoId: 'pedido-1',
+        nuevoEstado: PedidoEstado.LISTO_PARA_ENTREGAR,
+      });
+
+      expect(mockServer.to).toHaveBeenCalledWith(`pedido:PED-101`);
+      expect(mockServer.emit).toHaveBeenCalledWith(
+        'pedido:actualizado',
+        promovido,
       );
     });
 

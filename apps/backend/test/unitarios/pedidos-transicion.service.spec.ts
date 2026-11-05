@@ -24,9 +24,17 @@ describe('PedidosTransicionService', () => {
         findUnique: jest.fn(),
         update: jest.fn(),
         findMany: jest.fn(),
+        // HU-042 (BL-463): cola del KDS.
+        count: jest.fn(),
+        updateMany: jest.fn(),
+        findUniqueOrThrow: jest.fn(),
       },
       usuario: { findUnique: jest.fn() },
       pedidoEstadoHistorial: { create: jest.fn() },
+      // HU-042 (BL-463): sin límite configurado (cola desactivada) por
+      // defecto, así los tests anteriores no cambian.
+      restaurante: { findUnique: jest.fn().mockResolvedValue(null) },
+      $executeRaw: jest.fn(),
     };
 
     const tenantPrismaMock = {
@@ -100,17 +108,21 @@ describe('PedidosTransicionService', () => {
         },
       });
       expect(resultado).toEqual({
-        id: PEDIDO_ID,
-        estado: PedidoEstado.EN_PREPARACION,
-        actualizadoEn: '2026-08-30T12:00:00.000Z',
-        mesaNumero: 4,
-        lineas: [
-          {
-            id: 'linea-1',
-            nombreSnapshot: 'Milanesa a la napolitana',
-            cantidad: 2,
-          },
-        ],
+        actualizado: {
+          id: PEDIDO_ID,
+          estado: PedidoEstado.EN_PREPARACION,
+          actualizadoEn: '2026-08-30T12:00:00.000Z',
+          mesaNumero: 4,
+          lineas: [
+            {
+              id: 'linea-1',
+              nombreSnapshot: 'Milanesa a la napolitana',
+              cantidad: 2,
+            },
+          ],
+        },
+        // Con la cola desactivada no se promueve nada.
+        promovidos: [],
       });
     });
 
@@ -135,7 +147,10 @@ describe('PedidosTransicionService', () => {
         nuevoEstado: PedidoEstado.LISTO_PARA_ENTREGAR,
       });
 
-      expect(resultado.estado).toBe(PedidoEstado.LISTO_PARA_ENTREGAR);
+      expect(resultado.actualizado.estado).toBe(
+        PedidoEstado.LISTO_PARA_ENTREGAR,
+      );
+      expect(resultado.promovidos).toEqual([]);
     });
 
     it('[TC-U-KDS-012] transicionar rechaza saltear un estado (RECIBIDO -> LISTO_PARA_ENTREGAR, sin pasar por EN_PREPARACION)', async () => {
@@ -210,6 +225,137 @@ describe('PedidosTransicionService', () => {
       // transicion a un usuario real - evita un historial huerfano.
       expect(tx().pedido.update).not.toHaveBeenCalled();
       expect(tx().pedidoEstadoHistorial.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('HU-042 (BL-463): cola del KDS y límite de preparación', () => {
+    const conLimite = (limite: number) =>
+      tx().restaurante.findUnique.mockResolvedValue({
+        limitePedidosEnPreparacion: limite,
+      });
+
+    it('[TC-U-375] con la cocina al límite, rechaza pasar un pedido a preparación a mano y no lo toca', async () => {
+      conLimite(5);
+      tx().pedido.findUnique.mockResolvedValue({
+        id: PEDIDO_ID,
+        estado: PedidoEstado.RECIBIDO,
+      });
+      tx().usuario.findUnique.mockResolvedValue({ id: USUARIO_ID });
+      tx().pedido.count.mockResolvedValue(5);
+
+      await expect(
+        service.transicionar({
+          tenantId: TENANT_ID,
+          keycloakId: KEYCLOAK_ID,
+          pedidoId: PEDIDO_ID,
+          nuevoEstado: PedidoEstado.EN_PREPARACION,
+        }),
+      ).rejects.toThrow('La cocina está al límite de 5 pedidos');
+
+      expect(tx().$executeRaw).toHaveBeenCalled();
+      expect(tx().pedido.update).not.toHaveBeenCalled();
+      expect(tx().pedidoEstadoHistorial.create).not.toHaveBeenCalled();
+    });
+
+    it('[TC-U-376] con lugar en cocina, pasar un pedido a preparación a mano funciona igual que antes', async () => {
+      conLimite(5);
+      tx().pedido.findUnique.mockResolvedValue({
+        id: PEDIDO_ID,
+        estado: PedidoEstado.RECIBIDO,
+      });
+      tx().usuario.findUnique.mockResolvedValue({ id: USUARIO_ID });
+      tx().pedido.count.mockResolvedValue(3);
+      tx().pedido.update.mockResolvedValue({
+        id: PEDIDO_ID,
+        estado: PedidoEstado.EN_PREPARACION,
+        updatedAt: new Date('2026-11-05T12:00:00Z'),
+        mesa: { numero: 4 },
+        lineas: [],
+      });
+
+      const resultado = await service.transicionar({
+        tenantId: TENANT_ID,
+        keycloakId: KEYCLOAK_ID,
+        pedidoId: PEDIDO_ID,
+        nuevoEstado: PedidoEstado.EN_PREPARACION,
+      });
+
+      expect(resultado.actualizado.estado).toBe(PedidoEstado.EN_PREPARACION);
+      expect(resultado.promovidos).toEqual([]);
+    });
+
+    it('[TC-U-377] al marcar un pedido como listo, pasa a preparación el más antiguo de la cola y lo devuelve', async () => {
+      conLimite(5);
+      tx().pedido.findUnique.mockResolvedValue({
+        id: PEDIDO_ID,
+        estado: PedidoEstado.EN_PREPARACION,
+      });
+      tx().usuario.findUnique.mockResolvedValue({ id: USUARIO_ID });
+      tx().pedido.update.mockResolvedValue({
+        id: PEDIDO_ID,
+        estado: PedidoEstado.LISTO_PARA_ENTREGAR,
+        updatedAt: new Date('2026-11-05T12:05:00Z'),
+        mesa: { numero: 4 },
+        lineas: [],
+      });
+      // Ya salió uno: quedan 4 en preparación, 1 lugar libre.
+      tx().pedido.count.mockResolvedValue(4);
+      tx().pedido.findMany.mockResolvedValue([{ id: 'PED-101' }]);
+      tx().pedido.updateMany.mockResolvedValue({ count: 1 });
+      tx().pedido.findUniqueOrThrow.mockResolvedValue({
+        id: 'PED-101',
+        estado: PedidoEstado.EN_PREPARACION,
+        updatedAt: new Date('2026-11-05T12:05:01Z'),
+        mesa: { numero: 7 },
+        lineas: [{ id: 'l-1', nombreSnapshot: 'Chivito', cantidad: 1 }],
+      });
+
+      const resultado = await service.transicionar({
+        tenantId: TENANT_ID,
+        keycloakId: KEYCLOAK_ID,
+        pedidoId: PEDIDO_ID,
+        nuevoEstado: PedidoEstado.LISTO_PARA_ENTREGAR,
+      });
+
+      expect(resultado.actualizado.estado).toBe(
+        PedidoEstado.LISTO_PARA_ENTREGAR,
+      );
+      expect(resultado.promovidos).toEqual([
+        {
+          id: 'PED-101',
+          estado: PedidoEstado.EN_PREPARACION,
+          actualizadoEn: '2026-11-05T12:05:01.000Z',
+          mesaNumero: 7,
+          lineas: [{ id: 'l-1', nombreSnapshot: 'Chivito', cantidad: 1 }],
+        },
+      ]);
+    });
+
+    it('[TC-U-378] al entregar un pedido (LISTO -> ENTREGADO) no se toca la cola: el lugar ya se había liberado', async () => {
+      conLimite(5);
+      tx().pedido.findUnique.mockResolvedValue({
+        id: PEDIDO_ID,
+        estado: PedidoEstado.LISTO_PARA_ENTREGAR,
+      });
+      tx().usuario.findUnique.mockResolvedValue({ id: USUARIO_ID });
+      tx().pedido.update.mockResolvedValue({
+        id: PEDIDO_ID,
+        estado: PedidoEstado.ENTREGADO,
+        updatedAt: new Date('2026-11-05T12:10:00Z'),
+        mesa: { numero: 4 },
+        lineas: [],
+      });
+
+      const resultado = await service.transicionar({
+        tenantId: TENANT_ID,
+        keycloakId: KEYCLOAK_ID,
+        pedidoId: PEDIDO_ID,
+        nuevoEstado: PedidoEstado.ENTREGADO,
+      });
+
+      expect(resultado.promovidos).toEqual([]);
+      expect(tx().$executeRaw).not.toHaveBeenCalled();
+      expect(tx().pedido.findMany).not.toHaveBeenCalled();
     });
   });
 

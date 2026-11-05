@@ -7,6 +7,13 @@ import { PedidoEstado, Prisma } from '@prisma/client';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { aPedidoKds } from './pedido-kds.mapper';
 import type { LlamadoPagoEfectivo } from './kds.gateway';
+import {
+  bloquearColaDelTenant,
+  completarCapacidad,
+  contarEnPreparacion,
+  limiteDeLaCola,
+  type PedidoPromovido,
+} from './cola-kds';
 
 /**
  * BL-448: un aviso de «Mesa N quiere pagar en efectivo» pendiente, con la
@@ -47,6 +54,15 @@ export interface PedidoActualizado {
   lineas: LineaNotificacion[];
 }
 
+/**
+ * HU-042 (BL-463): el pedido que cambió y los que la cola pasó a
+ * EN_PREPARACION en la misma transacción (al liberarse un lugar).
+ */
+export interface ResultadoTransicion {
+  actualizado: PedidoActualizado;
+  promovidos: PedidoPromovido[];
+}
+
 @Injectable()
 export class PedidosTransicionService {
   constructor(private readonly tenantPrisma: TenantPrismaService) {}
@@ -61,7 +77,7 @@ export class PedidosTransicionService {
     keycloakId: string; // payload.sub del JWT — todavía no es Usuario.id
     pedidoId: string;
     nuevoEstado: PedidoEstado;
-  }): Promise<PedidoActualizado> {
+  }): Promise<ResultadoTransicion> {
     const { tenantId, keycloakId, pedidoId, nuevoEstado } = params;
 
     return this.tenantPrisma.runInTenantContext(tenantId, async (tx) => {
@@ -97,6 +113,21 @@ export class PedidosTransicionService {
         );
       }
 
+      // HU-042 (BL-463, ADR 0010): con la cola activa, pasar un pedido a
+      // preparación a mano respeta el límite. El lock evita que un pago
+      // aprobado en el mismo momento ocupe el mismo lugar.
+      if (nuevoEstado === PedidoEstado.EN_PREPARACION) {
+        const limite = await limiteDeLaCola(tx, tenantId);
+        if (limite !== null) {
+          await bloquearColaDelTenant(tx, tenantId);
+          if ((await contarEnPreparacion(tx, tenantId)) >= limite) {
+            throw new BadRequestException(
+              `La cocina está al límite de ${limite} pedidos en preparación. El pedido sigue en espera.`,
+            );
+          }
+        }
+      }
+
       const actualizado = await tx.pedido.update({
         where: { id: pedidoId },
         data: { estado: nuevoEstado },
@@ -121,12 +152,22 @@ export class PedidosTransicionService {
         },
       });
 
+      // HU-042 (BL-463): el pedido salió de preparación y liberó un lugar:
+      // pasa a preparación el más antiguo de la cola, en esta transacción.
+      const promovidos =
+        nuevoEstado === PedidoEstado.LISTO_PARA_ENTREGAR
+          ? await completarCapacidad(tx, tenantId)
+          : [];
+
       return {
-        id: actualizado.id,
-        estado: actualizado.estado,
-        actualizadoEn: actualizado.updatedAt.toISOString(),
-        mesaNumero: actualizado.mesa.numero,
-        lineas: actualizado.lineas,
+        actualizado: {
+          id: actualizado.id,
+          estado: actualizado.estado,
+          actualizadoEn: actualizado.updatedAt.toISOString(),
+          mesaNumero: actualizado.mesa.numero,
+          lineas: actualizado.lineas,
+        },
+        promovidos,
       };
     });
   }
