@@ -40,6 +40,9 @@ export interface LlamadoPagoEfectivo {
 })
 export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private static readonly ROLES_CONEXION_KDS = ['ADMIN', 'MOZO', 'COCINA'];
+  // BL-460: los avisos del salón (llamados y pago en efectivo) son del Mozo y
+  // del Administrador. Cocina solo necesita las comandas.
+  private static readonly ROLES_SALON = ['ADMIN', 'MOZO'];
 
   @WebSocketServer()
   server: Server;
@@ -99,6 +102,11 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       }
 
       await client.join(this.salaTenant(user.tenantId));
+      // BL-460: Cocina queda afuera de la sala del salón, así que no recibe
+      // los llamados ni el total y el «paga con» del pago en efectivo.
+      if (this.esSalon(user.roles)) {
+        await client.join(this.salaSalon(user.tenantId));
+      }
       // HU-015 (BL-120): las alertas de stock son solo del administrador.
       if (user.roles.includes('ADMIN')) {
         await client.join(this.salaAdmin(user.tenantId));
@@ -109,7 +117,7 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         KdsGateway.name,
       );
 
-      await this.enviarSnapshot(client, user.tenantId);
+      await this.enviarSnapshot(client, user.tenantId, user.roles);
     } catch (err) {
       const esWsAuthError =
         err instanceof WsAuthError || (err as Error)?.name === 'WsAuthError';
@@ -192,18 +200,24 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
 
-    await this.enviarSnapshot(client, user.tenantId);
+    await this.enviarSnapshot(client, user.tenantId, user.roles);
   }
 
   /**
    * Estado actual para un KDS que se conecta o pide sincronizar: los pedidos
    * activos y las alertas pendientes (BL-441): los llamados guardados en el
    * servidor más los avisos de efectivo (BL-448) que el mozo todavía no atendió.
+   * BL-460: esas alertas solo se mandan al salón (Mozo y Administrador).
    */
-  private async enviarSnapshot(client: Socket, tenantId: string) {
+  private async enviarSnapshot(
+    client: Socket,
+    tenantId: string,
+    roles: string[],
+  ) {
     const pedidosTransicion = await this.resolverPedidosTransicion();
     const pendientes = await pedidosTransicion.listarPendientes(tenantId);
     client.emit('pedidos:snapshot', pendientes);
+    if (!this.esSalon(roles)) return;
     const solicitudes =
       await pedidosTransicion.listarSolicitudesEfectivo(tenantId);
     client.emit(
@@ -299,7 +313,7 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
 
     this.server
-      .to(this.salaTenant(user.tenantId))
+      .to(this.salaSalon(user.tenantId))
       .emit('llamado:resuelto', { mesaId: body.mesaId, accion: body.accion });
   }
 
@@ -320,13 +334,13 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   /**
    * La mesa se cerró (BL-448): cancela los pedidos sin pagar, así que no
-   * queda alerta que atender. Se saca del almacén y de todos los KDS del
+   * queda alerta que atender. Se saca del almacén y de todo el salón del
    * tenant. Aceptar o desestimar pasa por `llamado:resolver`.
    */
   emitirLlamadoResuelto(tenantId: string, mesaId: string) {
     this.alertas.cerrarMesa(tenantId, mesaId);
     this.server
-      .to(this.salaTenant(tenantId))
+      .to(this.salaSalon(tenantId))
       .emit('llamado:resuelto', { mesaId });
   }
 
@@ -378,7 +392,8 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     // BL-441: se guarda antes de emitir, así un KDS que se conecta justo
     // después lo recibe en el snapshot.
     this.alertas.agregar(tenantId, llamado);
-    this.server.to(this.salaTenant(tenantId)).emit('llamado:nuevo', llamado);
+    // BL-460: solo el salón; Cocina no recibe el total ni el «paga con».
+    this.server.to(this.salaSalon(tenantId)).emit('llamado:nuevo', llamado);
   }
 
   // HU-016/HU-017: punto de entrada único para propagar un cambio de estado
@@ -411,6 +426,14 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   private salaAdmin(tenantId: string): string {
     return `admin:${tenantId}`;
+  }
+
+  private salaSalon(tenantId: string): string {
+    return `salon:${tenantId}`;
+  }
+
+  private esSalon(roles: string[]): boolean {
+    return KdsGateway.ROLES_SALON.some((r) => roles.includes(r));
   }
 
   private salaTenant(tenantId: string): string {

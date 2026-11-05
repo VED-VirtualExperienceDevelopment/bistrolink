@@ -76,3 +76,22 @@ Tenant A del seed. Dos pagos APROBADOS sin comprobante: uno de hace 10 minutos y
 3. Se emite el CFE y el pago ya no está entre los pendientes.
 4. 409: ya tiene su comprobante.
 5. Un registro PAGO_CFE_REINTENTADO del pago con el resultado EMITIDO.
+
+## TC-I-163
+
+### Precondición
+
+Establecimiento de prueba con un usuario Mozo y un usuario Cocina. Una mesa propia ocupada con un pedido esperando el pago en efectivo.
+
+### Pasos
+
+1. El comensal avisa que paga en efectivo (queda una solicitud pendiente).
+2. Se conectan al KDS por WebSocket un Mozo y un Cocina.
+3. Se emiten en vivo un llamado de mesa y un aviso de efectivo.
+4. Se emite un evento para todo el establecimiento (cambio de estado de mesa) como control.
+
+### Resultado esperado
+
+1. El Mozo recibe el efectivo pendiente en `llamados:snapshot`.
+2. El Mozo recibe los dos avisos en vivo.
+3. Cocina recibe el evento de control, pero ninguno de los avisos: ni snapshot, ni llamados, ni efectivo.
