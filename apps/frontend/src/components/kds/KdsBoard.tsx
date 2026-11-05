@@ -3,11 +3,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import { useKeycloakAuth } from '@/components/providers/KeycloakProvider';
+import { useAlertas } from '@/components/alertas/AlertasProvider';
 import { OrderTicket } from './OrderTicket';
 import type { Pedido } from '@/types/pedido';
 import {
   agregarLlamado,
-  combinarSnapshotLlamados,
+  llamadosDelSnapshot,
   quitarLlamadoDePedido,
   textoLlamado,
   type LlamadoMozo,
@@ -26,41 +27,65 @@ interface PedidoActualizadoPayload {
 
 export function KdsBoard() {
   const { token, hasRole } = useKeycloakAuth();
+  // BL-441: dentro de /admin/* el socket y las alertas vienen de
+  // AlertasProvider (un solo socket del staff). El /kds de COCINA no tiene
+  // ese proveedor y sigue abriendo el suyo.
+  const alertas = useAlertas();
+  const enShell = alertas !== null;
+  const socketCompartido = alertas ? alertas.socket : null;
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [conectado, setConectado] = useState(false);
-  const [llamados, setLlamados] = useState<LlamadoMozo[]>([]);
+  const [conectadoPropio, setConectadoPropio] = useState(false);
+  const [llamadosPropios, setLlamadosPropios] = useState<LlamadoMozo[]>([]);
   const socketRef = useRef<Socket | null>(null);
+
+  const conectado = alertas ? alertas.conectado : conectadoPropio;
+  // BL-441: los llamados de las mesas («Mesa N solicita atención») se atienden
+  // desde la campana y la pantalla Alertas, no desde este tablero. El tablero
+  // conserva solo los avisos de pago en efectivo (BL-442 / BL-448).
+  const llamados = (alertas ? alertas.llamados : llamadosPropios).filter(
+    (llamado) => llamado.motivo === 'PAGO_EFECTIVO',
+  );
 
   const puedeOperarTransiciones = Boolean(hasRole('MOZO') || hasRole('ADMIN'));
 
   useEffect(() => {
-    if (!token) return;
-
-    const socket = io(WS_URL, {
-      auth: { token },
-      reconnection: true,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
-    });
+    const propio = !enShell;
+    let socket: Socket;
+    if (propio) {
+      if (!token) return;
+      socket = io(WS_URL, {
+        auth: { token },
+        reconnection: true,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000,
+      });
+    } else {
+      // El socket compartido puede estar ya conectado: el servidor mandó el
+      // estado inicial antes de que este tablero existiera, así que se lo
+      // pedimos de nuevo (pedidos:sync). Si todavía no conectó, el servidor lo
+      // manda solo al conectar.
+      if (!socketCompartido) return;
+      socket = socketCompartido;
+    }
     socketRef.current = socket;
 
-    socket.on('connect', () => setConectado(true));
-    socket.on('disconnect', () => setConectado(false));
-
-    socket.on('pedidos:snapshot', (snapshot: Pedido[]) => {
+    const alSnapshotPedidos = (snapshot: Pedido[]) => {
       setPedidos(snapshot);
       setLoading(false);
-    });
+    };
 
-    socket.on('pedido:nuevo', (pedido: Pedido) => {
+    const alPedidoNuevo = (pedido: Pedido) => {
       setPedidos((prev) => (prev.some((p) => p.id === pedido.id) ? prev : [...prev, pedido]));
-      // BL-448: si era el pedido de un aviso de efectivo, ya se cobró.
-      setLlamados((prev) => quitarLlamadoDePedido(prev, pedido.id));
-    });
+      // BL-448: si era el pedido de un aviso de efectivo, ya se cobró. Dentro
+      // de /admin/* lo resuelve AlertasProvider.
+      if (propio) {
+        setLlamadosPropios((prev) => quitarLlamadoDePedido(prev, pedido.id));
+      }
+    };
 
-    socket.on('pedido:actualizado', (payload: PedidoActualizadoPayload) => {
+    const alPedidoActualizado = (payload: PedidoActualizadoPayload) => {
       setPedidos((prev) => {
         // HU-018/BL-64: una vez entregado, el pedido sale del tablero
         // activo — mismo criterio que listarPendientes() ya aplica del
@@ -72,38 +97,71 @@ export function KdsBoard() {
           p.id === payload.id ? { ...p, estado: payload.estado } : p,
         );
       });
-    });
+    };
 
-    // HU-019/BL-68
-    socket.on('llamado:nuevo', (llamado: LlamadoMozo) => {
-      setLlamados((prev) => agregarLlamado(prev, llamado));
-    });
-
-    // BL-448: avisos de efectivo pendientes, al conectar o reconectar.
-    socket.on('llamados:snapshot', (snapshot: LlamadoMozo[]) => {
-      setLlamados((prev) => combinarSnapshotLlamados(prev, snapshot));
-    });
-
-    socket.on('llamado:resuelto', ({ mesaId }: { mesaId: string }) => {
-      setLlamados((prev) => prev.filter((l) => l.mesaId !== mesaId));
-    });
-
-    socket.on('error', (err: { message: string }) => {
+    const alError = (err: { message: string }) => {
       setLoadError(err.message);
       setLoading(false);
-    });
+    };
+
+    socket.on('pedidos:snapshot', alSnapshotPedidos);
+    socket.on('pedido:nuevo', alPedidoNuevo);
+    socket.on('pedido:actualizado', alPedidoActualizado);
+    socket.on('error', alError);
+
+    // Solo el /kds de COCINA maneja sus propios llamados y su conexión.
+    const alConectar = () => setConectadoPropio(true);
+    const alDesconectar = () => setConectadoPropio(false);
+    // HU-019/BL-68
+    const alLlamadoNuevo = (llamado: LlamadoMozo) => {
+      setLlamadosPropios((prev) => agregarLlamado(prev, llamado));
+    };
+    // BL-441: alertas pendientes, al conectar o reconectar. Reemplazan a las
+    // que había: el servidor sabe cuáles siguen sin atender.
+    const alSnapshotLlamados = (snapshot: LlamadoMozo[]) => {
+      setLlamadosPropios(llamadosDelSnapshot(snapshot));
+    };
+    const alLlamadoResuelto = ({ mesaId }: { mesaId: string }) => {
+      setLlamadosPropios((prev) => prev.filter((l) => l.mesaId !== mesaId));
+    };
+
+    if (propio) {
+      socket.on('connect', alConectar);
+      socket.on('disconnect', alDesconectar);
+      socket.on('llamado:nuevo', alLlamadoNuevo);
+      socket.on('llamados:snapshot', alSnapshotLlamados);
+      socket.on('llamado:resuelto', alLlamadoResuelto);
+    } else if (socket.connected) {
+      socket.emit('pedidos:sync');
+    }
 
     return () => {
-      socket.disconnect();
+      socket.off('pedidos:snapshot', alSnapshotPedidos);
+      socket.off('pedido:nuevo', alPedidoNuevo);
+      socket.off('pedido:actualizado', alPedidoActualizado);
+      socket.off('error', alError);
+      if (propio) {
+        socket.off('connect', alConectar);
+        socket.off('disconnect', alDesconectar);
+        socket.off('llamado:nuevo', alLlamadoNuevo);
+        socket.off('llamados:snapshot', alSnapshotLlamados);
+        socket.off('llamado:resuelto', alLlamadoResuelto);
+        // El socket compartido lo cierra AlertasProvider, no este tablero.
+        socket.disconnect();
+      }
       socketRef.current = null;
     };
-  }, [token]);
+  }, [enShell, socketCompartido, token]);
 
   function emitirTransicion(pedidoId: string, nuevoEstado: EstadoPedido) {
     socketRef.current?.emit('pedido:transicion', { pedidoId, nuevoEstado });
   }
 
   function resolverLlamado(mesaId: string, accion: 'aceptado' | 'desestimado') {
+    if (alertas) {
+      alertas.resolver(mesaId, accion);
+      return;
+    }
     socketRef.current?.emit('llamado:resolver', { mesaId, accion });
   }
 

@@ -1,5 +1,8 @@
 import { expect, type Page } from "@playwright/test";
 
+/** Pantalla Alertas del panel (BL-441). */
+export const ALERTAS_PATH = "/admin/alertas";
+
 /**
  * Lleva un pedido hasta ENTREGADO desde el tablero del KDS, con los mismos
  * botones que usa el mozo (el mismo recorrido que TC-E-016).
@@ -41,5 +44,36 @@ export async function intentarEntregarPedido(
     await entregarPedidoDesdeKds(kdsPage, pedidoId);
   } catch {
     // Lo que quede abierto lo levanta la limpieza de BL-285.
+  }
+}
+
+/**
+ * BL-441: el llamado de una mesa queda pendiente en el servidor hasta que el
+ * mozo lo atiende, y se atiende desde la pantalla Alertas (el tablero del KDS
+ * ya no muestra los llamados normales). Este paso lo desestima al terminar el
+ * test, para no dejar alertas pendientes que contaminen a los demás.
+ *
+ * "Best effort", como `intentarEntregarPedido`: si no hay alerta de esa mesa
+ * (por ejemplo, porque el test falló antes de llamar), no tapa el error
+ * original con uno nuevo.
+ */
+export async function intentarDesestimarLlamado(
+  kdsPage: Page,
+  mesaNumero: number,
+): Promise<void> {
+  try {
+    await kdsPage.goto(ALERTAS_PATH);
+    const alerta = kdsPage
+      .getByRole("main")
+      .getByRole("listitem")
+      .filter({ hasText: new RegExp(`Mesa ${mesaNumero} solicita atención`, "i") });
+    await alerta
+      .getByRole("button", {
+        name: `Desestimar la alerta de la mesa ${mesaNumero}`,
+      })
+      .click({ timeout: 5000 });
+    await expect(alerta).toBeHidden({ timeout: 5000 });
+  } catch {
+    // Si quedó pendiente, vence sola a las 12 h o al cerrar la mesa.
   }
 }
