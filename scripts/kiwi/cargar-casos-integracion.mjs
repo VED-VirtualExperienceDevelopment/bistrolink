@@ -561,6 +561,12 @@ const DATOS_INTEGRACION = {
     priority: "P1",
     tags: ["websocket", "reconexion"],
   }),
+  // BL-460: el KDS de Cocina no recibe los avisos del salón.
+  163: avisoEfectivo({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["BL-460", "seguridad", "websocket"],
+  }),
   // HU-037 (BL-207): rebaja de IVA por pago electrónico (Ley 17.934).
   138: {
     category: "Funcional",

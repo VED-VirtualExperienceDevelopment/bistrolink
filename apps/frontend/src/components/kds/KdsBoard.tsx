@@ -6,13 +6,6 @@ import { useKeycloakAuth } from '@/components/providers/KeycloakProvider';
 import { useAlertas } from '@/components/alertas/AlertasProvider';
 import { OrderTicket } from './OrderTicket';
 import type { Pedido } from '@/types/pedido';
-import {
-  agregarLlamado,
-  llamadosDelSnapshot,
-  quitarLlamadoDePedido,
-  textoLlamado,
-  type LlamadoMozo,
-} from './llamado.utils';
 
 const WS_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
@@ -37,16 +30,12 @@ export function KdsBoard() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [conectadoPropio, setConectadoPropio] = useState(false);
-  const [llamadosPropios, setLlamadosPropios] = useState<LlamadoMozo[]>([]);
   const socketRef = useRef<Socket | null>(null);
 
   const conectado = alertas ? alertas.conectado : conectadoPropio;
-  // BL-441: los llamados de las mesas («Mesa N solicita atención») se atienden
-  // desde la campana y la pantalla Alertas, no desde este tablero. El tablero
-  // conserva solo los avisos de pago en efectivo (BL-442 / BL-448).
-  const llamados = (alertas ? alertas.llamados : llamadosPropios).filter(
-    (llamado) => llamado.motivo === 'PAGO_EFECTIVO',
-  );
+  // BL-460: este tablero solo muestra las comandas. Los llamados de mesa y los
+  // avisos de pago en efectivo se atienden desde la campana y la pantalla
+  // Alertas; el pedido listo se entrega con el botón de su comanda.
 
   const puedeOperarTransiciones = Boolean(hasRole('MOZO') || hasRole('ADMIN'));
 
@@ -78,11 +67,6 @@ export function KdsBoard() {
 
     const alPedidoNuevo = (pedido: Pedido) => {
       setPedidos((prev) => (prev.some((p) => p.id === pedido.id) ? prev : [...prev, pedido]));
-      // BL-448: si era el pedido de un aviso de efectivo, ya se cobró. Dentro
-      // de /admin/* lo resuelve AlertasProvider.
-      if (propio) {
-        setLlamadosPropios((prev) => quitarLlamadoDePedido(prev, pedido.id));
-      }
     };
 
     const alPedidoActualizado = (payload: PedidoActualizadoPayload) => {
@@ -109,28 +93,13 @@ export function KdsBoard() {
     socket.on('pedido:actualizado', alPedidoActualizado);
     socket.on('error', alError);
 
-    // Solo el /kds de COCINA maneja sus propios llamados y su conexión.
+    // Solo el /kds de COCINA maneja su propia conexión.
     const alConectar = () => setConectadoPropio(true);
     const alDesconectar = () => setConectadoPropio(false);
-    // HU-019/BL-68
-    const alLlamadoNuevo = (llamado: LlamadoMozo) => {
-      setLlamadosPropios((prev) => agregarLlamado(prev, llamado));
-    };
-    // BL-441: alertas pendientes, al conectar o reconectar. Reemplazan a las
-    // que había: el servidor sabe cuáles siguen sin atender.
-    const alSnapshotLlamados = (snapshot: LlamadoMozo[]) => {
-      setLlamadosPropios(llamadosDelSnapshot(snapshot));
-    };
-    const alLlamadoResuelto = ({ mesaId }: { mesaId: string }) => {
-      setLlamadosPropios((prev) => prev.filter((l) => l.mesaId !== mesaId));
-    };
 
     if (propio) {
       socket.on('connect', alConectar);
       socket.on('disconnect', alDesconectar);
-      socket.on('llamado:nuevo', alLlamadoNuevo);
-      socket.on('llamados:snapshot', alSnapshotLlamados);
-      socket.on('llamado:resuelto', alLlamadoResuelto);
     } else if (socket.connected) {
       socket.emit('pedidos:sync');
     }
@@ -143,9 +112,6 @@ export function KdsBoard() {
       if (propio) {
         socket.off('connect', alConectar);
         socket.off('disconnect', alDesconectar);
-        socket.off('llamado:nuevo', alLlamadoNuevo);
-        socket.off('llamados:snapshot', alSnapshotLlamados);
-        socket.off('llamado:resuelto', alLlamadoResuelto);
         // El socket compartido lo cierra AlertasProvider, no este tablero.
         socket.disconnect();
       }
@@ -155,14 +121,6 @@ export function KdsBoard() {
 
   function emitirTransicion(pedidoId: string, nuevoEstado: EstadoPedido) {
     socketRef.current?.emit('pedido:transicion', { pedidoId, nuevoEstado });
-  }
-
-  function resolverLlamado(mesaId: string, accion: 'aceptado' | 'desestimado') {
-    if (alertas) {
-      alertas.resolver(mesaId, accion);
-      return;
-    }
-    socketRef.current?.emit('llamado:resolver', { mesaId, accion });
   }
 
   const gruposPorMesa = (() => {
@@ -185,63 +143,6 @@ export function KdsBoard() {
           new Date(b.pedidos[0].createdAt).getTime(),
       );
   })();
-
-  const banner = llamados.length > 0 && (
-    <div className="flex shrink-0 flex-col gap-1.5">
-      {llamados.map((llamado) => (
-        <div
-          key={llamado.mesaId}
-          role="alert"
-          className="flex items-center justify-between rounded-lg bg-tertiary-container px-3 py-2 text-label-md text-on-tertiary-container"
-        >
-          <span>{textoLlamado(llamado)}</span>
-          {puedeOperarTransiciones && (
-            <div className="flex gap-2">
-              <button
-                onClick={() => resolverLlamado(llamado.mesaId, 'aceptado')}
-                className="rounded-md bg-primary px-2 py-1 text-white"
-              >
-                Aceptar
-              </button>
-              <button
-                onClick={() => resolverLlamado(llamado.mesaId, 'desestimado')}
-                className="rounded-md border border-outline px-2 py-1"
-              >
-                Desestimar
-              </button>
-            </div>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-
-  const pedidosListos = pedidos.filter((p) => p.estado === 'LISTO_PARA_ENTREGAR');
-
-  const bannerListos = pedidosListos.length > 0 && (
-    <div className="flex shrink-0 flex-col gap-1.5">
-      {pedidosListos.map((pedido) => (
-        <div
-          key={pedido.id}
-          data-pedido-id={pedido.id}
-          role="alert"
-          className="flex items-center justify-between rounded-lg bg-secondary-container px-3 py-2 text-label-md text-on-secondary-container"
-        >
-          <span>
-            🍽️ Mesa {pedido.mesaNumero}: pedido listo para entregar
-          </span>
-          {puedeOperarTransiciones && (
-            <button
-              onClick={() => emitirTransicion(pedido.id, 'ENTREGADO')}
-              className="rounded-md bg-secondary px-2 py-1 text-on-secondary"
-            >
-              Confirmar entrega
-            </button>
-          )}
-        </div>
-      ))}
-    </div>
-  );
 
   let contenido;
   if (loading) {
@@ -293,8 +194,6 @@ export function KdsBoard() {
 
   return (
     <div className="flex h-full flex-col gap-2">
-      {banner}
-      {bannerListos}
       {!conectado && !loading && (
         <div role="status" className="shrink-0 rounded-lg bg-tertiary-container px-3 py-1.5 text-label-md text-on-tertiary-container">
           Reconectando…

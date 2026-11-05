@@ -5,7 +5,9 @@ export const ALERTAS_PATH = "/admin/alertas";
 
 /**
  * Lleva un pedido hasta ENTREGADO desde el tablero del KDS, con los mismos
- * botones que usa el mozo (el mismo recorrido que TC-E-016).
+ * botones que usa el mozo (el mismo recorrido que TC-E-016). BL-460: el
+ * tablero ya no tiene avisos; la entrega se confirma con el botón «Marcar como
+ * entregado» de la propia comanda.
  *
  * Sirve para que los E2E no dejen tickets abiertos en la cocina. No borra el
  * pedido: queda en la base como ENTREGADO. El borrado (y que los datos de
@@ -21,11 +23,7 @@ export async function entregarPedidoDesdeKds(
   await ticket.getByRole("button", { name: "Marcar en preparación" }).click();
   await ticket.getByRole("button", { name: "Listo para entregar" }).click();
 
-  const banner = kdsPage.locator(`[data-pedido-id="${pedidoId}"]`, {
-    hasText: "pedido listo para entregar",
-  });
-  await expect(banner).toBeVisible({ timeout: 5000 });
-  await banner.getByRole("button", { name: "Confirmar entrega" }).click();
+  await ticket.getByRole("button", { name: "Marcar como entregado" }).click();
 
   await expect(ticket).not.toBeVisible({ timeout: 5000 });
 }

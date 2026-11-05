@@ -6,7 +6,7 @@ import {
   MENU_URL_PATH,
   MESA_ID,
 } from "../support/ids";
-import { intentarEntregarPedido } from "../support/kds";
+import { ALERTAS_PATH, intentarEntregarPedido } from "../support/kds";
 import { continuarAlPago } from "../support/pago";
 
 // BL-448: al recargar la página, el comensal vuelve a donde estaba (pantalla
@@ -163,7 +163,7 @@ test.describe("BL-448: Retomar el pago al recargar", () => {
     expect(guardado).not.toContain("5031");
   });
 
-  test("[TC-E-061] BL-448: con el KDS abierto después de la solicitud de efectivo, el aviso aparece", async ({
+  test("[TC-E-061] BL-448: con la pantalla Alertas abierta después de la solicitud de efectivo, el aviso aparece", async ({
     page,
     kdsPageMozo,
     qrMesas,
@@ -177,12 +177,14 @@ test.describe("BL-448: Retomar el pago al recargar", () => {
       // Un monto que no use otro test, para encontrar este aviso.
       await avisarQuePagaEnEfectivo(page, pedidoId, "7777");
 
-      // El KDS se abre (o se recarga) después: el evento en vivo ya pasó y
-      // el aviso tiene que llegar en el snapshot de la conexión nueva.
-      await kdsPageMozo.goto(KDS_PATH);
+      // BL-460: el aviso de efectivo ya no está en el tablero del KDS, se
+      // atiende desde la pantalla Alertas. Se abre después: el evento en vivo
+      // ya pasó y el aviso tiene que llegar en el snapshot de la conexión nueva.
+      await kdsPageMozo.goto(ALERTAS_PATH);
       await expect(
         kdsPageMozo
-          .getByRole("alert")
+          .getByRole("main")
+          .getByRole("listitem")
           .filter({ hasText: "quiere pagar en efectivo" })
           .filter({ hasText: /7\.777/ }),
       ).toBeVisible({ timeout: 15000 });
