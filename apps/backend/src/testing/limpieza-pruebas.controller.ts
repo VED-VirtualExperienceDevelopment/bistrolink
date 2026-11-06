@@ -13,6 +13,7 @@ import { PedidoEstado } from '@prisma/client';
 import { RolesGuard, Roles } from '../auth/roles.guard';
 import { AuthenticatedUser } from '../auth/keycloak-jwt.strategy';
 import { KdsGateway } from '../pedidos/kds.gateway';
+import { MenuGateway } from '../menu/menu.gateway';
 import { AREAS_LIMPIEZA, LimpiarPedidosDto } from './dto/limpiar-pedidos.dto';
 import {
   LimpiezaPruebasService,
@@ -24,18 +25,24 @@ import {
   type ResultadoLimpiezaMesas,
   type ResumenMesas,
 } from './limpieza-mesas.service';
+import {
+  LimpiezaCartaService,
+  type ResultadoLimpiezaCarta,
+  type ResumenCarta,
+} from './limpieza-carta.service';
 
 /** Resumen por área (solo las que se pidieron) y si fue dry-run. */
 export interface RespuestaLimpieza {
   dryRun: boolean;
   pedidos?: ResumenPedidos;
   mesas?: ResumenMesas;
+  carta?: ResumenCarta;
 }
 
 /**
  * BL-475 (BL-285, ADR 0011): `POST /testing/limpieza`. Deja los datos de
- * prueba del tenant como el seed, por áreas y en orden: pedidos (BL-475) y
- * mesas y plano (BL-479). Lo usan el fixture de los E2E y el script de
+ * prueba del tenant como el seed, por áreas y en orden: pedidos (BL-475),
+ * mesas y plano (BL-479) y carta y stock (BL-480). Lo usan el fixture de los E2E y el script de
  * limpieza de local y staging. Solo ADMIN, en el tenant del token. Fuera
  * del contrato OpenAPI, como `/test` (BL-211).
  *
@@ -50,7 +57,9 @@ export class LimpiezaPruebasController {
   constructor(
     private readonly limpieza: LimpiezaPruebasService,
     private readonly limpiezaMesas: LimpiezaMesasService,
+    private readonly limpiezaCarta: LimpiezaCartaService,
     private readonly kdsGateway: KdsGateway,
+    private readonly menuGateway: MenuGateway,
   ) {}
 
   @Post('limpieza')
@@ -80,7 +89,42 @@ export class LimpiezaPruebasController {
       if (!dryRun) this.avisarMesas(tenantId, { cambios, mesasDelSalon });
       respuesta.mesas = resumen;
     }
+    if (areas.includes('carta')) {
+      const { itemsRetirados, categoriasRetiradas, seedCambio, ...resumen } =
+        await this.limpiezaCarta.limpiar(tenantId, sub, dryRun);
+      if (!dryRun) {
+        this.avisarCarta(tenantId, {
+          itemsRetirados,
+          categoriasRetiradas,
+          seedCambio,
+        });
+      }
+      respuesta.carta = resumen;
+    }
     return respuesta;
+  }
+
+  /**
+   * La carta del comensal y Gestión de Carta sacan lo que se borró o
+   * archivó; si cambió el seed, recargan la carta y la campana de stock.
+   */
+  private avisarCarta(
+    tenantId: string,
+    carta: Pick<
+      ResultadoLimpiezaCarta,
+      'itemsRetirados' | 'categoriasRetiradas' | 'seedCambio'
+    >,
+  ) {
+    for (const itemId of carta.itemsRetirados) {
+      this.menuGateway.emitItemRetirado(tenantId, { itemId });
+    }
+    for (const categoriaId of carta.categoriasRetiradas) {
+      this.menuGateway.emitCategoriaRetirada(tenantId, { categoriaId });
+    }
+    if (carta.seedCambio) {
+      this.menuGateway.emitCartaReordenada(tenantId);
+      this.kdsGateway.emitirStockActualizado(tenantId);
+    }
   }
 
   /**

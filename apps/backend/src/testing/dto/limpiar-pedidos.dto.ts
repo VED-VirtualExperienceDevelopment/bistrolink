@@ -15,7 +15,7 @@ import {
  * limpian. Cada sub-issue agrega la suya (mesas, carta, configuración,
  * usuarios).
  */
-export const AREAS_LIMPIEZA = ['pedidos', 'mesas'] as const;
+export const AREAS_LIMPIEZA = ['pedidos', 'mesas', 'carta'] as const;
 export type AreaLimpieza = (typeof AREAS_LIMPIEZA)[number];
 
 /** BL-475: cuántos pedidos puede cerrar por id un solo pedido de limpieza. */

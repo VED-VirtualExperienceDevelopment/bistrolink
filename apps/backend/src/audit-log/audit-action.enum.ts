@@ -37,6 +37,7 @@ export enum AuditAction {
   CARTA_ITEM_ELIMINADO = 'CARTA_ITEM_ELIMINADO', // solo ítems sin pedidos
   CARTA_ITEM_STOCK_AJUSTADO = 'CARTA_ITEM_STOCK_AJUSTADO', // BL-120 (HU-015: control de stock, unidades, umbral y disponibilidad, con antes y después)
   CARTA_ITEM_VENDIDO_SIN_STOCK = 'CARTA_ITEM_VENDIDO_SIN_STOCK', // BL-120 (ADR 0009: dos pagos casi simultáneos se llevaron las últimas unidades; con el pedido y cuántas de más)
+  CARTA_ITEM_LIMPIEZA_PRUEBAS = 'CARTA_ITEM_LIMPIEZA_PRUEBAS', // BL-480 (BL-285: limpieza de datos de prueba; ítems y categorías «E2E» borrados o archivados y carta del seed restablecida)
   CARTA_CATEGORIA_CREADA = 'CARTA_CATEGORIA_CREADA',
   CARTA_CATEGORIA_MODIFICADA = 'CARTA_CATEGORIA_MODIFICADA', // nombre, descripción o visibilidad, con antes y después
   CARTA_CATEGORIA_ARCHIVADA = 'CARTA_CATEGORIA_ARCHIVADA',

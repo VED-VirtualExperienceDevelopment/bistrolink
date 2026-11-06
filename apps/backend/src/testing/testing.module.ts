@@ -1,10 +1,12 @@
 import { Module, type Type } from '@nestjs/common';
 import { PrismaModule } from '../prisma/prisma.module';
 import { PedidosModule } from '../pedidos/pedidos.module';
+import { MenuModule } from '../menu/menu.module';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { LimpiezaPruebasController } from './limpieza-pruebas.controller';
 import { LimpiezaPruebasService } from './limpieza-pruebas.service';
 import { LimpiezaMesasService } from './limpieza-mesas.service';
+import { LimpiezaCartaService } from './limpieza-carta.service';
 
 /**
  * BL-475 (BL-285): herramientas para los datos de prueba (limpieza de
@@ -13,9 +15,14 @@ import { LimpiezaMesasService } from './limpieza-mesas.service';
  * ruta no existe y responde 404.
  */
 @Module({
-  imports: [PrismaModule, PedidosModule],
+  imports: [PrismaModule, PedidosModule, MenuModule],
   controllers: [LimpiezaPruebasController],
-  providers: [LimpiezaPruebasService, LimpiezaMesasService, AuditLogService],
+  providers: [
+    LimpiezaPruebasService,
+    LimpiezaMesasService,
+    LimpiezaCartaService,
+    AuditLogService,
+  ],
 })
 export class TestingModule {}
 

@@ -253,7 +253,9 @@ describe('LimpiezaPruebasController', () => {
     const controller = new LimpiezaPruebasController(
       limpieza as any,
       limpiezaMesas as any,
+      { limpiar: jest.fn() } as any, // BL-480: limpieza-carta.spec.ts
       kdsGateway as any,
+      {} as any,
     );
     return { controller, limpieza, limpiezaMesas, kdsGateway };
   }

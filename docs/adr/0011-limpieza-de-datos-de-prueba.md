@@ -1,9 +1,8 @@
 # ADR 0011 — Limpieza de los datos de prueba (staging y local)
 
-| Campo | Valor |
-| --- | --- |
-| Estado | Propuesta |
-| Fecha | 06/11/2026 |
+| Campo            | Valor                   | 
+| ---              | ---                     |                     
+|            Fecha |   Estado 
 | 1.1 | 06/11/2026 | Aceptada por el equipo. |
 | Referencias | BL-285 (BL-475 a BL-482); BL-197; BL-232; BL-253; BL-275; BL-418; BL-441; ADR 0002; ADR 0006; hallazgos D2 y D8 |
 | Autores | E. Arenas, V. Couto, D. Silvera |

@@ -25,3 +25,50 @@ export const NUMERO_MESA_TEMPORAL_MAXIMO = 99;
 
 /** Zonas del plano creadas por `plano-salon.spec.ts` («Zona E2E 12345»). */
 export const PREFIJO_ZONA_E2E = 'Zona E2E';
+
+/**
+ * Categorías de los E2E (`gestion-carta.spec.ts`: «E2E carta …»;
+ * `stock.spec.ts`: «E2E stock …»). Todos sus ítems son de prueba.
+ */
+export const PREFIJO_CATEGORIA_E2E = 'E2E ';
+
+/** Ítems de prueba fuera de esas categorías: «E2E» como palabra en el nombre. */
+export const MARCA_ITEM_E2E = /\bE2E\b/;
+
+/** Categorías de la carta del seed (tenant A): activas y visibles. */
+export const CATEGORIAS_DEL_SEED: readonly string[] = [
+  '44444444-4444-4444-4444-444444444444', // Platos principales
+  '44444444-4444-4444-4444-444444444445', // Bebidas
+];
+
+/**
+ * Ítems de la carta del seed con lo que define el seed. Agua con gas está
+ * agotada a propósito (menu.spec.ts, menu-publico.spec.ts). El stock vuelve
+ * a los valores por defecto de la columna: sin control de stock.
+ */
+export const ITEMS_DEL_SEED: readonly {
+  id: string;
+  categoriaId: string;
+  precio: string;
+  disponible: boolean;
+}[] = [
+  {
+    id: '55555555-5555-5555-5555-555555555555', // Milanesa a la napolitana
+    categoriaId: '44444444-4444-4444-4444-444444444444',
+    precio: '590',
+    disponible: true,
+  },
+  {
+    id: '66666666-6666-6666-6666-666666666666', // Agua con gas
+    categoriaId: '44444444-4444-4444-4444-444444444445',
+    precio: '90',
+    disponible: false,
+  },
+];
+
+/** Stock de un ítem del seed (los valores por defecto de la columna). */
+export const STOCK_DEL_SEED = {
+  controlaStock: false,
+  stockActual: 0,
+  umbralAlerta: 5,
+} as const;

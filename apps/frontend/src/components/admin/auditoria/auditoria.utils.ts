@@ -87,6 +87,8 @@ export const ETIQUETAS_ACCION: Record<string, string> = {
   // BL-475 (BL-285): solo en staging y local (E2E_CLEANUP_ENABLED).
   PEDIDO_LIMPIEZA_PRUEBAS: "Pedidos de prueba cerrados (limpieza)",
   MESA_LIMPIEZA_PRUEBAS: "Mesas y plano de prueba restablecidos (limpieza)",
+  CARTA_ITEM_LIMPIEZA_PRUEBAS:
+    "Carta y stock de prueba restablecidos (limpieza)",
 };
 
 export function etiquetaAccion(accion: string): string {

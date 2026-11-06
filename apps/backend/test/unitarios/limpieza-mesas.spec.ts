@@ -263,6 +263,13 @@ describe('LimpiezaMesasService', () => {
 
 describe('LimpiezaPruebasController · área mesas', () => {
   const req = { user: { sub: ACTOR, tenantId: TENANT_ID, roles: ['ADMIN'] } };
+  const resumenCarta = {
+    itemsEliminados: 0,
+    itemsArchivados: 0,
+    categoriasEliminadas: 0,
+    categoriasArchivadas: 0,
+    seedRestablecido: 0,
+  };
   const resumenMesas = {
     reabiertas: 1,
     liberadas: 1,
@@ -290,24 +297,45 @@ describe('LimpiezaPruebasController · área mesas', () => {
         mesasDelSalon: [MESA_1, 'm3'],
       }),
     };
+    const limpiezaCarta = {
+      limpiar: jest.fn().mockResolvedValue({
+        ...resumenCarta,
+        itemsRetirados: [],
+        categoriasRetiradas: [],
+        seedCambio: false,
+      }),
+    };
     const kdsGateway = {
       emitirPedidoActualizado: jest.fn(),
       emitirLlamadoResuelto: jest.fn(),
       emitirEstadoMesa: jest.fn(),
       avisarEstadoCola: jest.fn(),
+      emitirStockActualizado: jest.fn(),
+    };
+    const menuGateway = {
+      emitItemRetirado: jest.fn(),
+      emitCategoriaRetirada: jest.fn(),
+      emitCartaReordenada: jest.fn(),
     };
     const controller = new LimpiezaPruebasController(
       limpieza as any,
       limpiezaMesas as any,
+      limpiezaCarta as any,
       kdsGateway as any,
+      menuGateway as any,
     );
-    return { controller, limpieza, limpiezaMesas, kdsGateway };
+    return { controller, limpieza, limpiezaMesas, limpiezaCarta, kdsGateway };
   }
 
-  it('[TC-U-440] sin áreas limpia pedidos y después mesas; avisa el estado de cada mesa y saca las alertas del salón', async () => {
-    const { controller, limpieza, limpiezaMesas, kdsGateway } = armar();
+  it('[TC-U-440] sin áreas limpia pedidos, después mesas y después carta; avisa el estado de cada mesa y saca las alertas del salón', async () => {
+    const { controller, limpieza, limpiezaMesas, limpiezaCarta, kdsGateway } =
+      armar();
 
     const respuesta = await controller.limpiar(req as any, {});
+
+    expect(limpiezaMesas.limpiar.mock.invocationCallOrder[0]).toBeLessThan(
+      limpiezaCarta.limpiar.mock.invocationCallOrder[0],
+    );
 
     expect(limpieza.limpiar.mock.invocationCallOrder[0]).toBeLessThan(
       limpiezaMesas.limpiar.mock.invocationCallOrder[0],
@@ -317,6 +345,7 @@ describe('LimpiezaPruebasController · área mesas', () => {
       dryRun: false,
       pedidos: { encontrados: {}, cancelados: 0, entregados: 0 },
       mesas: resumenMesas,
+      carta: resumenCarta,
     });
     expect(kdsGateway.emitirEstadoMesa).toHaveBeenCalledWith(
       TENANT_ID,
