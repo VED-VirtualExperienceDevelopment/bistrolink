@@ -1000,6 +1000,17 @@ const DATOS_E2E = {
     priority: "P2",
     tags: ["BL-473", "configuracion", "responsive", "mobile"],
   }),
+  // BL-474: pantalla de Stock de la jornada responsive y accesible.
+  77: e2e("admin", "HU-015", {
+    category: "Accesibilidad",
+    priority: "P2",
+    tags: ["BL-474", "stock", ...axe],
+  }),
+  78: e2e("admin", "HU-015", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-474", "stock", "responsive", "mobile"],
+  }),
 };
 /**
  * Datos de los contratos PactJS (TC-C). Requirement con la HU que usa el

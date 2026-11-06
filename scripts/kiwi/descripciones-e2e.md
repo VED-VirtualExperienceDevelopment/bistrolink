@@ -19,6 +19,7 @@
 | 1.12    | 04/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-072: pendientes de emisión de comprobantes (HU-023, BL-96).                             |
 | 1.13    | 04/11/2026 | TC-E-073 y 074: alertas del mozo (campana, pantalla Alertas y recarga con alertas pendientes) (BL-441).                                              |
 | 1.14    | 06/11/2026 | TC-E-075 y 076: pantalla de Configuración accesible, responsive y con «Guardar cambios» al final (BL-473).                                           |
+| 1.15    | 06/11/2026 | TC-E-077 y 078: pantalla de Stock de la jornada accesible, responsive y con «Guardar cambios» al final (BL-474).                                     |
 
 Plantilla para cargar en Kiwi la descripción de casos TC-E (Playwright)
 nuevos o que cambiaron (BL-435). La usa
@@ -162,5 +163,43 @@ Administrador del establecimiento del seed logueado en el panel. Ventana de celu
 ### Resultado esperado
 
 1. Se ve el formulario en una sola columna.
+2. No hay scroll horizontal y «Guardar cambios» se ve en pantalla.
+3. Sigue sin haber scroll horizontal y «Guardar cambios» sigue a la vista, como último botón.
+
+## TC-E-077
+
+### Precondición
+
+Administrador del establecimiento del seed logueado en el panel. Ventana de escritorio (1440 × 900). El test no cambia el stock.
+
+### Pasos
+
+1. Abrir «Stock».
+2. Revisar la pantalla con axe-core (WCAG 2.1 AA).
+3. Mirar los botones del panel.
+4. Bajar hasta la última categoría.
+
+### Resultado esperado
+
+1. Se ven las tablas de stock por categoría.
+2. No hay errores de accesibilidad graves ni críticos.
+3. «Guardar cambios» es el último botón y se ve en pantalla.
+4. «Guardar cambios» sigue siendo el último botón y sigue a la vista (barra fija abajo).
+
+## TC-E-078
+
+### Precondición
+
+Administrador del establecimiento del seed logueado en el panel. Ventana de celular (375 × 812). El test no cambia el stock.
+
+### Pasos
+
+1. Abrir «Stock».
+2. Revisar si la página, el panel o las tablas tienen scroll horizontal.
+3. Bajar hasta la última categoría.
+
+### Resultado esperado
+
+1. Se ven las tablas de stock por categoría, una debajo de la otra.
 2. No hay scroll horizontal y «Guardar cambios» se ve en pantalla.
 3. Sigue sin haber scroll horizontal y «Guardar cambios» sigue a la vista, como último botón.

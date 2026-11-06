@@ -3,15 +3,24 @@
 import { useEffect, useId, useState, type FormEvent } from "react";
 import { Dialog } from "@/components/ui/Dialog";
 import { ApiError } from "@/lib/api-client";
+import {
+  CLASE_AYUDA,
+  CLASE_BOTON,
+  CLASE_BOTON_SECUNDARIO,
+  CLASE_CONTROL,
+  CLASE_ERROR_CAMPO,
+  CLASE_ETIQUETA,
+} from "@/components/admin/configuracion/configuracion.estilos";
 import { leerUnidades, textoUnidades, type AlertaStock } from "./stock.utils";
-
-const CLASE_BOTON =
-  "flex min-h-12 items-center justify-center rounded-lg px-5 text-body-md font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-50";
 
 /**
  * HU-015 (BL-120): «Reponer stock» desde la campana, sin salir de la
  * pantalla. Las unidades que se ingresan son las que hay ahora (no se suman
  * a las que quedaban); con más de 0 el ítem vuelve a la carta (D6).
+ *
+ * BL-474: campo y botones con los estilos de Configuración (borde con
+ * contraste ≥ 3:1 y foco sólido); en el celular, botones a todo el ancho con
+ * el mismo orden que con el teclado.
  */
 export default function ReponerStockDialog({
   alerta,
@@ -66,10 +75,7 @@ export default function ReponerStockDialog({
       {alerta && (
         <form onSubmit={guardar} noValidate className="space-y-4">
           <div>
-            <label
-              htmlFor={`${id}-unidades`}
-              className="mb-1 block text-label-md text-on-surface-variant"
-            >
+            <label htmlFor={`${id}-unidades`} className={CLASE_ETIQUETA}>
               Unidades disponibles ahora
             </label>
             <input
@@ -85,37 +91,30 @@ export default function ReponerStockDialog({
               }}
               aria-invalid={error !== null}
               aria-describedby={describidoPor}
-              className="min-h-12 w-full rounded-lg border border-outline-variant bg-surface-container-lowest px-3 text-body-md text-on-surface focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 aria-[invalid=true]:border-error"
+              className={CLASE_CONTROL}
             />
-            <p
-              id={`${id}-ayuda`}
-              className="mt-1 text-body-sm text-on-surface-variant"
-            >
+            <p id={`${id}-ayuda`} className={`mt-1 ${CLASE_AYUDA}`}>
               Antes: {textoUnidades(alerta)}. Con más de 0, el ítem vuelve a la
               carta.
             </p>
             {error && (
-              <p
-                id={`${id}-error`}
-                role="alert"
-                className="mt-1 text-body-sm text-error"
-              >
+              <p id={`${id}-error`} role="alert" className={CLASE_ERROR_CAMPO}>
                 {error}
               </p>
             )}
           </div>
-          <div className="flex justify-end gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
             <button
               type="button"
               onClick={onClose}
-              className={`${CLASE_BOTON} border border-outline-variant text-on-surface hover:bg-surface-container-low`}
+              className={`${CLASE_BOTON_SECUNDARIO} w-full sm:w-auto`}
             >
               Cancelar
             </button>
             <button
               type="submit"
               disabled={guardando}
-              className={`${CLASE_BOTON} bg-primary text-on-primary hover:opacity-90`}
+              className={`${CLASE_BOTON} w-full sm:w-auto`}
             >
               {guardando ? "Guardando…" : "Guardar"}
             </button>

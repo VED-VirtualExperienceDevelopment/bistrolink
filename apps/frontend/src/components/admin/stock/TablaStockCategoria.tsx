@@ -1,7 +1,11 @@
 "use client";
 
 import Switch from "@/components/ui/Switch";
-import { ETIQUETA_TIPO } from "./stock.utils";
+import {
+  CLASE_CONTROL,
+  CLASE_ERROR_CAMPO,
+} from "@/components/admin/configuracion/configuracion.estilos";
+import { CLASE_ESTADO_STOCK, ETIQUETA_TIPO } from "./stock.utils";
 import {
   idCampoStock,
   idCampoUmbral,
@@ -11,21 +15,17 @@ import {
   type ItemStock,
 } from "./stock-jornada.utils";
 
-const CLASE_CAMPO =
-  "min-h-12 w-24 rounded-lg border border-outline-variant bg-surface-container-lowest px-3 text-body-md text-on-surface focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:bg-surface-container disabled:text-on-surface-variant aria-[invalid=true]:border-error";
-const CLASE_CELDA = "px-3 py-2 align-top";
+// BL-474: celdas compactas en el celular (px-2) para que la tabla entre en
+// 375 px sin scroll horizontal; desde md, el espaciado de siempre.
+const CLASE_CELDA = "px-2 py-2 align-top md:px-3";
 const CLASE_ENCABEZADO =
-  "px-3 py-2 text-left text-label-md font-medium text-on-surface-variant";
-const CLASE_ESTADO = {
-  STOCK_CRITICO: "bg-amber-100 text-amber-900",
-  AGOTADO: "bg-error-container text-on-error-container",
-} as const;
+  "px-2 py-2 text-left align-bottom text-label-md font-medium text-on-surface-variant md:px-3";
 
 function Estado({ item }: Readonly<{ item: ItemStock }>) {
   if (item.alerta) {
     return (
       <span
-        className={`inline-block rounded-full px-2 py-0.5 text-label-sm ${CLASE_ESTADO[item.alerta]}`}
+        className={`inline-block rounded-full px-2 py-0.5 text-label-sm ${CLASE_ESTADO_STOCK[item.alerta]}`}
       >
         {ETIQUETA_TIPO[item.alerta]}
       </span>
@@ -35,6 +35,19 @@ function Estado({ item }: Readonly<{ item: ItemStock }>) {
     <span className="text-body-sm text-on-surface-variant">
       {item.controlaStock ? "Con stock" : "Sin control"}
     </span>
+  );
+}
+
+/** Encabezado con un texto corto en el celular y el completo desde md. */
+function TextoEncabezado({
+  corto,
+  largo,
+}: Readonly<{ corto: string; largo: string }>) {
+  return (
+    <>
+      <span className="md:hidden">{corto}</span>
+      <span className="hidden md:inline">{largo}</span>
+    </>
   );
 }
 
@@ -53,8 +66,10 @@ function CampoUnidades({
   deshabilitado: boolean;
   onCambiar: (valor: string) => void;
 }>) {
+  // El ancho lo da el contenedor (64 px en el celular, 96 px desde md): con
+  // un ancho en % dentro de una tabla, la columna podría colapsar.
   return (
-    <>
+    <div className="w-16 md:w-24">
       <input
         id={id}
         type="text"
@@ -66,14 +81,14 @@ function CampoUnidades({
         onChange={(e) => onCambiar(e.target.value)}
         aria-invalid={error !== undefined}
         aria-describedby={error ? `${id}-error` : undefined}
-        className={CLASE_CAMPO}
+        className={`${CLASE_CONTROL} disabled:cursor-not-allowed disabled:bg-surface-container disabled:text-on-surface-variant`}
       />
       {error && (
-        <p id={`${id}-error`} className="mt-1 max-w-40 text-body-sm text-error">
+        <p id={`${id}-error`} className={CLASE_ERROR_CAMPO}>
           {error}
         </p>
       )}
-    </>
+    </div>
   );
 }
 
@@ -82,6 +97,14 @@ function CampoUnidades({
  * Una tabla por categoría, con el nombre del ítem como encabezado de fila;
  * cada campo lleva el nombre del ítem en su etiqueta, porque el lector de
  * pantalla lo anuncia fuera de la tabla al tabular.
+ *
+ * BL-474: sigue siendo una tabla en todos los tamaños (no se cambia el
+ * `display` de las filas, que en algunos navegadores borra la semántica de
+ * tabla). En el celular:
+ * - Sin ancho mínimo fijo: títulos cortos («Control», «Aviso»), campos de
+ *   64 px y el estado debajo del nombre (la columna «Estado» se oculta).
+ * - El `overflow-x-auto` queda solo como red para nombres muy largos en
+ *   pantallas de 320 px (WCAG 1.4.10 exceptúa las tablas de datos).
  */
 export default function TablaStockCategoria({
   grupo,
@@ -98,31 +121,34 @@ export default function TablaStockCategoria({
   return (
     <section
       aria-labelledby={idTitulo}
-      className="rounded-xl border border-outline-variant bg-surface-container-lowest"
+      className="min-w-0 overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest"
     >
       <h2
         id={idTitulo}
-        className="border-b border-outline-variant px-4 py-3 text-headline-sm text-on-surface"
+        className="border-b border-outline-variant px-4 py-3 text-headline-sm text-on-surface md:px-6"
       >
         {grupo.categoria.nombre}
       </h2>
       <div className="overflow-x-auto">
-        <table aria-labelledby={idTitulo} className="w-full min-w-[36rem]">
+        <table aria-labelledby={idTitulo} className="w-full">
           <thead>
             <tr>
-              <th scope="col" className={CLASE_ENCABEZADO}>
+              <th scope="col" className={`${CLASE_ENCABEZADO} pl-4 md:pl-6`}>
                 Ítem
               </th>
               <th scope="col" className={CLASE_ENCABEZADO}>
-                Controlar stock
+                <TextoEncabezado corto="Control" largo="Controlar stock" />
               </th>
               <th scope="col" className={CLASE_ENCABEZADO}>
                 Unidades
               </th>
               <th scope="col" className={CLASE_ENCABEZADO}>
-                Avisar cuando queden
+                <TextoEncabezado corto="Aviso" largo="Avisar cuando queden" />
               </th>
-              <th scope="col" className={CLASE_ENCABEZADO}>
+              <th
+                scope="col"
+                className={`${CLASE_ENCABEZADO} hidden md:table-cell md:pr-6`}
+              >
                 Estado
               </th>
             </tr>
@@ -133,13 +159,21 @@ export default function TablaStockCategoria({
               if (!fila) return null;
               const error = errores[item.id] ?? {};
               return (
-                <tr key={item.id}>
+                <tr
+                  key={item.id}
+                  className="hover:bg-surface-container-low focus-within:bg-surface-container-low"
+                >
                   <th
                     scope="row"
-                    className={`${CLASE_CELDA} text-left text-body-md font-normal text-on-surface`}
+                    className={`${CLASE_CELDA} pl-4 text-left text-body-md font-normal text-on-surface md:pl-6`}
                   >
-                    <span className="flex min-h-12 items-center">
-                      {item.nombre}
+                    <span className="flex min-h-12 flex-col items-start justify-center gap-1">
+                      <span className="[overflow-wrap:anywhere]">
+                        {item.nombre}
+                      </span>
+                      <span className="md:hidden">
+                        <Estado item={item} />
+                      </span>
                     </span>
                   </th>
                   <td className={CLASE_CELDA}>
@@ -177,7 +211,7 @@ export default function TablaStockCategoria({
                       }
                     />
                   </td>
-                  <td className={CLASE_CELDA}>
+                  <td className={`${CLASE_CELDA} hidden md:table-cell md:pr-6`}>
                     <span className="flex min-h-12 items-center">
                       <Estado item={item} />
                     </span>
