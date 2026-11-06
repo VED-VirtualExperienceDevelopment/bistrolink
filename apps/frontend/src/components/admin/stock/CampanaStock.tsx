@@ -5,6 +5,7 @@ import Link from "next/link";
 import ReponerStockDialog from "./ReponerStockDialog";
 import { useAlertasStock } from "./useAlertasStock";
 import {
+  CLASE_ESTADO_STOCK,
   colorBadge,
   ETIQUETA_TIPO,
   etiquetaCampana,
@@ -22,10 +23,6 @@ const CLASE_BADGE = {
 } as const;
 const CLASE_OPCION =
   "hover:bg-surface-container-low focus:bg-surface-container-low focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary";
-const CLASE_ESTADO = {
-  STOCK_CRITICO: "bg-amber-100 text-amber-900",
-  AGOTADO: "bg-error-container text-on-error-container",
-} as const;
 
 /**
  * HU-015 (BL-120): campana de alertas de stock en el header, al lado del
@@ -167,7 +164,7 @@ export default function CampanaStock() {
                     </span>
                   </span>
                   <span
-                    className={`flex-none rounded-full px-2 py-0.5 text-label-sm ${CLASE_ESTADO[alerta.tipo]}`}
+                    className={`flex-none rounded-full px-2 py-0.5 text-label-sm ${CLASE_ESTADO_STOCK[alerta.tipo]}`}
                   >
                     {ETIQUETA_TIPO[alerta.tipo]}
                   </span>

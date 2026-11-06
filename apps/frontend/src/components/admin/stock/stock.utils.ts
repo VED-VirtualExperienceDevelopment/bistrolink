@@ -21,6 +21,17 @@ export const ETIQUETA_TIPO: Record<TipoAlertaStock, string> = {
   AGOTADO: "Agotado",
 };
 
+/**
+ * BL-474: colores del estado de un ítem, con los tokens del tema (antes
+ * `amber-*`, fuera de la paleta). Los usan la tabla de «Stock de la
+ * jornada» y la campana. Contraste: on-tertiary-fixed sobre tertiary-fixed
+ * ≈ 13:1; on-error-container sobre error-container ≈ 7:1.
+ */
+export const CLASE_ESTADO_STOCK: Record<TipoAlertaStock, string> = {
+  STOCK_CRITICO: "bg-tertiary-fixed text-on-tertiary-fixed",
+  AGOTADO: "bg-error-container text-on-error-container",
+};
+
 /** Nombre accesible del botón de la campana. */
 export function etiquetaCampana(alertas: readonly AlertaStock[]): string {
   const n = alertas.length;
