@@ -46,4 +46,5 @@ export enum AuditAction {
   PAGO_EFECTIVO_REGISTRADO = 'PAGO_EFECTIVO_REGISTRADO', // BL-201 (HU-031: cobro en efectivo, con monto recibido y vuelto)
   PEDIDO_RECEPTOR_ANONIMIZADO = 'PEDIDO_RECEPTOR_ANONIMIZADO', // BL-453 (HU-009: RUT y razón social de la e-Factura anonimizados; con la cantidad de pedidos, nunca el RUT)
   PAGO_CFE_REINTENTADO = 'PAGO_CFE_REINTENTADO', // BL-96 (HU-023: el administrador reintentó la emisión del CFE de un pago, con el resultado)
+  PEDIDO_LIMPIEZA_PRUEBAS = 'PEDIDO_LIMPIEZA_PRUEBAS', // BL-475 (BL-285: limpieza de datos de prueba, solo con E2E_CLEANUP_ENABLED; con cuántos pedidos se cancelaron y entregaron y sus ids)
 }
