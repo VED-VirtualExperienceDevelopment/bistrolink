@@ -5,6 +5,8 @@ interface SwitchProps {
   readonly onChange: (checked: boolean) => void;
   readonly label: string;
   readonly disabled?: boolean;
+  /** BL-473: id del texto que describe la opción (aria-describedby). */
+  readonly describedBy?: string;
 }
 
 export default function Switch({
@@ -12,17 +14,21 @@ export default function Switch({
   onChange,
   label,
   disabled,
+  describedBy,
 }: SwitchProps) {
   // BL-398: colores del tema (primary / outline) en lugar de hex fijos.
+  // BL-473: el dibujo mide 44 × 24 px; el pseudo-elemento `after` agranda el
+  // área táctil a 44 × 44 px sin cambiar cómo se ve.
   return (
     <button
       type="button"
       role="switch"
       aria-checked={checked}
       aria-label={label}
+      aria-describedby={describedBy}
       disabled={disabled}
       onClick={() => !disabled && onChange(!checked)}
-      className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${
+      className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent after:absolute after:-inset-y-[12px] after:inset-x-[-2px] after:content-[''] transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${
         checked ? 'bg-primary' : 'bg-outline'
       } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
     >

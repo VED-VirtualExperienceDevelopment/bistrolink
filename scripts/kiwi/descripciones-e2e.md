@@ -18,6 +18,7 @@
 | 1.11    | 03/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-069 a 071: stock de la jornada y campana de alertas de stock (HU-015, BL-120).          |
 | 1.12    | 04/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-072: pendientes de emisión de comprobantes (HU-023, BL-96).                             |
 | 1.13    | 04/11/2026 | TC-E-073 y 074: alertas del mozo (campana, pantalla Alertas y recarga con alertas pendientes) (BL-441).                                              |
+| 1.14    | 06/11/2026 | TC-E-075 y 076: pantalla de Configuración accesible, responsive y con «Guardar cambios» al final (BL-473).                                           |
 
 Plantilla para cargar en Kiwi la descripción de casos TC-E (Playwright)
 nuevos o que cambiaron (BL-435). La usa
@@ -125,3 +126,41 @@ Administrador del establecimiento del seed logueado en el panel. El test crea do
 3. Las dos alertas siguen en la lista, aunque nadie las atendió.
 4. La alerta de la mesa A sale de la lista.
 5. La alerta de la mesa B sigue en la lista y la de la mesa A no vuelve.
+
+## TC-E-075
+
+### Precondición
+
+Administrador del establecimiento del seed logueado en el panel. Ventana de escritorio (1440 × 900). El test no cambia la configuración.
+
+### Pasos
+
+1. Abrir «Configuración».
+2. Revisar la pantalla con axe-core (WCAG 2.1 AA).
+3. Mirar los botones del panel.
+4. Bajar hasta la sección «Privacidad».
+
+### Resultado esperado
+
+1. Se ve el formulario de configuración.
+2. No hay errores de accesibilidad graves ni críticos.
+3. «Guardar cambios» es el último botón y se ve en pantalla.
+4. «Guardar cambios» sigue siendo el último botón y sigue a la vista (barra fija abajo).
+
+## TC-E-076
+
+### Precondición
+
+Administrador del establecimiento del seed logueado en el panel. Ventana de celular (375 × 812). El test no cambia la configuración.
+
+### Pasos
+
+1. Abrir «Configuración».
+2. Revisar si la página o el panel tienen scroll horizontal.
+3. Bajar hasta «Anonimizar datos de facturación».
+
+### Resultado esperado
+
+1. Se ve el formulario en una sola columna.
+2. No hay scroll horizontal y «Guardar cambios» se ve en pantalla.
+3. Sigue sin haber scroll horizontal y «Guardar cambios» sigue a la vista, como último botón.
