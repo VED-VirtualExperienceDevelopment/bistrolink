@@ -65,7 +65,7 @@ describe('ConfiguracionEstablecimientoService (HU-020, BL-72)', () => {
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         findUniqueOrThrow: jest.fn(),
       },
-      pedidoEstadoHistorial: { create: jest.fn() },
+      pedidoEstadoHistorial: { create: jest.fn(), createMany: jest.fn() },
       $executeRaw: jest.fn(),
     };
     const tenantPrisma = {
@@ -248,14 +248,9 @@ describe('ConfiguracionEstablecimientoService (HU-020, BL-72)', () => {
       tx.restaurante.findUnique
         .mockResolvedValueOnce({ ...RESTAURANTE_ACTUAL })
         .mockResolvedValueOnce({ limitePedidosEnPreparacion: 2 });
-      tx.pedido.findMany.mockResolvedValue([{ id: 'PED-101' }]);
-      tx.pedido.findUniqueOrThrow.mockResolvedValue({
-        id: 'PED-101',
-        estado: 'EN_PREPARACION',
-        updatedAt: new Date('2026-11-06T12:00:00Z'),
-        mesa: { numero: 3 },
-        lineas: [],
-      });
+      tx.pedido.findMany.mockResolvedValue([
+        { id: 'PED-101', mesa: { numero: 3 }, lineas: [] },
+      ]);
 
       const configuracion = await service.actualizar(
         TENANT_ID,
@@ -271,8 +266,8 @@ describe('ConfiguracionEstablecimientoService (HU-020, BL-72)', () => {
       expect(entrada.despues).toEqual({ limitePedidosEnPreparacion: 2 });
       expect(tx.$executeRaw).toHaveBeenCalled();
       expect(tx.pedido.updateMany).toHaveBeenCalledWith({
-        where: { id: 'PED-101', estado: 'RECIBIDO' },
-        data: { estado: 'EN_PREPARACION' },
+        where: { id: { in: ['PED-101'] }, estado: 'RECIBIDO' },
+        data: { estado: 'EN_PREPARACION', updatedAt: expect.any(Date) },
       });
       expect(configuracion.limitePedidosEnPreparacion).toBe(2);
     });
@@ -281,14 +276,9 @@ describe('ConfiguracionEstablecimientoService (HU-020, BL-72)', () => {
       tx.restaurante.findUnique
         .mockResolvedValueOnce({ ...RESTAURANTE_ACTUAL })
         .mockResolvedValueOnce({ limitePedidosEnPreparacion: 2 });
-      tx.pedido.findMany.mockResolvedValue([{ id: 'PED-101' }]);
-      tx.pedido.findUniqueOrThrow.mockResolvedValue({
-        id: 'PED-101',
-        estado: 'EN_PREPARACION',
-        updatedAt: new Date('2026-11-06T12:00:00Z'),
-        mesa: { numero: 3 },
-        lineas: [],
-      });
+      tx.pedido.findMany.mockResolvedValue([
+        { id: 'PED-101', mesa: { numero: 3 }, lineas: [] },
+      ]);
 
       await service.actualizar(
         TENANT_ID,

@@ -209,6 +209,27 @@ export function hayErroresCola(errores: ErroresCola): boolean {
 }
 
 /**
+ * Id del primer campo con error, en el orden de la pantalla, para llevarle el
+ * foco al guardar. null si no hay errores.
+ */
+export function primerCampoConError(errores: {
+  razonSocial: string | null;
+  propinas: string | null;
+  cola: ErroresCola;
+  email: string | null;
+}): string | null {
+  const enOrden: [string, unknown][] = [
+    ["razon-social", errores.razonSocial],
+    ["propinas", errores.propinas],
+    ["cola-limite", errores.cola.limitePreparacion],
+    ["cola-umbral", errores.cola.umbralAlertaCola],
+    ["cola-minutos", errores.cola.minutosPreparacion],
+    ["email-privacidad", errores.email],
+  ];
+  return enOrden.find(([, error]) => Boolean(error))?.[0] ?? null;
+}
+
+/**
  * HU-042 (BL-465): cambios de la cola para el PATCH. Apagarla manda el
  * límite en null (el umbral y los minutos quedan guardados para la próxima
  * vez). Supone que pasó erroresCola.

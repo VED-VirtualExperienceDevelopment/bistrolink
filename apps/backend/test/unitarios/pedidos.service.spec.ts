@@ -711,7 +711,7 @@ describe('PedidosService.confirmarPagoEnTx / notificarPedidoConfirmado (BL-311, 
         count: jest.fn(),
         findMany: jest.fn().mockResolvedValue([]),
       },
-      pedidoEstadoHistorial: { create: jest.fn() },
+      pedidoEstadoHistorial: { create: jest.fn(), createMany: jest.fn() },
       // HU-042 (BL-463): sin límite configurado (cola desactivada) por
       // defecto, así los tests anteriores no cambian.
       restaurante: { findUnique: jest.fn().mockResolvedValue(null) },
@@ -864,7 +864,9 @@ describe('PedidosService.confirmarPagoEnTx / notificarPedidoConfirmado (BL-311, 
       limitePedidosEnPreparacion: 5,
     });
     mockTx.pedido.count.mockResolvedValue(3);
-    mockTx.pedido.findMany.mockResolvedValue([{ id: 'pedido-nuevo' }]);
+    mockTx.pedido.findMany.mockResolvedValue([
+      { id: 'pedido-nuevo', mesa: { numero: 5 }, lineas: [] },
+    ]);
     const enPreparacion = { ...pedidoConfirmado, estado: 'EN_PREPARACION' };
     mockTx.pedido.findUniqueOrThrow.mockResolvedValue(enPreparacion);
 
@@ -876,16 +878,19 @@ describe('PedidosService.confirmarPagoEnTx / notificarPedidoConfirmado (BL-311, 
 
     expect(mockTx.$executeRaw).toHaveBeenCalled();
     expect(mockTx.pedido.updateMany).toHaveBeenCalledWith({
-      where: { id: 'pedido-nuevo', estado: 'RECIBIDO' },
-      data: { estado: 'EN_PREPARACION' },
+      where: { id: { in: ['pedido-nuevo'] }, estado: 'RECIBIDO' },
+      data: { estado: 'EN_PREPARACION', updatedAt: expect.any(Date) },
     });
-    expect(mockTx.pedidoEstadoHistorial.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        pedidoId: 'pedido-nuevo',
-        estadoAnterior: 'RECIBIDO',
-        estadoNuevo: 'EN_PREPARACION',
-        usuarioId: null,
-      }),
+    expect(mockTx.pedidoEstadoHistorial.createMany).toHaveBeenCalledWith({
+      data: [
+        {
+          tenantId: TENANT_ID,
+          pedidoId: 'pedido-nuevo',
+          usuarioId: null,
+          estadoAnterior: 'RECIBIDO',
+          estadoNuevo: 'EN_PREPARACION',
+        },
+      ],
     });
     expect(resultado?.estado).toBe('EN_PREPARACION');
   });

@@ -1174,6 +1174,40 @@ describe('KdsGateway', () => {
       );
     });
 
+    it('[TC-U-420] si falla el estado de la cola al avisar, no lanza ni emite nada', async () => {
+      mockPedidosTransicion.estadoCola.mockRejectedValue(new Error('timeout'));
+
+      await expect(
+        gateway.avisarEstadoCola(TENANT_ID),
+      ).resolves.toBeUndefined();
+      expect(mockServer.emit).not.toHaveBeenCalled();
+    });
+
+    it('[TC-U-421] si falla el lugar en la cola, el comensal igual recibe el estado de su pedido', async () => {
+      mockWsAuth.verify.mockResolvedValue({
+        sub: 'comensal-1',
+        tenantId: TENANT_ID,
+        roles: ['COMENSAL'],
+      });
+      const resumen = {
+        id: 'PED-102',
+        estado: PedidoEstado.RECIBIDO,
+        actualizadoEn: '2026-11-05T12:00:00.000Z',
+      };
+      mockPedidosTransicion.obtenerResumen.mockResolvedValue(resumen);
+      mockPedidosTransicion.estadoCola.mockRejectedValue(new Error('timeout'));
+      const client = mockClient();
+
+      await gateway.onSeguirPedido(client as any, { pedidoId: 'PED-102' });
+
+      expect(client.emit).toHaveBeenCalledWith('pedido:actualizado', resumen);
+      expect(client.emit).not.toHaveBeenCalledWith(
+        'pedido:cola',
+        expect.anything(),
+      );
+      expect(client.disconnect).not.toHaveBeenCalled();
+    });
+
     it('[TC-U-396] el comensal que sigue un pedido en espera recibe solo su lugar en la cola', async () => {
       mockWsAuth.verify.mockResolvedValue({
         sub: 'comensal-1',

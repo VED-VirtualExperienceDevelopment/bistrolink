@@ -134,57 +134,49 @@ export async function completarCapacidad(
     return [];
   }
 
+  // Con el lock tomado nadie más mueve la cola de este local: los pedidos
+  // elegidos siguen en RECIBIDO hasta el update de abajo. Tres consultas en
+  // total, sin importar cuántos lugares se liberen (sin await en un loop).
   const siguientes = await tx.pedido.findMany({
     where: { tenantId, estado: PedidoEstado.RECIBIDO },
     orderBy: ORDEN_COLA,
     take: libres,
-    select: { id: true },
+    select: {
+      id: true,
+      mesa: { select: { numero: true } },
+      lineas: {
+        select: { id: true, nombreSnapshot: true, cantidad: true },
+      },
+    },
   });
-
-  const promovidos: PedidoPromovido[] = [];
-  for (const { id } of siguientes) {
-    // Solo si sigue en RECIBIDO: nunca pisa un cambio que llegó antes.
-    const { count } = await tx.pedido.updateMany({
-      where: { id, estado: PedidoEstado.RECIBIDO },
-      data: { estado: PedidoEstado.EN_PREPARACION },
-    });
-    if (count === 0) {
-      continue;
-    }
-
-    await tx.pedidoEstadoHistorial.create({
-      data: {
-        tenantId,
-        pedidoId: id,
-        usuarioId: null,
-        estadoAnterior: PedidoEstado.RECIBIDO,
-        estadoNuevo: PedidoEstado.EN_PREPARACION,
-      },
-    });
-
-    const pedido = await tx.pedido.findUniqueOrThrow({
-      where: { id },
-      select: {
-        id: true,
-        estado: true,
-        updatedAt: true,
-        mesa: { select: { numero: true } },
-        lineas: {
-          select: { id: true, nombreSnapshot: true, cantidad: true },
-        },
-      },
-    });
-
-    promovidos.push({
-      id: pedido.id,
-      estado: pedido.estado,
-      actualizadoEn: pedido.updatedAt.toISOString(),
-      mesaNumero: pedido.mesa.numero,
-      lineas: pedido.lineas,
-    });
+  if (siguientes.length === 0) {
+    return [];
   }
 
-  return promovidos;
+  const ids = siguientes.map((pedido) => pedido.id);
+  const ahora = new Date();
+  await tx.pedido.updateMany({
+    where: { id: { in: ids }, estado: PedidoEstado.RECIBIDO },
+    data: { estado: PedidoEstado.EN_PREPARACION, updatedAt: ahora },
+  });
+  await tx.pedidoEstadoHistorial.createMany({
+    data: ids.map((pedidoId) => ({
+      tenantId,
+      pedidoId,
+      usuarioId: null,
+      estadoAnterior: PedidoEstado.RECIBIDO,
+      estadoNuevo: PedidoEstado.EN_PREPARACION,
+    })),
+  });
+
+  // En el orden de la cola (FIFO), como los devolvió el findMany.
+  return siguientes.map((pedido) => ({
+    id: pedido.id,
+    estado: PedidoEstado.EN_PREPARACION,
+    actualizadoEn: ahora.toISOString(),
+    mesaNumero: pedido.mesa.numero,
+    lineas: pedido.lineas,
+  }));
 }
 
 /**

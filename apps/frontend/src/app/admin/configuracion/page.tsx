@@ -6,6 +6,16 @@ import { useKeycloakAuth } from "@/components/providers/KeycloakProvider";
 import Switch from "@/components/ui/Switch";
 import { apiFetch, ApiError } from "@/lib/api-client";
 import AnonimizarDatosFactura from "@/components/admin/configuracion/AnonimizarDatosFactura";
+import SeccionCocina from "@/components/admin/configuracion/SeccionCocina";
+import {
+  CLASE_AYUDA,
+  CLASE_BOTON,
+  CLASE_CONTROL,
+  CLASE_ETIQUETA,
+  CLASE_PROXIMAMENTE,
+  CLASE_TARJETA,
+  CLASE_TITULO_TARJETA,
+} from "@/components/admin/configuracion/configuracion.estilos";
 import {
   cambiosParaGuardar,
   errorEmailPrivacidad,
@@ -13,84 +23,18 @@ import {
   erroresCola,
   formularioDesde,
   hayCambios,
-  hayErroresCola,
   leerPropinas,
+  primerCampoConError,
   LARGO_MAXIMO_EMAIL,
   LARGO_MAXIMO_RAZON_SOCIAL,
-  LIMITE_PREPARACION,
   MAXIMO_PROPINAS,
   MEDIOS_PAGO,
-  MINUTOS_PREPARACION,
   PROVEEDORES_CFE,
   sinMediosDePago,
-  UMBRAL_ALERTA_COLA,
   type CampoMedioPago,
   type ConfiguracionEstablecimiento,
   type FormularioConfiguracion,
 } from "@/components/admin/configuracion/configuracion.utils";
-
-const CLASE_CONTROL =
-  "min-h-12 w-full rounded-lg border border-outline-variant bg-surface-container-lowest px-3 text-body-md text-on-surface focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 aria-[invalid=true]:border-error";
-const CLASE_ETIQUETA = "mb-1 block text-label-md text-on-surface-variant";
-const CLASE_TARJETA =
-  "space-y-4 rounded-xl border border-outline-variant bg-surface-container-lowest p-4 md:p-6";
-const CLASE_TITULO_TARJETA = "text-headline-sm text-on-surface";
-const CLASE_AYUDA = "text-body-sm text-on-surface-variant";
-const CLASE_PROXIMAMENTE =
-  "rounded-full bg-surface-container-high px-2 py-0.5 text-label-sm text-on-surface-variant";
-const CLASE_BOTON =
-  "flex min-h-12 items-center justify-center gap-2 rounded-lg bg-primary px-5 text-body-md font-medium text-on-primary hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-50";
-
-/**
- * HU-042 (BL-465): un campo numérico de la cola del KDS, con su ayuda y su
- * error asociados para el lector de pantalla.
- */
-function CampoCola({
-  id,
-  etiqueta,
-  ayuda,
-  valor,
-  error,
-  rango,
-  onChange,
-}: {
-  id: string;
-  etiqueta: string;
-  ayuda: string;
-  valor: string;
-  error: string | undefined;
-  rango: { minimo: number; maximo: number };
-  onChange: (valor: string) => void;
-}) {
-  return (
-    <div>
-      <label htmlFor={id} className={CLASE_ETIQUETA}>
-        {etiqueta}
-      </label>
-      <input
-        id={id}
-        type="number"
-        inputMode="numeric"
-        min={rango.minimo}
-        max={rango.maximo}
-        step={1}
-        value={valor}
-        onChange={(e) => onChange(e.target.value)}
-        aria-invalid={error !== undefined}
-        aria-describedby={error ? `${id}-ayuda ${id}-error` : `${id}-ayuda`}
-        className={CLASE_CONTROL}
-      />
-      <p id={`${id}-ayuda`} className={`mt-1 ${CLASE_AYUDA}`}>
-        {ayuda}
-      </p>
-      {error && (
-        <p id={`${id}-error`} className="mt-1 text-body-sm text-error">
-          {error}
-        </p>
-      )}
-    </div>
-  );
-}
 
 /**
  * HU-020 (BL-72): configuración del establecimiento. El administrador
@@ -162,7 +106,6 @@ export default function ConfiguracionPage() {
     ? errorEmailPrivacidad(formulario.emailPrivacidad)
     : null;
   const errCola = formulario ? erroresCola(formulario) : {};
-  const conErroresCola = hayErroresCola(errCola);
   const cambios =
     guardada && formulario ? cambiosParaGuardar(guardada, formulario) : {};
   const conCambios = hayCambios(cambios);
@@ -172,14 +115,14 @@ export default function ConfiguracionPage() {
     e.preventDefault();
     setIntentoGuardar(true);
     // Con un error, el foco va al primer campo mal cargado.
-    if (errorRazon || errorPropinas || errorEmail || conErroresCola) {
-      let campo = "email-privacidad";
-      if (errorRazon) campo = "razon-social";
-      else if (errorPropinas) campo = "propinas";
-      else if (errCola.limitePreparacion) campo = "cola-limite";
-      else if (errCola.umbralAlertaCola) campo = "cola-umbral";
-      else if (errCola.minutosPreparacion) campo = "cola-minutos";
-      document.getElementById(campo)?.focus();
+    const campoConError = primerCampoConError({
+      razonSocial: errorRazon,
+      propinas: errorPropinas,
+      cola: errCola,
+      email: errorEmail,
+    });
+    if (campoConError) {
+      document.getElementById(campoConError)?.focus();
       return;
     }
     if (!guardada || !conCambios) return;
@@ -423,66 +366,11 @@ export default function ConfiguracionPage() {
           </section>
 
           {/* HU-042 (BL-465): cola de pedidos del KDS. */}
-          <section aria-labelledby="titulo-cocina" className={CLASE_TARJETA}>
-            <h2 id="titulo-cocina" className={CLASE_TITULO_TARJETA}>
-              Cocina
-            </h2>
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="text-body-md text-on-surface">
-                  Cola automática de pedidos
-                </p>
-                <p className={CLASE_AYUDA}>
-                  Limita cuántos pedidos prepara la cocina a la vez. Los demás
-                  esperan en orden de llegada y pasan a preparación solos cuando
-                  se marca uno como listo.
-                </p>
-              </div>
-              <Switch
-                checked={formulario.colaActiva}
-                onChange={(valor) => cambiar("colaActiva", valor)}
-                label="Cola automática de pedidos"
-              />
-            </div>
-            {formulario.colaActiva ? (
-              <div className="grid gap-4 md:grid-cols-3">
-                <CampoCola
-                  id="cola-limite"
-                  etiqueta="Pedidos en preparación a la vez"
-                  ayuda={`Entre ${LIMITE_PREPARACION.minimo} y ${LIMITE_PREPARACION.maximo}.`}
-                  valor={formulario.limitePreparacion}
-                  error={intentoGuardar ? errCola.limitePreparacion : undefined}
-                  rango={LIMITE_PREPARACION}
-                  onChange={(valor) => cambiar("limitePreparacion", valor)}
-                />
-                <CampoCola
-                  id="cola-umbral"
-                  etiqueta="Alerta de alta demanda con más de"
-                  ayuda="Pedidos en espera. El KDS muestra un aviso."
-                  valor={formulario.umbralAlertaCola}
-                  error={intentoGuardar ? errCola.umbralAlertaCola : undefined}
-                  rango={UMBRAL_ALERTA_COLA}
-                  onChange={(valor) => cambiar("umbralAlertaCola", valor)}
-                />
-                <CampoCola
-                  id="cola-minutos"
-                  etiqueta="Minutos de preparación por pedido"
-                  ayuda="Base del tiempo estimado que ve el comensal."
-                  valor={formulario.minutosPreparacion}
-                  error={
-                    intentoGuardar ? errCola.minutosPreparacion : undefined
-                  }
-                  rango={MINUTOS_PREPARACION}
-                  onChange={(valor) => cambiar("minutosPreparacion", valor)}
-                />
-              </div>
-            ) : (
-              <p className={CLASE_AYUDA}>
-                Desactivada: el mozo pasa cada pedido a preparación desde el
-                KDS, sin límite.
-              </p>
-            )}
-          </section>
+          <SeccionCocina
+            formulario={formulario}
+            errores={intentoGuardar ? errCola : {}}
+            onCambiar={cambiar}
+          />
 
           {/* HU-036 (BL-206): contacto para los derechos sobre los datos. */}
           <section

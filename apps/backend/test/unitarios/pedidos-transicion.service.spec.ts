@@ -30,7 +30,7 @@ describe('PedidosTransicionService', () => {
         findUniqueOrThrow: jest.fn(),
       },
       usuario: { findUnique: jest.fn() },
-      pedidoEstadoHistorial: { create: jest.fn() },
+      pedidoEstadoHistorial: { create: jest.fn(), createMany: jest.fn() },
       // HU-042 (BL-463): sin límite configurado (cola desactivada) por
       // defecto, así los tests anteriores no cambian.
       restaurante: { findUnique: jest.fn().mockResolvedValue(null) },
@@ -300,15 +300,14 @@ describe('PedidosTransicionService', () => {
       });
       // Ya salió uno: quedan 4 en preparación, 1 lugar libre.
       tx().pedido.count.mockResolvedValue(4);
-      tx().pedido.findMany.mockResolvedValue([{ id: 'PED-101' }]);
+      tx().pedido.findMany.mockResolvedValue([
+        {
+          id: 'PED-101',
+          mesa: { numero: 7 },
+          lineas: [{ id: 'l-1', nombreSnapshot: 'Chivito', cantidad: 1 }],
+        },
+      ]);
       tx().pedido.updateMany.mockResolvedValue({ count: 1 });
-      tx().pedido.findUniqueOrThrow.mockResolvedValue({
-        id: 'PED-101',
-        estado: PedidoEstado.EN_PREPARACION,
-        updatedAt: new Date('2026-11-05T12:05:01Z'),
-        mesa: { numero: 7 },
-        lineas: [{ id: 'l-1', nombreSnapshot: 'Chivito', cantidad: 1 }],
-      });
 
       const resultado = await service.transicionar({
         tenantId: TENANT_ID,
@@ -324,11 +323,52 @@ describe('PedidosTransicionService', () => {
         {
           id: 'PED-101',
           estado: PedidoEstado.EN_PREPARACION,
-          actualizadoEn: '2026-11-05T12:05:01.000Z',
+          actualizadoEn: expect.any(String),
           mesaNumero: 7,
           lineas: [{ id: 'l-1', nombreSnapshot: 'Chivito', cantidad: 1 }],
         },
       ]);
+    });
+
+    it('[TC-U-418] con lugar libre pero sin pedidos en la cola, no promueve ni escribe historial', async () => {
+      conLimite(5);
+      tx().pedido.findUnique.mockResolvedValue({
+        id: PEDIDO_ID,
+        estado: PedidoEstado.EN_PREPARACION,
+      });
+      tx().usuario.findUnique.mockResolvedValue({ id: USUARIO_ID });
+      tx().pedido.update.mockResolvedValue({
+        id: PEDIDO_ID,
+        estado: PedidoEstado.LISTO_PARA_ENTREGAR,
+        updatedAt: new Date('2026-11-05T12:05:00Z'),
+        mesa: { numero: 4 },
+        lineas: [],
+      });
+      tx().pedido.count.mockResolvedValue(4);
+      tx().pedido.findMany.mockResolvedValue([]);
+
+      const resultado = await service.transicionar({
+        tenantId: TENANT_ID,
+        keycloakId: KEYCLOAK_ID,
+        pedidoId: PEDIDO_ID,
+        nuevoEstado: PedidoEstado.LISTO_PARA_ENTREGAR,
+      });
+
+      expect(resultado.promovidos).toEqual([]);
+      expect(tx().pedido.updateMany).not.toHaveBeenCalled();
+      expect(tx().pedidoEstadoHistorial.createMany).not.toHaveBeenCalled();
+    });
+
+    it('[TC-U-419] estadoCola consulta el estado de la cola dentro del contexto del tenant', async () => {
+      const estado = await service.estadoCola(TENANT_ID);
+
+      // Sin límite configurado (mock por defecto): cola desactivada.
+      expect(estado).toEqual(
+        expect.objectContaining({ activa: false, orden: [] }),
+      );
+      expect(tx().restaurante.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { tenantId: TENANT_ID } }),
+      );
     });
 
     it('[TC-U-378] al entregar un pedido (LISTO -> ENTREGADO) no se toca la cola: el lugar ya se había liberado', async () => {

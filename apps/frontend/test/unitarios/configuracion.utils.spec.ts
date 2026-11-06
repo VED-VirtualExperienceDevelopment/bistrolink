@@ -5,6 +5,7 @@ import {
   erroresCola,
   formularioDesde,
   hayErroresCola,
+  primerCampoConError,
   hayCambios,
   leerPropinas,
   sinMediosDePago,
@@ -238,5 +239,35 @@ describe("HU-042 (BL-465): cola del KDS", () => {
     expect(
       erroresCola({ ...formulario, colaActiva: false, limitePreparacion: "" }),
     ).toEqual({});
+  });
+});
+
+describe("primerCampoConError", () => {
+  const SIN_ERRORES = {
+    razonSocial: null,
+    propinas: null,
+    cola: {},
+    email: null,
+  };
+
+  it("[TC-U-422] devuelve el primer campo con error en el orden de la pantalla, o null", () => {
+    expect(primerCampoConError(SIN_ERRORES)).toBeNull();
+    expect(
+      primerCampoConError({
+        ...SIN_ERRORES,
+        email: "mal",
+        cola: { umbralAlertaCola: "mal" },
+      }),
+    ).toBe("cola-umbral");
+    expect(
+      primerCampoConError({
+        ...SIN_ERRORES,
+        propinas: "mal",
+        cola: { limitePreparacion: "mal" },
+      }),
+    ).toBe("propinas");
+    expect(primerCampoConError({ ...SIN_ERRORES, email: "mal" })).toBe(
+      "email-privacidad",
+    );
   });
 });

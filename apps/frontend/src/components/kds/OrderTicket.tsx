@@ -43,7 +43,7 @@ export function OrderTicket({
   onTransicion,
   colaActiva = false,
   posicionEnCola = null,
-}: OrderTicketProps) {
+}: Readonly<OrderTicketProps>) {
   const urgencia = getUrgencyColor(pedido.createdAt);
   const lineas = pedido.lineas ?? [];
   const etiquetaEstado = etiquetaEstadoConCola(
