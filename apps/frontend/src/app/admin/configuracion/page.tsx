@@ -18,12 +18,9 @@ import {
 } from "@/components/admin/configuracion/configuracion.estilos";
 import {
   cambiosParaGuardar,
-  errorEmailPrivacidad,
-  errorRazonSocial,
-  erroresCola,
+  erroresDelFormulario,
   formularioDesde,
   hayCambios,
-  leerPropinas,
   primerCampoConError,
   LARGO_MAXIMO_EMAIL,
   LARGO_MAXIMO_RAZON_SOCIAL,
@@ -94,18 +91,13 @@ export default function ConfiguracionPage() {
     setErrorGuardar(null);
   }
 
-  const lecturaPropinas = formulario ? leerPropinas(formulario.propinas) : null;
-  const errorPropinas =
-    lecturaPropinas && "error" in lecturaPropinas
-      ? lecturaPropinas.error
-      : null;
-  const errorRazon = formulario
-    ? errorRazonSocial(formulario.razonSocial)
-    : null;
-  const errorEmail = formulario
-    ? errorEmailPrivacidad(formulario.emailPrivacidad)
-    : null;
-  const errCola = formulario ? erroresCola(formulario) : {};
+  const errores = erroresDelFormulario(formulario);
+  const {
+    razonSocial: errorRazon,
+    propinas: errorPropinas,
+    email: errorEmail,
+    cola: errCola,
+  } = errores;
   const cambios =
     guardada && formulario ? cambiosParaGuardar(guardada, formulario) : {};
   const conCambios = hayCambios(cambios);
@@ -115,12 +107,7 @@ export default function ConfiguracionPage() {
     e.preventDefault();
     setIntentoGuardar(true);
     // Con un error, el foco va al primer campo mal cargado.
-    const campoConError = primerCampoConError({
-      razonSocial: errorRazon,
-      propinas: errorPropinas,
-      cola: errCola,
-      email: errorEmail,
-    });
+    const campoConError = primerCampoConError(errores);
     if (campoConError) {
       document.getElementById(campoConError)?.focus();
       return;

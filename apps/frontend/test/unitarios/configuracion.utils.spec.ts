@@ -3,6 +3,7 @@ import {
   errorEmailPrivacidad,
   errorRazonSocial,
   erroresCola,
+  erroresDelFormulario,
   formularioDesde,
   hayErroresCola,
   primerCampoConError,
@@ -269,5 +270,39 @@ describe("primerCampoConError", () => {
     expect(primerCampoConError({ ...SIN_ERRORES, email: "mal" })).toBe(
       "email-privacidad",
     );
+  });
+});
+
+describe("erroresDelFormulario", () => {
+  it("[TC-U-423] junta los errores de todos los campos; sin formulario no hay errores", () => {
+    expect(erroresDelFormulario(null)).toEqual({
+      razonSocial: null,
+      propinas: null,
+      email: null,
+      cola: {},
+    });
+
+    expect(
+      erroresDelFormulario({
+        ...formularioDesde(GUARDADA),
+        razonSocial: "   ",
+        propinas: "diez",
+        emailPrivacidad: "no-es-un-correo",
+        colaActiva: true,
+        limitePreparacion: "0",
+      }),
+    ).toEqual({
+      razonSocial: "La razón social es obligatoria.",
+      propinas: expect.any(String),
+      email: expect.any(String),
+      cola: { limitePreparacion: "Tiene que estar entre 1 y 50." },
+    });
+
+    expect(erroresDelFormulario(formularioDesde(GUARDADA))).toEqual({
+      razonSocial: null,
+      propinas: null,
+      email: null,
+      cola: {},
+    });
   });
 });

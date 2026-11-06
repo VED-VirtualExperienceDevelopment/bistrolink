@@ -208,16 +208,38 @@ export function hayErroresCola(errores: ErroresCola): boolean {
   return Object.keys(errores).length > 0;
 }
 
+/** Errores de cada campo del formulario (null = sin error). */
+export interface ErroresFormulario {
+  razonSocial: string | null;
+  propinas: string | null;
+  email: string | null;
+  cola: ErroresCola;
+}
+
+/**
+ * Valida todo el formulario de una vez. Sin formulario (todavía cargando),
+ * no hay errores.
+ */
+export function erroresDelFormulario(
+  formulario: FormularioConfiguracion | null,
+): ErroresFormulario {
+  if (!formulario) {
+    return { razonSocial: null, propinas: null, email: null, cola: {} };
+  }
+  const propinas = leerPropinas(formulario.propinas);
+  return {
+    razonSocial: errorRazonSocial(formulario.razonSocial),
+    propinas: "error" in propinas ? propinas.error : null,
+    email: errorEmailPrivacidad(formulario.emailPrivacidad),
+    cola: erroresCola(formulario),
+  };
+}
+
 /**
  * Id del primer campo con error, en el orden de la pantalla, para llevarle el
  * foco al guardar. null si no hay errores.
  */
-export function primerCampoConError(errores: {
-  razonSocial: string | null;
-  propinas: string | null;
-  cola: ErroresCola;
-  email: string | null;
-}): string | null {
+export function primerCampoConError(errores: ErroresFormulario): string | null {
   const enOrden: [string, unknown][] = [
     ["razon-social", errores.razonSocial],
     ["propinas", errores.propinas],
