@@ -11,7 +11,9 @@ import {
   bloquearColaDelTenant,
   completarCapacidad,
   contarEnPreparacion,
+  estadoDeLaCola,
   limiteDeLaCola,
+  type EstadoCola,
   type PedidoPromovido,
 } from './cola-kds';
 
@@ -170,6 +172,16 @@ export class PedidosTransicionService {
         promovidos,
       };
     });
+  }
+
+  /**
+   * HU-042 (BL-464): estado de la cola del tenant, para `cola:actualizada`
+   * y para el lugar de cada comensal. RLS limita la consulta al tenant.
+   */
+  async estadoCola(tenantId: string): Promise<EstadoCola> {
+    return this.tenantPrisma.runInTenantContext(tenantId, (tx) =>
+      estadoDeLaCola(tx, tenantId),
+    );
   }
 
   /** Para HU-006: estado actual de un pedido puntual, al suscribirse (por

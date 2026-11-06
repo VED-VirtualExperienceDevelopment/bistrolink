@@ -15,6 +15,7 @@ import { WsAuthService, WsAuthError } from './ws-auth.service';
 import { PedidosTransicionService } from './pedidos-transicion.service';
 import { origenesPermitidos } from '../seguridad-http';
 import { AlertasPendientes } from './alertas-pendientes';
+import type { EstadoCola } from './cola-kds';
 
 /** Qué hizo el mozo con la alerta: la atendió o la descartó. */
 export type AccionLlamado = 'aceptado' | 'desestimado';
@@ -173,7 +174,12 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       }
     } catch (err) {
       client.emit('error', { message: (err as Error).message });
+      return;
     }
+
+    // HU-042 (BL-464): la cola pudo cambiar (entró o salió un pedido de
+    // preparación). Después de avisar el cambio de estado.
+    await this.avisarEstadoCola(user.tenantId);
   }
 
   @SubscribeMessage('pedidos:sync')
@@ -217,6 +223,9 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const pedidosTransicion = await this.resolverPedidosTransicion();
     const pendientes = await pedidosTransicion.listarPendientes(tenantId);
     client.emit('pedidos:snapshot', pendientes);
+    // HU-042 (BL-464): estado de la cola, también para Cocina (secciones del
+    // tablero). Sin cola activa no se manda: el KDS sigue como antes.
+    await this.enviarEstadoCola(client, tenantId, pedidosTransicion);
     if (!this.esSalon(roles)) return;
     const solicitudes =
       await pedidosTransicion.listarSolicitudesEfectivo(tenantId);
@@ -265,6 +274,21 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     await client.join(this.salaPedido(body.pedidoId));
     client.emit('pedido:actualizado', resumen);
+
+    // HU-042 (BL-464): si el pedido está en espera, su lugar en la cola y
+    // el tiempo estimado. Solo el suyo, nunca el de otros pedidos.
+    if (resumen.estado === PedidoEstado.RECIBIDO) {
+      try {
+        const estado = await pedidosTransicion.estadoCola(user.tenantId);
+        const suyo = estado.orden.find((p) => p.pedidoId === body.pedidoId);
+        if (suyo) client.emit('pedido:cola', suyo);
+      } catch (err) {
+        Logger.warn(
+          `No se pudo calcular el lugar en la cola: ${(err as Error).message}`,
+          KdsGateway.name,
+        );
+      }
+    }
   }
 
   @SubscribeMessage('llamado:resolver')
@@ -362,6 +386,55 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.server
       .to(this.salaTenant(tenantId))
       .emit('reportes:actualizado', { ts: new Date().toISOString() });
+  }
+
+  /**
+   * HU-042 (BL-464): la cola cambió. Al staff del tenant, `cola:actualizada`
+   * con el estado completo; a cada comensal en espera, `pedido:cola` con su
+   * lugar y su tiempo (sala del pedido: solo lo recibe quien lo sigue).
+   */
+  emitirEstadoCola(tenantId: string, estado: EstadoCola) {
+    this.server.to(this.salaTenant(tenantId)).emit('cola:actualizada', estado);
+    for (const lugar of estado.orden) {
+      this.server
+        .to(this.salaPedido(lugar.pedidoId))
+        .emit('pedido:cola', lugar);
+    }
+  }
+
+  /**
+   * HU-042 (BL-464): lee el estado de la cola y lo avisa. Nunca lanza: el
+   * cambio que lo disparó ya se guardó y se avisó; si falla, el KDS se
+   * corrige con el próximo cambio o al reconectar.
+   */
+  async avisarEstadoCola(tenantId: string) {
+    try {
+      const pedidosTransicion = await this.resolverPedidosTransicion();
+      const estado = await pedidosTransicion.estadoCola(tenantId);
+      if (estado.activa) this.emitirEstadoCola(tenantId, estado);
+    } catch (err) {
+      Logger.warn(
+        `No se pudo avisar el estado de la cola: ${(err as Error).message}`,
+        KdsGateway.name,
+      );
+    }
+  }
+
+  private async enviarEstadoCola(
+    client: Socket,
+    tenantId: string,
+    pedidosTransicion: PedidosTransicionService,
+  ) {
+    try {
+      const estado = await pedidosTransicion.estadoCola(tenantId);
+      if (estado.activa) client.emit('cola:actualizada', estado);
+    } catch (err) {
+      // El snapshot de pedidos ya salió: no se corta la conexión por esto.
+      Logger.warn(
+        `No se pudo enviar el estado de la cola: ${(err as Error).message}`,
+        KdsGateway.name,
+      );
+    }
   }
 
   /**

@@ -1,4 +1,4 @@
-import { PedidoEstado, PrismaClient } from '@prisma/client';
+import { PedidoEstado, Prisma, PrismaClient } from '@prisma/client';
 
 /**
  * HU-042 (BL-463, ADR 0010): cola del KDS y límite de pedidos en preparación.
@@ -20,6 +20,54 @@ export interface PedidoPromovido {
   mesaNumero: number;
   // BL-66: solo id, nombre y cantidad. Nunca precios.
   lineas: { id: string; nombreSnapshot: string; cantidad: number }[];
+}
+
+/**
+ * HU-042 (BL-464): orden de la cola. FIFO por encolado_en; los pedidos
+ * anteriores a HU-042 no lo tienen y van primero, por created_at.
+ */
+const ORDEN_COLA: Prisma.PedidoOrderByWithRelationInput[] = [
+  { encoladoEn: { sort: 'asc', nulls: 'first' } },
+  { createdAt: 'asc' },
+];
+
+/** HU-042 (BL-464): lugar de un pedido en la cola, para su comensal. */
+export interface PosicionEnCola {
+  pedidoId: string;
+  /** 1 = el próximo en pasar a preparación. */
+  posicion: number;
+  minutosEstimados: number;
+}
+
+/**
+ * HU-042 (BL-464): estado de la cola para el KDS (`cola:actualizada`).
+ * `orden` tiene la posición y el tiempo de cada pedido en espera: el KDS lo
+ * usa para numerarlos y el gateway para avisar a cada comensal el suyo.
+ */
+export interface EstadoCola {
+  activa: boolean;
+  limite: number | null;
+  enPreparacion: number;
+  enEspera: number;
+  umbralAlerta: number;
+  altaDemanda: boolean;
+  /** Tiempo estimado para un pedido que llega ahora. */
+  minutosEstimados: number;
+  orden: PosicionEnCola[];
+}
+
+/**
+ * HU-042 (BL-464, ADR 0010): tiempo estimado hasta que el pedido sale de
+ * cocina. `posicion` 0 = ya en preparación. Crece con la cola, así que con
+ * alta demanda sube solo, sin un multiplicador aparte. Redondea hacia arriba
+ * para no prometer menos de lo real.
+ */
+export function calcularMinutosEstimados(
+  posicion: number,
+  limite: number,
+  minutosReferencia: number,
+): number {
+  return Math.ceil(minutosReferencia * (1 + posicion / limite));
 }
 
 /** Límite del local, o null si la cola automática está desactivada. */
@@ -88,10 +136,7 @@ export async function completarCapacidad(
 
   const siguientes = await tx.pedido.findMany({
     where: { tenantId, estado: PedidoEstado.RECIBIDO },
-    orderBy: [
-      { encoladoEn: { sort: 'asc', nulls: 'first' } },
-      { createdAt: 'asc' },
-    ],
+    orderBy: ORDEN_COLA,
     take: libres,
     select: { id: true },
   });
@@ -140,4 +185,70 @@ export async function completarCapacidad(
   }
 
   return promovidos;
+}
+
+/**
+ * HU-042 (BL-464): foto de la cola para el KDS y los comensales. Solo lee:
+ * no toma el lock. Con la cola desactivada devuelve `activa: false` y la
+ * lista vacía.
+ */
+export async function estadoDeLaCola(
+  tx: PrismaClient,
+  tenantId: string,
+): Promise<EstadoCola> {
+  const restaurante = await tx.restaurante.findUnique({
+    where: { tenantId },
+    select: {
+      limitePedidosEnPreparacion: true,
+      umbralAlertaCola: true,
+      minutosPreparacionEstimados: true,
+    },
+  });
+  // Mismos valores por defecto que la migración.
+  const umbralAlerta = restaurante?.umbralAlertaCola ?? 10;
+  const minutosReferencia = restaurante?.minutosPreparacionEstimados ?? 15;
+  const limite = restaurante?.limitePedidosEnPreparacion ?? null;
+
+  if (limite === null) {
+    return {
+      activa: false,
+      limite: null,
+      enPreparacion: 0,
+      enEspera: 0,
+      umbralAlerta,
+      altaDemanda: false,
+      minutosEstimados: minutosReferencia,
+      orden: [],
+    };
+  }
+
+  const enPreparacion = await contarEnPreparacion(tx, tenantId);
+  const enEspera = await tx.pedido.findMany({
+    where: { tenantId, estado: PedidoEstado.RECIBIDO },
+    orderBy: ORDEN_COLA,
+    select: { id: true },
+  });
+
+  return {
+    activa: true,
+    limite,
+    enPreparacion,
+    enEspera: enEspera.length,
+    umbralAlerta,
+    altaDemanda: enEspera.length > umbralAlerta,
+    minutosEstimados: calcularMinutosEstimados(
+      enEspera.length + 1,
+      limite,
+      minutosReferencia,
+    ),
+    orden: enEspera.map((pedido, indice) => ({
+      pedidoId: pedido.id,
+      posicion: indice + 1,
+      minutosEstimados: calcularMinutosEstimados(
+        indice + 1,
+        limite,
+        minutosReferencia,
+      ),
+    })),
+  };
 }

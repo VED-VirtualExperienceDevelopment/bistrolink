@@ -721,6 +721,7 @@ describe('PedidosService.confirmarPagoEnTx / notificarPedidoConfirmado (BL-311, 
       emitirNuevoPedido: jest.fn(),
       emitirActualizacionPedido: jest.fn(),
       emitirPedidoActualizado: jest.fn(),
+      avisarEstadoCola: jest.fn().mockResolvedValue(undefined),
       emitirEstadoMesa: jest.fn(),
       emitirReportesActualizados: jest.fn(),
     };
@@ -928,6 +929,12 @@ describe('PedidosService.confirmarPagoEnTx / notificarPedidoConfirmado (BL-311, 
       TENANT_ID,
       otro,
     );
+  });
+
+  it('[TC-U-398] HU-042 (BL-464): notificarPedidoConfirmado avisa el estado de la cola del tenant', () => {
+    service.notificarPedidoConfirmado(TENANT_ID, pedidoConfirmado as any);
+
+    expect(mockKdsGateway.avisarEstadoCola).toHaveBeenCalledWith(TENANT_ID);
   });
 
   it('[TC-U-336] HU-015: confirmar el pago descuenta el stock en la misma transacción', async () => {

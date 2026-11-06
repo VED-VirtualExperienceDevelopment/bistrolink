@@ -302,6 +302,9 @@ export class PedidosService {
         this.kdsGateway.emitirPedidoActualizado(tenantId, promovido);
       }
     }
+    // HU-042 (BL-464): entró un pedido a cocina; la cola cambió. En segundo
+    // plano y sin lanzar, como el resumen de ventas.
+    void this.kdsGateway.avisarEstadoCola(tenantId);
     // HU-012 (BL-219): el dashboard de reportes se actualiza con el cobro.
     // En segundo plano: el pago ya está confirmado y no espera al resumen.
     void this.actualizarReportes(tenantId);
