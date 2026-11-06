@@ -19,18 +19,25 @@ import {
   type ResultadoLimpieza,
   type ResumenPedidos,
 } from './limpieza-pruebas.service';
+import {
+  LimpiezaMesasService,
+  type ResultadoLimpiezaMesas,
+  type ResumenMesas,
+} from './limpieza-mesas.service';
 
 /** Resumen por área (solo las que se pidieron) y si fue dry-run. */
 export interface RespuestaLimpieza {
   dryRun: boolean;
   pedidos?: ResumenPedidos;
+  mesas?: ResumenMesas;
 }
 
 /**
- * BL-475 (BL-285): `POST /testing/limpieza`. Cierra los pedidos de prueba
- * que quedaron abiertos (fixture de los E2E y workflow de limpieza de
- * staging). Solo ADMIN, en el tenant del token. Fuera del contrato
- * OpenAPI, como `/test` (BL-211).
+ * BL-475 (BL-285, ADR 0011): `POST /testing/limpieza`. Deja los datos de
+ * prueba del tenant como el seed, por áreas y en orden: pedidos (BL-475) y
+ * mesas y plano (BL-479). Lo usan el fixture de los E2E y el script de
+ * limpieza de local y staging. Solo ADMIN, en el tenant del token. Fuera
+ * del contrato OpenAPI, como `/test` (BL-211).
  *
  * Solo se registra con E2E_CLEANUP_ENABLED=true (TestingModule): en
  * producción la ruta no existe (404).
@@ -42,6 +49,7 @@ export interface RespuestaLimpieza {
 export class LimpiezaPruebasController {
   constructor(
     private readonly limpieza: LimpiezaPruebasService,
+    private readonly limpiezaMesas: LimpiezaMesasService,
     private readonly kdsGateway: KdsGateway,
   ) {}
 
@@ -53,7 +61,8 @@ export class LimpiezaPruebasController {
   ): Promise<RespuestaLimpieza> {
     const { tenantId, sub } = req.user;
     const areas = dto.areas ?? AREAS_LIMPIEZA;
-    const respuesta: RespuestaLimpieza = { dryRun: dto.dryRun === true };
+    const dryRun = dto.dryRun === true;
+    const respuesta: RespuestaLimpieza = { dryRun };
 
     if (areas.includes('pedidos')) {
       const { cerrados, ...resumen } = await this.limpieza.limpiar(
@@ -64,7 +73,30 @@ export class LimpiezaPruebasController {
       if (cerrados.length > 0) this.avisar(tenantId, cerrados);
       respuesta.pedidos = resumen;
     }
+    // Después de pedidos: sin pedidos abiertos, las mesas se pueden cerrar.
+    if (areas.includes('mesas')) {
+      const { cambios, mesasDelSalon, ...resumen } =
+        await this.limpiezaMesas.limpiar(tenantId, sub, dryRun);
+      if (!dryRun) this.avisarMesas(tenantId, { cambios, mesasDelSalon });
+      respuesta.mesas = resumen;
+    }
     return respuesta;
+  }
+
+  /**
+   * El mapa de mesas ve el estado nuevo y no queda ninguna alerta de las
+   * mesas del salón (llamados y avisos de efectivo).
+   */
+  private avisarMesas(
+    tenantId: string,
+    mesas: Pick<ResultadoLimpiezaMesas, 'cambios' | 'mesasDelSalon'>,
+  ) {
+    for (const { mesaId, estado } of mesas.cambios) {
+      this.kdsGateway.emitirEstadoMesa(tenantId, mesaId, estado);
+    }
+    for (const mesaId of mesas.mesasDelSalon) {
+      this.kdsGateway.emitirLlamadoResuelto(tenantId, mesaId);
+    }
   }
 
   /**

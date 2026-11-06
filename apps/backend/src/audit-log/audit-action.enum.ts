@@ -43,6 +43,7 @@ export enum AuditAction {
   CARTA_CATEGORIA_RESTAURADA = 'CARTA_CATEGORIA_RESTAURADA',
   CARTA_CATEGORIA_ELIMINADA = 'CARTA_CATEGORIA_ELIMINADA', // solo categorías sin ítems
   MESA_PEDIDOS_CANCELADOS = 'MESA_PEDIDOS_CANCELADOS', // BL-205 (al cerrar la mesa se cancelan los pedidos sin pagar, HU-017)
+  MESA_LIMPIEZA_PRUEBAS = 'MESA_LIMPIEZA_PRUEBAS', // BL-479 (BL-285: limpieza de datos de prueba; mesas reabiertas, liberadas y eliminadas y zonas «Zona E2E» quitadas)
   PAGO_EFECTIVO_REGISTRADO = 'PAGO_EFECTIVO_REGISTRADO', // BL-201 (HU-031: cobro en efectivo, con monto recibido y vuelto)
   PEDIDO_RECEPTOR_ANONIMIZADO = 'PEDIDO_RECEPTOR_ANONIMIZADO', // BL-453 (HU-009: RUT y razón social de la e-Factura anonimizados; con la cantidad de pedidos, nunca el RUT)
   PAGO_CFE_REINTENTADO = 'PAGO_CFE_REINTENTADO', // BL-96 (HU-023: el administrador reintentó la emisión del CFE de un pago, con el resultado)

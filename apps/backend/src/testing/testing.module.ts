@@ -4,6 +4,7 @@ import { PedidosModule } from '../pedidos/pedidos.module';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { LimpiezaPruebasController } from './limpieza-pruebas.controller';
 import { LimpiezaPruebasService } from './limpieza-pruebas.service';
+import { LimpiezaMesasService } from './limpieza-mesas.service';
 
 /**
  * BL-475 (BL-285): herramientas para los datos de prueba (limpieza de
@@ -14,7 +15,7 @@ import { LimpiezaPruebasService } from './limpieza-pruebas.service';
 @Module({
   imports: [PrismaModule, PedidosModule],
   controllers: [LimpiezaPruebasController],
-  providers: [LimpiezaPruebasService, AuditLogService],
+  providers: [LimpiezaPruebasService, LimpiezaMesasService, AuditLogService],
 })
 export class TestingModule {}
 

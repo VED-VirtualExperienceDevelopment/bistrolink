@@ -243,6 +243,8 @@ describe('LimpiezaPruebasController', () => {
 
   function armar(resultado: any) {
     const limpieza = { limpiar: jest.fn().mockResolvedValue(resultado) };
+    // BL-479: el área mesas tiene sus propios tests (limpieza-mesas.spec.ts).
+    const limpiezaMesas = { limpiar: jest.fn() };
     const kdsGateway = {
       emitirPedidoActualizado: jest.fn(),
       emitirLlamadoResuelto: jest.fn(),
@@ -250,9 +252,10 @@ describe('LimpiezaPruebasController', () => {
     };
     const controller = new LimpiezaPruebasController(
       limpieza as any,
+      limpiezaMesas as any,
       kdsGateway as any,
     );
-    return { controller, limpieza, kdsGateway };
+    return { controller, limpieza, limpiezaMesas, kdsGateway };
   }
 
   it('[TC-U-430] responde solo los números y avisa a KDS, comensales, alertas de las mesas y cola', async () => {
@@ -275,9 +278,13 @@ describe('LimpiezaPruebasController', () => {
       ],
     });
 
-    const respuesta = await controller.limpiar(req as any, { dryRun: false });
+    const respuesta = await controller.limpiar(req as any, {
+      areas: ['pedidos'],
+      dryRun: false,
+    });
 
     expect(limpieza.limpiar).toHaveBeenCalledWith(TENANT_ID, ACTOR, {
+      areas: ['pedidos'],
       dryRun: false,
     });
     expect(respuesta).toEqual({
@@ -313,7 +320,7 @@ describe('LimpiezaPruebasController', () => {
       cerrados: [],
     });
 
-    await controller.limpiar(req as any, { dryRun: true });
+    await controller.limpiar(req as any, { areas: ['pedidos'], dryRun: true });
 
     expect(kdsGateway.emitirPedidoActualizado).not.toHaveBeenCalled();
     expect(kdsGateway.emitirLlamadoResuelto).not.toHaveBeenCalled();
@@ -378,7 +385,7 @@ describe('TestingModule y LimpiarPedidosDto', () => {
       'antiguedadHoras',
     ]);
     expect(await errores({ dryRun: 'si' })).toEqual(['dryRun']);
-    expect(await errores({ areas: ['pedidos'] })).toEqual([]);
+    expect(await errores({ areas: ['pedidos', 'mesas'] })).toEqual([]);
     expect(await errores({ areas: ['otra'] })).toEqual(['areas']);
     expect(await errores({ areas: 'pedidos' })).toEqual(['areas']);
   });
