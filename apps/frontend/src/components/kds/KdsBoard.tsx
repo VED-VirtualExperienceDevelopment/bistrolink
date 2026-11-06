@@ -5,6 +5,12 @@ import { io, type Socket } from 'socket.io-client';
 import { useKeycloakAuth } from '@/components/providers/KeycloakProvider';
 import { useAlertas } from '@/components/alertas/AlertasProvider';
 import { OrderTicket } from './OrderTicket';
+import {
+  separarPorCola,
+  textoAltaDemanda,
+  textoContadorCola,
+  type EstadoCola,
+} from './cola-kds.utils';
 import type { Pedido } from '@/types/pedido';
 
 const WS_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
@@ -30,6 +36,9 @@ export function KdsBoard() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [conectadoPropio, setConectadoPropio] = useState(false);
+  // HU-042 (BL-466): estado de la cola. null = desactivada (o el servidor
+  // todavía no lo mandó): el tablero se ve como siempre.
+  const [cola, setCola] = useState<EstadoCola | null>(null);
   const socketRef = useRef<Socket | null>(null);
 
   const conectado = alertas ? alertas.conectado : conectadoPropio;
@@ -83,6 +92,13 @@ export function KdsBoard() {
       });
     };
 
+    // HU-042 (BL-466): llega al conectar (si la cola está activa) y cada vez
+    // que entra o sale un pedido de la cola. Con activa=false se apagó desde
+    // Configuración.
+    const alColaActualizada = (estado: EstadoCola) => {
+      setCola(estado.activa ? estado : null);
+    };
+
     const alError = (err: { message: string }) => {
       setLoadError(err.message);
       setLoading(false);
@@ -91,6 +107,7 @@ export function KdsBoard() {
     socket.on('pedidos:snapshot', alSnapshotPedidos);
     socket.on('pedido:nuevo', alPedidoNuevo);
     socket.on('pedido:actualizado', alPedidoActualizado);
+    socket.on('cola:actualizada', alColaActualizada);
     socket.on('error', alError);
 
     // Solo el /kds de COCINA maneja su propia conexión.
@@ -108,6 +125,7 @@ export function KdsBoard() {
       socket.off('pedidos:snapshot', alSnapshotPedidos);
       socket.off('pedido:nuevo', alPedidoNuevo);
       socket.off('pedido:actualizado', alPedidoActualizado);
+      socket.off('cola:actualizada', alColaActualizada);
       socket.off('error', alError);
       if (propio) {
         socket.off('connect', alConectar);
@@ -123,9 +141,14 @@ export function KdsBoard() {
     socketRef.current?.emit('pedido:transicion', { pedidoId, nuevoEstado });
   }
 
+  // HU-042 (BL-466): con la cola activa, los pedidos en espera van a su
+  // propia sección; el tablero agrupado por mesa muestra el resto.
+  const { enEspera, activos } = separarPorCola(pedidos, cola);
+  const colaActiva = cola !== null;
+
   const gruposPorMesa = (() => {
     const mapa = new Map<number, Pedido[]>();
-    for (const pedido of pedidos) {
+    for (const pedido of activos) {
       const grupo = mapa.get(pedido.mesaNumero) ?? [];
       grupo.push(pedido);
       mapa.set(pedido.mesaNumero, grupo);
@@ -167,7 +190,7 @@ export function KdsBoard() {
       </div>
     );
   } else {
-    contenido = (
+    const tablero = (
       <div className="flex h-full gap-gutter overflow-x-auto overflow-y-hidden pb-4">
         {gruposPorMesa.map(({ mesaNumero, pedidos: pedidosDeLaMesa }) => (
           <div key={mesaNumero} className="flex h-full shrink-0 flex-col gap-1.5">
@@ -183,12 +206,63 @@ export function KdsBoard() {
                   pedido={pedido}
                   puedeOperarTransiciones={puedeOperarTransiciones}
                   onTransicion={emitirTransicion}
+                  colaActiva={colaActiva}
                 />
               ))}
             </div>
           </div>
         ))}
       </div>
+    );
+
+    contenido = colaActiva ? (
+      <div className="flex min-h-0 flex-1 gap-gutter">
+        {/* HU-042 (BL-466): cola de espera, en orden de llegada. */}
+        <section
+          aria-labelledby="titulo-en-espera"
+          className="flex h-full shrink-0 flex-col gap-1.5"
+        >
+          <h2
+            id="titulo-en-espera"
+            className="shrink-0 rounded-md bg-surface-container-low px-2 py-1 text-label-sm font-semibold text-on-surface-variant"
+          >
+            En espera · {enEspera.length}
+          </h2>
+          {enEspera.length === 0 ? (
+            <p className="w-[300px] px-2 text-body-sm text-on-surface-variant">
+              No hay pedidos esperando.
+            </p>
+          ) : (
+            <ol className="flex h-full gap-gutter overflow-x-auto overflow-y-hidden pb-4">
+              {enEspera.map(({ pedido, posicion }) => (
+                <li key={pedido.id} className="h-full">
+                  <OrderTicket
+                    pedido={pedido}
+                    puedeOperarTransiciones={puedeOperarTransiciones}
+                    onTransicion={emitirTransicion}
+                    colaActiva
+                    posicionEnCola={posicion}
+                  />
+                </li>
+              ))}
+            </ol>
+          )}
+        </section>
+        <section
+          aria-labelledby="titulo-en-preparacion"
+          className="flex min-w-0 flex-1 flex-col gap-1.5"
+        >
+          <h2
+            id="titulo-en-preparacion"
+            className="shrink-0 rounded-md bg-surface-container-low px-2 py-1 text-label-sm font-semibold text-on-surface-variant"
+          >
+            En cocina
+          </h2>
+          {tablero}
+        </section>
+      </div>
+    ) : (
+      tablero
     );
   }
 
@@ -197,6 +271,28 @@ export function KdsBoard() {
       {!conectado && !loading && (
         <div role="status" className="shrink-0 rounded-lg bg-tertiary-container px-3 py-1.5 text-label-md text-on-tertiary-container">
           Reconectando…
+        </div>
+      )}
+      {/* HU-042 (BL-466): ocupación de la cocina y alerta de alta demanda.
+          aria-live para que el lector de pantalla lo anuncie sin mover el
+          foco. */}
+      {cola && !loading && (
+        <div aria-live="polite" className="flex shrink-0 flex-col gap-1">
+          <p
+            data-testid="cola-contador"
+            className="text-label-md font-semibold text-on-surface-variant"
+          >
+            {textoContadorCola(cola)}
+          </p>
+          {cola.altaDemanda && (
+            <p
+              data-testid="cola-alta-demanda"
+              className="flex items-center gap-2 rounded-lg bg-error-container px-3 py-1.5 text-label-md font-semibold text-on-error-container"
+            >
+              <span aria-hidden="true">⚠</span>
+              {textoAltaDemanda(cola)}
+            </p>
+          )}
         </div>
       )}
       {contenido}

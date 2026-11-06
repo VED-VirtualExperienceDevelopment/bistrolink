@@ -3,6 +3,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import { ESTADO_LABEL } from './kds/OrderTicket';
+import {
+  lugarVigente,
+  textoEnCola,
+  type PosicionEnCola,
+} from './kds/cola-kds.utils';
 import type { EstadoPedido } from '@/types/pedido';
 
 
@@ -35,6 +40,8 @@ export function SeguimientoPedido({
   const [estado, setEstado] = useState<EstadoPedido>(estadoInicial);
   const [actualizadoEn, setActualizadoEn] = useState<string | null>(null);
   const [conectado, setConectado] = useState(false);
+  // HU-042 (BL-466): lugar en la cola y tiempo estimado, mientras espera.
+  const [lugar, setLugar] = useState<PosicionEnCola | null>(null);
   const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
@@ -59,6 +66,13 @@ export function SeguimientoPedido({
       setActualizadoEn(payload.actualizadoEn);
     });
 
+    // HU-042 (BL-466): el servidor manda solo el lugar de este pedido (sala
+    // del pedido), al seguirlo y cada vez que la cola avanza.
+    socket.on('pedido:cola', (payload: PosicionEnCola) => {
+      if (payload.pedidoId !== pedidoId) return;
+      setLugar(payload);
+    });
+
     return () => {
       socket.disconnect();
       socketRef.current = null;
@@ -66,6 +80,7 @@ export function SeguimientoPedido({
   }, [pedidoId, token]);
 
   const indiceActual = PROGRESION.indexOf(estado);
+  const lugarActual = lugarVigente(estado, lugar);
 
   return (
     <div className="mt-4">
@@ -121,7 +136,7 @@ export function SeguimientoPedido({
       </ol>
 
     <p role="status" className="text-center text-sm font-semibold text-culinary-primary mt-4">
-        {ESTADO_LABEL[estado]}
+        {lugarActual ? textoEnCola(lugarActual) : ESTADO_LABEL[estado]}
       </p>
     </div>
   );
