@@ -323,6 +323,14 @@ describe('LimpiezaPruebasController · área mesas', () => {
       limpiezaCarta as any,
       kdsGateway as any,
       menuGateway as any,
+      {
+        limpiar: jest.fn().mockResolvedValue({ camposRestablecidos: [] }),
+      } as any,
+      {
+        limpiar: jest
+          .fn()
+          .mockResolvedValue({ eliminados: 0, desactivados: 0, conError: 0 }),
+      } as any,
     );
     return { controller, limpieza, limpiezaMesas, limpiezaCarta, kdsGateway };
   }
@@ -346,6 +354,8 @@ describe('LimpiezaPruebasController · área mesas', () => {
       pedidos: { encontrados: {}, cancelados: 0, entregados: 0 },
       mesas: resumenMesas,
       carta: resumenCarta,
+      configuracion: { camposRestablecidos: [] },
+      usuarios: { eliminados: 0, desactivados: 0, conError: 0 },
     });
     expect(kdsGateway.emitirEstadoMesa).toHaveBeenCalledWith(
       TENANT_ID,

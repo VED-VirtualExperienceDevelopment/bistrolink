@@ -30,6 +30,14 @@ import {
   type ResultadoLimpiezaCarta,
   type ResumenCarta,
 } from './limpieza-carta.service';
+import {
+  LimpiezaConfiguracionService,
+  type ResumenConfiguracion,
+} from './limpieza-configuracion.service';
+import {
+  LimpiezaUsuariosService,
+  type ResumenUsuarios,
+} from './limpieza-usuarios.service';
 
 /** Resumen por área (solo las que se pidieron) y si fue dry-run. */
 export interface RespuestaLimpieza {
@@ -37,12 +45,15 @@ export interface RespuestaLimpieza {
   pedidos?: ResumenPedidos;
   mesas?: ResumenMesas;
   carta?: ResumenCarta;
+  configuracion?: ResumenConfiguracion;
+  usuarios?: ResumenUsuarios;
 }
 
 /**
  * BL-475 (BL-285, ADR 0011): `POST /testing/limpieza`. Deja los datos de
  * prueba del tenant como el seed, por áreas y en orden: pedidos (BL-475),
- * mesas y plano (BL-479) y carta y stock (BL-480). Lo usan el fixture de los E2E y el script de
+ * mesas y plano (BL-479), carta y stock (BL-480), configuración y usuarios
+ * (BL-481). Lo usan el fixture de los E2E y el script de
  * limpieza de local y staging. Solo ADMIN, en el tenant del token. Fuera
  * del contrato OpenAPI, como `/test` (BL-211).
  *
@@ -60,6 +71,8 @@ export class LimpiezaPruebasController {
     private readonly limpiezaCarta: LimpiezaCartaService,
     private readonly kdsGateway: KdsGateway,
     private readonly menuGateway: MenuGateway,
+    private readonly limpiezaConfiguracion: LimpiezaConfiguracionService,
+    private readonly limpiezaUsuarios: LimpiezaUsuariosService,
   ) {}
 
   @Post('limpieza')
@@ -100,6 +113,21 @@ export class LimpiezaPruebasController {
         });
       }
       respuesta.carta = resumen;
+    }
+    // BL-481: avisan solos (auditoría y KDS), con sus propios servicios.
+    if (areas.includes('configuracion')) {
+      respuesta.configuracion = await this.limpiezaConfiguracion.limpiar(
+        tenantId,
+        sub,
+        dryRun,
+      );
+    }
+    if (areas.includes('usuarios')) {
+      respuesta.usuarios = await this.limpiezaUsuarios.limpiar(
+        tenantId,
+        sub,
+        dryRun,
+      );
     }
     return respuesta;
   }

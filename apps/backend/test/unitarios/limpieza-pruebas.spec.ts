@@ -256,6 +256,8 @@ describe('LimpiezaPruebasController', () => {
       { limpiar: jest.fn() } as any, // BL-480: limpieza-carta.spec.ts
       kdsGateway as any,
       {} as any,
+      {} as any, // BL-481: limpieza-configuracion-usuarios.spec.ts
+      {} as any,
     );
     return { controller, limpieza, limpiezaMesas, kdsGateway };
   }
@@ -387,7 +389,11 @@ describe('TestingModule y LimpiarPedidosDto', () => {
       'antiguedadHoras',
     ]);
     expect(await errores({ dryRun: 'si' })).toEqual(['dryRun']);
-    expect(await errores({ areas: ['pedidos', 'mesas'] })).toEqual([]);
+    expect(
+      await errores({
+        areas: ['pedidos', 'mesas', 'carta', 'configuracion', 'usuarios'],
+      }),
+    ).toEqual([]);
     expect(await errores({ areas: ['otra'] })).toEqual(['areas']);
     expect(await errores({ areas: 'pedidos' })).toEqual(['areas']);
   });

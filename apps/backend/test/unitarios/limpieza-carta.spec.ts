@@ -340,6 +340,8 @@ describe('LimpiezaPruebasController · área carta', () => {
       limpiezaCarta as any,
       kdsGateway as any,
       menuGateway as any,
+      { limpiar: jest.fn() } as any,
+      { limpiar: jest.fn() } as any,
     );
     return { controller, limpiezaCarta, kdsGateway, menuGateway };
   }

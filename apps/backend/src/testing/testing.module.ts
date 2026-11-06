@@ -7,6 +7,11 @@ import { LimpiezaPruebasController } from './limpieza-pruebas.controller';
 import { LimpiezaPruebasService } from './limpieza-pruebas.service';
 import { LimpiezaMesasService } from './limpieza-mesas.service';
 import { LimpiezaCartaService } from './limpieza-carta.service';
+import { LimpiezaConfiguracionService } from './limpieza-configuracion.service';
+import { LimpiezaUsuariosService } from './limpieza-usuarios.service';
+import { ConfiguracionEstablecimientoService } from '../configuracion/configuracion-establecimiento.service';
+import { UsuariosService } from '../usuarios/usuarios.service';
+import { KeycloakAdminService } from '../keycloak-admin/keycloak-admin.service';
 
 /**
  * BL-475 (BL-285): herramientas para los datos de prueba (limpieza de
@@ -21,6 +26,13 @@ import { LimpiezaCartaService } from './limpieza-carta.service';
     LimpiezaPruebasService,
     LimpiezaMesasService,
     LimpiezaCartaService,
+    LimpiezaConfiguracionService,
+    LimpiezaUsuariosService,
+    // BL-481: los mismos servicios que usan Configuración y Usuarios, para
+    // que la limpieza siga sus reglas y su auditoría.
+    ConfiguracionEstablecimientoService,
+    UsuariosService,
+    KeycloakAdminService,
     AuditLogService,
   ],
 })

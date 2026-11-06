@@ -1,0 +1,77 @@
+import { Injectable } from '@nestjs/common';
+import {
+  ConfiguracionEstablecimientoService,
+  type ConfiguracionEstablecimiento,
+} from '../configuracion/configuracion-establecimiento.service';
+import type { ActualizarConfiguracionDto } from '../configuracion/dto/actualizar-configuracion.dto';
+import { CONFIGURACION_DEL_SEED, RAZON_SOCIAL_DEL_SEED } from './datos-seed';
+
+/** Resumen del área `configuracion` (lo que responde la API). */
+export interface ResumenConfiguracion {
+  /** Campos que volvieron (o volverían, en dry-run) al valor del seed. */
+  camposRestablecidos: string[];
+}
+
+/** La configuración que define el seed para este tenant. */
+export function configuracionDelSeed(
+  tenantId: string,
+): ActualizarConfiguracionDto {
+  const razonSocial = RAZON_SOCIAL_DEL_SEED[tenantId];
+  return {
+    ...CONFIGURACION_DEL_SEED,
+    propinasSugeridas: [...CONFIGURACION_DEL_SEED.propinasSugeridas],
+    // Solo los tenants de testing tienen razón social en el seed.
+    ...(razonSocial ? { razonSocial } : {}),
+  };
+}
+
+/** Los campos que difieren del seed, con el valor del seed. */
+export function diferenciasConElSeed(
+  actual: ConfiguracionEstablecimiento,
+  seed: ActualizarConfiguracionDto,
+): ActualizarConfiguracionDto {
+  const diferencias: Record<string, unknown> = {};
+  for (const [campo, valor] of Object.entries(seed)) {
+    const vigente = actual[campo as keyof ConfiguracionEstablecimiento];
+    if (JSON.stringify(vigente) !== JSON.stringify(valor)) {
+      diferencias[campo] = valor;
+    }
+  }
+  return diferencias as ActualizarConfiguracionDto;
+}
+
+/**
+ * BL-481 (BL-285, ADR 0011): deja la configuración del establecimiento como
+ * el seed: medios de pago, propinas, proveedor de CFE, cola del KDS apagada
+ * y razón social de los tenants de testing. El correo de privacidad no se
+ * toca (el seed no lo define).
+ *
+ * Usa el mismo servicio que la pantalla Configuración, así que el cambio
+ * queda en la auditoría (con antes y después) y el KDS se entera si cambió
+ * la cola.
+ */
+@Injectable()
+export class LimpiezaConfiguracionService {
+  constructor(
+    private readonly configuracion: ConfiguracionEstablecimientoService,
+  ) {}
+
+  async limpiar(
+    tenantId: string,
+    actorKeycloakId: string,
+    dryRun: boolean,
+  ): Promise<ResumenConfiguracion> {
+    const actual = await this.configuracion.obtener(tenantId);
+    const diferencias = diferenciasConElSeed(
+      actual,
+      configuracionDelSeed(tenantId),
+    );
+    const camposRestablecidos = Object.keys(diferencias);
+    if (!dryRun && camposRestablecidos.length > 0) {
+      await this.configuracion.actualizar(tenantId, diferencias, {
+        id: actorKeycloakId,
+      });
+    }
+    return { camposRestablecidos };
+  }
+}

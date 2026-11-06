@@ -72,3 +72,32 @@ export const STOCK_DEL_SEED = {
   stockActual: 0,
   umbralAlerta: 5,
 } as const;
+
+/**
+ * Configuración del establecimiento como la deja el seed (los valores por
+ * defecto de las columnas de restaurante). El correo de privacidad no se
+ * toca: el seed no lo define.
+ */
+export const CONFIGURACION_DEL_SEED = {
+  efectivoHabilitado: true,
+  mercadoPagoHabilitado: true,
+  plexoHabilitado: false,
+  handyHabilitado: false,
+  propinasSugeridas: [] as number[],
+  cfeProveedor: 'SURTEC',
+  limitePedidosEnPreparacion: null,
+  umbralAlertaCola: 10,
+  minutosPreparacionEstimados: 15,
+} as const;
+
+/** Razón social de los tenants de testing, como en el seed. */
+export const RAZON_SOCIAL_DEL_SEED: Readonly<Record<string, string>> = {
+  '11111111-1111-1111-1111-111111111111': 'Restaurante Testing A SRL',
+  'b02579f2-2bb0-496b-abf2-33c494c93122': 'Restaurante Testing B SRL',
+};
+
+/**
+ * Usuarios creados por los E2E (`gestion-usuarios.spec.ts`: «e2e-…»).
+ * Ningún usuario del seed empieza así (admin-test, mozo-test, …).
+ */
+export const PREFIJO_USUARIO_E2E = 'e2e-';
