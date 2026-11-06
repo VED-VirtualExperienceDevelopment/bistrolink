@@ -56,6 +56,8 @@ describe('Pedidos Observaciones - Integración (BL-41)', () => {
             emitirNuevoPedido: jest.fn(),
             emitirActualizacionPedido: jest.fn(),
             emitirReportesActualizados: jest.fn(),
+            // HU-042 (BL-464): aviso del estado de la cola.
+            avisarEstadoCola: jest.fn().mockResolvedValue(undefined),
           },
         },
         // HU-012 (BL-219): al confirmar un pago se recalcula el resumen de
