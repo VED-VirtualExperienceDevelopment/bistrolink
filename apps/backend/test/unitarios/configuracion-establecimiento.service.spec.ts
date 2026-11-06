@@ -8,6 +8,7 @@ import { ConfiguracionEstablecimientoService } from '../../src/configuracion/con
 import { TenantPrismaService } from '../../src/prisma/tenant-prisma.service';
 import { AuditLogService } from '../../src/audit-log/audit-log.service';
 import { AuditAction } from '../../src/audit-log/audit-action.enum';
+import { KdsGateway } from '../../src/pedidos/kds.gateway';
 
 /**
  * HU-020 (BL-72): configuración del establecimiento. Lo que se escribe, en
@@ -26,12 +27,20 @@ const RESTAURANTE_ACTUAL = {
   handyHabilitado: false,
   propinasSugeridas: [10],
   cfeProveedor: 'SURTEC',
+  // HU-042 (BL-465): cola del KDS desactivada.
+  limitePedidosEnPreparacion: null,
+  umbralAlertaCola: 10,
+  minutosPreparacionEstimados: 15,
 };
 
 describe('ConfiguracionEstablecimientoService (HU-020, BL-72)', () => {
   let contextos: string[];
   let tx: any;
   let auditLog: { registrarEnTx: jest.Mock };
+  let kdsGateway: {
+    emitirPedidoActualizado: jest.Mock;
+    avisarEstadoCola: jest.Mock;
+  };
   let service: ConfiguracionEstablecimientoService;
 
   beforeEach(() => {
@@ -49,6 +58,15 @@ describe('ConfiguracionEstablecimientoService (HU-020, BL-72)', () => {
           Promise.resolve({ ...RESTAURANTE_ACTUAL, ...data }),
         ),
       },
+      // HU-042 (BL-465): cola del KDS (completarCapacidad).
+      pedido: {
+        count: jest.fn().mockResolvedValue(0),
+        findMany: jest.fn().mockResolvedValue([]),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        findUniqueOrThrow: jest.fn(),
+      },
+      pedidoEstadoHistorial: { create: jest.fn() },
+      $executeRaw: jest.fn(),
     };
     const tenantPrisma = {
       runInTenantContext: jest.fn((tenantId: string, fn: any) => {
@@ -57,9 +75,14 @@ describe('ConfiguracionEstablecimientoService (HU-020, BL-72)', () => {
       }),
     };
     auditLog = { registrarEnTx: jest.fn().mockResolvedValue(undefined) };
+    kdsGateway = {
+      emitirPedidoActualizado: jest.fn(),
+      avisarEstadoCola: jest.fn().mockResolvedValue(undefined),
+    };
     service = new ConfiguracionEstablecimientoService(
       tenantPrisma as unknown as TenantPrismaService,
       auditLog as unknown as AuditLogService,
+      kdsGateway as unknown as KdsGateway,
     );
   });
 
@@ -217,6 +240,117 @@ describe('ConfiguracionEstablecimientoService (HU-020, BL-72)', () => {
       ).rejects.toBeInstanceOf(ConflictException);
       expect(tx.restaurante.update).not.toHaveBeenCalled();
       expect(auditLog.registrarEnTx).not.toHaveBeenCalled();
+    });
+  });
+  describe('HU-042 (BL-465): cola del KDS', () => {
+    it('[TC-U-401] activar la cola: guarda el límite, lo audita con antes y después y llena la cocina en la misma transacción', async () => {
+      // Al escribir el límite, completarCapacidad lo lee de la base.
+      tx.restaurante.findUnique
+        .mockResolvedValueOnce({ ...RESTAURANTE_ACTUAL })
+        .mockResolvedValueOnce({ limitePedidosEnPreparacion: 2 });
+      tx.pedido.findMany.mockResolvedValue([{ id: 'PED-101' }]);
+      tx.pedido.findUniqueOrThrow.mockResolvedValue({
+        id: 'PED-101',
+        estado: 'EN_PREPARACION',
+        updatedAt: new Date('2026-11-06T12:00:00Z'),
+        mesa: { numero: 3 },
+        lineas: [],
+      });
+
+      const configuracion = await service.actualizar(
+        TENANT_ID,
+        { limitePedidosEnPreparacion: 2 },
+        ACTOR,
+      );
+
+      expect(tx.restaurante.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { limitePedidosEnPreparacion: 2 } }),
+      );
+      const [, entrada] = auditLog.registrarEnTx.mock.calls[0];
+      expect(entrada.antes).toEqual({ limitePedidosEnPreparacion: null });
+      expect(entrada.despues).toEqual({ limitePedidosEnPreparacion: 2 });
+      expect(tx.$executeRaw).toHaveBeenCalled();
+      expect(tx.pedido.updateMany).toHaveBeenCalledWith({
+        where: { id: 'PED-101', estado: 'RECIBIDO' },
+        data: { estado: 'EN_PREPARACION' },
+      });
+      expect(configuracion.limitePedidosEnPreparacion).toBe(2);
+    });
+
+    it('[TC-U-402] después del commit avisa al KDS los pedidos promovidos y el estado de la cola', async () => {
+      tx.restaurante.findUnique
+        .mockResolvedValueOnce({ ...RESTAURANTE_ACTUAL })
+        .mockResolvedValueOnce({ limitePedidosEnPreparacion: 2 });
+      tx.pedido.findMany.mockResolvedValue([{ id: 'PED-101' }]);
+      tx.pedido.findUniqueOrThrow.mockResolvedValue({
+        id: 'PED-101',
+        estado: 'EN_PREPARACION',
+        updatedAt: new Date('2026-11-06T12:00:00Z'),
+        mesa: { numero: 3 },
+        lineas: [],
+      });
+
+      await service.actualizar(
+        TENANT_ID,
+        { limitePedidosEnPreparacion: 2 },
+        ACTOR,
+      );
+
+      expect(kdsGateway.emitirPedidoActualizado).toHaveBeenCalledWith(
+        TENANT_ID,
+        expect.objectContaining({ id: 'PED-101', estado: 'EN_PREPARACION' }),
+      );
+      expect(kdsGateway.avisarEstadoCola).toHaveBeenCalledWith(TENANT_ID, {
+        forzar: true,
+      });
+    });
+
+    it('[TC-U-403] desactivar la cola (null): no promueve a nadie y avisa al KDS que se apagó', async () => {
+      tx.restaurante.findUnique
+        .mockResolvedValueOnce({
+          ...RESTAURANTE_ACTUAL,
+          limitePedidosEnPreparacion: 5,
+        })
+        .mockResolvedValueOnce({ limitePedidosEnPreparacion: null });
+
+      await service.actualizar(
+        TENANT_ID,
+        { limitePedidosEnPreparacion: null },
+        ACTOR,
+      );
+
+      expect(tx.restaurante.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { limitePedidosEnPreparacion: null } }),
+      );
+      expect(tx.pedido.updateMany).not.toHaveBeenCalled();
+      expect(kdsGateway.emitirPedidoActualizado).not.toHaveBeenCalled();
+      expect(kdsGateway.avisarEstadoCola).toHaveBeenCalledWith(TENANT_ID, {
+        forzar: true,
+      });
+    });
+
+    it('[TC-U-404] cambiar solo el umbral o los minutos: no toca la cocina, pero avisa el estado nuevo', async () => {
+      await service.actualizar(
+        TENANT_ID,
+        { umbralAlertaCola: 8, minutosPreparacionEstimados: 20 },
+        ACTOR,
+      );
+
+      expect(tx.$executeRaw).not.toHaveBeenCalled();
+      expect(tx.pedido.findMany).not.toHaveBeenCalled();
+      expect(kdsGateway.avisarEstadoCola).toHaveBeenCalledWith(TENANT_ID, {
+        forzar: true,
+      });
+    });
+
+    it('[TC-U-405] cambiar algo que no es de la cola (propinas) no avisa al KDS', async () => {
+      await service.actualizar(
+        TENANT_ID,
+        { propinasSugeridas: [10, 15] },
+        ACTOR,
+      );
+
+      expect(kdsGateway.avisarEstadoCola).not.toHaveBeenCalled();
     });
   });
 });

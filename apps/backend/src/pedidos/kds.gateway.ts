@@ -406,12 +406,18 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
    * HU-042 (BL-464): lee el estado de la cola y lo avisa. Nunca lanza: el
    * cambio que lo disparó ya se guardó y se avisó; si falla, el KDS se
    * corrige con el próximo cambio o al reconectar.
+   *
+   * HU-042 (BL-465): con `forzar`, avisa también con la cola desactivada,
+   * para que el KDS abierto deje de mostrar la cola (el administrador la
+   * apagó desde Configuración).
    */
-  async avisarEstadoCola(tenantId: string) {
+  async avisarEstadoCola(tenantId: string, opciones?: { forzar?: boolean }) {
     try {
       const pedidosTransicion = await this.resolverPedidosTransicion();
       const estado = await pedidosTransicion.estadoCola(tenantId);
-      if (estado.activa) this.emitirEstadoCola(tenantId, estado);
+      if (estado.activa || opciones?.forzar) {
+        this.emitirEstadoCola(tenantId, estado);
+      }
     } catch (err) {
       Logger.warn(
         `No se pudo avisar el estado de la cola: ${(err as Error).message}`,

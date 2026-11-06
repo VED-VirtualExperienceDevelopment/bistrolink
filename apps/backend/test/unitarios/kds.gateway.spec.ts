@@ -1164,6 +1164,16 @@ describe('KdsGateway', () => {
       expect(mockServer.emit).not.toHaveBeenCalled();
     });
 
+    it('[TC-U-406] HU-042 (BL-465): con forzar, avisa al KDS aunque la cola esté desactivada (se apagó desde Configuración)', async () => {
+      await gateway.avisarEstadoCola(TENANT_ID, { forzar: true });
+
+      expect(mockServer.to).toHaveBeenCalledWith(`tenant:${TENANT_ID}`);
+      expect(mockServer.emit).toHaveBeenCalledWith(
+        'cola:actualizada',
+        COLA_DESACTIVADA,
+      );
+    });
+
     it('[TC-U-396] el comensal que sigue un pedido en espera recibe solo su lugar en la cola', async () => {
       mockWsAuth.verify.mockResolvedValue({
         sub: 'comensal-1',

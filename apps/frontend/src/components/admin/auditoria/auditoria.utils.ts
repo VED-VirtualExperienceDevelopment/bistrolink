@@ -152,6 +152,10 @@ const NOMBRE_CAMPO: Record<string, string> = {
   handyHabilitado: "Handy",
   propinasSugeridas: "Propinas sugeridas (%)",
   cfeProveedor: "Proveedor de CFE",
+  // HU-042 (BL-465): cola del KDS. Sin límite (—) = cola desactivada.
+  limitePedidosEnPreparacion: "Límite de pedidos en preparación",
+  umbralAlertaCola: "Alerta de alta demanda con",
+  minutosPreparacionEstimados: "Minutos de preparación estimados",
   // BL-412: datos del establecimiento que cambia la plataforma.
   rut: "RUT",
   plan: "Plan",

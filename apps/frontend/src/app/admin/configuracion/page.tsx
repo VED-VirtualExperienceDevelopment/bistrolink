@@ -10,15 +10,20 @@ import {
   cambiosParaGuardar,
   errorEmailPrivacidad,
   errorRazonSocial,
+  erroresCola,
   formularioDesde,
   hayCambios,
+  hayErroresCola,
   leerPropinas,
   LARGO_MAXIMO_EMAIL,
   LARGO_MAXIMO_RAZON_SOCIAL,
+  LIMITE_PREPARACION,
   MAXIMO_PROPINAS,
   MEDIOS_PAGO,
+  MINUTOS_PREPARACION,
   PROVEEDORES_CFE,
   sinMediosDePago,
+  UMBRAL_ALERTA_COLA,
   type CampoMedioPago,
   type ConfiguracionEstablecimiento,
   type FormularioConfiguracion,
@@ -37,10 +42,62 @@ const CLASE_BOTON =
   "flex min-h-12 items-center justify-center gap-2 rounded-lg bg-primary px-5 text-body-md font-medium text-on-primary hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-50";
 
 /**
+ * HU-042 (BL-465): un campo numérico de la cola del KDS, con su ayuda y su
+ * error asociados para el lector de pantalla.
+ */
+function CampoCola({
+  id,
+  etiqueta,
+  ayuda,
+  valor,
+  error,
+  rango,
+  onChange,
+}: {
+  id: string;
+  etiqueta: string;
+  ayuda: string;
+  valor: string;
+  error: string | undefined;
+  rango: { minimo: number; maximo: number };
+  onChange: (valor: string) => void;
+}) {
+  return (
+    <div>
+      <label htmlFor={id} className={CLASE_ETIQUETA}>
+        {etiqueta}
+      </label>
+      <input
+        id={id}
+        type="number"
+        inputMode="numeric"
+        min={rango.minimo}
+        max={rango.maximo}
+        step={1}
+        value={valor}
+        onChange={(e) => onChange(e.target.value)}
+        aria-invalid={error !== undefined}
+        aria-describedby={error ? `${id}-ayuda ${id}-error` : `${id}-ayuda`}
+        className={CLASE_CONTROL}
+      />
+      <p id={`${id}-ayuda`} className={`mt-1 ${CLASE_AYUDA}`}>
+        {ayuda}
+      </p>
+      {error && (
+        <p id={`${id}-error`} className="mt-1 text-body-sm text-error">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
  * HU-020 (BL-72): configuración del establecimiento. El administrador
  * revisa los datos fiscales del emisor, elige el proveedor de CFE, habilita
  * los medios de pago y define los porcentajes de propina sugeridos. Cada
  * cambio queda en el registro de auditoría.
+ * HU-042 (BL-465): también configura la cola de pedidos del KDS.
  */
 export default function ConfiguracionPage() {
   const { token, hasRole } = useKeycloakAuth();
@@ -104,6 +161,8 @@ export default function ConfiguracionPage() {
   const errorEmail = formulario
     ? errorEmailPrivacidad(formulario.emailPrivacidad)
     : null;
+  const errCola = formulario ? erroresCola(formulario) : {};
+  const conErroresCola = hayErroresCola(errCola);
   const cambios =
     guardada && formulario ? cambiosParaGuardar(guardada, formulario) : {};
   const conCambios = hayCambios(cambios);
@@ -113,10 +172,13 @@ export default function ConfiguracionPage() {
     e.preventDefault();
     setIntentoGuardar(true);
     // Con un error, el foco va al primer campo mal cargado.
-    if (errorRazon || errorPropinas || errorEmail) {
+    if (errorRazon || errorPropinas || errorEmail || conErroresCola) {
       let campo = "email-privacidad";
       if (errorRazon) campo = "razon-social";
       else if (errorPropinas) campo = "propinas";
+      else if (errCola.limitePreparacion) campo = "cola-limite";
+      else if (errCola.umbralAlertaCola) campo = "cola-umbral";
+      else if (errCola.minutosPreparacion) campo = "cola-minutos";
       document.getElementById(campo)?.focus();
       return;
     }
@@ -358,6 +420,68 @@ export default function ConfiguracionPage() {
                 </p>
               )}
             </div>
+          </section>
+
+          {/* HU-042 (BL-465): cola de pedidos del KDS. */}
+          <section aria-labelledby="titulo-cocina" className={CLASE_TARJETA}>
+            <h2 id="titulo-cocina" className={CLASE_TITULO_TARJETA}>
+              Cocina
+            </h2>
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-body-md text-on-surface">
+                  Cola automática de pedidos
+                </p>
+                <p className={CLASE_AYUDA}>
+                  Limita cuántos pedidos prepara la cocina a la vez. Los demás
+                  esperan en orden de llegada y pasan a preparación solos cuando
+                  se marca uno como listo.
+                </p>
+              </div>
+              <Switch
+                checked={formulario.colaActiva}
+                onChange={(valor) => cambiar("colaActiva", valor)}
+                label="Cola automática de pedidos"
+              />
+            </div>
+            {formulario.colaActiva ? (
+              <div className="grid gap-4 md:grid-cols-3">
+                <CampoCola
+                  id="cola-limite"
+                  etiqueta="Pedidos en preparación a la vez"
+                  ayuda={`Entre ${LIMITE_PREPARACION.minimo} y ${LIMITE_PREPARACION.maximo}.`}
+                  valor={formulario.limitePreparacion}
+                  error={intentoGuardar ? errCola.limitePreparacion : undefined}
+                  rango={LIMITE_PREPARACION}
+                  onChange={(valor) => cambiar("limitePreparacion", valor)}
+                />
+                <CampoCola
+                  id="cola-umbral"
+                  etiqueta="Alerta de alta demanda con más de"
+                  ayuda="Pedidos en espera. El KDS muestra un aviso."
+                  valor={formulario.umbralAlertaCola}
+                  error={intentoGuardar ? errCola.umbralAlertaCola : undefined}
+                  rango={UMBRAL_ALERTA_COLA}
+                  onChange={(valor) => cambiar("umbralAlertaCola", valor)}
+                />
+                <CampoCola
+                  id="cola-minutos"
+                  etiqueta="Minutos de preparación por pedido"
+                  ayuda="Base del tiempo estimado que ve el comensal."
+                  valor={formulario.minutosPreparacion}
+                  error={
+                    intentoGuardar ? errCola.minutosPreparacion : undefined
+                  }
+                  rango={MINUTOS_PREPARACION}
+                  onChange={(valor) => cambiar("minutosPreparacion", valor)}
+                />
+              </div>
+            ) : (
+              <p className={CLASE_AYUDA}>
+                Desactivada: el mozo pasa cada pedido a preparación desde el
+                KDS, sin límite.
+              </p>
+            )}
           </section>
 
           {/* HU-036 (BL-206): contacto para los derechos sobre los datos. */}
