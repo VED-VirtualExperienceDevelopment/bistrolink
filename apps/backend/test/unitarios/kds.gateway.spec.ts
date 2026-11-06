@@ -5,6 +5,31 @@ import { WsAuthError } from '../../src/pedidos/ws-auth.service';
 const TENANT_ID = '11111111-1111-1111-1111-111111111111';
 const TENANT_ID_AJENO = 'aaaaaaaa-0000-0000-0000-000000000001';
 
+// HU-042 (BL-464): estados de la cola para los tests.
+const COLA_DESACTIVADA = {
+  activa: false,
+  limite: null,
+  enPreparacion: 0,
+  enEspera: 0,
+  umbralAlerta: 10,
+  altaDemanda: false,
+  minutosEstimados: 15,
+  orden: [],
+};
+const COLA_ACTIVA = {
+  activa: true,
+  limite: 5,
+  enPreparacion: 5,
+  enEspera: 2,
+  umbralAlerta: 10,
+  altaDemanda: false,
+  minutosEstimados: 24,
+  orden: [
+    { pedidoId: 'PED-101', posicion: 1, minutosEstimados: 18 },
+    { pedidoId: 'PED-102', posicion: 2, minutosEstimados: 21 },
+  ],
+};
+
 function mockClient(overrides: Record<string, unknown> = {}) {
   return {
     id: 'socket-123',
@@ -25,6 +50,7 @@ describe('KdsGateway', () => {
     listarSolicitudesEfectivo: jest.Mock;
     transicionar: jest.Mock;
     obtenerResumen: jest.Mock;
+    estadoCola: jest.Mock;
   };
   let mockModuleRef: { resolve: jest.Mock };
 
@@ -34,6 +60,9 @@ describe('KdsGateway', () => {
       listarSolicitudesEfectivo: jest.fn().mockResolvedValue([]),
       transicionar: jest.fn(),
       obtenerResumen: jest.fn(),
+      // HU-042 (BL-464): cola desactivada por defecto, así los tests
+      // anteriores no reciben eventos de cola.
+      estadoCola: jest.fn().mockResolvedValue(COLA_DESACTIVADA),
     };
     mockModuleRef = {
       resolve: jest.fn().mockResolvedValue(mockPedidosTransicion),
@@ -246,7 +275,10 @@ describe('KdsGateway', () => {
         estado: PedidoEstado.EN_PREPARACION,
         actualizadoEn: '2026-08-30T12:00:00.000Z',
       };
-      mockPedidosTransicion.transicionar.mockResolvedValue(actualizado);
+      mockPedidosTransicion.transicionar.mockResolvedValue({
+        actualizado,
+        promovidos: [],
+      });
       const client = mockClient();
 
       await gateway.onTransicion(client as any, {
@@ -265,6 +297,42 @@ describe('KdsGateway', () => {
       expect(mockServer.emit).toHaveBeenCalledWith(
         'pedido:actualizado',
         actualizado,
+      );
+    });
+
+    it('[TC-U-379] HU-042 (BL-463): al liberarse un lugar, avisa también el pedido que la cola pasó a preparación', async () => {
+      mockWsAuth.verify.mockResolvedValue({
+        sub: 'usuario-1',
+        tenantId: TENANT_ID,
+        roles: ['MOZO'],
+      });
+      const actualizado = {
+        id: 'pedido-1',
+        estado: PedidoEstado.LISTO_PARA_ENTREGAR,
+        actualizadoEn: '2026-11-05T12:05:00.000Z',
+      };
+      const promovido = {
+        id: 'PED-101',
+        estado: PedidoEstado.EN_PREPARACION,
+        actualizadoEn: '2026-11-05T12:05:01.000Z',
+        mesaNumero: 7,
+        lineas: [],
+      };
+      mockPedidosTransicion.transicionar.mockResolvedValue({
+        actualizado,
+        promovidos: [promovido],
+      });
+      const client = mockClient();
+
+      await gateway.onTransicion(client as any, {
+        pedidoId: 'pedido-1',
+        nuevoEstado: PedidoEstado.LISTO_PARA_ENTREGAR,
+      });
+
+      expect(mockServer.to).toHaveBeenCalledWith(`pedido:PED-101`);
+      expect(mockServer.emit).toHaveBeenCalledWith(
+        'pedido:actualizado',
+        promovido,
       );
     });
 
@@ -991,6 +1059,204 @@ describe('KdsGateway', () => {
       expect(snapshotDe(client)).toEqual([
         expect.objectContaining({ mesaId: 'mesa-1' }),
       ]);
+    });
+  });
+  describe('HU-042 (BL-464): estado de la cola', () => {
+    it('[TC-U-390] emitirEstadoCola: el estado completo al staff y a cada comensal en espera solo su lugar', () => {
+      gateway.emitirEstadoCola(TENANT_ID, COLA_ACTIVA);
+
+      expect(mockServer.to).toHaveBeenCalledWith(`tenant:${TENANT_ID}`);
+      expect(mockServer.emit).toHaveBeenCalledWith(
+        'cola:actualizada',
+        COLA_ACTIVA,
+      );
+      expect(mockServer.to).toHaveBeenCalledWith('pedido:PED-101');
+      expect(mockServer.emit).toHaveBeenCalledWith('pedido:cola', {
+        pedidoId: 'PED-101',
+        posicion: 1,
+        minutosEstimados: 18,
+      });
+      expect(mockServer.to).toHaveBeenCalledWith('pedido:PED-102');
+      expect(mockServer.emit).toHaveBeenCalledTimes(3);
+    });
+
+    it('[TC-U-391] al conectarse, el KDS (también Cocina) recibe el estado de la cola si está activa', async () => {
+      mockWsAuth.verify.mockResolvedValue({
+        sub: 'cocina-1',
+        tenantId: TENANT_ID,
+        roles: ['COCINA'],
+      });
+      mockPedidosTransicion.estadoCola.mockResolvedValue(COLA_ACTIVA);
+      const client = mockClient();
+
+      await gateway.handleConnection(client as any);
+
+      expect(client.emit.mock.calls.map(([evento]) => evento)).toEqual([
+        'pedidos:snapshot',
+        'cola:actualizada',
+      ]);
+      expect(client.emit).toHaveBeenCalledWith('cola:actualizada', COLA_ACTIVA);
+    });
+
+    it('[TC-U-392] si falla el estado de la cola, la conexión sigue y el snapshot de pedidos ya salió', async () => {
+      mockWsAuth.verify.mockResolvedValue({
+        sub: 'mozo-1',
+        tenantId: TENANT_ID,
+        roles: ['MOZO'],
+      });
+      mockPedidosTransicion.estadoCola.mockRejectedValue(new Error('timeout'));
+      const client = mockClient();
+
+      await gateway.handleConnection(client as any);
+
+      expect(client.emit).toHaveBeenCalledWith('pedidos:snapshot', []);
+      expect(client.disconnect).not.toHaveBeenCalled();
+    });
+
+    it('[TC-U-393] después de una transición avisa el estado de la cola al tenant', async () => {
+      mockWsAuth.verify.mockResolvedValue({
+        sub: 'usuario-1',
+        tenantId: TENANT_ID,
+        roles: ['MOZO'],
+      });
+      mockPedidosTransicion.transicionar.mockResolvedValue({
+        actualizado: {
+          id: 'pedido-1',
+          estado: PedidoEstado.LISTO_PARA_ENTREGAR,
+        },
+        promovidos: [],
+      });
+      mockPedidosTransicion.estadoCola.mockResolvedValue(COLA_ACTIVA);
+
+      await gateway.onTransicion(mockClient() as any, {
+        pedidoId: 'pedido-1',
+        nuevoEstado: PedidoEstado.LISTO_PARA_ENTREGAR,
+      });
+
+      expect(mockPedidosTransicion.estadoCola).toHaveBeenCalledWith(TENANT_ID);
+      expect(mockServer.emit).toHaveBeenCalledWith(
+        'cola:actualizada',
+        COLA_ACTIVA,
+      );
+    });
+
+    it('[TC-U-394] si la transición falla, no se avisa la cola', async () => {
+      mockWsAuth.verify.mockResolvedValue({
+        sub: 'usuario-1',
+        tenantId: TENANT_ID,
+        roles: ['MOZO'],
+      });
+      mockPedidosTransicion.transicionar.mockRejectedValue(
+        new Error('La cocina está al límite de 5 pedidos en preparación.'),
+      );
+
+      await gateway.onTransicion(mockClient() as any, {
+        pedidoId: 'pedido-1',
+        nuevoEstado: PedidoEstado.EN_PREPARACION,
+      });
+
+      expect(mockPedidosTransicion.estadoCola).not.toHaveBeenCalled();
+    });
+
+    it('[TC-U-395] con la cola desactivada no se emite nada de cola', async () => {
+      await gateway.avisarEstadoCola(TENANT_ID);
+
+      expect(mockServer.emit).not.toHaveBeenCalled();
+    });
+
+    it('[TC-U-406] HU-042 (BL-465): con forzar, avisa al KDS aunque la cola esté desactivada (se apagó desde Configuración)', async () => {
+      await gateway.avisarEstadoCola(TENANT_ID, { forzar: true });
+
+      expect(mockServer.to).toHaveBeenCalledWith(`tenant:${TENANT_ID}`);
+      expect(mockServer.emit).toHaveBeenCalledWith(
+        'cola:actualizada',
+        COLA_DESACTIVADA,
+      );
+    });
+
+    it('[TC-U-420] si falla el estado de la cola al avisar, no lanza ni emite nada', async () => {
+      mockPedidosTransicion.estadoCola.mockRejectedValue(new Error('timeout'));
+
+      await expect(
+        gateway.avisarEstadoCola(TENANT_ID),
+      ).resolves.toBeUndefined();
+      expect(mockServer.emit).not.toHaveBeenCalled();
+    });
+
+    it('[TC-U-421] si falla el lugar en la cola, el comensal igual recibe el estado de su pedido', async () => {
+      mockWsAuth.verify.mockResolvedValue({
+        sub: 'comensal-1',
+        tenantId: TENANT_ID,
+        roles: ['COMENSAL'],
+      });
+      const resumen = {
+        id: 'PED-102',
+        estado: PedidoEstado.RECIBIDO,
+        actualizadoEn: '2026-11-05T12:00:00.000Z',
+      };
+      mockPedidosTransicion.obtenerResumen.mockResolvedValue(resumen);
+      mockPedidosTransicion.estadoCola.mockRejectedValue(new Error('timeout'));
+      const client = mockClient();
+
+      await gateway.onSeguirPedido(client as any, { pedidoId: 'PED-102' });
+
+      expect(client.emit).toHaveBeenCalledWith('pedido:actualizado', resumen);
+      expect(client.emit).not.toHaveBeenCalledWith(
+        'pedido:cola',
+        expect.anything(),
+      );
+      expect(client.disconnect).not.toHaveBeenCalled();
+    });
+
+    it('[TC-U-396] el comensal que sigue un pedido en espera recibe solo su lugar en la cola', async () => {
+      mockWsAuth.verify.mockResolvedValue({
+        sub: 'comensal-1',
+        tenantId: TENANT_ID,
+        roles: ['COMENSAL'],
+      });
+      mockPedidosTransicion.obtenerResumen.mockResolvedValue({
+        id: 'PED-102',
+        estado: PedidoEstado.RECIBIDO,
+        actualizadoEn: '2026-11-05T12:00:00.000Z',
+      });
+      mockPedidosTransicion.estadoCola.mockResolvedValue(COLA_ACTIVA);
+      const client = mockClient();
+
+      await gateway.onSeguirPedido(client as any, { pedidoId: 'PED-102' });
+
+      expect(client.emit).toHaveBeenCalledWith('pedido:cola', {
+        pedidoId: 'PED-102',
+        posicion: 2,
+        minutosEstimados: 21,
+      });
+      // Nunca el estado completo de la cola ni el lugar de otro pedido.
+      expect(client.emit).not.toHaveBeenCalledWith(
+        'cola:actualizada',
+        expect.anything(),
+      );
+      expect(client.emit).not.toHaveBeenCalledWith(
+        'pedido:cola',
+        expect.objectContaining({ pedidoId: 'PED-101' }),
+      );
+    });
+
+    it('[TC-U-397] un pedido que ya está en preparación no consulta la cola', async () => {
+      mockWsAuth.verify.mockResolvedValue({
+        sub: 'comensal-1',
+        tenantId: TENANT_ID,
+        roles: ['COMENSAL'],
+      });
+      mockPedidosTransicion.obtenerResumen.mockResolvedValue({
+        id: 'pedido-1',
+        estado: PedidoEstado.EN_PREPARACION,
+        actualizadoEn: '2026-11-05T12:00:00.000Z',
+      });
+
+      await gateway.onSeguirPedido(mockClient() as any, {
+        pedidoId: 'pedido-1',
+      });
+
+      expect(mockPedidosTransicion.estadoCola).not.toHaveBeenCalled();
     });
   });
 });

@@ -707,12 +707,21 @@ describe('PedidosService.confirmarPagoEnTx / notificarPedidoConfirmado (BL-311, 
       pedido: {
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         findUniqueOrThrow: jest.fn().mockResolvedValue(pedidoConfirmado),
+        // HU-042 (BL-463): cola del KDS.
+        count: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
       },
-      pedidoEstadoHistorial: { create: jest.fn() },
+      pedidoEstadoHistorial: { create: jest.fn(), createMany: jest.fn() },
+      // HU-042 (BL-463): sin límite configurado (cola desactivada) por
+      // defecto, así los tests anteriores no cambian.
+      restaurante: { findUnique: jest.fn().mockResolvedValue(null) },
+      $executeRaw: jest.fn(),
     };
     mockKdsGateway = {
       emitirNuevoPedido: jest.fn(),
       emitirActualizacionPedido: jest.fn(),
+      emitirPedidoActualizado: jest.fn(),
+      avisarEstadoCola: jest.fn().mockResolvedValue(undefined),
       emitirEstadoMesa: jest.fn(),
       emitirReportesActualizados: jest.fn(),
     };
@@ -730,7 +739,8 @@ describe('PedidosService.confirmarPagoEnTx / notificarPedidoConfirmado (BL-311, 
 
     expect(mockTx.pedido.updateMany).toHaveBeenCalledWith({
       where: { id: 'pedido-nuevo', estado: 'PENDIENTE_PAGO' },
-      data: { estado: 'RECIBIDO' },
+      // HU-042 (BL-463): con la hora de llegada a la cola.
+      data: { estado: 'RECIBIDO', encoladoEn: expect.any(Date) },
     });
   });
 
@@ -840,6 +850,96 @@ describe('PedidosService.confirmarPagoEnTx / notificarPedidoConfirmado (BL-311, 
         actualizadoEn: '2026-10-10T23:45:00.000Z',
       },
     );
+  });
+
+  it('[TC-U-380] HU-042: con la cola desactivada no toma el lock ni cuenta pedidos (como antes)', async () => {
+    await service.confirmarPagoEnTx(mockTx, TENANT_ID, 'pedido-nuevo');
+
+    expect(mockTx.$executeRaw).not.toHaveBeenCalled();
+    expect(mockTx.pedido.count).not.toHaveBeenCalled();
+  });
+
+  it('[TC-U-381] HU-042: con lugar en cocina, el pedido pasa a EN_PREPARACION en la misma transacción', async () => {
+    mockTx.restaurante.findUnique.mockResolvedValue({
+      limitePedidosEnPreparacion: 5,
+    });
+    mockTx.pedido.count.mockResolvedValue(3);
+    mockTx.pedido.findMany.mockResolvedValue([
+      { id: 'pedido-nuevo', mesa: { numero: 5 }, lineas: [] },
+    ]);
+    const enPreparacion = { ...pedidoConfirmado, estado: 'EN_PREPARACION' };
+    mockTx.pedido.findUniqueOrThrow.mockResolvedValue(enPreparacion);
+
+    const resultado = await service.confirmarPagoEnTx(
+      mockTx,
+      TENANT_ID,
+      'pedido-nuevo',
+    );
+
+    expect(mockTx.$executeRaw).toHaveBeenCalled();
+    expect(mockTx.pedido.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ['pedido-nuevo'] }, estado: 'RECIBIDO' },
+      data: { estado: 'EN_PREPARACION', updatedAt: expect.any(Date) },
+    });
+    expect(mockTx.pedidoEstadoHistorial.createMany).toHaveBeenCalledWith({
+      data: [
+        {
+          tenantId: TENANT_ID,
+          pedidoId: 'pedido-nuevo',
+          usuarioId: null,
+          estadoAnterior: 'RECIBIDO',
+          estadoNuevo: 'EN_PREPARACION',
+        },
+      ],
+    });
+    expect(resultado?.estado).toBe('EN_PREPARACION');
+  });
+
+  it('[TC-U-382] HU-042: con la cocina al límite, el pedido queda en RECIBIDO (en espera)', async () => {
+    mockTx.restaurante.findUnique.mockResolvedValue({
+      limitePedidosEnPreparacion: 5,
+    });
+    mockTx.pedido.count.mockResolvedValue(5);
+
+    const resultado = await service.confirmarPagoEnTx(
+      mockTx,
+      TENANT_ID,
+      'pedido-nuevo',
+    );
+
+    expect(mockTx.pedido.findMany).not.toHaveBeenCalled();
+    expect(mockTx.pedido.updateMany).toHaveBeenCalledTimes(1);
+    expect(resultado?.estado).toBe('RECIBIDO');
+    expect(resultado).not.toHaveProperty('promovidos');
+  });
+
+  it('[TC-U-383] HU-042: notificarPedidoConfirmado avisa los otros pedidos de la cola que pasaron a preparación, no el mismo dos veces', () => {
+    const otro = {
+      id: 'pedido-viejo',
+      estado: 'EN_PREPARACION',
+      actualizadoEn: '2026-10-10T23:45:00.000Z',
+      mesaNumero: 2,
+      lineas: [],
+    };
+    const mismo = { ...otro, id: 'pedido-nuevo', mesaNumero: 5 };
+
+    service.notificarPedidoConfirmado(TENANT_ID, {
+      ...pedidoConfirmado,
+      estado: 'EN_PREPARACION',
+      promovidos: [otro, mismo],
+    } as any);
+
+    expect(mockKdsGateway.emitirPedidoActualizado).toHaveBeenCalledTimes(1);
+    expect(mockKdsGateway.emitirPedidoActualizado).toHaveBeenCalledWith(
+      TENANT_ID,
+      otro,
+    );
+  });
+
+  it('[TC-U-398] HU-042 (BL-464): notificarPedidoConfirmado avisa el estado de la cola del tenant', () => {
+    service.notificarPedidoConfirmado(TENANT_ID, pedidoConfirmado as any);
+
+    expect(mockKdsGateway.avisarEstadoCola).toHaveBeenCalledWith(TENANT_ID);
   });
 
   it('[TC-U-336] HU-015: confirmar el pago descuenta el stock en la misma transacción', async () => {

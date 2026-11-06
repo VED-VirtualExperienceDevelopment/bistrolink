@@ -6,13 +6,22 @@ import { useKeycloakAuth } from "@/components/providers/KeycloakProvider";
 import Switch from "@/components/ui/Switch";
 import { apiFetch, ApiError } from "@/lib/api-client";
 import AnonimizarDatosFactura from "@/components/admin/configuracion/AnonimizarDatosFactura";
+import SeccionCocina from "@/components/admin/configuracion/SeccionCocina";
+import {
+  CLASE_AYUDA,
+  CLASE_BOTON,
+  CLASE_CONTROL,
+  CLASE_ETIQUETA,
+  CLASE_PROXIMAMENTE,
+  CLASE_TARJETA,
+  CLASE_TITULO_TARJETA,
+} from "@/components/admin/configuracion/configuracion.estilos";
 import {
   cambiosParaGuardar,
-  errorEmailPrivacidad,
-  errorRazonSocial,
+  erroresDelFormulario,
   formularioDesde,
   hayCambios,
-  leerPropinas,
+  primerCampoConError,
   LARGO_MAXIMO_EMAIL,
   LARGO_MAXIMO_RAZON_SOCIAL,
   MAXIMO_PROPINAS,
@@ -24,23 +33,12 @@ import {
   type FormularioConfiguracion,
 } from "@/components/admin/configuracion/configuracion.utils";
 
-const CLASE_CONTROL =
-  "min-h-12 w-full rounded-lg border border-outline-variant bg-surface-container-lowest px-3 text-body-md text-on-surface focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 aria-[invalid=true]:border-error";
-const CLASE_ETIQUETA = "mb-1 block text-label-md text-on-surface-variant";
-const CLASE_TARJETA =
-  "space-y-4 rounded-xl border border-outline-variant bg-surface-container-lowest p-4 md:p-6";
-const CLASE_TITULO_TARJETA = "text-headline-sm text-on-surface";
-const CLASE_AYUDA = "text-body-sm text-on-surface-variant";
-const CLASE_PROXIMAMENTE =
-  "rounded-full bg-surface-container-high px-2 py-0.5 text-label-sm text-on-surface-variant";
-const CLASE_BOTON =
-  "flex min-h-12 items-center justify-center gap-2 rounded-lg bg-primary px-5 text-body-md font-medium text-on-primary hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-50";
-
 /**
  * HU-020 (BL-72): configuración del establecimiento. El administrador
  * revisa los datos fiscales del emisor, elige el proveedor de CFE, habilita
  * los medios de pago y define los porcentajes de propina sugeridos. Cada
  * cambio queda en el registro de auditoría.
+ * HU-042 (BL-465): también configura la cola de pedidos del KDS.
  */
 export default function ConfiguracionPage() {
   const { token, hasRole } = useKeycloakAuth();
@@ -93,17 +91,13 @@ export default function ConfiguracionPage() {
     setErrorGuardar(null);
   }
 
-  const lecturaPropinas = formulario ? leerPropinas(formulario.propinas) : null;
-  const errorPropinas =
-    lecturaPropinas && "error" in lecturaPropinas
-      ? lecturaPropinas.error
-      : null;
-  const errorRazon = formulario
-    ? errorRazonSocial(formulario.razonSocial)
-    : null;
-  const errorEmail = formulario
-    ? errorEmailPrivacidad(formulario.emailPrivacidad)
-    : null;
+  const errores = erroresDelFormulario(formulario);
+  const {
+    razonSocial: errorRazon,
+    propinas: errorPropinas,
+    email: errorEmail,
+    cola: errCola,
+  } = errores;
   const cambios =
     guardada && formulario ? cambiosParaGuardar(guardada, formulario) : {};
   const conCambios = hayCambios(cambios);
@@ -113,11 +107,9 @@ export default function ConfiguracionPage() {
     e.preventDefault();
     setIntentoGuardar(true);
     // Con un error, el foco va al primer campo mal cargado.
-    if (errorRazon || errorPropinas || errorEmail) {
-      let campo = "email-privacidad";
-      if (errorRazon) campo = "razon-social";
-      else if (errorPropinas) campo = "propinas";
-      document.getElementById(campo)?.focus();
+    const campoConError = primerCampoConError(errores);
+    if (campoConError) {
+      document.getElementById(campoConError)?.focus();
       return;
     }
     if (!guardada || !conCambios) return;
@@ -359,6 +351,13 @@ export default function ConfiguracionPage() {
               )}
             </div>
           </section>
+
+          {/* HU-042 (BL-465): cola de pedidos del KDS. */}
+          <SeccionCocina
+            formulario={formulario}
+            errores={intentoGuardar ? errCola : {}}
+            onCambiar={cambiar}
+          />
 
           {/* HU-036 (BL-206): contacto para los derechos sobre los datos. */}
           <section

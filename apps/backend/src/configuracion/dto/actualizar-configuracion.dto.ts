@@ -54,6 +54,18 @@ function valoresPermitidos(medio: MedioPagoConfigurable): boolean[] {
     : [false];
 }
 
+/**
+ * HU-042 (BL-465): rangos de la cola del KDS. Los mismos que los CHECK de la
+ * migración 20261105120000_kds_cola_pedidos; pensados para locales chicos y
+ * medianos (se amplían si hace falta).
+ */
+export const LIMITE_PREPARACION_MINIMO = 1;
+export const LIMITE_PREPARACION_MAXIMO = 50;
+export const UMBRAL_ALERTA_COLA_MINIMO = 1;
+export const UMBRAL_ALERTA_COLA_MAXIMO = 200;
+export const MINUTOS_PREPARACION_MINIMO = 1;
+export const MINUTOS_PREPARACION_MAXIMO = 180;
+
 /** HU-036 (BL-206): largo máximo de un correo (RFC 5321) y de la columna. */
 export const LARGO_MAXIMO_EMAIL = 254;
 
@@ -152,4 +164,47 @@ export class ActualizarConfiguracionDto {
     message: `El correo de privacidad puede tener hasta ${LARGO_MAXIMO_EMAIL} caracteres`,
   })
   emailPrivacidad?: string | null;
+
+  // HU-042 (BL-465, ADR 0010): cola del KDS. null desactiva la cola
+  // automática (el mozo pasa los pedidos a preparación a mano, como antes).
+  @IsOptional()
+  @ValidateIf((_dto, valor) => valor !== null)
+  @IsInt({
+    message: 'El límite de pedidos en preparación debe ser un número entero',
+  })
+  @Min(LIMITE_PREPARACION_MINIMO, {
+    message: `El límite de pedidos en preparación debe ser al menos ${LIMITE_PREPARACION_MINIMO}`,
+  })
+  @Max(LIMITE_PREPARACION_MAXIMO, {
+    message: `El límite de pedidos en preparación puede ser como máximo ${LIMITE_PREPARACION_MAXIMO}`,
+  })
+  limitePedidosEnPreparacion?: number | null;
+
+  // Opcional, pero nunca null: la columna es NOT NULL (IsOptional
+  // dejaría pasar null).
+  @ValidateIf((_dto, valor) => valor !== undefined)
+  @IsInt({
+    message: 'El umbral de alerta de la cola debe ser un número entero',
+  })
+  @Min(UMBRAL_ALERTA_COLA_MINIMO, {
+    message: `El umbral de alerta de la cola debe ser al menos ${UMBRAL_ALERTA_COLA_MINIMO}`,
+  })
+  @Max(UMBRAL_ALERTA_COLA_MAXIMO, {
+    message: `El umbral de alerta de la cola puede ser como máximo ${UMBRAL_ALERTA_COLA_MAXIMO}`,
+  })
+  umbralAlertaCola?: number;
+
+  // Opcional, pero nunca null: la columna es NOT NULL (IsOptional
+  // dejaría pasar null).
+  @ValidateIf((_dto, valor) => valor !== undefined)
+  @IsInt({
+    message: 'Los minutos de preparación estimados deben ser un número entero',
+  })
+  @Min(MINUTOS_PREPARACION_MINIMO, {
+    message: `Los minutos de preparación estimados deben ser al menos ${MINUTOS_PREPARACION_MINIMO}`,
+  })
+  @Max(MINUTOS_PREPARACION_MAXIMO, {
+    message: `Los minutos de preparación estimados pueden ser como máximo ${MINUTOS_PREPARACION_MAXIMO}`,
+  })
+  minutosPreparacionEstimados?: number;
 }

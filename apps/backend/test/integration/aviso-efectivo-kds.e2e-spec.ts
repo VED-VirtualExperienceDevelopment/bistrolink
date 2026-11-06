@@ -109,7 +109,11 @@ function conectarKds(baseUrl: string, token: string) {
       resolve();
     });
   });
-  for (const evento of ['llamados:snapshot', 'llamado:nuevo', 'llamado:resuelto']) {
+  for (const evento of [
+    'llamados:snapshot',
+    'llamado:nuevo',
+    'llamado:resuelto',
+  ]) {
     socket.on(evento, () => eventos.push(evento));
   }
   socket.on('mesa:estado_actualizado', () => controles.push('mesa'));

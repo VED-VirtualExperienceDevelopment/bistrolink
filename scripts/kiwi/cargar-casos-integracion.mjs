@@ -223,6 +223,14 @@ const stock = (ticket, extra = {}) => ({
   ...extra,
   tags: ["HU-015", ticket, "stock", ...(extra.tags ?? [])],
 });
+// HU-042 (BL-467): cola del KDS y límite de pedidos en preparación, en
+// cola-kds.e2e-spec.ts.
+const colaKds = (extra = {}) => ({
+  component: "api",
+  requirement: "HU-042",
+  ...extra,
+  tags: ["HU-042", "BL-467", "kds", ...(extra.tags ?? [])],
+});
 const DATOS_INTEGRACION = {
   55: {
     category: "Funcional",
@@ -663,6 +671,23 @@ const DATOS_INTEGRACION = {
     priority: "P1",
     tags: ["HU-023", "BL-96", "cfe", "multi-tenant", "auditoria"],
   },
+  // HU-042 (BL-467): cola del KDS.
+  164: colaKds({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["concurrencia", "integridad-datos"],
+  }),
+  165: colaKds({ category: "Funcional", priority: "P1" }),
+  166: colaKds({
+    category: "Funcional",
+    priority: "P2",
+    tags: ["compatibilidad"],
+  }),
+  167: colaKds({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["multi-tenant", "RD.07"],
+  }),
 };
 /**
  * BL-435: datos de los E2E TC-E-017 en adelante, con los criterios de

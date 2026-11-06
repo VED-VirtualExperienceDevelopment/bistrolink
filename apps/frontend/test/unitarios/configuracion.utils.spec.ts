@@ -2,7 +2,11 @@ import {
   cambiosParaGuardar,
   errorEmailPrivacidad,
   errorRazonSocial,
+  erroresCola,
+  erroresDelFormulario,
   formularioDesde,
+  hayErroresCola,
+  primerCampoConError,
   hayCambios,
   leerPropinas,
   sinMediosDePago,
@@ -80,6 +84,12 @@ describe("cambios para guardar", () => {
       propinas: "10, 15",
       cfeProveedor: "SURTEC",
       emailPrivacidad: "",
+      // HU-042 (BL-465): un backend anterior no trae la cola: desactivada,
+      // con los valores que la pantalla propone al activarla.
+      colaActiva: false,
+      limitePreparacion: "5",
+      umbralAlertaCola: "10",
+      minutosPreparacion: "15",
     });
   });
 });
@@ -151,5 +161,148 @@ describe("mensajeAnonimizacion (HU-009, BL-453)", () => {
     expect(mensajeAnonimizacion({ pedidos: 3 })).toBe(
       "Listo: se anonimizaron 3 pedidos.",
     );
+  });
+});
+
+describe("HU-042 (BL-465): cola del KDS", () => {
+  const CON_COLA: ConfiguracionEstablecimiento = {
+    ...GUARDADA,
+    limitePedidosEnPreparacion: 5,
+    umbralAlertaCola: 10,
+    minutosPreparacionEstimados: 15,
+  };
+
+  it("[TC-U-407] el formulario arranca con la cola guardada", () => {
+    expect(formularioDesde(CON_COLA)).toEqual(
+      expect.objectContaining({
+        colaActiva: true,
+        limitePreparacion: "5",
+        umbralAlertaCola: "10",
+        minutosPreparacion: "15",
+      }),
+    );
+    expect(
+      formularioDesde({ ...CON_COLA, limitePedidosEnPreparacion: null })
+        .colaActiva,
+    ).toBe(false);
+  });
+
+  it("[TC-U-408] activar la cola manda el límite; cambiar el umbral o los minutos manda solo eso", () => {
+    expect(
+      cambiosParaGuardar(GUARDADA, {
+        ...formularioDesde(GUARDADA),
+        colaActiva: true,
+        limitePreparacion: "4",
+      }),
+    ).toEqual({ limitePedidosEnPreparacion: 4 });
+
+    expect(
+      cambiosParaGuardar(CON_COLA, {
+        ...formularioDesde(CON_COLA),
+        umbralAlertaCola: " 8 ",
+        minutosPreparacion: "20",
+      }),
+    ).toEqual({ umbralAlertaCola: 8, minutosPreparacionEstimados: 20 });
+  });
+
+  it("[TC-U-409] apagar la cola manda el límite en null y no toca el umbral ni los minutos", () => {
+    expect(
+      cambiosParaGuardar(CON_COLA, {
+        ...formularioDesde(CON_COLA),
+        colaActiva: false,
+        umbralAlertaCola: "99",
+      }),
+    ).toEqual({ limitePedidosEnPreparacion: null });
+  });
+
+  it("[TC-U-410] con la cola apagada y sin guardar, no hay nada que mandar", () => {
+    const cambios = cambiosParaGuardar(GUARDADA, formularioDesde(GUARDADA));
+    expect(hayCambios(cambios)).toBe(false);
+  });
+
+  it("[TC-U-411] valida enteros dentro de rango, solo con la cola activa", () => {
+    const formulario = { ...formularioDesde(CON_COLA) };
+    expect(hayErroresCola(erroresCola(formulario))).toBe(false);
+
+    expect(
+      erroresCola({
+        ...formulario,
+        limitePreparacion: "0",
+        umbralAlertaCola: "2.5",
+        minutosPreparacion: "181",
+      }),
+    ).toEqual({
+      limitePreparacion: "Tiene que estar entre 1 y 50.",
+      umbralAlertaCola: "Escribí un número entero.",
+      minutosPreparacion: "Tiene que estar entre 1 y 180.",
+    });
+
+    expect(
+      erroresCola({ ...formulario, colaActiva: false, limitePreparacion: "" }),
+    ).toEqual({});
+  });
+});
+
+describe("primerCampoConError", () => {
+  const SIN_ERRORES = {
+    razonSocial: null,
+    propinas: null,
+    cola: {},
+    email: null,
+  };
+
+  it("[TC-U-422] devuelve el primer campo con error en el orden de la pantalla, o null", () => {
+    expect(primerCampoConError(SIN_ERRORES)).toBeNull();
+    expect(
+      primerCampoConError({
+        ...SIN_ERRORES,
+        email: "mal",
+        cola: { umbralAlertaCola: "mal" },
+      }),
+    ).toBe("cola-umbral");
+    expect(
+      primerCampoConError({
+        ...SIN_ERRORES,
+        propinas: "mal",
+        cola: { limitePreparacion: "mal" },
+      }),
+    ).toBe("propinas");
+    expect(primerCampoConError({ ...SIN_ERRORES, email: "mal" })).toBe(
+      "email-privacidad",
+    );
+  });
+});
+
+describe("erroresDelFormulario", () => {
+  it("[TC-U-423] junta los errores de todos los campos; sin formulario no hay errores", () => {
+    expect(erroresDelFormulario(null)).toEqual({
+      razonSocial: null,
+      propinas: null,
+      email: null,
+      cola: {},
+    });
+
+    expect(
+      erroresDelFormulario({
+        ...formularioDesde(GUARDADA),
+        razonSocial: "   ",
+        propinas: "diez",
+        emailPrivacidad: "no-es-un-correo",
+        colaActiva: true,
+        limitePreparacion: "0",
+      }),
+    ).toEqual({
+      razonSocial: "La razón social es obligatoria.",
+      propinas: expect.any(String),
+      email: expect.any(String),
+      cola: { limitePreparacion: "Tiene que estar entre 1 y 50." },
+    });
+
+    expect(erroresDelFormulario(formularioDesde(GUARDADA))).toEqual({
+      razonSocial: null,
+      propinas: null,
+      email: null,
+      cola: {},
+    });
   });
 });

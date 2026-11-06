@@ -20,6 +20,7 @@ import {
   type AvisosStock,
 } from '../stock/descuento-stock.service';
 import { cantidadesPorItem, faltaStock } from '../stock/estado-stock';
+import { completarCapacidad, type PedidoPromovido } from './cola-kds';
 
 // BL-311 (RD.03, prepago): el pedido espera el pago aprobado antes de ir a
 // cocina. La transición a RECIBIDO la hace la confirmación del pago.
@@ -28,8 +29,13 @@ export const ESTADO_INICIAL_PEDIDO = 'PENDIENTE_PAGO' as const;
 /**
  * HU-015 (BL-120): el pedido recién confirmado, con lo que hay que avisar
  * del stock después del commit (notificarPedidoConfirmado).
+ * HU-042 (BL-463): y los pedidos que la cola pasó a EN_PREPARACION en la
+ * misma transacción (puede incluir a este mismo pedido).
  */
-export type PedidoConfirmado = PedidoParaKds & { avisosStock?: AvisosStock };
+export type PedidoConfirmado = PedidoParaKds & {
+  avisosStock?: AvisosStock;
+  promovidos?: PedidoPromovido[];
+};
 const NUMERO_MESA_VIRTUAL = 0;
 // usuario.keycloak_id es UUID: un actor que no lo es (un script) no se busca.
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -191,9 +197,11 @@ export class PedidosService {
     pedidoId: string,
     usuarioId: string | null = null,
   ): Promise<PedidoConfirmado | null> {
+    // HU-042 (BL-463): encolado_en es la hora de llegada a cocina y define
+    // el orden de la cola (FIFO), no created_at (el carrito es anterior).
     const { count } = await tx.pedido.updateMany({
       where: { id: pedidoId, estado: 'PENDIENTE_PAGO' },
-      data: { estado: 'RECIBIDO' },
+      data: { estado: 'RECIBIDO', encoladoEn: new Date() },
     });
     if (count === 0) {
       return null;
@@ -217,6 +225,12 @@ export class PedidosService {
       pedidoId,
     );
 
+    // HU-042 (BL-463, ADR 0010): con la cola activa y lugar en cocina, el
+    // pedido pasa a EN_PREPARACION en esta misma transacción; si no, queda
+    // en RECIBIDO («en espera»). Se lee después, así el KDS y el comensal
+    // reciben el estado final.
+    const promovidos = await completarCapacidad(tx, tenantId);
+
     const pedido = await tx.pedido.findUniqueOrThrow({
       where: { id: pedidoId },
       select: {
@@ -236,7 +250,11 @@ export class PedidosService {
         },
       },
     });
-    return { ...pedido, avisosStock };
+    return {
+      ...pedido,
+      avisosStock,
+      ...(promovidos.length > 0 && { promovidos }),
+    };
   }
 
   /**
@@ -277,6 +295,16 @@ export class PedidosService {
       estado: pedido.estado,
       actualizadoEn: (pedido.updatedAt ?? new Date()).toISOString(),
     });
+    // HU-042 (BL-463): otros pedidos de la cola que pasaron a preparación en
+    // la misma transacción. Este mismo ya salió en `pedido:nuevo`.
+    for (const promovido of pedido.promovidos ?? []) {
+      if (promovido.id !== pedido.id) {
+        this.kdsGateway.emitirPedidoActualizado(tenantId, promovido);
+      }
+    }
+    // HU-042 (BL-464): entró un pedido a cocina; la cola cambió. En segundo
+    // plano y sin lanzar, como el resumen de ventas.
+    void this.kdsGateway.avisarEstadoCola(tenantId);
     // HU-012 (BL-219): el dashboard de reportes se actualiza con el cobro.
     // En segundo plano: el pago ya está confirmado y no espera al resumen.
     void this.actualizarReportes(tenantId);

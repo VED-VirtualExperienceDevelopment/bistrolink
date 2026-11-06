@@ -126,4 +126,34 @@ describe('ActualizarConfiguracionDto (HU-020, BL-72)', () => {
       },
     );
   });
+  describe('HU-042 (BL-465): cola del KDS', () => {
+    it('[TC-U-399] acepta el límite, el umbral y los minutos dentro de rango, y null para desactivar la cola', async () => {
+      expect(
+        await errores({
+          limitePedidosEnPreparacion: 5,
+          umbralAlertaCola: 10,
+          minutosPreparacionEstimados: 15,
+        }),
+      ).toEqual([]);
+      expect(await errores({ limitePedidosEnPreparacion: null })).toEqual([]);
+    });
+
+    it.each([
+      ['limitePedidosEnPreparacion', 0],
+      ['limitePedidosEnPreparacion', 51],
+      ['limitePedidosEnPreparacion', 2.5],
+      ['limitePedidosEnPreparacion', '5'],
+      ['umbralAlertaCola', 0],
+      ['umbralAlertaCola', 201],
+      ['umbralAlertaCola', null],
+      ['minutosPreparacionEstimados', 0],
+      ['minutosPreparacionEstimados', 181],
+      ['minutosPreparacionEstimados', 12.5],
+    ])(
+      '[TC-U-400] rechaza %s = %p (fuera de rango o no entero)',
+      async (campo, valor) => {
+        expect(await errores({ [campo]: valor })).toEqual([campo]);
+      },
+    );
+  });
 });
