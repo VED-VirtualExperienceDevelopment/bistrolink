@@ -4,6 +4,7 @@ import Switch from "@/components/ui/Switch";
 import {
   CLASE_AYUDA,
   CLASE_CONTROL,
+  CLASE_ERROR_CAMPO,
   CLASE_ETIQUETA,
   CLASE_TARJETA,
   CLASE_TITULO_TARJETA,
@@ -66,7 +67,7 @@ function CampoCola({
         {ayuda}
       </p>
       {error && (
-        <p id={`${id}-error`} className="mt-1 text-body-sm text-error">
+        <p id={`${id}-error`} className={CLASE_ERROR_CAMPO}>
           {error}
         </p>
       )}
@@ -79,6 +80,8 @@ interface SeccionCocinaProps {
   /** Errores a mostrar (vacío hasta que el administrador intenta guardar). */
   errores: ErroresCola;
   onCambiar: CambiarCampo;
+  /** BL-473: clases extra del layout (por ejemplo, ocupar las 2 columnas). */
+  className?: string;
 }
 
 /**
@@ -92,18 +95,22 @@ export default function SeccionCocina({
   formulario,
   errores,
   onCambiar,
+  className = "",
 }: Readonly<SeccionCocinaProps>) {
   return (
-    <section aria-labelledby="titulo-cocina" className={CLASE_TARJETA}>
+    <section
+      aria-labelledby="titulo-cocina"
+      className={`${CLASE_TARJETA} ${className}`}
+    >
       <h2 id="titulo-cocina" className={CLASE_TITULO_TARJETA}>
         Cocina
       </h2>
       <div className="flex items-center justify-between gap-4">
-        <div>
+        <div className="min-w-0">
           <p className="text-body-md text-on-surface">
             Cola automática de pedidos
           </p>
-          <p className={CLASE_AYUDA}>
+          <p id="cola-descripcion" className={CLASE_AYUDA}>
             Limita cuántos pedidos prepara la cocina a la vez. Los demás esperan
             en orden de llegada y pasan a preparación solos cuando se marca uno
             como listo.
@@ -113,10 +120,11 @@ export default function SeccionCocina({
           checked={formulario.colaActiva}
           onChange={(valor) => onCambiar("colaActiva", valor)}
           label="Cola automática de pedidos"
+          describedBy="cola-descripcion"
         />
       </div>
       {formulario.colaActiva ? (
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <CampoCola
             id="cola-limite"
             etiqueta="Pedidos en preparación a la vez"

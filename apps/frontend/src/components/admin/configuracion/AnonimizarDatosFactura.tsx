@@ -4,17 +4,21 @@ import { useState } from "react";
 import { apiFetch, ApiError } from "@/lib/api-client";
 import { errorDeRut, normalizarRut } from "@/lib/rut";
 import {
+  CLASE_AYUDA,
+  CLASE_BOTON_PELIGRO,
+  CLASE_BOTON_SECUNDARIO,
+  CLASE_CONTROL,
+  CLASE_ERROR_CAMPO,
+  CLASE_ERROR_GENERAL,
+  CLASE_ETIQUETA,
+  CLASE_TARJETA,
+  CLASE_TITULO_TARJETA,
+} from "./configuracion.estilos";
+import {
   mensajeAnonimizacion,
   RUTA_ANONIMIZAR_RECEPTOR,
   type ResultadoAnonimizacion,
 } from "./configuracion.utils";
-
-const CLASE_CONTROL =
-  "min-h-12 w-full rounded-lg border border-outline-variant bg-surface-container-lowest px-3 text-body-md text-on-surface focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 aria-[invalid=true]:border-error";
-const CLASE_BOTON_SECUNDARIO =
-  "min-h-12 rounded-lg border border-outline-variant px-4 text-body-md text-primary hover:bg-surface-container-high focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-50";
-const CLASE_BOTON_PELIGRO =
-  "min-h-12 rounded-lg bg-error px-4 text-body-md font-medium text-on-error hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-error disabled:cursor-not-allowed disabled:opacity-50";
 
 /**
  * HU-009 (BL-453): pedido de supresión de un comensal que pidió e-Factura
@@ -78,14 +82,11 @@ export default function AnonimizarDatosFactura({
   }
 
   return (
-    <section
-      aria-labelledby="titulo-anonimizar"
-      className="space-y-4 rounded-xl border border-outline-variant bg-surface-container-lowest p-4 md:p-6"
-    >
-      <h2 id="titulo-anonimizar" className="text-headline-sm text-on-surface">
+    <section aria-labelledby="titulo-anonimizar" className={CLASE_TARJETA}>
+      <h2 id="titulo-anonimizar" className={CLASE_TITULO_TARJETA}>
         Anonimizar datos de facturación
       </h2>
-      <p className="text-body-sm text-on-surface-variant">
+      <p className={CLASE_AYUDA}>
         Si un comensal que pidió e-Factura te pide eliminar sus datos, ingresá
         su RUT: se borran el RUT y la razón social de sus pedidos. Las
         e-Facturas ya emitidas y los montos no cambian (se conservan 5 años por
@@ -93,10 +94,7 @@ export default function AnonimizarDatosFactura({
       </p>
       <form onSubmit={pedirConfirmacion} noValidate className="space-y-3">
         <div>
-          <label
-            htmlFor="anonimizar-rut"
-            className="mb-1 block text-label-md text-on-surface-variant"
-          >
+          <label htmlFor="anonimizar-rut" className={CLASE_ETIQUETA}>
             RUT del comensal
           </label>
           <input
@@ -116,10 +114,7 @@ export default function AnonimizarDatosFactura({
             className={CLASE_CONTROL}
           />
           {mostrarError && (
-            <p
-              id="anonimizar-rut-error"
-              className="mt-1 text-body-sm text-error"
-            >
+            <p id="anonimizar-rut-error" className={CLASE_ERROR_CAMPO}>
               {errorRut}
             </p>
           )}
@@ -157,17 +152,17 @@ export default function AnonimizarDatosFactura({
             </div>
           </div>
         ) : (
-          <button type="submit" className={CLASE_BOTON_SECUNDARIO}>
+          <button
+            type="submit"
+            className={`${CLASE_BOTON_SECUNDARIO} w-full sm:w-auto`}
+          >
             Anonimizar
           </button>
         )}
       </form>
 
       {error && (
-        <p
-          role="alert"
-          className="rounded-xl bg-error-container px-4 py-3 text-body-md text-on-error-container"
-        >
+        <p role="alert" className={CLASE_ERROR_GENERAL}>
           {error}
         </p>
       )}
