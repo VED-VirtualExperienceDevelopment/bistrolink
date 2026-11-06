@@ -24,6 +24,7 @@
 | 1.17    | 03/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-I-144 a 152: dashboard de reportes de ventas y resumen por hora (HU-012 / BL-108, BL-109, BL-110 y BL-219), para cargar con el script antes de mergear el PR.                  |
 | 1.18    | 03/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-I-153 a 160: stock de la jornada, alertas de stock bajo y descuento al confirmar el pago (HU-015 / BL-120, BL-121 y BL-122), para cargar con el script antes de mergear el PR. |
 | 1.19    | 04/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-I-161 y 162: conciliación de CFE pendientes y pendientes de emisión del administrador (HU-023 / BL-96), para cargar con el script antes de mergear el PR.                      |
+| 1.20    | 06/11/2026 | TC-I-164 a 167: cola del KDS y límite de pedidos en preparación (HU-042 / BL-467), para cargar con el script antes de mergear el PR.                                                                                                      |
 
 Texto del campo de descripción de cada caso TC-I en Kiwi. Lo carga
 `cargar-casos-integracion.mjs --descripciones`: cada bloque `## TC-I-NNN`
@@ -95,3 +96,70 @@ Establecimiento de prueba con un usuario Mozo y un usuario Cocina. Una mesa prop
 1. El Mozo recibe el efectivo pendiente en `llamados:snapshot`.
 2. El Mozo recibe los dos avisos en vivo.
 3. Cocina recibe el evento de control, pero ninguno de los avisos: ni snapshot, ni llamados, ni efectivo.
+
+## TC-I-164
+
+### Precondición
+
+Tenant A del seed con la cola activa y límite 1. Ningún otro pedido del tenant A en la cola ni en preparación (la suite los aparta y los restaura al final).
+
+### Pasos
+
+1. Crear dos pedidos de la mesa 1 en PENDIENTE_PAGO.
+2. Confirmar el pago de los dos al mismo tiempo, cada uno en su propia transacción.
+3. Leer el estado de los dos pedidos.
+
+### Resultado esperado
+
+1. Uno queda en EN_PREPARACION y el otro en RECIBIDO.
+2. Hay un solo pedido de la suite en EN_PREPARACION: el lock por tenant no deja superar el límite.
+
+## TC-I-165
+
+### Precondición
+
+Igual que TC-I-164. Usuario Mozo del seed en el tenant A.
+
+### Pasos
+
+1. Con límite 1, confirmar el pago de tres pedidos, uno detrás de otro.
+2. El Mozo pasa el primero a LISTO_PARA_ENTREGAR.
+3. Leer el estado de los tres pedidos y el historial del segundo.
+
+### Resultado esperado
+
+1. El primero pasa a preparación y los otros dos quedan en la cola, en ese orden.
+2. La transición devuelve como promovido solo al segundo (el más antiguo de la cola).
+3. El segundo queda en EN_PREPARACION y el tercero sigue en RECIBIDO. El historial del segundo tiene RECIBIDO → EN_PREPARACION sin usuario (promoción automática).
+
+## TC-I-166
+
+### Precondición
+
+Tenant A del seed con la cola desactivada (sin límite).
+
+### Pasos
+
+1. Crear un pedido en PENDIENTE_PAGO y confirmar su pago.
+2. Leer su estado y su hora de llegada a cocina.
+
+### Resultado esperado
+
+1. Queda en RECIBIDO, como antes de HU-042.
+2. Tiene cargada la hora de llegada a cocina (`encolado_en`).
+
+## TC-I-167
+
+### Precondición
+
+Tenant A del seed con límite 1. Tenant B del seed.
+
+### Pasos
+
+1. Confirmar dos pedidos del tenant A: uno queda en preparación y el otro en la cola.
+2. Leer el estado de la cola del tenant A y del tenant B.
+
+### Resultado esperado
+
+1. La cola del tenant A incluye el pedido en espera.
+2. La cola del tenant B no incluye ninguno de los dos pedidos del tenant A (RLS).
