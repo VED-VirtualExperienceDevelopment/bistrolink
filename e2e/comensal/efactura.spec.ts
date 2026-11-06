@@ -18,6 +18,10 @@ import { continuarAlPago } from "../support/pago";
 // Pago). Necesita el efectivo habilitado en el establecimiento del seed
 // (valor por defecto). Los pedidos avisados se cobran y se entregan desde el
 // KDS al terminar.
+//
+// Cada paso va en un `test.step` y las esperas tienen su propio límite: si
+// algo se traba, el reporte dice en qué paso, en lugar de un «Test timeout»
+// sin detalle.
 
 const COBROS_PATH = "/admin/cobros";
 // RUT de ejemplo con dígito verificador válido (no es de un contribuyente
@@ -25,6 +29,9 @@ const COBROS_PATH = "/admin/cobros";
 const RUT_VALIDO = "21.999983.001-9";
 const RUT_INVALIDO = "21.999983.001-8";
 const RAZON_SOCIAL = "Comensal de Prueba E2E SAS";
+// Lo que el mozo dice que recibió al cobrar: alcanza para cualquier ítem del
+// seed (el vuelto no se verifica en este test).
+const MONTO_RECIBIDO = "100000";
 
 const codigoDelPedido = (pedidoId: string) =>
   `#${pedidoId.replace(/-/g, "").slice(0, 6).toUpperCase()}`;
@@ -54,7 +61,13 @@ async function completarFactura(page: Page, rut: string): Promise<void> {
   await page.getByLabel("Razón social", { exact: true }).fill(RAZON_SOCIAL);
 }
 
-/** El mozo cobra el pedido desde «Cobros pendientes» (best effort en el cierre). */
+/**
+ * El mozo cobra el pedido desde «Cobros pendientes» (best effort en el
+ * cierre). El comensal no dijo con cuánto paga, así que «Monto recibido»
+ * empieza vacío y «Confirmar cobro» queda deshabilitado hasta cargarlo
+ * (antes el test esperaba el clic hasta el timeout de 90 s). Espera la
+ * respuesta del cobro antes de seguir, como en retomar-pago.spec.ts.
+ */
 async function cobrarEnEfectivo(
   kdsPage: Page,
   pedidoId: string,
@@ -64,11 +77,23 @@ async function cobrarEnEfectivo(
     .getByRole("listitem")
     .filter({ hasText: `Pedido ${codigoDelPedido(pedidoId)}` });
   await expect(fila).toBeVisible({ timeout: 15000 });
-  await fila.getByRole("button", { name: "Cobrar en efectivo" }).click();
-  await kdsPage
-    .getByRole("dialog")
-    .getByRole("button", { name: "Confirmar cobro" })
-    .click();
+  await fila
+    .getByRole("button", { name: "Cobrar en efectivo" })
+    .click({ timeout: 10000 });
+  const dialogo = kdsPage.getByRole("dialog");
+  await dialogo.getByLabel("Monto recibido").fill(MONTO_RECIBIDO);
+  const [cobro] = await Promise.all([
+    kdsPage.waitForResponse(
+      (res) =>
+        res.url().endsWith("/cobros/efectivo") &&
+        res.request().method() === "POST",
+      { timeout: 15000 },
+    ),
+    dialogo
+      .getByRole("button", { name: "Confirmar cobro" })
+      .click({ timeout: 10000 }),
+  ]);
+  expect(cobro.status()).toBe(201);
 }
 
 test.describe("BL-453: e-Factura con RUT y razón social", () => {
@@ -81,8 +106,10 @@ test.describe("BL-453: e-Factura con RUT y razón social", () => {
     let pedidoId: string | undefined;
     let avisado = false;
     try {
-      pedidoId = await pedidoEnEfectivo(page, qrMesas.ruta(MESA_ID));
-      await completarFactura(page, RUT_VALIDO);
+      pedidoId = await test.step("arma el pedido y elige efectivo", () =>
+        pedidoEnEfectivo(page, qrMesas.ruta(MESA_ID)));
+      await test.step("completa RUT y razón social", () =>
+        completarFactura(page, RUT_VALIDO));
 
       // El aviso tiene el enlace a la política y empieza sin aceptar.
       const aviso = page.getByRole("checkbox", {
@@ -101,28 +128,39 @@ test.describe("BL-453: e-Factura con RUT y razón social", () => {
           solicitudes.push(req.url());
         }
       });
-      await page.getByRole("button", { name: "Avisar al mozo" }).click();
-      await expect(
-        page.getByRole("alert").filter({ hasText: /tenés que aceptar/ }),
-      ).toBeVisible();
-      await expect(aviso).toBeFocused();
-      await expect(aviso).toHaveAttribute("aria-invalid", "true");
-      expect(solicitudes).toHaveLength(0);
+      await test.step("sin aceptar el aviso, no avisa al mozo", async () => {
+        await page
+          .getByRole("button", { name: "Avisar al mozo" })
+          .click({ timeout: 10000 });
+        await expect(
+          page.getByRole("alert").filter({ hasText: /tenés que aceptar/ }),
+        ).toBeVisible();
+        await expect(aviso).toBeFocused();
+        await expect(aviso).toHaveAttribute("aria-invalid", "true");
+        expect(solicitudes).toHaveLength(0);
+      });
 
       // Desmarca la e-Factura: ahora sí avisa, sin el RUT ni la razón social.
-      await page
-        .getByRole("checkbox", { name: /Quiero e-Factura con RUT/ })
-        .uncheck();
-      const [solicitud] = await Promise.all([
-        page.waitForRequest(
-          (req) =>
-            req
-              .url()
-              .endsWith(`/pedidos/${pedidoId}/pagos/solicitud-efectivo`) &&
-            req.method() === "POST",
-        ),
-        page.getByRole("button", { name: "Avisar al mozo" }).click(),
-      ]);
+      const solicitud =
+        await test.step("desmarca la e-Factura y avisa al mozo", async () => {
+          await page
+            .getByRole("checkbox", { name: /Quiero e-Factura con RUT/ })
+            .uncheck({ timeout: 10000 });
+          const [req] = await Promise.all([
+            page.waitForRequest(
+              (r) =>
+                r
+                  .url()
+                  .endsWith(`/pedidos/${pedidoId}/pagos/solicitud-efectivo`) &&
+                r.method() === "POST",
+              { timeout: 15000 },
+            ),
+            page
+              .getByRole("button", { name: "Avisar al mozo" })
+              .click({ timeout: 10000 }),
+          ]);
+          return req;
+        });
       avisado = true;
 
       const cuerpo = solicitud.postData() ?? "";
@@ -134,9 +172,12 @@ test.describe("BL-453: e-Factura con RUT y razón social", () => {
       ).toBeVisible();
     } finally {
       if (pedidoId && avisado) {
-        await cobrarEnEfectivo(kdsPageMozo, pedidoId).catch(() => undefined);
-        await kdsPageMozo.goto(KDS_PATH).catch(() => undefined);
-        await intentarEntregarPedido(kdsPageMozo, pedidoId);
+        const id = pedidoId;
+        await test.step("limpieza: cobra y entrega el pedido", async () => {
+          await cobrarEnEfectivo(kdsPageMozo, id).catch(() => undefined);
+          await kdsPageMozo.goto(KDS_PATH).catch(() => undefined);
+          await intentarEntregarPedido(kdsPageMozo, id);
+        });
       }
     }
   });
