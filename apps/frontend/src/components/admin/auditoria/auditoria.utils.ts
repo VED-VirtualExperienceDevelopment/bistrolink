@@ -84,6 +84,11 @@ export const ETIQUETAS_ACCION: Record<string, string> = {
   PEDIDO_RECEPTOR_ANONIMIZADO: "Datos de facturación anonimizados",
   // HU-023 (BL-96): reintento manual de la emisión de un CFE.
   PAGO_CFE_REINTENTADO: "Reintento de emisión de comprobante",
+  // BL-475 (BL-285): solo en staging y local (E2E_CLEANUP_ENABLED).
+  PEDIDO_LIMPIEZA_PRUEBAS: "Pedidos de prueba cerrados (limpieza)",
+  MESA_LIMPIEZA_PRUEBAS: "Mesas y plano de prueba restablecidos (limpieza)",
+  CARTA_ITEM_LIMPIEZA_PRUEBAS:
+    "Carta y stock de prueba restablecidos (limpieza)",
 };
 
 export function etiquetaAccion(accion: string): string {

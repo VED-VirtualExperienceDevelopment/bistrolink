@@ -231,6 +231,13 @@ const colaKds = (extra = {}) => ({
   ...extra,
   tags: ["HU-042", "BL-467", "kds", ...(extra.tags ?? [])],
 });
+// BL-285 (BL-476): limpieza de los datos de prueba (ADR 0011).
+const limpieza = (ticket, extra = {}) => ({
+  component: "api",
+  requirement: "BL-285",
+  ...extra,
+  tags: ["BL-285", ticket, "limpieza", ...(extra.tags ?? [])],
+});
 const DATOS_INTEGRACION = {
   55: {
     category: "Funcional",
@@ -687,6 +694,30 @@ const DATOS_INTEGRACION = {
     category: "Seguridad",
     priority: "P1",
     tags: ["multi-tenant", "RD.07"],
+  }),
+  // BL-285 (BL-476): limpieza de los datos de prueba.
+  168: limpieza("BL-475", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["auditoria"],
+  }),
+  169: limpieza("BL-479", { category: "Funcional", priority: "P2" }),
+  170: limpieza("BL-480", { category: "Funcional", priority: "P2" }),
+  171: limpieza("BL-481", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["keycloak"],
+  }),
+  172: limpieza("BL-475", { category: "Seguridad", priority: "P1" }),
+  173: limpieza("BL-482", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["plataforma", "keycloak"],
+  }),
+  174: limpieza("BL-475", {
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["configuracion-entorno"],
   }),
 };
 /**
