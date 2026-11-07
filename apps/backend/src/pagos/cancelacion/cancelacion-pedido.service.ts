@@ -401,7 +401,9 @@ export class CancelacionPedidoService {
       detalle: {
         motivo: datos.dto.motivo,
         ...(datos.dto.detalle ? { detalle: datos.dto.detalle } : {}),
-        estadoAnterior: actual.estado,
+        // «estadoPrevio» y no «estadoAnterior»: la auditoría toma los campos
+        // que terminan en «Anterior» como el valor de antes de un cambio.
+        estadoPrevio: actual.estado,
         pagos: datos.pagos,
       },
     });

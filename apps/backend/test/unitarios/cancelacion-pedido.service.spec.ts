@@ -229,6 +229,27 @@ describe('CancelacionPedidoService (HU-024, BL-104)', () => {
       });
     });
 
+    it('un actor que no es un UUID (un script): no busca el usuario y el historial queda sin usuario', async () => {
+      await service.cancelar(TENANT, 'script:prueba', PEDIDO, {
+        motivo: 'ERROR_PEDIDO',
+      } as CancelarPedidoDto);
+
+      expect(tx.usuario.findUnique).not.toHaveBeenCalled();
+      expect(tx.pedidoEstadoHistorial.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ usuarioId: null }),
+      });
+    });
+
+    it('actor sin fila en usuario: el historial queda sin usuario', async () => {
+      tx.usuario.findUnique.mockResolvedValue(null);
+
+      await cancelar();
+
+      expect(tx.pedidoEstadoHistorial.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ usuarioId: null }),
+      });
+    });
+
     it('auditoría en la transacción: motivo, monto, devolución y stock', async () => {
       await cancelar({ motivo: 'OTRO', detalle: 'Se fue sin esperar' });
 
@@ -246,7 +267,7 @@ describe('CancelacionPedidoService (HU-024, BL-104)', () => {
         detalle: {
           motivo: 'OTRO',
           detalle: 'Se fue sin esperar',
-          estadoAnterior: 'RECIBIDO',
+          estadoPrevio: 'RECIBIDO',
           pagos: ['pago-mp'],
         },
       });
@@ -290,6 +311,27 @@ describe('CancelacionPedidoService (HU-024, BL-104)', () => {
       expect(cfe.emitirNotaDeCreditoEnSegundoPlano).toHaveBeenCalledWith(
         TENANT,
         'pago-mp',
+      );
+    });
+
+    it('si el webhook ya lo había marcado reembolsado, no duplica el historial del pago', async () => {
+      tx.pago.updateMany.mockResolvedValue({ count: 0 });
+
+      await cancelar();
+
+      expect(tx.pagoEstadoHistorial.create).not.toHaveBeenCalled();
+      expect(tx.pedido.updateMany).toHaveBeenCalled();
+    });
+
+    it('un pago ya devuelto por otro medio figura con su código en la auditoría', async () => {
+      conPagos('RECIBIDO', [
+        pago({ estado: 'REEMBOLSADO', medioPago: 'OTRO' }),
+      ]);
+
+      await cancelar();
+
+      expect(auditLog.registrarEnTx.mock.calls[0][1].despues.devolucion).toBe(
+        'OTRO (devolución manual)',
       );
     });
 

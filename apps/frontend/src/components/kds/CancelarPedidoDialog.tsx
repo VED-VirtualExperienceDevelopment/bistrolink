@@ -226,7 +226,7 @@ export function CancelarPedidoDialog({
                     })
                   }
                   className="h-5 w-5 accent-primary"
-                />
+                />{" "}
                 Ya hice la devolución al comensal
               </label>
             )}

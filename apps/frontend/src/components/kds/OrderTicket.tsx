@@ -160,8 +160,8 @@ export function OrderTicket({
             onClick={() => onCancelar(pedido)}
             className="min-h-12 w-full rounded-lg text-label-lg text-error hover:bg-error-container/40"
           >
-            Cancelar pedido
-            <span className="sr-only"> de la mesa {pedido.mesaNumero}</span>
+            Cancelar pedido{' '}
+            <span className="sr-only">de la mesa {pedido.mesaNumero}</span>
           </button>
         </div>
       )}

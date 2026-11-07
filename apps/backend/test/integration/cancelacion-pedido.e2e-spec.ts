@@ -295,7 +295,7 @@ describe('HU-024 (BL-104): cancelación de un pedido pagado', () => {
         detalle: {
           motivo: 'RECLAMO_CLIENTE',
           detalle: 'Llegó frío',
-          estadoAnterior: 'RECIBIDO',
+          estadoPrevio: 'RECIBIDO',
           pagos: [pagoId],
         },
       },
