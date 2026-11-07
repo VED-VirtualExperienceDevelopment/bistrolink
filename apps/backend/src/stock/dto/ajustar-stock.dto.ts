@@ -19,7 +19,10 @@ export const MAXIMO_UNIDADES_STOCK = 100_000;
 
 /** El ajuste de un ítem: lo que no viene, no cambia. */
 export class AjusteStockItemDto {
-  @IsUUID('4', { message: 'itemId debe ser un UUID' })
+  // 'loose', igual que los demás DTOs que reciben ids del seed: los ítems del
+  // seed (5555…, 6666…) no son UUID v4 y con '4' guardar el stock respondía
+  // 400 "items.0.itemId debe ser un UUID" (ver ids-seed-uuid.dto.spec.ts).
+  @IsUUID('loose', { message: 'itemId debe ser un UUID' })
   itemId!: string;
 
   @IsOptional()
