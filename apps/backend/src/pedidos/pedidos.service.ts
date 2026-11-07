@@ -316,6 +316,46 @@ export class PedidosService {
   }
 
   /**
+   * HU-024 (BL-104): devuelve el stock de un pedido cancelado antes de que
+   * cocina lo empiece. Dentro de la transacción de la cancelación.
+   */
+  reponerStockEnTx(
+    tx: PrismaClient,
+    tenantId: string,
+    pedidoId: string,
+  ): Promise<string[]> {
+    return this.descuentoStock.reponerEnTx(tx, tenantId, pedidoId);
+  }
+
+  /**
+   * HU-024 (BL-104): después de confirmar la cancelación. El pedido sale del
+   * KDS y el comensal que lo sigue lo ve cancelado; si liberó un lugar en
+   * la cola, entran los siguientes; el dashboard se recalcula y la carta se
+   * entera del stock repuesto.
+   */
+  notificarPedidoCancelado(
+    tenantId: string,
+    pedidoId: string,
+    promovidos: { id: string }[],
+    stockRepuesto: string[] | null,
+  ) {
+    const cancelado = {
+      id: pedidoId,
+      estado: 'CANCELADO',
+      actualizadoEn: new Date().toISOString(),
+    };
+    this.kdsGateway.emitirPedidoActualizado(tenantId, cancelado);
+    for (const promovido of promovidos) {
+      this.kdsGateway.emitirPedidoActualizado(tenantId, promovido);
+    }
+    void this.kdsGateway.avisarEstadoCola(tenantId);
+    void this.actualizarReportes(tenantId);
+    if (stockRepuesto) {
+      this.descuentoStock.avisarReposicion(tenantId, stockRepuesto);
+    }
+  }
+
+  /**
    * HU-015 (BL-120): antes de cobrar (reservar el pago con tarjeta o
    * registrar el efectivo), 409 si el stock ya no alcanza para el pedido.
    */

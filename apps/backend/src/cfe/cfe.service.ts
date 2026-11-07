@@ -86,6 +86,29 @@ export const SUFIJO_ETICKET_DE_RESPALDO = '-et';
 export const LARGO_MAXIMO_ERROR_CFE = 300;
 
 /** HU-023 (BL-96): resultado de un reintento de emisión. */
+/**
+ * HU-024 (BL-104): sufijo de la clave de idempotencia de la nota de crédito
+ * de un pago («bl-<pagoId>-nc»): distinta de la del CFE original.
+ */
+export const SUFIJO_NOTA_DE_CREDITO = '-nc';
+
+/** HU-024 (BL-104): tipos de CFE de venta y su nota de crédito. */
+export const NOTA_DE_CREDITO_DE: Readonly<Record<string, string>> = {
+  [String(TIPO_CFE.E_TICKET)]: String(TIPO_CFE.NC_E_TICKET),
+  [String(TIPO_CFE.E_FACTURA)]: String(TIPO_CFE.NC_E_FACTURA),
+};
+const TIPOS_NOTA_DE_CREDITO = new Set(Object.values(NOTA_DE_CREDITO_DE));
+
+/** Fecha AAAA-MM-DD en hora de Uruguay (la del CFE referenciado). */
+function fechaEnUruguay(fecha: Date): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Montevideo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(fecha);
+}
+
 export interface ResultadoReintentoCfe {
   /** El comprobante emitido (o el que ya tenía); null si no se emitió. */
   comprobante: ResumenComprobante | null;
@@ -199,6 +222,153 @@ export class CfeService {
    */
   emitirEnSegundoPlano(tenantId: string, pagoId: string): void {
     void this.emitirConReintentos(tenantId, pagoId);
+  }
+
+  /**
+   * HU-024 (BL-104): emite la nota de crédito del CFE de un pago devuelto
+   * (REEMBOLSADO) sin hacer esperar a quien canceló el pedido. Un intento
+   * inmediato; si falla, queda registrado en el pago y la conciliación de CFE
+   * (BL-96) la reintenta espaciada. Nunca lanza.
+   */
+  emitirNotaDeCreditoEnSegundoPlano(tenantId: string, pagoId: string): void {
+    void this.reintentarNotaDeCredito(tenantId, pagoId);
+  }
+
+  /**
+   * HU-024 (BL-104): un intento de emitir la nota de crédito de un pago
+   * devuelto. Nunca lanza; si falla, lo registra en el pago (cfe_intentos)
+   * para que la conciliación espacie los reintentos. Si el pago no tenía
+   * CFE, no hay nada que anular: devuelve null sin error.
+   */
+  async reintentarNotaDeCredito(
+    tenantId: string,
+    pagoId: string,
+  ): Promise<ResultadoReintentoCfe> {
+    const clave = `nc:${pagoId}`;
+    const actual = this.enCurso.get(clave);
+    if (actual !== undefined) {
+      const comprobante = await actual;
+      return {
+        comprobante,
+        error: comprobante ? null : 'La emisión en curso no se completó',
+      };
+    }
+    const intento = this.emitirNotaDeCredito(tenantId, pagoId).then(
+      (comprobante): ResultadoReintentoCfe => ({ comprobante, error: null }),
+      async (error: unknown): Promise<ResultadoReintentoCfe> => {
+        Logger.error(
+          `CFE: no se pudo emitir la nota de crédito del pago ${pagoId}: ${mensajeDe(error)}`,
+          undefined,
+          CfeService.name,
+        );
+        await this.registrarIntentoFallido(tenantId, pagoId, error);
+        return { comprobante: null, error: textoDelError(error) };
+      },
+    );
+    this.enCurso.set(
+      clave,
+      intento.then((r) => r.comprobante),
+    );
+    try {
+      return await intento;
+    } finally {
+      this.enCurso.delete(clave);
+    }
+  }
+
+  private async emitirNotaDeCredito(
+    tenantId: string,
+    pagoId: string,
+  ): Promise<ResumenComprobante | null> {
+    if (!this.surtec.configurado()) {
+      Logger.warn(
+        'CFE: Surtec no está configurado, no se emite la nota de crédito',
+        CfeService.name,
+      );
+      return null;
+    }
+    const { pago, tenant } = await this.tenantPrisma.runInTenantContext(
+      tenantId,
+      async (tx) => ({
+        pago: await tx.pago.findUnique({
+          where: { id: pagoId },
+          include: {
+            comprobantes: { orderBy: { fechaEmision: 'asc' } },
+            pedido: { include: { lineas: true } },
+          },
+        }),
+        tenant: await tx.tenant.findUnique({
+          where: { id: tenantId },
+          select: { rut: true },
+        }),
+      }),
+    );
+    if (pago?.estado !== 'REEMBOLSADO' || !tenant) return null;
+    const yaEmitida = pago.comprobantes.find((c) =>
+      TIPOS_NOTA_DE_CREDITO.has(c.tipoCfe),
+    );
+    if (yaEmitida) return resumir(yaEmitida);
+    const original = pago.comprobantes.find(
+      (c) => NOTA_DE_CREDITO_DE[c.tipoCfe] !== undefined,
+    );
+    // Sin CFE (por ejemplo, Surtec no lo había emitido): nada que anular.
+    if (!original) return null;
+
+    const tipoOriginal = Number(original.tipoCfe);
+    const { receptorRut: rut, receptorRazonSocial: razonSocial } = pago.pedido;
+    const idExterno = `bl-${pago.id}${SUFIJO_NOTA_DE_CREDITO}`;
+    const emitido = await this.surtec.emitirNotaDeCredito(
+      {
+        rutEmisor: tenant.rut,
+        idExterno,
+        items: pago.pedido.lineas.map((l) => ({
+          concepto: l.nombreSnapshot.slice(0, 100),
+          cantidad: l.cantidad,
+          precio: l.precioUnitarioSnapshot.toNumber(),
+        })),
+        adenda: `Cancelación del pedido ${pago.pedidoId.slice(0, 8)}`,
+      },
+      {
+        tipoComprobante: tipoOriginal,
+        serie: original.serie,
+        numero: original.numero,
+        fecha: fechaEnUruguay(original.fechaEmision),
+        razon: 'Cancelación del pedido',
+      },
+      // La de una e-Factura va al mismo receptor. Si sus datos se
+      // anonimizaron (BL-453), Surtec la rechaza y queda para revisar.
+      rut && razonSocial ? { rut, razonSocial } : undefined,
+    );
+
+    const ahora = new Date();
+    const retencionHasta = new Date(ahora);
+    retencionHasta.setFullYear(retencionHasta.getFullYear() + ANIOS_RETENCION);
+    const guardado = await this.tenantPrisma.runInTenantContext(
+      tenantId,
+      (tx) =>
+        tx.comprobanteFiscal.upsert({
+          where: { idExterno },
+          create: {
+            tenantId,
+            pedidoId: pago.pedidoId,
+            pagoId: pago.id,
+            tipoCfe: NOTA_DE_CREDITO_DE[original.tipoCfe],
+            serie: emitido.serie,
+            numero: emitido.numero,
+            hashSha256: emitido.hash ?? null,
+            proveedor: 'SURTEC',
+            proveedorRef: emitido.id,
+            idExterno,
+            caeNumero: emitido.caeNumero ?? null,
+            caeVencimiento: emitido.caeVencimiento ?? null,
+            urlConsulta: emitido.url ?? null,
+            fechaEmision: ahora,
+            retencionHasta,
+          },
+          update: {},
+        }),
+    );
+    return resumir(guardado);
   }
 
   emitirConReintentos(

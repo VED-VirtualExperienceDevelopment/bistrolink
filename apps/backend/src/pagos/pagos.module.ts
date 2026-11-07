@@ -19,6 +19,8 @@ import { CobrosController } from './efectivo/cobros.controller';
 import { CobroEfectivoService } from './efectivo/cobro-efectivo.service';
 import { SolicitudEfectivoService } from './efectivo/solicitud-efectivo.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { CancelacionPedidoController } from './cancelacion/cancelacion-pedido.controller';
+import { CancelacionPedidoService } from './cancelacion/cancelacion-pedido.service';
 
 @Module({
   // BL-311: QrMesaModule para MesaQrGuard en el pago (RD.05).
@@ -29,6 +31,8 @@ import { AuditLogService } from '../audit-log/audit-log.service';
     PlexoWebhookController,
     // HU-031 (BL-201): cobro en efectivo (mozo y administrador).
     CobrosController,
+    // HU-024 (BL-104): cancelación de pedidos pagados y devolución.
+    CancelacionPedidoController,
   ],
   providers: [
     PagosService,
@@ -43,6 +47,7 @@ import { AuditLogService } from '../audit-log/audit-log.service';
     CobroEfectivoService,
     // HU-031b (BL-442): el comensal pide pagar en efectivo.
     SolicitudEfectivoService,
+    CancelacionPedidoService,
     AuditLogService,
   ],
 })
