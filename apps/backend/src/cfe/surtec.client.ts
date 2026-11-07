@@ -65,6 +65,38 @@ export function cuerpoParaLog(datos: unknown): string {
   );
 }
 
+/** HU-009 (BL-454): el PDF de un CFE emitido, ya validado. */
+export interface PdfCfe {
+  contenido: Buffer;
+}
+
+/** Tope del PDF que se acepta de Surtec (un A4 ronda los 200 KB). */
+export const TAMANO_MAXIMO_PDF_CFE = 10 * 1024 * 1024;
+
+/**
+ * Valida la respuesta de GET /comprobantes/{id}/pdf: Surtec devuelve un JSON
+ * `{ file_name, mime_type, format, data }` con el PDF en base64 en `data`.
+ * Lanza SurtecError si no es un PDF.
+ */
+export function leerPdf(datos: unknown): PdfCfe {
+  const raiz = (datos ?? {}) as Record<string, unknown>;
+  const tipo = raiz.mime_type;
+  if (typeof tipo === 'string' && !tipo.toLowerCase().includes('pdf')) {
+    throw new SurtecError(`Surtec devolvió un archivo que no es PDF (${tipo})`);
+  }
+  if (typeof raiz.data !== 'string' || raiz.data.length === 0) {
+    throw new SurtecError('Surtec devolvió el PDF vacío');
+  }
+  const contenido = Buffer.from(raiz.data, 'base64');
+  if (contenido.length > TAMANO_MAXIMO_PDF_CFE) {
+    throw new SurtecError('El PDF de Surtec supera el tamaño máximo');
+  }
+  if (contenido.subarray(0, 5).toString('latin1') !== '%PDF-') {
+    throw new SurtecError('Surtec devolvió un archivo que no es PDF');
+  }
+  return { contenido };
+}
+
 /** HU-009 (BL-455): consulta de los CFE emitidos por un emisor. */
 export interface ConsultaEmitidos {
   rutEmisor: string;
@@ -243,6 +275,19 @@ export class SurtecClient {
     return leerEmitidos(datos);
   }
 
+  /**
+   * HU-009 (BL-454): el PDF A4 de un CFE emitido, por el id de Surtec
+   * (comprobante_fiscal.proveedor_ref). No se guarda: Surtec conserva los
+   * comprobantes los 5 años que exige la DGI.
+   */
+  async obtenerPdf(rutEmisor: string, idSurtec: string): Promise<PdfCfe> {
+    const datos = await this.llamar(
+      `${apiUrl()}/comprobantes/${encodeURIComponent(idSurtec)}/pdf`,
+      rutEmisor,
+    );
+    return leerPdf(datos);
+  }
+
   // Si el token fue rechazado (401) se pide uno nuevo y se reintenta una vez.
   // Con cuerpo es un POST (emisión); sin cuerpo, un GET (consulta).
   private async llamar(
@@ -275,7 +320,7 @@ export class SurtecClient {
     >;
     if (!respuesta.ok) {
       throw new SurtecError(
-        `Surtec rechazó ${cuerpo === undefined ? 'la consulta' : 'la emisión'} (HTTP ${respuesta.status}): ${cuerpoParaLog(datos)}`,
+        `Surtec rechazó ${cuerpo === undefined ? 'la consulta' : 'la emisión'} (HTTP ${respuesta.status}): ${cuerpoParaLog(datos).slice(0, 500)}`,
         respuesta.status,
       );
     }

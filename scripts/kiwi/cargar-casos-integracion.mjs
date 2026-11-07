@@ -719,6 +719,22 @@ const DATOS_INTEGRACION = {
     priority: "P1",
     tags: ["configuracion-entorno"],
   }),
+  // HU-009 (BL-454): PDF del comprobante, a pedido.
+  175: {
+    category: "Seguridad",
+    component: "api",
+    requirement: "HU-009",
+    priority: "P1",
+    tags: ["HU-009", "BL-454", "cfe", "multi-tenant"],
+  },
+  // HU-009 (BL-454): copia del PDF del CFE en S3 con su SHA-256.
+  176: {
+    category: "Funcional",
+    component: "api",
+    requirement: "HU-009",
+    priority: "P1",
+    tags: ["HU-009", "BL-454", "cfe", "s3", "multi-tenant"],
+  },
 };
 /**
  * BL-435: datos de los E2E TC-E-017 en adelante, con los criterios de
@@ -1042,6 +1058,12 @@ const DATOS_E2E = {
     priority: "P2",
     tags: ["BL-474", "stock", "responsive", "mobile"],
   }),
+  // HU-009 (BL-454): PDF del comprobante desde Comprobantes.
+  79: e2e("admin", "HU-009", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-454", "cfe"],
+  }),
 };
 /**
  * Datos de los contratos PactJS (TC-C). Requirement con la HU que usa el
@@ -1099,6 +1121,8 @@ const DATOS_CONTRATO = {
   18: contrato("HU-009", "surtec", { priority: "P2", tags: ["BL-455"] }),
   // Surtec: emisión con el servicio no disponible (BL-96).
   19: contrato("HU-023", "surtec", { priority: "P1", tags: ["BL-96"] }),
+  // Surtec: PDF de un CFE emitido (BL-454).
+  20: contrato("HU-009", "surtec", { priority: "P2", tags: ["BL-454"] }),
 };
 const DATOS = CONTRATO ? DATOS_CONTRATO : E2E ? DATOS_E2E : DATOS_INTEGRACION;
 

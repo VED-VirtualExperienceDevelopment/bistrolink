@@ -293,6 +293,97 @@
       "type": "Synchronous/HTTP"
     },
     {
+      "description": "un pedido del PDF de un CFE emitido",
+      "pending": false,
+      "providerStates": [
+        {
+          "name": "el emisor tiene el CFE 541759 emitido"
+        }
+      ],
+      "request": {
+        "headers": {
+          "Authorization": [
+            "Bearer token-acceso-contrato-1"
+          ],
+          "X-Emisor": [
+            "219999990019"
+          ]
+        },
+        "matchingRules": {
+          "header": {
+            "Authorization": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^Bearer \\S+$"
+                }
+              ]
+            },
+            "X-Emisor": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^\\d{12}$"
+                }
+              ]
+            }
+          }
+        },
+        "method": "GET",
+        "path": "/comprobantes/541759/pdf"
+      },
+      "response": {
+        "body": {
+          "content": {
+            "data": "JVBERi0xLjQgcHJ1ZWJh",
+            "file_name": "cfe.pdf",
+            "format": "A4",
+            "mime_type": "application/pdf"
+          },
+          "contentType": "application/json",
+          "encoded": false
+        },
+        "headers": {
+          "Content-Type": [
+            "application/json"
+          ]
+        },
+        "matchingRules": {
+          "body": {
+            "$.data": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^JVBERi0[A-Za-z0-9+/=]*$"
+                }
+              ]
+            },
+            "$.file_name": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.format": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      },
+      "type": "Synchronous/HTTP"
+    },
+    {
       "description": "una consulta de CFE emitidos en un rango sin comprobantes",
       "pending": false,
       "providerStates": [

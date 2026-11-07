@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { apiFetch } from '@/lib/api-client';
+import { descargarArchivo, type ArchivoBase64 } from '@/lib/descarga';
 import { etiquetaMesa, type OrigenMenu } from '@/components/menu-digital.utils';
 import type { LineaResumen } from './PagoPedido';
 import {
@@ -13,6 +14,7 @@ import {
   headersAccesoPedido,
   INTERVALO_CONSULTA_MS,
   rutaPagos,
+  rutaPdfComprobante,
   seguirConsultando,
   type EstadoComprobante,
   type EstadoPagoDelPedido,
@@ -24,6 +26,9 @@ const SeguimientoPedido = dynamic(
   () => import('@/components/SeguimientoPedido').then((mod) => ({ default: mod.SeguimientoPedido })),
   { ssr: false, loading: () => null },
 );
+
+/** HU-009 (BL-454): estado del botón «Descargar PDF». */
+type EstadoDescarga = 'lista' | 'descargando' | 'error';
 
 interface PagoAprobadoProps {
   readonly origen: OrigenMenu;
@@ -65,6 +70,8 @@ export function PagoAprobado({
   const [comprobante, setComprobante] = useState<EstadoComprobante>({ tipo: 'emitiendo' });
   const [agotado, setAgotado] = useState(false);
   const [consulta, setConsulta] = useState(0);
+  // HU-009 (BL-454): descarga del PDF del comprobante.
+  const [descarga, setDescarga] = useState<EstadoDescarga>('lista');
   const tituloRef = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
@@ -109,6 +116,19 @@ export function PagoAprobado({
   }, [pedidoId, accessToken, consulta]);
 
   const esMesa = origen.tipo === 'mesa';
+
+  async function descargarPdf() {
+    setDescarga('descargando');
+    try {
+      const archivo = await apiFetch<ArchivoBase64>(rutaPdfComprobante(pedidoId), accessToken, {
+        headers: headersAccesoPedido(origen, tokenAcceso),
+      });
+      descargarArchivo(archivo);
+      setDescarga('lista');
+    } catch {
+      setDescarga('error');
+    }
+  }
 
   return (
     <div className="pt-20 pb-12 px-4 md:px-8 max-w-[640px] mx-auto flex flex-col gap-6">
@@ -155,6 +175,8 @@ export function PagoAprobado({
         comprobante={comprobante}
         agotado={agotado}
         onReintentar={() => setConsulta((n) => n + 1)}
+        descarga={descarga}
+        onDescargarPdf={() => void descargarPdf()}
       />
 
       <section aria-labelledby="resumen-pagado" className={CLASE_TARJETA}>
@@ -196,10 +218,14 @@ function Comprobante({
   comprobante,
   agotado,
   onReintentar,
+  descarga,
+  onDescargarPdf,
 }: {
   readonly comprobante: EstadoComprobante;
   readonly agotado: boolean;
   readonly onReintentar: () => void;
+  readonly descarga: EstadoDescarga;
+  readonly onDescargarPdf: () => void;
 }) {
   return (
     <section aria-labelledby="comprobante" aria-live="polite" className={CLASE_TARJETA}>
@@ -228,6 +254,8 @@ function Comprobante({
         comprobante={comprobante}
         agotado={agotado}
         onReintentar={onReintentar}
+        descarga={descarga}
+        onDescargarPdf={onDescargarPdf}
       />
     </section>
   );
@@ -300,17 +328,36 @@ function AccionesDelComprobante({
   comprobante,
   agotado,
   onReintentar,
+  descarga,
+  onDescargarPdf,
 }: {
   readonly comprobante: EstadoComprobante;
   readonly agotado: boolean;
   readonly onReintentar: () => void;
+  readonly descarga: EstadoDescarga;
+  readonly onDescargarPdf: () => void;
 }) {
   if (comprobante.tipo === 'emitido') {
     return (
       <>
         {comprobante.rebaja && <DetalleRebaja rebaja={comprobante.rebaja} />}
+        <div className="mt-4 flex flex-wrap justify-center gap-3">
+          {/* HU-009 (BL-454): PDF A4, pedido a Surtec en el momento. */}
+          <button
+            type="button"
+            onClick={onDescargarPdf}
+            disabled={descarga === 'descargando'}
+            aria-busy={descarga === 'descargando'}
+            className="inline-flex items-center gap-2 px-4 py-2.5 border border-[#6e54ad] text-[#6e54ad] font-semibold rounded-[0.5rem] hover:bg-[#6e54ad]/10 focus:outline-none focus:ring-4 focus:ring-[#6e54ad]/30 transition-colors disabled:opacity-60"
+          >
+            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 3v12" />
+              <path d="m7 10 5 5 5-5" />
+              <path d="M5 21h14" />
+            </svg>
+            {descarga === 'descargando' ? 'Descargando…' : 'Descargar PDF'}
+          </button>
         {comprobante.urlConsulta && (
-          <div className="mt-4 flex justify-center">
           <a
             href={comprobante.urlConsulta}
             target="_blank"
@@ -325,7 +372,12 @@ function AccionesDelComprobante({
             </svg>
             <span className="sr-only">(se abre en otra pestaña)</span>
           </a>
-          </div>
+        )}
+        </div>
+        {descarga === 'error' && (
+          <p role="alert" className="mt-3 text-center text-sm font-semibold text-[#BA1A1A]">
+            No se pudo descargar el PDF. Probá de nuevo en unos minutos o usá «Ver comprobante en DGI».
+          </p>
         )}
       </>
     );
