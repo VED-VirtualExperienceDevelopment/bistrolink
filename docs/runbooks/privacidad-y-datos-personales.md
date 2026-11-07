@@ -10,6 +10,7 @@
 | 1.0     | 01/11/2026 | Primera versión: roles, datos que trata el sistema, registro ante la URCDP y pedidos de derechos. |
 | 1.1     | 02/11/2026 | HU-009 (BL-453): RUT y razón social de la e-Factura, consentimiento y anonimización.              |
 | 1.2     | 02/11/2026 | BL-453: sin aceptar el aviso, la pantalla no deja pagar con datos de la e-Factura cargados.       |
+| 1.3     | 05/11/2026 | BL-454: PDF del comprobante a pedido, sin guardar copia.                                          |
 
 ## 1. Roles
 
@@ -43,6 +44,12 @@ pagar hasta que lo acepte, borre los datos o desmarque la e-Factura (en ese
 caso recibe un e-Ticket). El backend, igual, sin consentimiento no guarda
 nada y emite un e-Ticket. Los datos viajan a
 Surtec para emitir el CFE (tipo 111) y quedan en el CFE ante DGI.
+
+**PDF del comprobante (BL-454):** el comensal (desde la pantalla de pago) y
+el administrador (desde Comprobantes) lo descargan; BistroLink se lo pide a
+Surtec en ese momento y **no guarda copia**, porque el de una e-Factura lleva
+el RUT y la razón social. Surtec conserva los CFE (PDF y XML firmado) los 5
+años que exige la DGI. El PDF no va a los logs.
 
 **Pendiente:** el pedido para retirar (HU-040) va a guardar el nombre y el
 contacto del comensal; esa historia agrega su aviso, la anonimización y la

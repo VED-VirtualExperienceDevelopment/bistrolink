@@ -26,6 +26,7 @@
 | 1.19    | 04/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-I-161 y 162: conciliación de CFE pendientes y pendientes de emisión del administrador (HU-023 / BL-96), para cargar con el script antes de mergear el PR.                      |
 | 1.20    | 06/11/2026 | TC-I-164 a 167: cola del KDS y límite de pedidos en preparación (HU-042 / BL-467), para cargar con el script antes de mergear el PR.                                                                                                      |
 | 1.21    | 07/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-I-168 a 174: limpieza de los datos de prueba (BL-285 / BL-476, ADR 0011), para cargar con el script antes de mergear el PR.                                                    |
+| 1.22    | 07/11/2026 | TC-I-175: PDF del comprobante (HU-009 / BL-454), para cargar con el script antes de mergear el PR.                                                                                                                                        |
 
 Texto del campo de descripción de cada caso TC-I en Kiwi. Lo carga
 `cargar-casos-integracion.mjs --descripciones`: cada bloque `## TC-I-NNN`
@@ -156,3 +157,21 @@ API levantada **sin** `E2E_CLEANUP_ENABLED` (como en producción).
 
 1. 404: la ruta no existe.
 2. 404.
+
+## TC-I-175
+
+### Precondición
+
+Tenant A del seed. Un pedido pagado con su e-Factura de Surtec y otro pagado sin comprobante. Surtec falso: devuelve un PDF mínimo.
+
+### Pasos
+
+1. Pedir el PDF del comprobante por el pedido (como el comensal) y por el comprobante (como el administrador).
+2. Pedir el PDF del pedido sin comprobante.
+3. Pedir los dos PDF desde el tenant B.
+
+### Resultado esperado
+
+1. Se recibe el PDF en base64 con el nombre «e-Factura-<serie>-<número>.pdf», pedido a Surtec con el RUT del local y el id de Surtec del comprobante.
+2. 404.
+3. 404 (RLS). Ninguno de los pedidos de los pasos 2 y 3 llega a Surtec.
