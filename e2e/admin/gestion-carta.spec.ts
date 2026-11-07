@@ -238,7 +238,22 @@ test.describe("BL-392 · Gestión de Carta", () => {
         name: "Pancho E2E disponible",
       });
 
-      await disponible.click();
+      // La pantalla cambia el switch antes de que responda la API. Se espera
+      // el PATCH: si se recarga la carta con el pedido en vuelo, el navegador
+      // lo cancela y el agotado no llega a guardarse.
+      const [guardado] = await Promise.all([
+        page.waitForResponse(
+          (r) =>
+            r
+              .url()
+              .endsWith(
+                `/admin/menu/item/${categoria?.items[0].id}/disponibilidad`,
+              ) && r.request().method() === "PATCH",
+          { timeout: 10_000 },
+        ),
+        disponible.click(),
+      ]);
+      expect(guardado.status(), "la API no guardó el agotado").toBe(200);
       await expect(disponible).toHaveAttribute("aria-checked", "false");
       await expect(
         tarjeta(page, categoria, "Pancho E2E").getByText("Agotado"),

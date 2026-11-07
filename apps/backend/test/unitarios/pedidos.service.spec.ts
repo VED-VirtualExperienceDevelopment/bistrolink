@@ -25,6 +25,9 @@ const mockDescuentoStock = {
   descontarEnTx: jest.fn().mockResolvedValue(AVISOS_VACIOS),
   verificarPedidoEnTx: jest.fn().mockResolvedValue(undefined),
   avisar: jest.fn(),
+  // HU-024 (BL-104): stock de un pedido cancelado.
+  reponerEnTx: jest.fn().mockResolvedValue(['item-1']),
+  avisarReposicion: jest.fn(),
 } as any;
 const RESTAURANTE_ID = '22222222-2222-2222-2222-222222222222';
 const MESA_ID = '33333333-3333-3333-3333-333333333333';
@@ -707,12 +710,21 @@ describe('PedidosService.confirmarPagoEnTx / notificarPedidoConfirmado (BL-311, 
       pedido: {
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         findUniqueOrThrow: jest.fn().mockResolvedValue(pedidoConfirmado),
+        // HU-042 (BL-463): cola del KDS.
+        count: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
       },
-      pedidoEstadoHistorial: { create: jest.fn() },
+      pedidoEstadoHistorial: { create: jest.fn(), createMany: jest.fn() },
+      // HU-042 (BL-463): sin límite configurado (cola desactivada) por
+      // defecto, así los tests anteriores no cambian.
+      restaurante: { findUnique: jest.fn().mockResolvedValue(null) },
+      $executeRaw: jest.fn(),
     };
     mockKdsGateway = {
       emitirNuevoPedido: jest.fn(),
       emitirActualizacionPedido: jest.fn(),
+      emitirPedidoActualizado: jest.fn(),
+      avisarEstadoCola: jest.fn().mockResolvedValue(undefined),
       emitirEstadoMesa: jest.fn(),
       emitirReportesActualizados: jest.fn(),
     };
@@ -730,7 +742,8 @@ describe('PedidosService.confirmarPagoEnTx / notificarPedidoConfirmado (BL-311, 
 
     expect(mockTx.pedido.updateMany).toHaveBeenCalledWith({
       where: { id: 'pedido-nuevo', estado: 'PENDIENTE_PAGO' },
-      data: { estado: 'RECIBIDO' },
+      // HU-042 (BL-463): con la hora de llegada a la cola.
+      data: { estado: 'RECIBIDO', encoladoEn: expect.any(Date) },
     });
   });
 
@@ -789,6 +802,49 @@ describe('PedidosService.confirmarPagoEnTx / notificarPedidoConfirmado (BL-311, 
     expect(mockTx.pedido.findUniqueOrThrow).not.toHaveBeenCalled();
   });
 
+  it('HU-024 (BL-104): reponerStockEnTx delega en el descuento de stock', async () => {
+    await expect(
+      service.reponerStockEnTx(mockTx, TENANT_ID, 'pedido-1'),
+    ).resolves.toEqual(['item-1']);
+    expect(mockDescuentoStock.reponerEnTx).toHaveBeenCalledWith(
+      mockTx,
+      TENANT_ID,
+      'pedido-1',
+    );
+  });
+
+  it('HU-024 (BL-104): notificarPedidoCancelado saca el pedido del KDS, avisa los promovidos, la cola, los reportes y el stock', () => {
+    service.notificarPedidoCancelado(
+      TENANT_ID,
+      'pedido-1',
+      [{ id: 'pedido-2' }],
+      ['item-1'],
+    );
+
+    expect(mockKdsGateway.emitirPedidoActualizado).toHaveBeenCalledWith(
+      TENANT_ID,
+      expect.objectContaining({ id: 'pedido-1', estado: 'CANCELADO' }),
+    );
+    expect(mockKdsGateway.emitirPedidoActualizado).toHaveBeenCalledWith(
+      TENANT_ID,
+      { id: 'pedido-2' },
+    );
+    expect(mockKdsGateway.avisarEstadoCola).toHaveBeenCalledWith(TENANT_ID);
+    expect(mockResumenVentas.recalcularRecientes).toHaveBeenCalled();
+    expect(mockDescuentoStock.avisarReposicion).toHaveBeenCalledWith(
+      TENANT_ID,
+      ['item-1'],
+    );
+  });
+
+  it('HU-024 (BL-104): sin stock repuesto (estaba en preparación) no avisa de stock', () => {
+    mockDescuentoStock.avisarReposicion.mockClear();
+
+    service.notificarPedidoCancelado(TENANT_ID, 'pedido-1', [], null);
+
+    expect(mockDescuentoStock.avisarReposicion).not.toHaveBeenCalled();
+  });
+
   it('notificarPedidoConfirmado: al KDS va con la forma del snapshot, con mesaNumero (BL-244)', () => {
     service.notificarPedidoConfirmado(TENANT_ID, pedidoConfirmado as any);
 
@@ -840,6 +896,96 @@ describe('PedidosService.confirmarPagoEnTx / notificarPedidoConfirmado (BL-311, 
         actualizadoEn: '2026-10-10T23:45:00.000Z',
       },
     );
+  });
+
+  it('[TC-U-380] HU-042: con la cola desactivada no toma el lock ni cuenta pedidos (como antes)', async () => {
+    await service.confirmarPagoEnTx(mockTx, TENANT_ID, 'pedido-nuevo');
+
+    expect(mockTx.$executeRaw).not.toHaveBeenCalled();
+    expect(mockTx.pedido.count).not.toHaveBeenCalled();
+  });
+
+  it('[TC-U-381] HU-042: con lugar en cocina, el pedido pasa a EN_PREPARACION en la misma transacción', async () => {
+    mockTx.restaurante.findUnique.mockResolvedValue({
+      limitePedidosEnPreparacion: 5,
+    });
+    mockTx.pedido.count.mockResolvedValue(3);
+    mockTx.pedido.findMany.mockResolvedValue([
+      { id: 'pedido-nuevo', mesa: { numero: 5 }, lineas: [] },
+    ]);
+    const enPreparacion = { ...pedidoConfirmado, estado: 'EN_PREPARACION' };
+    mockTx.pedido.findUniqueOrThrow.mockResolvedValue(enPreparacion);
+
+    const resultado = await service.confirmarPagoEnTx(
+      mockTx,
+      TENANT_ID,
+      'pedido-nuevo',
+    );
+
+    expect(mockTx.$executeRaw).toHaveBeenCalled();
+    expect(mockTx.pedido.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ['pedido-nuevo'] }, estado: 'RECIBIDO' },
+      data: { estado: 'EN_PREPARACION', updatedAt: expect.any(Date) },
+    });
+    expect(mockTx.pedidoEstadoHistorial.createMany).toHaveBeenCalledWith({
+      data: [
+        {
+          tenantId: TENANT_ID,
+          pedidoId: 'pedido-nuevo',
+          usuarioId: null,
+          estadoAnterior: 'RECIBIDO',
+          estadoNuevo: 'EN_PREPARACION',
+        },
+      ],
+    });
+    expect(resultado?.estado).toBe('EN_PREPARACION');
+  });
+
+  it('[TC-U-382] HU-042: con la cocina al límite, el pedido queda en RECIBIDO (en espera)', async () => {
+    mockTx.restaurante.findUnique.mockResolvedValue({
+      limitePedidosEnPreparacion: 5,
+    });
+    mockTx.pedido.count.mockResolvedValue(5);
+
+    const resultado = await service.confirmarPagoEnTx(
+      mockTx,
+      TENANT_ID,
+      'pedido-nuevo',
+    );
+
+    expect(mockTx.pedido.findMany).not.toHaveBeenCalled();
+    expect(mockTx.pedido.updateMany).toHaveBeenCalledTimes(1);
+    expect(resultado?.estado).toBe('RECIBIDO');
+    expect(resultado).not.toHaveProperty('promovidos');
+  });
+
+  it('[TC-U-383] HU-042: notificarPedidoConfirmado avisa los otros pedidos de la cola que pasaron a preparación, no el mismo dos veces', () => {
+    const otro = {
+      id: 'pedido-viejo',
+      estado: 'EN_PREPARACION',
+      actualizadoEn: '2026-10-10T23:45:00.000Z',
+      mesaNumero: 2,
+      lineas: [],
+    };
+    const mismo = { ...otro, id: 'pedido-nuevo', mesaNumero: 5 };
+
+    service.notificarPedidoConfirmado(TENANT_ID, {
+      ...pedidoConfirmado,
+      estado: 'EN_PREPARACION',
+      promovidos: [otro, mismo],
+    } as any);
+
+    expect(mockKdsGateway.emitirPedidoActualizado).toHaveBeenCalledTimes(1);
+    expect(mockKdsGateway.emitirPedidoActualizado).toHaveBeenCalledWith(
+      TENANT_ID,
+      otro,
+    );
+  });
+
+  it('[TC-U-398] HU-042 (BL-464): notificarPedidoConfirmado avisa el estado de la cola del tenant', () => {
+    service.notificarPedidoConfirmado(TENANT_ID, pedidoConfirmado as any);
+
+    expect(mockKdsGateway.avisarEstadoCola).toHaveBeenCalledWith(TENANT_ID);
   });
 
   it('[TC-U-336] HU-015: confirmar el pago descuenta el stock en la misma transacción', async () => {

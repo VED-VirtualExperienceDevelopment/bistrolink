@@ -12,9 +12,14 @@
 //     de los CFE emitidos en un rango de fechas (HU-009, BL-455). Leemos id,
 //     serie, numero y estado_dgi (código y motivo).
 //
+//   - GET {SURTEC_API_URL}/comprobantes/{id}/pdf: PDF A4 de un CFE emitido,
+//     en base64 dentro de un JSON (HU-009, BL-454).
+//   - HU-023 (BL-96): emisión con Surtec no disponible (5xx): BistroLink la
+//     trata como transitoria y la concilia después.
+//
 // Qué NO cubre todavía (cada contrato se suma con la historia que lo usa):
-//   - Nota de crédito: HU-024. La API no tiene descarga de PDF ni XML
-//     (BL-454).
+//   - Nota de crédito: HU-024. La API no tiene descarga del XML firmado
+//     (BL-454): lo conservan Surtec y la DGI.
 //   - Integración con el POS: BL-100.
 //
 // Las dos URLs apuntan al mismo mock: los paths no se pisan. Cada test lleva
@@ -31,6 +36,7 @@ import {
   SurtecClient,
   SurtecError,
 } from '../../src/cfe/surtec.client';
+import { esErrorTransitorio } from '../../src/cfe/cfe.service';
 
 const { like, regex, eachLike } = MatchersV3;
 
@@ -442,6 +448,124 @@ describe('Contrato Surtec — facturación electrónica (BL-216)', () => {
           await expect(
             clienteContra(mock.url).consultarEmitidos(CONSULTA),
           ).resolves.toEqual([]);
+        });
+    });
+  });
+
+  describe('POST /comprobantes/crear — Surtec no disponible (HU-023, BL-96)', () => {
+    it('[TC-C-019] Surtec CFE: POST /comprobantes/crear con el servicio no disponible responde 503 y BistroLink lanza un SurtecError transitorio (se concilia después)', async () => {
+      loginConUsuario(pact.addInteraction());
+      await pact
+        .addInteraction()
+        .given('el servicio de emisión de Surtec no está disponible')
+        .uponReceiving('una emisión de e-Ticket con Surtec no disponible')
+        .withRequest('POST', '/comprobantes/crear', (b) => {
+          b.headers({
+            Authorization: regex('^Bearer \\S+$', `Bearer ${TOKEN_1}`),
+            'X-Emisor': regex(RUT, RUT_EMISOR),
+            'Content-Type': 'application/json',
+          }).jsonBody(cuerpoETicket());
+        })
+        // Solo el status: el cuerpo de un 5xx no se interpreta.
+        .willRespondWith(503)
+        .executeTest(async (mock) => {
+          const error = await clienteContra(mock.url)
+            .emitirETicket(SOLICITUD)
+            .catch((e: unknown) => e);
+
+          expect(error).toBeInstanceOf(SurtecError);
+          expect((error as SurtecError).status).toBe(503);
+          expect(esErrorTransitorio(error)).toBe(true);
+        });
+    });
+  });
+
+  describe('POST /comprobantes/crear — nota de crédito (HU-024, BL-104)', () => {
+    it('[TC-C-021] Surtec CFE: POST /comprobantes/crear de una nota de crédito de e-Ticket (102) con la referencia al CFE original responde 200 con serie y número', async () => {
+      loginConUsuario(pact.addInteraction());
+      await pact
+        .addInteraction()
+        .given('el emisor tiene emitido el e-Ticket A-49')
+        .uponReceiving(
+          'una nota de crédito de e-Ticket que anula el e-Ticket A-49',
+        )
+        .withRequest('POST', '/comprobantes/crear', (b) => {
+          b.headers({
+            Authorization: regex('^Bearer \\S+$', `Bearer ${TOKEN_1}`),
+            'X-Emisor': regex(RUT, RUT_EMISOR),
+            'Content-Type': 'application/json',
+          }).jsonBody({
+            ...cuerpoETicket(),
+            tipo_comprobante: 102,
+            id_externo: like('bl-pago-contrato-1-nc'),
+            referencias: [
+              {
+                tipo_comprobante: 101,
+                serie: like('A'),
+                numero: like(49),
+                fecha: regex('^\\d{4}-\\d{2}-\\d{2}$', '2026-11-07'),
+                razon: like('Cancelación del pedido'),
+              },
+            ],
+            adenda: { texto: like('Cancelación del pedido 1') },
+          });
+        })
+        .willRespondWith(200, (b) => {
+          b.jsonBody({ ...RESPUESTA_ETICKET, numero: like(7) });
+        })
+        .executeTest(async (mock) => {
+          const cfe = await clienteContra(mock.url).emitirNotaDeCredito(
+            {
+              ...SOLICITUD,
+              idExterno: 'bl-pago-contrato-1-nc',
+              adenda: 'Cancelación del pedido 1',
+            },
+            {
+              tipoComprobante: 101,
+              serie: 'A',
+              numero: 49,
+              fecha: '2026-11-07',
+              razon: 'Cancelación del pedido',
+            },
+          );
+
+          expect(cfe).toMatchObject({ serie: 'A', numero: 7 });
+        });
+    });
+  });
+
+  describe('GET /comprobantes/{id}/pdf — PDF del CFE (HU-009, BL-454)', () => {
+    // «%PDF-1.4 prueba» en base64: el contrato pide que empiece con %PDF-.
+    const PDF_BASE64 = Buffer.from('%PDF-1.4 prueba').toString('base64');
+
+    it('[TC-C-020] Surtec CFE: GET /comprobantes/{id}/pdf de un CFE emitido responde 200 con el PDF A4 en base64 (file_name, mime_type, format, data)', async () => {
+      loginConUsuario(pact.addInteraction());
+      await pact
+        .addInteraction()
+        .given('el emisor tiene el CFE 541759 emitido')
+        .uponReceiving('un pedido del PDF de un CFE emitido')
+        .withRequest('GET', '/comprobantes/541759/pdf', (b) => {
+          b.headers({
+            Authorization: regex('^Bearer \\S+$', `Bearer ${TOKEN_1}`),
+            'X-Emisor': regex(RUT, RUT_EMISOR),
+          });
+        })
+        .willRespondWith(200, (b) => {
+          b.jsonBody({
+            file_name: like('cfe.pdf'),
+            mime_type: 'application/pdf',
+            format: like('A4'),
+            // base64 de un archivo que empieza con %PDF- («JVBERi0»).
+            data: regex('^JVBERi0[A-Za-z0-9+/=]*$', PDF_BASE64),
+          });
+        })
+        .executeTest(async (mock) => {
+          const { contenido } = await clienteContra(mock.url).obtenerPdf(
+            RUT_EMISOR,
+            '541759',
+          );
+
+          expect(contenido.subarray(0, 5).toString('latin1')).toBe('%PDF-');
         });
     });
   });

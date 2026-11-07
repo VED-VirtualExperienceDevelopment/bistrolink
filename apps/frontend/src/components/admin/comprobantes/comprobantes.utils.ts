@@ -77,6 +77,11 @@ export function rutaComprobantes(
 }
 
 /** «desde» posterior a «hasta»: el backend respondería 400. */
+/** HU-009 (BL-454): PDF A4 de un comprobante (solo ADMIN). */
+export function rutaPdfComprobante(comprobanteId: string): string {
+  return `/admin/comprobantes/${encodeURIComponent(comprobanteId)}/pdf`;
+}
+
 export function rangoInvalido(filtros: FiltrosComprobantes): boolean {
   return Boolean(
     filtros.desde && filtros.hasta && filtros.desde > filtros.hasta,
@@ -144,4 +149,100 @@ export function filaComprobante(c: Comprobante) {
     detalle: detalleEstadoDgi(c),
     enlaceDgi: urlConsultaSegura(c.urlConsulta),
   };
+}
+
+// ── HU-023 (BL-96): pendientes de emisión ────────────────────────────────
+
+/** Un pago aprobado sin CFE (GET /admin/comprobantes/pendientes). */
+export interface PendienteEmision {
+  pagoId: string;
+  pedidoId: string;
+  mesa: number | null;
+  canal: string;
+  monto: string;
+  medioPago: string;
+  fecha: string;
+  intentos: number;
+  ultimoIntentoEn: string | null;
+  ultimoError: string | null;
+  requiereAtencion: boolean;
+  proximoIntentoEn: string | null;
+}
+
+export interface PaginaPendientesEmision {
+  pendientes: PendienteEmision[];
+  total: number;
+  pagina: number;
+  hayMas: boolean;
+}
+
+/** Respuesta de POST .../pendientes/:pagoId/reintentar. */
+export interface ResultadoReintento {
+  emitido: boolean;
+  comprobante: { tipoCfe: string; serie: string; numero: number } | null;
+  error: string | null;
+}
+
+export function rutaPendientes(pagina = 1): string {
+  return pagina > 1
+    ? `/admin/comprobantes/pendientes?pagina=${pagina}`
+    : "/admin/comprobantes/pendientes";
+}
+
+export function rutaReintentar(pagoId: string): string {
+  return `/admin/comprobantes/pendientes/${encodeURIComponent(pagoId)}/reintentar`;
+}
+
+const NOMBRE_MEDIO: Record<string, string> = {
+  MERCADOPAGO: "Tarjeta (Mercado Pago)",
+  PLEXO: "Tarjeta (Plexo)",
+  EFECTIVO: "Efectivo",
+  // HU-007b (BL-80): cobros con el POS del local.
+  POS_CREDITO: "Crédito (POS del local)",
+  POS_DEBITO: "Débito (POS del local)",
+};
+
+const FORMATO_HORA = new Intl.DateTimeFormat("es-UY", {
+  timeZone: "America/Montevideo",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
+
+/** Estado del pendiente para mostrar. */
+export function estadoPendiente(p: PendienteEmision): string {
+  if (p.requiereAtencion) return "Requiere atención";
+  if (p.intentos === 0) return "Se emite en unos minutos";
+  return p.proximoIntentoEn
+    ? `Reintentando · próximo intento ${FORMATO_HORA.format(new Date(p.proximoIntentoEn))}`
+    : "Reintentando";
+}
+
+/** Lo que muestra cada fila de pendientes, ya formateado. */
+export function filaPendiente(p: PendienteEmision) {
+  return {
+    fecha: FORMATO_FECHA.format(new Date(p.fecha)),
+    pedido: codigoPedido(p.pedidoId),
+    origen: p.mesa === null ? "Para retirar" : `Mesa ${p.mesa}`,
+    monto: formatearPrecio(p.monto),
+    medio: NOMBRE_MEDIO[p.medioPago] ?? p.medioPago,
+    intentos:
+      p.intentos === 1
+        ? "1 intento fallido"
+        : `${p.intentos} intentos fallidos`,
+    estado: estadoPendiente(p),
+  };
+}
+
+/** Mensaje después de «Reintentar ahora». */
+export function mensajeReintento(r: ResultadoReintento): string {
+  if (r.emitido && r.comprobante) {
+    const { tipoCfe, serie, numero } = r.comprobante;
+    // «la» e-Factura, «el» e-Ticket.
+    const articulo = tipoCfe === "111" ? "la" : "el";
+    return `Listo: se emitió ${articulo} ${nombreDelComprobante(tipoCfe)} ${numeroComprobante(serie, numero)}.`;
+  }
+  return r.error
+    ? `No se pudo emitir: ${r.error}`
+    : "No se pudo emitir el comprobante. Probá de nuevo más tarde.";
 }

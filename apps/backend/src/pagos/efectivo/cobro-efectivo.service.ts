@@ -12,9 +12,33 @@ import { CfeService } from '../../cfe/cfe.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { AuditAction } from '../../audit-log/audit-action.enum';
 import { RegistrarCobroEfectivoDto } from './registrar-cobro-efectivo.dto';
+import {
+  RegistrarCobroPosDto,
+  TarjetaPos,
+} from '../pos/registrar-cobro-pos.dto';
 
 /** HU-031 (BL-201): medio de pago de los cobros en efectivo. */
 export const MEDIO_EFECTIVO = 'EFECTIVO';
+
+/**
+ * HU-007b (BL-80): medios de pago de los cobros con el POS del local. El
+ * cobro lo hace el POS; BistroLink solo lo registra, con el número de
+ * autorización (en pasarela_referencia). Nunca datos de la tarjeta.
+ */
+export const MEDIOS_POS: Readonly<Record<TarjetaPos, string>> = {
+  CREDITO: 'POS_CREDITO',
+  DEBITO: 'POS_DEBITO',
+};
+
+const NOMBRE_TARJETA: Readonly<Record<TarjetaPos, string>> = {
+  CREDITO: 'Crédito',
+  DEBITO: 'Débito',
+};
+
+function tarjetaDelMedio(medioPago: string): TarjetaPos | null {
+  const entrada = Object.entries(MEDIOS_POS).find(([, m]) => m === medioPago);
+  return entrada ? (entrada[0] as TarjetaPos) : null;
+}
 
 /**
  * Los pedidos para retirar (mesa virtual) no se cancelan solos: un carrito
@@ -66,6 +90,8 @@ export function ordenarPendientes(
 
 export interface PendientesDeCobro {
   efectivoHabilitado: boolean;
+  /** HU-007b (BL-80): el local registra cobros hechos con su POS. */
+  posHabilitado: boolean;
   pedidos: PedidoPendienteDeCobro[];
 }
 
@@ -78,9 +104,48 @@ export interface CobroEfectivoRegistrado {
   vuelto: string;
 }
 
-type ResultadoTx =
-  | { repetido: CobroEfectivoRegistrado }
-  | { cobro: CobroEfectivoRegistrado; pedidoConfirmado: PedidoParaKds };
+/** HU-007b (BL-80): cobro con el POS del local, ya registrado. */
+export interface CobroPosRegistrado {
+  pagoId: string;
+  pedidoId: string;
+  /** Total cobrado (el del pedido, calculado en el backend). */
+  monto: string;
+  tarjeta: TarjetaPos;
+  /** Número de autorización del voucher del POS. */
+  autorizacion: string;
+}
+
+type ResultadoTx<R> =
+  { repetido: R } | { cobro: R; pedidoConfirmado: PedidoParaKds };
+
+/**
+ * Lo que cambia entre los cobros que registra el personal (efectivo y POS).
+ * El resto (pedido en PENDIENTE_PAGO, sin pago con tarjeta en curso, stock,
+ * pedido a RECIBIDO, auditoría, KDS y CFE) es igual.
+ */
+interface CobroManual<R> {
+  pedidoId: string;
+  idempotencyKey: string;
+  /** Columna de restaurante que habilita el medio. */
+  habilitadoPor: 'efectivoHabilitado' | 'posHabilitado';
+  mensajeDeshabilitado: string;
+  medioPago: string;
+  pasarelaReferencia: string | null;
+  /** Controles propios del medio sobre el total (ej. lo recibido alcanza). */
+  validarMonto(monto: Prisma.Decimal): void;
+  /** El pago con esta clave es de este mismo cobro (reintento). */
+  esElMismo(pago: Pago): boolean;
+  resumen(
+    pago: Pick<
+      Pago,
+      'id' | 'pedidoId' | 'monto' | 'medioPago' | 'pasarelaReferencia'
+    >,
+  ): R;
+  auditoria(cobro: R): {
+    action: AuditAction;
+    despues: Record<string, string>;
+  };
+}
 
 function esClaveDuplicada(error: unknown): boolean {
   return (
@@ -111,7 +176,9 @@ function resumenDelCobro(
 
 /**
  * HU-031 (BL-201): el mozo o el administrador registra que el comensal pagó
- * en efectivo (RF.08).
+ * en efectivo (RF.08). HU-007b (BL-80): o con el POS del local (crédito o
+ * débito), con el mismo flujo: solo cambian el medio, el flag que lo
+ * habilita y lo que va a la auditoría.
  *
  * En una sola transacción: Pago EFECTIVO/APROBADO, pedido de PENDIENTE_PAGO
  * a RECIBIDO (RD.03) con quién lo cobró en el historial, y el registro de
@@ -146,7 +213,7 @@ export class CobroEfectivoService {
     return this.tenantPrisma.runInTenantContext(tenantId, async (tx) => {
       const restaurante = await tx.restaurante.findUnique({
         where: { tenantId },
-        select: { efectivoHabilitado: true },
+        select: { efectivoHabilitado: true, posHabilitado: true },
       });
       const pedidos = await tx.pedido.findMany({
         where: {
@@ -179,6 +246,7 @@ export class CobroEfectivoService {
       });
       return {
         efectivoHabilitado: restaurante?.efectivoHabilitado ?? false,
+        posHabilitado: restaurante?.posHabilitado ?? false,
         pedidos: ordenarPendientes(
           pedidos.map((pedido) => ({
             id: pedido.id,
@@ -211,11 +279,94 @@ export class CobroEfectivoService {
     dto: RegistrarCobroEfectivoDto,
   ): Promise<CobroEfectivoRegistrado> {
     const recibido = new Prisma.Decimal(dto.montoRecibido);
+    return this.cobrar(tenantId, actorKeycloakId, {
+      pedidoId: dto.pedidoId,
+      idempotencyKey: dto.idempotencyKey,
+      habilitadoPor: 'efectivoHabilitado',
+      mensajeDeshabilitado:
+        'El cobro en efectivo no está habilitado en este establecimiento',
+      medioPago: MEDIO_EFECTIVO,
+      pasarelaReferencia: null,
+      validarMonto: (monto) => {
+        if (recibido.lessThan(monto)) {
+          throw new BadRequestException(
+            `El monto recibido ($ ${recibido.toFixed(2)}) es menor que el total del pedido ($ ${monto.toFixed(2)})`,
+          );
+        }
+      },
+      esElMismo: (pago) => pago.medioPago === MEDIO_EFECTIVO,
+      resumen: (pago) => resumenDelCobro(pago, recibido),
+      auditoria: (cobro) => ({
+        action: AuditAction.PAGO_EFECTIVO_REGISTRADO,
+        // Un alta: no hay valores antes. La pantalla de Auditoría muestra
+        // los de después (total, recibido y vuelto).
+        despues: {
+          monto: cobro.monto,
+          montoRecibido: cobro.montoRecibido,
+          vuelto: cobro.vuelto,
+        },
+      }),
+    });
+  }
 
-    let resultado: ResultadoTx;
+  /**
+   * HU-007b (BL-80): registra un cobro hecho con el POS del local (crédito
+   * o débito). Igual que el efectivo: el total lo calcula el backend y el
+   * pedido pasa a cocina. Solo se guarda el número de autorización del
+   * voucher, nunca datos de la tarjeta.
+   */
+  async registrarPos(
+    tenantId: string,
+    actorKeycloakId: string,
+    dto: RegistrarCobroPosDto,
+  ): Promise<CobroPosRegistrado> {
+    const medioPago = MEDIOS_POS[dto.tarjeta];
+    return this.cobrar(tenantId, actorKeycloakId, {
+      pedidoId: dto.pedidoId,
+      idempotencyKey: dto.idempotencyKey,
+      habilitadoPor: 'posHabilitado',
+      mensajeDeshabilitado:
+        'El cobro con el POS del local no está habilitado en este establecimiento',
+      medioPago,
+      pasarelaReferencia: dto.autorizacion,
+      validarMonto: () => undefined,
+      // Un reintento puede no traer exactamente lo mismo (el mozo corrigió
+      // un dígito): lo que importa es que sea un cobro con POS del pedido.
+      esElMismo: (pago) => tarjetaDelMedio(pago.medioPago) !== null,
+      resumen: (pago) => ({
+        pagoId: pago.id,
+        pedidoId: pago.pedidoId,
+        monto: pago.monto.toFixed(2),
+        tarjeta: tarjetaDelMedio(pago.medioPago) ?? dto.tarjeta,
+        autorizacion: pago.pasarelaReferencia ?? dto.autorizacion,
+      }),
+      auditoria: (cobro) => ({
+        action: AuditAction.PAGO_POS_REGISTRADO,
+        // «medio» y no «tarjeta»: la auditoría oculta todo campo que se
+        // llame como un dato de tarjeta (HU-035), y esto no lo es.
+        despues: {
+          monto: cobro.monto,
+          medio: NOMBRE_TARJETA[cobro.tarjeta],
+          autorizacion: cobro.autorizacion,
+        },
+      }),
+    });
+  }
+
+  /**
+   * Cobro que registra el personal (efectivo o POS). En una transacción:
+   * pago APROBADO, pedido a RECIBIDO y auditoría. Confirmada, el pedido va al
+   * KDS y se pide el CFE en segundo plano.
+   */
+  private async cobrar<R extends { pagoId: string }>(
+    tenantId: string,
+    actorKeycloakId: string,
+    cobro: CobroManual<R>,
+  ): Promise<R> {
+    let resultado: ResultadoTx<R>;
     try {
       resultado = await this.tenantPrisma.runInTenantContext(tenantId, (tx) =>
-        this.registrarEnTx(tx, tenantId, actorKeycloakId, dto, recibido),
+        this.registrarEnTx(tx, tenantId, actorKeycloakId, cobro),
       );
     } catch (error) {
       // Dos requests a la vez con la misma clave (doble clic): el segundo
@@ -225,11 +376,11 @@ export class CobroEfectivoService {
         tenantId,
         (tx) =>
           tx.pago.findUnique({
-            where: { idempotencyKey: dto.idempotencyKey },
+            where: { idempotencyKey: cobro.idempotencyKey },
           }),
       );
       if (!existente) throw error;
-      return this.repetido(existente, dto, recibido);
+      return this.repetido(existente, cobro);
     }
 
     if ('repetido' in resultado) {
@@ -247,34 +398,31 @@ export class CobroEfectivoService {
     return resultado.cobro;
   }
 
-  private async registrarEnTx(
+  private async registrarEnTx<R>(
     tx: PrismaClient,
     tenantId: string,
     actorKeycloakId: string,
-    dto: RegistrarCobroEfectivoDto,
-    recibido: Prisma.Decimal,
-  ): Promise<ResultadoTx> {
+    cobro: CobroManual<R>,
+  ): Promise<ResultadoTx<R>> {
     // Idempotencia primero: un reintento llega cuando el pedido ya está en
     // RECIBIDO, y tiene que devolver el mismo cobro, no un 409.
     const existente = await tx.pago.findUnique({
-      where: { idempotencyKey: dto.idempotencyKey },
+      where: { idempotencyKey: cobro.idempotencyKey },
     });
     if (existente) {
-      return { repetido: this.repetido(existente, dto, recibido) };
+      return { repetido: this.repetido(existente, cobro) };
     }
 
     const restaurante = await tx.restaurante.findUnique({
       where: { tenantId },
-      select: { efectivoHabilitado: true },
+      select: { [cobro.habilitadoPor]: true },
     });
-    if (!restaurante?.efectivoHabilitado) {
-      throw new ConflictException(
-        'El cobro en efectivo no está habilitado en este establecimiento',
-      );
+    if (!restaurante?.[cobro.habilitadoPor]) {
+      throw new ConflictException(cobro.mensajeDeshabilitado);
     }
 
     const pedido = await tx.pedido.findUnique({
-      where: { id: dto.pedidoId },
+      where: { id: cobro.pedidoId },
       select: {
         id: true,
         estado: true,
@@ -301,13 +449,9 @@ export class CobroEfectivoService {
     if (monto.lessThanOrEqualTo(0)) {
       throw new BadRequestException('El pedido no tiene monto a cobrar');
     }
-    if (recibido.lessThan(monto)) {
-      throw new BadRequestException(
-        `El monto recibido ($ ${recibido.toFixed(2)}) es menor que el total del pedido ($ ${monto.toFixed(2)})`,
-      );
-    }
-    // HU-015 (BL-120): el efectivo se cobra en mano: si el stock ya no
-    // alcanza, 409 antes de registrarlo (D3, ADR 0009).
+    cobro.validarMonto(monto);
+    // HU-015 (BL-120): el cobro ya ocurrió en mano (efectivo o POS): si el
+    // stock ya no alcanza, 409 antes de registrarlo (D3, ADR 0009).
     await this.pedidos.verificarStockEnTx(tx, pedido.id);
 
     const usuario = UUID.test(actorKeycloakId)
@@ -320,10 +464,13 @@ export class CobroEfectivoService {
       data: {
         tenantId,
         pedidoId: pedido.id,
-        idempotencyKey: dto.idempotencyKey,
+        idempotencyKey: cobro.idempotencyKey,
         monto,
-        medioPago: MEDIO_EFECTIVO,
+        medioPago: cobro.medioPago,
         estado: 'APROBADO',
+        ...(cobro.pasarelaReferencia
+          ? { pasarelaReferencia: cobro.pasarelaReferencia }
+          : {}),
       },
     });
 
@@ -341,39 +488,27 @@ export class CobroEfectivoService {
       throw new ConflictException('Este pedido ya fue pagado');
     }
 
-    const cobro = resumenDelCobro(pago, recibido);
+    const resumen = cobro.resumen(pago);
+    const { action, despues } = cobro.auditoria(resumen);
     await this.auditLog.registrarEnTx(tx, {
-      action: AuditAction.PAGO_EFECTIVO_REGISTRADO,
+      action,
       tenantId,
       actorKeycloakId,
       entidadId: pago.id,
-      // Un alta: no hay valores antes. La pantalla de Auditoría muestra los
-      // de después (total, recibido y vuelto).
-      despues: {
-        monto: cobro.monto,
-        montoRecibido: cobro.montoRecibido,
-        vuelto: cobro.vuelto,
-      },
+      despues,
       detalle: { pedidoId: pedido.id },
     });
 
-    return { cobro, pedidoConfirmado };
+    return { cobro: resumen, pedidoConfirmado };
   }
 
   /** Mismo cobro de un reintento con la misma clave. */
-  private repetido(
-    existente: Pago,
-    dto: RegistrarCobroEfectivoDto,
-    recibido: Prisma.Decimal,
-  ): CobroEfectivoRegistrado {
-    if (
-      existente.medioPago !== MEDIO_EFECTIVO ||
-      existente.pedidoId !== dto.pedidoId
-    ) {
+  private repetido<R>(existente: Pago, cobro: CobroManual<R>): R {
+    if (!cobro.esElMismo(existente) || existente.pedidoId !== cobro.pedidoId) {
       throw new ConflictException(
         'La clave de idempotencia ya se usó en otro cobro',
       );
     }
-    return resumenDelCobro(existente, recibido);
+    return cobro.resumen(existente);
   }
 }

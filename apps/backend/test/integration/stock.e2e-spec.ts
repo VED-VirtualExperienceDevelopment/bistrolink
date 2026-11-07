@@ -169,6 +169,8 @@ describe('HU-015 (BL-120): stock y alertas de stock bajo', () => {
       'emitirActualizacionPedido',
       'emitirReportesActualizados',
       'emitirStockActualizado',
+      // HU-042 (BL-464): aviso del estado de la cola.
+      'avisarEstadoCola',
     ] as const) {
       jest
         .spyOn(app.get(KdsGateway), metodo)

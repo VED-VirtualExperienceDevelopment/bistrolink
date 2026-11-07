@@ -9,7 +9,8 @@ import {
 import { usePendientesDeCobro } from "@/components/admin/cobros/usePendientesDeCobro";
 
 /**
- * HU-031 (BL-201): cobros pendientes. Los pedidos para retirar no tienen
+ * HU-031 (BL-201): cobros pendientes (en efectivo y, HU-007b / BL-80, con
+ * el POS del local). Los pedidos para retirar no tienen
  * mesa en el mapa: se cobran acá. También se listan los de las mesas, que
  * se pueden cobrar desde acá o desde el panel de la mesa.
  */
@@ -23,8 +24,9 @@ export default function CobrosPage() {
         <div>
           <h1 className="text-headline-lg text-primary">Cobros pendientes</h1>
           <p className="text-body-md text-on-surface-variant">
-            Pedidos que esperan el pago. Al cobrar en efectivo, el pedido pasa
-            a cocina y se emite el comprobante.
+            Pedidos que esperan el pago. Al cobrar en efectivo o registrar el
+            cobro hecho con el POS del local, el pedido pasa a cocina y se
+            emite el comprobante.
           </p>
         </div>
         <button
@@ -65,6 +67,7 @@ export default function CobrosPage() {
             <PedidosPorCobrar
               pedidos={pendientesParaRetirar(datos.pedidos)}
               efectivoHabilitado={datos.efectivoHabilitado}
+              posHabilitado={datos.posHabilitado}
               token={token}
               vacio="No hay pedidos para retirar esperando el pago."
               onCobrado={() => void recargar()}
@@ -77,6 +80,7 @@ export default function CobrosPage() {
             <PedidosPorCobrar
               pedidos={pendientesEnMesas(datos.pedidos)}
               efectivoHabilitado={datos.efectivoHabilitado}
+              posHabilitado={datos.posHabilitado}
               token={token}
               conMesa
               vacio="No hay pedidos de mesas esperando el pago."

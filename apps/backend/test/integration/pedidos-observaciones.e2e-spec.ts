@@ -37,6 +37,10 @@ describe('Pedidos Observaciones - Integración (BL-41)', () => {
       pedidoEstadoHistorial: { create: jest.fn() },
       mesa: { findUnique: jest.fn(), upsert: jest.fn() },
       itemCarta: { findMany: jest.fn() },
+      // HU-042 (BL-463): al confirmar el pago se consulta el límite de la
+      // cola del KDS. Sin límite (null) la cola está desactivada y el pedido
+      // queda en RECIBIDO, como antes.
+      restaurante: { findUnique: jest.fn().mockResolvedValue(null) },
     };
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -56,6 +60,8 @@ describe('Pedidos Observaciones - Integración (BL-41)', () => {
             emitirNuevoPedido: jest.fn(),
             emitirActualizacionPedido: jest.fn(),
             emitirReportesActualizados: jest.fn(),
+            // HU-042 (BL-464): aviso del estado de la cola.
+            avisarEstadoCola: jest.fn().mockResolvedValue(undefined),
           },
         },
         // HU-012 (BL-219): al confirmar un pago se recalcula el resumen de

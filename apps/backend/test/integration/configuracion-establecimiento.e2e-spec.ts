@@ -293,7 +293,8 @@ describe('HU-020 (BL-72): configuración del establecimiento', () => {
       expect(lectura.body).toMatchObject({
         razonSocial: original.razonSocial,
         efectivoHabilitado: original.efectivoHabilitado,
-        mediosPagoDisponibles: ['EFECTIVO', 'MERCADOPAGO'],
+        // HU-007b (BL-80): el POS del local también se puede habilitar.
+        mediosPagoDisponibles: ['EFECTIVO', 'MERCADOPAGO', 'POS'],
         proveedoresCfeDisponibles: ['SURTEC'],
       });
       expect(typeof lectura.body.rut).toBe('string');

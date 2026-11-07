@@ -1,12 +1,7 @@
 import { test, expect } from "../support/auth";
 import type { Page } from "@playwright/test";
-import {
-  ITEM_DISPONIBLE,
-  KDS_PATH,
-  MENU_URL_PATH,
-  MESA_ID,
-} from "../support/ids";
-import { intentarEntregarPedido } from "../support/kds";
+import { ITEM_DISPONIBLE, MENU_URL_PATH, MESA_ID } from "../support/ids";
+import { ALERTAS_PATH } from "../support/kds";
 import { continuarAlPago } from "../support/pago";
 
 // BL-448: al recargar la página, el comensal vuelve a donde estaba (pantalla
@@ -14,8 +9,8 @@ import { continuarAlPago } from "../support/pago";
 // aviso de efectivo aparece en un KDS abierto después de la solicitud.
 //
 // Necesita el efectivo habilitado en el establecimiento del seed (valor por
-// defecto). Los pedidos de mesa se cobran y se entregan desde el KDS al
-// terminar, para no dejar avisos ni tickets abiertos.
+// defecto). BL-477: los pedidos los cierra al terminar el fixture
+// pedidosDeTest, para no dejar avisos ni tickets abiertos.
 
 const COBROS_PATH = "/admin/cobros";
 
@@ -56,7 +51,7 @@ async function avisarQuePagaEnEfectivo(
   ).toBeVisible();
 }
 
-/** El mozo cobra el pedido desde «Cobros pendientes» (best effort en el cierre). */
+/** El mozo cobra el pedido desde «Cobros pendientes». */
 async function cobrarEnEfectivo(
   kdsPage: Page,
   pedidoId: string,
@@ -95,38 +90,27 @@ test.describe("BL-448: Retomar el pago al recargar", () => {
     qrMesas,
   }) => {
     test.slow();
-    let pedidoId: string | undefined;
-    let cobrado = false;
-    try {
-      await page.goto(qrMesas.ruta(MESA_ID));
-      await agregarItem(page);
-      pedidoId = await continuarAlPago(page);
-      await avisarQuePagaEnEfectivo(page, pedidoId, "10000");
+    await page.goto(qrMesas.ruta(MESA_ID));
+    await agregarItem(page);
+    const pedidoId = await continuarAlPago(page);
+    await avisarQuePagaEnEfectivo(page, pedidoId, "10000");
 
-      // Recarga: vuelve a «Esperando al mozo», con el mismo pedido.
-      const creados = contarPedidosCreados(page);
-      await page.reload();
-      await expect(
-        page.getByRole("heading", { name: "Esperando al mozo" }),
-      ).toBeVisible({ timeout: 15000 });
-      await expect(
-        page.getByText(`Pedido ${codigoDelPedido(pedidoId)}`),
-      ).toBeVisible();
-      expect(creados()).toBe(0);
+    // Recarga: vuelve a «Esperando al mozo», con el mismo pedido.
+    const creados = contarPedidosCreados(page);
+    await page.reload();
+    await expect(
+      page.getByRole("heading", { name: "Esperando al mozo" }),
+    ).toBeVisible({ timeout: 15000 });
+    await expect(
+      page.getByText(`Pedido ${codigoDelPedido(pedidoId)}`),
+    ).toBeVisible();
+    expect(creados()).toBe(0);
 
-      // El mozo cobra y la pantalla pasa sola a cocina.
-      await cobrarEnEfectivo(kdsPageMozo, pedidoId);
-      cobrado = true;
-      await expect(
-        page.getByRole("heading", { name: "¡Tu pedido ya está en cocina!" }),
-      ).toBeVisible({ timeout: 20000 });
-    } finally {
-      if (pedidoId && !cobrado) {
-        await cobrarEnEfectivo(kdsPageMozo, pedidoId).catch(() => undefined);
-      }
-      await kdsPageMozo.goto(KDS_PATH).catch(() => undefined);
-      await intentarEntregarPedido(kdsPageMozo, pedidoId);
-    }
+    // El mozo cobra y la pantalla pasa sola a cocina.
+    await cobrarEnEfectivo(kdsPageMozo, pedidoId);
+    await expect(
+      page.getByRole("heading", { name: "¡Tu pedido ya está en cocina!" }),
+    ).toBeVisible({ timeout: 20000 });
   });
 
   test("[TC-E-060] BL-448: el comensal recarga en la pantalla de pago con tarjeta y vuelve a esa pantalla con el mismo pedido", async ({
@@ -163,35 +147,28 @@ test.describe("BL-448: Retomar el pago al recargar", () => {
     expect(guardado).not.toContain("5031");
   });
 
-  test("[TC-E-061] BL-448: con el KDS abierto después de la solicitud de efectivo, el aviso aparece", async ({
+  test("[TC-E-061] BL-448: con la pantalla Alertas abierta después de la solicitud de efectivo, el aviso aparece", async ({
     page,
     kdsPageMozo,
     qrMesas,
   }) => {
     test.slow();
-    let pedidoId: string | undefined;
-    try {
-      await page.goto(qrMesas.ruta(MESA_ID));
-      await agregarItem(page);
-      pedidoId = await continuarAlPago(page);
-      // Un monto que no use otro test, para encontrar este aviso.
-      await avisarQuePagaEnEfectivo(page, pedidoId, "7777");
+    await page.goto(qrMesas.ruta(MESA_ID));
+    await agregarItem(page);
+    const pedidoId = await continuarAlPago(page);
+    // Un monto que no use otro test, para encontrar este aviso.
+    await avisarQuePagaEnEfectivo(page, pedidoId, "7777");
 
-      // El KDS se abre (o se recarga) después: el evento en vivo ya pasó y
-      // el aviso tiene que llegar en el snapshot de la conexión nueva.
-      await kdsPageMozo.goto(KDS_PATH);
-      await expect(
-        kdsPageMozo
-          .getByRole("alert")
-          .filter({ hasText: "quiere pagar en efectivo" })
-          .filter({ hasText: /7\.777/ }),
-      ).toBeVisible({ timeout: 15000 });
-    } finally {
-      if (pedidoId) {
-        await cobrarEnEfectivo(kdsPageMozo, pedidoId).catch(() => undefined);
-        await kdsPageMozo.goto(KDS_PATH).catch(() => undefined);
-        await intentarEntregarPedido(kdsPageMozo, pedidoId);
-      }
-    }
+    // BL-460: el aviso de efectivo ya no está en el tablero del KDS, se
+    // atiende desde la pantalla Alertas. Se abre después: el evento en vivo
+    // ya pasó y el aviso tiene que llegar en el snapshot de la conexión nueva.
+    await kdsPageMozo.goto(ALERTAS_PATH);
+    await expect(
+      kdsPageMozo
+        .getByRole("main")
+        .getByRole("listitem")
+        .filter({ hasText: "quiere pagar en efectivo" })
+        .filter({ hasText: /7\.777/ }),
+    ).toBeVisible({ timeout: 15000 });
   });
 });

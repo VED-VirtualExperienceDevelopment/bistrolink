@@ -102,7 +102,12 @@ export function receptorParaEnviar(
   };
 }
 
-/** Nombre del comprobante según su tipo de CFE (111 e-Factura, 101 e-Ticket). */
+/**
+ * Nombre del comprobante según su tipo de CFE (111 e-Factura, 101 e-Ticket).
+ * HU-024 (BL-104): 102 y 112 son sus notas de crédito.
+ */
 export function nombreDelComprobante(tipoCfe: string | undefined): string {
+  if (tipoCfe === "102") return "Nota de crédito de e-Ticket";
+  if (tipoCfe === "112") return "Nota de crédito de e-Factura";
   return tipoCfe === "111" ? "e-Factura" : "e-Ticket";
 }

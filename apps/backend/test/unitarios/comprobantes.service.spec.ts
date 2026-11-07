@@ -44,7 +44,11 @@ describe('ComprobantesService.consultar', () => {
     tenantPrisma = {
       runInTenantContext: jest.fn((_t, callback) => callback(tx)),
     };
-    service = new ComprobantesService(tenantPrisma as any);
+    service = new ComprobantesService(
+      tenantPrisma as any,
+      {} as any,
+      {} as any,
+    );
   });
 
   const where = () => tx.comprobanteFiscal.findMany.mock.calls[0][0].where;
@@ -172,7 +176,7 @@ describe('ComprobantesController', () => {
     expect(guards[1]).toBe(RolesGuard);
 
     const servicio = { consultar: jest.fn().mockResolvedValue({}) };
-    const controller = new ComprobantesController(servicio as any);
+    const controller = new ComprobantesController(servicio as any, {} as any);
     await controller.consultar(
       { user: { sub: 'kc', tenantId: TENANT_ID, roles: ['ADMIN'] } } as any,
       { estado: 'PENDIENTE' },
@@ -180,5 +184,231 @@ describe('ComprobantesController', () => {
     expect(servicio.consultar).toHaveBeenCalledWith(TENANT_ID, {
       estado: 'PENDIENTE',
     });
+  });
+
+  it('HU-023 (BL-96): pendientes y reintentar usan el tenant y el actor del token', async () => {
+    const servicio = {
+      consultarPendientes: jest.fn().mockResolvedValue({}),
+      reintentar: jest.fn().mockResolvedValue({}),
+    };
+    const cfe = { pdfDelComprobante: jest.fn().mockResolvedValue({}) };
+    const controller = new ComprobantesController(servicio as any, cfe as any);
+    const req = {
+      user: { sub: 'kc', tenantId: TENANT_ID, roles: ['ADMIN'] },
+    } as any;
+
+    await controller.pendientes(req, { pagina: 2 });
+    await controller.reintentar(req, 'pago-1');
+
+    expect(servicio.consultarPendientes).toHaveBeenCalledWith(TENANT_ID, 2);
+
+    // HU-009 (BL-454): PDF de un comprobante del tenant del token.
+    await controller.pdf(req, 'comprobante-1');
+    expect(cfe.pdfDelComprobante).toHaveBeenCalledWith(
+      TENANT_ID,
+      'comprobante-1',
+    );
+    expect(servicio.reintentar).toHaveBeenCalledWith(TENANT_ID, 'pago-1', {
+      id: 'kc',
+    });
+  });
+});
+
+describe('ComprobantesService: pendientes de emisión (HU-023, BL-96)', () => {
+  const entornoOriginal = process.env;
+  let tx: {
+    pago: { count: jest.Mock; findMany: jest.Mock; findUnique: jest.Mock };
+  };
+  let tenantPrisma: { runInTenantContext: jest.Mock };
+  let cfe: { configurado: jest.Mock; reintentar: jest.Mock };
+  let auditLog: { registrar: jest.Mock };
+  let service: ComprobantesService;
+
+  const pagoSinCfe = (extra: Record<string, unknown> = {}) => ({
+    id: 'pago-1',
+    pedidoId: 'pedido-1',
+    monto: new Prisma.Decimal('590'),
+    medioPago: 'EFECTIVO',
+    createdAt: new Date('2026-11-03T17:00:00.000Z'),
+    cfeIntentos: 1,
+    cfeUltimoIntentoEn: new Date('2026-11-03T17:01:00.000Z'),
+    cfeUltimoError: 'Surtec rechazó la emisión (HTTP 503): {}',
+    pedido: { canal: 'QR', mesa: { numero: 4, esVirtual: false } },
+    ...extra,
+  });
+
+  beforeEach(() => {
+    process.env = { ...entornoOriginal, NODE_ENV: 'production' };
+    tx = {
+      pago: {
+        count: jest.fn().mockResolvedValue(1),
+        findMany: jest.fn().mockResolvedValue([pagoSinCfe()]),
+        findUnique: jest.fn().mockResolvedValue({
+          estado: 'APROBADO',
+          _count: { comprobantes: 0 },
+        }),
+      },
+    };
+    tenantPrisma = {
+      runInTenantContext: jest.fn((_t, callback) => callback(tx)),
+    };
+    cfe = {
+      configurado: jest.fn().mockReturnValue(true),
+      reintentar: jest.fn().mockResolvedValue({
+        comprobante: {
+          tipoCfe: '101',
+          serie: 'A',
+          numero: 7,
+          urlConsulta: null,
+        },
+        error: null,
+      }),
+    };
+    auditLog = { registrar: jest.fn() };
+    service = new ComprobantesService(
+      tenantPrisma as any,
+      cfe as any,
+      auditLog as any,
+    );
+  });
+
+  afterEach(() => {
+    process.env = entornoOriginal;
+  });
+
+  it('lista los aprobados sin CFE del tenant, del más viejo al más nuevo, con intentos y próximo intento', async () => {
+    const r = await service.consultarPendientes(TENANT_ID, 1, AHORA);
+
+    const args = tx.pago.findMany.mock.calls[0][0];
+    expect(args.where).toEqual({
+      estado: 'APROBADO',
+      comprobantes: { none: {} },
+    });
+    expect(args.orderBy).toEqual([{ createdAt: 'asc' }, { id: 'asc' }]);
+    expect(r).toMatchObject({ total: 1, pagina: 1, hayMas: false });
+    expect(r.pendientes).toEqual([
+      {
+        pagoId: 'pago-1',
+        pedidoId: 'pedido-1',
+        mesa: 4,
+        canal: 'QR',
+        monto: '590.00',
+        medioPago: 'EFECTIVO',
+        fecha: '2026-11-03T17:00:00.000Z',
+        intentos: 1,
+        ultimoIntentoEn: '2026-11-03T17:01:00.000Z',
+        ultimoError: 'Surtec rechazó la emisión (HTTP 503): {}',
+        requiereAtencion: false,
+        // 5 min después del primer intento fallido.
+        proximoIntentoEn: '2026-11-03T17:06:00.000Z',
+      },
+    ]);
+  });
+
+  it('sin página ni fecha: la primera página, calculada con la hora actual', async () => {
+    const r = await service.consultarPendientes(TENANT_ID);
+
+    expect(tx.pago.findMany.mock.calls[0][0].skip).toBe(0);
+    expect(r.pagina).toBe(1);
+  });
+
+  it('con 10 intentos o más de 3 días, requiere atención y no tiene próximo intento', async () => {
+    tx.pago.findMany.mockResolvedValue([
+      pagoSinCfe({ cfeIntentos: 10 }),
+      pagoSinCfe({
+        id: 'pago-2',
+        createdAt: new Date('2026-10-30T12:00:00.000Z'),
+        cfeIntentos: 0,
+        cfeUltimoIntentoEn: null,
+        pedido: { canal: 'WEB', mesa: { numero: 0, esVirtual: true } },
+      }),
+    ]);
+
+    const { pendientes } = await service.consultarPendientes(
+      TENANT_ID,
+      1,
+      AHORA,
+    );
+
+    expect(
+      pendientes.map((p) => [p.requiereAtencion, p.proximoIntentoEn]),
+    ).toEqual([
+      [true, null],
+      [true, null],
+    ]);
+    expect(pendientes[1].mesa).toBeNull();
+  });
+
+  it('reintentar: emite, responde el comprobante y lo audita sin el error', async () => {
+    const r = await service.reintentar(TENANT_ID, 'pago-1', { id: 'kc-admin' });
+
+    expect(cfe.reintentar).toHaveBeenCalledWith(TENANT_ID, 'pago-1');
+    expect(r).toMatchObject({ emitido: true, error: null });
+    expect(auditLog.registrar).toHaveBeenCalledWith({
+      action: 'PAGO_CFE_REINTENTADO',
+      tenantId: TENANT_ID,
+      actorKeycloakId: 'kc-admin',
+      entidadId: 'pago-1',
+      detalle: { resultado: 'EMITIDO' },
+    });
+  });
+
+  it('reintentar: si vuelve a fallar responde el error y audita FALLIDO', async () => {
+    cfe.reintentar.mockResolvedValue({
+      comprobante: null,
+      error: 'Surtec rechazó la emisión (HTTP 400): {}',
+    });
+
+    const r = await service.reintentar(TENANT_ID, 'pago-1', { id: 'kc' });
+
+    expect(r).toEqual({
+      emitido: false,
+      comprobante: null,
+      error: 'Surtec rechazó la emisión (HTTP 400): {}',
+    });
+    expect(auditLog.registrar.mock.calls[0][0].detalle).toEqual({
+      resultado: 'FALLIDO',
+    });
+  });
+
+  it('reintentar: sin comprobante ni error (por ejemplo, el pago dejó de estar aprobado) audita SIN_EMITIR', async () => {
+    cfe.reintentar.mockResolvedValue({ comprobante: null, error: null });
+
+    const r = await service.reintentar(TENANT_ID, 'pago-1', { id: 'kc' });
+
+    expect(r).toEqual({ emitido: false, comprobante: null, error: null });
+    expect(auditLog.registrar.mock.calls[0][0].detalle).toEqual({
+      resultado: 'SIN_EMITIR',
+    });
+  });
+
+  it.each([
+    ['pago de otro tenant o inexistente', null, 404],
+    [
+      'pago no aprobado',
+      { estado: 'PENDIENTE', _count: { comprobantes: 0 } },
+      409,
+    ],
+    [
+      'pago que ya tiene CFE',
+      { estado: 'APROBADO', _count: { comprobantes: 1 } },
+      409,
+    ],
+  ])('reintentar: %s => %s', async (_caso, pago, status) => {
+    tx.pago.findUnique.mockResolvedValue(pago);
+
+    await expect(
+      service.reintentar(TENANT_ID, 'pago-1', { id: 'kc' }),
+    ).rejects.toMatchObject({ status });
+    expect(cfe.reintentar).not.toHaveBeenCalled();
+    expect(auditLog.registrar).not.toHaveBeenCalled();
+  });
+
+  it('reintentar: sin Surtec configurado => 409', async () => {
+    cfe.configurado.mockReturnValue(false);
+
+    await expect(
+      service.reintentar(TENANT_ID, 'pago-1', { id: 'kc' }),
+    ).rejects.toMatchObject({ status: 409 });
   });
 });

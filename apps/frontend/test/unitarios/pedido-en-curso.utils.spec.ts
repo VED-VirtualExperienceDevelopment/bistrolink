@@ -12,7 +12,7 @@ import {
 } from "@/components/pago/pedido-en-curso.utils";
 import { pantallaAlAbrir } from "@/components/pago/pago.utils";
 import {
-  combinarSnapshotLlamados,
+  llamadosDelSnapshot,
   quitarLlamadoDePedido,
   type LlamadoMozo,
 } from "@/components/kds/llamado.utils";
@@ -264,7 +264,7 @@ describe("pedido en curso (BL-448)", () => {
   });
 });
 
-describe("avisos de efectivo en el KDS (BL-448)", () => {
+describe("alertas y avisos de efectivo en el KDS (BL-441, BL-448)", () => {
   const atencion: LlamadoMozo = { mesaId: "m1", mesaNumero: 1, ts: 1 };
   const efectivoViejo: LlamadoMozo = {
     mesaId: "m2",
@@ -284,21 +284,20 @@ describe("avisos de efectivo en el KDS (BL-448)", () => {
     pagaCon: "1000.00",
   };
 
-  it("el snapshot reemplaza los avisos de efectivo y conserva los de atención", () => {
-    expect(
-      combinarSnapshotLlamados([atencion, efectivoViejo], [efectivo3]),
-    ).toEqual([atencion, efectivo3]);
-  });
-
-  it("si la mesa con atención tiene una solicitud de efectivo, queda la de efectivo", () => {
-    const efectivo1 = { ...efectivo3, mesaId: "m1", mesaNumero: 1 };
-    expect(combinarSnapshotLlamados([atencion], [efectivo1])).toEqual([
-      efectivo1,
+  it("el snapshot trae todas las alertas pendientes: de atención y de efectivo", () => {
+    expect(llamadosDelSnapshot([atencion, efectivo3])).toEqual([
+      atencion,
+      efectivo3,
     ]);
   });
 
-  it("un KDS recién abierto (sin avisos) muestra las solicitudes del snapshot", () => {
-    expect(combinarSnapshotLlamados([], [efectivo3])).toEqual([efectivo3]);
+  it("un snapshot vacío deja la pantalla sin alertas (se atendieron sin conexión)", () => {
+    expect(llamadosDelSnapshot([])).toEqual([]);
+  });
+
+  it("si el snapshot trae dos alertas de la misma mesa, queda la última", () => {
+    const efectivo1 = { ...efectivo3, mesaId: "m1", mesaNumero: 1 };
+    expect(llamadosDelSnapshot([atencion, efectivo1])).toEqual([efectivo1]);
   });
 
   it("al cobrarse el pedido se saca su aviso, y solo ese", () => {

@@ -16,6 +16,14 @@
 | 1.9     | 03/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-065: comprobantes del administrador y su estado ante la DGI (HU-009, BL-455).           |
 | 1.10    | 03/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-066 a 068: dashboard de reportes del administrador (HU-012, BL-108).                    |
 | 1.11    | 03/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-069 a 071: stock de la jornada y campana de alertas de stock (HU-015, BL-120).          |
+| 1.12    | 04/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-072: pendientes de emisión de comprobantes (HU-023, BL-96).                             |
+| 1.13    | 04/11/2026 | TC-E-073 y 074: alertas del mozo (campana, pantalla Alertas y recarga con alertas pendientes) (BL-441).                                              |
+| 1.14    | 06/11/2026 | TC-E-075 y 076: pantalla de Configuración accesible, responsive y con «Guardar cambios» al final (BL-473).                                           |
+| 1.15    | 06/11/2026 | TC-E-077 y 078: pantalla de Stock de la jornada accesible, responsive y con «Guardar cambios» al final (BL-474).                                     |
+| 1.16    | 07/11/2026 | TC-E-080: el mozo registra el cobro con el POS del local (HU-007b, BL-80).                                                                           |
+| 1.17    | 07/11/2026 | TC-E-081: el mozo cancela desde el KDS un pedido pagado en efectivo (HU-024, BL-104).                                                                |
+| 1.18    | 07/11/2026 | Se borran los bloques de TC-E-072, 080 y 081, ya cargados en Kiwi. TC-E-079: PDF del comprobante desde Comprobantes (HU-009, BL-454).                |
+| 1.19    | 07/11/2026 | TC-E-082: el mozo cobra con el POS del local al confirmar el pedido de una mesa (HU-007b, BL-485).                                                   |
 
 Plantilla para cargar en Kiwi la descripción de casos TC-E (Playwright)
 nuevos o que cambiaron (BL-435). La usa
@@ -60,64 +68,159 @@ Reglas:
 
 ## Casos para cargar
 
-## TC-E-069
+## TC-E-073
 
 ### Precondición
 
-Staging con el usuario administrador del seed. El test crea por la API una categoría «E2E stock …» con un ítem sin control de stock y la elimina al terminar.
+Administrador del establecimiento del seed logueado en el panel. El test crea una mesa propia y la borra al terminar.
 
 ### Pasos
 
-1. Como administrador, abrir Stock desde el menú lateral.
-2. Revisar la fila del ítem de prueba.
-3. Activar «Controlar stock», cargar 2 unidades y cambiar el aviso de 5 a 3, y tocar Guardar.
-4. Abrir la campana del header.
-5. Revisar la pantalla con axe-core (WCAG 2.1 AA).
+1. Abrir «Pedidos activos» del panel de administración.
+2. Desde el QR de la mesa de prueba, presionar «Llamar al mozo».
+3. En el encabezado, abrir la campana y revisar la vista rápida con axe-core (WCAG 2.1 AA).
+4. Presionar Esc.
+5. Desde el menú, abrir «Alertas» y revisar la pantalla con axe-core (WCAG 2.1 AA).
+6. Aceptar la alerta de la mesa de prueba.
 
 ### Resultado esperado
 
-1. Se abre «Stock de la jornada» y la API responde 200.
-2. Sin control de stock, los campos de unidades y aviso están deshabilitados y Guardar también.
-3. Se avisa «Hay 1 ítem con cambios sin guardar.»; al guardar, el PATCH responde 200 y lleva solo ese ítem con lo que cambió; se anuncia «Se guardó 1 ítem.» y la fila pasa a «Por agotarse».
-4. La campana muestra el ítem con «Quedan 2 · aviso en 3».
-5. Sin errores graves ni críticos.
+1. Se ve el tablero y la campana del encabezado.
+2. El comensal ve «Avisamos al mozo». La campana muestra el contador y el tablero no muestra el aviso de la mesa: los llamados se atienden desde la campana y la pantalla «Alertas».
+3. Se abre la vista rápida con «Mesa N solicita atención» (N es el número de la mesa de prueba), sin errores graves ni críticos de accesibilidad.
+4. La vista rápida se cierra y el foco vuelve a la campana.
+5. Se abre la pantalla «Alertas», marcada como la página actual del menú, con la alerta de la mesa y los botones «Aceptar» y «Desestimar», sin errores graves ni críticos de accesibilidad.
+6. La alerta sale de la lista.
 
-## TC-E-070
+## TC-E-074
 
 ### Precondición
 
-Staging con el usuario administrador del seed. El test crea por la API un ítem de prueba con control de stock, 0 unidades y aviso en 5, y lo elimina al terminar.
+Administrador del establecimiento del seed logueado en el panel. El test crea dos mesas propias y las borra al terminar.
 
 ### Pasos
 
-1. Abrir la campana y cerrarla con Escape.
-2. Con el foco en la campana, abrirla con Enter y moverse con Fin e Inicio.
-3. Elegir el ítem de prueba: se abre «Reponer stock».
-4. Cargar «2,5» y guardar.
-5. Cargar 20 y guardar.
-6. Abrir la campana.
+1. Abrir «Alertas» desde el menú.
+2. Desde el QR de cada una de las dos mesas de prueba (A y B), presionar «Llamar al mozo».
+3. Recargar la página.
+4. Aceptar la alerta de la mesa A.
+5. Recargar la página otra vez.
 
 ### Resultado esperado
 
-1. El ítem aparece como «Agotado»; con Escape se cierra y el foco vuelve a la campana.
-2. Enter abre el menú con el foco en la primera alerta; Fin va a «Ver el stock de la jornada» e Inicio vuelve a la primera alerta.
-3. El diálogo «Reponer stock: …» se abre con el foco en «Unidades disponibles ahora».
-4. Se muestra «Usá un número entero, sin decimales.» y el campo queda marcado como inválido.
-5. El PATCH responde 200, el diálogo se cierra y el foco vuelve a la campana.
-6. El ítem ya no está en las alertas.
+1. Se abre la pantalla «Alertas».
+2. Las dos mesas aparecen en la lista como «Mesa N solicita atención».
+3. Las dos alertas siguen en la lista, aunque nadie las atendió.
+4. La alerta de la mesa A sale de la lista.
+5. La alerta de la mesa B sigue en la lista y la de la mesa A no vuelve.
 
-## TC-E-071
+## TC-E-075
 
 ### Precondición
 
-Staging con el usuario mozo del seed.
+Administrador del establecimiento del seed logueado en el panel. Ventana de escritorio (1440 × 900). El test no cambia la configuración.
 
 ### Pasos
 
-1. Como mozo, abrir /admin/mesas.
-2. Ir a /admin/stock por la URL.
+1. Abrir «Configuración».
+2. Revisar la pantalla con axe-core (WCAG 2.1 AA).
+3. Mirar los botones del panel.
+4. Bajar hasta la sección «Privacidad».
 
 ### Resultado esperado
 
-1. No hay campana de stock en el header ni «Stock» en el menú.
-2. Vuelve al mapa de mesas.
+1. Se ve el formulario de configuración.
+2. No hay errores de accesibilidad graves ni críticos.
+3. «Guardar cambios» es el último botón y se ve en pantalla.
+4. «Guardar cambios» sigue siendo el último botón y sigue a la vista (barra fija abajo).
+
+## TC-E-076
+
+### Precondición
+
+Administrador del establecimiento del seed logueado en el panel. Ventana de celular (375 × 812). El test no cambia la configuración.
+
+### Pasos
+
+1. Abrir «Configuración».
+2. Revisar si la página o el panel tienen scroll horizontal.
+3. Bajar hasta «Anonimizar datos de facturación».
+
+### Resultado esperado
+
+1. Se ve el formulario en una sola columna.
+2. No hay scroll horizontal y «Guardar cambios» se ve en pantalla.
+3. Sigue sin haber scroll horizontal y «Guardar cambios» sigue a la vista, como último botón.
+
+## TC-E-077
+
+### Precondición
+
+Administrador del establecimiento del seed logueado en el panel. Ventana de escritorio (1440 × 900). El test no cambia el stock.
+
+### Pasos
+
+1. Abrir «Stock».
+2. Revisar la pantalla con axe-core (WCAG 2.1 AA).
+3. Mirar los botones del panel.
+4. Bajar hasta la última categoría.
+
+### Resultado esperado
+
+1. Se ven las tablas de stock por categoría.
+2. No hay errores de accesibilidad graves ni críticos.
+3. «Guardar cambios» es el último botón y se ve en pantalla.
+4. «Guardar cambios» sigue siendo el último botón y sigue a la vista (barra fija abajo).
+
+## TC-E-078
+
+### Precondición
+
+Administrador del establecimiento del seed logueado en el panel. Ventana de celular (375 × 812). El test no cambia el stock.
+
+### Pasos
+
+1. Abrir «Stock».
+2. Revisar si la página, el panel o las tablas tienen scroll horizontal.
+3. Bajar hasta la última categoría.
+
+### Resultado esperado
+
+1. Se ven las tablas de stock por categoría, una debajo de la otra.
+2. No hay scroll horizontal y «Guardar cambios» se ve en pantalla.
+3. Sigue sin haber scroll horizontal y «Guardar cambios» sigue a la vista, como último botón.
+
+## TC-E-079
+
+### Precondición
+
+Administrador del establecimiento del seed logueado en el panel. Al menos un comprobante emitido en la última semana (si no hay, el test se saltea).
+
+### Pasos
+
+1. Abrir «Comprobantes» y poner «Desde» una semana atrás.
+2. Tocar «PDF» en el primer comprobante.
+
+### Resultado esperado
+
+Se descarga un archivo «e-Ticket-<serie>-<número>.pdf» o «e-Factura-<serie>-<número>.pdf».
+
+## TC-E-082
+
+### Precondición
+
+Mozo del establecimiento del seed logueado. Mesa del seed abierta. Efectivo y POS del local habilitados en Configuración.
+
+### Pasos
+
+1. Abrir «Cargar pedido» de la mesa, agregar un ítem y tocar «Confirmar pedido».
+2. Tocar «Cobrar con el POS», elegir «Crédito» y cargar la autorización «e2e082».
+3. Tocar «Registrar cobro».
+4. Abrir el KDS.
+
+### Resultado esperado
+
+1. El pedido queda cargado y se ofrecen «Cobrar en efectivo» y «Cobrar con el POS».
+2. Se abre el diálogo con el total del pedido. Sin errores graves de accesibilidad (axe).
+3. Se registra el cobro (crédito, autorización E2E082) y aparece «Cobro registrado: pedido …».
+4. El pedido está en el KDS.

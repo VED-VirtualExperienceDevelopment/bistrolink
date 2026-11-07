@@ -21,6 +21,7 @@ import { ConfiguracionModule } from './configuracion/configuracion.module';
 import { ComprobantesModule } from './comprobantes/comprobantes.module';
 import { ReportesModule } from './reportes/reportes.module';
 import { StockModule } from './stock/stock.module';
+import { modulosDeTesting } from './testing/testing.module';
 import { ContextoAuditoriaMiddleware } from './audit-log/contexto-auditoria';
 
 // BL-273: destinos y formato de los logs según el entorno (ver
@@ -88,6 +89,9 @@ const configuracionLog = construirConfiguracionLog(process.env);
     ReportesModule,
     // HU-015 (BL-120): stock de la jornada y alertas, solo ADMIN.
     StockModule,
+    // BL-475 (BL-285): POST /testing/limpieza, solo con
+    // E2E_CLEANUP_ENABLED=true (staging y local; nunca en producción).
+    ...modulosDeTesting(),
   ],
   controllers: [AppController, HealthController, TestController],
   providers: [AppService],

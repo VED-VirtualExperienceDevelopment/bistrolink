@@ -8,6 +8,8 @@ import { CfeProveedor, Prisma, PrismaClient } from '@prisma/client';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { AuditAction } from '../audit-log/audit-action.enum';
+import { KdsGateway } from '../pedidos/kds.gateway';
+import { completarCapacidad, type PedidoPromovido } from '../pedidos/cola-kds';
 import {
   ActualizarConfiguracionDto,
   MEDIOS_PAGO_DISPONIBLES,
@@ -23,6 +25,8 @@ export interface ConfiguracionEstablecimiento {
   rut: string;
   efectivoHabilitado: boolean;
   mercadoPagoHabilitado: boolean;
+  /** HU-007b (BL-80): cobros con el POS del local. */
+  posHabilitado: boolean;
   plexoHabilitado: boolean;
   handyHabilitado: boolean;
   /** Los que se pueden habilitar hoy (Plexo y Handy quedaron fuera del MVP). */
@@ -34,18 +38,36 @@ export interface ConfiguracionEstablecimiento {
   proveedoresCfeDisponibles: CfeProveedor[];
   /** HU-036 (BL-206): contacto para los derechos de los titulares de datos. */
   emailPrivacidad: string | null;
+  /** HU-042 (BL-465): null = cola automática del KDS desactivada. */
+  limitePedidosEnPreparacion: number | null;
+  /** HU-042 (BL-465): con más pedidos en espera, alerta de alta demanda. */
+  umbralAlertaCola: number;
+  /** HU-042 (BL-465): referencia para el tiempo estimado del comensal. */
+  minutosPreparacionEstimados: number;
 }
 
 /** Campos de la configuración que viven en restaurante. */
 const SELECT_RESTAURANTE = {
   efectivoHabilitado: true,
   mercadoPagoHabilitado: true,
+  posHabilitado: true,
   plexoHabilitado: true,
   handyHabilitado: true,
   propinasSugeridas: true,
   cfeProveedor: true,
   emailPrivacidad: true,
+  // HU-042 (BL-465): cola del KDS. Van con antes y después a la auditoría.
+  limitePedidosEnPreparacion: true,
+  umbralAlertaCola: true,
+  minutosPreparacionEstimados: true,
 } satisfies Prisma.RestauranteSelect;
+
+/** HU-042 (BL-465): campos que cambian el estado de la cola del KDS. */
+const CAMPOS_DE_LA_COLA: ReadonlySet<CampoConfiguracion> = new Set([
+  'limitePedidosEnPreparacion',
+  'umbralAlertaCola',
+  'minutosPreparacionEstimados',
+]);
 
 type ConfiguracionDelRestaurante = Prisma.RestauranteGetPayload<{
   select: typeof SELECT_RESTAURANTE;
@@ -70,6 +92,15 @@ interface Actual {
   razonSocial: string;
   rut: string;
   restaurante: ConfiguracionDelRestaurante;
+}
+
+/** HU-042 (BL-465): lo que devuelve la transacción de actualizar. */
+interface ResultadoActualizacion {
+  configuracion: ConfiguracionEstablecimiento;
+  /** Cambió algún campo de la cola: hay que avisar al KDS. */
+  cambioLaCola: boolean;
+  /** Pedidos que pasaron a preparación al subir el límite. */
+  promovidos: PedidoPromovido[];
 }
 
 /** Lo que cambió, listo para escribir y auditar. */
@@ -109,6 +140,8 @@ export class ConfiguracionEstablecimientoService {
   constructor(
     private readonly tenantPrisma: TenantPrismaService,
     private readonly auditLog: AuditLogService,
+    // HU-042 (BL-465): avisar al KDS cuando cambia la configuración de la cola.
+    private readonly kdsGateway: KdsGateway,
   ) {}
 
   async obtener(tenantId: string): Promise<ConfiguracionEstablecimiento> {
@@ -130,44 +163,86 @@ export class ConfiguracionEstablecimientoService {
       throw new BadRequestException('No hay cambios');
     }
 
-    return this.tenantPrisma.runInTenantContext(tenantId, async (tx) => {
-      const actual = await this.leer(tx, tenantId);
-      const cambios = calcularCambios(actual, dto);
-      if (cambios.campos.length === 0) {
-        return armarRespuesta(actual);
-      }
+    const resultado = await this.tenantPrisma.runInTenantContext(
+      tenantId,
+      async (tx): Promise<ResultadoActualizacion> => {
+        const actual = await this.leer(tx, tenantId);
+        const cambios = calcularCambios(actual, dto);
+        if (cambios.campos.length === 0) {
+          return {
+            configuracion: armarRespuesta(actual),
+            cambioLaCola: false,
+            promovidos: [],
+          };
+        }
+        return this.guardarCambios(tx, tenantId, actor, actual, cambios);
+      },
+    );
 
-      if (cambios.razonSocial !== undefined) {
-        await tx.tenant.update({
-          where: { id: tenantId },
-          data: { razonSocial: cambios.razonSocial },
-        });
+    // HU-042 (BL-465): después del commit, como el resto de los avisos en
+    // vivo. Los pedidos que pasaron a preparación (subió el límite o se
+    // activó la cola) y el estado nuevo de la cola, también si se desactivó.
+    if (resultado.cambioLaCola) {
+      for (const promovido of resultado.promovidos) {
+        this.kdsGateway.emitirPedidoActualizado(tenantId, promovido);
       }
-      let restaurante = actual.restaurante;
-      if (Object.keys(cambios.restaurante).length > 0) {
-        restaurante = await tx.restaurante.update({
-          where: { tenantId },
-          data: cambios.restaurante,
-          select: SELECT_RESTAURANTE,
-        });
-      }
+      await this.kdsGateway.avisarEstadoCola(tenantId, { forzar: true });
+    }
+    return resultado.configuracion;
+  }
 
-      await this.auditLog.registrarEnTx(tx, {
-        action: AuditAction.ESTABLECIMIENTO_CONFIGURACION_MODIFICADA,
-        tenantId,
-        actorKeycloakId: actor.id,
-        entidadId: tenantId,
-        detalle: { campos: cambios.campos },
-        antes: cambios.antes,
-        despues: cambios.despues,
+  /** Escribe los cambios, los audita y, si hace falta, llena la cocina. */
+  private async guardarCambios(
+    tx: PrismaClient,
+    tenantId: string,
+    actor: { id: string },
+    actual: Actual,
+    cambios: Cambios,
+  ): Promise<ResultadoActualizacion> {
+    if (cambios.razonSocial !== undefined) {
+      await tx.tenant.update({
+        where: { id: tenantId },
+        data: { razonSocial: cambios.razonSocial },
       });
+    }
+    let restaurante = actual.restaurante;
+    if (Object.keys(cambios.restaurante).length > 0) {
+      restaurante = await tx.restaurante.update({
+        where: { tenantId },
+        data: cambios.restaurante,
+        select: SELECT_RESTAURANTE,
+      });
+    }
 
-      return armarRespuesta({
+    await this.auditLog.registrarEnTx(tx, {
+      action: AuditAction.ESTABLECIMIENTO_CONFIGURACION_MODIFICADA,
+      tenantId,
+      actorKeycloakId: actor.id,
+      entidadId: tenantId,
+      detalle: { campos: cambios.campos },
+      antes: cambios.antes,
+      despues: cambios.despues,
+    });
+
+    // HU-042 (BL-465): si cambió el límite (subió o se activó la cola), los
+    // lugares libres se llenan con la cola en esta misma transacción. Si
+    // bajó, no se saca a nadie de preparación: la cola espera hasta que la
+    // cocina quede por debajo del límite nuevo.
+    const promovidos = cambios.campos.includes('limitePedidosEnPreparacion')
+      ? await completarCapacidad(tx, tenantId)
+      : [];
+
+    return {
+      configuracion: armarRespuesta({
         razonSocial: cambios.razonSocial ?? actual.razonSocial,
         rut: actual.rut,
         restaurante,
-      });
-    });
+      }),
+      cambioLaCola: cambios.campos.some((campo) =>
+        CAMPOS_DE_LA_COLA.has(campo),
+      ),
+      promovidos,
+    };
   }
 
   /** Tenant y restaurante actuales. Sin restaurante (alta incompleta): 409. */

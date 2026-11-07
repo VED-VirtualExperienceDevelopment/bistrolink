@@ -1,4 +1,10 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  BadGatewayException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import {
   CfeEmitido,
@@ -8,6 +14,28 @@ import {
   TIPO_CFE,
 } from './surtec.client';
 import { aplicaRebaja17934, LEYENDA_REBAJA_17934 } from './rebaja-iva';
+import { AlmacenCfe, sha256Hex } from './respaldo-pdf/almacen-cfe';
+
+// HU-009 (BL-454): lo que hace falta para leer el PDF de S3 o pedirlo a Surtec.
+const SELECCION_PDF = {
+  tipoCfe: true,
+  serie: true,
+  numero: true,
+  proveedor: true,
+  proveedorRef: true,
+  urlPdf: true,
+  pdfSha256: true,
+} as const;
+
+interface ComprobanteParaPdf {
+  tipoCfe: string;
+  serie: string;
+  numero: number;
+  proveedor: string;
+  proveedorRef: string | null;
+  urlPdf: string | null;
+  pdfSha256: string | null;
+}
 
 // Res. DGI 798/2012: los CFE se conservan 5 años.
 const ANIOS_RETENCION = 5;
@@ -82,6 +110,60 @@ export function esRechazoDeLaEFactura(error: unknown): boolean {
  */
 export const SUFIJO_ETICKET_DE_RESPALDO = '-et';
 
+/** HU-009 (BL-454): el PDF de un comprobante, para descargar. */
+export interface PdfComprobante {
+  /** Ej.: «e-Factura-A-0000049.pdf». Sin datos del receptor. */
+  nombreArchivo: string;
+  mimeType: 'application/pdf';
+  /** El PDF en base64. */
+  contenido: string;
+}
+
+/** HU-009 (BL-454): nombre del archivo del PDF, sin datos personales. */
+export function nombreArchivoPdf(
+  tipoCfe: string,
+  serie: string,
+  numero: number,
+): string {
+  const tipo =
+    tipoCfe === String(TIPO_CFE.E_FACTURA) ? 'e-Factura' : 'e-Ticket';
+  return `${tipo}-${serie}-${String(numero).padStart(7, '0')}.pdf`;
+}
+
+/** HU-023 (BL-96): tope del error guardado en pago.cfe_ultimo_error. */
+export const LARGO_MAXIMO_ERROR_CFE = 300;
+
+/** HU-023 (BL-96): resultado de un reintento de emisión. */
+/**
+ * HU-024 (BL-104): sufijo de la clave de idempotencia de la nota de crédito
+ * de un pago («bl-<pagoId>-nc»): distinta de la del CFE original.
+ */
+export const SUFIJO_NOTA_DE_CREDITO = '-nc';
+
+/** HU-024 (BL-104): tipos de CFE de venta y su nota de crédito. */
+export const NOTA_DE_CREDITO_DE: Readonly<Record<string, string>> = {
+  [String(TIPO_CFE.E_TICKET)]: String(TIPO_CFE.NC_E_TICKET),
+  [String(TIPO_CFE.E_FACTURA)]: String(TIPO_CFE.NC_E_FACTURA),
+};
+const TIPOS_NOTA_DE_CREDITO = new Set(Object.values(NOTA_DE_CREDITO_DE));
+
+/** Fecha AAAA-MM-DD en hora de Uruguay (la del CFE referenciado). */
+function fechaEnUruguay(fecha: Date): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Montevideo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(fecha);
+}
+
+export interface ResultadoReintentoCfe {
+  /** El comprobante emitido (o el que ya tenía); null si no se emitió. */
+  comprobante: ResumenComprobante | null;
+  /** Por qué falló, sin datos personales; null si no hubo error. */
+  error: string | null;
+}
+
 @Injectable()
 export class CfeService {
   // Emisiones en curso por pago: si el POST del comensal y el webhook de
@@ -94,7 +176,134 @@ export class CfeService {
   constructor(
     private readonly tenantPrisma: TenantPrismaService,
     private readonly surtec: SurtecClient,
+    private readonly almacen: AlmacenCfe,
   ) {}
+
+  /**
+   * HU-009 (BL-454): PDF A4 del comprobante del pedido (el más reciente),
+   * para el comensal. El acceso al pedido ya lo validó PedidoAccesoGuard.
+   */
+  async pdfDelPedido(
+    tenantId: string,
+    pedidoId: string,
+  ): Promise<PdfComprobante> {
+    const comprobante = await this.tenantPrisma.runInTenantContext(
+      tenantId,
+      (tx) =>
+        tx.comprobanteFiscal.findFirst({
+          where: { pedidoId },
+          orderBy: { fechaEmision: 'desc' },
+          select: SELECCION_PDF,
+        }),
+    );
+    return this.pdf(tenantId, comprobante);
+  }
+
+  /** HU-009 (BL-454): PDF A4 de un comprobante del tenant, para el admin. */
+  async pdfDelComprobante(
+    tenantId: string,
+    comprobanteId: string,
+  ): Promise<PdfComprobante> {
+    const comprobante = await this.tenantPrisma.runInTenantContext(
+      tenantId,
+      (tx) =>
+        tx.comprobanteFiscal.findUnique({
+          where: { id: comprobanteId },
+          select: SELECCION_PDF,
+        }),
+    );
+    return this.pdf(tenantId, comprobante);
+  }
+
+  /**
+   * El PDF sale de la copia en S3 (RespaldoPdfService) si ya está guardada y
+   * el hash coincide. Si no, se pide a Surtec, que también lo conserva 5
+   * años. El PDF no va a los logs: el de una e-Factura lleva el RUT y la
+   * razón social.
+   */
+  private async pdf(
+    tenantId: string,
+    comprobante: ComprobanteParaPdf | null,
+  ): Promise<PdfComprobante> {
+    if (!comprobante?.proveedorRef || comprobante.proveedor !== 'SURTEC') {
+      throw new NotFoundException('El comprobante no está disponible');
+    }
+    const nombreArchivo = nombreArchivoPdf(
+      comprobante.tipoCfe,
+      comprobante.serie,
+      comprobante.numero,
+    );
+    const guardado = await this.pdfGuardado(comprobante);
+    if (guardado) {
+      return {
+        nombreArchivo,
+        mimeType: 'application/pdf',
+        contenido: guardado.toString('base64'),
+      };
+    }
+    if (!this.surtec.configurado()) {
+      throw new ServiceUnavailableException(
+        'La facturación electrónica no está configurada',
+      );
+    }
+    const tenant = await this.tenantPrisma.runInTenantContext(tenantId, (tx) =>
+      tx.tenant.findUnique({ where: { id: tenantId }, select: { rut: true } }),
+    );
+    if (!tenant?.rut) {
+      throw new NotFoundException('El comprobante no está disponible');
+    }
+    try {
+      const { contenido } = await this.surtec.obtenerPdf(
+        tenant.rut,
+        comprobante.proveedorRef,
+      );
+      return {
+        nombreArchivo,
+        mimeType: 'application/pdf',
+        contenido: contenido.toString('base64'),
+      };
+    } catch (error) {
+      Logger.warn(
+        `CFE: no se pudo obtener el PDF del comprobante ${comprobante.serie}-${comprobante.numero}: ${mensajeDe(error)}`,
+        CfeService.name,
+      );
+      throw new BadGatewayException(
+        'No se pudo obtener el PDF del comprobante. Probá de nuevo en unos minutos.',
+      );
+    }
+  }
+
+  /**
+   * HU-009 (BL-454): la copia del PDF en S3, si está guardada y su SHA-256
+   * coincide con el registrado. Nunca lanza: si S3 falla o el hash no
+   * coincide, queda en el log y se pide a Surtec.
+   */
+  private async pdfGuardado(
+    comprobante: ComprobanteParaPdf,
+  ): Promise<Buffer | null> {
+    const { urlPdf, pdfSha256, serie, numero } = comprobante;
+    if (!urlPdf || !pdfSha256 || !this.almacen.configurado()) return null;
+    try {
+      const contenido = await this.almacen.leer(urlPdf);
+      if (sha256Hex(contenido) === pdfSha256) return contenido;
+      Logger.error(
+        `CFE: el PDF guardado del comprobante ${serie}-${numero} no coincide con su SHA-256; se pide a Surtec`,
+        undefined,
+        CfeService.name,
+      );
+    } catch (error) {
+      Logger.warn(
+        `CFE: no se pudo leer de S3 el PDF del comprobante ${serie}-${numero}; se pide a Surtec: ${mensajeDe(error)}`,
+        CfeService.name,
+      );
+    }
+    return null;
+  }
+
+  /** HU-023 (BL-96): sin Surtec configurado no hay nada que conciliar. */
+  configurado(): boolean {
+    return this.surtec.configurado();
+  }
 
   // Emite el eTicket de un pago APROBADO. Nunca lanza: el cobro ya se hizo y
   // no puede fallar porque falle la facturación. Si no se pudo emitir, el
@@ -104,11 +313,73 @@ export class CfeService {
     tenantId: string,
     pagoId: string,
   ): Promise<ResumenComprobante | null> {
+    return (await this.reintentar(tenantId, pagoId)).comprobante;
+  }
+
+  /**
+   * HU-023 (BL-96): un intento de emisión, sin esperas, que dice qué pasó.
+   * Lo usan la conciliación y el «Reintentar ahora» del administrador.
+   * Nunca lanza. Si falla, queda registrado en el pago (cfe_intentos,
+   * cfe_ultimo_intento_en y cfe_ultimo_error) para espaciar los reintentos.
+   * Si ya hay una emisión en curso para el pago, espera esa.
+   */
+  async reintentar(
+    tenantId: string,
+    pagoId: string,
+  ): Promise<ResultadoReintentoCfe> {
+    const actual = this.enCurso.get(pagoId);
+    if (actual !== undefined) {
+      const comprobante = await actual;
+      return {
+        comprobante,
+        error: comprobante ? null : 'La emisión en curso no se completó',
+      };
+    }
+    const intento = this.emitir(tenantId, pagoId).then(
+      (comprobante): ResultadoReintentoCfe => ({ comprobante, error: null }),
+      async (error: unknown): Promise<ResultadoReintentoCfe> => {
+        registrarFallo(pagoId, error);
+        await this.registrarIntentoFallido(tenantId, pagoId, error);
+        return { comprobante: null, error: textoDelError(error) };
+      },
+    );
+    this.enCurso.set(
+      pagoId,
+      intento.then((r) => r.comprobante),
+    );
     try {
-      return await this.emitir(tenantId, pagoId);
-    } catch (error) {
-      registrarFallo(pagoId, error);
-      return null;
+      return await intento;
+    } finally {
+      this.enCurso.delete(pagoId);
+    }
+  }
+
+  /**
+   * HU-023 (BL-96): deja en el pago que la emisión falló. Nunca lanza: si no
+   * se puede escribir, solo queda en el log (la conciliación lo reintenta
+   * igual, sin espaciar).
+   */
+  private async registrarIntentoFallido(
+    tenantId: string,
+    pagoId: string,
+    error: unknown,
+  ): Promise<void> {
+    try {
+      await this.tenantPrisma.runInTenantContext(tenantId, (tx) =>
+        tx.pago.update({
+          where: { id: pagoId },
+          data: {
+            cfeIntentos: { increment: 1 },
+            cfeUltimoIntentoEn: new Date(),
+            cfeUltimoError: textoDelError(error),
+          },
+        }),
+      );
+    } catch (error_) {
+      Logger.warn(
+        `CFE: no se pudo registrar el intento fallido del pago ${pagoId}: ${mensajeDe(error_)}`,
+        CfeService.name,
+      );
     }
   }
 
@@ -121,6 +392,153 @@ export class CfeService {
    */
   emitirEnSegundoPlano(tenantId: string, pagoId: string): void {
     void this.emitirConReintentos(tenantId, pagoId);
+  }
+
+  /**
+   * HU-024 (BL-104): emite la nota de crédito del CFE de un pago devuelto
+   * (REEMBOLSADO) sin hacer esperar a quien canceló el pedido. Un intento
+   * inmediato; si falla, queda registrado en el pago y la conciliación de CFE
+   * (BL-96) la reintenta espaciada. Nunca lanza.
+   */
+  emitirNotaDeCreditoEnSegundoPlano(tenantId: string, pagoId: string): void {
+    void this.reintentarNotaDeCredito(tenantId, pagoId);
+  }
+
+  /**
+   * HU-024 (BL-104): un intento de emitir la nota de crédito de un pago
+   * devuelto. Nunca lanza; si falla, lo registra en el pago (cfe_intentos)
+   * para que la conciliación espacie los reintentos. Si el pago no tenía
+   * CFE, no hay nada que anular: devuelve null sin error.
+   */
+  async reintentarNotaDeCredito(
+    tenantId: string,
+    pagoId: string,
+  ): Promise<ResultadoReintentoCfe> {
+    const clave = `nc:${pagoId}`;
+    const actual = this.enCurso.get(clave);
+    if (actual !== undefined) {
+      const comprobante = await actual;
+      return {
+        comprobante,
+        error: comprobante ? null : 'La emisión en curso no se completó',
+      };
+    }
+    const intento = this.emitirNotaDeCredito(tenantId, pagoId).then(
+      (comprobante): ResultadoReintentoCfe => ({ comprobante, error: null }),
+      async (error: unknown): Promise<ResultadoReintentoCfe> => {
+        Logger.error(
+          `CFE: no se pudo emitir la nota de crédito del pago ${pagoId}: ${mensajeDe(error)}`,
+          undefined,
+          CfeService.name,
+        );
+        await this.registrarIntentoFallido(tenantId, pagoId, error);
+        return { comprobante: null, error: textoDelError(error) };
+      },
+    );
+    this.enCurso.set(
+      clave,
+      intento.then((r) => r.comprobante),
+    );
+    try {
+      return await intento;
+    } finally {
+      this.enCurso.delete(clave);
+    }
+  }
+
+  private async emitirNotaDeCredito(
+    tenantId: string,
+    pagoId: string,
+  ): Promise<ResumenComprobante | null> {
+    if (!this.surtec.configurado()) {
+      Logger.warn(
+        'CFE: Surtec no está configurado, no se emite la nota de crédito',
+        CfeService.name,
+      );
+      return null;
+    }
+    const { pago, tenant } = await this.tenantPrisma.runInTenantContext(
+      tenantId,
+      async (tx) => ({
+        pago: await tx.pago.findUnique({
+          where: { id: pagoId },
+          include: {
+            comprobantes: { orderBy: { fechaEmision: 'asc' } },
+            pedido: { include: { lineas: true } },
+          },
+        }),
+        tenant: await tx.tenant.findUnique({
+          where: { id: tenantId },
+          select: { rut: true },
+        }),
+      }),
+    );
+    if (pago?.estado !== 'REEMBOLSADO' || !tenant) return null;
+    const yaEmitida = pago.comprobantes.find((c) =>
+      TIPOS_NOTA_DE_CREDITO.has(c.tipoCfe),
+    );
+    if (yaEmitida) return resumir(yaEmitida);
+    const original = pago.comprobantes.find(
+      (c) => NOTA_DE_CREDITO_DE[c.tipoCfe] !== undefined,
+    );
+    // Sin CFE (por ejemplo, Surtec no lo había emitido): nada que anular.
+    if (!original) return null;
+
+    const tipoOriginal = Number(original.tipoCfe);
+    const { receptorRut: rut, receptorRazonSocial: razonSocial } = pago.pedido;
+    const idExterno = `bl-${pago.id}${SUFIJO_NOTA_DE_CREDITO}`;
+    const emitido = await this.surtec.emitirNotaDeCredito(
+      {
+        rutEmisor: tenant.rut,
+        idExterno,
+        items: pago.pedido.lineas.map((l) => ({
+          concepto: l.nombreSnapshot.slice(0, 100),
+          cantidad: l.cantidad,
+          precio: l.precioUnitarioSnapshot.toNumber(),
+        })),
+        adenda: `Cancelación del pedido ${pago.pedidoId.slice(0, 8)}`,
+      },
+      {
+        tipoComprobante: tipoOriginal,
+        serie: original.serie,
+        numero: original.numero,
+        fecha: fechaEnUruguay(original.fechaEmision),
+        razon: 'Cancelación del pedido',
+      },
+      // La de una e-Factura va al mismo receptor. Si sus datos se
+      // anonimizaron (BL-453), Surtec la rechaza y queda para revisar.
+      rut && razonSocial ? { rut, razonSocial } : undefined,
+    );
+
+    const ahora = new Date();
+    const retencionHasta = new Date(ahora);
+    retencionHasta.setFullYear(retencionHasta.getFullYear() + ANIOS_RETENCION);
+    const guardado = await this.tenantPrisma.runInTenantContext(
+      tenantId,
+      (tx) =>
+        tx.comprobanteFiscal.upsert({
+          where: { idExterno },
+          create: {
+            tenantId,
+            pedidoId: pago.pedidoId,
+            pagoId: pago.id,
+            tipoCfe: NOTA_DE_CREDITO_DE[original.tipoCfe],
+            serie: emitido.serie,
+            numero: emitido.numero,
+            hashSha256: emitido.hash ?? null,
+            proveedor: 'SURTEC',
+            proveedorRef: emitido.id,
+            idExterno,
+            caeNumero: emitido.caeNumero ?? null,
+            caeVencimiento: emitido.caeVencimiento ?? null,
+            urlConsulta: emitido.url ?? null,
+            fechaEmision: ahora,
+            retencionHasta,
+          },
+          update: {},
+        }),
+    );
+    return resumir(guardado);
   }
 
   emitirConReintentos(
@@ -153,6 +571,8 @@ export class CfeService {
       const espera = ESPERAS_REINTENTO_CFE_MS[intento];
       if (espera === undefined || !esErrorTransitorio(error)) {
         registrarFallo(pagoId, error);
+        // HU-023 (BL-96): la tanda de reintentos cuenta como un intento.
+        await this.registrarIntentoFallido(tenantId, pagoId, error);
         return null;
       }
       Logger.warn(
@@ -315,6 +735,11 @@ function esperar(ms: number): Promise<void> {
 
 function mensajeDe(error: unknown): string {
   return error instanceof Error ? error.message : JSON.stringify(error);
+}
+
+/** El error para guardar en el pago: ya sin datos del receptor (cuerpoParaLog). */
+function textoDelError(error: unknown): string {
+  return mensajeDe(error).slice(0, LARGO_MAXIMO_ERROR_CFE);
 }
 
 function registrarFallo(pagoId: string, error: unknown): void {

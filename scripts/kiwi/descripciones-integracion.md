@@ -23,6 +23,12 @@
 | 1.16    | 03/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-I-142 y 143: estado de los CFE ante la DGI y listado de comprobantes del administrador (HU-009 / BL-455), para cargar con el script antes de mergear el PR.                    |
 | 1.17    | 03/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-I-144 a 152: dashboard de reportes de ventas y resumen por hora (HU-012 / BL-108, BL-109, BL-110 y BL-219), para cargar con el script antes de mergear el PR.                  |
 | 1.18    | 03/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-I-153 a 160: stock de la jornada, alertas de stock bajo y descuento al confirmar el pago (HU-015 / BL-120, BL-121 y BL-122), para cargar con el script antes de mergear el PR. |
+| 1.19    | 04/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-I-161 y 162: conciliación de CFE pendientes y pendientes de emisión del administrador (HU-023 / BL-96), para cargar con el script antes de mergear el PR.                      |
+| 1.20    | 06/11/2026 | TC-I-164 a 167: cola del KDS y límite de pedidos en preparación (HU-042 / BL-467), para cargar con el script antes de mergear el PR.                                                                                                      |
+| 1.21    | 07/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-I-168 a 174: limpieza de los datos de prueba (BL-285 / BL-476, ADR 0011), para cargar con el script antes de mergear el PR.                                                    |
+| 1.22    | 07/11/2026 | TC-I-177 y 178: cobro con el POS del local (HU-007b / BL-80), para cargar con el script antes de mergear el PR.                                                                                                                           |
+| 1.23    | 07/11/2026 | TC-I-179 a 182: cancelación de un pedido pagado y devolución del pago (HU-024 / BL-104), para cargar con el script antes de mergear el PR.                                                                                                |
+| 1.24    | 07/11/2026 | Se borran los bloques de TC-I-177 a 182, ya cargados en Kiwi. TC-I-175 y 176: PDF del comprobante y su copia en S3 (HU-009 / BL-454), para cargar con el script antes de mergear el PR.                                                   |
 
 Texto del campo de descripción de cada caso TC-I en Kiwi. Lo carga
 `cargar-casos-integracion.mjs --descripciones`: cada bloque `## TC-I-NNN`
@@ -34,126 +40,160 @@ esperado`, igual que los casos cargados a mano desde TC-I-029.
 
 ## Casos para cargar
 
-## TC-I-153
+## TC-I-168
 
 ### Precondición
 
-Tenant A del seed. Un ítem de prueba en la categoría Platos, sin control de stock. Usuario administrador.
+Módulo de limpieza habilitado (`E2E_CLEANUP_ENABLED=true`). Token del Admin del tenant A. Tres pedidos propios del test en la mesa 1: uno en `PENDIENTE_PAGO` con aviso de efectivo y dos en `RECIBIDO`.
 
 ### Pasos
 
-1. Como administrador, mandar PATCH /admin/stock con ese ítem: control de stock activado, 4 unidades y aviso en 5.
-2. Pedir GET /admin/stock.
-3. Pedir GET /admin/stock/alertas.
+1. `POST /testing/limpieza` con el área `pedidos`, los ids de los dos primeros pedidos y `dryRun: true`.
+2. Repetir sin `dryRun`.
+3. Leer los pedidos, el historial de estados y la auditoría.
 
 ### Resultado esperado
 
-1. Responde 200 con el ítem: control de stock activado, 4 unidades, aviso en 5, disponible y alerta «STOCK_CRITICO».
-2. El ítem aparece con 4 unidades.
-3. El ítem aparece con 4 unidades, aviso en 5 y tipo «STOCK_CRITICO». La alerta solo lleva nombre y cantidades.
+1. 200 con un pedido por estado encontrado (uno a cancelar y uno a entregar). Ningún pedido cambia.
+2. 200.
+3. El pedido sin pagar queda `CANCELADO` y el pagado `ENTREGADO`, cada uno con su fila en el historial; el tercero sigue en `RECIBIDO`. Hay un registro `PEDIDO_LIMPIEZA_PRUEBAS` con los ids. No se borró ninguna fila.
 
-## TC-I-154
+## TC-I-169
 
 ### Precondición
 
-El ítem de prueba de TC-I-153. Usuario administrador.
+Módulo de limpieza habilitado. Token del Admin del tenant A. Una mesa temporal número 77, la mesa 2 en `REQUIERE_LIMPIEZA` y dos zonas en el plano: «Zona E2E …» y «Patio …».
 
 ### Pasos
 
-1. Mandar PATCH /admin/stock con: un aviso de -1; un stock de -5; un stock de 2,5; un stock de 3 con un campo tenantId de más.
+1. `POST /testing/limpieza` con el área `mesas`.
+2. Leer las mesas y el plano.
 
 ### Resultado esperado
 
-1. Cada pedido responde 400 y el stock no cambia.
+1. 200 con al menos una mesa eliminada y una zona quitada.
+2. La mesa 77 ya no existe. La mesa 2 está `OCUPADA` con sesión nueva (como el seed). El plano conserva «Patio …» y no tiene «Zona E2E …».
 
-## TC-I-155
+## TC-I-170
 
 ### Precondición
 
-API levantada.
+Módulo de limpieza habilitado. Token del Admin del tenant A. Una categoría «E2E carta …» con un ítem, un ítem «Flan casero …» en Platos principales y la Milanesa con precio 600 y control de stock con 3 unidades.
 
 ### Pasos
 
-1. Pedir GET /admin/stock/alertas sin token.
-2. Mandar PATCH /admin/stock sin token.
+1. `POST /testing/limpieza` con el área `carta`.
+2. Leer la carta.
 
 ### Resultado esperado
 
-1. Responde 401.
-2. Responde 401.
+1. 200 con al menos un ítem y una categoría eliminados.
+2. La categoría «E2E carta …» y su ítem ya no existen. «Flan casero …» no cambió. La Milanesa vuelve a 590, sin control de stock y con stock 0.
 
-## TC-I-156
+## TC-I-171
 
 ### Precondición
 
-Usuarios mozo y cocina del tenant A.
+Módulo de limpieza habilitado. Token del Admin del tenant A. Configuración del restaurante cambiada (Mercado Pago apagado, propinas 10 y 15, cola con límite 3) y un usuario «e2e-limpieza-…» creado por la API (base y Keycloak).
 
 ### Pasos
 
-1. Con cada uno, pedir GET /admin/stock/alertas.
-2. Con cada uno, mandar PATCH /admin/stock con 99 unidades.
+1. `POST /testing/limpieza` con las áreas `configuracion` y `usuarios`.
+2. Leer la configuración, el usuario en la base y en Keycloak, y pedir un token del Admin del seed.
 
 ### Resultado esperado
 
-1. Responde 403: el stock es solo del administrador.
-2. Responde 403 y el stock no cambia.
+1. 200: los campos cambiados figuran como restablecidos (el correo de privacidad no) y al menos un usuario eliminado, sin errores.
+2. Mercado Pago encendido, sin propinas y cola apagada; el correo de privacidad no cambió. El usuario «e2e-limpieza-…» no existe en la base ni en Keycloak. El Admin del seed sigue entrando.
 
-## TC-I-157
+## TC-I-172
 
 ### Precondición
 
-El ítem de prueba con control de stock, 7 unidades y aviso en 5. Un pedido en espera de pago con 3 unidades del ítem.
+Módulo de limpieza habilitado. Usuarios Admin y Mozo del seed.
 
 ### Pasos
 
-1. Confirmar el pago del pedido.
+1. `POST /testing/limpieza` sin token.
+2. Lo mismo con el token del Mozo.
+3. `POST /testing/limpieza/establecimientos` con el token del Admin.
+4. `POST /testing/limpieza` con el token del Admin y un área que no existe.
 
 ### Resultado esperado
 
-1. En la misma transacción el stock baja a 4 y el ítem sigue disponible. Se avisa a los administradores del tenant A (`stock:alerta`) con el ítem, 4 unidades, aviso en 5 y tipo «STOCK_CRITICO», en menos de 5 segundos.
+1. 401.
+2. 403.
+3. 401 o 403: la ruta es solo para el rol PLATAFORMA.
+4. 400.
 
-## TC-I-158
+## TC-I-173
 
 ### Precondición
 
-El ítem de prueba con control de stock, 2 unidades y aviso en 5. Un pedido en espera de pago con 2 unidades del ítem.
+Módulo de limpieza habilitado. Usuario PLATAFORMA del test. Un establecimiento «E2E Plataforma …» dado de alta por la API, sin pedidos (con su Admin y su cuenta de Cocina en Keycloak).
 
 ### Pasos
 
-1. Confirmar el pago del pedido.
-2. Crear otro pedido con 1 unidad del ítem y verificar el stock antes de cobrarlo.
+1. `POST /testing/limpieza/establecimientos` con `dryRun: true`.
+2. Repetir sin `dryRun`.
+3. Buscar el establecimiento y el tenant A en la base, y las cuentas del alta en Keycloak.
 
 ### Resultado esperado
 
-1. El stock queda en 0 y el ítem no disponible. Se avisa a los administradores con tipo «AGOTADO» y a la carta del comensal que el ítem no está disponible.
-2. Responde 409: el ítem está agotado y no se cobra.
+1. 200 con al menos un establecimiento a eliminar. Las cuentas siguen en Keycloak.
+2. 200, sin errores.
+3. El establecimiento ya no existe; el tenant A sí. Las cuentas del alta ya no están en Keycloak.
 
-## TC-I-159
+## TC-I-174
 
 ### Precondición
 
-El ítem de prueba con control de stock y 1 unidad. Dos pedidos en espera de pago con 1 unidad cada uno, que ya pasaron la verificación de stock.
+API levantada **sin** `E2E_CLEANUP_ENABLED` (como en producción).
 
 ### Pasos
 
-1. Confirmar los dos pagos a la vez.
+1. `POST /testing/limpieza`.
+2. `POST /testing/limpieza/establecimientos`.
 
 ### Resultado esperado
 
-1. Los dos pagos se confirman (el dinero ya se cobró, ADR 0009). El stock queda en 0, nunca negativo, y el ítem no disponible. Se avisa una sola vez «1 vendida sin stock» y queda un registro «CARTA_ITEM_VENDIDO_SIN_STOCK» en la auditoría.
+1. 404: la ruta no existe.
+2. 404.
 
-## TC-I-160
+## TC-I-175
 
 ### Precondición
 
-El ítem de prueba del tenant A agotado (0 unidades). Tenant B del seed.
+Tenant A del seed. Un pedido pagado con su e-Factura de Surtec y otro pagado sin comprobante. Surtec falso: devuelve un PDF mínimo.
 
 ### Pasos
 
-1. Pedir las alertas y el stock con el contexto del tenant B.
-2. Pedir las alertas con el contexto del tenant A.
+1. Pedir el PDF del comprobante por el pedido (como el comensal) y por el comprobante (como el administrador).
+2. Pedir el PDF del pedido sin comprobante.
+3. Pedir los dos PDF desde el tenant B.
 
 ### Resultado esperado
 
-1. El ítem del tenant A no aparece (RLS).
-2. El ítem aparece.
+1. Se recibe el PDF en base64 con el nombre «e-Factura-<serie>-<número>.pdf», pedido a Surtec con el RUT del local y el id de Surtec del comprobante.
+2. 404.
+3. 404 (RLS). Ninguno de los pedidos de los pasos 2 y 3 llega a Surtec.
+
+## TC-I-176
+
+### Precondición
+
+Tenant A del seed. Dos pedidos pagados con su e-Ticket de Surtec, emitidos hace 10 minutos. Surtec falso (devuelve un PDF mínimo, salvo para el segundo comprobante, donde falla) y S3 en memoria.
+
+### Pasos
+
+1. Correr el respaldo del PDF para el tenant B.
+2. Correr el respaldo del PDF para el tenant A.
+3. Volver a correrlo enseguida.
+4. Descargar el PDF del primer comprobante como administrador.
+
+### Resultado esperado
+
+1. No pide a Surtec ningún comprobante del tenant A (RLS).
+2. El PDF del primero queda en S3 con la clave «<tenant_id>/cfe/<año>/<mes>/<id>.pdf», y en la base quedan esa clave y el SHA-256 del archivo. El segundo queda sin clave y con 1 intento.
+3. No vuelve a pedir ninguno: el primero ya está guardado y el segundo espera 5 minutos antes de reintentar.
+4. Se recibe el PDF guardado sin llamar a Surtec.

@@ -1,5 +1,6 @@
 /**
  * HU-031 (BL-201): cobro en efectivo que registra el mozo o el administrador.
+ * HU-007b (BL-80): también el cobro hecho con el POS del local.
  * Lógica pura del panel de la mesa y de la pantalla /admin/cobros (probada
  * en test/unitarios/cobros.utils.spec.ts).
  */
@@ -27,6 +28,11 @@ export interface PedidoPendienteDeCobro {
 /** Respuesta de GET /cobros/pendientes. */
 export interface PendientesDeCobro {
   efectivoHabilitado: boolean;
+  /**
+   * HU-007b (BL-80): el local registra cobros hechos con su POS. Opcional:
+   * un backend anterior no lo trae (y entonces no se ofrece).
+   */
+  posHabilitado?: boolean;
   pedidos: PedidoPendienteDeCobro[];
 }
 
@@ -41,6 +47,66 @@ export interface CobroEfectivoRegistrado {
 
 export const RUTA_PENDIENTES = "/cobros/pendientes";
 export const RUTA_COBRO_EFECTIVO = "/cobros/efectivo";
+
+// ── HU-007b (BL-80): cobro con el POS del local ─────────────────────────
+
+export type TarjetaPos = "CREDITO" | "DEBITO";
+
+export const TARJETAS_POS: ReadonlyArray<{
+  codigo: TarjetaPos;
+  nombre: string;
+}> = [
+  { codigo: "DEBITO", nombre: "Débito" },
+  { codigo: "CREDITO", nombre: "Crédito" },
+];
+
+/** Respuesta de POST /cobros/pos. */
+export interface CobroPosRegistrado {
+  pagoId: string;
+  pedidoId: string;
+  monto: string;
+  tarjeta: TarjetaPos;
+  autorizacion: string;
+}
+
+export const RUTA_COBRO_POS = "/cobros/pos";
+
+/**
+ * Lo que escribe el mozo como número de autorización del voucher. Devuelve
+ * el valor normalizado (sin espacios ni guiones, en mayúsculas) o null si no
+ * es válido. Mismo control que el backend: de 4 a 12 letras o números (con
+ * más, podría ser un número de tarjeta, que nunca se guarda).
+ */
+export function normalizarAutorizacion(texto: string): string | null {
+  const limpio = texto.replace(/[\s-]/g, "").toUpperCase();
+  return /^[A-Z0-9]{4,12}$/.test(limpio) ? limpio : null;
+}
+
+/** Motivo por el que no se puede cobrar con el POS, o null si se puede. */
+export function motivoSinPos(
+  pedido: PedidoPendienteDeCobro,
+  posHabilitado: boolean,
+): string | null {
+  if (!posHabilitado) {
+    return "El cobro con el POS del local no está habilitado en este establecimiento.";
+  }
+  if (pedido.pagoEnCurso) {
+    return "El comensal está pagando con tarjeta. Si no se confirma, vence solo en unos minutos.";
+  }
+  return null;
+}
+
+/** Aviso después de registrar un cobro con el POS. */
+export function mensajeCobroPosRegistrado(cobro: CobroPosRegistrado): string {
+  const tarjeta =
+    TARJETAS_POS.find((t) => t.codigo === cobro.tarjeta)?.nombre ?? "Tarjeta";
+  return `Cobro registrado: pedido ${codigoDelPedido(cobro.pedidoId)}, ${formatearMonto(cobro.monto)} con ${tarjeta.toLowerCase()} (autorización ${cobro.autorizacion}). Ya está en cocina.`;
+}
+
+/** Clave de idempotencia de un cobro con POS: una por diálogo abierto. */
+export function nuevaClaveDeCobroPos(): string {
+  return `pos-${crypto.randomUUID()}`;
+}
 
 /**
  * Mismo código que ve el comensal en su pantalla de pago (codigoPedido de

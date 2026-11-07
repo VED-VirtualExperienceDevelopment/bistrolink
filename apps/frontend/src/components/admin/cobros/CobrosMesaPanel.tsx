@@ -65,6 +65,7 @@ export function CobrosMesaPanel({ mesaId, numero, token, abierta }: Props) {
         <PedidosPorCobrar
           pedidos={pedidos}
           efectivoHabilitado={datos.efectivoHabilitado}
+          posHabilitado={datos.posHabilitado}
           token={token}
           vacio="No hay pedidos de esta mesa esperando el pago."
           onCobrado={() => void recargar()}

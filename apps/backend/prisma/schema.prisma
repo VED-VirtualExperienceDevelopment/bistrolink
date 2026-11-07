@@ -80,6 +80,8 @@ enum PagoOrigen {
   WEBHOOK
   CONCILIACION
   VENCIMIENTO
+  // HU-024 (BL-104): el personal canceló el pedido y se devolvió el pago.
+  CANCELACION
 }
 
 // HU-020 (BL-72): proveedor de facturación electrónica (CFE) del local.
@@ -139,24 +141,24 @@ model Tenant {
 // ── 4.2 Restaurante ──────────────────────────────────────────────────────────
 
 model Restaurante {
-  id                    String       @id @default(uuid()) @db.Uuid
+  id                          String       @id @default(uuid()) @db.Uuid
   // Único (BL-163): un tenant tiene un solo restaurante (ver
   // Tenant.restaurante). El índice único reemplaza al @@index([tenantId]).
-  tenantId              String       @unique @map("tenant_id") @db.Uuid
-  nombre                String
-  direccion             String
-  timezone              String
+  tenantId                    String       @unique @map("tenant_id") @db.Uuid
+  nombre                      String
+  direccion                   String
+  timezone                    String
   // HU-028 (BL-173): elementos fijos (puerta, baño, cocina, caja, barra) y
   // zonas (salón, patio, calle) del plano del salón. Forma:
   // { elementos: [{ id, tipo, x, y, ancho, alto, rotacion }],
   //   zonas: [{ id, etiqueta, x, y, ancho, alto }] }
   // Nullable: null = plano sin elementos ni zonas (los layouts de HU-016,
   // que viven en mesa.layout, no cambian). Validado por PlanoDto.
-  plano                 Json?
+  plano                       Json?
   // HU-031 (BL-201): el local acepta efectivo. Columna mínima hasta HU-020
   // (BL-72, configuración del establecimiento), que la va a administrar.
   // Default true: los locales existentes siguen cobrando en efectivo.
-  efectivoHabilitado    Boolean      @default(true) @map("efectivo_habilitado")
+  efectivoHabilitado          Boolean      @default(true) @map("efectivo_habilitado")
   // HU-020 (BL-72): configuración del establecimiento. Columnas directas en
   // restaurante (sin tabla aparte): un tenant tiene un solo restaurante y
   // los valores son pocos y fijos. La razón social y el RUT no van acá:
@@ -165,20 +167,33 @@ model Restaurante {
   // (que es el de efectivo; no se duplica). Mercado Pago es la única
   // pasarela (decisión del 17/10/2026, Anexo 2): Plexo y Handy quedan en
   // false y fuera del MVP hasta que se integren (BL-452).
-  mercadoPagoHabilitado Boolean      @default(true) @map("mercadopago_habilitado")
-  plexoHabilitado       Boolean      @default(false) @map("plexo_habilitado")
-  handyHabilitado       Boolean      @default(false) @map("handy_habilitado")
+  mercadoPagoHabilitado       Boolean      @default(true) @map("mercadopago_habilitado")
+  plexoHabilitado             Boolean      @default(false) @map("plexo_habilitado")
+  handyHabilitado             Boolean      @default(false) @map("handy_habilitado")
+  // HU-007b (BL-80): el local registra cobros hechos con su propio POS
+  // (crédito o débito). Default true: casi todos los locales tienen POS
+  // (Ley 19.210 de inclusión financiera); el administrador lo apaga en
+  // Configuración si no lo usa.
+  posHabilitado               Boolean      @default(true) @map("pos_habilitado")
   // Porcentajes de propina sugeridos, enteros (ej. [10, 15, 20]). Vacío =
   // sin sugerencias. Entre 1 y 100 y hasta 5 valores: CHECK en la migración
   // (Prisma no los declara); el DTO valida lo mismo con mensajes claros.
-  propinasSugeridas     Int[]        @default([]) @map("propinas_sugeridas")
+  propinasSugeridas           Int[]        @default([]) @map("propinas_sugeridas")
   // Default SURTEC: es el proveedor que emite hoy (CfeService).
-  cfeProveedor          CfeProveedor @default(SURTEC) @map("cfe_proveedor")
+  cfeProveedor                CfeProveedor @default(SURTEC) @map("cfe_proveedor")
   // HU-036 (BL-206): contacto para los derechos de los titulares de datos
   // (Ley 18.331). Se muestra en la política de privacidad del local.
-  emailPrivacidad       String?      @map("email_privacidad") @db.VarChar(254)
-  createdAt             DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt             DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+  emailPrivacidad             String?      @map("email_privacidad") @db.VarChar(254)
+  // HU-042 (BL-462, ADR 0010): cola del KDS. Null = cola automática
+  // desactivada: el mozo pasa el pedido a preparación a mano, como antes.
+  // Rangos con CHECK en la migración (1..50, 1..200, 1..180).
+  limitePedidosEnPreparacion  Int?         @map("limite_pedidos_en_preparacion")
+  // Con más pedidos que esto en espera, el KDS muestra alta demanda.
+  umbralAlertaCola            Int          @default(10) @map("umbral_alerta_cola")
+  // Referencia para el tiempo estimado de espera del comensal.
+  minutosPreparacionEstimados Int          @default(15) @map("minutos_preparacion_estimados")
+  createdAt                   DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                   DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   tenant     Tenant           @relation(fields: [tenantId], references: [id])
   usuarios   Usuario[]
@@ -354,6 +369,10 @@ model Pedido {
   receptorRazonSocial   String?      @map("receptor_razon_social") @db.VarChar(150)
   receptorConsentidoEn  DateTime?    @map("receptor_consentido_en") @db.Timestamptz(3)
   receptorAnonimizadoEn DateTime?    @map("receptor_anonimizado_en") @db.Timestamptz(3)
+  // HU-042 (BL-462, ADR 0010): cuándo llegó a cocina (pago aprobado →
+  // RECIBIDO). Orden FIFO de la cola; null en pedidos anteriores (se
+  // ordenan primero, por createdAt).
+  encoladoEn            DateTime?    @map("encolado_en") @db.Timestamptz(3)
   createdAt             DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt             DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -370,6 +389,8 @@ model Pedido {
   // del tenant (compatibles con el predicado de RLS).
   @@index([tenantId, createdAt])
   @@index([tenantId, estado])
+  // HU-042 (BL-462): próximo pedido de la cola (FIFO) y conteo por estado.
+  @@index([tenantId, estado, encoladoEn])
   // BL-453: buscar los pedidos de un RUT para anonimizarlos.
   @@index([tenantId, receptorRut])
   @@map("pedido")
@@ -413,6 +434,12 @@ model Pago {
   // HU-032 (BL-202): por qué quedó RECHAZADO («VENCIDO» si venció sin
   // confirmación, o el status_detail de la pasarela). Null en los demás.
   motivoRechazo      String?    @map("motivo_rechazo") @db.VarChar(60)
+  // HU-023 (BL-96): intentos fallidos de emitir el CFE de un pago APROBADO
+  // (el que no tiene comprobante). Los usa la conciliación de CFE para
+  // espaciar los reintentos; el error va sin datos personales.
+  cfeIntentos        Int        @default(0) @map("cfe_intentos")
+  cfeUltimoIntentoEn DateTime?  @map("cfe_ultimo_intento_en") @db.Timestamptz(3)
+  cfeUltimoError     String?    @map("cfe_ultimo_error") @db.VarChar(300)
   createdAt          DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt          DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -423,6 +450,8 @@ model Pago {
   @@index([tenantId])
   // BL-213: pagos de un pedido (cobro, webhook, consulta del comensal).
   @@index([pedidoId])
+  // HU-023 (BL-96): la conciliación busca los APROBADOS sin CFE por fecha.
+  @@index([tenantId, estado, createdAt])
   // HU-012 (BL-219): pagos de un tenant por fecha, para recalcular el
   // resumen de ventas de una ventana de horas.
   @@index([tenantId, createdAt])
@@ -459,10 +488,20 @@ model ComprobanteFiscal {
   tipoCfe                String       @map("tipo_cfe")
   serie                  String
   numero                 Int
-  // Nulos hasta HU-009/BL-92 (XML y PDF a S3/R2).
+  // HU-009 (BL-454): clave del objeto en S3_BUCKET_CFE, no una URL
+  // ({tenant_id}/cfe/{yyyy}/{mm}/{id}.pdf). El XML queda nulo hasta que
+  // Surtec tenga el endpoint para bajarlo.
   urlXml                 String?      @map("url_xml")
   urlPdf                 String?      @map("url_pdf")
-  // Hash que informa el proveedor (Surtec lo devuelve en Base64, 44 chars).
+  // BL-454: SHA-256 (hex) del PDF guardado en S3, propio. Se verifica al
+  // descargarlo. Distinto de hash_sha256, que es el DigestValue del XML
+  // firmado que informa Surtec (el del QR de la DGI).
+  pdfSha256              String?      @map("pdf_sha256") @db.Char(64)
+  // BL-454: intentos fallidos de guardar el PDF, para espaciar los reintentos.
+  pdfIntentos            Int          @default(0) @map("pdf_intentos")
+  pdfUltimoIntentoEn     DateTime?    @map("pdf_ultimo_intento_en") @db.Timestamptz(3)
+  // Hash que informa el proveedor: el DigestValue del XML firmado, en
+  // Base64 (44 chars). Es el que va en el QR para verificar el CFE en DGI.
   hashSha256             String?      @unique @map("hash_sha256") @db.VarChar(64)
   // Facturación electrónica (Surtec/FEU): trazabilidad del proveedor.
   proveedor              String       @default("SURTEC")

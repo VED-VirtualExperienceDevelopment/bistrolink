@@ -2,9 +2,10 @@ import 'dotenv/config';
 import { randomUUID } from 'node:crypto';
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { MesaEstado, Prisma } from '@prisma/client';
 import { io, Socket } from 'socket.io-client';
 import { AppModule } from '../../src/app.module';
+import { KdsGateway } from '../../src/pedidos/kds.gateway';
 import { TenantPrismaService } from '../../src/prisma/tenant-prisma.service';
 import {
   PedidosTransicionService,
@@ -24,6 +25,8 @@ import { asegurarClaveQr } from './support/qr-mesa';
 // rango 80 a 99 de mesas-layout.e2e-spec.ts), que al terminar queda LIBRE.
 // El test por WebSocket necesita el usuario mozo de Keycloak
 // (TEST_MOZO_USERNAME / TEST_MOZO_PASSWORD), como los demás tests del KDS.
+// BL-460: el que comprueba que Cocina no recibe los avisos necesita además el
+// usuario de cocina (TEST_COCINA_USERNAME / TEST_COCINA_PASSWORD).
 
 const KEYCLOAK_URL = process.env.KEYCLOAK_URL ?? 'http://localhost:8080';
 const REALM = process.env.KEYCLOAK_REALM ?? 'bistrolink';
@@ -31,6 +34,8 @@ const CLIENT_ID = process.env.KEYCLOAK_CLIENT_ID ?? 'bistrolink-backend';
 const CLIENT_SECRET = process.env.KEYCLOAK_CLIENT_SECRET ?? '';
 const MOZO_USER = process.env.TEST_MOZO_USERNAME;
 const MOZO_PASS = process.env.TEST_MOZO_PASSWORD;
+const COCINA_USER = process.env.TEST_COCINA_USERNAME;
+const COCINA_PASS = process.env.TEST_COCINA_PASSWORD;
 
 const TENANT_ID = '11111111-1111-1111-1111-111111111111';
 // Otro tenant: con RLS no tiene que ver las solicitudes del tenant A.
@@ -41,7 +46,7 @@ const NUMERO_MESA_TEST = 77;
 const NOMBRE_ITEM = 'Item de prueba BL-448';
 const ACTOR_PRUEBA = 'script:test-bl-448';
 
-async function tokenMozo(): Promise<string> {
+async function tokenDe(usuario?: string, clave?: string): Promise<string> {
   const res = await fetch(
     `${KEYCLOAK_URL}/realms/${REALM}/protocol/openid-connect/token`,
     {
@@ -51,13 +56,68 @@ async function tokenMozo(): Promise<string> {
         grant_type: 'password',
         client_id: CLIENT_ID,
         client_secret: CLIENT_SECRET,
-        username: MOZO_USER ?? '',
-        password: MOZO_PASS ?? '',
+        username: usuario ?? '',
+        password: clave ?? '',
       }),
     },
   );
   if (!res.ok) throw new Error(`No se pudo obtener token: ${res.status}`);
   return (await res.json()).access_token as string;
+}
+
+const tokenMozo = () => tokenDe(MOZO_USER, MOZO_PASS);
+const tokenCocina = () => tokenDe(COCINA_USER, COCINA_PASS);
+
+const esperar = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Espera (hasta 10 s) a que se cumpla la condición. */
+async function hasta(condicion: () => boolean, que: string): Promise<void> {
+  const limite = Date.now() + 10_000;
+  while (!condicion()) {
+    if (Date.now() > limite) throw new Error(`No se cumplió: ${que}`);
+    await esperar(50);
+  }
+}
+
+/**
+ * Conecta un KDS y anota los eventos de avisos que recibe (los llamados y el
+ * efectivo). `listo` se cumple cuando llega el snapshot de pedidos, que el
+ * servidor manda a todo el staff. `controles` anota los cambios de estado de
+ * mesa, que van a toda la sala del establecimiento: prueban que ese KDS está
+ * en el mismo establecimiento y que ya procesó lo que se emitió antes.
+ */
+function conectarKds(baseUrl: string, token: string) {
+  const eventos: string[] = [];
+  const controles: string[] = [];
+  const socket: Socket = io(baseUrl, {
+    auth: { token },
+    transports: ['websocket'],
+    forceNew: true,
+  });
+  const listo = new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      socket.disconnect();
+      reject(new Error('No llegó pedidos:snapshot'));
+    }, 10_000);
+    socket.on('error', (e: { message: string }) => {
+      clearTimeout(timer);
+      socket.disconnect();
+      reject(new Error(e.message));
+    });
+    socket.on('pedidos:snapshot', () => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
+  for (const evento of [
+    'llamados:snapshot',
+    'llamado:nuevo',
+    'llamado:resuelto',
+  ]) {
+    socket.on(evento, () => eventos.push(evento));
+  }
+  socket.on('mesa:estado_actualizado', () => controles.push('mesa'));
+  return { socket, eventos, controles, listo };
 }
 
 /** Conecta un KDS y devuelve el primer `llamados:snapshot` que recibe. */
@@ -95,9 +155,12 @@ describe('BL-448: avisos de efectivo que no se pierden en el KDS', () => {
   let solicitudes: SolicitudEfectivoService;
   let cobros: CobroEfectivoService;
   let transicion: PedidosTransicionService;
+  let gateway: KdsGateway;
   let mesaId: string;
 
   const itConMozo = MOZO_USER && MOZO_PASS ? it : it.skip;
+  const itConMozoYCocina =
+    MOZO_USER && MOZO_PASS && COCINA_USER && COCINA_PASS ? it : it.skip;
 
   const enTenant = <T>(
     fn: Parameters<TenantPrismaService['runInTenantContext']>[1],
@@ -146,6 +209,7 @@ describe('BL-448: avisos de efectivo que no se pierden en el KDS', () => {
     solicitudes = await app.resolve(SolicitudEfectivoService);
     cobros = await app.resolve(CobroEfectivoService);
     transicion = await app.resolve(PedidosTransicionService);
+    gateway = app.get(KdsGateway);
 
     // Mesa propia del test, ocupada (con sesión, HU-017).
     const mesa = await enTenant<{ id: string }>(async (tx) => {
@@ -247,6 +311,56 @@ describe('BL-448: avisos de efectivo que no se pierden en el KDS', () => {
         total: '590.00',
         pagaCon: null,
       });
+    },
+    30000,
+  );
+
+  itConMozoYCocina(
+    '[TC-I-163] BL-460: el aviso de efectivo y los llamados de mesa llegan al Mozo, pero no a Cocina, ni al conectarse ni en vivo',
+    async () => {
+      const pedidoId = await pedidoPendiente();
+      await solicitudes.solicitar(TENANT_ID, pedidoId, { pagaCon: '1000' });
+
+      const mozo = conectarKds(baseUrl, await tokenMozo());
+      const cocina = conectarKds(baseUrl, await tokenCocina());
+      try {
+        await Promise.all([mozo.listo, cocina.listo]);
+
+        // Al conectarse: el Mozo recibe el efectivo pendiente en su snapshot.
+        await hasta(
+          () => mozo.eventos.includes('llamados:snapshot'),
+          'el Mozo recibe llamados:snapshot',
+        );
+
+        // En vivo: un llamado de mesa y un aviso de efectivo.
+        gateway.emitirLlamado(TENANT_ID, mesaId, NUMERO_MESA_TEST);
+        gateway.emitirLlamado(TENANT_ID, mesaId, NUMERO_MESA_TEST, {
+          pedidoId,
+          total: '590.00',
+          pagaCon: '1000.00',
+        });
+        await hasta(
+          () => mozo.eventos.filter((e) => e === 'llamado:nuevo').length === 2,
+          'el Mozo recibe los dos avisos en vivo',
+        );
+
+        // Control: un evento para todo el establecimiento, emitido después de
+        // los avisos. Cuando Cocina lo recibe, está en el mismo establecimiento
+        // y, como los eventos de un mismo cliente llegan en orden, ya habría
+        // recibido antes cualquier aviso que se le hubiera mandado.
+        gateway.emitirEstadoMesa(TENANT_ID, mesaId, MesaEstado.OCUPADA);
+        await hasta(
+          () => cocina.controles.length === 1,
+          'Cocina recibe el evento de control',
+        );
+
+        expect(cocina.eventos).toEqual([]);
+      } finally {
+        mozo.socket.disconnect();
+        cocina.socket.disconnect();
+        // Saca la alerta del almacén en memoria, para no contaminar otros tests.
+        gateway.emitirLlamadoResuelto(TENANT_ID, mesaId);
+      }
     },
     30000,
   );

@@ -125,6 +125,20 @@ export default {
       maxWidth: {
         container: "1280px",
       },
+      // BL-441: la campana de alertas se agita al llegar un llamado nuevo.
+      keyframes: {
+        campana: {
+          "0%, 100%": { transform: "rotate(0deg)" },
+          "15%": { transform: "rotate(14deg)" },
+          "30%": { transform: "rotate(-12deg)" },
+          "45%": { transform: "rotate(9deg)" },
+          "60%": { transform: "rotate(-6deg)" },
+          "75%": { transform: "rotate(3deg)" },
+        },
+      },
+      animation: {
+        campana: "campana 1.2s ease-in-out 2",
+      },
     },
   },
   plugins: [],

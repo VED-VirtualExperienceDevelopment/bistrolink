@@ -463,4 +463,50 @@ describe('MercadoPagoGateway', () => {
       expect(claves[0]).toBe(claves[1]);
     });
   });
+
+  describe('reembolsarOrden (HU-024, BL-104)', () => {
+    it('reembolso total: POST /v1/orders/{id}/refund con body vacío y una clave de idempotencia fija por pago', async () => {
+      fetchMock.mockResolvedValue(
+        respuestaMp(201, {
+          id: 'ORD1',
+          status: 'processed',
+          status_detail: 'refunded',
+        }),
+      );
+
+      await new MercadoPagoGateway().reembolsarOrden(
+        'ORD1',
+        TENANT_ID,
+        'reembolso-p1',
+      );
+
+      const [url, init] = fetchMock.mock.calls[0];
+      expect(url).toBe('https://api.mercadopago.com/v1/orders/ORD1/refund');
+      expect(init.method).toBe('POST');
+      expect(init.body).toBe('{}');
+      expect(init.headers['X-Idempotency-Key']).toBe(
+        idempotencyKeyMp(TENANT_ID, 'reembolso-p1'),
+      );
+    });
+
+    it('la order ya estaba reembolsada: también es éxito', async () => {
+      fetchMock.mockResolvedValue(
+        respuestaMp(409, { errors: [{ code: 'order_already_refunded' }] }),
+      );
+
+      await expect(
+        new MercadoPagoGateway().reembolsarOrden('ORD1', TENANT_ID, 'r'),
+      ).resolves.toBeUndefined();
+    });
+
+    it('cualquier otro error: BadGatewayException', async () => {
+      fetchMock.mockResolvedValue(
+        respuestaMp(400, { errors: [{ code: 'cannot_refund_order' }] }),
+      );
+
+      await expect(
+        new MercadoPagoGateway().reembolsarOrden('ORD1', TENANT_ID, 'r'),
+      ).rejects.toBeInstanceOf(BadGatewayException);
+    });
+  });
 });
