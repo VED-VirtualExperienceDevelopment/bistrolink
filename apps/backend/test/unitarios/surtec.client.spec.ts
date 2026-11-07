@@ -368,6 +368,84 @@ describe('SurtecClient', () => {
     });
   });
 
+  describe('HU-024 (BL-104): nota de crédito', () => {
+    const REFERENCIA = {
+      tipoComprobante: 101,
+      serie: 'A',
+      numero: 49,
+      fecha: '2026-11-07',
+      razon: 'Cancelación del pedido',
+    };
+
+    it('de un e-Ticket: tipo 102, sin cliente y con la referencia específica al CFE original', async () => {
+      fetchMock
+        .mockReturnValueOnce(json({ access_token: 'AT' }))
+        .mockReturnValueOnce(json(RESPUESTA_CFE));
+
+      await client.emitirNotaDeCredito(SOLICITUD, REFERENCIA);
+
+      const cuerpo = JSON.parse(fetchMock.mock.calls[1][1].body);
+      expect(cuerpo).toMatchObject({
+        tipo_comprobante: 102,
+        id_externo: 'bl-pago-1',
+        items: [{ cantidad: 1, concepto: 'Milanesa', precio: 590 }],
+        referencias: [
+          {
+            tipo_comprobante: 101,
+            serie: 'A',
+            numero: 49,
+            fecha: '2026-11-07',
+            razon: 'Cancelación del pedido',
+          },
+        ],
+      });
+      expect(cuerpo).not.toHaveProperty('cliente');
+    });
+
+    it('de una e-Factura: tipo 112 con el mismo receptor', async () => {
+      fetchMock
+        .mockReturnValueOnce(json({ access_token: 'AT' }))
+        .mockReturnValueOnce(json(RESPUESTA_CFE));
+
+      await client.emitirNotaDeCredito(
+        SOLICITUD,
+        { ...REFERENCIA, tipoComprobante: 111 },
+        { rut: '219999830019', razonSocial: 'Comensal Ejemplo SAS' },
+      );
+
+      expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toMatchObject({
+        tipo_comprobante: 112,
+        cliente: { tipo_doc: 2, nro_doc: '219999830019' },
+        referencias: [{ tipo_comprobante: 111 }],
+      });
+    });
+
+    it('de una e-Factura sin receptor (anonimizado): error sin llamar a Surtec', async () => {
+      await expect(
+        client.emitirNotaDeCredito(SOLICITUD, {
+          ...REFERENCIA,
+          tipoComprobante: 111,
+        }),
+      ).rejects.toBeInstanceOf(SurtecError);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('la razón va cortada a 90 caracteres', async () => {
+      fetchMock
+        .mockReturnValueOnce(json({ access_token: 'AT' }))
+        .mockReturnValueOnce(json(RESPUESTA_CFE));
+
+      await client.emitirNotaDeCredito(SOLICITUD, {
+        ...REFERENCIA,
+        razon: 'x'.repeat(120),
+      });
+
+      expect(
+        JSON.parse(fetchMock.mock.calls[1][1].body).referencias[0].razon,
+      ).toHaveLength(90);
+    });
+  });
+
   describe('HU-009 (BL-455): consulta de emitidos', () => {
     const CONSULTA = {
       rutEmisor: '214198620015',

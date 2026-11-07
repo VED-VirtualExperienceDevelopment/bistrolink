@@ -80,6 +80,8 @@ enum PagoOrigen {
   WEBHOOK
   CONCILIACION
   VENCIMIENTO
+  // HU-024 (BL-104): el personal canceló el pedido y se devolvió el pago.
+  CANCELACION
 }
 
 // HU-020 (BL-72): proveedor de facturación electrónica (CFE) del local.

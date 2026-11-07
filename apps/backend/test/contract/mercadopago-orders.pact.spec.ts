@@ -22,7 +22,10 @@ import {
 } from '@pact-foundation/pact';
 import { Decimal } from '@prisma/client/runtime/library';
 import { BadRequestException } from '@nestjs/common';
-import { MercadoPagoGateway } from '../../src/pagos/gateways/mercadopago.gateway';
+import {
+  idempotencyKeyMp,
+  MercadoPagoGateway,
+} from '../../src/pagos/gateways/mercadopago.gateway';
 import { SolicitudCobro } from '../../src/pagos/gateways/pago-gateway.interface';
 import { armarReferenciaExterna } from '../../src/pagos/webhooks/referencia-externa';
 
@@ -301,6 +304,47 @@ describe('Contrato Mercado Pago — API Orders (BL-215)', () => {
           );
 
           expect(orden).toBeNull();
+        });
+    });
+  });
+
+  describe('POST /v1/orders/{id}/refund — reembolso total (HU-024, BL-104)', () => {
+    it('[TC-C-022] Mercado Pago Orders: POST /v1/orders/{id}/refund sin monto (reembolso total) con clave de idempotencia responde 201 con la order reembolsada', async () => {
+      const pathReembolso = fromProviderState(
+        '/v1/orders/${orderId}/refund',
+        '/v1/orders/ORD01J49MMW3SSBK5PSV3DFR32959/refund',
+      );
+      await pact
+        .addInteraction()
+        .given('existe una order procesada y acreditada', {
+          orderId: 'ORD01J49MMW3SSBK5PSV3DFR32959',
+        })
+        .uponReceiving('el reembolso total de una order acreditada')
+        .withRequest('POST', pathReembolso, (b) => {
+          b.headers({
+            ...HEADERS_AUTENTICADOS,
+            'Content-Type': 'application/json',
+            'X-Idempotency-Key': regex(
+              `^${UUID}$`,
+              idempotencyKeyMp(TENANT_ID, 'reembolso-pago-1'),
+            ),
+          }).jsonBody({});
+        })
+        .willRespondWith(201, (b) => {
+          b.jsonBody({
+            id: like('ORD01J49MMW3SSBK5PSV3DFR32959'),
+            status: like('processed'),
+            status_detail: 'refunded',
+          });
+        })
+        .executeTest(async (mock) => {
+          await expect(
+            gatewayContra(mock.url).reembolsarOrden(
+              'ORD01J49MMW3SSBK5PSV3DFR32959',
+              TENANT_ID,
+              'reembolso-pago-1',
+            ),
+          ).resolves.toBeUndefined();
         });
     });
   });
