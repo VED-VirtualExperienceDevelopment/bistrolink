@@ -192,6 +192,9 @@ const NOMBRE_MEDIO: Record<string, string> = {
   MERCADOPAGO: "Tarjeta (Mercado Pago)",
   PLEXO: "Tarjeta (Plexo)",
   EFECTIVO: "Efectivo",
+  // HU-007b (BL-80): cobros con el POS del local.
+  POS_CREDITO: "Crédito (POS del local)",
+  POS_DEBITO: "Débito (POS del local)",
 };
 
 const FORMATO_HORA = new Intl.DateTimeFormat("es-UY", {

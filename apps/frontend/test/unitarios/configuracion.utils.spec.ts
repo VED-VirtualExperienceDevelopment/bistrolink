@@ -79,6 +79,8 @@ describe("cambios para guardar", () => {
       razonSocial: "Uno SRL",
       efectivoHabilitado: true,
       mercadoPagoHabilitado: true,
+      // HU-007b (BL-80): un backend anterior no lo trae: el default (true).
+      posHabilitado: true,
       plexoHabilitado: false,
       handyHabilitado: false,
       propinas: "10, 15",
@@ -91,6 +93,28 @@ describe("cambios para guardar", () => {
       umbralAlertaCola: "10",
       minutosPreparacion: "15",
     });
+  });
+});
+
+describe("HU-007b (BL-80): POS del local", () => {
+  it("se lee de lo guardado y solo se manda si cambió", () => {
+    const guardada = { ...GUARDADA, posHabilitado: false };
+    const formulario = formularioDesde(guardada);
+    expect(formulario.posHabilitado).toBe(false);
+    expect(cambiosParaGuardar(guardada, formulario)).toEqual({});
+    expect(
+      cambiosParaGuardar(guardada, { ...formulario, posHabilitado: true }),
+    ).toEqual({ posHabilitado: true });
+  });
+
+  it("con un backend anterior (sin el campo) no manda nada si no se tocó", () => {
+    expect(cambiosParaGuardar(GUARDADA, formularioDesde(GUARDADA))).toEqual({});
+    expect(
+      cambiosParaGuardar(GUARDADA, {
+        ...formularioDesde(GUARDADA),
+        posHabilitado: false,
+      }),
+    ).toEqual({ posHabilitado: false });
   });
 });
 
@@ -109,9 +133,19 @@ describe("validaciones", () => {
         ...formulario,
         efectivoHabilitado: false,
         mercadoPagoHabilitado: false,
+        posHabilitado: false,
         plexoHabilitado: false,
       }),
     ).toBe(true);
+    // HU-007b (BL-80): con el POS del local alcanza para cobrar.
+    expect(
+      sinMediosDePago({
+        ...formulario,
+        efectivoHabilitado: false,
+        mercadoPagoHabilitado: false,
+        posHabilitado: true,
+      }),
+    ).toBe(false);
   });
 });
 

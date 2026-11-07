@@ -20,6 +20,7 @@
 | 1.13    | 04/11/2026 | TC-E-073 y 074: alertas del mozo (campana, pantalla Alertas y recarga con alertas pendientes) (BL-441).                                              |
 | 1.14    | 06/11/2026 | TC-E-075 y 076: pantalla de Configuración accesible, responsive y con «Guardar cambios» al final (BL-473).                                           |
 | 1.15    | 06/11/2026 | TC-E-077 y 078: pantalla de Stock de la jornada accesible, responsive y con «Guardar cambios» al final (BL-474).                                     |
+| 1.16    | 07/11/2026 | TC-E-080: el mozo registra el cobro con el POS del local (HU-007b, BL-80).                                                                           |
 
 Plantilla para cargar en Kiwi la descripción de casos TC-E (Playwright)
 nuevos o que cambiaron (BL-435). La usa
@@ -203,3 +204,23 @@ Administrador del establecimiento del seed logueado en el panel. Ventana de celu
 1. Se ven las tablas de stock por categoría, una debajo de la otra.
 2. No hay scroll horizontal y «Guardar cambios» se ve en pantalla.
 3. Sigue sin haber scroll horizontal y «Guardar cambios» sigue a la vista, como último botón.
+
+## TC-E-080
+
+### Precondición
+
+Mozo del establecimiento del seed logueado. POS del local habilitado en Configuración.
+
+### Pasos
+
+1. Como comensal, armar un pedido para retirar y quedarse en «Pagá tu pedido».
+2. Como mozo, abrir «Cobros pendientes» y tocar «Cobrar con el POS» en ese pedido.
+3. Elegir «Débito», cargar la autorización «e2e123» y tocar «Registrar cobro».
+4. Abrir el KDS.
+
+### Resultado esperado
+
+1. El pedido queda esperando el pago.
+2. Se abre el diálogo con el total; «Registrar cobro» está deshabilitado hasta cargar la autorización. Sin errores graves de accesibilidad (axe).
+3. Se registra el cobro (débito, autorización E2E123), aparece «Cobro registrado: pedido …» y el pedido sale de la lista.
+4. El pedido está en el KDS.

@@ -165,6 +165,13 @@ const cobroEfectivo = (extra = {}) => ({
   ...extra,
   tags: ["HU-031", "BL-201", "pagos", ...(extra.tags ?? [])],
 });
+// HU-007b (BL-80): cobro con el POS del local que registra el mozo.
+const cobroPos = (extra = {}) => ({
+  component: "api",
+  requirement: "HU-007b",
+  ...extra,
+  tags: ["HU-007b", "BL-80", "pagos", "pos", ...(extra.tags ?? [])],
+});
 // HU-031b (BL-442): el comensal de una mesa pide pagar en efectivo.
 const solicitudEfectivo = (extra = {}) => ({
   component: "api",
@@ -719,6 +726,12 @@ const DATOS_INTEGRACION = {
     priority: "P1",
     tags: ["configuracion-entorno"],
   }),
+  177: cobroPos({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["idempotencia", "multi-tenant", "auditoria"],
+  }),
+  178: cobroPos({ category: "Seguridad", priority: "P1", tags: ["seguridad"] }),
 };
 /**
  * BL-435: datos de los E2E TC-E-017 en adelante, con los criterios de
@@ -1041,6 +1054,12 @@ const DATOS_E2E = {
     category: "Funcional",
     priority: "P2",
     tags: ["BL-474", "stock", "responsive", "mobile"],
+  }),
+  // HU-007b (BL-80): cobro con el POS del local.
+  80: e2e("mozo", "HU-007b", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-80", "pagos", "pos", ...axe],
   }),
 };
 /**

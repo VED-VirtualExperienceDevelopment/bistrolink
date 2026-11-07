@@ -152,7 +152,7 @@ function CargarPedido() {
                 <span>Cobrar en efectivo</span>
               </button>
               <p className="text-body-sm text-on-surface-variant">
-                También lo podés cobrar después, desde «Cobros pendientes» o el panel de la mesa.
+                También lo podés cobrar después, en efectivo o con el POS del local, desde «Cobros pendientes» o el panel de la mesa.
               </p>
             </>
           )}
