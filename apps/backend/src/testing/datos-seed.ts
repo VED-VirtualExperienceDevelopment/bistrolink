@@ -101,3 +101,18 @@ export const RAZON_SOCIAL_DEL_SEED: Readonly<Record<string, string>> = {
  * Ningún usuario del seed empieza así (admin-test, mozo-test, …).
  */
 export const PREFIJO_USUARIO_E2E = 'e2e-';
+
+/** Tenants de testing del seed (A y B): la limpieza de plataforma no los toca. */
+export const TENANTS_DE_TESTING: readonly string[] = Object.keys(
+  RAZON_SOCIAL_DEL_SEED,
+);
+
+/**
+ * Establecimientos creados por los E2E de plataforma
+ * (`e2e/support/plataforma.ts`: «E2E Plataforma 12345678 SRL»).
+ */
+export const PREFIJO_ESTABLECIMIENTO_E2E = 'E2E Plataforma ';
+
+/** Motivo de suspensión cuando un establecimiento E2E tiene pedidos. */
+export const MOTIVO_SUSPENSION_E2E =
+  'Limpieza de datos de prueba (BL-285): establecimiento E2E con pedidos';
