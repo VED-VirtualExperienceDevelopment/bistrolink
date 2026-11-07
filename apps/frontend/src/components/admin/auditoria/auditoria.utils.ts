@@ -82,6 +82,8 @@ export const ETIQUETAS_ACCION: Record<string, string> = {
   CARTA_ITEM_VENDIDO_SIN_STOCK: "Venta sin stock",
   // HU-009 (BL-453): supresión de los datos de la e-Factura de un comensal.
   PEDIDO_RECEPTOR_ANONIMIZADO: "Datos de facturación anonimizados",
+  // HU-024 (BL-104): cancelación de un pedido pagado, con la devolución.
+  PEDIDO_CANCELADO: "Pedido cancelado y pago devuelto",
   // HU-023 (BL-96): reintento manual de la emisión de un CFE.
   PAGO_CFE_REINTENTADO: "Reintento de emisión de comprobante",
   // BL-475 (BL-285): solo en staging y local (E2E_CLEANUP_ENABLED).
@@ -145,6 +147,10 @@ const NOMBRE_CAMPO: Record<string, string> = {
   monto: "Total",
   montoRecibido: "Recibido",
   vuelto: "Vuelto",
+  // HU-024 (BL-104): cancelación de un pedido pagado.
+  motivo: "Motivo",
+  devolucion: "Devolución",
+  stockRepuesto: "Stock repuesto",
   // BL-396: categorías de la carta.
   nombre: "Nombre",
   descripcion: "Descripción",
