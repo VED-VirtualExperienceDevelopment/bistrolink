@@ -27,6 +27,7 @@
 | Documento | Para qué |
 |---|---|
 | [Guía de commits](COMMITS.md) | Formato de los commits y uso de `npm run commit` |
+| [Release, hotfix y rollback](RELEASE.md) | Cómo se pasa una versión a producción con un tag, cómo se corrige un error urgente y cómo se vuelve a una versión anterior |
 
 ### Dashboards
 
