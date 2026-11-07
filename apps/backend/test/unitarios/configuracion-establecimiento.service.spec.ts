@@ -23,6 +23,7 @@ const RUT = '219999990016';
 const RESTAURANTE_ACTUAL = {
   efectivoHabilitado: true,
   mercadoPagoHabilitado: true,
+  posHabilitado: true,
   plexoHabilitado: false,
   handyHabilitado: false,
   propinasSugeridas: [10],
@@ -95,7 +96,7 @@ describe('ConfiguracionEstablecimientoService (HU-020, BL-72)', () => {
         razonSocial: RAZON_SOCIAL,
         rut: RUT,
         ...RESTAURANTE_ACTUAL,
-        mediosPagoDisponibles: ['EFECTIVO', 'MERCADOPAGO'],
+        mediosPagoDisponibles: ['EFECTIVO', 'MERCADOPAGO', 'POS'],
         proveedoresCfeDisponibles: ['SURTEC'],
       });
     });

@@ -46,6 +46,7 @@ export enum AuditAction {
   MESA_PEDIDOS_CANCELADOS = 'MESA_PEDIDOS_CANCELADOS', // BL-205 (al cerrar la mesa se cancelan los pedidos sin pagar, HU-017)
   MESA_LIMPIEZA_PRUEBAS = 'MESA_LIMPIEZA_PRUEBAS', // BL-479 (BL-285: limpieza de datos de prueba; mesas reabiertas, liberadas y eliminadas y zonas «Zona E2E» quitadas)
   PAGO_EFECTIVO_REGISTRADO = 'PAGO_EFECTIVO_REGISTRADO', // BL-201 (HU-031: cobro en efectivo, con monto recibido y vuelto)
+  PAGO_POS_REGISTRADO = 'PAGO_POS_REGISTRADO', // BL-80 (HU-007b: cobro con el POS del local, con total, tipo de tarjeta y n.° de autorización; nunca datos de la tarjeta)
   PEDIDO_RECEPTOR_ANONIMIZADO = 'PEDIDO_RECEPTOR_ANONIMIZADO', // BL-453 (HU-009: RUT y razón social de la e-Factura anonimizados; con la cantidad de pedidos, nunca el RUT)
   PAGO_CFE_REINTENTADO = 'PAGO_CFE_REINTENTADO', // BL-96 (HU-023: el administrador reintentó la emisión del CFE de un pago, con el resultado)
   PEDIDO_LIMPIEZA_PRUEBAS = 'PEDIDO_LIMPIEZA_PRUEBAS', // BL-475 (BL-285: limpieza de datos de prueba, solo con E2E_CLEANUP_ENABLED; con cuántos pedidos se cancelaron y entregaron y sus ids)

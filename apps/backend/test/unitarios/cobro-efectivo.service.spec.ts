@@ -18,6 +18,7 @@ import {
 } from '../../src/pagos/efectivo/cobro-efectivo.service';
 import { CobrosController } from '../../src/pagos/efectivo/cobros.controller';
 import { RegistrarCobroEfectivoDto } from '../../src/pagos/efectivo/registrar-cobro-efectivo.dto';
+import { RegistrarCobroPosDto } from '../../src/pagos/pos/registrar-cobro-pos.dto';
 
 // HU-031 (BL-201): registro de cobro en efectivo.
 
@@ -364,6 +365,186 @@ describe('CobroEfectivoService (HU-031, BL-201)', () => {
     });
   });
 
+  describe('registrarPos (HU-007b, BL-80)', () => {
+    const dtoPos = (overrides: Partial<RegistrarCobroPosDto> = {}) => ({
+      pedidoId: PEDIDO,
+      idempotencyKey: 'pos-1',
+      tarjeta: 'DEBITO' as const,
+      autorizacion: 'A1B2C3',
+      ...overrides,
+    });
+    const registrarPos = (body = dtoPos()) =>
+      service.registrarPos(TENANT, ACTOR, body as RegistrarCobroPosDto);
+
+    beforeEach(() => {
+      tx.restaurante.findUnique.mockResolvedValue({ posHabilitado: true });
+      tx.pago.create.mockResolvedValue(
+        pagoGuardado({
+          medioPago: 'POS_DEBITO',
+          pasarelaReferencia: 'A1B2C3',
+        }),
+      );
+    });
+
+    it('mira el flag del POS del local, no el del efectivo', async () => {
+      await registrarPos();
+
+      expect(tx.restaurante.findUnique).toHaveBeenCalledWith({
+        where: { tenantId: TENANT },
+        select: { posHabilitado: true },
+      });
+    });
+
+    it.each([
+      ['DEBITO', 'POS_DEBITO'],
+      ['CREDITO', 'POS_CREDITO'],
+    ] as const)(
+      '%s: crea el pago %s/APROBADO con el total del backend y el n.° de autorización',
+      async (tarjeta, medioPago) => {
+        await registrarPos(dtoPos({ tarjeta }));
+
+        expect(tx.pago.create).toHaveBeenCalledWith({
+          data: {
+            tenantId: TENANT,
+            pedidoId: PEDIDO,
+            idempotencyKey: 'pos-1',
+            monto: new Prisma.Decimal('590.00'),
+            medioPago,
+            estado: 'APROBADO',
+            pasarelaReferencia: 'A1B2C3',
+          },
+        });
+      },
+    );
+
+    it('devuelve el cobro y lo deja en la auditoría con total, tarjeta y autorización', async () => {
+      await expect(registrarPos()).resolves.toEqual({
+        pagoId: 'pago-1',
+        pedidoId: PEDIDO,
+        monto: '590.00',
+        tarjeta: 'DEBITO',
+        autorizacion: 'A1B2C3',
+      });
+      expect(auditLog.registrarEnTx).toHaveBeenCalledWith(tx, {
+        action: AuditAction.PAGO_POS_REGISTRADO,
+        tenantId: TENANT,
+        actorKeycloakId: ACTOR,
+        entidadId: 'pago-1',
+        despues: { monto: '590.00', tarjeta: 'Débito', autorizacion: 'A1B2C3' },
+        detalle: { pedidoId: PEDIDO },
+      });
+    });
+
+    it('igual que el efectivo: pedido a RECIBIDO con quién cobró, stock verificado, KDS y CFE', async () => {
+      await registrarPos();
+
+      expect(pedidos.verificarStockEnTx).toHaveBeenCalledWith(tx, PEDIDO);
+      expect(pedidos.confirmarPagoEnTx).toHaveBeenCalledWith(
+        tx,
+        TENANT,
+        PEDIDO,
+        'u-mozo',
+      );
+      expect(pedidos.notificarPedidoConfirmado).toHaveBeenCalledWith(
+        TENANT,
+        PEDIDO_KDS,
+      );
+      expect(cfe.emitirEnSegundoPlano).toHaveBeenCalledWith(TENANT, 'pago-1');
+    });
+
+    it('POS deshabilitado en el establecimiento: 409 y no cobra', async () => {
+      tx.restaurante.findUnique.mockResolvedValue({ posHabilitado: false });
+
+      await expect(registrarPos()).rejects.toThrow(
+        new ConflictException(
+          'El cobro con el POS del local no está habilitado en este establecimiento',
+        ),
+      );
+      expect(tx.pago.create).not.toHaveBeenCalled();
+    });
+
+    it('el comensal tiene un pago con Mercado Pago en curso: 409', async () => {
+      tx.pedido.findUnique.mockResolvedValue({
+        id: PEDIDO,
+        estado: 'PENDIENTE_PAGO',
+        lineas: [{ subtotal: new Prisma.Decimal('590.00') }],
+        pagos: [{ id: 'pago-mp' }],
+      });
+
+      await expect(registrarPos()).rejects.toBeInstanceOf(ConflictException);
+      expect(tx.pago.create).not.toHaveBeenCalled();
+    });
+
+    it('pedido ya pagado: 409', async () => {
+      tx.pedido.findUnique.mockResolvedValue({
+        id: PEDIDO,
+        estado: 'RECIBIDO',
+        lineas: [],
+        pagos: [],
+      });
+
+      await expect(registrarPos()).rejects.toThrow('Este pedido ya fue pagado');
+    });
+
+    describe('idempotencia (RNF.03)', () => {
+      it('misma clave: devuelve el mismo cobro, con lo guardado, sin crear otro', async () => {
+        tx.pago.findUnique.mockResolvedValue(
+          pagoGuardado({
+            medioPago: 'POS_CREDITO',
+            pasarelaReferencia: 'ZZ9999',
+          }),
+        );
+
+        await expect(registrarPos()).resolves.toMatchObject({
+          tarjeta: 'CREDITO',
+          autorizacion: 'ZZ9999',
+        });
+        expect(tx.pago.create).not.toHaveBeenCalled();
+        expect(cfe.emitirEnSegundoPlano).not.toHaveBeenCalled();
+      });
+
+      it('la clave ya se usó en un cobro en efectivo: 409', async () => {
+        tx.pago.findUnique.mockResolvedValue(pagoGuardado());
+
+        await expect(registrarPos()).rejects.toThrow(
+          'La clave de idempotencia ya se usó en otro cobro',
+        );
+      });
+
+      it('y al revés: la clave de un cobro con POS no sirve para efectivo', async () => {
+        tx.pago.findUnique.mockResolvedValue(
+          pagoGuardado({ medioPago: 'POS_DEBITO' }),
+        );
+
+        await expect(
+          service.registrar(TENANT, ACTOR, dto() as RegistrarCobroEfectivoDto),
+        ).rejects.toThrow('La clave de idempotencia ya se usó en otro cobro');
+      });
+
+      it('doble clic simultáneo: la clave única choca (P2002) y devuelve el cobro del primero', async () => {
+        tenantPrisma.runInTenantContext
+          .mockRejectedValueOnce(
+            new Prisma.PrismaClientKnownRequestError('duplicada', {
+              code: 'P2002',
+              clientVersion: 'test',
+            }),
+          )
+          .mockImplementation((_t, callback) => callback(tx));
+        tx.pago.findUnique.mockResolvedValue(
+          pagoGuardado({
+            medioPago: 'POS_DEBITO',
+            pasarelaReferencia: 'A1B2C3',
+          }),
+        );
+
+        await expect(registrarPos()).resolves.toMatchObject({
+          pagoId: 'pago-1',
+          tarjeta: 'DEBITO',
+        });
+      });
+    });
+  });
+
   describe('pendientes', () => {
     it('busca los PENDIENTE_PAGO de las mesas y los para retirar de las últimas horas', async () => {
       await service.pendientes(TENANT, AHORA);
@@ -412,6 +593,8 @@ describe('CobroEfectivoService (HU-031, BL-201)', () => {
 
       await expect(service.pendientes(TENANT, AHORA)).resolves.toEqual({
         efectivoHabilitado: true,
+        // HU-007b (BL-80): el mock no lo trae: queda deshabilitado.
+        posHabilitado: false,
         pedidos: [
           {
             id: PEDIDO,
@@ -470,14 +653,26 @@ describe('CobroEfectivoService (HU-031, BL-201)', () => {
 
 describe('CobrosController (HU-031, BL-201)', () => {
   it('pasa el tenant y el actor del token, nunca del body', async () => {
-    const cobro = { registrar: jest.fn(), pendientes: jest.fn() };
+    const cobro = {
+      registrar: jest.fn(),
+      registrarPos: jest.fn(),
+      pendientes: jest.fn(),
+    };
     const controller = new CobrosController(cobro as any);
     const req = { user: { tenantId: TENANT, sub: ACTOR, roles: ['MOZO'] } };
+    const pos = {
+      pedidoId: PEDIDO,
+      idempotencyKey: 'pos-1',
+      tarjeta: 'CREDITO',
+      autorizacion: 'A1B2C3',
+    } as RegistrarCobroPosDto;
 
     await controller.registrarEfectivo(req as any, dto());
+    await controller.registrarPos(req as any, pos);
     await controller.pendientes(req as any);
 
     expect(cobro.registrar).toHaveBeenCalledWith(TENANT, ACTOR, dto());
+    expect(cobro.registrarPos).toHaveBeenCalledWith(TENANT, ACTOR, pos);
     expect(cobro.pendientes).toHaveBeenCalledWith(TENANT);
   });
 
@@ -492,6 +687,7 @@ describe('CobrosController (HU-031, BL-201)', () => {
   it.each([['ADMIN'], ['MOZO']])('%s puede cobrar y ver pendientes', (rol) => {
     for (const handler of [
       CobrosController.prototype.registrarEfectivo,
+      CobrosController.prototype.registrarPos,
       CobrosController.prototype.pendientes,
     ]) {
       expect(guard.canActivate(contexto(handler, [rol]))).toBe(true);
@@ -509,6 +705,12 @@ describe('CobrosController (HU-031, BL-201)', () => {
       expect(() =>
         guard.canActivate(
           contexto(CobrosController.prototype.pendientes, [rol]),
+        ),
+      ).toThrow(ForbiddenException);
+      // HU-007b (BL-80): tampoco registran cobros con POS.
+      expect(() =>
+        guard.canActivate(
+          contexto(CobrosController.prototype.registrarPos, [rol]),
         ),
       ).toThrow(ForbiddenException);
     },
@@ -572,5 +774,58 @@ describe('ordenarPendientes (HU-031b, BL-442)', () => {
       'sin-2',
       'sin-1',
     ]);
+  });
+});
+
+describe('RegistrarCobroPosDto (HU-007b, BL-80)', () => {
+  const base = {
+    pedidoId: PEDIDO,
+    idempotencyKey: 'pos-1',
+    tarjeta: 'DEBITO',
+    autorizacion: 'A1B2C3',
+  };
+  const validar = async (body: Record<string, unknown>) => {
+    const instancia = plainToInstance(RegistrarCobroPosDto, body);
+    return {
+      errores: (await validate(instancia)).map((e) => e.property),
+      instancia,
+    };
+  };
+
+  it.each([['CREDITO'], ['DEBITO']])('acepta tarjeta %s', async (tarjeta) => {
+    expect((await validar({ ...base, tarjeta })).errores).toEqual([]);
+  });
+
+  it.each([['VISA'], ['credito'], ['']])(
+    'rechaza tarjeta %s',
+    async (tarjeta) => {
+      expect((await validar({ ...base, tarjeta })).errores).toEqual([
+        'tarjeta',
+      ]);
+    },
+  );
+
+  it('normaliza la autorización: sin espacios ni guiones y en mayúsculas', async () => {
+    const { errores, instancia } = await validar({
+      ...base,
+      autorizacion: ' ab-12 3c ',
+    });
+    expect(errores).toEqual([]);
+    expect(instancia.autorizacion).toBe('AB123C');
+  });
+
+  it.each([
+    ['muy corta', '123'],
+    ['muy larga (podría ser un número de tarjeta)', '4111111111111111'],
+    ['con símbolos', 'AB#123'],
+    ['vacía', ''],
+  ])('rechaza una autorización %s', async (_caso, autorizacion) => {
+    expect((await validar({ ...base, autorizacion })).errores).toEqual([
+      'autorizacion',
+    ]);
+  });
+
+  it('no acepta el monto en el body (lo calcula el backend)', () => {
+    expect(Object.keys(new RegistrarCobroPosDto())).not.toContain('monto');
   });
 });

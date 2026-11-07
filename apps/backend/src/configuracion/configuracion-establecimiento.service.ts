@@ -25,6 +25,8 @@ export interface ConfiguracionEstablecimiento {
   rut: string;
   efectivoHabilitado: boolean;
   mercadoPagoHabilitado: boolean;
+  /** HU-007b (BL-80): cobros con el POS del local. */
+  posHabilitado: boolean;
   plexoHabilitado: boolean;
   handyHabilitado: boolean;
   /** Los que se pueden habilitar hoy (Plexo y Handy quedaron fuera del MVP). */
@@ -48,6 +50,7 @@ export interface ConfiguracionEstablecimiento {
 const SELECT_RESTAURANTE = {
   efectivoHabilitado: true,
   mercadoPagoHabilitado: true,
+  posHabilitado: true,
   plexoHabilitado: true,
   handyHabilitado: true,
   propinasSugeridas: true,
