@@ -430,7 +430,7 @@ describe('CobroEfectivoService (HU-031, BL-201)', () => {
         tenantId: TENANT,
         actorKeycloakId: ACTOR,
         entidadId: 'pago-1',
-        despues: { monto: '590.00', tarjeta: 'Débito', autorizacion: 'A1B2C3' },
+        despues: { monto: '590.00', medio: 'Débito', autorizacion: 'A1B2C3' },
         detalle: { pedidoId: PEDIDO },
       });
     });

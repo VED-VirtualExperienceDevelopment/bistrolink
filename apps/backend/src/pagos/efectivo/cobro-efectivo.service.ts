@@ -342,9 +342,11 @@ export class CobroEfectivoService {
       }),
       auditoria: (cobro) => ({
         action: AuditAction.PAGO_POS_REGISTRADO,
+        // «medio» y no «tarjeta»: la auditoría oculta todo campo que se
+        // llame como un dato de tarjeta (HU-035), y esto no lo es.
         despues: {
           monto: cobro.monto,
-          tarjeta: NOMBRE_TARJETA[cobro.tarjeta],
+          medio: NOMBRE_TARJETA[cobro.tarjeta],
           autorizacion: cobro.autorizacion,
         },
       }),

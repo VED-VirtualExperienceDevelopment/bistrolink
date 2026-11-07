@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { randomUUID } from 'node:crypto';
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication } from '@nestjs/common';
+import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 import request = require('supertest');
@@ -159,6 +159,15 @@ describe('HU-007b (BL-80): cobro con el POS del local', () => {
       Test.createTestingModule({ imports: [AppModule] }),
     ).compile();
     app = moduleRef.createNestApplication();
+    // El mismo ValidationPipe que main.ts: sin él, el body llega sin validar
+    // (TC-I-178 prueba que se rechace una autorización con 16 dígitos).
+    app.useGlobalPipes(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true,
+        transform: true,
+      }),
+    );
     await app.init();
 
     tenantPrisma = await app.resolve(TenantPrismaService);
@@ -261,7 +270,7 @@ describe('HU-007b (BL-80): cobro con el POS del local', () => {
         actorKeycloakId: ACTOR_PRUEBA,
         valoresDespues: {
           monto: '590.00',
-          tarjeta: 'Débito',
+          medio: 'Débito',
           autorizacion: 'A1B2C3',
         },
         detalle: { pedidoId },

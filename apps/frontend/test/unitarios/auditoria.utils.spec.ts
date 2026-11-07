@@ -103,7 +103,7 @@ describe("cómo se muestra cada registro", () => {
       valoresAntes: null,
       valoresDespues: {
         monto: "590.00",
-        tarjeta: "Débito",
+        medio: "Débito",
         autorizacion: "A1B2C3",
       },
     });

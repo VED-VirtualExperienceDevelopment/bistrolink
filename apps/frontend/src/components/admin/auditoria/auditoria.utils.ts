@@ -148,7 +148,7 @@ const NOMBRE_CAMPO: Record<string, string> = {
   montoRecibido: "Recibido",
   vuelto: "Vuelto",
   // HU-007b (BL-80): cobro con el POS del local.
-  tarjeta: "Tarjeta",
+  medio: "Tarjeta",
   autorizacion: "N.° de autorización",
   // BL-396: categorías de la carta.
   nombre: "Nombre",
