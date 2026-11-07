@@ -81,6 +81,7 @@ export const STOCK_DEL_SEED = {
 export const CONFIGURACION_DEL_SEED = {
   efectivoHabilitado: true,
   mercadoPagoHabilitado: true,
+  posHabilitado: true,
   plexoHabilitado: false,
   handyHabilitado: false,
   propinasSugeridas: [] as number[],

@@ -9,7 +9,8 @@
 | 1.2     | 02/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-C-015 y 016: emisión de e-Factura en Surtec (HU-009, BL-453).                       |
 | 1.3     | 03/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-C-017 y 018: consulta del estado de los CFE ante la DGI en Surtec (HU-009, BL-455). |
 | 1.4     | 03/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-C-019: emisión con Surtec no disponible (HU-023, BL-96).                            |
-| 1.5     | 07/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-C-020: PDF de un CFE emitido en Surtec (HU-009, BL-454).                            |
+| 1.5     | 07/11/2026 | Se borra el bloque de TC-C-019, ya cargado en Kiwi. TC-C-021 y 022: nota de crédito en Surtec y reembolso en Mercado Pago (HU-024, BL-104).    |
+| 1.6     | 07/11/2026 | Se borran los bloques de TC-C-021 y 022, ya cargados en Kiwi. TC-C-020: PDF de un CFE emitido en Surtec (HU-009, BL-454).                      |
 
 Texto del campo de descripción de cada caso TC-C en Kiwi. Lo carga
 `cargar-casos-integracion.mjs --contrato --descripciones`: cada bloque

@@ -46,12 +46,14 @@ export const PUNTOS_SIN_PRORROGA = 5;
 const IVA_BASICO = new Prisma.Decimal('0.22');
 
 /**
- * Pasarelas que cobran con tarjeta o dinero electrónico. EFECTIVO no tiene
- * beneficio.
+ * Medios que cobran con tarjeta o dinero electrónico: las pasarelas y el POS
+ * del local (HU-007b, BL-80: crédito y débito). EFECTIVO no tiene beneficio.
  */
 const MEDIOS_ELECTRONICOS: ReadonlySet<string> = new Set([
   'MERCADOPAGO',
   'PLEXO',
+  'POS_CREDITO',
+  'POS_DEBITO',
 ]);
 
 /**

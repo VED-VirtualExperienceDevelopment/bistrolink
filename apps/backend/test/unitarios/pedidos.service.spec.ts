@@ -25,6 +25,9 @@ const mockDescuentoStock = {
   descontarEnTx: jest.fn().mockResolvedValue(AVISOS_VACIOS),
   verificarPedidoEnTx: jest.fn().mockResolvedValue(undefined),
   avisar: jest.fn(),
+  // HU-024 (BL-104): stock de un pedido cancelado.
+  reponerEnTx: jest.fn().mockResolvedValue(['item-1']),
+  avisarReposicion: jest.fn(),
 } as any;
 const RESTAURANTE_ID = '22222222-2222-2222-2222-222222222222';
 const MESA_ID = '33333333-3333-3333-3333-333333333333';
@@ -797,6 +800,49 @@ describe('PedidosService.confirmarPagoEnTx / notificarPedidoConfirmado (BL-311, 
     expect(resultado).toBeNull();
     expect(mockTx.pedidoEstadoHistorial.create).not.toHaveBeenCalled();
     expect(mockTx.pedido.findUniqueOrThrow).not.toHaveBeenCalled();
+  });
+
+  it('HU-024 (BL-104): reponerStockEnTx delega en el descuento de stock', async () => {
+    await expect(
+      service.reponerStockEnTx(mockTx, TENANT_ID, 'pedido-1'),
+    ).resolves.toEqual(['item-1']);
+    expect(mockDescuentoStock.reponerEnTx).toHaveBeenCalledWith(
+      mockTx,
+      TENANT_ID,
+      'pedido-1',
+    );
+  });
+
+  it('HU-024 (BL-104): notificarPedidoCancelado saca el pedido del KDS, avisa los promovidos, la cola, los reportes y el stock', () => {
+    service.notificarPedidoCancelado(
+      TENANT_ID,
+      'pedido-1',
+      [{ id: 'pedido-2' }],
+      ['item-1'],
+    );
+
+    expect(mockKdsGateway.emitirPedidoActualizado).toHaveBeenCalledWith(
+      TENANT_ID,
+      expect.objectContaining({ id: 'pedido-1', estado: 'CANCELADO' }),
+    );
+    expect(mockKdsGateway.emitirPedidoActualizado).toHaveBeenCalledWith(
+      TENANT_ID,
+      { id: 'pedido-2' },
+    );
+    expect(mockKdsGateway.avisarEstadoCola).toHaveBeenCalledWith(TENANT_ID);
+    expect(mockResumenVentas.recalcularRecientes).toHaveBeenCalled();
+    expect(mockDescuentoStock.avisarReposicion).toHaveBeenCalledWith(
+      TENANT_ID,
+      ['item-1'],
+    );
+  });
+
+  it('HU-024 (BL-104): sin stock repuesto (estaba en preparación) no avisa de stock', () => {
+    mockDescuentoStock.avisarReposicion.mockClear();
+
+    service.notificarPedidoCancelado(TENANT_ID, 'pedido-1', [], null);
+
+    expect(mockDescuentoStock.avisarReposicion).not.toHaveBeenCalled();
   });
 
   it('notificarPedidoConfirmado: al KDS va con la forma del snapshot, con mesaNumero (BL-244)', () => {

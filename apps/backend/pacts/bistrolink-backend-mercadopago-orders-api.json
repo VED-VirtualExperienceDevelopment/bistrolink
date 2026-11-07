@@ -4,6 +4,112 @@
   },
   "interactions": [
     {
+      "description": "el reembolso total de una order acreditada",
+      "pending": false,
+      "providerStates": [
+        {
+          "name": "existe una order procesada y acreditada",
+          "params": {
+            "orderId": "ORD01J49MMW3SSBK5PSV3DFR32959"
+          }
+        }
+      ],
+      "request": {
+        "body": {
+          "content": {},
+          "contentType": "application/json",
+          "encoded": false
+        },
+        "generators": {
+          "path": {
+            "expression": "/v1/orders/${orderId}/refund",
+            "type": "ProviderState"
+          }
+        },
+        "headers": {
+          "Authorization": [
+            "Bearer APP_USR-1234567890-101726-contrato-987654321"
+          ],
+          "Content-Type": [
+            "application/json"
+          ],
+          "X-Idempotency-Key": [
+            "592ee82d-5ca7-5525-8c4e-24a2c0536ad1"
+          ]
+        },
+        "matchingRules": {
+          "header": {
+            "Authorization": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^Bearer \\S+$"
+                }
+              ]
+            },
+            "X-Idempotency-Key": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                }
+              ]
+            }
+          },
+          "path": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "type"
+              }
+            ]
+          }
+        },
+        "method": "POST",
+        "path": "/v1/orders/ORD01J49MMW3SSBK5PSV3DFR32959/refund"
+      },
+      "response": {
+        "body": {
+          "content": {
+            "id": "ORD01J49MMW3SSBK5PSV3DFR32959",
+            "status": "processed",
+            "status_detail": "refunded"
+          },
+          "contentType": "application/json",
+          "encoded": false
+        },
+        "headers": {
+          "Content-Type": [
+            "application/json"
+          ]
+        },
+        "matchingRules": {
+          "body": {
+            "$.id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.status": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          }
+        },
+        "status": 201
+      },
+      "type": "Synchronous/HTTP"
+    },
+    {
       "description": "la consulta de una order aprobada",
       "pending": false,
       "providerStates": [

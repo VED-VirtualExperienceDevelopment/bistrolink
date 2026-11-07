@@ -30,7 +30,25 @@ export interface SolicitudEmision {
 export const TIPO_CFE = {
   E_TICKET: 101,
   E_FACTURA: 111,
+  // HU-024 (BL-104): notas de crédito que anulan un e-Ticket o una e-Factura.
+  NC_E_TICKET: 102,
+  NC_E_FACTURA: 112,
 } as const;
+
+/**
+ * HU-024 (BL-104): CFE al que se refiere una nota de crédito (campo
+ * `referencias` de POST /comprobantes/crear, referencia específica).
+ */
+export interface ReferenciaCfe {
+  /** Código DGI del CFE referenciado: 101 o 111. */
+  tipoComprobante: number;
+  serie: string;
+  numero: number;
+  /** Fecha de emisión del referenciado, AAAA-MM-DD. */
+  fecha: string;
+  /** Motivo (hasta 90 caracteres). */
+  razon: string;
+}
 
 /** HU-009 (BL-453): receptor de la e-Factura, ya validado. */
 export interface ReceptorEFactura {
@@ -207,10 +225,58 @@ export class SurtecClient {
     });
   }
 
+  /**
+   * HU-024 (BL-104): nota de crédito (102 de un e-Ticket, 112 de una
+   * e-Factura) que anula el CFE referenciado. Los importes van positivos;
+   * el tipo dice que es una nota de crédito. La de una e-Factura lleva el
+   * mismo receptor.
+   */
+  async emitirNotaDeCredito(
+    solicitud: SolicitudEmision,
+    referencia: ReferenciaCfe,
+    receptor?: ReceptorEFactura,
+  ): Promise<CfeEmitido> {
+    const deEFactura = referencia.tipoComprobante === TIPO_CFE.E_FACTURA;
+    const referencias = [
+      {
+        tipo_comprobante: referencia.tipoComprobante,
+        serie: referencia.serie,
+        numero: referencia.numero,
+        fecha: referencia.fecha,
+        razon: referencia.razon.slice(0, 90),
+      },
+    ];
+    if (!deEFactura) {
+      return this.emitir(
+        TIPO_CFE.NC_E_TICKET,
+        solicitud,
+        undefined,
+        referencias,
+      );
+    }
+    if (!receptor) {
+      throw new SurtecError(
+        'La nota de crédito de una e-Factura necesita el receptor de la e-Factura',
+      );
+    }
+    return this.emitir(
+      TIPO_CFE.NC_E_FACTURA,
+      solicitud,
+      {
+        tipo_doc: 2, // RUT
+        cod_pais_doc: 'UY',
+        nro_doc: receptor.rut,
+        denominacion: receptor.razonSocial,
+      },
+      referencias,
+    );
+  }
+
   private async emitir(
     tipoComprobante: number,
     solicitud: SolicitudEmision,
     cliente?: ClienteCfe,
+    referencias?: Record<string, unknown>[],
   ): Promise<CfeEmitido> {
     const cuerpo = {
       sucursal: Number(process.env.SURTEC_SUCURSAL ?? 1),
@@ -227,6 +293,7 @@ export class SurtecClient {
         indicador_facturacion: 3, // tasa básica (22 %)
         unidad: 'Un',
       })),
+      ...(referencias ? { referencias } : {}),
       ...(solicitud.adenda ? { adenda: { texto: solicitud.adenda } } : {}),
     };
 

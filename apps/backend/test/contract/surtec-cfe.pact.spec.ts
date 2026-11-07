@@ -480,6 +480,60 @@ describe('Contrato Surtec — facturación electrónica (BL-216)', () => {
     });
   });
 
+  describe('POST /comprobantes/crear — nota de crédito (HU-024, BL-104)', () => {
+    it('[TC-C-021] Surtec CFE: POST /comprobantes/crear de una nota de crédito de e-Ticket (102) con la referencia al CFE original responde 200 con serie y número', async () => {
+      loginConUsuario(pact.addInteraction());
+      await pact
+        .addInteraction()
+        .given('el emisor tiene emitido el e-Ticket A-49')
+        .uponReceiving(
+          'una nota de crédito de e-Ticket que anula el e-Ticket A-49',
+        )
+        .withRequest('POST', '/comprobantes/crear', (b) => {
+          b.headers({
+            Authorization: regex('^Bearer \\S+$', `Bearer ${TOKEN_1}`),
+            'X-Emisor': regex(RUT, RUT_EMISOR),
+            'Content-Type': 'application/json',
+          }).jsonBody({
+            ...cuerpoETicket(),
+            tipo_comprobante: 102,
+            id_externo: like('bl-pago-contrato-1-nc'),
+            referencias: [
+              {
+                tipo_comprobante: 101,
+                serie: like('A'),
+                numero: like(49),
+                fecha: regex('^\\d{4}-\\d{2}-\\d{2}$', '2026-11-07'),
+                razon: like('Cancelación del pedido'),
+              },
+            ],
+            adenda: { texto: like('Cancelación del pedido 1') },
+          });
+        })
+        .willRespondWith(200, (b) => {
+          b.jsonBody({ ...RESPUESTA_ETICKET, numero: like(7) });
+        })
+        .executeTest(async (mock) => {
+          const cfe = await clienteContra(mock.url).emitirNotaDeCredito(
+            {
+              ...SOLICITUD,
+              idExterno: 'bl-pago-contrato-1-nc',
+              adenda: 'Cancelación del pedido 1',
+            },
+            {
+              tipoComprobante: 101,
+              serie: 'A',
+              numero: 49,
+              fecha: '2026-11-07',
+              razon: 'Cancelación del pedido',
+            },
+          );
+
+          expect(cfe).toMatchObject({ serie: 'A', numero: 7 });
+        });
+    });
+  });
+
   describe('GET /comprobantes/{id}/pdf — PDF del CFE (HU-009, BL-454)', () => {
     // «%PDF-1.4 prueba» en base64: el contrato pide que empiece con %PDF-.
     const PDF_BASE64 = Buffer.from('%PDF-1.4 prueba').toString('base64');

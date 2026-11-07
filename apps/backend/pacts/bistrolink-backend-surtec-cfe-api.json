@@ -1635,6 +1635,262 @@
       "type": "Synchronous/HTTP"
     },
     {
+      "description": "una nota de crédito de e-Ticket que anula el e-Ticket A-49",
+      "pending": false,
+      "providerStates": [
+        {
+          "name": "el emisor tiene emitido el e-Ticket A-49"
+        }
+      ],
+      "request": {
+        "body": {
+          "content": {
+            "adenda": {
+              "texto": "Cancelación del pedido 1"
+            },
+            "cod_montos_brutos": 1,
+            "forma_pago": 1,
+            "id_externo": "bl-pago-contrato-1-nc",
+            "items": [
+              {
+                "cantidad": 1,
+                "concepto": "Milanesa",
+                "indicador_facturacion": 3,
+                "precio": 590,
+                "unidad": "Un"
+              }
+            ],
+            "moneda": "UYU",
+            "referencias": [
+              {
+                "fecha": "2026-11-07",
+                "numero": 49,
+                "razon": "Cancelación del pedido",
+                "serie": "A",
+                "tipo_comprobante": 101
+              }
+            ],
+            "sucursal": 1,
+            "tipo_comprobante": 102
+          },
+          "contentType": "application/json",
+          "encoded": false
+        },
+        "headers": {
+          "Authorization": [
+            "Bearer token-acceso-contrato-1"
+          ],
+          "Content-Type": [
+            "application/json"
+          ],
+          "X-Emisor": [
+            "219999990019"
+          ]
+        },
+        "matchingRules": {
+          "body": {
+            "$.adenda.texto": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.id_externo": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.items": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.items[*].cantidad": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.items[*].concepto": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.items[*].precio": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.referencias[0].fecha": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^\\d{4}-\\d{2}-\\d{2}$"
+                }
+              ]
+            },
+            "$.referencias[0].numero": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.referencias[0].razon": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.referencias[0].serie": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.sucursal": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          },
+          "header": {
+            "Authorization": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^Bearer \\S+$"
+                }
+              ]
+            },
+            "X-Emisor": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^\\d{12}$"
+                }
+              ]
+            }
+          }
+        },
+        "method": "POST",
+        "path": "/comprobantes/crear"
+      },
+      "response": {
+        "body": {
+          "content": {
+            "cae_numero": 90191275538,
+            "cae_vencimiento": "2030-12-31T00:00:00",
+            "hash": "YuFjLi8FhjlpqbniSfBS0OfmpPFErwiODpihtMqCyYs=",
+            "id": 541759,
+            "numero": 7,
+            "serie": "A",
+            "url": "https://www.efactura.dgi.gub.uy/consultaQR/cfe?x"
+          },
+          "contentType": "application/json",
+          "encoded": false
+        },
+        "headers": {
+          "Content-Type": [
+            "application/json"
+          ]
+        },
+        "matchingRules": {
+          "body": {
+            "$.cae_numero": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.cae_vencimiento": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}"
+                }
+              ]
+            },
+            "$.hash": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.numero": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.serie": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^[A-Z]{1,2}$"
+                }
+              ]
+            },
+            "$.url": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^https://"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      },
+      "type": "Synchronous/HTTP"
+    },
+    {
       "description": "una renovación del token con el refresh token",
       "pending": false,
       "providerStates": [
