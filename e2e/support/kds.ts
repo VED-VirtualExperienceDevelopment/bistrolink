@@ -9,9 +9,8 @@ export const ALERTAS_PATH = "/admin/alertas";
  * tablero ya no tiene avisos; la entrega se confirma con el botón «Marcar como
  * entregado» de la propia comanda.
  *
- * Sirve para que los E2E no dejen tickets abiertos en la cocina. No borra el
- * pedido: queda en la base como ENTREGADO. El borrado (y que los datos de
- * prueba no cuenten como ventas en la analítica) es BL-285.
+ * Es un paso de prueba (falla si no anda). Para no dejar pedidos abiertos no
+ * hace falta: los cierra el fixture `pedidosDeTest` (BL-477, support/auth.ts).
  */
 export async function entregarPedidoDesdeKds(
   kdsPage: Page,
@@ -29,31 +28,15 @@ export async function entregarPedidoDesdeKds(
 }
 
 /**
- * Versión "best effort" para el cierre de un test: si el pedido no se puede
- * entregar (por ejemplo, porque el test falló antes de que llegara al KDS),
- * no tapa el error original del test con uno nuevo.
- */
-export async function intentarEntregarPedido(
-  kdsPage: Page,
-  pedidoId: string | undefined,
-): Promise<void> {
-  if (!pedidoId) return;
-  try {
-    await entregarPedidoDesdeKds(kdsPage, pedidoId);
-  } catch {
-    // Lo que quede abierto lo levanta la limpieza de BL-285.
-  }
-}
-
-/**
  * BL-441: el llamado de una mesa queda pendiente en el servidor hasta que el
  * mozo lo atiende, y se atiende desde la pantalla Alertas (el tablero del KDS
  * ya no muestra los llamados normales). Este paso lo desestima al terminar el
  * test, para no dejar alertas pendientes que contaminen a los demás.
  *
- * "Best effort", como `intentarEntregarPedido`: si no hay alerta de esa mesa
- * (por ejemplo, porque el test falló antes de llamar), no tapa el error
- * original con uno nuevo.
+ * "Best effort": si no hay alerta de esa mesa (por ejemplo, porque el test
+ * falló antes de llamar), no tapa el error original con uno nuevo. Los
+ * llamados viven en memoria del backend, no en un pedido: la limpieza de
+ * BL-477 no los cierra.
  */
 export async function intentarDesestimarLlamado(
   kdsPage: Page,
@@ -64,7 +47,9 @@ export async function intentarDesestimarLlamado(
     const alerta = kdsPage
       .getByRole("main")
       .getByRole("listitem")
-      .filter({ hasText: new RegExp(`Mesa ${mesaNumero} solicita atención`, "i") });
+      .filter({
+        hasText: new RegExp(`Mesa ${mesaNumero} solicita atención`, "i"),
+      });
     await alerta
       .getByRole("button", {
         name: `Desestimar la alerta de la mesa ${mesaNumero}`,
