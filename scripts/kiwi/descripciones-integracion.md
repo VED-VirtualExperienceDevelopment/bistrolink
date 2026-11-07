@@ -26,7 +26,7 @@
 | 1.19    | 04/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-I-161 y 162: conciliación de CFE pendientes y pendientes de emisión del administrador (HU-023 / BL-96), para cargar con el script antes de mergear el PR.                      |
 | 1.20    | 06/11/2026 | TC-I-164 a 167: cola del KDS y límite de pedidos en preparación (HU-042 / BL-467), para cargar con el script antes de mergear el PR.                                                                                                      |
 | 1.21    | 07/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-I-168 a 174: limpieza de los datos de prueba (BL-285 / BL-476, ADR 0011), para cargar con el script antes de mergear el PR.                                                    |
-| 1.22    | 07/11/2026 | TC-I-175: PDF del comprobante (HU-009 / BL-454), para cargar con el script antes de mergear el PR.                                                                                                                                        |
+| 1.22    | 07/11/2026 | TC-I-175 y 176: PDF del comprobante y su copia en S3 (HU-009 / BL-454), para cargar con el script antes de mergear el PR.                                                                                                                 |
 
 Texto del campo de descripción de cada caso TC-I en Kiwi. Lo carga
 `cargar-casos-integracion.mjs --descripciones`: cada bloque `## TC-I-NNN`
@@ -175,3 +175,23 @@ Tenant A del seed. Un pedido pagado con su e-Factura de Surtec y otro pagado sin
 1. Se recibe el PDF en base64 con el nombre «e-Factura-<serie>-<número>.pdf», pedido a Surtec con el RUT del local y el id de Surtec del comprobante.
 2. 404.
 3. 404 (RLS). Ninguno de los pedidos de los pasos 2 y 3 llega a Surtec.
+
+## TC-I-176
+
+### Precondición
+
+Tenant A del seed. Dos pedidos pagados con su e-Ticket de Surtec, emitidos hace 10 minutos. Surtec falso (devuelve un PDF mínimo, salvo para el segundo comprobante, donde falla) y S3 en memoria.
+
+### Pasos
+
+1. Correr el respaldo del PDF para el tenant B.
+2. Correr el respaldo del PDF para el tenant A.
+3. Volver a correrlo enseguida.
+4. Descargar el PDF del primer comprobante como administrador.
+
+### Resultado esperado
+
+1. No pide a Surtec ningún comprobante del tenant A (RLS).
+2. El PDF del primero queda en S3 con la clave «<tenant_id>/cfe/<año>/<mes>/<id>.pdf», y en la base quedan esa clave y el SHA-256 del archivo. El segundo queda sin clave y con 1 intento.
+3. No vuelve a pedir ninguno: el primero ya está guardado y el segundo espera 5 minutos antes de reintentar.
+4. Se recibe el PDF guardado sin llamar a Surtec.

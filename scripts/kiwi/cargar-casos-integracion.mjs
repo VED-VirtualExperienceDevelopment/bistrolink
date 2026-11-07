@@ -727,6 +727,14 @@ const DATOS_INTEGRACION = {
     priority: "P1",
     tags: ["HU-009", "BL-454", "cfe", "multi-tenant"],
   },
+  // HU-009 (BL-454): copia del PDF del CFE en S3 con su SHA-256.
+  176: {
+    category: "Funcional",
+    component: "api",
+    requirement: "HU-009",
+    priority: "P1",
+    tags: ["HU-009", "BL-454", "cfe", "s3", "multi-tenant"],
+  },
 };
 /**
  * BL-435: datos de los E2E TC-E-017 en adelante, con los criterios de
