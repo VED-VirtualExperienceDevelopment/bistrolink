@@ -3,7 +3,10 @@
  * Lógica pura de /admin/mesas/pedido (probada en
  * test/unitarios/pedido-mozo.utils.spec.ts).
  */
-import type { PedidoPendienteDeCobro } from "@/components/admin/cobros/cobros.utils";
+import type {
+  PedidoPendienteDeCobro,
+  PendientesDeCobro,
+} from "@/components/admin/cobros/cobros.utils";
 
 /** Mismo tope que el carrito del comensal y el backend (BL-425). */
 export const CANTIDAD_MAXIMA_POR_ITEM = 99;
@@ -126,4 +129,34 @@ export function armarPedido(
  */
 export function nuevaClaveDePedido(): string {
   return `mozo-${crypto.randomUUID()}`;
+}
+
+/** HU-007b (BL-485): con qué medios se puede cobrar el pedido recién cargado. */
+export interface MediosAlCargar {
+  efectivo: boolean;
+  pos: boolean;
+}
+
+/**
+ * HU-007b (BL-485): después de confirmar el pedido, el mozo lo cobra ahí
+ * mismo en efectivo o con el POS del local, los mismos medios que tiene el
+ * comensal. Salen de la configuración del local (GET /cobros/pendientes).
+ * Mientras no llegó, se ofrece solo el efectivo, como antes; el POS, solo
+ * si el local lo tiene habilitado. El backend vuelve a controlarlo al cobrar.
+ */
+export function mediosAlCargar(
+  pendientes: Pick<PendientesDeCobro, "efectivoHabilitado" | "posHabilitado"> | null,
+): MediosAlCargar {
+  return {
+    efectivo: pendientes?.efectivoHabilitado ?? true,
+    pos: pendientes?.posHabilitado === true,
+  };
+}
+
+/** Texto de ayuda debajo de los botones de cobro. */
+export function ayudaCobroAlCargar(medios: MediosAlCargar): string {
+  if (!medios.efectivo && !medios.pos) {
+    return "Cobralo desde «Cobros pendientes» o el panel de la mesa.";
+  }
+  return "También lo podés cobrar después, desde «Cobros pendientes» o el panel de la mesa.";
 }
