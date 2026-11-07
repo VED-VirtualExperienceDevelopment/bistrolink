@@ -16,6 +16,7 @@ import { RolesGuard, Roles } from '../auth/roles.guard';
 import { AuthenticatedUser } from '../auth/keycloak-jwt.strategy';
 import { SEGURIDAD_KEYCLOAK } from '../openapi';
 import { ComprobantesService } from './comprobantes.service';
+import { CfeService } from '../cfe/cfe.service';
 import {
   ConsultarComprobantesDto,
   ConsultarPendientesDto,
@@ -31,7 +32,10 @@ import {
 @UseGuards(AuthGuard('jwt'), RolesGuard)
 @Roles('ADMIN')
 export class ComprobantesController {
-  constructor(private readonly comprobantes: ComprobantesService) {}
+  constructor(
+    private readonly comprobantes: ComprobantesService,
+    private readonly cfe: CfeService,
+  ) {}
 
   @Get()
   consultar(
@@ -63,5 +67,14 @@ export class ComprobantesController {
     return this.comprobantes.reintentar(req.user.tenantId, pagoId, {
       id: req.user.sub,
     });
+  }
+
+  /** HU-009 (BL-454): PDF A4 de un comprobante del establecimiento. */
+  @Get(':comprobanteId/pdf')
+  pdf(
+    @Req() req: { user: AuthenticatedUser },
+    @Param('comprobanteId', ParseUUIDPipe) comprobanteId: string,
+  ) {
+    return this.cfe.pdfDelComprobante(req.user.tenantId, comprobanteId);
   }
 }

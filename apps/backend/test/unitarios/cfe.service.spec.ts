@@ -5,6 +5,7 @@ import {
   ESPERAS_REINTENTO_CFE_MS,
   esErrorTransitorio,
   esRechazoDeLaEFactura,
+  nombreArchivoPdf,
 } from '../../src/cfe/cfe.service';
 import { SurtecError } from '../../src/cfe/surtec.client';
 
@@ -606,5 +607,122 @@ describe('CfeService.reintentar (HU-023, BL-96)', () => {
     await service.emitirConReintentos(TENANT_ID, PAGO_ID);
 
     expect(tx.pago.update).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('CfeService: PDF del comprobante (HU-009, BL-454)', () => {
+  const PDF = Buffer.from('%PDF-1.4 prueba');
+  const COMPROBANTE = {
+    tipoCfe: '111',
+    serie: 'A',
+    numero: 49,
+    proveedor: 'SURTEC',
+    proveedorRef: '542442',
+  };
+  let tx: {
+    comprobanteFiscal: { findFirst: jest.Mock; findUnique: jest.Mock };
+    tenant: { findUnique: jest.Mock };
+  };
+  let tenantPrisma: { runInTenantContext: jest.Mock };
+  let surtec: { configurado: jest.Mock; obtenerPdf: jest.Mock };
+  let service: CfeService;
+
+  beforeEach(() => {
+    jest.spyOn(Logger, 'warn').mockImplementation();
+    tx = {
+      comprobanteFiscal: {
+        findFirst: jest.fn().mockResolvedValue(COMPROBANTE),
+        findUnique: jest.fn().mockResolvedValue(COMPROBANTE),
+      },
+      tenant: {
+        findUnique: jest.fn().mockResolvedValue({ rut: '214198620015' }),
+      },
+    };
+    tenantPrisma = {
+      runInTenantContext: jest.fn((_t, callback) => callback(tx)),
+    };
+    surtec = {
+      configurado: jest.fn().mockReturnValue(true),
+      obtenerPdf: jest.fn().mockResolvedValue({ contenido: PDF }),
+    };
+    service = new CfeService(tenantPrisma as any, surtec as any);
+  });
+
+  afterEach(() => jest.restoreAllMocks());
+
+  it('nombre del archivo: tipo, serie y número, sin datos del receptor', () => {
+    expect(nombreArchivoPdf('111', 'A', 49)).toBe('e-Factura-A-0000049.pdf');
+    expect(nombreArchivoPdf('101', 'B', 1234567)).toBe(
+      'e-Ticket-B-1234567.pdf',
+    );
+  });
+
+  it('del pedido: el comprobante más reciente, pedido a Surtec con el RUT del local y su id', async () => {
+    const pdf = await service.pdfDelPedido(TENANT_ID, 'pedido-1');
+
+    expect(tx.comprobanteFiscal.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { pedidoId: 'pedido-1' },
+        orderBy: { fechaEmision: 'desc' },
+      }),
+    );
+    expect(surtec.obtenerPdf).toHaveBeenCalledWith('214198620015', '542442');
+    expect(pdf).toEqual({
+      nombreArchivo: 'e-Factura-A-0000049.pdf',
+      mimeType: 'application/pdf',
+      contenido: PDF.toString('base64'),
+    });
+  });
+
+  it('del admin: por id, dentro del tenant', async () => {
+    await service.pdfDelComprobante(TENANT_ID, 'comprobante-1');
+
+    expect(tenantPrisma.runInTenantContext).toHaveBeenCalledWith(
+      TENANT_ID,
+      expect.any(Function),
+    );
+    expect(tx.comprobanteFiscal.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'comprobante-1' } }),
+    );
+  });
+
+  it.each([
+    ['sin comprobante (u otro tenant)', null],
+    ['sin id de Surtec', { ...COMPROBANTE, proveedorRef: null }],
+    ['de otro proveedor', { ...COMPROBANTE, proveedor: 'OTRO' }],
+  ])('%s: 404 sin llamar a Surtec', async (_caso, comprobante) => {
+    tx.comprobanteFiscal.findFirst.mockResolvedValue(comprobante);
+
+    await expect(
+      service.pdfDelPedido(TENANT_ID, 'pedido-1'),
+    ).rejects.toMatchObject({ status: 404 });
+    expect(surtec.obtenerPdf).not.toHaveBeenCalled();
+  });
+
+  it('sin RUT del local: 404', async () => {
+    tx.tenant.findUnique.mockResolvedValue(null);
+
+    await expect(
+      service.pdfDelComprobante(TENANT_ID, 'comprobante-1'),
+    ).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('sin Surtec configurado: 503', async () => {
+    surtec.configurado.mockReturnValue(false);
+
+    await expect(
+      service.pdfDelPedido(TENANT_ID, 'pedido-1'),
+    ).rejects.toMatchObject({ status: 503 });
+  });
+
+  it('si Surtec falla: 502 con un mensaje para el usuario; el log no tiene el RUT', async () => {
+    surtec.obtenerPdf.mockRejectedValue(new SurtecError('caído', 503));
+
+    await expect(
+      service.pdfDelPedido(TENANT_ID, 'pedido-1'),
+    ).rejects.toMatchObject({ status: 502 });
+    const logs = JSON.stringify((Logger.warn as jest.Mock).mock.calls);
+    expect(logs).toContain('A-49');
+    expect(logs).not.toContain('214198620015');
   });
 });

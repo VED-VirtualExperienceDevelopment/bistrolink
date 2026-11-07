@@ -18,6 +18,7 @@ describe('PagosController (BL-311)', () => {
   let pagosService: { crear: jest.Mock; consultar: jest.Mock };
   let solicitudEfectivo: { solicitar: jest.Mock };
   let controller: PagosController;
+  let cfe: { pdfDelPedido: jest.Mock };
   const req = { user: { sub: 'c', tenantId: TENANT_ID, roles: ['COMENSAL'] } };
 
   beforeEach(() => {
@@ -26,10 +27,24 @@ describe('PagosController (BL-311)', () => {
       consultar: jest.fn().mockResolvedValue({ pedidoId: PEDIDO_ID }),
     };
     solicitudEfectivo = { solicitar: jest.fn().mockResolvedValue({}) };
+    cfe = {
+      pdfDelPedido: jest.fn().mockResolvedValue({ nombreArchivo: 'x.pdf' }),
+    };
     controller = new PagosController(
       pagosService as any,
       solicitudEfectivo as any,
+      cfe as any,
     );
+  });
+
+  it('HU-009 (BL-454): el PDF del comprobante pasa por los mismos guards y usa el pedido de la ruta', async () => {
+    expect(
+      Reflect.getMetadata(GUARDS_METADATA, controller.pdfDelComprobante),
+    ).toEqual([MesaQrGuard, PedidoAccesoGuard]);
+
+    await controller.pdfDelComprobante(req, PEDIDO_ID);
+
+    expect(cfe.pdfDelPedido).toHaveBeenCalledWith(TENANT_ID, PEDIDO_ID);
   });
 
   it('POST pasa por MesaQrGuard y PedidoAccesoGuard, en ese orden (RD.05)', () => {
