@@ -1,5 +1,6 @@
 import type { Pedido } from '@/types/pedido';
 import { etiquetaEstadoConCola } from './cola-kds.utils';
+import { sePuedeCancelar } from './cancelacion.utils';
 
 interface OrderTicketProps {
   pedido: Pedido;
@@ -9,6 +10,8 @@ interface OrderTicketProps {
   colaActiva?: boolean;
   /** HU-042 (BL-466): lugar en la cola (1 = el próximo), si está en espera. */
   posicionEnCola?: number | null;
+  /** HU-024 (BL-104): abre la cancelación del pedido (mozo y admin). */
+  onCancelar?: (pedido: Pedido) => void;
 }
 
 // Etiqueta legible para mostrar en el badge — separada del valor real del
@@ -43,6 +46,7 @@ export function OrderTicket({
   onTransicion,
   colaActiva = false,
   posicionEnCola = null,
+  onCancelar,
 }: Readonly<OrderTicketProps>) {
   const urgencia = getUrgencyColor(pedido.createdAt);
   const lineas = pedido.lineas ?? [];
@@ -146,6 +150,19 @@ export function OrderTicket({
               Marcar como entregado
             </button>
           )}
+        </div>
+      )}
+      {/* HU-024 (BL-104): cancelar un pedido recibido o en preparación. */}
+      {puedeOperarTransiciones && onCancelar && sePuedeCancelar(pedido.estado) && (
+        <div className="shrink-0 px-3 pb-3">
+          <button
+            type="button"
+            onClick={() => onCancelar(pedido)}
+            className="min-h-12 w-full rounded-lg text-label-lg text-error hover:bg-error-container/40"
+          >
+            Cancelar pedido{' '}
+            <span className="sr-only">de la mesa {pedido.mesaNumero}</span>
+          </button>
         </div>
       )}
     </article>

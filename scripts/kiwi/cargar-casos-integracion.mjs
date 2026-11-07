@@ -172,6 +172,13 @@ const cobroPos = (extra = {}) => ({
   ...extra,
   tags: ["HU-007b", "BL-80", "pagos", "pos", ...(extra.tags ?? [])],
 });
+// HU-024 (BL-104): cancelación de un pedido pagado y devolución.
+const cancelacion = (extra = {}) => ({
+  component: "api",
+  requirement: "HU-024",
+  ...extra,
+  tags: ["HU-024", "BL-104", "pagos", ...(extra.tags ?? [])],
+});
 // HU-031b (BL-442): el comensal de una mesa pide pagar en efectivo.
 const solicitudEfectivo = (extra = {}) => ({
   component: "api",
@@ -732,6 +739,26 @@ const DATOS_INTEGRACION = {
     tags: ["idempotencia", "multi-tenant", "auditoria"],
   }),
   178: cobroPos({ category: "Seguridad", priority: "P1", tags: ["seguridad"] }),
+  179: cancelacion({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["mercadopago", "stock", "multi-tenant", "auditoria"],
+  }),
+  180: cancelacion({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["mercadopago", "resiliencia"],
+  }),
+  181: cancelacion({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["efectivo"],
+  }),
+  182: cancelacion({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["seguridad"],
+  }),
 };
 /**
  * BL-435: datos de los E2E TC-E-017 en adelante, con los criterios de
@@ -1061,6 +1088,12 @@ const DATOS_E2E = {
     priority: "P1",
     tags: ["BL-80", "pagos", "pos", ...axe],
   }),
+  // HU-024 (BL-104): cancelación de un pedido pagado desde el KDS.
+  81: e2e("mozo", "HU-024", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-104", "pagos", ...axe],
+  }),
 };
 /**
  * Datos de los contratos PactJS (TC-C). Requirement con la HU que usa el
@@ -1118,6 +1151,9 @@ const DATOS_CONTRATO = {
   18: contrato("HU-009", "surtec", { priority: "P2", tags: ["BL-455"] }),
   // Surtec: emisión con el servicio no disponible (BL-96).
   19: contrato("HU-023", "surtec", { priority: "P1", tags: ["BL-96"] }),
+  // HU-024 (BL-104): nota de crédito en Surtec y reembolso en Mercado Pago.
+  21: contrato("HU-024", "surtec", { priority: "P1", tags: ["BL-104"] }),
+  22: contrato("HU-024", "mercadopago", { priority: "P1", tags: ["BL-104"] }),
 };
 const DATOS = CONTRATO ? DATOS_CONTRATO : E2E ? DATOS_E2E : DATOS_INTEGRACION;
 

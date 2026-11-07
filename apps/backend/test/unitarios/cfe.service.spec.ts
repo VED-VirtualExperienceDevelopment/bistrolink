@@ -608,3 +608,196 @@ describe('CfeService.reintentar (HU-023, BL-96)', () => {
     expect(tx.pago.update).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('CfeService: nota de crédito (HU-024, BL-104)', () => {
+  const ORIGINAL = {
+    id: 'cfe-1',
+    tipoCfe: '101',
+    serie: 'A',
+    numero: 49,
+    fechaEmision: new Date('2026-11-07T02:30:00Z'), // 6/11 en Uruguay
+    urlConsulta: null,
+  };
+  const pagoDevuelto = (extra: Record<string, unknown> = {}) => ({
+    id: PAGO_ID,
+    pedidoId: PEDIDO_ID,
+    estado: 'REEMBOLSADO',
+    comprobantes: [ORIGINAL],
+    pedido: {
+      receptorRut: null,
+      receptorRazonSocial: null,
+      lineas: [
+        {
+          nombreSnapshot: 'Milanesa',
+          cantidad: 1,
+          precioUnitarioSnapshot: new Prisma.Decimal('590'),
+        },
+      ],
+    },
+    ...extra,
+  });
+  let tx: {
+    pago: { findUnique: jest.Mock; update: jest.Mock };
+    tenant: { findUnique: jest.Mock };
+    comprobanteFiscal: { upsert: jest.Mock };
+  };
+  let surtec: { configurado: jest.Mock; emitirNotaDeCredito: jest.Mock };
+  let service: CfeService;
+
+  beforeEach(() => {
+    jest.spyOn(Logger, 'error').mockImplementation();
+    jest.spyOn(Logger, 'warn').mockImplementation();
+    tx = {
+      pago: {
+        findUnique: jest.fn().mockResolvedValue(pagoDevuelto()),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      tenant: {
+        findUnique: jest.fn().mockResolvedValue({ rut: '214198620015' }),
+      },
+      comprobanteFiscal: {
+        upsert: jest.fn(({ create }) =>
+          Promise.resolve({ ...create, urlConsulta: null }),
+        ),
+      },
+    };
+    const tenantPrisma = {
+      runInTenantContext: jest.fn((_t, callback) => callback(tx)),
+    };
+    surtec = {
+      configurado: jest.fn().mockReturnValue(true),
+      emitirNotaDeCredito: jest.fn().mockResolvedValue({
+        id: '600001',
+        serie: 'A',
+        numero: 7,
+        hash: 'h',
+      }),
+    };
+    service = new CfeService(tenantPrisma as any, surtec as any);
+  });
+
+  afterEach(() => jest.restoreAllMocks());
+
+  it('emite la NC del e-Ticket con las mismas líneas y la referencia al original (fecha en Uruguay), y la guarda como 102', async () => {
+    const resultado = await service.reintentarNotaDeCredito(TENANT_ID, PAGO_ID);
+
+    expect(surtec.emitirNotaDeCredito).toHaveBeenCalledWith(
+      {
+        rutEmisor: '214198620015',
+        idExterno: `bl-${PAGO_ID}-nc`,
+        items: [{ concepto: 'Milanesa', cantidad: 1, precio: 590 }],
+        adenda: `Cancelación del pedido ${PEDIDO_ID.slice(0, 8)}`,
+      },
+      {
+        tipoComprobante: 101,
+        serie: 'A',
+        numero: 49,
+        fecha: '2026-11-06',
+        razon: 'Cancelación del pedido',
+      },
+      undefined,
+    );
+    expect(tx.comprobanteFiscal.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { idExterno: `bl-${PAGO_ID}-nc` },
+        create: expect.objectContaining({ tipoCfe: '102', pagoId: PAGO_ID }),
+      }),
+    );
+    expect(resultado).toEqual({
+      comprobante: { tipoCfe: '102', serie: 'A', numero: 7, urlConsulta: null },
+      error: null,
+    });
+  });
+
+  it('la de una e-Factura va con el receptor del pedido', async () => {
+    tx.pago.findUnique.mockResolvedValue(
+      pagoDevuelto({
+        comprobantes: [{ ...ORIGINAL, tipoCfe: '111' }],
+        pedido: {
+          ...pagoDevuelto().pedido,
+          receptorRut: '219999830019',
+          receptorRazonSocial: 'Comensal SAS',
+        },
+      }),
+    );
+
+    await service.reintentarNotaDeCredito(TENANT_ID, PAGO_ID);
+
+    expect(surtec.emitirNotaDeCredito.mock.calls[0][1].tipoComprobante).toBe(
+      111,
+    );
+    expect(surtec.emitirNotaDeCredito.mock.calls[0][2]).toEqual({
+      rut: '219999830019',
+      razonSocial: 'Comensal SAS',
+    });
+    expect(tx.comprobanteFiscal.upsert.mock.calls[0][0].create.tipoCfe).toBe(
+      '112',
+    );
+  });
+
+  it.each([
+    ['el pago no está devuelto', { estado: 'APROBADO' }],
+    ['el pago no tenía CFE', { comprobantes: [] }],
+  ])('%s: no emite nada', async (_caso, extra) => {
+    tx.pago.findUnique.mockResolvedValue(pagoDevuelto(extra));
+
+    await expect(
+      service.reintentarNotaDeCredito(TENANT_ID, PAGO_ID),
+    ).resolves.toEqual({ comprobante: null, error: null });
+    expect(surtec.emitirNotaDeCredito).not.toHaveBeenCalled();
+  });
+
+  it('si ya tiene la NC, la devuelve sin volver a emitir', async () => {
+    tx.pago.findUnique.mockResolvedValue(
+      pagoDevuelto({
+        comprobantes: [ORIGINAL, { ...ORIGINAL, tipoCfe: '102', numero: 7 }],
+      }),
+    );
+
+    const { comprobante } = await service.reintentarNotaDeCredito(
+      TENANT_ID,
+      PAGO_ID,
+    );
+
+    expect(comprobante).toMatchObject({ tipoCfe: '102', numero: 7 });
+    expect(surtec.emitirNotaDeCredito).not.toHaveBeenCalled();
+  });
+
+  it('sin Surtec configurado no hace nada', async () => {
+    surtec.configurado.mockReturnValue(false);
+
+    await expect(
+      service.reintentarNotaDeCredito(TENANT_ID, PAGO_ID),
+    ).resolves.toEqual({ comprobante: null, error: null });
+  });
+
+  it('si Surtec falla: registra el intento en el pago (para la conciliación) y no lanza', async () => {
+    surtec.emitirNotaDeCredito.mockRejectedValue(new SurtecError('caído', 503));
+
+    const resultado = await service.reintentarNotaDeCredito(TENANT_ID, PAGO_ID);
+
+    expect(resultado.comprobante).toBeNull();
+    expect(resultado.error).toContain('caído');
+    expect(tx.pago.update).toHaveBeenCalledWith({
+      where: { id: PAGO_ID },
+      data: expect.objectContaining({ cfeIntentos: { increment: 1 } }),
+    });
+  });
+
+  it('en segundo plano: lanza el intento sin esperar', async () => {
+    service.emitirNotaDeCreditoEnSegundoPlano(TENANT_ID, PAGO_ID);
+    await new Promise((r) => setImmediate(r));
+
+    expect(surtec.emitirNotaDeCredito).toHaveBeenCalled();
+  });
+
+  it('dos intentos a la vez del mismo pago emiten una sola vez', async () => {
+    const [a, b] = await Promise.all([
+      service.reintentarNotaDeCredito(TENANT_ID, PAGO_ID),
+      service.reintentarNotaDeCredito(TENANT_ID, PAGO_ID),
+    ]);
+
+    expect(surtec.emitirNotaDeCredito).toHaveBeenCalledTimes(1);
+    expect(a.comprobante).toEqual(b.comprobante);
+  });
+});

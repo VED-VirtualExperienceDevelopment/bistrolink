@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { TenantPrismaService } from '../../prisma/tenant-prisma.service';
-import { CfeService } from '../cfe.service';
+import { CfeService, NOTA_DE_CREDITO_DE } from '../cfe.service';
 import { ConfiguracionConciliacionCfe } from './configuracion-conciliacion-cfe';
 import { ESPERA_INICIAL_MS, tocaReintentar } from './reintentos-cfe';
 
@@ -32,6 +32,11 @@ export function resumenConciliacionCfeVacio(): ResumenConciliacionCfe {
  *
  * El cobro ya está hecho: el comensal no espera nada de esto (su pantalla
  * muestra el comprobante cuando aparece).
+ *
+ * HU-024 (BL-104): también reintenta las notas de crédito pendientes: pagos
+ * REEMBOLSADOS (pedido cancelado) con CFE de venta y sin nota de crédito.
+ * Cuentan desde que se devolvió el pago (updated_at) y usan los mismos
+ * contadores del pago, que la cancelación pone en cero.
  */
 @Injectable()
 export class ConciliacionCfeService {
@@ -75,17 +80,61 @@ export class ConciliacionCfeService {
         }),
     );
 
-    const aReintentar = candidatos
-      .filter((p) => tocaReintentar(p, configuracion, ahora))
-      .slice(0, configuracion.lote);
+    const tiposDeVenta = Object.keys(NOTA_DE_CREDITO_DE);
+    const notasPendientes = await this.tenantPrisma.runInTenantContext(
+      tenantId,
+      (tx) =>
+        tx.pago.findMany({
+          where: {
+            estado: 'REEMBOLSADO',
+            AND: [
+              { comprobantes: { some: { tipoCfe: { in: tiposDeVenta } } } },
+              {
+                comprobantes: {
+                  none: {
+                    tipoCfe: { in: Object.values(NOTA_DE_CREDITO_DE) },
+                  },
+                },
+              },
+            ],
+            cfeIntentos: { lt: configuracion.maxIntentos },
+            updatedAt: {
+              gte: new Date(ahora.getTime() - configuracion.dias * DIA_MS),
+              lte: new Date(ahora.getTime() - ESPERA_INICIAL_MS),
+            },
+          },
+          select: {
+            id: true,
+            updatedAt: true,
+            cfeIntentos: true,
+            cfeUltimoIntentoEn: true,
+          },
+          orderBy: { updatedAt: 'asc' },
+          take: configuracion.lote * 5,
+        }),
+    );
+
+    const aReintentar = [
+      ...candidatos
+        .filter((p) => tocaReintentar(p, configuracion, ahora))
+        .map((p) => ({ id: p.id, notaDeCredito: false })),
+      ...notasPendientes
+        .filter((p) =>
+          tocaReintentar(
+            { ...p, createdAt: p.updatedAt },
+            configuracion,
+            ahora,
+          ),
+        )
+        .map((p) => ({ id: p.id, notaDeCredito: true })),
+    ].slice(0, configuracion.lote);
 
     // Secuencial a propósito: no mandarle ráfagas a Surtec.
     let emitidos = 0;
-    for (const { id } of aReintentar) {
-      const { comprobante } = await /* NOSONAR */ this.cfe.reintentar(
-        tenantId,
-        id,
-      );
+    for (const { id, notaDeCredito } of aReintentar) {
+      const { comprobante } = notaDeCredito
+        ? await /* NOSONAR */ this.cfe.reintentarNotaDeCredito(tenantId, id)
+        : await /* NOSONAR */ this.cfe.reintentar(tenantId, id);
       if (comprobante) emitidos++;
     }
     return {

@@ -48,6 +48,8 @@ export function conPagoFalso(
     .useValue({
       emitirEnSegundoPlano: () => undefined,
       intentarEmitir: () => Promise.resolve(null),
+      // HU-024 (BL-104): la nota de crédito de un pedido cancelado.
+      emitirNotaDeCreditoEnSegundoPlano: () => undefined,
     });
 }
 

@@ -5,6 +5,8 @@ import { io, type Socket } from 'socket.io-client';
 import { useKeycloakAuth } from '@/components/providers/KeycloakProvider';
 import { useAlertas } from '@/components/alertas/AlertasProvider';
 import { OrderTicket } from './OrderTicket';
+import { CancelarPedidoDialog } from './CancelarPedidoDialog';
+import { nombreDelMedio, type PedidoCancelado } from './cancelacion.utils';
 import {
   separarPorCola,
   textoAltaDemanda,
@@ -40,6 +42,9 @@ export function KdsBoard() {
   // todavía no lo mandó): el tablero se ve como siempre.
   const [cola, setCola] = useState<EstadoCola | null>(null);
   const socketRef = useRef<Socket | null>(null);
+  // HU-024 (BL-104): pedido que se está cancelando y aviso del resultado.
+  const [aCancelar, setACancelar] = useState<Pedido | null>(null);
+  const [avisoCancelacion, setAvisoCancelacion] = useState<string | null>(null);
 
   const conectado = alertas ? alertas.conectado : conectadoPropio;
   // BL-460: este tablero solo muestra las comandas. Los llamados de mesa y los
@@ -83,7 +88,8 @@ export function KdsBoard() {
         // HU-018/BL-64: una vez entregado, el pedido sale del tablero
         // activo — mismo criterio que listarPendientes() ya aplica del
         // lado del backend para el snapshot de reconexión.
-        if (payload.estado === 'ENTREGADO') {
+        // HU-024 (BL-104): un pedido cancelado también sale del tablero.
+        if (payload.estado === 'ENTREGADO' || payload.estado === 'CANCELADO') {
           return prev.filter((p) => p.id !== payload.id);
         }
         return prev.map((p) =>
@@ -140,6 +146,26 @@ export function KdsBoard() {
   function emitirTransicion(pedidoId: string, nuevoEstado: EstadoPedido) {
     socketRef.current?.emit('pedido:transicion', { pedidoId, nuevoEstado });
   }
+
+  function cancelado(resultado: PedidoCancelado) {
+    const mesa = aCancelar?.mesaNumero;
+    setACancelar(null);
+    setPedidos((prev) => prev.filter((p) => p.id !== resultado.pedidoId));
+    const medios = [
+      ...new Set(resultado.devoluciones.map((d) => nombreDelMedio(d.medio))),
+    ].join(' y ');
+    const como = medios ? 'con ' + medios : 'el pago';
+    setAvisoCancelacion(
+      `Pedido de la mesa ${mesa ?? ''} cancelado. Se devolvió ${como} y se emite la nota de crédito.`,
+    );
+  }
+
+  const abrirCancelacion = puedeOperarTransiciones
+    ? (pedido: Pedido) => {
+        setAvisoCancelacion(null);
+        setACancelar(pedido);
+      }
+    : undefined;
 
   // HU-042 (BL-466): con la cola activa, los pedidos en espera van a su
   // propia sección; el tablero agrupado por mesa muestra el resto.
@@ -207,6 +233,7 @@ export function KdsBoard() {
                   puedeOperarTransiciones={puedeOperarTransiciones}
                   onTransicion={emitirTransicion}
                   colaActiva={colaActiva}
+                  onCancelar={abrirCancelacion}
                 />
               ))}
             </div>
@@ -242,6 +269,7 @@ export function KdsBoard() {
                     onTransicion={emitirTransicion}
                     colaActiva
                     posicionEnCola={posicion}
+                    onCancelar={abrirCancelacion}
                   />
                 </li>
               ))}
@@ -268,6 +296,18 @@ export function KdsBoard() {
 
   return (
     <div className="flex h-full flex-col gap-2">
+      {avisoCancelacion && (
+        // <output>: rol «status» implícito, el lector de pantalla lo anuncia.
+        <output className="block shrink-0 rounded-lg bg-surface-container px-3 py-2 text-body-md text-on-surface">
+          {avisoCancelacion}
+        </output>
+      )}
+      <CancelarPedidoDialog
+        pedido={aCancelar}
+        token={token}
+        onClose={() => setACancelar(null)}
+        onCancelado={cancelado}
+      />
       {!conectado && !loading && (
         <div role="status" className="shrink-0 rounded-lg bg-tertiary-container px-3 py-1.5 text-label-md text-on-tertiary-container">
           Reconectando…
