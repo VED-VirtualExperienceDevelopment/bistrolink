@@ -23,6 +23,7 @@
 | 1.16    | 07/11/2026 | TC-E-080: el mozo registra el cobro con el POS del local (HU-007b, BL-80).                                                                           |
 | 1.17    | 07/11/2026 | TC-E-081: el mozo cancela desde el KDS un pedido pagado en efectivo (HU-024, BL-104).                                                                |
 | 1.18    | 07/11/2026 | Se borran los bloques de TC-E-072, 080 y 081, ya cargados en Kiwi. TC-E-079: PDF del comprobante desde Comprobantes (HU-009, BL-454).                |
+| 1.19    | 07/11/2026 | TC-E-082: el mozo cobra con el POS del local al confirmar el pedido de una mesa (HU-007b, BL-485).                                                   |
 
 Plantilla para cargar en Kiwi la descripción de casos TC-E (Playwright)
 nuevos o que cambiaron (BL-435). La usa
@@ -203,3 +204,23 @@ Administrador del establecimiento del seed logueado en el panel. Al menos un com
 ### Resultado esperado
 
 Se descarga un archivo «e-Ticket-<serie>-<número>.pdf» o «e-Factura-<serie>-<número>.pdf».
+
+## TC-E-082
+
+### Precondición
+
+Mozo del establecimiento del seed logueado. Mesa del seed abierta. Efectivo y POS del local habilitados en Configuración.
+
+### Pasos
+
+1. Abrir «Cargar pedido» de la mesa, agregar un ítem y tocar «Confirmar pedido».
+2. Tocar «Cobrar con el POS», elegir «Crédito» y cargar la autorización «e2e082».
+3. Tocar «Registrar cobro».
+4. Abrir el KDS.
+
+### Resultado esperado
+
+1. El pedido queda cargado y se ofrecen «Cobrar en efectivo» y «Cobrar con el POS».
+2. Se abre el diálogo con el total del pedido. Sin errores graves de accesibilidad (axe).
+3. Se registra el cobro (crédito, autorización E2E082) y aparece «Cobro registrado: pedido …».
+4. El pedido está en el KDS.
