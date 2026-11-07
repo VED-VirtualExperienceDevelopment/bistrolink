@@ -76,15 +76,19 @@ export class LimpiezaEstablecimientosService {
       cuentasPendientes: 0,
       conError: 0,
     };
+    // Secuencial a propósito (Sonar S9382): un establecimiento por vez, cada
+    // uno en su transacción, para no ocupar varias conexiones del pool único
+    // (BL-430) ni varias llamadas a Keycloak a la vez. Uno que falla se
+    // cuenta en conError sin cortar a los demás.
     for (const establecimiento of await this.buscar()) {
       try {
         const accion = accionParaEstablecimiento(
           establecimiento,
-          await this.conActividad(establecimiento.id),
+          await /* NOSONAR */ this.conActividad(establecimiento.id),
         );
         if (accion === 'nada') continue;
         if (!dryRun) {
-          resumen.cuentasPendientes += await this.aplicar(
+          resumen.cuentasPendientes += await /* NOSONAR */ this.aplicar(
             accion,
             establecimiento,
             actorKeycloakId,

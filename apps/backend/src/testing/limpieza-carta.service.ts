@@ -200,8 +200,10 @@ export class LimpiezaCartaService {
         data: { activo: true, archivadaEn: null },
       });
     }
+    // Secuencial a propósito (Sonar S9382): misma transacción, una sola
+    // conexión, y son los pocos ítems del seed (cada uno con sus valores).
     for (const { id, data } of plan.itemsDelSeed) {
-      await tx.itemCarta.update({ where: { id }, data });
+      await /* NOSONAR */ tx.itemCarta.update({ where: { id }, data });
     }
   }
 }

@@ -68,12 +68,20 @@ export class LimpiezaUsuariosService {
       desactivados: 0,
       conError: 0,
     };
+    // Secuencial a propósito (Sonar S9382): cada usuario toca Keycloak y la
+    // base; uno que falla se cuenta en conError sin cortar a los demás, y no
+    // se satura la API de administración de Keycloak.
     for (const usuario of deprueba) {
       const accion = accionParaUsuario(usuario);
       if (accion === 'nada') continue;
       try {
         if (!dryRun) {
-          await this.aplicar(accion, tenantId, actorKeycloakId, usuario.id);
+          await /* NOSONAR */ this.aplicar(
+            accion,
+            tenantId,
+            actorKeycloakId,
+            usuario.id,
+          );
         }
         resumen[accion === 'eliminar' ? 'eliminados' : 'desactivados'] += 1;
       } catch (err) {

@@ -168,8 +168,10 @@ export class LimpiezaMesasService {
           where: { id: { in: borrables.map((m) => m.id) } },
         });
       }
+      // Secuencial a propósito (Sonar S9382): todo va en una transacción
+      // (una sola conexión) y son las pocas mesas y planos del seed.
       for (const mesa of reabrir) {
-        await this.abrir(tx, tenantId, mesa, ahora);
+        await /* NOSONAR */ this.abrir(tx, tenantId, mesa, ahora);
       }
       if (pasarAOcupada.length > 0) {
         await tx.mesa.updateMany({
@@ -178,7 +180,10 @@ export class LimpiezaMesasService {
         });
       }
       for (const { id, plano } of planos) {
-        await tx.restaurante.update({ where: { id }, data: { plano } });
+        await /* NOSONAR */ tx.restaurante.update({
+          where: { id },
+          data: { plano },
+        });
       }
 
       await this.auditLog.registrarEnTx(tx, {
