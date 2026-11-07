@@ -1116,6 +1116,12 @@ const DATOS_E2E = {
     priority: "P1",
     tags: ["BL-104", "pagos", ...axe],
   }),
+  // HU-007b (BL-485): cobro con el POS al confirmar el pedido del mozo.
+  82: e2e("mozo", "HU-007b", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-485", "BL-209", "pagos", "pos", ...axe],
+  }),
 };
 /**
  * Datos de los contratos PactJS (TC-C). Requirement con la HU que usa el
