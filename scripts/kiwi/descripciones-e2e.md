@@ -20,6 +20,7 @@
 | 1.13    | 04/11/2026 | TC-E-073 y 074: alertas del mozo (campana, pantalla Alertas y recarga con alertas pendientes) (BL-441).                                              |
 | 1.14    | 06/11/2026 | TC-E-075 y 076: pantalla de Configuración accesible, responsive y con «Guardar cambios» al final (BL-473).                                           |
 | 1.15    | 06/11/2026 | TC-E-077 y 078: pantalla de Stock de la jornada accesible, responsive y con «Guardar cambios» al final (BL-474).                                     |
+| 1.16    | 07/11/2026 | TC-E-081: el mozo cancela desde el KDS un pedido pagado en efectivo (HU-024, BL-104).                                                                |
 
 Plantilla para cargar en Kiwi la descripción de casos TC-E (Playwright)
 nuevos o que cambiaron (BL-435). La usa
@@ -203,3 +204,23 @@ Administrador del establecimiento del seed logueado en el panel. Ventana de celu
 1. Se ven las tablas de stock por categoría, una debajo de la otra.
 2. No hay scroll horizontal y «Guardar cambios» se ve en pantalla.
 3. Sigue sin haber scroll horizontal y «Guardar cambios» sigue a la vista, como último botón.
+
+## TC-E-081
+
+### Precondición
+
+Mozo del establecimiento del seed logueado. Efectivo habilitado.
+
+### Pasos
+
+1. Como comensal, armar un pedido para retirar y quedarse en «Pagá tu pedido».
+2. Como mozo, cobrarlo en efectivo desde «Cobros pendientes».
+3. En el KDS, tocar «Cancelar pedido» en su comanda, elegir el motivo «Error en el pedido» y tocar «Cancelar pedido» sin confirmar la devolución.
+4. Marcar «Ya hice la devolución al comensal» y tocar «Cancelar pedido».
+
+### Resultado esperado
+
+1. El pedido queda esperando el pago.
+2. El pedido pasa a cocina.
+3. El diálogo indica «Devolvé el efectivo al comensal.» y pide confirmar la devolución. Sin errores graves de accesibilidad (axe).
+4. La cancelación responde 201 con la devolución manual en efectivo, la comanda sale del tablero y aparece el aviso de la cancelación.
