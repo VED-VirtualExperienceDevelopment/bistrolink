@@ -413,12 +413,19 @@ describe('RespaldoPdfJob (BL-454)', () => {
         { resolve: jest.fn() } as any,
         { tenant: { findMany: jest.fn() } } as any,
       );
+      const ejecutar = jest
+        .spyOn(habilitado, 'ejecutar')
+        .mockResolvedValue(null);
       habilitado.onApplicationBootstrap();
       expect(setInterval).toHaveBeenCalledWith(
         expect.any(Function),
         5 * MINUTO,
       );
       expect(unref).toHaveBeenCalled();
+
+      // Cada tick del timer lanza una corrida.
+      (setInterval.mock.calls[0][0] as () => void)();
+      expect(ejecutar).toHaveBeenCalledTimes(1);
     } finally {
       delete process.env.CFE_RESPALDO_PDF_HABILITADO;
     }

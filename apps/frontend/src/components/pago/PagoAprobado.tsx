@@ -27,6 +27,9 @@ const SeguimientoPedido = dynamic(
   { ssr: false, loading: () => null },
 );
 
+/** HU-009 (BL-454): estado del botón «Descargar PDF». */
+type EstadoDescarga = 'lista' | 'descargando' | 'error';
+
 interface PagoAprobadoProps {
   readonly origen: OrigenMenu;
   readonly pedidoId: string;
@@ -68,7 +71,7 @@ export function PagoAprobado({
   const [agotado, setAgotado] = useState(false);
   const [consulta, setConsulta] = useState(0);
   // HU-009 (BL-454): descarga del PDF del comprobante.
-  const [descarga, setDescarga] = useState<'lista' | 'descargando' | 'error'>('lista');
+  const [descarga, setDescarga] = useState<EstadoDescarga>('lista');
   const tituloRef = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
@@ -221,7 +224,7 @@ function Comprobante({
   readonly comprobante: EstadoComprobante;
   readonly agotado: boolean;
   readonly onReintentar: () => void;
-  readonly descarga: 'lista' | 'descargando' | 'error';
+  readonly descarga: EstadoDescarga;
   readonly onDescargarPdf: () => void;
 }) {
   return (
@@ -331,7 +334,7 @@ function AccionesDelComprobante({
   readonly comprobante: EstadoComprobante;
   readonly agotado: boolean;
   readonly onReintentar: () => void;
-  readonly descarga: 'lista' | 'descargando' | 'error';
+  readonly descarga: EstadoDescarga;
   readonly onDescargarPdf: () => void;
 }) {
   if (comprobante.tipo === 'emitido') {
