@@ -3,10 +3,14 @@ import {
   evaluarMontoRecibido,
   formatearMonto,
   horaDelPedido,
+  mensajeCobroPosRegistrado,
   mensajeCobroRegistrado,
   motivoSinEfectivo,
+  motivoSinPos,
+  normalizarAutorizacion,
   normalizarMontoRecibido,
   nuevaClaveDeCobro,
+  nuevaClaveDeCobroPos,
   pendientesDeLaMesa,
   pendientesEnMesas,
   pendientesParaRetirar,
@@ -161,5 +165,54 @@ describe("cobros.utils (HU-031, BL-201)", () => {
     expect(a).not.toBe(b);
     expect(a.length).toBeLessThanOrEqual(64);
     expect(a).toMatch(/^efectivo-/);
+  });
+});
+
+describe("cobros.utils: POS del local (HU-007b, BL-80)", () => {
+  it.each([
+    ["A1B2C3", "A1B2C3"],
+    [" ab-12 3c ", "AB123C"],
+    ["1234", "1234"],
+    ["123456789012", "123456789012"],
+  ])("normalizarAutorizacion(%p) = %p", (texto, esperado) => {
+    expect(normalizarAutorizacion(texto)).toBe(esperado);
+  });
+
+  it.each([
+    ["muy corta", "123"],
+    ["con 16 dígitos (parece un número de tarjeta)", "4111111111111111"],
+    ["con símbolos", "AB#123"],
+    ["vacía", ""],
+  ])("normalizarAutorizacion rechaza una autorización %s", (_caso, texto) => {
+    expect(normalizarAutorizacion(texto)).toBeNull();
+  });
+
+  it("motivoSinPos: deshabilitado o con un pago con tarjeta en curso", () => {
+    expect(motivoSinPos(pedido(), true)).toBeNull();
+    expect(motivoSinPos(pedido(), false)).toContain("no está habilitado");
+    expect(motivoSinPos(pedido({ pagoEnCurso: true }), true)).toContain(
+      "está pagando con tarjeta",
+    );
+  });
+
+  it("mensajeCobroPosRegistrado: pedido, total, tarjeta y autorización", () => {
+    expect(
+      mensajeCobroPosRegistrado({
+        pagoId: "p-1",
+        pedidoId: "3f2a9c1e-0000-4000-8000-000000000001",
+        monto: "590.00",
+        tarjeta: "DEBITO",
+        autorizacion: "A1B2C3",
+      }),
+    ).toBe(
+      `Cobro registrado: pedido #3F2A9C, ${formatearMonto("590.00")} con débito (autorización A1B2C3). Ya está en cocina.`,
+    );
+  });
+
+  it("nuevaClaveDeCobroPos: una clave distinta por cobro, de hasta 64 caracteres", () => {
+    const a = nuevaClaveDeCobroPos();
+    expect(a).toMatch(/^pos-/);
+    expect(a.length).toBeLessThanOrEqual(64);
+    expect(nuevaClaveDeCobroPos()).not.toBe(a);
   });
 });

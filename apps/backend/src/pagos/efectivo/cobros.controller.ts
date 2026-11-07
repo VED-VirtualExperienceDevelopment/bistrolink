@@ -6,10 +6,12 @@ import { AuthenticatedUser } from '../../auth/keycloak-jwt.strategy';
 import { SEGURIDAD_KEYCLOAK } from '../../openapi';
 import { CobroEfectivoService } from './cobro-efectivo.service';
 import { RegistrarCobroEfectivoDto } from './registrar-cobro-efectivo.dto';
+import { RegistrarCobroPosDto } from '../pos/registrar-cobro-pos.dto';
 
 /**
- * HU-031 (BL-201): cobros que registra el staff del local. Solo el mozo
- * (colaborador) y el administrador; Cocina y Comensal reciben 403.
+ * HU-031 (BL-201): cobros que registra el staff del local, en efectivo o
+ * (HU-007b, BL-80) con el POS del local. Solo el mozo (colaborador) y el
+ * administrador; Cocina y Comensal reciben 403.
  */
 @ApiTags('Cobros')
 @ApiBearerAuth(SEGURIDAD_KEYCLOAK)
@@ -36,5 +38,23 @@ export class CobrosController {
     @Body() dto: RegistrarCobroEfectivoDto,
   ) {
     return this.cobroEfectivo.registrar(req.user.tenantId, req.user.sub, dto);
+  }
+
+  /**
+   * HU-007b (BL-80): registra un cobro hecho con el POS del local (crédito o
+   * débito) con el número de autorización del voucher: el pedido pasa a
+   * cocina y se pide el CFE. 409 si el POS no está habilitado, el pedido ya
+   * se pagó o hay un pago con tarjeta en curso.
+   */
+  @Post('pos')
+  registrarPos(
+    @Req() req: { user: AuthenticatedUser },
+    @Body() dto: RegistrarCobroPosDto,
+  ) {
+    return this.cobroEfectivo.registrarPos(
+      req.user.tenantId,
+      req.user.sub,
+      dto,
+    );
   }
 }

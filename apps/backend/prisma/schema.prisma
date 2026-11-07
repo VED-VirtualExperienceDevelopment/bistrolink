@@ -170,6 +170,11 @@ model Restaurante {
   mercadoPagoHabilitado       Boolean      @default(true) @map("mercadopago_habilitado")
   plexoHabilitado             Boolean      @default(false) @map("plexo_habilitado")
   handyHabilitado             Boolean      @default(false) @map("handy_habilitado")
+  // HU-007b (BL-80): el local registra cobros hechos con su propio POS
+  // (crédito o débito). Default true: casi todos los locales tienen POS
+  // (Ley 19.210 de inclusión financiera); el administrador lo apaga en
+  // Configuración si no lo usa.
+  posHabilitado               Boolean      @default(true) @map("pos_habilitado")
   // Porcentajes de propina sugeridos, enteros (ej. [10, 15, 20]). Vacío =
   // sin sugerencias. Entre 1 y 100 y hasta 5 valores: CHECK en la migración
   // (Prisma no los declara); el DTO valida lo mismo con mensajes claros.

@@ -77,6 +77,8 @@ export const ETIQUETAS_ACCION: Record<string, string> = {
   CARTA_CATEGORIA_ELIMINADA: "Categoría eliminada",
   MESA_PEDIDOS_CANCELADOS: "Pedidos cancelados al cerrar la mesa",
   PAGO_EFECTIVO_REGISTRADO: "Cobro en efectivo",
+  // HU-007b (BL-80): cobro con el POS del local.
+  PAGO_POS_REGISTRADO: "Cobro con el POS del local",
   // HU-015 (BL-120): stock de la jornada.
   CARTA_ITEM_STOCK_AJUSTADO: "Stock de un ítem ajustado",
   CARTA_ITEM_VENDIDO_SIN_STOCK: "Venta sin stock",
@@ -147,6 +149,9 @@ const NOMBRE_CAMPO: Record<string, string> = {
   monto: "Total",
   montoRecibido: "Recibido",
   vuelto: "Vuelto",
+  // HU-007b (BL-80): cobro con el POS del local.
+  medio: "Tarjeta",
+  autorizacion: "N.° de autorización",
   // HU-024 (BL-104): cancelación de un pedido pagado.
   motivo: "Motivo",
   devolucion: "Devolución",
@@ -159,6 +164,7 @@ const NOMBRE_CAMPO: Record<string, string> = {
   razonSocial: "Razón social",
   efectivoHabilitado: "Efectivo",
   mercadoPagoHabilitado: "Mercado Pago",
+  posHabilitado: "POS del local",
   plexoHabilitado: "Plexo",
   handyHabilitado: "Handy",
   propinasSugeridas: "Propinas sugeridas (%)",

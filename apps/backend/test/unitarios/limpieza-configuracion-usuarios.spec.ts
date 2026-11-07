@@ -23,6 +23,7 @@ function configuracionSeedA() {
     rut: '214198620015',
     efectivoHabilitado: true,
     mercadoPagoHabilitado: true,
+    posHabilitado: true,
     plexoHabilitado: false,
     handyHabilitado: false,
     mediosPagoDisponibles: ['EFECTIVO', 'MERCADO_PAGO'],

@@ -26,7 +26,8 @@
 | 1.19    | 04/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-I-161 y 162: conciliación de CFE pendientes y pendientes de emisión del administrador (HU-023 / BL-96), para cargar con el script antes de mergear el PR.                      |
 | 1.20    | 06/11/2026 | TC-I-164 a 167: cola del KDS y límite de pedidos en preparación (HU-042 / BL-467), para cargar con el script antes de mergear el PR.                                                                                                      |
 | 1.21    | 07/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-I-168 a 174: limpieza de los datos de prueba (BL-285 / BL-476, ADR 0011), para cargar con el script antes de mergear el PR.                                                    |
-| 1.22    | 07/11/2026 | TC-I-179 a 182: cancelación de un pedido pagado y devolución del pago (HU-024 / BL-104), para cargar con el script antes de mergear el PR.                                                                                                |
+| 1.22    | 07/11/2026 | TC-I-177 y 178: cobro con el POS del local (HU-007b / BL-80), para cargar con el script antes de mergear el PR.                                                                                                                           |
+| 1.23    | 07/11/2026 | TC-I-179 a 182: cancelación de un pedido pagado y devolución del pago (HU-024 / BL-104), para cargar con el script antes de mergear el PR.                                                                                                |
 
 Texto del campo de descripción de cada caso TC-I en Kiwi. Lo carga
 `cargar-casos-integracion.mjs --descripciones`: cada bloque `## TC-I-NNN`
@@ -157,6 +158,46 @@ API levantada **sin** `E2E_CLEANUP_ENABLED` (como en producción).
 
 1. 404: la ruta no existe.
 2. 404.
+
+## TC-I-177
+
+### Precondición
+
+Tenant A del seed con el POS del local habilitado. Mesa 76 ocupada con un pedido de $ 590 esperando el pago. CFE apagado.
+
+### Pasos
+
+1. Registrar el cobro con POS (débito, autorización A1B2C3) desde el tenant B.
+2. Registrarlo desde el tenant A.
+3. Repetirlo con la misma clave de idempotencia.
+4. Deshabilitar el POS y registrar el cobro de otro pedido.
+
+### Resultado esperado
+
+1. 404: el tenant B no ve el pedido (RLS) y no se crea ningún pago.
+2. El pedido pasa a RECIBIDO; hay un pago POS_DEBITO/APROBADO de $ 590 con la autorización A1B2C3, el historial del pedido y el registro de auditoría «PAGO_POS_REGISTRADO» con total, tarjeta y autorización.
+3. Devuelve el mismo cobro, sin crear otro pago ni otro registro.
+4. 409 «El cobro con el POS del local no está habilitado en este establecimiento»; el pedido sigue en PENDIENTE_PAGO.
+
+## TC-I-178
+
+### Precondición
+
+Usuarios de prueba del mozo y de cocina en Keycloak. Un pedido de la mesa 76 esperando el pago.
+
+### Pasos
+
+1. Como mozo, `GET /cobros/pendientes`.
+2. Como mozo, `POST /cobros/pos` con una autorización de 16 dígitos.
+3. Como cocina, `POST /cobros/pos` con una autorización válida.
+4. Como mozo, `POST /cobros/pos` con crédito y autorización 123456.
+
+### Resultado esperado
+
+1. `posHabilitado` es true.
+2. 400: con 16 dígitos podría ser un número de tarjeta.
+3. 403.
+4. 201 con el total calculado en el backend ($ 590); el pedido pasa a RECIBIDO con un pago POS_CREDITO.
 
 ## TC-I-179
 

@@ -41,7 +41,12 @@ export const PROVEEDORES_CFE_DISPONIBLES: readonly CfeProveedor[] = [
  * alcanza con sumarlo acá; la pantalla toma la lista de GET
  * /admin/configuracion.
  */
-export const MEDIOS_PAGO_DISPONIBLES = ['EFECTIVO', 'MERCADOPAGO'] as const;
+export const MEDIOS_PAGO_DISPONIBLES = [
+  'EFECTIVO',
+  'MERCADOPAGO',
+  // HU-007b (BL-80): cobro con el POS del local, que registra el mozo.
+  'POS',
+] as const;
 export type MedioPagoConfigurable =
   (typeof MEDIOS_PAGO_DISPONIBLES)[number] | 'PLEXO' | 'HANDY';
 
@@ -108,6 +113,11 @@ export class ActualizarConfiguracionDto {
   @IsOptional()
   @IsBoolean({ message: 'mercadoPagoHabilitado debe ser verdadero o falso' })
   mercadoPagoHabilitado?: boolean;
+
+  // HU-007b (BL-80): cobros con el POS del local.
+  @IsOptional()
+  @IsBoolean({ message: 'posHabilitado debe ser verdadero o falso' })
+  posHabilitado?: boolean;
 
   // Plexo y Handy, fuera del MVP (BL-452): solo se acepta false hasta que
   // estén disponibles.
