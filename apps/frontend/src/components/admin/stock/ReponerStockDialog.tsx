@@ -2,7 +2,6 @@
 
 import { useEffect, useId, useState, type FormEvent } from "react";
 import { Dialog } from "@/components/ui/Dialog";
-import { ApiError } from "@/lib/api-client";
 import {
   CLASE_AYUDA,
   CLASE_BOTON,
@@ -11,7 +10,12 @@ import {
   CLASE_ERROR_CAMPO,
   CLASE_ETIQUETA,
 } from "@/components/admin/configuracion/configuracion.estilos";
-import { leerUnidades, textoUnidades, type AlertaStock } from "./stock.utils";
+import {
+  leerUnidades,
+  mensajeErrorGuardarStock,
+  textoUnidades,
+  type AlertaStock,
+} from "./stock.utils";
 
 /**
  * HU-015 (BL-120): «Reponer stock» desde la campana, sin salir de la
@@ -59,9 +63,8 @@ export default function ReponerStockDialog({
       await onGuardar(alerta.itemId, unidades.valor);
       onClose();
     } catch (err) {
-      setError(
-        err instanceof ApiError ? err.message : "No se pudo guardar el stock",
-      );
+      // BL-483: sin el detalle técnico de la API (ver mensajeErrorGuardarStock).
+      setError(mensajeErrorGuardarStock(err));
       setGuardando(false);
     }
   }

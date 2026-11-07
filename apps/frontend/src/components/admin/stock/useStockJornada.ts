@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useKeycloakAuth } from "@/components/providers/KeycloakProvider";
 import { apiFetch, ApiError } from "@/lib/api-client";
 import { abrirSocketStock } from "./socket-stock";
+import { mensajeErrorGuardarStock } from "./stock.utils";
 import {
   ajustesParaGuardar,
   formularioDesde,
@@ -124,9 +125,8 @@ export function useStockJornada(habilitado: boolean): EstadoStockJornada {
       }));
       setAviso(textoGuardado(ajustes.length));
     } catch (err) {
-      setErrorGuardar(
-        err instanceof ApiError ? err.message : "No se pudo guardar el stock",
-      );
+      // BL-483: sin el detalle técnico de la API (ver mensajeErrorGuardarStock).
+      setErrorGuardar(mensajeErrorGuardarStock(err));
     } finally {
       setGuardando(false);
     }

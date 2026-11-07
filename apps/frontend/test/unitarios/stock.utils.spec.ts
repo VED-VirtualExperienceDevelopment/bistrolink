@@ -1,9 +1,12 @@
+import { ApiError } from "@/lib/api-client";
 import {
+  MENSAJE_ERROR_GUARDAR_STOCK,
   acumularSinStock,
   anuncioAlerta,
   colorBadge,
   etiquetaCampana,
   leerUnidades,
+  mensajeErrorGuardarStock,
   siguienteIndice,
   sinStockVigentes,
   textoBadge,
@@ -101,5 +104,45 @@ describe("stock.utils", () => {
     expect(leerUnidades("2,5").ok).toBe(false);
     expect(leerUnidades("-3").ok).toBe(false);
     expect(leerUnidades("100001").ok).toBe(false);
+  });
+
+  it("[TC-U-464] BL-483: al fallar el guardado no se muestra el detalle técnico de la API", () => {
+    // Error de un dato interno: mensaje genérico con qué hacer.
+    expect(
+      mensajeErrorGuardarStock(
+        new ApiError(400, "items.0.itemId debe ser un UUID"),
+      ),
+    ).toBe(MENSAJE_ERROR_GUARDAR_STOCK);
+    expect(
+      mensajeErrorGuardarStock(
+        new ApiError(
+          400,
+          "items.0.stockActual no puede ser negativo, items.1.itemId debe ser un UUID",
+        ),
+      ),
+    ).toBe(MENSAJE_ERROR_GUARDAR_STOCK);
+    // Otros 400: sin el prefijo «items.N.», con el nombre de la pantalla y
+    // sin repetidos.
+    expect(
+      mensajeErrorGuardarStock(
+        new ApiError(
+          400,
+          "items.0.stockActual no puede ser negativo, items.3.stockActual no puede ser negativo, items.1.umbralAlerta debe ser un número entero",
+        ),
+      ),
+    ).toBe(
+      "«Unidades» no puede ser negativo. «Avisar cuando queden» debe ser un número entero",
+    );
+    expect(
+      mensajeErrorGuardarStock(new ApiError(400, "Indicá al menos un ítem")),
+    ).toBe("Indicá al menos un ítem");
+    // Los demás errores de la API se muestran tal cual.
+    expect(
+      mensajeErrorGuardarStock(new ApiError(403, "No tenés permiso")),
+    ).toBe("No tenés permiso");
+    // Sin respuesta de la API (red caída, etc.).
+    expect(mensajeErrorGuardarStock(new TypeError("Failed to fetch"))).toBe(
+      MENSAJE_ERROR_GUARDAR_STOCK,
+    );
   });
 });

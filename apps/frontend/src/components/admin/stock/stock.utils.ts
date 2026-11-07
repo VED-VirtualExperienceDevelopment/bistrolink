@@ -1,3 +1,5 @@
+import { ApiError } from "@/lib/api-client";
+
 /**
  * HU-015 (BL-120): lógica pura de la campana de stock y del stock de la
  * jornada (probada en test/unitarios/stock.utils.spec.ts).
@@ -150,4 +152,39 @@ export function leerUnidades(
     };
   }
   return { ok: true, valor };
+}
+
+/** BL-483: lo que se muestra cuando falla algo que la persona no puede corregir. */
+export const MENSAJE_ERROR_GUARDAR_STOCK =
+  "No se pudieron guardar los cambios de stock. Recargá la página e intentá de nuevo.";
+
+/** BL-483: nombre de cada campo de la API como se ve en la pantalla. */
+const CAMPOS_EN_PANTALLA: Record<string, string> = {
+  stockActual: "«Unidades»",
+  umbralAlerta: "«Avisar cuando queden»",
+  controlaStock: "«Controlar stock»",
+};
+
+/**
+ * BL-483: el mensaje que se muestra cuando falla PATCH /admin/stock.
+ * - Un 400 sobre `itemId` es de un dato interno («items.0.itemId debe ser un
+ *   UUID»): la persona no lo ve ni lo puede corregir, así que se muestra un
+ *   mensaje genérico con qué hacer.
+ * - En el resto de los 400 se saca el prefijo técnico «items.N.» y el campo
+ *   se nombra como en la pantalla (stockActual → «Unidades»).
+ * - Los demás errores de la API (403, 409…) ya vienen redactados para mostrarse.
+ */
+export function mensajeErrorGuardarStock(err: unknown): string {
+  if (!(err instanceof ApiError)) return MENSAJE_ERROR_GUARDAR_STOCK;
+  if (err.status !== 400) return err.message;
+  const partes = err.message
+    .split(", ")
+    .map((parte) => parte.replace(/^items\.\d+\./, ""));
+  if (partes.some((parte) => parte.startsWith("itemId"))) {
+    return MENSAJE_ERROR_GUARDAR_STOCK;
+  }
+  const legibles = partes.map((parte) =>
+    parte.replace(/^\w+/, (campo) => CAMPOS_EN_PANTALLA[campo] ?? campo),
+  );
+  return [...new Set(legibles)].join(". ");
 }
