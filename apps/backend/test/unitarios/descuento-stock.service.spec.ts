@@ -17,7 +17,10 @@ describe('DescuentoStockService', () => {
     $queryRaw: jest.Mock;
   };
   let auditLog: { registrarEnTx: jest.Mock };
-  let kdsGateway: { emitirAlertaStock: jest.Mock };
+  let kdsGateway: {
+    emitirAlertaStock: jest.Mock;
+    emitirStockActualizado: jest.Mock;
+  };
   let menuGateway: { emitItemUpdated: jest.Mock };
   let service: DescuentoStockService;
 
@@ -34,7 +37,10 @@ describe('DescuentoStockService', () => {
       $queryRaw: jest.fn(),
     };
     auditLog = { registrarEnTx: jest.fn() };
-    kdsGateway = { emitirAlertaStock: jest.fn() };
+    kdsGateway = {
+      emitirAlertaStock: jest.fn(),
+      emitirStockActualizado: jest.fn(),
+    };
     menuGateway = { emitItemUpdated: jest.fn() };
     service = new DescuentoStockService(
       auditLog as any,
@@ -265,5 +271,81 @@ describe('DescuentoStockService', () => {
     // La sobreventa también queda en el log.
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('sin stock'));
     warn.mockRestore();
+  });
+
+  describe('reponerEnTx (HU-024, BL-104: pedido cancelado antes de cocina)', () => {
+    it('devuelve lo que pidió el pedido; el ítem agotado vuelve a estar disponible', async () => {
+      tx.$queryRaw.mockResolvedValue([
+        {
+          id: FLAN,
+          nombre: 'Flan',
+          stock_actual: 0,
+          umbral_alerta: 2,
+          disponible: false,
+        },
+        {
+          id: MILANESA,
+          nombre: 'Milanesa',
+          stock_actual: 4,
+          umbral_alerta: 5,
+          disponible: true,
+        },
+      ]);
+
+      const disponibles = await service.reponerEnTx(
+        tx as any,
+        TENANT_ID,
+        PEDIDO_ID,
+      );
+
+      expect(tx.itemCarta.update).toHaveBeenCalledWith({
+        where: { id: FLAN },
+        data: { stockActual: 1, disponible: true },
+      });
+      expect(tx.itemCarta.update).toHaveBeenCalledWith({
+        where: { id: MILANESA },
+        data: { stockActual: 7 },
+      });
+      expect(disponibles).toEqual([FLAN]);
+    });
+
+    it('un ítem sin stock pero deshabilitado a mano (con stock) no se toca su disponibilidad', async () => {
+      tx.$queryRaw.mockResolvedValue([
+        {
+          id: MILANESA,
+          nombre: 'Milanesa',
+          stock_actual: 3,
+          umbral_alerta: 5,
+          disponible: false,
+        },
+      ]);
+
+      await expect(
+        service.reponerEnTx(tx as any, TENANT_ID, PEDIDO_ID),
+      ).resolves.toEqual([]);
+      expect(tx.itemCarta.update).toHaveBeenCalledWith({
+        where: { id: MILANESA },
+        data: { stockActual: 6 },
+      });
+    });
+
+    it('pedido sin líneas: no consulta nada', async () => {
+      tx.lineaPedido.findMany.mockResolvedValue([]);
+
+      await expect(
+        service.reponerEnTx(tx as any, TENANT_ID, PEDIDO_ID),
+      ).resolves.toEqual([]);
+      expect(tx.$queryRaw).not.toHaveBeenCalled();
+    });
+
+    it('después del commit avisa al panel de stock y a la carta', () => {
+      service.avisarReposicion(TENANT_ID, [FLAN]);
+
+      expect(kdsGateway.emitirStockActualizado).toHaveBeenCalledWith(TENANT_ID);
+      expect(menuGateway.emitItemUpdated).toHaveBeenCalledWith(TENANT_ID, {
+        itemId: FLAN,
+        disponible: true,
+      });
+    });
   });
 });

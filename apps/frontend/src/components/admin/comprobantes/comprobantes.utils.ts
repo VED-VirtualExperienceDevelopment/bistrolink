@@ -77,6 +77,11 @@ export function rutaComprobantes(
 }
 
 /** «desde» posterior a «hasta»: el backend respondería 400. */
+/** HU-009 (BL-454): PDF A4 de un comprobante (solo ADMIN). */
+export function rutaPdfComprobante(comprobanteId: string): string {
+  return `/admin/comprobantes/${encodeURIComponent(comprobanteId)}/pdf`;
+}
+
 export function rangoInvalido(filtros: FiltrosComprobantes): boolean {
   return Boolean(
     filtros.desde && filtros.hasta && filtros.desde > filtros.hasta,
@@ -192,6 +197,9 @@ const NOMBRE_MEDIO: Record<string, string> = {
   MERCADOPAGO: "Tarjeta (Mercado Pago)",
   PLEXO: "Tarjeta (Plexo)",
   EFECTIVO: "Efectivo",
+  // HU-007b (BL-80): cobros con el POS del local.
+  POS_CREDITO: "Crédito (POS del local)",
+  POS_DEBITO: "Débito (POS del local)",
 };
 
 const FORMATO_HORA = new Intl.DateTimeFormat("es-UY", {

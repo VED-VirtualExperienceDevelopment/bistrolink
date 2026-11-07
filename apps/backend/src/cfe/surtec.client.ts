@@ -30,7 +30,25 @@ export interface SolicitudEmision {
 export const TIPO_CFE = {
   E_TICKET: 101,
   E_FACTURA: 111,
+  // HU-024 (BL-104): notas de crédito que anulan un e-Ticket o una e-Factura.
+  NC_E_TICKET: 102,
+  NC_E_FACTURA: 112,
 } as const;
+
+/**
+ * HU-024 (BL-104): CFE al que se refiere una nota de crédito (campo
+ * `referencias` de POST /comprobantes/crear, referencia específica).
+ */
+export interface ReferenciaCfe {
+  /** Código DGI del CFE referenciado: 101 o 111. */
+  tipoComprobante: number;
+  serie: string;
+  numero: number;
+  /** Fecha de emisión del referenciado, AAAA-MM-DD. */
+  fecha: string;
+  /** Motivo (hasta 90 caracteres). */
+  razon: string;
+}
 
 /** HU-009 (BL-453): receptor de la e-Factura, ya validado. */
 export interface ReceptorEFactura {
@@ -63,6 +81,38 @@ export function cuerpoParaLog(datos: unknown): string {
   return JSON.stringify(datos, (clave, valor: unknown) =>
     CAMPOS_DEL_RECEPTOR.has(clave) ? '[oculto]' : valor,
   );
+}
+
+/** HU-009 (BL-454): el PDF de un CFE emitido, ya validado. */
+export interface PdfCfe {
+  contenido: Buffer;
+}
+
+/** Tope del PDF que se acepta de Surtec (un A4 ronda los 200 KB). */
+export const TAMANO_MAXIMO_PDF_CFE = 10 * 1024 * 1024;
+
+/**
+ * Valida la respuesta de GET /comprobantes/{id}/pdf: Surtec devuelve un JSON
+ * `{ file_name, mime_type, format, data }` con el PDF en base64 en `data`.
+ * Lanza SurtecError si no es un PDF.
+ */
+export function leerPdf(datos: unknown): PdfCfe {
+  const raiz = (datos ?? {}) as Record<string, unknown>;
+  const tipo = raiz.mime_type;
+  if (typeof tipo === 'string' && !tipo.toLowerCase().includes('pdf')) {
+    throw new SurtecError(`Surtec devolvió un archivo que no es PDF (${tipo})`);
+  }
+  if (typeof raiz.data !== 'string' || raiz.data.length === 0) {
+    throw new SurtecError('Surtec devolvió el PDF vacío');
+  }
+  const contenido = Buffer.from(raiz.data, 'base64');
+  if (contenido.length > TAMANO_MAXIMO_PDF_CFE) {
+    throw new SurtecError('El PDF de Surtec supera el tamaño máximo');
+  }
+  if (contenido.subarray(0, 5).toString('latin1') !== '%PDF-') {
+    throw new SurtecError('Surtec devolvió un archivo que no es PDF');
+  }
+  return { contenido };
 }
 
 /** HU-009 (BL-455): consulta de los CFE emitidos por un emisor. */
@@ -175,10 +225,58 @@ export class SurtecClient {
     });
   }
 
+  /**
+   * HU-024 (BL-104): nota de crédito (102 de un e-Ticket, 112 de una
+   * e-Factura) que anula el CFE referenciado. Los importes van positivos;
+   * el tipo dice que es una nota de crédito. La de una e-Factura lleva el
+   * mismo receptor.
+   */
+  async emitirNotaDeCredito(
+    solicitud: SolicitudEmision,
+    referencia: ReferenciaCfe,
+    receptor?: ReceptorEFactura,
+  ): Promise<CfeEmitido> {
+    const deEFactura = referencia.tipoComprobante === TIPO_CFE.E_FACTURA;
+    const referencias = [
+      {
+        tipo_comprobante: referencia.tipoComprobante,
+        serie: referencia.serie,
+        numero: referencia.numero,
+        fecha: referencia.fecha,
+        razon: referencia.razon.slice(0, 90),
+      },
+    ];
+    if (!deEFactura) {
+      return this.emitir(
+        TIPO_CFE.NC_E_TICKET,
+        solicitud,
+        undefined,
+        referencias,
+      );
+    }
+    if (!receptor) {
+      throw new SurtecError(
+        'La nota de crédito de una e-Factura necesita el receptor de la e-Factura',
+      );
+    }
+    return this.emitir(
+      TIPO_CFE.NC_E_FACTURA,
+      solicitud,
+      {
+        tipo_doc: 2, // RUT
+        cod_pais_doc: 'UY',
+        nro_doc: receptor.rut,
+        denominacion: receptor.razonSocial,
+      },
+      referencias,
+    );
+  }
+
   private async emitir(
     tipoComprobante: number,
     solicitud: SolicitudEmision,
     cliente?: ClienteCfe,
+    referencias?: Record<string, unknown>[],
   ): Promise<CfeEmitido> {
     const cuerpo = {
       sucursal: Number(process.env.SURTEC_SUCURSAL ?? 1),
@@ -195,6 +293,7 @@ export class SurtecClient {
         indicador_facturacion: 3, // tasa básica (22 %)
         unidad: 'Un',
       })),
+      ...(referencias ? { referencias } : {}),
       ...(solicitud.adenda ? { adenda: { texto: solicitud.adenda } } : {}),
     };
 
@@ -243,6 +342,19 @@ export class SurtecClient {
     return leerEmitidos(datos);
   }
 
+  /**
+   * HU-009 (BL-454): el PDF A4 de un CFE emitido, por el id de Surtec
+   * (comprobante_fiscal.proveedor_ref). No se guarda: Surtec conserva los
+   * comprobantes los 5 años que exige la DGI.
+   */
+  async obtenerPdf(rutEmisor: string, idSurtec: string): Promise<PdfCfe> {
+    const datos = await this.llamar(
+      `${apiUrl()}/comprobantes/${encodeURIComponent(idSurtec)}/pdf`,
+      rutEmisor,
+    );
+    return leerPdf(datos);
+  }
+
   // Si el token fue rechazado (401) se pide uno nuevo y se reintenta una vez.
   // Con cuerpo es un POST (emisión); sin cuerpo, un GET (consulta).
   private async llamar(
@@ -275,7 +387,7 @@ export class SurtecClient {
     >;
     if (!respuesta.ok) {
       throw new SurtecError(
-        `Surtec rechazó ${cuerpo === undefined ? 'la consulta' : 'la emisión'} (HTTP ${respuesta.status}): ${cuerpoParaLog(datos)}`,
+        `Surtec rechazó ${cuerpo === undefined ? 'la consulta' : 'la emisión'} (HTTP ${respuesta.status}): ${cuerpoParaLog(datos).slice(0, 500)}`,
         respuesta.status,
       );
     }

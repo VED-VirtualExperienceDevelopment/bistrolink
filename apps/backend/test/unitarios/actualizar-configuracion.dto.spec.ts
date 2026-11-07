@@ -53,6 +53,12 @@ describe('ActualizarConfiguracionDto (HU-020, BL-72)', () => {
     },
   );
 
+  it('HU-007b (BL-80): el POS del local se puede habilitar y deshabilitar', async () => {
+    expect(await errores({ posHabilitado: true })).toEqual([]);
+    expect(await errores({ posHabilitado: false })).toEqual([]);
+    expect(await errores({ posHabilitado: 'si' })).toEqual(['posHabilitado']);
+  });
+
   it('los medios de pago son verdadero o falso', async () => {
     expect(await errores({ efectivoHabilitado: 'no' })).toEqual([
       'efectivoHabilitado',

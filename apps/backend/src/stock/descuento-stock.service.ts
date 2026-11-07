@@ -166,6 +166,59 @@ export class DescuentoStockService {
     return avisos;
   }
 
+  /**
+   * HU-024 (BL-104): devuelve al stock lo que había descontado un pedido que
+   * se cancela antes de que cocina lo empiece (RECIBIDO). Corre dentro de la
+   * transacción de la cancelación. Un ítem que se había agotado (stock 0 y
+   * no disponible) vuelve a estar disponible. Devuelve esos ítems, para
+   * avisarle a la carta después del commit.
+   */
+  async reponerEnTx(
+    tx: PrismaClient,
+    tenantId: string,
+    pedidoId: string,
+  ): Promise<string[]> {
+    const lineas = await tx.lineaPedido.findMany({
+      where: { pedidoId },
+      select: { itemCartaId: true, cantidad: true },
+    });
+    const cantidades = cantidadesPorItem(lineas);
+    if (cantidades.size === 0) return [];
+
+    const filas = await tx.$queryRaw<FilaStock[]>(Prisma.sql`
+      SELECT id, nombre, stock_actual, umbral_alerta, disponible
+      FROM item_carta
+      WHERE tenant_id = ${tenantId}::uuid
+        AND controla_stock
+        AND id IN (${Prisma.join([...cantidades.keys()].map((id) => Prisma.sql`${id}::uuid`))})
+      ORDER BY id
+      FOR UPDATE`);
+
+    const vuelvenADisponible: string[] = [];
+    for (const fila of filas) {
+      const agotado = fila.stock_actual === 0 && !fila.disponible;
+      // Secuencial a propósito (Sonar S9382): misma transacción, filas ya
+      // bloqueadas; son los pocos ítems de un pedido.
+      await /* NOSONAR */ tx.itemCarta.update({
+        where: { id: fila.id },
+        data: {
+          stockActual: fila.stock_actual + (cantidades.get(fila.id) ?? 0),
+          ...(agotado && { disponible: true }),
+        },
+      });
+      if (agotado) vuelvenADisponible.push(fila.id);
+    }
+    return vuelvenADisponible;
+  }
+
+  /** HU-024 (BL-104): después del commit, avisa que el stock volvió. */
+  avisarReposicion(tenantId: string, disponibles: string[]): void {
+    this.kdsGateway.emitirStockActualizado(tenantId);
+    for (const itemId of disponibles) {
+      this.menuGateway.emitItemUpdated(tenantId, { itemId, disponible: true });
+    }
+  }
+
   /** Después del commit: avisa al administrador y a la carta del comensal. */
   avisar(tenantId: string, avisos: AvisosStock): void {
     for (const alerta of avisos.alertas) {

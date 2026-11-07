@@ -178,6 +178,13 @@ describe("pendientes de emisión (HU-023, BL-96)", () => {
       medio: "Efectivo",
       intentos: "2 intentos fallidos",
     });
+    // HU-007b (BL-80): cobros con el POS del local.
+    expect(filaPendiente({ ...PENDIENTE, medioPago: "POS_DEBITO" }).medio).toBe(
+      "Débito (POS del local)",
+    );
+    expect(
+      filaPendiente({ ...PENDIENTE, medioPago: "POS_CREDITO" }).medio,
+    ).toBe("Crédito (POS del local)");
     expect(
       filaPendiente({
         ...PENDIENTE,

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useKeycloakAuth } from "@/components/providers/KeycloakProvider";
 import { apiFetch, ApiError } from "@/lib/api-client";
+import { descargarArchivo, type ArchivoBase64 } from "@/lib/descarga";
 import {
   claseEstadoDgi,
   ESTADOS_DGI,
@@ -11,6 +12,7 @@ import {
   filtrosIniciales,
   rangoInvalido,
   rutaComprobantes,
+  rutaPdfComprobante,
   rutaPendientes,
   type Comprobante,
   type EstadoDgi,
@@ -49,6 +51,9 @@ export default function ComprobantesPage() {
   const [hayMas, setHayMas] = useState(false);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // HU-009 (BL-454): PDF de un comprobante, pedido a Surtec al tocarlo.
+  const [descargando, setDescargando] = useState<string | null>(null);
+  const [avisoPdf, setAvisoPdf] = useState("");
   const [pestana, setPestana] = useState<"emitidos" | "pendientes">("emitidos");
   const [totalPendientes, setTotalPendientes] = useState<number | null>(null);
 
@@ -86,6 +91,26 @@ export default function ComprobantesPage() {
   useEffect(() => {
     if (hasRole("ADMIN")) void cargar(1);
   }, [cargar, hasRole]);
+
+  async function descargarPdf(c: Comprobante) {
+    setDescargando(c.id);
+    setAvisoPdf("");
+    try {
+      const archivo = await apiFetch<ArchivoBase64>(
+        rutaPdfComprobante(c.id),
+        token,
+      );
+      descargarArchivo(archivo);
+    } catch (err) {
+      setAvisoPdf(
+        err instanceof ApiError
+          ? err.message
+          : "No se pudo descargar el PDF. Probá de nuevo.",
+      );
+    } finally {
+      setDescargando(null);
+    }
+  }
 
   // El contador de la pestaña de pendientes se carga al abrir.
   useEffect(() => {
@@ -258,6 +283,12 @@ export default function ComprobantesPage() {
             </div>
           )}
 
+          {avisoPdf && (
+            <p role="alert" className="text-body-md text-error">
+              {avisoPdf}
+            </p>
+          )}
+
           {comprobantes.length > 0 && (
             <div className="overflow-x-auto rounded-xl border border-outline-variant bg-surface-container-lowest">
               <table className="w-full min-w-[760px] border-collapse text-left">
@@ -282,7 +313,7 @@ export default function ComprobantesPage() {
                       Estado DGI
                     </th>
                     <th scope="col" className="px-3 py-3">
-                      <span className="sr-only">Consulta en DGI</span>
+                      <span className="sr-only">PDF y consulta en DGI</span>
                     </th>
                   </tr>
                 </thead>
@@ -322,7 +353,19 @@ export default function ComprobantesPage() {
                             </span>
                           )}
                         </td>
-                        <td className={CLASE_CELDA}>
+                        <td className={`${CLASE_CELDA} whitespace-nowrap`}>
+                          <button
+                            type="button"
+                            onClick={() => void descargarPdf(c)}
+                            disabled={descargando !== null}
+                            aria-busy={descargando === c.id}
+                            className="mr-4 text-primary underline disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {descargando === c.id ? "Descargando…" : "PDF"}{" "}
+                            <span className="sr-only">
+                              de {f.tipo} {f.numero}
+                            </span>
+                          </button>
                           {f.enlaceDgi && (
                             <a
                               href={f.enlaceDgi}

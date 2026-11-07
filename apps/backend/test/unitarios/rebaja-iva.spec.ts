@@ -89,6 +89,10 @@ describe('rebaja de IVA de la Ley 17.934 (HU-037, BL-207)', () => {
       ['WEB', 'MERCADOPAGO', 'APROBADO', false],
       ['QR', 'MERCADOPAGO', 'PENDIENTE', false],
       ['QR', 'MERCADOPAGO', 'RECHAZADO', false],
+      // HU-007b (BL-80): el POS del local también es pago electrónico.
+      ['QR', 'POS_DEBITO', 'APROBADO', true],
+      ['MOZO', 'POS_CREDITO', 'APROBADO', true],
+      ['WEB', 'POS_DEBITO', 'APROBADO', false],
     ])('canal %s, %s, %s => %s', (canal, medioPago, estado, esperado) => {
       expect(aplicaRebaja17934({ canal, medioPago, estado })).toBe(esperado);
     });

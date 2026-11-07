@@ -207,6 +207,58 @@ export class MercadoPagoGateway implements PagoGateway {
     };
   }
 
+  /**
+   * HU-024 (BL-104): reembolso total de una order (POST
+   * /v1/orders/{id}/refund con el body vacío). La clave de idempotencia es
+   * fija por pago: un reintento no devuelve dos veces. Si Mercado Pago dice
+   * que la order ya está reembolsada, también es éxito. Si falla, lanza
+   * BadGatewayException (el pedido no se cancela).
+   */
+  async reembolsarOrden(
+    orderId: string,
+    tenantId: string,
+    clave: string,
+  ): Promise<void> {
+    const respuesta = await fetch(
+      `${this.ordersUrl}/${encodeURIComponent(orderId)}/refund`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.accessToken}`,
+          'Content-Type': 'application/json',
+          'X-Idempotency-Key': idempotencyKeyMp(tenantId, clave),
+        },
+        body: '{}',
+        signal: AbortSignal.timeout(15_000),
+      },
+    );
+    if (respuesta.ok) {
+      Logger.log(
+        `Mercado Pago: order ${orderId} reembolsada`,
+        MercadoPagoGateway.name,
+      );
+      return;
+    }
+    const cuerpo = (await respuesta.json().catch(() => ({}))) as {
+      errors?: { code?: string }[];
+      code?: string;
+    };
+    const codigo = cuerpo.errors?.[0]?.code ?? cuerpo.code;
+    if (codigo === 'order_already_refunded') {
+      Logger.log(
+        `Mercado Pago: la order ${orderId} ya estaba reembolsada`,
+        MercadoPagoGateway.name,
+      );
+      return;
+    }
+    Logger.error(
+      `Mercado Pago no pudo reembolsar la order ${orderId} (HTTP ${respuesta.status}): ${JSON.stringify(cuerpo)}`,
+      undefined,
+      MercadoPagoGateway.name,
+    );
+    throw new BadGatewayException('Mercado Pago no pudo hacer el reembolso');
+  }
+
   // BL-78: "notificar y luego consultar". El webhook solo avisa que algo
   // cambió; el estado real se lee de Mercado Pago con nuestro token, sin
   // fiarse del cuerpo de la notificación. null = la order no existe.

@@ -165,6 +165,20 @@ const cobroEfectivo = (extra = {}) => ({
   ...extra,
   tags: ["HU-031", "BL-201", "pagos", ...(extra.tags ?? [])],
 });
+// HU-007b (BL-80): cobro con el POS del local que registra el mozo.
+const cobroPos = (extra = {}) => ({
+  component: "api",
+  requirement: "HU-007b",
+  ...extra,
+  tags: ["HU-007b", "BL-80", "pagos", "pos", ...(extra.tags ?? [])],
+});
+// HU-024 (BL-104): cancelación de un pedido pagado y devolución.
+const cancelacion = (extra = {}) => ({
+  component: "api",
+  requirement: "HU-024",
+  ...extra,
+  tags: ["HU-024", "BL-104", "pagos", ...(extra.tags ?? [])],
+});
 // HU-031b (BL-442): el comensal de una mesa pide pagar en efectivo.
 const solicitudEfectivo = (extra = {}) => ({
   component: "api",
@@ -719,6 +733,48 @@ const DATOS_INTEGRACION = {
     priority: "P1",
     tags: ["configuracion-entorno"],
   }),
+  // HU-009 (BL-454): PDF del comprobante, a pedido.
+  175: {
+    category: "Seguridad",
+    component: "api",
+    requirement: "HU-009",
+    priority: "P1",
+    tags: ["HU-009", "BL-454", "cfe", "multi-tenant"],
+  },
+  // HU-009 (BL-454): copia del PDF del CFE en S3 con su SHA-256.
+  176: {
+    category: "Funcional",
+    component: "api",
+    requirement: "HU-009",
+    priority: "P1",
+    tags: ["HU-009", "BL-454", "cfe", "s3", "multi-tenant"],
+  },
+  177: cobroPos({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["idempotencia", "multi-tenant", "auditoria"],
+  }),
+  178: cobroPos({ category: "Seguridad", priority: "P1", tags: ["seguridad"] }),
+  179: cancelacion({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["mercadopago", "stock", "multi-tenant", "auditoria"],
+  }),
+  180: cancelacion({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["mercadopago", "resiliencia"],
+  }),
+  181: cancelacion({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["efectivo"],
+  }),
+  182: cancelacion({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["seguridad"],
+  }),
 };
 /**
  * BL-435: datos de los E2E TC-E-017 en adelante, con los criterios de
@@ -1042,6 +1098,30 @@ const DATOS_E2E = {
     priority: "P2",
     tags: ["BL-474", "stock", "responsive", "mobile"],
   }),
+  // HU-009 (BL-454): PDF del comprobante desde Comprobantes.
+  79: e2e("admin", "HU-009", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-454", "cfe"],
+  }),
+  // HU-007b (BL-80): cobro con el POS del local.
+  80: e2e("mozo", "HU-007b", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-80", "pagos", "pos", ...axe],
+  }),
+  // HU-024 (BL-104): cancelación de un pedido pagado desde el KDS.
+  81: e2e("mozo", "HU-024", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-104", "pagos", ...axe],
+  }),
+  // HU-007b (BL-485): cobro con el POS al confirmar el pedido del mozo.
+  82: e2e("mozo", "HU-007b", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-485", "BL-209", "pagos", "pos", ...axe],
+  }),
 };
 /**
  * Datos de los contratos PactJS (TC-C). Requirement con la HU que usa el
@@ -1099,6 +1179,11 @@ const DATOS_CONTRATO = {
   18: contrato("HU-009", "surtec", { priority: "P2", tags: ["BL-455"] }),
   // Surtec: emisión con el servicio no disponible (BL-96).
   19: contrato("HU-023", "surtec", { priority: "P1", tags: ["BL-96"] }),
+  // Surtec: PDF de un CFE emitido (BL-454).
+  20: contrato("HU-009", "surtec", { priority: "P2", tags: ["BL-454"] }),
+  // HU-024 (BL-104): nota de crédito en Surtec y reembolso en Mercado Pago.
+  21: contrato("HU-024", "surtec", { priority: "P1", tags: ["BL-104"] }),
+  22: contrato("HU-024", "mercadopago", { priority: "P1", tags: ["BL-104"] }),
 };
 const DATOS = CONTRATO ? DATOS_CONTRATO : E2E ? DATOS_E2E : DATOS_INTEGRACION;
 

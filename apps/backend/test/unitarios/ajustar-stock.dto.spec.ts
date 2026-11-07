@@ -5,6 +5,9 @@ import { AjustarStockDto } from '../../src/stock/dto/ajustar-stock.dto';
 // HU-015 (BL-120): body de PATCH /admin/stock.
 
 const ITEM_ID = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
+// Ítems del seed del tenant A (Milanesa, Agua con gas): no son UUID v4.
+const ITEM_MILANESA_SEED = '55555555-5555-5555-5555-555555555555';
+const ITEM_AGUA_SEED = '66666666-6666-6666-6666-666666666666';
 
 function errores(body: unknown): string[] {
   const dto = plainToInstance(AjustarStockDto, body);
@@ -56,4 +59,17 @@ describe('AjustarStockDto', () => {
       'itemId debe ser un UUID',
     );
   });
+
+  it.each([ITEM_MILANESA_SEED, ITEM_AGUA_SEED])(
+    '[TC-U-463] acepta el ítem del seed %s aunque no sea UUID v4',
+    (itemId) => {
+      expect(
+        errores({
+          items: [
+            { itemId, controlaStock: true, stockActual: 10, umbralAlerta: 5 },
+          ],
+        }),
+      ).toEqual([]);
+    },
+  );
 });

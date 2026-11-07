@@ -176,7 +176,7 @@ describe('ComprobantesController', () => {
     expect(guards[1]).toBe(RolesGuard);
 
     const servicio = { consultar: jest.fn().mockResolvedValue({}) };
-    const controller = new ComprobantesController(servicio as any);
+    const controller = new ComprobantesController(servicio as any, {} as any);
     await controller.consultar(
       { user: { sub: 'kc', tenantId: TENANT_ID, roles: ['ADMIN'] } } as any,
       { estado: 'PENDIENTE' },
@@ -191,7 +191,8 @@ describe('ComprobantesController', () => {
       consultarPendientes: jest.fn().mockResolvedValue({}),
       reintentar: jest.fn().mockResolvedValue({}),
     };
-    const controller = new ComprobantesController(servicio as any);
+    const cfe = { pdfDelComprobante: jest.fn().mockResolvedValue({}) };
+    const controller = new ComprobantesController(servicio as any, cfe as any);
     const req = {
       user: { sub: 'kc', tenantId: TENANT_ID, roles: ['ADMIN'] },
     } as any;
@@ -200,6 +201,13 @@ describe('ComprobantesController', () => {
     await controller.reintentar(req, 'pago-1');
 
     expect(servicio.consultarPendientes).toHaveBeenCalledWith(TENANT_ID, 2);
+
+    // HU-009 (BL-454): PDF de un comprobante del tenant del token.
+    await controller.pdf(req, 'comprobante-1');
+    expect(cfe.pdfDelComprobante).toHaveBeenCalledWith(
+      TENANT_ID,
+      'comprobante-1',
+    );
     expect(servicio.reintentar).toHaveBeenCalledWith(TENANT_ID, 'pago-1', {
       id: 'kc',
     });

@@ -18,6 +18,11 @@ export function rutaPagos(pedidoId: string): string {
   return `/pedidos/${encodeURIComponent(pedidoId)}/pagos`;
 }
 
+/** HU-009 (BL-454): PDF del comprobante del pedido (mismo acceso que el pago). */
+export function rutaPdfComprobante(pedidoId: string): string {
+  return `${rutaPagos(pedidoId)}/comprobante/pdf`;
+}
+
 /**
  * BL-311 (RD.05): credencial que prueba que el pedido es de quien paga.
  * - Mesa: el token del QR (la mesa del QR tiene que ser la del pedido).

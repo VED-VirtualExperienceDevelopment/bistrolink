@@ -20,6 +20,10 @@
 | 1.13    | 04/11/2026 | TC-E-073 y 074: alertas del mozo (campana, pantalla Alertas y recarga con alertas pendientes) (BL-441).                                              |
 | 1.14    | 06/11/2026 | TC-E-075 y 076: pantalla de Configuración accesible, responsive y con «Guardar cambios» al final (BL-473).                                           |
 | 1.15    | 06/11/2026 | TC-E-077 y 078: pantalla de Stock de la jornada accesible, responsive y con «Guardar cambios» al final (BL-474).                                     |
+| 1.16    | 07/11/2026 | TC-E-080: el mozo registra el cobro con el POS del local (HU-007b, BL-80).                                                                           |
+| 1.17    | 07/11/2026 | TC-E-081: el mozo cancela desde el KDS un pedido pagado en efectivo (HU-024, BL-104).                                                                |
+| 1.18    | 07/11/2026 | Se borran los bloques de TC-E-072, 080 y 081, ya cargados en Kiwi. TC-E-079: PDF del comprobante desde Comprobantes (HU-009, BL-454).                |
+| 1.19    | 07/11/2026 | TC-E-082: el mozo cobra con el POS del local al confirmar el pedido de una mesa (HU-007b, BL-485).                                                   |
 
 Plantilla para cargar en Kiwi la descripción de casos TC-E (Playwright)
 nuevos o que cambiaron (BL-435). La usa
@@ -63,24 +67,6 @@ Reglas:
     Lo que tiene que verse.
 
 ## Casos para cargar
-
-## TC-E-072
-
-### Precondición
-
-Administrador del establecimiento del seed logueado en el panel.
-
-### Pasos
-
-1. Abrir «Comprobantes».
-2. Tocar la pestaña «Pendientes de emisión».
-3. Revisar la pantalla con axe-core (WCAG 2.1 AA).
-
-### Resultado esperado
-
-1. Se abre en la pestaña «Emitidos».
-2. La API responde 200 y se ve la tabla de pagos sin comprobante, con «Reintentar ahora», o el aviso «No hay pagos sin comprobante». No se reintenta nada (emitiría un CFE en staging).
-3. Sin errores graves ni críticos de accesibilidad.
 
 ## TC-E-073
 
@@ -203,3 +189,38 @@ Administrador del establecimiento del seed logueado en el panel. Ventana de celu
 1. Se ven las tablas de stock por categoría, una debajo de la otra.
 2. No hay scroll horizontal y «Guardar cambios» se ve en pantalla.
 3. Sigue sin haber scroll horizontal y «Guardar cambios» sigue a la vista, como último botón.
+
+## TC-E-079
+
+### Precondición
+
+Administrador del establecimiento del seed logueado en el panel. Al menos un comprobante emitido en la última semana (si no hay, el test se saltea).
+
+### Pasos
+
+1. Abrir «Comprobantes» y poner «Desde» una semana atrás.
+2. Tocar «PDF» en el primer comprobante.
+
+### Resultado esperado
+
+Se descarga un archivo «e-Ticket-<serie>-<número>.pdf» o «e-Factura-<serie>-<número>.pdf».
+
+## TC-E-082
+
+### Precondición
+
+Mozo del establecimiento del seed logueado. Mesa del seed abierta. Efectivo y POS del local habilitados en Configuración.
+
+### Pasos
+
+1. Abrir «Cargar pedido» de la mesa, agregar un ítem y tocar «Confirmar pedido».
+2. Tocar «Cobrar con el POS», elegir «Crédito» y cargar la autorización «e2e082».
+3. Tocar «Registrar cobro».
+4. Abrir el KDS.
+
+### Resultado esperado
+
+1. El pedido queda cargado y se ofrecen «Cobrar en efectivo» y «Cobrar con el POS».
+2. Se abre el diálogo con el total del pedido. Sin errores graves de accesibilidad (axe).
+3. Se registra el cobro (crédito, autorización E2E082) y aparece «Cobro registrado: pedido …».
+4. El pedido está en el KDS.
