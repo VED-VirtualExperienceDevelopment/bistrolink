@@ -25,6 +25,7 @@
 | 1.18    | 03/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-I-153 a 160: stock de la jornada, alertas de stock bajo y descuento al confirmar el pago (HU-015 / BL-120, BL-121 y BL-122), para cargar con el script antes de mergear el PR. |
 | 1.19    | 04/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-I-161 y 162: conciliación de CFE pendientes y pendientes de emisión del administrador (HU-023 / BL-96), para cargar con el script antes de mergear el PR.                      |
 | 1.20    | 06/11/2026 | TC-I-164 a 167: cola del KDS y límite de pedidos en preparación (HU-042 / BL-467), para cargar con el script antes de mergear el PR.                                                                                                      |
+| 1.21    | 07/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-I-168 a 174: limpieza de los datos de prueba (BL-285 / BL-476, ADR 0011), para cargar con el script antes de mergear el PR.                                                    |
 
 Texto del campo de descripción de cada caso TC-I en Kiwi. Lo carga
 `cargar-casos-integracion.mjs --descripciones`: cada bloque `## TC-I-NNN`
@@ -36,130 +37,122 @@ esperado`, igual que los casos cargados a mano desde TC-I-029.
 
 ## Casos para cargar
 
-## TC-I-161
+## TC-I-168
 
 ### Precondición
 
-Tenant A del seed. Tres pagos APROBADOS sin comprobante: dos de hace 10 minutos (Surtec falso emite para uno y responde 503 para el otro) y uno de hace 5 días.
+Módulo de limpieza habilitado (`E2E_CLEANUP_ENABLED=true`). Token del Admin del tenant A. Tres pedidos propios del test en la mesa 1: uno en `PENDIENTE_PAGO` con aviso de efectivo y dos en `RECIBIDO`.
 
 ### Pasos
 
-1. Correr la conciliación de CFE para el tenant B.
-2. Correrla para el tenant A.
-3. Correrla otra vez enseguida.
-4. Con Surtec de vuelta, correrla 6 minutos después.
+1. `POST /testing/limpieza` con el área `pedidos`, los ids de los dos primeros pedidos y `dryRun: true`.
+2. Repetir sin `dryRun`.
+3. Leer los pedidos, el historial de estados y la auditoría.
 
 ### Resultado esperado
 
-1. No se emite nada de los pagos del tenant A (RLS).
-2. El primero queda con su CFE (tipo 101, id externo `bl-<pagoId>`). El segundo queda sin CFE, con 1 intento fallido y el error guardado. El de hace 5 días no se toca.
-3. El segundo no se reintenta (espera 5 minutos después del primer fallo).
-4. El segundo queda con su CFE y el primero no se vuelve a emitir.
+1. 200 con un pedido por estado encontrado (uno a cancelar y uno a entregar). Ningún pedido cambia.
+2. 200.
+3. El pedido sin pagar queda `CANCELADO` y el pagado `ENTREGADO`, cada uno con su fila en el historial; el tercero sigue en `RECIBIDO`. Hay un registro `PEDIDO_LIMPIEZA_PRUEBAS` con los ids. No se borró ninguna fila.
 
-## TC-I-162
+## TC-I-169
 
 ### Precondición
 
-Tenant A del seed. Dos pagos APROBADOS sin comprobante: uno de hace 10 minutos y otro de hace 5 días.
+Módulo de limpieza habilitado. Token del Admin del tenant A. Una mesa temporal número 77, la mesa 2 en `REQUIERE_LIMPIEZA` y dos zonas en el plano: «Zona E2E …» y «Patio …».
 
 ### Pasos
 
-1. Consultar los pendientes de emisión del tenant A y del tenant B.
-2. Reintentar el de hace 5 días desde el tenant B.
-3. Reintentarlo desde el tenant A (Surtec falso emite) y volver a consultar.
-4. Reintentarlo otra vez.
-5. Leer el registro de auditoría.
+1. `POST /testing/limpieza` con el área `mesas`.
+2. Leer las mesas y el plano.
 
 ### Resultado esperado
 
-1. En el tenant A aparecen los dos: el reciente con 0 intentos y próximo intento, el de hace 5 días como «requiere atención» y sin próximo intento. En el tenant B no aparecen.
+1. 200 con al menos una mesa eliminada y una zona quitada.
+2. La mesa 77 ya no existe. La mesa 2 está `OCUPADA` con sesión nueva (como el seed). El plano conserva «Patio …» y no tiene «Zona E2E …».
+
+## TC-I-170
+
+### Precondición
+
+Módulo de limpieza habilitado. Token del Admin del tenant A. Una categoría «E2E carta …» con un ítem, un ítem «Flan casero …» en Platos principales y la Milanesa con precio 600 y control de stock con 3 unidades.
+
+### Pasos
+
+1. `POST /testing/limpieza` con el área `carta`.
+2. Leer la carta.
+
+### Resultado esperado
+
+1. 200 con al menos un ítem y una categoría eliminados.
+2. La categoría «E2E carta …» y su ítem ya no existen. «Flan casero …» no cambió. La Milanesa vuelve a 590, sin control de stock y con stock 0.
+
+## TC-I-171
+
+### Precondición
+
+Módulo de limpieza habilitado. Token del Admin del tenant A. Configuración del restaurante cambiada (Mercado Pago apagado, propinas 10 y 15, cola con límite 3) y un usuario «e2e-limpieza-…» creado por la API (base y Keycloak).
+
+### Pasos
+
+1. `POST /testing/limpieza` con las áreas `configuracion` y `usuarios`.
+2. Leer la configuración, el usuario en la base y en Keycloak, y pedir un token del Admin del seed.
+
+### Resultado esperado
+
+1. 200: los campos cambiados figuran como restablecidos (el correo de privacidad no) y al menos un usuario eliminado, sin errores.
+2. Mercado Pago encendido, sin propinas y cola apagada; el correo de privacidad no cambió. El usuario «e2e-limpieza-…» no existe en la base ni en Keycloak. El Admin del seed sigue entrando.
+
+## TC-I-172
+
+### Precondición
+
+Módulo de limpieza habilitado. Usuarios Admin y Mozo del seed.
+
+### Pasos
+
+1. `POST /testing/limpieza` sin token.
+2. Lo mismo con el token del Mozo.
+3. `POST /testing/limpieza/establecimientos` con el token del Admin.
+4. `POST /testing/limpieza` con el token del Admin y un área que no existe.
+
+### Resultado esperado
+
+1. 401.
+2. 403.
+3. 401 o 403: la ruta es solo para el rol PLATAFORMA.
+4. 400.
+
+## TC-I-173
+
+### Precondición
+
+Módulo de limpieza habilitado. Usuario PLATAFORMA del test. Un establecimiento «E2E Plataforma …» dado de alta por la API, sin pedidos (con su Admin y su cuenta de Cocina en Keycloak).
+
+### Pasos
+
+1. `POST /testing/limpieza/establecimientos` con `dryRun: true`.
+2. Repetir sin `dryRun`.
+3. Buscar el establecimiento y el tenant A en la base, y las cuentas del alta en Keycloak.
+
+### Resultado esperado
+
+1. 200 con al menos un establecimiento a eliminar. Las cuentas siguen en Keycloak.
+2. 200, sin errores.
+3. El establecimiento ya no existe; el tenant A sí. Las cuentas del alta ya no están en Keycloak.
+
+## TC-I-174
+
+### Precondición
+
+API levantada **sin** `E2E_CLEANUP_ENABLED` (como en producción).
+
+### Pasos
+
+1. `POST /testing/limpieza`.
+2. `POST /testing/limpieza/establecimientos`.
+
+### Resultado esperado
+
+1. 404: la ruta no existe.
 2. 404.
-3. Se emite el CFE y el pago ya no está entre los pendientes.
-4. 409: ya tiene su comprobante.
-5. Un registro PAGO_CFE_REINTENTADO del pago con el resultado EMITIDO.
-
-## TC-I-163
-
-### Precondición
-
-Establecimiento de prueba con un usuario Mozo y un usuario Cocina. Una mesa propia ocupada con un pedido esperando el pago en efectivo.
-
-### Pasos
-
-1. El comensal avisa que paga en efectivo (queda una solicitud pendiente).
-2. Se conectan al KDS por WebSocket un Mozo y un Cocina.
-3. Se emiten en vivo un llamado de mesa y un aviso de efectivo.
-4. Se emite un evento para todo el establecimiento (cambio de estado de mesa) como control.
-
-### Resultado esperado
-
-1. El Mozo recibe el efectivo pendiente en `llamados:snapshot`.
-2. El Mozo recibe los dos avisos en vivo.
-3. Cocina recibe el evento de control, pero ninguno de los avisos: ni snapshot, ni llamados, ni efectivo.
-
-## TC-I-164
-
-### Precondición
-
-Tenant A del seed con la cola activa y límite 1. Ningún otro pedido del tenant A en la cola ni en preparación (la suite los aparta y los restaura al final).
-
-### Pasos
-
-1. Crear dos pedidos de la mesa 1 en PENDIENTE_PAGO.
-2. Confirmar el pago de los dos al mismo tiempo, cada uno en su propia transacción.
-3. Leer el estado de los dos pedidos.
-
-### Resultado esperado
-
-1. Uno queda en EN_PREPARACION y el otro en RECIBIDO.
-2. Hay un solo pedido de la suite en EN_PREPARACION: el lock por tenant no deja superar el límite.
-
-## TC-I-165
-
-### Precondición
-
-Igual que TC-I-164. Usuario Mozo del seed en el tenant A.
-
-### Pasos
-
-1. Con límite 1, confirmar el pago de tres pedidos, uno detrás de otro.
-2. El Mozo pasa el primero a LISTO_PARA_ENTREGAR.
-3. Leer el estado de los tres pedidos y el historial del segundo.
-
-### Resultado esperado
-
-1. El primero pasa a preparación y los otros dos quedan en la cola, en ese orden.
-2. La transición devuelve como promovido solo al segundo (el más antiguo de la cola).
-3. El segundo queda en EN_PREPARACION y el tercero sigue en RECIBIDO. El historial del segundo tiene RECIBIDO → EN_PREPARACION sin usuario (promoción automática).
-
-## TC-I-166
-
-### Precondición
-
-Tenant A del seed con la cola desactivada (sin límite).
-
-### Pasos
-
-1. Crear un pedido en PENDIENTE_PAGO y confirmar su pago.
-2. Leer su estado y su hora de llegada a cocina.
-
-### Resultado esperado
-
-1. Queda en RECIBIDO, como antes de HU-042.
-2. Tiene cargada la hora de llegada a cocina (`encolado_en`).
-
-## TC-I-167
-
-### Precondición
-
-Tenant A del seed con límite 1. Tenant B del seed.
-
-### Pasos
-
-1. Confirmar dos pedidos del tenant A: uno queda en preparación y el otro en la cola.
-2. Leer el estado de la cola del tenant A y del tenant B.
-
-### Resultado esperado
-
-1. La cola del tenant A incluye el pedido en espera.
-2. La cola del tenant B no incluye ninguno de los dos pedidos del tenant A (RLS).
