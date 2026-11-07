@@ -10,6 +10,7 @@
 | 1.3     | 03/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-C-017 y 018: consulta del estado de los CFE ante la DGI en Surtec (HU-009, BL-455). |
 | 1.4     | 03/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-C-019: emisión con Surtec no disponible (HU-023, BL-96).                            |
 | 1.5     | 07/11/2026 | Se borra el bloque de TC-C-019, ya cargado en Kiwi. TC-C-021 y 022: nota de crédito en Surtec y reembolso en Mercado Pago (HU-024, BL-104).    |
+| 1.6     | 07/11/2026 | Se borran los bloques de TC-C-021 y 022, ya cargados en Kiwi. TC-C-020: PDF de un CFE emitido en Surtec (HU-009, BL-454).                      |
 
 Texto del campo de descripción de cada caso TC-C en Kiwi. Lo carga
 `cargar-casos-integracion.mjs --contrato --descripciones`: cada bloque
@@ -36,30 +37,16 @@ repositorio es público.
 
 ## Casos para cargar
 
-## TC-C-021
+## TC-C-020
 
 ### Precondición
 
-El emisor tiene emitido el e-Ticket A-49 en Surtec.
+El emisor tiene un CFE emitido en Surtec.
 
 ### Pasos
 
-1. BistroLink pide POST /comprobantes/crear con tipo 102, el `id_externo` de la nota de crédito («bl-<pago>-nc») y `referencias` con el tipo (101), la serie, el número, la fecha y la razón del e-Ticket original.
+1. BistroLink pide GET /comprobantes/{id}/pdf con el header X-Emisor (RUT del restaurante) y el id de Surtec del CFE.
 
 ### Resultado esperado
 
-Surtec responde 200 con la serie y el número de la nota de crédito.
-
-## TC-C-022
-
-### Precondición
-
-Existe una order de Mercado Pago procesada y acreditada.
-
-### Pasos
-
-1. BistroLink pide POST /v1/orders/{id}/refund con el body vacío (reembolso total) y la clave de idempotencia del pago.
-
-### Resultado esperado
-
-Mercado Pago responde 201 con la order en `status_detail` refunded, y BistroLink lo toma como reembolsado.
+Surtec responde 200 con un JSON con `file_name`, `mime_type` application/pdf, `format` y `data`: el PDF A4 en base64. BistroLink lo decodifica y verifica que sea un PDF (empieza con %PDF-).

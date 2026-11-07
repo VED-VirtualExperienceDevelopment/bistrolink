@@ -10,6 +10,7 @@
 | 1.0     | 01/11/2026 | Primera versión: roles, datos que trata el sistema, registro ante la URCDP y pedidos de derechos. |
 | 1.1     | 02/11/2026 | HU-009 (BL-453): RUT y razón social de la e-Factura, consentimiento y anonimización.              |
 | 1.2     | 02/11/2026 | BL-453: sin aceptar el aviso, la pantalla no deja pagar con datos de la e-Factura cargados.       |
+| 1.3     | 07/11/2026 | BL-454: copia del PDF del comprobante en S3 y descarga desde la API.                              |
 
 ## 1. Roles
 
@@ -43,6 +44,17 @@ pagar hasta que lo acepte, borre los datos o desmarque la e-Factura (en ese
 caso recibe un e-Ticket). El backend, igual, sin consentimiento no guarda
 nada y emite un e-Ticket. Los datos viajan a
 Surtec para emitir el CFE (tipo 111) y quedan en el CFE ante DGI.
+
+**PDF del comprobante (BL-454):** el de una e-Factura lleva el RUT y la
+razón social del receptor. Se guarda una copia en el bucket privado de los
+CFE (`S3_BUCKET_CFE`, HU-029) porque la DGI exige conservar los comprobantes
+5 años (Res. DGI 798/2012); Surtec también los conserva ese plazo. Solo el
+backend accede al bucket, la clave del objeto empieza con el `tenant_id` y no
+tiene datos del receptor, y el PDF no va a los logs. El comensal (desde la
+pantalla de pago) y el administrador (desde Comprobantes) lo descargan a
+través de la API, con los mismos controles de acceso que el comprobante. La
+anonimización de los datos de facturación del pedido (BL-453) no alcanza a
+esta copia: es un comprobante fiscal que hay que conservar.
 
 **Pendiente:** el pedido para retirar (HU-040) va a guardar el nombre y el
 contacto del comensal; esa historia agrega su aviso, la anonimización y la

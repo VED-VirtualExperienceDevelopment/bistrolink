@@ -28,6 +28,7 @@
 | 1.21    | 07/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-I-168 a 174: limpieza de los datos de prueba (BL-285 / BL-476, ADR 0011), para cargar con el script antes de mergear el PR.                                                    |
 | 1.22    | 07/11/2026 | TC-I-177 y 178: cobro con el POS del local (HU-007b / BL-80), para cargar con el script antes de mergear el PR.                                                                                                                           |
 | 1.23    | 07/11/2026 | TC-I-179 a 182: cancelación de un pedido pagado y devolución del pago (HU-024 / BL-104), para cargar con el script antes de mergear el PR.                                                                                                |
+| 1.24    | 07/11/2026 | Se borran los bloques de TC-I-177 a 182, ya cargados en Kiwi. TC-I-175 y 176: PDF del comprobante y su copia en S3 (HU-009 / BL-454), para cargar con el script antes de mergear el PR.                                                   |
 
 Texto del campo de descripción de cada caso TC-I en Kiwi. Lo carga
 `cargar-casos-integracion.mjs --descripciones`: cada bloque `## TC-I-NNN`
@@ -159,110 +160,40 @@ API levantada **sin** `E2E_CLEANUP_ENABLED` (como en producción).
 1. 404: la ruta no existe.
 2. 404.
 
-## TC-I-177
+## TC-I-175
 
 ### Precondición
 
-Tenant A del seed con el POS del local habilitado. Mesa 76 ocupada con un pedido de $ 590 esperando el pago. CFE apagado.
+Tenant A del seed. Un pedido pagado con su e-Factura de Surtec y otro pagado sin comprobante. Surtec falso: devuelve un PDF mínimo.
 
 ### Pasos
 
-1. Registrar el cobro con POS (débito, autorización A1B2C3) desde el tenant B.
-2. Registrarlo desde el tenant A.
-3. Repetirlo con la misma clave de idempotencia.
-4. Deshabilitar el POS y registrar el cobro de otro pedido.
+1. Pedir el PDF del comprobante por el pedido (como el comensal) y por el comprobante (como el administrador).
+2. Pedir el PDF del pedido sin comprobante.
+3. Pedir los dos PDF desde el tenant B.
 
 ### Resultado esperado
 
-1. 404: el tenant B no ve el pedido (RLS) y no se crea ningún pago.
-2. El pedido pasa a RECIBIDO; hay un pago POS_DEBITO/APROBADO de $ 590 con la autorización A1B2C3, el historial del pedido y el registro de auditoría «PAGO_POS_REGISTRADO» con total, tarjeta y autorización.
-3. Devuelve el mismo cobro, sin crear otro pago ni otro registro.
-4. 409 «El cobro con el POS del local no está habilitado en este establecimiento»; el pedido sigue en PENDIENTE_PAGO.
+1. Se recibe el PDF en base64 con el nombre «e-Factura-<serie>-<número>.pdf», pedido a Surtec con el RUT del local y el id de Surtec del comprobante.
+2. 404.
+3. 404 (RLS). Ninguno de los pedidos de los pasos 2 y 3 llega a Surtec.
 
-## TC-I-178
+## TC-I-176
 
 ### Precondición
 
-Usuarios de prueba del mozo y de cocina en Keycloak. Un pedido de la mesa 76 esperando el pago.
+Tenant A del seed. Dos pedidos pagados con su e-Ticket de Surtec, emitidos hace 10 minutos. Surtec falso (devuelve un PDF mínimo, salvo para el segundo comprobante, donde falla) y S3 en memoria.
 
 ### Pasos
 
-1. Como mozo, `GET /cobros/pendientes`.
-2. Como mozo, `POST /cobros/pos` con una autorización de 16 dígitos.
-3. Como cocina, `POST /cobros/pos` con una autorización válida.
-4. Como mozo, `POST /cobros/pos` con crédito y autorización 123456.
+1. Correr el respaldo del PDF para el tenant B.
+2. Correr el respaldo del PDF para el tenant A.
+3. Volver a correrlo enseguida.
+4. Descargar el PDF del primer comprobante como administrador.
 
 ### Resultado esperado
 
-1. `posHabilitado` es true.
-2. 400: con 16 dígitos podría ser un número de tarjeta.
-3. 403.
-4. 201 con el total calculado en el backend ($ 590); el pedido pasa a RECIBIDO con un pago POS_CREDITO.
-
-## TC-I-179
-
-### Precondición
-
-Tenant A del seed. El ítem del seed con control de stock y 8 unidades. Un pedido RECIBIDO de 2 unidades ($ 590) pagado con Mercado Pago (pasarela falsa).
-
-### Pasos
-
-1. Cancelar el pedido desde el tenant B.
-2. Cancelarlo desde el tenant A con el motivo «Reclamo del cliente» y un detalle.
-
-### Resultado esperado
-
-1. 404 (RLS): no se devuelve nada.
-2. Se pide el reembolso total a Mercado Pago con una clave fija para ese pago. El pedido queda CANCELADO con su historial, el pago REEMBOLSADO con el historial de origen CANCELACION, el stock vuelve a 10 y queda la auditoría «PEDIDO_CANCELADO» con motivo, monto, devolución y stock repuesto.
-
-## TC-I-180
-
-### Precondición
-
-Un pedido EN_PREPARACION y otro LISTO_PARA_ENTREGAR, pagados con Mercado Pago. Mercado Pago falso que falla al reembolsar.
-
-### Pasos
-
-1. Cancelar el pedido en preparación.
-2. Cancelar el pedido listo para entregar (Mercado Pago ya responde bien).
-
-### Resultado esperado
-
-1. 502: el pedido sigue EN_PREPARACION, el pago sigue APROBADO y no hay auditoría de cancelación.
-2. 409: un pedido listo para entregar no se puede cancelar.
-
-## TC-I-181
-
-### Precondición
-
-El ítem del seed con control de stock y 5 unidades. Un pedido EN_PREPARACION pagado en efectivo.
-
-### Pasos
-
-1. Cancelarlo sin confirmar la devolución.
-2. Cancelarlo confirmando que se devolvió el efectivo.
-
-### Resultado esperado
-
-1. 400: hay que confirmar la devolución manual.
-2. El pedido queda CANCELADO y el pago REEMBOLSADO (historial de origen CANCELACION, devolución manual), sin llamar a Mercado Pago. El stock sigue en 5: cocina ya lo había empezado.
-
-## TC-I-182
-
-### Precondición
-
-Usuarios de prueba del mozo y de cocina en Keycloak. Un pedido RECIBIDO pagado con Mercado Pago.
-
-### Pasos
-
-1. Como mozo, `GET /pedidos/:id/cancelacion`.
-2. Como cocina, `POST /pedidos/:id/cancelacion`.
-3. Como mozo, `POST` con el motivo «Otro» sin detalle.
-4. Como mozo, `POST` con el motivo «Cobro duplicado».
-
-### Resultado esperado
-
-1. 200 con el monto ($ 590), sin motivo que lo impida y la devolución automática por Mercado Pago.
-2. 403.
-3. 400: con «Otro» el detalle es obligatorio.
-4. 201: el pedido queda CANCELADO.
+1. No pide a Surtec ningún comprobante del tenant A (RLS).
+2. El PDF del primero queda en S3 con la clave «<tenant_id>/cfe/<año>/<mes>/<id>.pdf», y en la base quedan esa clave y el SHA-256 del archivo. El segundo queda sin clave y con 1 intento.
+3. No vuelve a pedir ninguno: el primero ya está guardado y el segundo espera 5 minutos antes de reintentar.
+4. Se recibe el PDF guardado sin llamar a Surtec.

@@ -22,6 +22,7 @@
 | 1.15    | 06/11/2026 | TC-E-077 y 078: pantalla de Stock de la jornada accesible, responsive y con «Guardar cambios» al final (BL-474).                                     |
 | 1.16    | 07/11/2026 | TC-E-080: el mozo registra el cobro con el POS del local (HU-007b, BL-80).                                                                           |
 | 1.17    | 07/11/2026 | TC-E-081: el mozo cancela desde el KDS un pedido pagado en efectivo (HU-024, BL-104).                                                                |
+| 1.18    | 07/11/2026 | Se borran los bloques de TC-E-072, 080 y 081, ya cargados en Kiwi. TC-E-079: PDF del comprobante desde Comprobantes (HU-009, BL-454).                |
 
 Plantilla para cargar en Kiwi la descripción de casos TC-E (Playwright)
 nuevos o que cambiaron (BL-435). La usa
@@ -65,24 +66,6 @@ Reglas:
     Lo que tiene que verse.
 
 ## Casos para cargar
-
-## TC-E-072
-
-### Precondición
-
-Administrador del establecimiento del seed logueado en el panel.
-
-### Pasos
-
-1. Abrir «Comprobantes».
-2. Tocar la pestaña «Pendientes de emisión».
-3. Revisar la pantalla con axe-core (WCAG 2.1 AA).
-
-### Resultado esperado
-
-1. Se abre en la pestaña «Emitidos».
-2. La API responde 200 y se ve la tabla de pagos sin comprobante, con «Reintentar ahora», o el aviso «No hay pagos sin comprobante». No se reintenta nada (emitiría un CFE en staging).
-3. Sin errores graves ni críticos de accesibilidad.
 
 ## TC-E-073
 
@@ -206,42 +189,17 @@ Administrador del establecimiento del seed logueado en el panel. Ventana de celu
 2. No hay scroll horizontal y «Guardar cambios» se ve en pantalla.
 3. Sigue sin haber scroll horizontal y «Guardar cambios» sigue a la vista, como último botón.
 
-## TC-E-080
+## TC-E-079
 
 ### Precondición
 
-Mozo del establecimiento del seed logueado. POS del local habilitado en Configuración.
+Administrador del establecimiento del seed logueado en el panel. Al menos un comprobante emitido en la última semana (si no hay, el test se saltea).
 
 ### Pasos
 
-1. Como comensal, armar un pedido para retirar y quedarse en «Pagá tu pedido».
-2. Como mozo, abrir «Cobros pendientes» y tocar «Cobrar con el POS» en ese pedido.
-3. Elegir «Débito», cargar la autorización «e2e123» y tocar «Registrar cobro».
-4. Abrir el KDS.
+1. Abrir «Comprobantes» y poner «Desde» una semana atrás.
+2. Tocar «PDF» en el primer comprobante.
 
 ### Resultado esperado
 
-1. El pedido queda esperando el pago.
-2. Se abre el diálogo con el total; «Registrar cobro» está deshabilitado hasta cargar la autorización. Sin errores graves de accesibilidad (axe).
-3. Se registra el cobro (débito, autorización E2E123), aparece «Cobro registrado: pedido …» y el pedido sale de la lista.
-4. El pedido está en el KDS.
-
-## TC-E-081
-
-### Precondición
-
-Mozo del establecimiento del seed logueado. Efectivo habilitado.
-
-### Pasos
-
-1. Como comensal, armar un pedido para retirar y quedarse en «Pagá tu pedido».
-2. Como mozo, cobrarlo en efectivo desde «Cobros pendientes».
-3. En el KDS, tocar «Cancelar pedido» en su comanda, elegir el motivo «Error en el pedido» y tocar «Cancelar pedido» sin confirmar la devolución.
-4. Marcar «Ya hice la devolución al comensal» y tocar «Cancelar pedido».
-
-### Resultado esperado
-
-1. El pedido queda esperando el pago.
-2. El pedido pasa a cocina.
-3. El diálogo indica «Devolvé el efectivo al comensal.» y pide confirmar la devolución. Sin errores graves de accesibilidad (axe).
-4. La cancelación responde 201 con la devolución manual en efectivo, la comanda sale del tablero y aparece el aviso de la cancelación.
+Se descarga un archivo «e-Ticket-<serie>-<número>.pdf» o «e-Factura-<serie>-<número>.pdf».

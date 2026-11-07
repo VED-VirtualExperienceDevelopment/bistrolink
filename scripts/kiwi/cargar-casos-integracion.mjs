@@ -733,6 +733,22 @@ const DATOS_INTEGRACION = {
     priority: "P1",
     tags: ["configuracion-entorno"],
   }),
+  // HU-009 (BL-454): PDF del comprobante, a pedido.
+  175: {
+    category: "Seguridad",
+    component: "api",
+    requirement: "HU-009",
+    priority: "P1",
+    tags: ["HU-009", "BL-454", "cfe", "multi-tenant"],
+  },
+  // HU-009 (BL-454): copia del PDF del CFE en S3 con su SHA-256.
+  176: {
+    category: "Funcional",
+    component: "api",
+    requirement: "HU-009",
+    priority: "P1",
+    tags: ["HU-009", "BL-454", "cfe", "s3", "multi-tenant"],
+  },
   177: cobroPos({
     category: "Funcional",
     priority: "P1",
@@ -1082,6 +1098,12 @@ const DATOS_E2E = {
     priority: "P2",
     tags: ["BL-474", "stock", "responsive", "mobile"],
   }),
+  // HU-009 (BL-454): PDF del comprobante desde Comprobantes.
+  79: e2e("admin", "HU-009", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-454", "cfe"],
+  }),
   // HU-007b (BL-80): cobro con el POS del local.
   80: e2e("mozo", "HU-007b", {
     category: "Funcional",
@@ -1151,6 +1173,8 @@ const DATOS_CONTRATO = {
   18: contrato("HU-009", "surtec", { priority: "P2", tags: ["BL-455"] }),
   // Surtec: emisión con el servicio no disponible (BL-96).
   19: contrato("HU-023", "surtec", { priority: "P1", tags: ["BL-96"] }),
+  // Surtec: PDF de un CFE emitido (BL-454).
+  20: contrato("HU-009", "surtec", { priority: "P2", tags: ["BL-454"] }),
   // HU-024 (BL-104): nota de crédito en Surtec y reembolso en Mercado Pago.
   21: contrato("HU-024", "surtec", { priority: "P1", tags: ["BL-104"] }),
   22: contrato("HU-024", "mercadopago", { priority: "P1", tags: ["BL-104"] }),
