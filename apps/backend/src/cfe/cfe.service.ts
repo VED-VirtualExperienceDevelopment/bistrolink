@@ -14,15 +14,28 @@ import {
   TIPO_CFE,
 } from './surtec.client';
 import { aplicaRebaja17934, LEYENDA_REBAJA_17934 } from './rebaja-iva';
+import { AlmacenCfe, sha256Hex } from './respaldo-pdf/almacen-cfe';
 
-// HU-009 (BL-454): lo que hace falta para pedir el PDF a Surtec.
+// HU-009 (BL-454): lo que hace falta para leer el PDF de S3 o pedirlo a Surtec.
 const SELECCION_PDF = {
   tipoCfe: true,
   serie: true,
   numero: true,
   proveedor: true,
   proveedorRef: true,
+  urlPdf: true,
+  pdfSha256: true,
 } as const;
+
+interface ComprobanteParaPdf {
+  tipoCfe: string;
+  serie: string;
+  numero: number;
+  proveedor: string;
+  proveedorRef: string | null;
+  urlPdf: string | null;
+  pdfSha256: string | null;
+}
 
 // Res. DGI 798/2012: los CFE se conservan 5 años.
 const ANIOS_RETENCION = 5;
@@ -140,6 +153,7 @@ export class CfeService {
   constructor(
     private readonly tenantPrisma: TenantPrismaService,
     private readonly surtec: SurtecClient,
+    private readonly almacen: AlmacenCfe,
   ) {}
 
   /**
@@ -179,21 +193,30 @@ export class CfeService {
   }
 
   /**
-   * Pide el PDF a Surtec. No se guarda copia (Surtec lo conserva 5 años) y
-   * no va a los logs: el de una e-Factura lleva el RUT y la razón social.
+   * El PDF sale de la copia en S3 (RespaldoPdfService) si ya está guardada y
+   * el hash coincide. Si no, se pide a Surtec, que también lo conserva 5
+   * años. El PDF no va a los logs: el de una e-Factura lleva el RUT y la
+   * razón social.
    */
   private async pdf(
     tenantId: string,
-    comprobante: {
-      tipoCfe: string;
-      serie: string;
-      numero: number;
-      proveedor: string;
-      proveedorRef: string | null;
-    } | null,
+    comprobante: ComprobanteParaPdf | null,
   ): Promise<PdfComprobante> {
     if (!comprobante?.proveedorRef || comprobante.proveedor !== 'SURTEC') {
       throw new NotFoundException('El comprobante no está disponible');
+    }
+    const nombreArchivo = nombreArchivoPdf(
+      comprobante.tipoCfe,
+      comprobante.serie,
+      comprobante.numero,
+    );
+    const guardado = await this.pdfGuardado(comprobante);
+    if (guardado) {
+      return {
+        nombreArchivo,
+        mimeType: 'application/pdf',
+        contenido: guardado.toString('base64'),
+      };
     }
     if (!this.surtec.configurado()) {
       throw new ServiceUnavailableException(
@@ -212,11 +235,7 @@ export class CfeService {
         comprobante.proveedorRef,
       );
       return {
-        nombreArchivo: nombreArchivoPdf(
-          comprobante.tipoCfe,
-          comprobante.serie,
-          comprobante.numero,
-        ),
+        nombreArchivo,
         mimeType: 'application/pdf',
         contenido: contenido.toString('base64'),
       };
@@ -229,6 +248,33 @@ export class CfeService {
         'No se pudo obtener el PDF del comprobante. Probá de nuevo en unos minutos.',
       );
     }
+  }
+
+  /**
+   * HU-009 (BL-454): la copia del PDF en S3, si está guardada y su SHA-256
+   * coincide con el registrado. Nunca lanza: si S3 falla o el hash no
+   * coincide, queda en el log y se pide a Surtec.
+   */
+  private async pdfGuardado(
+    comprobante: ComprobanteParaPdf,
+  ): Promise<Buffer | null> {
+    const { urlPdf, pdfSha256, serie, numero } = comprobante;
+    if (!urlPdf || !pdfSha256 || !this.almacen.configurado()) return null;
+    try {
+      const contenido = await this.almacen.leer(urlPdf);
+      if (sha256Hex(contenido) === pdfSha256) return contenido;
+      Logger.error(
+        `CFE: el PDF guardado del comprobante ${serie}-${numero} no coincide con su SHA-256; se pide a Surtec`,
+        undefined,
+        CfeService.name,
+      );
+    } catch (error) {
+      Logger.warn(
+        `CFE: no se pudo leer de S3 el PDF del comprobante ${serie}-${numero}; se pide a Surtec: ${mensajeDe(error)}`,
+        CfeService.name,
+      );
+    }
+    return null;
   }
 
   /** HU-023 (BL-96): sin Surtec configurado no hay nada que conciliar. */

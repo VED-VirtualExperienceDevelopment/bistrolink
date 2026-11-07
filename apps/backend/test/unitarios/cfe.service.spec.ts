@@ -8,6 +8,7 @@ import {
   nombreArchivoPdf,
 } from '../../src/cfe/cfe.service';
 import { SurtecError } from '../../src/cfe/surtec.client';
+import { sha256Hex } from '../../src/cfe/respaldo-pdf/almacen-cfe';
 
 const TENANT_ID = '11111111-1111-1111-1111-111111111111';
 const PAGO_ID = '22222222-2222-2222-2222-222222222222';
@@ -41,6 +42,12 @@ const EMITIDO = {
   caeVencimiento: new Date('2030-12-31T00:00:00'),
   url: 'https://www.efactura.dgi.gub.uy/consultaQR/cfe?x',
 };
+
+// BL-454: copia del PDF en S3. Por defecto no está configurada.
+let almacen: { configurado: jest.Mock; leer: jest.Mock };
+beforeEach(() => {
+  almacen = { configurado: jest.fn().mockReturnValue(false), leer: jest.fn() };
+});
 
 describe('CfeService.intentarEmitir', () => {
   let tx: {
@@ -78,7 +85,11 @@ describe('CfeService.intentarEmitir', () => {
       emitirETicket: jest.fn().mockResolvedValue(EMITIDO),
       emitirEFactura: jest.fn().mockResolvedValue(EMITIDO),
     };
-    service = new CfeService(tenantPrisma as any, surtec as any);
+    service = new CfeService(
+      tenantPrisma as any,
+      surtec as any,
+      almacen as any,
+    );
   });
 
   afterEach(() => jest.restoreAllMocks());
@@ -394,7 +405,11 @@ describe('CfeService.emitirConReintentos (BL-311)', () => {
       configurado: jest.fn().mockReturnValue(true),
       emitirETicket: jest.fn().mockResolvedValue(EMITIDO),
     };
-    service = new CfeService(tenantPrisma as any, surtec as any);
+    service = new CfeService(
+      tenantPrisma as any,
+      surtec as any,
+      almacen as any,
+    );
   });
 
   afterEach(() => {
@@ -525,7 +540,11 @@ describe('CfeService.reintentar (HU-023, BL-96)', () => {
       configurado: jest.fn().mockReturnValue(true),
       emitirETicket: jest.fn().mockResolvedValue(EMITIDO),
     };
-    service = new CfeService(tenantPrisma as any, surtec as any);
+    service = new CfeService(
+      tenantPrisma as any,
+      surtec as any,
+      almacen as any,
+    );
   });
 
   afterEach(() => jest.restoreAllMocks());
@@ -618,6 +637,8 @@ describe('CfeService: PDF del comprobante (HU-009, BL-454)', () => {
     numero: 49,
     proveedor: 'SURTEC',
     proveedorRef: '542442',
+    urlPdf: null as string | null,
+    pdfSha256: null as string | null,
   };
   let tx: {
     comprobanteFiscal: { findFirst: jest.Mock; findUnique: jest.Mock };
@@ -629,6 +650,7 @@ describe('CfeService: PDF del comprobante (HU-009, BL-454)', () => {
 
   beforeEach(() => {
     jest.spyOn(Logger, 'warn').mockImplementation();
+    jest.spyOn(Logger, 'error').mockImplementation();
     tx = {
       comprobanteFiscal: {
         findFirst: jest.fn().mockResolvedValue(COMPROBANTE),
@@ -645,7 +667,11 @@ describe('CfeService: PDF del comprobante (HU-009, BL-454)', () => {
       configurado: jest.fn().mockReturnValue(true),
       obtenerPdf: jest.fn().mockResolvedValue({ contenido: PDF }),
     };
-    service = new CfeService(tenantPrisma as any, surtec as any);
+    service = new CfeService(
+      tenantPrisma as any,
+      surtec as any,
+      almacen as any,
+    );
   });
 
   afterEach(() => jest.restoreAllMocks());
@@ -724,5 +750,62 @@ describe('CfeService: PDF del comprobante (HU-009, BL-454)', () => {
     const logs = JSON.stringify((Logger.warn as jest.Mock).mock.calls);
     expect(logs).toContain('A-49');
     expect(logs).not.toContain('214198620015');
+  });
+
+  describe('con la copia en S3', () => {
+    const CLAVE = `${TENANT_ID}/cfe/2026/11/comprobante-1.pdf`;
+    const GUARDADO = {
+      ...COMPROBANTE,
+      urlPdf: CLAVE,
+      pdfSha256: sha256Hex(PDF),
+    };
+
+    beforeEach(() => {
+      almacen.configurado.mockReturnValue(true);
+      almacen.leer.mockResolvedValue(PDF);
+      tx.comprobanteFiscal.findFirst.mockResolvedValue(GUARDADO);
+    });
+
+    it('sale de S3 si el hash coincide, sin llamar a Surtec (aunque no esté configurado)', async () => {
+      surtec.configurado.mockReturnValue(false);
+
+      const pdf = await service.pdfDelPedido(TENANT_ID, 'pedido-1');
+
+      expect(almacen.leer).toHaveBeenCalledWith(CLAVE);
+      expect(surtec.obtenerPdf).not.toHaveBeenCalled();
+      expect(pdf).toEqual({
+        nombreArchivo: 'e-Factura-A-0000049.pdf',
+        mimeType: 'application/pdf',
+        contenido: PDF.toString('base64'),
+      });
+    });
+
+    it('si el hash no coincide: lo deja en el log y lo pide a Surtec', async () => {
+      almacen.leer.mockResolvedValue(Buffer.from('%PDF-1.4 alterado'));
+
+      await service.pdfDelPedido(TENANT_ID, 'pedido-1');
+
+      expect(surtec.obtenerPdf).toHaveBeenCalled();
+      expect(JSON.stringify((Logger.error as jest.Mock).mock.calls)).toContain(
+        'no coincide con su SHA-256',
+      );
+    });
+
+    it('si S3 falla: lo pide a Surtec', async () => {
+      almacen.leer.mockRejectedValue(new Error('AccessDenied'));
+
+      await service.pdfDelPedido(TENANT_ID, 'pedido-1');
+
+      expect(surtec.obtenerPdf).toHaveBeenCalled();
+    });
+
+    it('sin S3_BUCKET_CFE: lo pide a Surtec sin leer S3', async () => {
+      almacen.configurado.mockReturnValue(false);
+
+      await service.pdfDelPedido(TENANT_ID, 'pedido-1');
+
+      expect(almacen.leer).not.toHaveBeenCalled();
+      expect(surtec.obtenerPdf).toHaveBeenCalled();
+    });
   });
 });

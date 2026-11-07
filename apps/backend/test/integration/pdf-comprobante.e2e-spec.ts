@@ -7,10 +7,12 @@ import { AppModule } from '../../src/app.module';
 import { TenantPrismaService } from '../../src/prisma/tenant-prisma.service';
 import { SurtecClient } from '../../src/cfe/surtec.client';
 import { CfeService } from '../../src/cfe/cfe.service';
+import { AlmacenCfe } from '../../src/cfe/respaldo-pdf/almacen-cfe';
 import { asegurarClaveQr } from './support/qr-mesa';
 
-// HU-009 (BL-454): PDF del comprobante, pedido a Surtec a demanda (no se
-// guarda copia). Base y RLS reales; Surtec es falso y devuelve un PDF mínimo.
+// HU-009 (BL-454): PDF del comprobante pedido a Surtec cuando todavía no
+// hay copia en S3 (la copia la prueba respaldo-pdf-cfe.e2e-spec.ts, TC-I-176).
+// Base y RLS reales; Surtec es falso y devuelve un PDF mínimo.
 // El control de acceso del comensal (QR o token del pedido) lo prueban los
 // unitarios de PagosController y los tests de PedidoAccesoGuard.
 
@@ -110,6 +112,9 @@ describe('HU-009 (BL-454): PDF del comprobante', () => {
     })
       .overrideProvider(SurtecClient)
       .useValue(surtec)
+      // Sin S3_BUCKET_CFE: siempre se pide a Surtec.
+      .overrideProvider(AlmacenCfe)
+      .useValue({ configurado: () => false })
       .compile();
     app = moduleRef.createNestApplication();
     await app.init();
