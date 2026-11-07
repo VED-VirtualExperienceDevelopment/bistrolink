@@ -396,8 +396,8 @@ export function cambiosParaGuardar(
   const razonSocial = formulario.razonSocial.trim().replace(/\s+/g, " ");
   if (razonSocial !== guardada.razonSocial) cambios.razonSocial = razonSocial;
   for (const { campo } of MEDIOS_PAGO) {
-    const guardado =
-      guardada[campo] ?? (campo === "posHabilitado" ? true : false);
+    // Un backend anterior no trae posHabilitado: vale el default (true).
+    const guardado = guardada[campo] ?? campo === "posHabilitado";
     if (formulario[campo] !== guardado) cambios[campo] = formulario[campo];
   }
   const lectura = leerPropinas(formulario.propinas);
