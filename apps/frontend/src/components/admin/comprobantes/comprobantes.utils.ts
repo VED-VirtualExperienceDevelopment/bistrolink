@@ -77,6 +77,11 @@ export function rutaComprobantes(
 }
 
 /** «desde» posterior a «hasta»: el backend respondería 400. */
+/** HU-009 (BL-454): PDF A4 de un comprobante (solo ADMIN). */
+export function rutaPdfComprobante(comprobanteId: string): string {
+  return `/admin/comprobantes/${encodeURIComponent(comprobanteId)}/pdf`;
+}
+
 export function rangoInvalido(filtros: FiltrosComprobantes): boolean {
   return Boolean(
     filtros.desde && filtros.hasta && filtros.desde > filtros.hasta,

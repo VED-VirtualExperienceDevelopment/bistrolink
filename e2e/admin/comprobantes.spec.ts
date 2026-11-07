@@ -110,4 +110,41 @@ test.describe("BL-455: Comprobantes del administrador", () => {
         .map((v) => ({ id: v.id, nodos: v.nodes.map((n) => n.target) })),
     ).toEqual([]);
   });
+
+  test("[TC-E-079] HU-009: el administrador descarga el PDF de un comprobante emitido desde Comprobantes", async ({
+    kdsPageAdmin: page,
+  }) => {
+    test.slow();
+    await page.goto(COMPROBANTES_PATH);
+    // Los de la última semana: alcanza con que haya uno emitido en staging.
+    const haceUnaSemana = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10);
+    const [respuesta] = await Promise.all([
+      page.waitForResponse(
+        (res) =>
+          res.url().includes("/admin/comprobantes?") &&
+          res.url().includes(`desde=${haceUnaSemana}`),
+      ),
+      page.getByLabel("Desde").fill(haceUnaSemana),
+    ]);
+    const { comprobantes } = (await respuesta.json()) as {
+      comprobantes: unknown[];
+    };
+    test.skip(
+      comprobantes.length === 0,
+      "No hay comprobantes emitidos en la última semana en este entorno",
+    );
+
+    const [descarga] = await Promise.all([
+      page.waitForEvent("download"),
+      page
+        .getByRole("button", { name: /^PDF de / })
+        .first()
+        .click(),
+    ]);
+    expect(descarga.suggestedFilename()).toMatch(
+      /^e-(Ticket|Factura)-[A-Z]{1,2}-\d{7}\.pdf$/,
+    );
+  });
 });
