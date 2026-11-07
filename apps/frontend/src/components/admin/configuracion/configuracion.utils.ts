@@ -5,7 +5,7 @@
  */
 
 export type CfeProveedor = "SURTEC" | "BILLER";
-export type MedioPago = "EFECTIVO" | "MERCADOPAGO" | "PLEXO" | "HANDY";
+export type MedioPago = "EFECTIVO" | "MERCADOPAGO" | "POS" | "PLEXO" | "HANDY";
 
 /** Respuesta de GET y PATCH /admin/configuracion. */
 export interface ConfiguracionEstablecimiento {
@@ -14,6 +14,11 @@ export interface ConfiguracionEstablecimiento {
   rut: string;
   efectivoHabilitado: boolean;
   mercadoPagoHabilitado: boolean;
+  /**
+   * HU-007b (BL-80): cobros con el POS del local. Opcional: un backend
+   * anterior no lo trae.
+   */
+  posHabilitado?: boolean;
   plexoHabilitado: boolean;
   handyHabilitado: boolean;
   propinasSugeridas: number[];
@@ -39,6 +44,7 @@ export interface ConfiguracionEstablecimiento {
 export type CampoMedioPago =
   | "efectivoHabilitado"
   | "mercadoPagoHabilitado"
+  | "posHabilitado"
   | "plexoHabilitado"
   | "handyHabilitado";
 
@@ -47,6 +53,7 @@ export interface FormularioConfiguracion {
   razonSocial: string;
   efectivoHabilitado: boolean;
   mercadoPagoHabilitado: boolean;
+  posHabilitado: boolean;
   plexoHabilitado: boolean;
   handyHabilitado: boolean;
   /** Texto del campo, por ejemplo «10, 15, 20». */
@@ -116,6 +123,13 @@ export const MEDIOS_PAGO: ReadonlyArray<{
     descripcion: "El comensal paga con tarjeta desde su celular.",
   },
   {
+    codigo: "POS",
+    campo: "posHabilitado",
+    nombre: "POS del local",
+    descripcion:
+      "El mozo cobra con el POS del local y registra el cobro desde «Cobros pendientes».",
+  },
+  {
     codigo: "PLEXO",
     campo: "plexoHabilitado",
     nombre: "Plexo",
@@ -144,6 +158,8 @@ export function formularioDesde(
     razonSocial: configuracion.razonSocial,
     efectivoHabilitado: configuracion.efectivoHabilitado,
     mercadoPagoHabilitado: configuracion.mercadoPagoHabilitado,
+    // Un backend anterior no lo trae: queda como el default de la columna.
+    posHabilitado: configuracion.posHabilitado ?? true,
     plexoHabilitado: configuracion.plexoHabilitado,
     handyHabilitado: configuracion.handyHabilitado,
     propinas: textoDePropinas(configuracion.propinasSugeridas),
@@ -380,8 +396,9 @@ export function cambiosParaGuardar(
   const razonSocial = formulario.razonSocial.trim().replace(/\s+/g, " ");
   if (razonSocial !== guardada.razonSocial) cambios.razonSocial = razonSocial;
   for (const { campo } of MEDIOS_PAGO) {
-    if (formulario[campo] !== guardada[campo])
-      cambios[campo] = formulario[campo];
+    const guardado =
+      guardada[campo] ?? (campo === "posHabilitado" ? true : false);
+    if (formulario[campo] !== guardado) cambios[campo] = formulario[campo];
   }
   const lectura = leerPropinas(formulario.propinas);
   if (

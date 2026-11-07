@@ -95,6 +95,22 @@ describe("cómo se muestra cada registro", () => {
     );
   });
 
+  it("HU-007b (BL-80): el cobro con el POS del local, con tarjeta y autorización", () => {
+    expect(etiquetaAccion("PAGO_POS_REGISTRADO")).toBe(
+      "Cobro con el POS del local",
+    );
+    const lineas = cambiosDelRegistro({
+      valoresAntes: null,
+      valoresDespues: {
+        monto: "590.00",
+        tarjeta: "Débito",
+        autorizacion: "A1B2C3",
+      },
+    });
+    expect(lineas[1]).toMatch(/^Tarjeta: .* → Débito$/);
+    expect(lineas[2]).toMatch(/^N\.° de autorización: .* → A1B2C3$/);
+  });
+
   it("los cambios como «campo: antes → después»", () => {
     expect(
       cambiosDelRegistro({
