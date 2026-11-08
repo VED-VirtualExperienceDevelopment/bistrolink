@@ -3,18 +3,22 @@
 import { useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { apiFetch } from '@/lib/api-client';
+import { descargarArchivo, type ArchivoBase64 } from '@/lib/descarga';
 import { etiquetaMesa, type OrigenMenu } from '@/components/menu-digital.utils';
 import type { LineaResumen } from './PagoPedido';
 import {
   codigoPedido,
   estadoComprobante,
+  filasRebajaIva,
   formatearPrecio,
   headersAccesoPedido,
   INTERVALO_CONSULTA_MS,
   rutaPagos,
+  rutaPdfComprobante,
   seguirConsultando,
   type EstadoComprobante,
   type EstadoPagoDelPedido,
+  type RebajaIva,
 } from './pago.utils';
 
 // Usa socket.io (solo en el navegador), igual que en la carta.
@@ -22,6 +26,9 @@ const SeguimientoPedido = dynamic(
   () => import('@/components/SeguimientoPedido').then((mod) => ({ default: mod.SeguimientoPedido })),
   { ssr: false, loading: () => null },
 );
+
+/** HU-009 (BL-454): estado del botón «Descargar PDF». */
+type EstadoDescarga = 'lista' | 'descargando' | 'error';
 
 interface PagoAprobadoProps {
   readonly origen: OrigenMenu;
@@ -63,6 +70,8 @@ export function PagoAprobado({
   const [comprobante, setComprobante] = useState<EstadoComprobante>({ tipo: 'emitiendo' });
   const [agotado, setAgotado] = useState(false);
   const [consulta, setConsulta] = useState(0);
+  // HU-009 (BL-454): descarga del PDF del comprobante.
+  const [descarga, setDescarga] = useState<EstadoDescarga>('lista');
   const tituloRef = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
@@ -107,6 +116,19 @@ export function PagoAprobado({
   }, [pedidoId, accessToken, consulta]);
 
   const esMesa = origen.tipo === 'mesa';
+
+  async function descargarPdf() {
+    setDescarga('descargando');
+    try {
+      const archivo = await apiFetch<ArchivoBase64>(rutaPdfComprobante(pedidoId), accessToken, {
+        headers: headersAccesoPedido(origen, tokenAcceso),
+      });
+      descargarArchivo(archivo);
+      setDescarga('lista');
+    } catch {
+      setDescarga('error');
+    }
+  }
 
   return (
     <div className="pt-20 pb-12 px-4 md:px-8 max-w-[640px] mx-auto flex flex-col gap-6">
@@ -153,6 +175,8 @@ export function PagoAprobado({
         comprobante={comprobante}
         agotado={agotado}
         onReintentar={() => setConsulta((n) => n + 1)}
+        descarga={descarga}
+        onDescargarPdf={() => void descargarPdf()}
       />
 
       <section aria-labelledby="resumen-pagado" className={CLASE_TARJETA}>
@@ -194,10 +218,14 @@ function Comprobante({
   comprobante,
   agotado,
   onReintentar,
+  descarga,
+  onDescargarPdf,
 }: {
   readonly comprobante: EstadoComprobante;
   readonly agotado: boolean;
   readonly onReintentar: () => void;
+  readonly descarga: EstadoDescarga;
+  readonly onDescargarPdf: () => void;
 }) {
   return (
     <section aria-labelledby="comprobante" aria-live="polite" className={CLASE_TARJETA}>
@@ -215,67 +243,69 @@ function Comprobante({
             Comprobante fiscal
           </h2>
 
-          <EstadoDelComprobante
-            comprobante={comprobante}
-            agotado={agotado}
-            onReintentar={onReintentar}
-          />
+          <EstadoDelComprobante comprobante={comprobante} agotado={agotado} />
         </div>
       </div>
+
+      {/* Fuera de la columna del título: el detalle de la rebaja y los
+          botones van de margen a margen de la tarjeta, alineados con el
+          ícono. */}
+      <AccionesDelComprobante
+        comprobante={comprobante}
+        agotado={agotado}
+        onReintentar={onReintentar}
+        descarga={descarga}
+        onDescargarPdf={onDescargarPdf}
+      />
     </section>
   );
 }
 
-/** Emitido (con enlace a DGI), demorado (se puede volver a consultar) o emitiéndose. */
+/**
+ * HU-037 (BL-207): detalle de la rebaja de IVA de la Ley 17.934, como pide
+ * DGI para el comprobante del pago (junto al número del e-Ticket). La
+ * reducción la descuenta la administradora del medio de pago.
+ */
+function DetalleRebaja({ rebaja }: { readonly rebaja: RebajaIva }) {
+  return (
+    <div className="mt-4 rounded-[0.75rem] bg-culinary-background px-4 py-3 text-sm">
+      <dl className="flex flex-col gap-1">
+        {filasRebajaIva(rebaja).map((fila) => (
+          <div key={fila.etiqueta} className="flex items-center justify-between gap-3">
+            <dt className="text-[#5a575e]">{fila.etiqueta}</dt>
+            <dd className="font-semibold text-foreground whitespace-nowrap">{fila.valor}</dd>
+          </div>
+        ))}
+      </dl>
+      <p className="mt-2 text-xs font-semibold text-[#6e54ad]">{rebaja.leyenda}</p>
+      <p className="mt-1 text-xs text-[#5a575e]">
+        La reducción la descuenta la administradora de tu medio de pago.
+      </p>
+    </div>
+  );
+}
+
+/** Emitido, demorado (se puede volver a consultar) o emitiéndose: la línea debajo del título. */
 function EstadoDelComprobante({
   comprobante,
   agotado,
-  onReintentar,
 }: {
   readonly comprobante: EstadoComprobante;
   readonly agotado: boolean;
-  readonly onReintentar: () => void;
 }) {
   if (comprobante.tipo === 'emitido') {
     return (
-      <>
-        <p className="mt-1 text-sm text-[#5a575e]">
-          <span className="font-semibold text-foreground">{comprobante.texto}</span> · emitido
-        </p>
-        {comprobante.urlConsulta && (
-          <a
-            href={comprobante.urlConsulta}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-3 inline-flex items-center gap-2 px-4 py-2.5 bg-[#6e54ad] text-white font-semibold rounded-[0.5rem] hover:bg-[#5b468f] focus:outline-none focus:ring-4 focus:ring-[#6e54ad]/30 transition-colors"
-          >
-            Ver comprobante en DGI
-            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M15 3h6v6" />
-              <path d="M10 14 21 3" />
-              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-            </svg>
-            <span className="sr-only">(se abre en otra pestaña)</span>
-          </a>
-        )}
-      </>
+      <p className="mt-1 text-sm text-[#5a575e]">
+        <span className="font-semibold text-foreground">{comprobante.texto}</span> · emitido
+      </p>
     );
   }
   if (agotado) {
     return (
-      <>
-        <p className="mt-1 text-sm text-[#5a575e]">
-          Tu pago está aprobado. El comprobante todavía se está emitiendo:
-          volvé a consultar en unos minutos o pedíselo al personal del local.
-        </p>
-        <button
-          type="button"
-          onClick={onReintentar}
-          className="mt-3 px-4 py-2 bg-[#6e54ad]/10 text-[#6e54ad] font-semibold rounded-[0.5rem] hover:bg-[#6e54ad] hover:text-white transition-colors"
-        >
-          Volver a consultar
-        </button>
-      </>
+      <p className="mt-1 text-sm text-[#5a575e]">
+        Tu pago está aprobado. El comprobante todavía se está emitiendo:
+        volvé a consultar en unos minutos o pedíselo al personal del local.
+      </p>
     );
   }
   return (
@@ -287,4 +317,83 @@ function EstadoDelComprobante({
       Estamos emitiendo tu comprobante…
     </p>
   );
+}
+
+/**
+ * Debajo del encabezado, a todo el ancho de la tarjeta: el detalle de la
+ * rebaja de IVA (HU-037) y el enlace a DGI si ya se emitió, o «Volver a
+ * consultar» si se demora.
+ */
+function AccionesDelComprobante({
+  comprobante,
+  agotado,
+  onReintentar,
+  descarga,
+  onDescargarPdf,
+}: {
+  readonly comprobante: EstadoComprobante;
+  readonly agotado: boolean;
+  readonly onReintentar: () => void;
+  readonly descarga: EstadoDescarga;
+  readonly onDescargarPdf: () => void;
+}) {
+  if (comprobante.tipo === 'emitido') {
+    return (
+      <>
+        {comprobante.rebaja && <DetalleRebaja rebaja={comprobante.rebaja} />}
+        <div className="mt-4 flex flex-wrap justify-center gap-3">
+          {/* HU-009 (BL-454): PDF A4, pedido a Surtec en el momento. */}
+          <button
+            type="button"
+            onClick={onDescargarPdf}
+            disabled={descarga === 'descargando'}
+            aria-busy={descarga === 'descargando'}
+            className="inline-flex items-center gap-2 px-4 py-2.5 border border-[#6e54ad] text-[#6e54ad] font-semibold rounded-[0.5rem] hover:bg-[#6e54ad]/10 focus:outline-none focus:ring-4 focus:ring-[#6e54ad]/30 transition-colors disabled:opacity-60"
+          >
+            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 3v12" />
+              <path d="m7 10 5 5 5-5" />
+              <path d="M5 21h14" />
+            </svg>
+            {descarga === 'descargando' ? 'Descargando…' : 'Descargar PDF'}
+          </button>
+        {comprobante.urlConsulta && (
+          <a
+            href={comprobante.urlConsulta}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#6e54ad] text-white font-semibold rounded-[0.5rem] hover:bg-[#5b468f] focus:outline-none focus:ring-4 focus:ring-[#6e54ad]/30 transition-colors"
+          >
+            Ver comprobante en DGI
+            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M15 3h6v6" />
+              <path d="M10 14 21 3" />
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+            </svg>
+            <span className="sr-only">(se abre en otra pestaña)</span>
+          </a>
+        )}
+        </div>
+        {descarga === 'error' && (
+          <p role="alert" className="mt-3 text-center text-sm font-semibold text-[#BA1A1A]">
+            No se pudo descargar el PDF. Probá de nuevo en unos minutos o usá «Ver comprobante en DGI».
+          </p>
+        )}
+      </>
+    );
+  }
+  if (agotado) {
+    return (
+      <div className="mt-4 flex justify-center">
+      <button
+        type="button"
+        onClick={onReintentar}
+        className="px-4 py-2 bg-[#6e54ad]/10 text-[#6e54ad] font-semibold rounded-[0.5rem] hover:bg-[#6e54ad] hover:text-white transition-colors"
+      >
+        Volver a consultar
+      </button>
+      </div>
+    );
+  }
+  return null;
 }

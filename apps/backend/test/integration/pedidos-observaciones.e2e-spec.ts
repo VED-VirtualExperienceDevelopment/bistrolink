@@ -5,6 +5,8 @@ import { PedidosService } from '../../src/pedidos/pedidos.service';
 import { TenantPrismaService } from '../../src/prisma/tenant-prisma.service';
 import { KdsGateway } from '../../src/pedidos/kds.gateway';
 import { CrearPedidoDto } from '../../src/pedidos/dto/crear-pedido.dto';
+import { ResumenVentasService } from '../../src/reportes/resumen-ventas.service';
+import { DescuentoStockService } from '../../src/stock/descuento-stock.service';
 
 // BL-204: pedido desde la mesa del QR, tal como lo deja MesaQrGuard en
 // request.mesaQr (el body ya no lleva mesaId).
@@ -35,6 +37,10 @@ describe('Pedidos Observaciones - Integración (BL-41)', () => {
       pedidoEstadoHistorial: { create: jest.fn() },
       mesa: { findUnique: jest.fn(), upsert: jest.fn() },
       itemCarta: { findMany: jest.fn() },
+      // HU-042 (BL-463): al confirmar el pago se consulta el límite de la
+      // cola del KDS. Sin límite (null) la cola está desactivada y el pedido
+      // queda en RECIBIDO, como antes.
+      restaurante: { findUnique: jest.fn().mockResolvedValue(null) },
     };
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -53,6 +59,27 @@ describe('Pedidos Observaciones - Integración (BL-41)', () => {
           useValue: {
             emitirNuevoPedido: jest.fn(),
             emitirActualizacionPedido: jest.fn(),
+            emitirReportesActualizados: jest.fn(),
+            // HU-042 (BL-464): aviso del estado de la cola.
+            avisarEstadoCola: jest.fn().mockResolvedValue(undefined),
+          },
+        },
+        // HU-012 (BL-219): al confirmar un pago se recalcula el resumen de
+        // ventas (se prueba en resumen-ventas.service.spec).
+        {
+          provide: ResumenVentasService,
+          useValue: { recalcularRecientes: jest.fn().mockResolvedValue({}) },
+        },
+        // HU-015 (BL-120): sin ítems con control de stock no hay nada que
+        // descontar (se prueba en descuento-stock.service.spec).
+        {
+          provide: DescuentoStockService,
+          useValue: {
+            descontarEnTx: jest
+              .fn()
+              .mockResolvedValue({ alertas: [], agotados: [] }),
+            verificarPedidoEnTx: jest.fn(),
+            avisar: jest.fn(),
           },
         },
       ],

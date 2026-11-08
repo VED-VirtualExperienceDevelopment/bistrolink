@@ -2,13 +2,28 @@
 
 ## Control de versiones
 
-| Versión | Fecha      | Modificación                                                                                           |
-| ------- | ---------- | ------------------------------------------------------------------------------------------------------ |
-| 1.0     | 27/10/2026 | Plantilla (BL-435).                                                                                    |
-| 1.1     | 28/10/2026 | TC-E-046 a 049: cobro en efectivo (BL-201), solicitud de efectivo (BL-442) y pedido del mozo (BL-209). |
-| 1.2     | 31/10/2026 | TC-E-007 y 008 cambian: la carta por URL muestra los agotados bloqueados, igual que el QR (BL-397).    |
-| 1.3     | 31/10/2026 | TC-E-050 a 055: Gestión de Carta (BL-392 / BL-402).                                                    |
-| 1.4     | 01/11/2026 | TC-E-056 a 058: medios de pago del comensal según la configuración del local (BL-452).                 |
+| Versión | Fecha      | Modificación                                                                                                                                         |
+| ------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1.0     | 27/10/2026 | Plantilla (BL-435).                                                                                                                                  |
+| 1.1     | 28/10/2026 | TC-E-046 a 049: cobro en efectivo (BL-201), solicitud de efectivo (BL-442) y pedido del mozo (BL-209).                                               |
+| 1.2     | 31/10/2026 | TC-E-007 y 008 cambian: la carta por URL muestra los agotados bloqueados, igual que el QR (BL-397).                                                  |
+| 1.3     | 31/10/2026 | TC-E-050 a 055: Gestión de Carta (BL-392 / BL-402).                                                                                                  |
+| 1.4     | 01/11/2026 | TC-E-056 a 058: medios de pago del comensal según la configuración del local (BL-452).                                                               |
+| 1.5     | 01/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-059 a 061: retomar el pago al recargar y aviso de efectivo en el KDS (BL-448).          |
+| 1.6     | 01/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-062: política de privacidad desde la carta y el pago (BL-206).                          |
+| 1.7     | 02/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-063 y 064: e-Factura con RUT y razón social desde la pantalla de pago (HU-009, BL-453). |
+| 1.8     | 02/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-063 cambia: sin aceptar el aviso no se avisa al mozo (BL-453, ajuste de staging).       |
+| 1.9     | 03/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-065: comprobantes del administrador y su estado ante la DGI (HU-009, BL-455).           |
+| 1.10    | 03/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-066 a 068: dashboard de reportes del administrador (HU-012, BL-108).                    |
+| 1.11    | 03/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-069 a 071: stock de la jornada y campana de alertas de stock (HU-015, BL-120).          |
+| 1.12    | 04/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-072: pendientes de emisión de comprobantes (HU-023, BL-96).                             |
+| 1.13    | 04/11/2026 | TC-E-073 y 074: alertas del mozo (campana, pantalla Alertas y recarga con alertas pendientes) (BL-441).                                              |
+| 1.14    | 06/11/2026 | TC-E-075 y 076: pantalla de Configuración accesible, responsive y con «Guardar cambios» al final (BL-473).                                           |
+| 1.15    | 06/11/2026 | TC-E-077 y 078: pantalla de Stock de la jornada accesible, responsive y con «Guardar cambios» al final (BL-474).                                     |
+| 1.16    | 07/11/2026 | TC-E-080: el mozo registra el cobro con el POS del local (HU-007b, BL-80).                                                                           |
+| 1.17    | 07/11/2026 | TC-E-081: el mozo cancela desde el KDS un pedido pagado en efectivo (HU-024, BL-104).                                                                |
+| 1.18    | 07/11/2026 | Se borran los bloques de TC-E-072, 080 y 081, ya cargados en Kiwi. TC-E-079: PDF del comprobante desde Comprobantes (HU-009, BL-454).                |
+| 1.19    | 07/11/2026 | TC-E-082: el mozo cobra con el POS del local al confirmar el pedido de una mesa (HU-007b, BL-485).                                                   |
 
 Plantilla para cargar en Kiwi la descripción de casos TC-E (Playwright)
 nuevos o que cambiaron (BL-435). La usa
@@ -53,257 +68,159 @@ Reglas:
 
 ## Casos para cargar
 
-## TC-E-046
+## TC-E-073
 
 ### Precondición
 
-Usuario de prueba MOZO (`TEST_MOZO_*`) del tenant A, con el efectivo habilitado en el establecimiento. Ítem disponible en la carta web (pedido para retirar).
+Administrador del establecimiento del seed logueado en el panel. El test crea una mesa propia y la borra al terminar.
 
 ### Pasos
 
-1. Como comensal, agregar un ítem desde la carta web y tocar «Continuar al pago», sin pagar con tarjeta.
-2. Como mozo, abrir «Cobros pendientes» y buscar el pedido por su código.
-3. Tocar «Cobrar en efectivo», ingresar el monto recibido y confirmar.
+1. Abrir «Pedidos activos» del panel de administración.
+2. Desde el QR de la mesa de prueba, presionar «Llamar al mozo».
+3. En el encabezado, abrir la campana y revisar la vista rápida con axe-core (WCAG 2.1 AA).
+4. Presionar Esc.
+5. Desde el menú, abrir «Alertas» y revisar la pantalla con axe-core (WCAG 2.1 AA).
+6. Aceptar la alerta de la mesa de prueba.
+
+### Resultado esperado
+
+1. Se ve el tablero y la campana del encabezado.
+2. El comensal ve «Avisamos al mozo». La campana muestra el contador y el tablero no muestra el aviso de la mesa: los llamados se atienden desde la campana y la pantalla «Alertas».
+3. Se abre la vista rápida con «Mesa N solicita atención» (N es el número de la mesa de prueba), sin errores graves ni críticos de accesibilidad.
+4. La vista rápida se cierra y el foco vuelve a la campana.
+5. Se abre la pantalla «Alertas», marcada como la página actual del menú, con la alerta de la mesa y los botones «Aceptar» y «Desestimar», sin errores graves ni críticos de accesibilidad.
+6. La alerta sale de la lista.
+
+## TC-E-074
+
+### Precondición
+
+Administrador del establecimiento del seed logueado en el panel. El test crea dos mesas propias y las borra al terminar.
+
+### Pasos
+
+1. Abrir «Alertas» desde el menú.
+2. Desde el QR de cada una de las dos mesas de prueba (A y B), presionar «Llamar al mozo».
+3. Recargar la página.
+4. Aceptar la alerta de la mesa A.
+5. Recargar la página otra vez.
+
+### Resultado esperado
+
+1. Se abre la pantalla «Alertas».
+2. Las dos mesas aparecen en la lista como «Mesa N solicita atención».
+3. Las dos alertas siguen en la lista, aunque nadie las atendió.
+4. La alerta de la mesa A sale de la lista.
+5. La alerta de la mesa B sigue en la lista y la de la mesa A no vuelve.
+
+## TC-E-075
+
+### Precondición
+
+Administrador del establecimiento del seed logueado en el panel. Ventana de escritorio (1440 × 900). El test no cambia la configuración.
+
+### Pasos
+
+1. Abrir «Configuración».
+2. Revisar la pantalla con axe-core (WCAG 2.1 AA).
+3. Mirar los botones del panel.
+4. Bajar hasta la sección «Privacidad».
+
+### Resultado esperado
+
+1. Se ve el formulario de configuración.
+2. No hay errores de accesibilidad graves ni críticos.
+3. «Guardar cambios» es el último botón y se ve en pantalla.
+4. «Guardar cambios» sigue siendo el último botón y sigue a la vista (barra fija abajo).
+
+## TC-E-076
+
+### Precondición
+
+Administrador del establecimiento del seed logueado en el panel. Ventana de celular (375 × 812). El test no cambia la configuración.
+
+### Pasos
+
+1. Abrir «Configuración».
+2. Revisar si la página o el panel tienen scroll horizontal.
+3. Bajar hasta «Anonimizar datos de facturación».
+
+### Resultado esperado
+
+1. Se ve el formulario en una sola columna.
+2. No hay scroll horizontal y «Guardar cambios» se ve en pantalla.
+3. Sigue sin haber scroll horizontal y «Guardar cambios» sigue a la vista, como último botón.
+
+## TC-E-077
+
+### Precondición
+
+Administrador del establecimiento del seed logueado en el panel. Ventana de escritorio (1440 × 900). El test no cambia el stock.
+
+### Pasos
+
+1. Abrir «Stock».
+2. Revisar la pantalla con axe-core (WCAG 2.1 AA).
+3. Mirar los botones del panel.
+4. Bajar hasta la última categoría.
+
+### Resultado esperado
+
+1. Se ven las tablas de stock por categoría.
+2. No hay errores de accesibilidad graves ni críticos.
+3. «Guardar cambios» es el último botón y se ve en pantalla.
+4. «Guardar cambios» sigue siendo el último botón y sigue a la vista (barra fija abajo).
+
+## TC-E-078
+
+### Precondición
+
+Administrador del establecimiento del seed logueado en el panel. Ventana de celular (375 × 812). El test no cambia el stock.
+
+### Pasos
+
+1. Abrir «Stock».
+2. Revisar si la página, el panel o las tablas tienen scroll horizontal.
+3. Bajar hasta la última categoría.
+
+### Resultado esperado
+
+1. Se ven las tablas de stock por categoría, una debajo de la otra.
+2. No hay scroll horizontal y «Guardar cambios» se ve en pantalla.
+3. Sigue sin haber scroll horizontal y «Guardar cambios» sigue a la vista, como último botón.
+
+## TC-E-079
+
+### Precondición
+
+Administrador del establecimiento del seed logueado en el panel. Al menos un comprobante emitido en la última semana (si no hay, el test se saltea).
+
+### Pasos
+
+1. Abrir «Comprobantes» y poner «Desde» una semana atrás.
+2. Tocar «PDF» en el primer comprobante.
+
+### Resultado esperado
+
+Se descarga un archivo «e-Ticket-<serie>-<número>.pdf» o «e-Factura-<serie>-<número>.pdf».
+
+## TC-E-082
+
+### Precondición
+
+Mozo del establecimiento del seed logueado. Mesa del seed abierta. Efectivo y POS del local habilitados en Configuración.
+
+### Pasos
+
+1. Abrir «Cargar pedido» de la mesa, agregar un ítem y tocar «Confirmar pedido».
+2. Tocar «Cobrar con el POS», elegir «Crédito» y cargar la autorización «e2e082».
+3. Tocar «Registrar cobro».
 4. Abrir el KDS.
 
 ### Resultado esperado
 
-1. El pedido aparece entre los pendientes de pago, con su código y su total.
-2. El diálogo muestra el vuelto antes de confirmar; al confirmar, aviso «Cobro registrado» y el pedido sale de la lista.
-3. El pedido aparece en el KDS (pasó a RECIBIDO).
-
-## TC-E-047
-
-### Precondición
-
-Mesa del seed abierta (QR del fixture), efectivo habilitado en el establecimiento y usuario de prueba MOZO (`TEST_MOZO_*`).
-
-### Pasos
-
-1. Como comensal, desde el QR de la mesa, agregar un ítem y tocar «Continuar al pago».
-2. Elegir «Efectivo», completar «¿Con cuánto vas a pagar?» con 10000 y tocar «Avisar al mozo».
-3. Como mozo, abrir «Cobros pendientes», buscar el pedido por su código, tocar «Cobrar en efectivo» y confirmar.
-
-### Resultado esperado
-
-1. Aparecen las opciones «Tarjeta de débito o crédito» y «Efectivo».
-2. La pantalla del comensal pasa a «Esperando al mozo».
-3. El pedido aparece marcado «Pidió pagar en efectivo» y el diálogo trae 10000.00 en «Monto recibido».
-4. Al confirmar, la pantalla del comensal pasa sola a «¡Tu pedido ya está en cocina!».
-
-## TC-E-048
-
-### Precondición
-
-Carta web del local (pedido para retirar, fuera del local).
-
-### Pasos
-
-1. Agregar un ítem y tocar «Continuar al pago».
-
-### Resultado esperado
-
-Se ve solo el formulario de tarjeta: no aparecen las opciones de pago ni «Efectivo».
-
-## TC-E-049
-
-### Precondición
-
-Usuario de prueba MOZO (`TEST_MOZO_*`) y la mesa del seed abierta (la abre el fixture de los QR). Efectivo habilitado en el establecimiento.
-
-### Pasos
-
-1. Como mozo, abrir la carga de pedido de la mesa (`/admin/mesas/pedido?mesa=…`), agregar una unidad de un ítem con una nota y tocar «Confirmar pedido».
-2. Tocar «Cobrar en efectivo», ingresar el monto recibido y confirmar.
-3. Abrir el KDS.
-
-### Resultado esperado
-
-1. El pedido se crea con canal `MOZO`.
-2. Aparece el aviso «Cobro registrado».
-3. El pedido aparece en el KDS.
-
-## TC-E-007
-
-### Precondición
-
-Mesa del seed con su QR (fixture) y, en la carta, al menos un ítem disponible y uno agotado («Agua con gas» del seed).
-
-### Pasos
-
-1. Pedir la carta por la API con el QR de la mesa y por la URL del restaurante.
-2. Abrir la carta por URL en el navegador.
-
-### Resultado esperado
-
-1. Las dos respuestas traen los mismos ítems.
-2. Se ven todos los ítems disponibles.
-3. Los agotados también se ven, con «No disponible» y bloqueados (`aria-disabled="true"`), como en la carta del QR (BL-397).
-
-## TC-E-008
-
-### Precondición
-
-Al menos un ítem disponible en la carta del restaurante.
-
-### Pasos
-
-1. Abrir la carta por URL.
-2. Tocar «Agregar» en el primer ítem disponible (los agotados se saltean: desde BL-397 la carta por URL también los muestra).
-
-### Resultado esperado
-
-El ítem queda en el carrito.
-
-## TC-E-050
-
-### Precondición
-
-Usuario de prueba ADMIN (`TEST_ADMIN_*`). El test crea por la API una categoría «E2E carta …» vacía y al terminar la elimina.
-
-### Pasos
-
-1. En `/admin/menu`, tocar «Agregar ítem» en la categoría de prueba.
-2. Completar «Nombre» con «Chivito E2E» y «Precio» con «590,50» (con coma) y tocar «Guardar».
-
-### Resultado esperado
-
-El diálogo se cierra y la tarjeta del ítem muestra el precio con centésimos (590,50).
-
-## TC-E-051
-
-### Precondición
-
-Usuario de prueba ADMIN (`TEST_ADMIN_*`) y una categoría de prueba con el ítem «Flan E2E», creada por la API.
-
-### Pasos
-
-1. Abrir el menú «⋯» del ítem y elegir «Archivar».
-2. Confirmar en el diálogo.
-3. Tocar «Deshacer» en el aviso.
-
-### Resultado esperado
-
-1. El diálogo «Archivar ítem» se abre con el foco en «Cancelar».
-2. El ítem sale de la vista y aparece el aviso «Ítem «Flan E2E» archivado».
-3. El ítem vuelve a la carta.
-
-## TC-E-052
-
-### Precondición
-
-Usuario de prueba ADMIN (`TEST_ADMIN_*`) y una categoría de prueba con el ítem «Pancho E2E».
-
-### Pasos
-
-1. Apagar el switch «Pancho E2E disponible».
-2. Volver a abrir la carta.
-
-### Resultado esperado
-
-1. La tarjeta muestra «Agotado».
-2. El ítem sigue agotado: el cambio quedó guardado.
-
-## TC-E-053
-
-### Precondición
-
-Usuario de prueba ADMIN (`TEST_ADMIN_*`) y una categoría de prueba con «Primero E2E» y «Segundo E2E», en ese orden. La categoría nueva queda última en la carta.
-
-### Pasos
-
-1. Abrir el menú «⋯» de «Segundo E2E» y elegir «Subir».
-2. En la manija «Mover la categoría …» de la categoría de prueba: Espacio, flecha arriba, Espacio.
-3. Volver a abrir la carta.
-
-### Resultado esperado
-
-1. «Segundo E2E» queda primero y el foco vuelve a su «⋯».
-2. La categoría de prueba sube un lugar.
-3. Los dos cambios siguen: quedaron guardados.
-
-## TC-E-054
-
-### Precondición
-
-Usuario de prueba MOZO (`TEST_MOZO_*`) y la carta del seed.
-
-### Pasos
-
-1. Abrir `/admin/menu` como mozo.
-
-### Resultado esperado
-
-1. Se ven los switches de disponibilidad (por ejemplo, «Milanesa a la napolitana disponible»).
-2. No aparecen «Nueva categoría», «Agregar ítem», los menús «⋯» ni las manijas para ordenar.
-3. El filtro «Estado» no ofrece «En categorías ocultas» ni «Archivados».
-
-## TC-E-055
-
-### Precondición
-
-Usuario de prueba ADMIN (`TEST_ADMIN_*`) y una categoría de prueba con dos ítems.
-
-### Pasos
-
-En celular (390 px), tablet (768 px) y PC (1280 px), revisar con axe-core:
-
-1. La carta.
-2. El menú «⋯» de un ítem, abierto.
-3. Los diálogos «Nueva categoría», «Nuevo ítem» y «Archivar ítem» (se cierran con «Cancelar», sin guardar).
-4. La carta con una búsqueda escrita (aviso «Para cambiar el orden, quitá los filtros.»).
-
-### Resultado esperado
-
-Ninguna violación critical ni serious de WCAG 2.1 AA.
-
-## TC-E-056
-
-### Precondición
-
-Usuario de prueba ADMIN (`TEST_ADMIN_*`) y la mesa del seed abierta. Corre en el proyecto `chromium-configuracion`.
-
-### Pasos
-
-1. Como admin, deshabilitar Mercado Pago y dejar el efectivo habilitado (`PATCH /admin/configuracion`).
-2. Como comensal, abrir la carta con el QR de la mesa, agregar un ítem y tocar «Continuar al pago».
-3. Al terminar, restaurar la configuración.
-
-### Resultado esperado
-
-1. Se muestra directo el pago en efectivo («¿Con cuánto vas a pagar?» y «Avisar al mozo»).
-2. No aparecen el formulario de tarjeta ni el selector de medios.
-
-## TC-E-057
-
-### Precondición
-
-Usuario de prueba ADMIN (`TEST_ADMIN_*`) y la mesa del seed abierta. Corre en el proyecto `chromium-configuracion`.
-
-### Pasos
-
-1. Como admin, deshabilitar el efectivo y dejar Mercado Pago habilitado.
-2. Como comensal, abrir la carta con el QR de la mesa, agregar un ítem y tocar «Continuar al pago».
-3. Al terminar, restaurar la configuración.
-
-### Resultado esperado
-
-1. Se muestra directo el formulario «Tarjeta de débito o crédito».
-2. No aparecen el selector de medios ni «Avisar al mozo».
-
-## TC-E-058
-
-### Precondición
-
-Usuario de prueba ADMIN (`TEST_ADMIN_*`) y la mesa del seed abierta. Corre en el proyecto `chromium-configuracion`.
-
-### Pasos
-
-1. Como admin, deshabilitar el efectivo y Mercado Pago.
-2. Como comensal, abrir la carta con el QR de la mesa, agregar un ítem y tocar «Continuar al pago».
-3. Al terminar, restaurar la configuración.
-
-### Resultado esperado
-
-1. Se ve el aviso «… Llamá al mozo para que te cobre.» con el botón «Llamar al mozo».
-2. No aparecen el formulario de tarjeta ni el de efectivo.
+1. El pedido queda cargado y se ofrecen «Cobrar en efectivo» y «Cobrar con el POS».
+2. Se abre el diálogo con el total del pedido. Sin errores graves de accesibilidad (axe).
+3. Se registra el cobro (crédito, autorización E2E082) y aparece «Cobro registrado: pedido …».
+4. El pedido está en el KDS.

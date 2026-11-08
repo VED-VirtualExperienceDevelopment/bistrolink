@@ -77,6 +77,22 @@ export const ETIQUETAS_ACCION: Record<string, string> = {
   CARTA_CATEGORIA_ELIMINADA: "Categoría eliminada",
   MESA_PEDIDOS_CANCELADOS: "Pedidos cancelados al cerrar la mesa",
   PAGO_EFECTIVO_REGISTRADO: "Cobro en efectivo",
+  // HU-007b (BL-80): cobro con el POS del local.
+  PAGO_POS_REGISTRADO: "Cobro con el POS del local",
+  // HU-015 (BL-120): stock de la jornada.
+  CARTA_ITEM_STOCK_AJUSTADO: "Stock de un ítem ajustado",
+  CARTA_ITEM_VENDIDO_SIN_STOCK: "Venta sin stock",
+  // HU-009 (BL-453): supresión de los datos de la e-Factura de un comensal.
+  PEDIDO_RECEPTOR_ANONIMIZADO: "Datos de facturación anonimizados",
+  // HU-024 (BL-104): cancelación de un pedido pagado, con la devolución.
+  PEDIDO_CANCELADO: "Pedido cancelado y pago devuelto",
+  // HU-023 (BL-96): reintento manual de la emisión de un CFE.
+  PAGO_CFE_REINTENTADO: "Reintento de emisión de comprobante",
+  // BL-475 (BL-285): solo en staging y local (E2E_CLEANUP_ENABLED).
+  PEDIDO_LIMPIEZA_PRUEBAS: "Pedidos de prueba cerrados (limpieza)",
+  MESA_LIMPIEZA_PRUEBAS: "Mesas y plano de prueba restablecidos (limpieza)",
+  CARTA_ITEM_LIMPIEZA_PRUEBAS:
+    "Carta y stock de prueba restablecidos (limpieza)",
 };
 
 export function etiquetaAccion(accion: string): string {
@@ -133,6 +149,13 @@ const NOMBRE_CAMPO: Record<string, string> = {
   monto: "Total",
   montoRecibido: "Recibido",
   vuelto: "Vuelto",
+  // HU-007b (BL-80): cobro con el POS del local.
+  medio: "Tarjeta",
+  autorizacion: "N.° de autorización",
+  // HU-024 (BL-104): cancelación de un pedido pagado.
+  motivo: "Motivo",
+  devolucion: "Devolución",
+  stockRepuesto: "Stock repuesto",
   // BL-396: categorías de la carta.
   nombre: "Nombre",
   descripcion: "Descripción",
@@ -141,15 +164,24 @@ const NOMBRE_CAMPO: Record<string, string> = {
   razonSocial: "Razón social",
   efectivoHabilitado: "Efectivo",
   mercadoPagoHabilitado: "Mercado Pago",
+  posHabilitado: "POS del local",
   plexoHabilitado: "Plexo",
   handyHabilitado: "Handy",
   propinasSugeridas: "Propinas sugeridas (%)",
   cfeProveedor: "Proveedor de CFE",
+  // HU-042 (BL-465): cola del KDS. Sin límite (—) = cola desactivada.
+  limitePedidosEnPreparacion: "Límite de pedidos en preparación",
+  umbralAlertaCola: "Alerta de alta demanda con",
+  minutosPreparacionEstimados: "Minutos de preparación estimados",
   // BL-412: datos del establecimiento que cambia la plataforma.
   rut: "RUT",
   plan: "Plan",
   restauranteNombre: "Nombre del restaurante",
   restauranteDireccion: "Dirección del restaurante",
+  // HU-015 (BL-120): stock de la jornada.
+  controlaStock: "Controla stock",
+  stockActual: "Unidades",
+  umbralAlerta: "Aviso con",
 };
 
 /** HU-020 (BL-72): valores de un campo que se muestran con otro texto. */
@@ -210,7 +242,13 @@ export function cambiosDelRegistro(
   const sinValor = camposSinValor(registro.detalle, new Set(campos)).map(
     (campo) => `${NOMBRE_CAMPO[campo] ?? campo}: modificado`,
   );
-  return [...conValor, ...sinValor];
+  // HU-015 (BL-120): unidades que se vendieron sin stock (ADR 0009).
+  const unidadesDeMas = registro.detalle?.unidadesDeMas;
+  const sinStock =
+    typeof unidadesDeMas === "number"
+      ? [`Unidades vendidas sin stock: ${unidadesDeMas}`]
+      : [];
+  return [...conValor, ...sinValor, ...sinStock];
 }
 
 /**
@@ -232,7 +270,11 @@ export function autorDelRegistro(
   registro: Pick<RegistroAuditoria, "usuario" | "actorKeycloakId">,
 ): string {
   if (registro.usuario) return registro.usuario.nombre;
-  if (registro.actorKeycloakId.startsWith("script:"))
+  // HU-015 (BL-120): «sistema:» es el descuento de stock al confirmar un pago.
+  if (
+    registro.actorKeycloakId.startsWith("script:") ||
+    registro.actorKeycloakId.startsWith("sistema:")
+  )
     return "Proceso automático";
   return "Plataforma o usuario eliminado";
 }

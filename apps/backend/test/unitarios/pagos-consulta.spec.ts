@@ -12,6 +12,7 @@ function pago(overrides: Record<string, unknown> = {}) {
     medioPago: 'MERCADOPAGO',
     monto: new Prisma.Decimal('590'),
     motivoRechazo: null,
+    createdAt: new Date('2026-11-01T15:00:00Z'),
     comprobantes: [],
     ...overrides,
   };
@@ -51,6 +52,7 @@ describe('PagosService.consultar (BL-311: estado del pago y comprobante para el 
         pago({
           comprobantes: [
             {
+              tipoCfe: '111',
               serie: 'A',
               numero: 1234,
               urlConsulta: 'https://www.efactura.dgi.gub.uy/consultaQR/x',
@@ -71,12 +73,14 @@ describe('PagosService.consultar (BL-311: estado del pago y comprobante para el 
         motivoRechazo: null,
       },
       comprobante: {
+        tipoCfe: '111',
         serie: 'A',
         numero: 1234,
         urlConsulta: 'https://www.efactura.dgi.gub.uy/consultaQR/x',
       },
       efectivo: { disponible: false, solicitadoEn: null, pagaCon: null },
       tarjeta: { disponible: true },
+      rebajaIva: null,
     });
   });
 
@@ -122,6 +126,7 @@ describe('PagosService.consultar (BL-311: estado del pago y comprobante para el 
       comprobante: null,
       efectivo: { disponible: false, solicitadoEn: null, pagaCon: null },
       tarjeta: { disponible: true },
+      rebajaIva: null,
     });
   });
 
@@ -164,7 +169,9 @@ describe('PagosService.consultar (BL-311: estado del pago y comprobante para el 
       estado: 'RECIBIDO',
       pagos: [
         pago({
-          comprobantes: [{ serie: 'A', numero: 1, urlConsulta: null }],
+          comprobantes: [
+            { tipoCfe: '101', serie: 'A', numero: 1, urlConsulta: null },
+          ],
         }),
       ],
     });
@@ -178,15 +185,18 @@ describe('PagosService.consultar (BL-311: estado del pago y comprobante para el 
       'monto',
       'motivoRechazo',
     ]);
+    // HU-009 (BL-453): tipoCfe dice si es e-Ticket o e-Factura.
     expect(Object.keys(r.comprobante!).sort()).toEqual([
       'numero',
       'serie',
+      'tipoCfe',
       'urlConsulta',
     ]);
     // La consulta ni siquiera pide esos campos a la base.
     const { select } = findUnique.mock.calls[0][0];
     expect(select.pagos.select).not.toHaveProperty('pasarelaReferencia');
     expect(select.pagos.select.comprobantes.select).toEqual({
+      tipoCfe: true,
       serie: true,
       numero: true,
       urlConsulta: true,
@@ -322,6 +332,49 @@ describe('PagosService.consultar (BL-311: estado del pago y comprobante para el 
 
       expect(r.tarjeta.disponible).toBe(true);
       expect(r.efectivo.disponible).toBe(false);
+    });
+  });
+
+  describe('HU-037 (BL-207): rebaja de IVA de la Ley 17.934', () => {
+    const pedidoCon = (
+      canal: string,
+      pagoDelPedido: Record<string, unknown>,
+    ) => ({
+      id: PEDIDO_ID,
+      estado: 'RECIBIDO',
+      canal,
+      pagos: [pago({ monto: new Prisma.Decimal('1220'), ...pagoDelPedido })],
+    });
+
+    it.each(['QR', 'MOZO'])(
+      'pago con tarjeta aprobado de un consumo en el local (%s): informa total, reducción de 9 puntos, neto y leyenda',
+      async (canal) => {
+        findUnique.mockResolvedValue(pedidoCon(canal, {}));
+
+        const estado = await service.consultar(TENANT_ID, PEDIDO_ID);
+
+        expect(estado.rebajaIva).toEqual({
+          ley: '17.934',
+          puntos: 9,
+          totalSinReduccion: '1220.00',
+          reduccion: '90.00',
+          neto: '1130.00',
+          leyenda: 'Reducción IVA Ley N° 17.934',
+        });
+      },
+    );
+
+    it.each([
+      ['efectivo', 'QR', { medioPago: 'EFECTIVO' }],
+      ['para retirar (Ley 19.210, no 17.934)', 'WEB', {}],
+      ['pago rechazado', 'QR', { estado: 'RECHAZADO' }],
+      ['pago pendiente', 'QR', { estado: 'PENDIENTE' }],
+    ])('%s: sin rebaja', async (_caso, canal, pagoDelPedido) => {
+      findUnique.mockResolvedValue(pedidoCon(canal, pagoDelPedido));
+
+      const estado = await service.consultar(TENANT_ID, PEDIDO_ID);
+
+      expect(estado.rebajaIva).toBeNull();
     });
   });
 });

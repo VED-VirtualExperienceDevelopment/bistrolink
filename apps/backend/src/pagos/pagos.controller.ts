@@ -20,6 +20,7 @@ import { PagosService } from './pagos.service';
 import { CrearPagoDto } from './dto/crear-pago.dto';
 import { SolicitudEfectivoService } from './efectivo/solicitud-efectivo.service';
 import { SolicitarEfectivoDto } from './efectivo/solicitar-efectivo.dto';
+import { CfeService } from '../cfe/cfe.service';
 import { ApiTags, ApiSecurity } from '@nestjs/swagger';
 import {
   SEGURIDAD_KEYCLOAK,
@@ -38,6 +39,7 @@ export class PagosController {
   constructor(
     private readonly pagosService: PagosService,
     private readonly solicitudEfectivo: SolicitudEfectivoService,
+    private readonly cfe: CfeService,
   ) {}
 
   // BL-311 (RD.05): solo quien hizo el pedido lo puede pagar (mesa del QR o
@@ -70,6 +72,18 @@ export class PagosController {
     @Param('pedidoId', ParseUUIDPipe) pedidoId: string,
   ) {
     return this.pagosService.consultar(req.user.tenantId, pedidoId);
+  }
+
+  // HU-009 (BL-454): PDF A4 del comprobante del pedido, en base64. Mismo
+  // control de acceso que el pago (RD.05). No se guarda copia: se pide a
+  // Surtec, que lo conserva 5 años.
+  @Get('comprobante/pdf')
+  @UseGuards(MesaQrGuard, PedidoAccesoGuard)
+  pdfDelComprobante(
+    @Req() req: { user: AuthenticatedUser },
+    @Param('pedidoId', ParseUUIDPipe) pedidoId: string,
+  ) {
+    return this.cfe.pdfDelPedido(req.user.tenantId, pedidoId);
   }
 
   // HU-031b (BL-442): el comensal de una mesa pide pagar en efectivo y se

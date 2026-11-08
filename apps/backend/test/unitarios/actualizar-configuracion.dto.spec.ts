@@ -53,6 +53,12 @@ describe('ActualizarConfiguracionDto (HU-020, BL-72)', () => {
     },
   );
 
+  it('HU-007b (BL-80): el POS del local se puede habilitar y deshabilitar', async () => {
+    expect(await errores({ posHabilitado: true })).toEqual([]);
+    expect(await errores({ posHabilitado: false })).toEqual([]);
+    expect(await errores({ posHabilitado: 'si' })).toEqual(['posHabilitado']);
+  });
+
   it('los medios de pago son verdadero o falso', async () => {
     expect(await errores({ efectivoHabilitado: 'no' })).toEqual([
       'efectivoHabilitado',
@@ -95,5 +101,65 @@ describe('ActualizarConfiguracionDto (HU-020, BL-72)', () => {
         'cfeProveedor',
       ]);
     });
+  });
+
+  describe('HU-036 (BL-206): correo de privacidad', () => {
+    it('acepta un correo válido y lo guarda sin espacios y en minúsculas', async () => {
+      const dto = plainToInstance(ActualizarConfiguracionDto, {
+        emailPrivacidad: '  Privacidad@Uno.com.UY ',
+      });
+      expect(await validate(dto)).toEqual([]);
+      expect(dto.emailPrivacidad).toBe('privacidad@uno.com.uy');
+    });
+
+    it.each([[''], ['   '], [null]])(
+      'vacío o null (%p) lo quita',
+      async (valor) => {
+        const dto = plainToInstance(ActualizarConfiguracionDto, {
+          emailPrivacidad: valor,
+        });
+        expect(await validate(dto)).toEqual([]);
+        expect(dto.emailPrivacidad).toBeNull();
+      },
+    );
+
+    it.each([['no-es-un-correo'], ['a@b'], [123]])(
+      'rechaza %p',
+      async (valor) => {
+        expect(await errores({ emailPrivacidad: valor })).toEqual([
+          'emailPrivacidad',
+        ]);
+      },
+    );
+  });
+  describe('HU-042 (BL-465): cola del KDS', () => {
+    it('[TC-U-399] acepta el límite, el umbral y los minutos dentro de rango, y null para desactivar la cola', async () => {
+      expect(
+        await errores({
+          limitePedidosEnPreparacion: 5,
+          umbralAlertaCola: 10,
+          minutosPreparacionEstimados: 15,
+        }),
+      ).toEqual([]);
+      expect(await errores({ limitePedidosEnPreparacion: null })).toEqual([]);
+    });
+
+    it.each([
+      ['limitePedidosEnPreparacion', 0],
+      ['limitePedidosEnPreparacion', 51],
+      ['limitePedidosEnPreparacion', 2.5],
+      ['limitePedidosEnPreparacion', '5'],
+      ['umbralAlertaCola', 0],
+      ['umbralAlertaCola', 201],
+      ['umbralAlertaCola', null],
+      ['minutosPreparacionEstimados', 0],
+      ['minutosPreparacionEstimados', 181],
+      ['minutosPreparacionEstimados', 12.5],
+    ])(
+      '[TC-U-400] rechaza %s = %p (fuera de rango o no entero)',
+      async (campo, valor) => {
+        expect(await errores({ [campo]: valor })).toEqual([campo]);
+      },
+    );
   });
 });

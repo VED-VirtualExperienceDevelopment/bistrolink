@@ -1,9 +1,17 @@
 import type { Pedido } from '@/types/pedido';
+import { etiquetaEstadoConCola } from './cola-kds.utils';
+import { sePuedeCancelar } from './cancelacion.utils';
 
 interface OrderTicketProps {
   pedido: Pedido;
   puedeOperarTransiciones: boolean;
   onTransicion: (pedidoId: string, nuevoEstado: Pedido['estado']) => void;
+  /** HU-042 (BL-466): cola automática activa en el local. */
+  colaActiva?: boolean;
+  /** HU-042 (BL-466): lugar en la cola (1 = el próximo), si está en espera. */
+  posicionEnCola?: number | null;
+  /** HU-024 (BL-104): abre la cancelación del pedido (mozo y admin). */
+  onCancelar?: (pedido: Pedido) => void;
 }
 
 // Etiqueta legible para mostrar en el badge — separada del valor real del
@@ -32,9 +40,25 @@ function formatHora(iso: string) {
   return new Date(iso).toLocaleTimeString('es-UY', { hour: '2-digit', minute: '2-digit' });
 }
 
-export function OrderTicket({ pedido, puedeOperarTransiciones, onTransicion }: OrderTicketProps) {
+export function OrderTicket({
+  pedido,
+  puedeOperarTransiciones,
+  onTransicion,
+  colaActiva = false,
+  posicionEnCola = null,
+  onCancelar,
+}: Readonly<OrderTicketProps>) {
   const urgencia = getUrgencyColor(pedido.createdAt);
   const lineas = pedido.lineas ?? [];
+  const etiquetaEstado = etiquetaEstadoConCola(
+    pedido.estado,
+    ESTADO_LABEL[pedido.estado],
+    colaActiva,
+  );
+  // HU-042 (BL-466): con la cola activa, el pedido en espera pasa a
+  // preparación solo cuando se libera un lugar. El pase manual con la cocina
+  // llena el backend lo rechaza, así que el botón no se muestra.
+  const esperaLugar = pedido.estado === 'RECIBIDO' && colaActiva;
 
   return (
     <article
@@ -51,8 +75,16 @@ export function OrderTicket({ pedido, puedeOperarTransiciones, onTransicion }: O
         <div className="text-right">
           <div className="text-headline-md font-bold">{formatHora(pedido.createdAt)}</div>
           <div className="mt-1 rounded bg-white/20 px-2 py-0.5 text-label-md text-white">
-            {ESTADO_LABEL[pedido.estado]}
+            {etiquetaEstado}
           </div>
+          {posicionEnCola !== null && (
+            <div
+              data-testid="posicion-cola"
+              className="mt-1 text-label-md font-semibold"
+            >
+              N.º {posicionEnCola} en la cola
+            </div>
+          )}
         </div>
       </div>
 
@@ -84,7 +116,12 @@ export function OrderTicket({ pedido, puedeOperarTransiciones, onTransicion }: O
           botones no se renderizan si el rol autenticado es solo Cocina.
           El backend igual rechaza el evento si el rol no corresponde;
           esto es defensa en profundidad de la UI, no la única validación). */}
-      {puedeOperarTransiciones && (
+      {puedeOperarTransiciones && esperaLugar && (
+        <p className="shrink-0 border-t border-outline-variant p-3 text-center text-body-sm text-on-surface-variant">
+          Pasa a preparación cuando se libere un lugar.
+        </p>
+      )}
+      {puedeOperarTransiciones && !esperaLugar && (
         <div className="shrink-0 border-t border-outline-variant p-3">
           {pedido.estado === 'RECIBIDO' && (
             <button
@@ -113,6 +150,19 @@ export function OrderTicket({ pedido, puedeOperarTransiciones, onTransicion }: O
               Marcar como entregado
             </button>
           )}
+        </div>
+      )}
+      {/* HU-024 (BL-104): cancelar un pedido recibido o en preparación. */}
+      {puedeOperarTransiciones && onCancelar && sePuedeCancelar(pedido.estado) && (
+        <div className="shrink-0 px-3 pb-3">
+          <button
+            type="button"
+            onClick={() => onCancelar(pedido)}
+            className="min-h-12 w-full rounded-lg text-label-lg text-error hover:bg-error-container/40"
+          >
+            Cancelar pedido{' '}
+            <span className="sr-only">de la mesa {pedido.mesaNumero}</span>
+          </button>
         </div>
       )}
     </article>

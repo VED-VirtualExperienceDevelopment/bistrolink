@@ -7,6 +7,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { TenantPrismaService } from '../../prisma/tenant-prisma.service';
 import { PedidosService } from '../../pedidos/pedidos.service';
+import { receptorParaGuardar } from '../../cfe/receptor-fiscal';
 import { SolicitarEfectivoDto } from './solicitar-efectivo.dto';
 
 /**
@@ -118,6 +119,8 @@ export class SolicitudEfectivoService {
           data: {
             efectivoSolicitadoEn: solicitadoEn,
             efectivoPagaCon: pagaCon,
+            // HU-009 (BL-453): e-Factura; el CFE se emite al cobrar.
+            ...receptorParaGuardar(dto.receptorFiscal, ahora),
           },
         });
 

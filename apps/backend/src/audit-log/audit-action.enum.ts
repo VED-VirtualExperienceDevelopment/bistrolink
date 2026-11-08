@@ -35,11 +35,20 @@ export enum AuditAction {
   CARTA_ITEM_ARCHIVADO = 'CARTA_ITEM_ARCHIVADO',
   CARTA_ITEM_RESTAURADO = 'CARTA_ITEM_RESTAURADO',
   CARTA_ITEM_ELIMINADO = 'CARTA_ITEM_ELIMINADO', // solo ítems sin pedidos
+  CARTA_ITEM_STOCK_AJUSTADO = 'CARTA_ITEM_STOCK_AJUSTADO', // BL-120 (HU-015: control de stock, unidades, umbral y disponibilidad, con antes y después)
+  CARTA_ITEM_VENDIDO_SIN_STOCK = 'CARTA_ITEM_VENDIDO_SIN_STOCK', // BL-120 (ADR 0009: dos pagos casi simultáneos se llevaron las últimas unidades; con el pedido y cuántas de más)
+  CARTA_ITEM_LIMPIEZA_PRUEBAS = 'CARTA_ITEM_LIMPIEZA_PRUEBAS', // BL-480 (BL-285: limpieza de datos de prueba; ítems y categorías «E2E» borrados o archivados y carta del seed restablecida)
   CARTA_CATEGORIA_CREADA = 'CARTA_CATEGORIA_CREADA',
   CARTA_CATEGORIA_MODIFICADA = 'CARTA_CATEGORIA_MODIFICADA', // nombre, descripción o visibilidad, con antes y después
   CARTA_CATEGORIA_ARCHIVADA = 'CARTA_CATEGORIA_ARCHIVADA',
   CARTA_CATEGORIA_RESTAURADA = 'CARTA_CATEGORIA_RESTAURADA',
   CARTA_CATEGORIA_ELIMINADA = 'CARTA_CATEGORIA_ELIMINADA', // solo categorías sin ítems
   MESA_PEDIDOS_CANCELADOS = 'MESA_PEDIDOS_CANCELADOS', // BL-205 (al cerrar la mesa se cancelan los pedidos sin pagar, HU-017)
+  MESA_LIMPIEZA_PRUEBAS = 'MESA_LIMPIEZA_PRUEBAS', // BL-479 (BL-285: limpieza de datos de prueba; mesas reabiertas, liberadas y eliminadas y zonas «Zona E2E» quitadas)
   PAGO_EFECTIVO_REGISTRADO = 'PAGO_EFECTIVO_REGISTRADO', // BL-201 (HU-031: cobro en efectivo, con monto recibido y vuelto)
+  PAGO_POS_REGISTRADO = 'PAGO_POS_REGISTRADO', // BL-80 (HU-007b: cobro con el POS del local, con total, tipo de tarjeta y n.° de autorización; nunca datos de la tarjeta)
+  PEDIDO_CANCELADO = 'PEDIDO_CANCELADO', // BL-104 (HU-024: pedido pagado cancelado por el personal, con motivo, monto devuelto y medio; reembolso automático o devolución manual)
+  PEDIDO_RECEPTOR_ANONIMIZADO = 'PEDIDO_RECEPTOR_ANONIMIZADO', // BL-453 (HU-009: RUT y razón social de la e-Factura anonimizados; con la cantidad de pedidos, nunca el RUT)
+  PAGO_CFE_REINTENTADO = 'PAGO_CFE_REINTENTADO', // BL-96 (HU-023: el administrador reintentó la emisión del CFE de un pago, con el resultado)
+  PEDIDO_LIMPIEZA_PRUEBAS = 'PEDIDO_LIMPIEZA_PRUEBAS', // BL-475 (BL-285: limpieza de datos de prueba, solo con E2E_CLEANUP_ENABLED; con cuántos pedidos se cancelaron y entregaron y sus ids)
 }

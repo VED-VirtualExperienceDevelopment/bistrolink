@@ -4,8 +4,21 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { LlamarMozoButton } from '@/components/LlamarMozoButton';
 import { etiquetaMesa, type OrigenMenu } from '@/components/menu-digital.utils';
+import { rutaPrivacidad } from '@/components/privacidad/privacidad.utils';
 import { FormularioTarjeta, IconoCandado, type DatosTarjeta } from './FormularioTarjeta';
 import { EsperandoMozo, FormularioEfectivo, SelectorMetodoPago } from './PagoEfectivo';
+import {
+  FacturaConRut,
+  ID_CONSENTIMIENTO_FACTURA,
+  ID_RAZON_SOCIAL_FACTURA,
+  ID_RUT_FACTURA,
+} from './FacturaConRut';
+import {
+  erroresFactura,
+  FACTURA_VACIA,
+  receptorParaEnviar,
+  type FormularioFactura,
+} from './factura.utils';
 import {
   codigoPedido,
   formatearPrecio,
@@ -17,6 +30,7 @@ import {
   mensajeSinMedios,
   metodoSegunMedios,
   opcionesDePago,
+  pantallaAlAbrir,
   resultadoDeError,
   resultadoDeEstado,
   rutaPagos,
@@ -110,8 +124,28 @@ export function PagoPedido({
   const [metodo, setMetodo] = useState<MetodoPago>('tarjeta');
   const [avisandoMozo, setAvisandoMozo] = useState(false);
   const [errorEfectivo, setErrorEfectivo] = useState<string | null>(null);
+  // HU-009 (BL-453): e-Factura con RUT y razón social.
+  const [factura, setFactura] = useState<FormularioFactura>(FACTURA_VACIA);
+  const [erroresFacturaVisibles, setErroresFacturaVisibles] = useState(false);
 
   const headers = headersAccesoPedido(origen, tokenAcceso);
+
+  /**
+   * HU-009 (BL-453): antes de pagar o de avisar al mozo. Si cargó datos de
+   * la e-Factura sin aceptar el aviso, o con el aviso aceptado faltan datos,
+   * se muestran los errores, el foco va al primero y no se paga.
+   */
+  function facturaLista(): boolean {
+    const errores = erroresFactura(factura);
+    let campo: string | null = null;
+    if (errores.consentimiento) campo = ID_CONSENTIMIENTO_FACTURA;
+    else if (errores.rut) campo = ID_RUT_FACTURA;
+    else if (errores.razonSocial) campo = ID_RAZON_SOCIAL_FACTURA;
+    if (!campo) return true;
+    setErroresFacturaVisibles(true);
+    document.getElementById(campo)?.focus();
+    return false;
+  }
   const cantidadItems = lineas.reduce((acc, l) => acc + l.cantidad, 0);
 
   const aplicarResultado = useCallback(
@@ -146,6 +180,7 @@ export function PagoPedido({
           idempotencyKey: crypto.randomUUID(),
           medioPago: 'MERCADOPAGO',
           datosPasarela: datos,
+          receptorFiscal: receptorParaEnviar(factura),
         }),
       });
       aplicarResultado(resultadoDeEstado(pago.estado));
@@ -202,9 +237,14 @@ export function PagoPedido({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [verificando, pedidoId, accessToken, aplicarResultado]);
 
-  // Al abrir la pantalla: qué medios ofrece el local (BL-452) y, en un
-  // pedido de mesa, si el comensal ya había avisado que paga en efectivo
-  // (recargó la página): sigue esperando al mozo (HU-031b, BL-442).
+  // Al abrir la pantalla (también al retomar después de recargar, BL-448)
+  // se consulta el estado real del pedido:
+  // - BL-452: qué medios ofrece el local.
+  // - HU-031b (BL-442): en un pedido de mesa, si el comensal ya había
+  //   avisado que paga en efectivo, sigue esperando al mozo.
+  // - BL-448: si ya hay un pago con tarjeta en curso, se espera su resultado
+  //   en lugar de ofrecer pagar de nuevo (evita un doble cobro).
+  const esMesa = origen.tipo === 'mesa';
   useEffect(() => {
     let cancelado = false;
     apiFetch<EstadoPagoDelPedido>(rutaPagos(pedidoId), accessToken, { headers })
@@ -213,16 +253,19 @@ export function PagoPedido({
         const disponibles = mediosDisponibles(estado);
         setMedios(disponibles);
         setMetodo((actual) => metodoSegunMedios(disponibles, actual));
-        if (
-          estado.efectivo?.solicitadoEn &&
-          estado.estadoPedido === 'PENDIENTE_PAGO' &&
-          estado.pago?.estado !== 'PENDIENTE'
-        ) {
+        const pantallaInicial = pantallaAlAbrir(estado, esMesa);
+        if (pantallaInicial === 'efectivo') {
           setMetodo('efectivo');
           setPantalla({
             tipo: 'esperandoEfectivo',
-            pagaCon: estado.efectivo.pagaCon,
+            pagaCon: estado.efectivo?.pagaCon ?? null,
             aviso: null,
+            agotado: false,
+          });
+        } else if (pantallaInicial === 'verificando') {
+          setPantalla({
+            tipo: 'verificando',
+            mensaje: 'Estamos confirmando tu pago con tarjeta.',
             agotado: false,
           });
         }
@@ -237,9 +280,14 @@ export function PagoPedido({
     };
     // headers se arma en cada render con los mismos valores: no es dependencia.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pedidoId, accessToken]);
+  }, [esMesa, pedidoId, accessToken]);
 
-  async function avisarAlMozo(pagaCon: string | null) {
+  /**
+   * `conFactura`: el primer aviso manda la e-Factura (o null si no la pidió).
+   * «Avisar de nuevo» no la manda: después de recargar, el formulario está
+   * vacío y borraría lo que ya se guardó.
+   */
+  async function avisarAlMozo(pagaCon: string | null, conFactura = true) {
     setAvisandoMozo(true);
     setErrorEfectivo(null);
     try {
@@ -249,7 +297,10 @@ export function PagoPedido({
         {
           method: 'POST',
           headers,
-          body: JSON.stringify(pagaCon ? { pagaCon } : {}),
+          body: JSON.stringify({
+            ...(pagaCon ? { pagaCon } : {}),
+            ...(conFactura ? { receptorFiscal: receptorParaEnviar(factura) } : {}),
+          }),
         },
       );
       setPantalla({
@@ -370,6 +421,21 @@ export function PagoPedido({
             )}
           </section>
 
+          {/* HU-009 (BL-453): antes de elegir cómo pagar; no mientras se
+              confirma un pago ni mientras espera al mozo. */}
+          {pideComprobante(pantalla, medios) && (
+            <FacturaConRut
+              valor={factura}
+              onCambiar={(nuevo) => {
+                setFactura(nuevo);
+                if (!nuevo.quiere) setErroresFacturaVisibles(false);
+              }}
+              mostrarErrores={erroresFacturaVisibles}
+              rutaPrivacidad={rutaPrivacidad(origen)}
+              deshabilitado={pantalla.tipo === 'procesando' || avisandoMozo}
+            />
+          )}
+
           <MetodosDePago
             pantalla={pantalla}
             opciones={medios && opcionesDePago(medios)}
@@ -414,7 +480,16 @@ export function PagoPedido({
                       : undefined
                   }
                   onPagar={pagar}
+                  puedePagar={facturaLista}
                 />
+                {/* HU-036 (BL-206): aviso antes de pedir correo y documento. */}
+                <p className="mt-4 text-xs text-[#5a575e]">
+                  Tu correo y tu documento se envían a Mercado Pago para procesar el pago
+                  y enviarte el comprobante; BistroLink no los guarda.{' '}
+                  <a href={rutaPrivacidad(origen)} className="underline hover:text-[#6e54ad]">
+                    Política de privacidad
+                  </a>
+                </p>
               </section>
             }
             efectivo={
@@ -422,7 +497,8 @@ export function PagoPedido({
                 total={total}
                 enviando={avisandoMozo}
                 error={errorEfectivo}
-                onAvisar={avisarAlMozo}
+                onAvisar={(pagaCon) => void avisarAlMozo(pagaCon)}
+                puedeAvisar={facturaLista}
               />
             }
             verificando={
@@ -442,7 +518,7 @@ export function PagoPedido({
                   aviso={pantalla.aviso}
                   agotado={pantalla.agotado}
                   enviando={avisandoMozo}
-                  onAvisarDeNuevo={() => void avisarAlMozo(pantalla.pagaCon)}
+                  onAvisarDeNuevo={() => void avisarAlMozo(pantalla.pagaCon, false)}
                   onConsultar={() => setPantalla({ ...pantalla, agotado: false })}
                   onPagarConTarjeta={
                     medios?.tarjeta === false
@@ -523,6 +599,21 @@ function MetodosDePago({
       {metodo === 'tarjeta' ? tarjeta : efectivo}
     </>
   );
+}
+
+/**
+ * HU-009 (BL-453): la e-Factura se pide junto con los medios de pago (mismo
+ * criterio que MetodosDePago): no mientras se confirma un pago ni mientras
+ * espera al mozo, ni si el local no tiene medios de pago.
+ */
+function pideComprobante(
+  pantalla: Pantalla,
+  medios: MediosDisponibles | null,
+): boolean {
+  if (pantalla.tipo === 'verificando' || pantalla.tipo === 'esperandoEfectivo') {
+    return false;
+  }
+  return medios !== null && opcionesDePago(medios).tipo !== 'ninguno';
 }
 
 const CLASE_SECCION =

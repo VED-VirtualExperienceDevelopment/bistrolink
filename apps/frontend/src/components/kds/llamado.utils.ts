@@ -38,3 +38,30 @@ export function agregarLlamado(
 ): LlamadoMozo[] {
   return [...llamados.filter((l) => l.mesaId !== nuevo.mesaId), nuevo];
 }
+
+/**
+ * BL-448 / BL-441: al conectarse (o reconectarse) el KDS recibe todas las
+ * alertas que siguen pendientes (`llamados:snapshot`: llamados de mesa y
+ * avisos de efectivo). El servidor es quien sabe cuáles siguen sin atender,
+ * así que el snapshot reemplaza por completo lo que había en pantalla: una
+ * alerta que se atendió o se cerró mientras no había conexión no tiene que
+ * quedar a la vista. Una alerta por mesa (queda la última, como en
+ * agregarLlamado).
+ */
+export function llamadosDelSnapshot(snapshot: LlamadoMozo[]): LlamadoMozo[] {
+  return snapshot.reduce(
+    (acumulado, llamado) => agregarLlamado(acumulado, llamado),
+    [] as LlamadoMozo[],
+  );
+}
+
+/**
+ * BL-448: el pedido que tenía el aviso de efectivo ya se cobró (llega a
+ * cocina como `pedido:nuevo`): se saca su banner.
+ */
+export function quitarLlamadoDePedido(
+  llamados: LlamadoMozo[],
+  pedidoId: string,
+): LlamadoMozo[] {
+  return llamados.filter((l) => l.pedidoId !== pedidoId);
+}

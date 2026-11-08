@@ -4,13 +4,16 @@ import {
   ArrayUnique,
   IsArray,
   IsBoolean,
+  IsEmail,
   IsIn,
   IsInt,
   IsOptional,
   IsString,
   Length,
   Max,
+  MaxLength,
   Min,
+  ValidateIf,
 } from 'class-validator';
 import { CfeProveedor } from '@prisma/client';
 import { limpiarEspacios } from '../../usuarios/dto/create-usuario.dto';
@@ -38,7 +41,12 @@ export const PROVEEDORES_CFE_DISPONIBLES: readonly CfeProveedor[] = [
  * alcanza con sumarlo acá; la pantalla toma la lista de GET
  * /admin/configuracion.
  */
-export const MEDIOS_PAGO_DISPONIBLES = ['EFECTIVO', 'MERCADOPAGO'] as const;
+export const MEDIOS_PAGO_DISPONIBLES = [
+  'EFECTIVO',
+  'MERCADOPAGO',
+  // HU-007b (BL-80): cobro con el POS del local, que registra el mozo.
+  'POS',
+] as const;
 export type MedioPagoConfigurable =
   (typeof MEDIOS_PAGO_DISPONIBLES)[number] | 'PLEXO' | 'HANDY';
 
@@ -50,6 +58,28 @@ function valoresPermitidos(medio: MedioPagoConfigurable): boolean[] {
     ? [true, false]
     : [false];
 }
+
+/**
+ * HU-042 (BL-465): rangos de la cola del KDS. Los mismos que los CHECK de la
+ * migración 20261105120000_kds_cola_pedidos; pensados para locales chicos y
+ * medianos (se amplían si hace falta).
+ */
+export const LIMITE_PREPARACION_MINIMO = 1;
+export const LIMITE_PREPARACION_MAXIMO = 50;
+export const UMBRAL_ALERTA_COLA_MINIMO = 1;
+export const UMBRAL_ALERTA_COLA_MAXIMO = 200;
+export const MINUTOS_PREPARACION_MINIMO = 1;
+export const MINUTOS_PREPARACION_MAXIMO = 180;
+
+/** HU-036 (BL-206): largo máximo de un correo (RFC 5321) y de la columna. */
+export const LARGO_MAXIMO_EMAIL = 254;
+
+/** Sin espacios y en minúsculas; vacío = quitarlo (null). */
+const normalizarEmail = ({ value }: { value: unknown }) => {
+  if (typeof value !== 'string') return value;
+  const limpio = value.trim().toLowerCase();
+  return limpio === '' ? null : limpio;
+};
 
 /** Ordena de menor a mayor (si es una lista de números), para guardar siempre igual. */
 const ordenarPropinas = ({ value }: { value: unknown }) =>
@@ -83,6 +113,11 @@ export class ActualizarConfiguracionDto {
   @IsOptional()
   @IsBoolean({ message: 'mercadoPagoHabilitado debe ser verdadero o falso' })
   mercadoPagoHabilitado?: boolean;
+
+  // HU-007b (BL-80): cobros con el POS del local.
+  @IsOptional()
+  @IsBoolean({ message: 'posHabilitado debe ser verdadero o falso' })
+  posHabilitado?: boolean;
 
   // Plexo y Handy, fuera del MVP (BL-452): solo se acepta false hasta que
   // estén disponibles.
@@ -128,4 +163,58 @@ export class ActualizarConfiguracionDto {
     message: `Proveedor de CFE no disponible. Hoy se puede elegir: ${PROVEEDORES_CFE_DISPONIBLES.join(', ')}`,
   })
   cfeProveedor?: CfeProveedor;
+
+  // HU-036 (BL-206): correo para que los comensales ejerzan sus derechos
+  // sobre sus datos personales (Ley 18.331). Vacío o null lo quita.
+  @IsOptional()
+  @Transform(normalizarEmail)
+  @ValidateIf((_dto, valor) => valor !== null)
+  @IsEmail({}, { message: 'El correo de privacidad no es válido' })
+  @MaxLength(LARGO_MAXIMO_EMAIL, {
+    message: `El correo de privacidad puede tener hasta ${LARGO_MAXIMO_EMAIL} caracteres`,
+  })
+  emailPrivacidad?: string | null;
+
+  // HU-042 (BL-465, ADR 0010): cola del KDS. null desactiva la cola
+  // automática (el mozo pasa los pedidos a preparación a mano, como antes).
+  @IsOptional()
+  @ValidateIf((_dto, valor) => valor !== null)
+  @IsInt({
+    message: 'El límite de pedidos en preparación debe ser un número entero',
+  })
+  @Min(LIMITE_PREPARACION_MINIMO, {
+    message: `El límite de pedidos en preparación debe ser al menos ${LIMITE_PREPARACION_MINIMO}`,
+  })
+  @Max(LIMITE_PREPARACION_MAXIMO, {
+    message: `El límite de pedidos en preparación puede ser como máximo ${LIMITE_PREPARACION_MAXIMO}`,
+  })
+  limitePedidosEnPreparacion?: number | null;
+
+  // Opcional, pero nunca null: la columna es NOT NULL (IsOptional
+  // dejaría pasar null).
+  @ValidateIf((_dto, valor) => valor !== undefined)
+  @IsInt({
+    message: 'El umbral de alerta de la cola debe ser un número entero',
+  })
+  @Min(UMBRAL_ALERTA_COLA_MINIMO, {
+    message: `El umbral de alerta de la cola debe ser al menos ${UMBRAL_ALERTA_COLA_MINIMO}`,
+  })
+  @Max(UMBRAL_ALERTA_COLA_MAXIMO, {
+    message: `El umbral de alerta de la cola puede ser como máximo ${UMBRAL_ALERTA_COLA_MAXIMO}`,
+  })
+  umbralAlertaCola?: number;
+
+  // Opcional, pero nunca null: la columna es NOT NULL (IsOptional
+  // dejaría pasar null).
+  @ValidateIf((_dto, valor) => valor !== undefined)
+  @IsInt({
+    message: 'Los minutos de preparación estimados deben ser un número entero',
+  })
+  @Min(MINUTOS_PREPARACION_MINIMO, {
+    message: `Los minutos de preparación estimados deben ser al menos ${MINUTOS_PREPARACION_MINIMO}`,
+  })
+  @Max(MINUTOS_PREPARACION_MAXIMO, {
+    message: `Los minutos de preparación estimados pueden ser como máximo ${MINUTOS_PREPARACION_MAXIMO}`,
+  })
+  minutosPreparacionEstimados?: number;
 }

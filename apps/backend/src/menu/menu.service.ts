@@ -59,6 +59,42 @@ export class MenuService {
     });
   }
 
+  /**
+   * HU-036 (BL-206): datos del responsable de los datos personales (el
+   * establecimiento) para su política de privacidad: nombre del local,
+   * razón social, RUT, dirección y correo para ejercer los derechos. El RUT
+   * y la razón social ya figuran en cada e-Ticket. Si se pasa el
+   * restaurante, tiene que ser el del tenant (404 genérico si no).
+   */
+  async getPrivacidad(tenantId: string, restauranteId?: string) {
+    return this.tenantPrisma.runInTenantContext(tenantId, async (tx) => {
+      const restaurante = await tx.restaurante.findUnique({
+        where: { tenantId },
+        select: {
+          id: true,
+          nombre: true,
+          direccion: true,
+          emailPrivacidad: true,
+          tenant: { select: { razonSocial: true, rut: true } },
+        },
+      });
+      if (!restaurante || (restauranteId && restaurante.id !== restauranteId)) {
+        throw new NotFoundException(
+          'Restaurante no encontrado para este establecimiento',
+        );
+      }
+      return {
+        establecimiento: {
+          nombre: restaurante.nombre,
+          razonSocial: restaurante.tenant.razonSocial,
+          rut: restaurante.tenant.rut,
+          direccion: restaurante.direccion,
+          emailPrivacidad: restaurante.emailPrivacidad,
+        },
+      };
+    });
+  }
+
   async getMenuByRestaurante(tenantId: string, restauranteId: string) {
     return this.tenantPrisma.runInTenantContext(tenantId, async (tx) => {
       const restaurante = await tx.restaurante.findUnique({

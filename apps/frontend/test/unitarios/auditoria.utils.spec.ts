@@ -95,6 +95,22 @@ describe("cómo se muestra cada registro", () => {
     );
   });
 
+  it("HU-007b (BL-80): el cobro con el POS del local, con tarjeta y autorización", () => {
+    expect(etiquetaAccion("PAGO_POS_REGISTRADO")).toBe(
+      "Cobro con el POS del local",
+    );
+    const lineas = cambiosDelRegistro({
+      valoresAntes: null,
+      valoresDespues: {
+        monto: "590.00",
+        medio: "Débito",
+        autorizacion: "A1B2C3",
+      },
+    });
+    expect(lineas[1]).toMatch(/^Tarjeta: .* → Débito$/);
+    expect(lineas[2]).toMatch(/^N\.° de autorización: .* → A1B2C3$/);
+  });
+
   it("los cambios como «campo: antes → después»", () => {
     expect(
       cambiosDelRegistro({
@@ -173,5 +189,48 @@ describe("cómo se muestra cada registro", () => {
     expect(autorDelRegistro({ usuario: null, actorKeycloakId: "k" })).toBe(
       "Plataforma o usuario eliminado",
     );
+  });
+
+  it("[TC-U-369] HU-015: los ajustes de stock y las ventas sin stock tienen su texto, sus campos y su autor", () => {
+    expect(etiquetaAccion("CARTA_ITEM_STOCK_AJUSTADO")).toBe(
+      "Stock de un ítem ajustado",
+    );
+    expect(etiquetaAccion("CARTA_ITEM_VENDIDO_SIN_STOCK")).toBe(
+      "Venta sin stock",
+    );
+    expect(
+      cambiosDelRegistro({
+        valoresAntes: {
+          controlaStock: false,
+          stockActual: 0,
+          umbralAlerta: 5,
+          disponible: true,
+        },
+        valoresDespues: {
+          controlaStock: true,
+          stockActual: 12,
+          umbralAlerta: 3,
+          disponible: true,
+        },
+      }),
+    ).toEqual([
+      "Controla stock: no → sí",
+      "Unidades: 0 → 12",
+      "Aviso con: 5 → 3",
+      "Disponible: sí → sí",
+    ]);
+    expect(
+      cambiosDelRegistro({
+        valoresAntes: null,
+        valoresDespues: null,
+        detalle: { nombre: "Flan", pedidoId: "p", unidadesDeMas: 1 },
+      }),
+    ).toEqual(["Unidades vendidas sin stock: 1"]);
+    expect(
+      autorDelRegistro({
+        usuario: null,
+        actorKeycloakId: "sistema:confirmacion-de-pago",
+      }),
+    ).toBe("Proceso automático");
   });
 });

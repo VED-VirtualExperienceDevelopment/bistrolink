@@ -21,7 +21,10 @@
     "staging:up": "bash -i scripts/staging-up.sh",
     "test:e2e": "playwright test",
     "test:pact": "npm run test:pact --workspaces --if-present",
-    "test:e2e:update-snapshots": "bash scripts/e2e-update-snapshots.sh"
+    "test:e2e:update-snapshots": "bash scripts/e2e-update-snapshots.sh",
+    "limpiar:local": "node scripts/limpieza/limpiar-entorno.mjs --entorno local",
+    "limpiar:staging": "node scripts/limpieza/limpiar-entorno.mjs --entorno staging",
+    "test:limpieza": "node --test scripts/limpieza/limpiar-entorno.test.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.14.0",
@@ -47,7 +50,7 @@
     "sharp": "0.35.5",
     "deepmerge-ts": "8.0.0",
     "ws": "8.21.0",
-    "qs": "6.16.0",
+    "qs": "6.17.1",
     "file-type": "21.3.2",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",

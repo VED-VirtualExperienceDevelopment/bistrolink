@@ -413,17 +413,24 @@ export class MesasService {
           );
         }
         // Condicional: si otro mozo la abrió al mismo tiempo, no se pisa.
+        const sesionId = randomUUID();
+        const abiertaEn = new Date();
         const { count } = await tx.mesa.updateMany({
           where: { id: mesaId, estado: MesaEstado.LIBRE },
           data: {
             estado: MesaEstado.OCUPADA,
-            sesionId: randomUUID(),
-            sesionAbiertaEn: new Date(),
+            sesionId,
+            sesionAbiertaEn: abiertaEn,
           },
         });
         if (count === 0) {
           throw new ConflictException('La mesa ya está abierta');
         }
+        // HU-012 (BL-108): la sesión queda en el historial para medir la
+        // rotación de mesas, en la misma transacción que la apertura.
+        await tx.sesionMesa.create({
+          data: { id: sesionId, tenantId, mesaId, abiertaEn },
+        });
         return tx.mesa.findUniqueOrThrow({
           where: { id: mesaId },
           select: SELECT_MESA_ESTADO,
@@ -488,6 +495,13 @@ export class MesasService {
             'La mesa cambió mientras se cerraba: probá de nuevo',
           );
         }
+        // HU-012 (BL-108): cierra la sesión en el historial. updateMany y
+        // condicional: no falla si la sesión no tiene fila ni la cierra dos
+        // veces.
+        await tx.sesionMesa.updateMany({
+          where: { id: actual.sesionId, cerradaEn: null },
+          data: { cerradaEn: new Date() },
+        });
 
         const pedidosCancelados = await this.cancelarSinPagar(
           tx,
@@ -507,6 +521,9 @@ export class MesasService {
       resultado.mesa.id,
       resultado.mesa.estado,
     );
+    // BL-448: con la mesa cerrada no queda nada que atender (los pedidos sin
+    // pagar se cancelaron): se saca su aviso de todos los KDS.
+    this.kdsGateway.emitirLlamadoResuelto(tenantId, resultado.mesa.id);
     return resultado;
   }
 

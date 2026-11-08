@@ -1,5 +1,6 @@
 import {
   armarPedido,
+  ayudaCobroAlCargar,
   cambiarCantidad,
   cambiarNota,
   cantidadDeItems,
@@ -7,6 +8,7 @@ import {
   CANTIDAD_MAXIMA_POR_ITEM,
   LARGO_NOTA_GENERAL,
   LARGO_NOTA_ITEM,
+  mediosAlCargar,
   nuevaClaveDePedido,
   rutaCargarPedido,
   totalDelCarrito,
@@ -107,5 +109,32 @@ describe("pedido-mozo.utils (HU-039, BL-209)", () => {
     expect(a).not.toBe(nuevaClaveDePedido());
     expect(a.length).toBeLessThanOrEqual(64);
     expect(a).toMatch(/^mozo-/);
+  });
+});
+
+describe("cobro al cargar el pedido (HU-007b, BL-485)", () => {
+  it("mientras no llegó la configuración: solo efectivo, como antes", () => {
+    expect(mediosAlCargar(null)).toEqual({ efectivo: true, pos: false });
+  });
+
+  it.each([
+    [true, true, { efectivo: true, pos: true }],
+    [true, false, { efectivo: true, pos: false }],
+    [false, true, { efectivo: false, pos: true }],
+    [false, false, { efectivo: false, pos: false }],
+  ])("efectivo %s y POS %s: ofrece %o", (efectivoHabilitado, posHabilitado, esperado) => {
+    expect(mediosAlCargar({ efectivoHabilitado, posHabilitado })).toEqual(esperado);
+  });
+
+  it("un backend sin posHabilitado: no ofrece el POS", () => {
+    expect(mediosAlCargar({ efectivoHabilitado: true })).toEqual({ efectivo: true, pos: false });
+  });
+
+  it("ayuda: «también después» si hay algún medio; si no, a dónde ir", () => {
+    expect(ayudaCobroAlCargar({ efectivo: true, pos: false })).toMatch(/^También lo podés cobrar/);
+    expect(ayudaCobroAlCargar({ efectivo: false, pos: true })).toMatch(/^También lo podés cobrar/);
+    expect(ayudaCobroAlCargar({ efectivo: false, pos: false })).toBe(
+      "Cobralo desde «Cobros pendientes» o el panel de la mesa.",
+    );
   });
 });

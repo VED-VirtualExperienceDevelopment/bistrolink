@@ -6,14 +6,17 @@ import { useSearchParams } from "next/navigation";
 import { useKeycloakAuth } from "@/components/providers/KeycloakProvider";
 import { apiFetch, ApiError } from "@/lib/api-client";
 import { CobrarEfectivoDialog } from "@/components/admin/cobros/CobrarEfectivoDialog";
+import { CobrarPosDialog } from "@/components/admin/cobros/CobrarPosDialog";
+import { usePendientesDeCobro } from "@/components/admin/cobros/usePendientesDeCobro";
 import {
   codigoDelPedido,
   formatearMonto,
+  mensajeCobroPosRegistrado,
   mensajeCobroRegistrado,
-  type CobroEfectivoRegistrado,
 } from "@/components/admin/cobros/cobros.utils";
 import {
   armarPedido,
+  ayudaCobroAlCargar,
   cambiarCantidad,
   cambiarNota,
   cantidadDeItems,
@@ -21,6 +24,7 @@ import {
   CANTIDAD_MAXIMA_POR_ITEM,
   LARGO_NOTA_GENERAL,
   LARGO_NOTA_ITEM,
+  mediosAlCargar,
   nuevaClaveDePedido,
   RUTA_CARTA_STAFF,
   RUTA_PEDIDO_MOZO,
@@ -41,9 +45,9 @@ const CLASE_STEPPER =
 /**
  * HU-039 (BL-209): el mozo carga el pedido de un comensal sin celular en
  * una mesa abierta. Misma carta y mismas reglas que el comensal; el pedido
- * queda esperando el pago (prepago, RD.03) y el mozo lo cobra en efectivo
- * acá mismo o después, desde «Cobros pendientes». Pensada para usar con una
- * mano en el celular (RNF.01): botones de 48 px y el total fijo abajo.
+ * queda esperando el pago (prepago, RD.03) y el mozo lo cobra acá mismo, en
+ * efectivo o con el POS del local (HU-007b, BL-485), o después, desde
+ * «Cobros pendientes». Pensada para usar con una mano en el celular (RNF.01): botones de 48 px y el total fijo abajo.
  */
 export default function CargarPedidoPage() {
   return (
@@ -66,8 +70,11 @@ function CargarPedido() {
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cargado, setCargado] = useState<PedidoCargado | null>(null);
-  const [cobrando, setCobrando] = useState(false);
-  const [cobro, setCobro] = useState<CobroEfectivoRegistrado | null>(null);
+  // HU-007b (BL-485): diálogo de cobro abierto, en efectivo o con el POS.
+  const [cobrando, setCobrando] = useState<"EFECTIVO" | "POS" | null>(null);
+  const [cobrado, setCobrado] = useState<string | null>(null);
+  // Medios habilitados en el local; se consultan recién con el pedido cargado.
+  const { datos: pendientes } = usePendientesDeCobro(token, cargado !== null);
   // Una clave por carrito: si cambia el carrito, es otro pedido.
   const claveRef = useRef(nuevaClaveDePedido());
   const idNota = useId();
@@ -112,7 +119,7 @@ function CargarPedido() {
     setCarrito({});
     setNota("");
     setCargado(null);
-    setCobro(null);
+    setCobrado(null);
   }
 
   if (!mesaId) {
@@ -131,29 +138,38 @@ function CargarPedido() {
   const titulo = numero ? `Pedido para la mesa ${numero}` : "Cargar pedido";
 
   if (cargado) {
+    const medios = mediosAlCargar(pendientes);
     return (
       <div className="mx-auto w-full max-w-2xl space-y-6 p-4 md:p-6">
         <h1 className="text-headline-lg text-primary">{titulo}</h1>
         <section className="space-y-4 rounded-xl border border-outline-variant bg-surface-container-lowest p-5">
-          {cobro ? (
-            <output className="block text-body-lg text-on-surface">
-              {mensajeCobroRegistrado(cobro)}
-            </output>
+          {cobrado ? (
+            <output className="block text-body-lg text-on-surface">{cobrado}</output>
           ) : (
             <>
               <output className="block text-body-lg text-on-surface">
                 Pedido {codigoDelPedido(cargado.id)} cargado: {formatearMonto(cargado.total)}.
                 Pasa a cocina cuando se cobra.
               </output>
-              <button type="button" onClick={() => setCobrando(true)} className={CLASE_BOTON_PRINCIPAL}>
-                <span aria-hidden="true" className="material-symbols-outlined text-[20px]">
-                  payments
-                </span>
-                <span>Cobrar en efectivo</span>
-              </button>
-              <p className="text-body-sm text-on-surface-variant">
-                También lo podés cobrar después, desde «Cobros pendientes» o el panel de la mesa.
-              </p>
+              <div className="flex flex-wrap gap-3">
+                {medios.efectivo && (
+                  <button type="button" onClick={() => setCobrando("EFECTIVO")} className={CLASE_BOTON_PRINCIPAL}>
+                    <span aria-hidden="true" className="material-symbols-outlined text-[20px]">
+                      payments
+                    </span>
+                    <span>Cobrar en efectivo</span>
+                  </button>
+                )}
+                {medios.pos && (
+                  <button type="button" onClick={() => setCobrando("POS")} className={CLASE_BOTON_PRINCIPAL}>
+                    <span aria-hidden="true" className="material-symbols-outlined text-[20px]">
+                      credit_card
+                    </span>
+                    <span>Cobrar con el POS</span>
+                  </button>
+                )}
+              </div>
+              <p className="text-body-sm text-on-surface-variant">{ayudaCobroAlCargar(medios)}</p>
             </>
           )}
           <div className="flex flex-wrap gap-3">
@@ -166,12 +182,21 @@ function CargarPedido() {
           </div>
         </section>
         <CobrarEfectivoDialog
-          pedido={cobrando ? cargado : null}
+          pedido={cobrando === "EFECTIVO" ? cargado : null}
           token={token}
-          onClose={() => setCobrando(false)}
+          onClose={() => setCobrando(null)}
           onCobrado={(registrado) => {
-            setCobrando(false);
-            setCobro(registrado);
+            setCobrando(null);
+            setCobrado(mensajeCobroRegistrado(registrado));
+          }}
+        />
+        <CobrarPosDialog
+          pedido={cobrando === "POS" ? cargado : null}
+          token={token}
+          onClose={() => setCobrando(null)}
+          onCobrado={(registrado) => {
+            setCobrando(null);
+            setCobrado(mensajeCobroPosRegistrado(registrado));
           }}
         />
       </div>

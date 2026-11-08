@@ -80,12 +80,24 @@ enum PagoOrigen {
   WEBHOOK
   CONCILIACION
   VENCIMIENTO
+  // HU-024 (BL-104): el personal canceló el pedido y se devolvió el pago.
+  CANCELACION
 }
 
 // HU-020 (BL-72): proveedor de facturación electrónica (CFE) del local.
 enum CfeProveedor {
   SURTEC
   BILLER
+}
+
+// HU-009 (BL-455): estado del CFE ante la DGI, según la consulta a Surtec.
+// PENDIENTE hasta que DGI responde: AE = ACEPTADO, BE = RECHAZADO,
+// CE = OBSERVADO.
+enum CfeEstadoDgi {
+  PENDIENTE
+  ACEPTADO
+  RECHAZADO
+  OBSERVADO
 }
 
 // ── 4.1 Tenant ───────────────────────────────────────────────────────────────
@@ -129,24 +141,24 @@ model Tenant {
 // ── 4.2 Restaurante ──────────────────────────────────────────────────────────
 
 model Restaurante {
-  id                    String       @id @default(uuid()) @db.Uuid
+  id                          String       @id @default(uuid()) @db.Uuid
   // Único (BL-163): un tenant tiene un solo restaurante (ver
   // Tenant.restaurante). El índice único reemplaza al @@index([tenantId]).
-  tenantId              String       @unique @map("tenant_id") @db.Uuid
-  nombre                String
-  direccion             String
-  timezone              String
+  tenantId                    String       @unique @map("tenant_id") @db.Uuid
+  nombre                      String
+  direccion                   String
+  timezone                    String
   // HU-028 (BL-173): elementos fijos (puerta, baño, cocina, caja, barra) y
   // zonas (salón, patio, calle) del plano del salón. Forma:
   // { elementos: [{ id, tipo, x, y, ancho, alto, rotacion }],
   //   zonas: [{ id, etiqueta, x, y, ancho, alto }] }
   // Nullable: null = plano sin elementos ni zonas (los layouts de HU-016,
   // que viven en mesa.layout, no cambian). Validado por PlanoDto.
-  plano                 Json?
+  plano                       Json?
   // HU-031 (BL-201): el local acepta efectivo. Columna mínima hasta HU-020
   // (BL-72, configuración del establecimiento), que la va a administrar.
   // Default true: los locales existentes siguen cobrando en efectivo.
-  efectivoHabilitado    Boolean      @default(true) @map("efectivo_habilitado")
+  efectivoHabilitado          Boolean      @default(true) @map("efectivo_habilitado")
   // HU-020 (BL-72): configuración del establecimiento. Columnas directas en
   // restaurante (sin tabla aparte): un tenant tiene un solo restaurante y
   // los valores son pocos y fijos. La razón social y el RUT no van acá:
@@ -155,17 +167,33 @@ model Restaurante {
   // (que es el de efectivo; no se duplica). Mercado Pago es la única
   // pasarela (decisión del 17/10/2026, Anexo 2): Plexo y Handy quedan en
   // false y fuera del MVP hasta que se integren (BL-452).
-  mercadoPagoHabilitado Boolean      @default(true) @map("mercadopago_habilitado")
-  plexoHabilitado       Boolean      @default(false) @map("plexo_habilitado")
-  handyHabilitado       Boolean      @default(false) @map("handy_habilitado")
+  mercadoPagoHabilitado       Boolean      @default(true) @map("mercadopago_habilitado")
+  plexoHabilitado             Boolean      @default(false) @map("plexo_habilitado")
+  handyHabilitado             Boolean      @default(false) @map("handy_habilitado")
+  // HU-007b (BL-80): el local registra cobros hechos con su propio POS
+  // (crédito o débito). Default true: casi todos los locales tienen POS
+  // (Ley 19.210 de inclusión financiera); el administrador lo apaga en
+  // Configuración si no lo usa.
+  posHabilitado               Boolean      @default(true) @map("pos_habilitado")
   // Porcentajes de propina sugeridos, enteros (ej. [10, 15, 20]). Vacío =
   // sin sugerencias. Entre 1 y 100 y hasta 5 valores: CHECK en la migración
   // (Prisma no los declara); el DTO valida lo mismo con mensajes claros.
-  propinasSugeridas     Int[]        @default([]) @map("propinas_sugeridas")
+  propinasSugeridas           Int[]        @default([]) @map("propinas_sugeridas")
   // Default SURTEC: es el proveedor que emite hoy (CfeService).
-  cfeProveedor          CfeProveedor @default(SURTEC) @map("cfe_proveedor")
-  createdAt             DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt             DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+  cfeProveedor                CfeProveedor @default(SURTEC) @map("cfe_proveedor")
+  // HU-036 (BL-206): contacto para los derechos de los titulares de datos
+  // (Ley 18.331). Se muestra en la política de privacidad del local.
+  emailPrivacidad             String?      @map("email_privacidad") @db.VarChar(254)
+  // HU-042 (BL-462, ADR 0010): cola del KDS. Null = cola automática
+  // desactivada: el mozo pasa el pedido a preparación a mano, como antes.
+  // Rangos con CHECK en la migración (1..50, 1..200, 1..180).
+  limitePedidosEnPreparacion  Int?         @map("limite_pedidos_en_preparacion")
+  // Con más pedidos que esto en espera, el KDS muestra alta demanda.
+  umbralAlertaCola            Int          @default(10) @map("umbral_alerta_cola")
+  // Referencia para el tiempo estimado de espera del comensal.
+  minutosPreparacionEstimados Int          @default(15) @map("minutos_preparacion_estimados")
+  createdAt                   DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                   DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   tenant     Tenant           @relation(fields: [tenantId], references: [id])
   usuarios   Usuario[]
@@ -277,24 +305,32 @@ model CategoriaCarta {
 }
 
 model ItemCarta {
-  id          String    @id @default(uuid()) @db.Uuid
-  tenantId    String    @map("tenant_id") @db.Uuid
-  categoriaId String    @map("categoria_id") @db.Uuid
-  nombre      String
-  descripcion String?
-  precio      Decimal   @db.Decimal(10, 2)
-  disponible  Boolean   @default(true)
-  imagenKey   String?   @map("imagen_key")
+  id            String    @id @default(uuid()) @db.Uuid
+  tenantId      String    @map("tenant_id") @db.Uuid
+  categoriaId   String    @map("categoria_id") @db.Uuid
+  nombre        String
+  descripcion   String?
+  precio        Decimal   @db.Decimal(10, 2)
+  disponible    Boolean   @default(true)
+  imagenKey     String?   @map("imagen_key")
   // BL-393: orden manual dentro de la categoría. La migración lo completa con
   // el orden alfabético que había, así la carta se ve igual.
   // BL-399: sin valor por defecto (ver CategoriaCarta.orden).
-  orden       Int
+  orden         Int
   // BL-393: baja lógica. Nulo = activo. Nombre único entre los no archivados
   // de la categoría: índice parcial creado con SQL en la migración. El precio
   // tiene CHECK (precio >= 0) en la base.
-  archivadoEn DateTime? @map("archivado_en") @db.Timestamptz(3)
-  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  archivadoEn   DateTime? @map("archivado_en") @db.Timestamptz(3)
+  // HU-015 (BL-120): stock de la jornada. Solo cuenta si controlaStock: el
+  // stock se descuenta al confirmarse el pago (RF.04, RD.09) y en 0 el ítem
+  // queda no disponible. umbralAlerta: con stockActual en o debajo, el
+  // administrador recibe la alerta «Por agotarse». CHECK (>= 0) de las dos
+  // cantidades en la migración.
+  controlaStock Boolean   @default(false) @map("controla_stock")
+  stockActual   Int       @default(0) @map("stock_actual")
+  umbralAlerta  Int       @default(5) @map("umbral_alerta")
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   categoria    CategoriaCarta @relation(fields: [categoriaId], references: [id])
   lineasPedido LineaPedido[]
@@ -307,26 +343,38 @@ model ItemCarta {
 // ── 4.6 Pedido ────────────────────────────────────────────────────────────────
 
 model Pedido {
-  id                   String       @id @default(uuid()) @db.Uuid
-  tenantId             String       @map("tenant_id") @db.Uuid
-  restauranteId        String       @map("restaurante_id") @db.Uuid
-  mesaId               String       @map("mesa_id") @db.Uuid
-  usuarioId            String?      @map("usuario_id") @db.Uuid
-  idempotencyKey       String       @unique @map("idempotency_key") @db.VarChar(64)
-  estado               PedidoEstado
-  canal                PedidoCanal
-  observacionGeneral   String?      @map("observacion_general") @db.VarChar(500) // <-- NUEVO
+  id                    String       @id @default(uuid()) @db.Uuid
+  tenantId              String       @map("tenant_id") @db.Uuid
+  restauranteId         String       @map("restaurante_id") @db.Uuid
+  mesaId                String       @map("mesa_id") @db.Uuid
+  usuarioId             String?      @map("usuario_id") @db.Uuid
+  idempotencyKey        String       @unique @map("idempotency_key") @db.VarChar(64)
+  estado                PedidoEstado
+  canal                 PedidoCanal
+  observacionGeneral    String?      @map("observacion_general") @db.VarChar(500) // <-- NUEVO
   // BL-311 (RD.05): SHA-256 del token de acceso de un pedido para retirar
   // (canal WEB, sin QR). El token en claro se devuelve una sola vez, al
   // crear el pedido; acá nunca se guarda. Null en los pedidos de mesa.
-  accesoTokenHash      String?      @map("acceso_token_hash") @db.Char(64)
+  accesoTokenHash       String?      @map("acceso_token_hash") @db.Char(64)
   // HU-031b (BL-442): el comensal de una mesa pidió pagar en efectivo
   // (cuándo, y con cuánto va a pagar si lo dijo). No es un pago: el pedido
   // sigue en PENDIENTE_PAGO hasta que el mozo registra el cobro (BL-201).
-  efectivoSolicitadoEn DateTime?    @map("efectivo_solicitado_en") @db.Timestamptz(3)
-  efectivoPagaCon      Decimal?     @map("efectivo_paga_con") @db.Decimal(10, 2)
-  createdAt            DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt            DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+  efectivoSolicitadoEn  DateTime?    @map("efectivo_solicitado_en") @db.Timestamptz(3)
+  efectivoPagaCon       Decimal?     @map("efectivo_paga_con") @db.Decimal(10, 2)
+  // HU-009 (BL-453): el comensal pidió e-Factura (tipo 111) en lugar del
+  // e-Ticket. Solo se guardan si aceptó el aviso de privacidad (HU-036):
+  // sin aceptar, quedan nulos y se emite un e-Ticket. El administrador los
+  // puede anonimizar (receptorAnonimizadoEn); el CFE emitido no cambia.
+  receptorRut           String?      @map("receptor_rut") @db.VarChar(12)
+  receptorRazonSocial   String?      @map("receptor_razon_social") @db.VarChar(150)
+  receptorConsentidoEn  DateTime?    @map("receptor_consentido_en") @db.Timestamptz(3)
+  receptorAnonimizadoEn DateTime?    @map("receptor_anonimizado_en") @db.Timestamptz(3)
+  // HU-042 (BL-462, ADR 0010): cuándo llegó a cocina (pago aprobado →
+  // RECIBIDO). Orden FIFO de la cola; null en pedidos anteriores (se
+  // ordenan primero, por createdAt).
+  encoladoEn            DateTime?    @map("encolado_en") @db.Timestamptz(3)
+  createdAt             DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   restaurante      Restaurante             @relation(fields: [restauranteId], references: [id])
   mesa             Mesa                    @relation(fields: [mesaId], references: [id])
@@ -341,6 +389,10 @@ model Pedido {
   // del tenant (compatibles con el predicado de RLS).
   @@index([tenantId, createdAt])
   @@index([tenantId, estado])
+  // HU-042 (BL-462): próximo pedido de la cola (FIFO) y conteo por estado.
+  @@index([tenantId, estado, encoladoEn])
+  // BL-453: buscar los pedidos de un RUT para anonimizarlos.
+  @@index([tenantId, receptorRut])
   @@map("pedido")
 }
 
@@ -382,6 +434,12 @@ model Pago {
   // HU-032 (BL-202): por qué quedó RECHAZADO («VENCIDO» si venció sin
   // confirmación, o el status_detail de la pasarela). Null en los demás.
   motivoRechazo      String?    @map("motivo_rechazo") @db.VarChar(60)
+  // HU-023 (BL-96): intentos fallidos de emitir el CFE de un pago APROBADO
+  // (el que no tiene comprobante). Los usa la conciliación de CFE para
+  // espaciar los reintentos; el error va sin datos personales.
+  cfeIntentos        Int        @default(0) @map("cfe_intentos")
+  cfeUltimoIntentoEn DateTime?  @map("cfe_ultimo_intento_en") @db.Timestamptz(3)
+  cfeUltimoError     String?    @map("cfe_ultimo_error") @db.VarChar(300)
   createdAt          DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt          DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -392,6 +450,11 @@ model Pago {
   @@index([tenantId])
   // BL-213: pagos de un pedido (cobro, webhook, consulta del comensal).
   @@index([pedidoId])
+  // HU-023 (BL-96): la conciliación busca los APROBADOS sin CFE por fecha.
+  @@index([tenantId, estado, createdAt])
+  // HU-012 (BL-219): pagos de un tenant por fecha, para recalcular el
+  // resumen de ventas de una ventana de horas.
+  @@index([tenantId, createdAt])
   @@map("pago")
 }
 
@@ -418,36 +481,54 @@ model PagoEstadoHistorial {
 // ── 4.9 ComprobanteFiscal ─────────────────────────────────────────────────────
 
 model ComprobanteFiscal {
-  id             String    @id @default(uuid()) @db.Uuid
-  tenantId       String    @map("tenant_id") @db.Uuid
-  pedidoId       String    @map("pedido_id") @db.Uuid
-  pagoId         String?   @map("pago_id") @db.Uuid
-  tipoCfe        String    @map("tipo_cfe")
-  serie          String
-  numero         Int
-  // Nulos hasta HU-009/BL-92 (XML y PDF a S3/R2).
-  urlXml         String?   @map("url_xml")
-  urlPdf         String?   @map("url_pdf")
-  // Hash que informa el proveedor (Surtec lo devuelve en Base64, 44 chars).
-  hashSha256     String?   @unique @map("hash_sha256") @db.VarChar(64)
+  id                     String       @id @default(uuid()) @db.Uuid
+  tenantId               String       @map("tenant_id") @db.Uuid
+  pedidoId               String       @map("pedido_id") @db.Uuid
+  pagoId                 String?      @map("pago_id") @db.Uuid
+  tipoCfe                String       @map("tipo_cfe")
+  serie                  String
+  numero                 Int
+  // HU-009 (BL-454): clave del objeto en S3_BUCKET_CFE, no una URL
+  // ({tenant_id}/cfe/{yyyy}/{mm}/{id}.pdf). El XML queda nulo hasta que
+  // Surtec tenga el endpoint para bajarlo.
+  urlXml                 String?      @map("url_xml")
+  urlPdf                 String?      @map("url_pdf")
+  // BL-454: SHA-256 (hex) del PDF guardado en S3, propio. Se verifica al
+  // descargarlo. Distinto de hash_sha256, que es el DigestValue del XML
+  // firmado que informa Surtec (el del QR de la DGI).
+  pdfSha256              String?      @map("pdf_sha256") @db.Char(64)
+  // BL-454: intentos fallidos de guardar el PDF, para espaciar los reintentos.
+  pdfIntentos            Int          @default(0) @map("pdf_intentos")
+  pdfUltimoIntentoEn     DateTime?    @map("pdf_ultimo_intento_en") @db.Timestamptz(3)
+  // Hash que informa el proveedor: el DigestValue del XML firmado, en
+  // Base64 (44 chars). Es el que va en el QR para verificar el CFE en DGI.
+  hashSha256             String?      @unique @map("hash_sha256") @db.VarChar(64)
   // Facturación electrónica (Surtec/FEU): trazabilidad del proveedor.
-  proveedor      String    @default("SURTEC")
-  proveedorRef   String?   @map("proveedor_ref")
+  proveedor              String       @default("SURTEC")
+  proveedorRef           String?      @map("proveedor_ref")
   // Clave de idempotencia enviada al proveedor ("bl-<pagoId>").
-  idExterno      String?   @unique @map("id_externo")
-  caeNumero      String?   @map("cae_numero")
-  caeVencimiento DateTime? @map("cae_vencimiento") @db.Date
+  idExterno              String?      @unique @map("id_externo")
+  caeNumero              String?      @map("cae_numero")
+  caeVencimiento         DateTime?    @map("cae_vencimiento") @db.Date
   // URL de consulta QR de DGI.
-  urlConsulta    String?   @map("url_consulta")
-  fechaEmision   DateTime  @map("fecha_emision") @db.Timestamptz(3)
-  retencionHasta DateTime  @map("retencion_hasta") @db.Date
-  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  urlConsulta            String?      @map("url_consulta")
+  // HU-009 (BL-455): estado ante la DGI. Lo actualiza EstadoDgiJob hasta que
+  // es definitivo (todos menos PENDIENTE); el motivo, si DGI lo informa.
+  estadoDgi              CfeEstadoDgi @default(PENDIENTE) @map("estado_dgi")
+  estadoDgiMotivo        String?      @map("estado_dgi_motivo") @db.VarChar(200)
+  estadoDgiActualizadoEn DateTime?    @map("estado_dgi_actualizado_en") @db.Timestamptz(3)
+  fechaEmision           DateTime     @map("fecha_emision") @db.Timestamptz(3)
+  retencionHasta         DateTime     @map("retencion_hasta") @db.Date
+  createdAt              DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt              DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   pedido Pedido @relation(fields: [pedidoId], references: [id])
   pago   Pago?  @relation(fields: [pagoId], references: [id])
 
   @@index([tenantId])
+  // BL-455: el job busca los PENDIENTE y el listado filtra por fecha.
+  @@index([tenantId, estadoDgi])
+  @@index([tenantId, fechaEmision])
   @@map("comprobante_fiscal")
 }
 
@@ -497,4 +578,57 @@ model PedidoEstadoHistorial {
 
   @@index([tenantId])
   @@map("pedido_estado_historial")
+}
+
+// ── HU-012 (BL-108) SesionMesa ────────────────────────────────────────────────
+// Historial de sesiones de mesa (HU-017) para medir la rotación de mesas.
+// MesasService escribe una fila al abrir la sesión (id = mesa.sesionId) y le
+// pone cerrada_en al cerrarla. Sin clave foránea a mesa a propósito: el
+// historial no tiene que impedir borrar una mesa del mapa. Con RLS.
+model SesionMesa {
+  id        String    @id @db.Uuid
+  tenantId  String    @map("tenant_id") @db.Uuid
+  mesaId    String    @map("mesa_id") @db.Uuid
+  abiertaEn DateTime  @map("abierta_en") @db.Timestamptz(3)
+  cerradaEn DateTime? @map("cerrada_en") @db.Timestamptz(3)
+
+  // Rotación: sesiones cerradas de un tenant en un período.
+  @@index([tenantId, cerradaEn])
+  @@map("sesion_mesa")
+}
+
+// ── HU-012 (BL-219) Resumen de ventas ─────────────────────────────────────────
+// Carga analítica separada de la transaccional: el dashboard lee de estas
+// tablas y no de pago ni de linea_pedido. Las escribe el job de agregación
+// (borra y vuelve a insertar una ventana de horas: idempotente). Una venta
+// es un pago APROBADO; `hora` es la hora del pago truncada, en UTC. Tablas y
+// no vistas materializadas, porque PostgreSQL no aplica RLS sobre vistas
+// materializadas. Sin claves foráneas: son datos derivados. Con RLS.
+
+model ResumenVentasHora {
+  tenantId      String      @map("tenant_id") @db.Uuid
+  hora          DateTime    @db.Timestamptz(3)
+  canal         PedidoCanal
+  medioPago     String      @map("medio_pago")
+  pedidos       Int
+  monto         Decimal     @db.Decimal(12, 2)
+  actualizadoEn DateTime    @default(now()) @map("actualizado_en") @db.Timestamptz(3)
+
+  @@id([tenantId, hora, canal, medioPago])
+  @@map("resumen_ventas_hora")
+}
+
+model ResumenPlatosHora {
+  tenantId      String      @map("tenant_id") @db.Uuid
+  hora          DateTime    @db.Timestamptz(3)
+  canal         PedidoCanal
+  itemCartaId   String      @map("item_carta_id") @db.Uuid
+  // Último nombre con el que se vendió (nombre_snapshot de la línea).
+  nombre        String
+  cantidad      Int
+  recaudado     Decimal     @db.Decimal(12, 2)
+  actualizadoEn DateTime    @default(now()) @map("actualizado_en") @db.Timestamptz(3)
+
+  @@id([tenantId, hora, canal, itemCartaId])
+  @@map("resumen_platos_hora")
 }

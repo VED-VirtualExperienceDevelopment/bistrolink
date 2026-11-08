@@ -1,5 +1,17 @@
-import { test as base, type BrowserContext, type Page } from "@playwright/test";
+import {
+  test as base,
+  type Browser,
+  type BrowserContext,
+  type Page,
+} from "@playwright/test";
 import { KDS_PATH, MESA_ID, MESA_ID_RATE_LIMIT } from "./ids";
+import {
+  cerrarPedidosDeTest,
+  registrarPedidosDelContexto,
+  tokenVigente,
+  type PedidosDeTest,
+  type SesionLimpieza,
+} from "./limpieza";
 import {
   asegurarMesasAbiertas,
   obtenerQrMesas,
@@ -78,6 +90,12 @@ type Fixtures = {
   kdsPageMozo: Page;
   /** Idem, pero logueada como ADMIN. */
   kdsPageAdmin: Page;
+  /**
+   * BL-477 (BL-285): automático en todos los tests. Junta los pedidos que
+   * crean las páginas del test y al terminar, pase o falle, los cierra con
+   * POST /testing/limpieza. Ver support/limpieza.ts.
+   */
+  pedidosDeTest: PedidosDeTest;
 };
 
 type WorkerFixtures = {
@@ -89,7 +107,16 @@ type WorkerFixtures = {
    * sesión de una mesa que ya estaba abierta).
    */
   qrMesas: QrMesas;
+  /**
+   * BL-477: sesión de ADMIN para la limpieza, una por worker. Recién loguea
+   * cuando un test tiene pedidos para cerrar, y pide un token nuevo cuando
+   * el anterior está por vencer.
+   */
+  sesionLimpieza: SesionLimpieza;
 };
+
+/** baseURL para los contextos que se crean a mano (no heredan el `use`). */
+const BASE_URL = process.env.BASE_URL ?? "http://localhost:3000";
 
 export const test = base.extend<Fixtures, WorkerFixtures>({
   qrMesas: [
@@ -104,9 +131,7 @@ export const test = base.extend<Fixtures, WorkerFixtures>({
       try {
         // newContext() no hereda el `use` de playwright.config.ts: el baseURL
         // se pasa a mano, con el mismo valor por defecto.
-        const context = await browser.newContext({
-          baseURL: process.env.BASE_URL ?? "http://localhost:3000",
-        });
+        const context = await browser.newContext({ baseURL: BASE_URL });
         const adminPage = await loginKds(context, credenciales("TEST_ADMIN"));
         const authorization = await tokenAdminDesdePanel(adminPage);
         qrMesas = await obtenerQrMesas(context.request, authorization);
@@ -121,6 +146,45 @@ export const test = base.extend<Fixtures, WorkerFixtures>({
       await use(qrMesas);
     },
     { scope: "worker" },
+  ],
+  sesionLimpieza: [
+    async ({ playwright }, use) => {
+      // En Chromium, como qrMesas (ver el comentario de arriba).
+      let browser: Browser | undefined;
+      let adminPage: Page | undefined;
+      let authorization: string | undefined;
+      const sesion: SesionLimpieza = {
+        async authorization() {
+          if (tokenVigente(authorization)) return authorization;
+          if (!adminPage) {
+            // Si un login anterior falló, reusa el navegador ya abierto.
+            browser ??= await playwright.chromium.launch();
+            const context = await browser.newContext({ baseURL: BASE_URL });
+            adminPage = await loginKds(context, credenciales("TEST_ADMIN"));
+          }
+          // El panel renueva el token con la sesión de Keycloak.
+          authorization = await tokenAdminDesdePanel(adminPage);
+          return authorization;
+        },
+      };
+      try {
+        await use(sesion);
+      } finally {
+        await browser?.close();
+      }
+    },
+    { scope: "worker" },
+  ],
+  pedidosDeTest: [
+    async ({ context, request, sesionLimpieza }, use, testInfo) => {
+      const { pedidos, terminar } = registrarPedidosDelContexto(context);
+      await use(pedidos);
+      await terminar();
+      await cerrarPedidosDeTest(request, sesionLimpieza, pedidos.ids, testInfo);
+    },
+    // Tiempo propio: la limpieza corre aunque el test se haya pasado del
+    // suyo, y el primer cierre del worker incluye el login del ADMIN.
+    { auto: true, timeout: 60_000 },
   ],
   kdsPageMozo: async ({ context }, use) => {
     const kdsPage = await loginKds(context, credenciales("TEST_MOZO"));
