@@ -34,10 +34,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Producción se agrega a la matriz cuando exista el servicio de respaldo
-        # en el entorno production de Railway (BL-220). En un workflow_dispatch
-        # se verifica solo el entorno elegido.
-        entorno: ${{ github.event_name == 'workflow_dispatch' && fromJSON(format('["{0}"]', inputs.entorno)) || fromJSON('["staging"]') }}
+        # BL-232: producción entra en la matriz desde que existe db-backup-prod
+        # en el entorno production de Railway (primer respaldo: 07/11/2026).
+        # En un workflow_dispatch se verifica solo el entorno elegido.
+        entorno: ${{ github.event_name == 'workflow_dispatch' && fromJSON(format('["{0}"]', inputs.entorno)) || fromJSON('["staging", "prod"]') }}
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_BACKUP_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_BACKUP_SECRET_ACCESS_KEY }}

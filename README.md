@@ -138,6 +138,10 @@ Las ramas `develop` y `main` están protegidas: solo se mergea por PR, con revis
 
 Los commits siguen Conventional Commits con el ticket de Linear y se hacen con `npm run commit`, que crea la rama desde `develop`. Detalle en [`docs/COMMITS.md`](docs/COMMITS.md).
 
+## Releases
+
+Producción se despliega solo con un tag `vX.Y.Z`, con la aprobación de otro integrante. Release, hotfix y rollback en [`docs/RELEASE.md`](docs/RELEASE.md).
+
 ## Licencia
 
 **Copyright (c) 2026. Todos los derechos reservados.**

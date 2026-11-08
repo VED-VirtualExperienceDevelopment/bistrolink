@@ -23,12 +23,13 @@ on:
         options:
           - ""
           - staging
-          # - production  # PENDIENTE: descomentar cuando el equipo decida
-          # habilitar deploys reales a producción (ver deploy-prod, hoy
-          # comentado a propósito más abajo). Mientras tanto, "production"
-          # no es una opción seleccionable acá.
+          # BL-220: production revierte por tag semántico (vX.Y.Z). El
+          # environment "production" solo admite despliegues desde tags v* y
+          # desde main, así que el rollback de producción se dispara con
+          # "Use workflow from" = main (ver docs/RELEASE.md).
+          - production
       rollback_version:
-        description: "Rollback: tag de imagen a restaurar en GHCR (el SHA completo de 40 caracteres del commit al que querés volver en staging)"
+        description: "Rollback: imagen a restaurar en GHCR. Staging: el SHA completo (40 caracteres) del commit. Production: el tag semántico (ej. v0.5.0)"
         required: false
         default: ""
       # ── E2E manual (Playwright) ──────────────────────────────────────────
@@ -570,9 +571,19 @@ jobs:
           # v8.12.0 -> v8.30.1: última versión estable (Gitleaks quedó feature-complete,
           # solo recibe parches de seguridad; conviene revisar este número cada tanto).
           VERSION=8.30.1
+          # SHA-256 oficial de gitleaks_8.30.1_linux_x64.tar.gz (archivo
+          # gitleaks_8.30.1_checksums.txt del release). Al subir VERSION hay que
+          # actualizarlo también.
+          SHA256=551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
           TMPDIR=$(mktemp -d)
-          curl -sSL -o "${TMPDIR}/gitleaks.tar.gz" \
-            "https://github.com/zricethezav/gitleaks/releases/download/v${VERSION}/gitleaks_${VERSION}_linux_x64.tar.gz"
+          # -f: si GitHub responde con un error (5xx, límite de descargas), curl
+          # falla en lugar de guardar la página de error como si fuera el .tar.gz
+          # (antes terminaba en «gzip: stdin: not in gzip format»). --retry
+          # reintenta los cortes transitorios de la descarga.
+          curl -fsSL --retry 3 --retry-delay 5 --retry-all-errors \
+            -o "${TMPDIR}/gitleaks.tar.gz" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}/gitleaks_${VERSION}_linux_x64.tar.gz"
+          echo "${SHA256}  ${TMPDIR}/gitleaks.tar.gz" | sha256sum --check --strict
           mkdir -p "${TMPDIR}/bin"
           tar -xzf "${TMPDIR}/gitleaks.tar.gz" -C "${TMPDIR}/bin"
           "${TMPDIR}/bin/gitleaks" detect \
@@ -1117,9 +1128,10 @@ jobs:
           check https://bistrolink-web-staging.up.railway.app
           check https://bistrolink-auth-staging.up.railway.app/realms/bistrolink/.well-known/openid-configuration
 
-  # ── JOB 9A: ROLLBACK MANUAL (staging) ─────────────────────────────────────
-  # Revierte staging a una imagen YA publicada en GHCR (por SHA), sin
-  # reconstruir nada. Se dispara a mano completando "rollback_environment" y
+  # ── JOB 9A: ROLLBACK MANUAL (staging y production) ───────────────────────
+  # Revierte un entorno a una imagen YA publicada en GHCR, sin reconstruir
+  # nada: staging por SHA y production por tag semántico (BL-220). En
+  # production, el environment pide la misma aprobación que un deploy. Se dispara a mano completando "rollback_environment" y
   # "rollback_version" en workflow_dispatch — con cualquiera de los dos
   # vacío, este job no corre (ver "if").
   #
@@ -1139,22 +1151,33 @@ jobs:
   # adelante" (prisma migrate diff --script), nunca de forma automática
   # desde CI.
   rollback:
-    name: ⏪ Rollback manual (staging)
-    if: github.event_name == 'workflow_dispatch' && inputs.rollback_environment == 'staging' && inputs.rollback_version != ''
-    environment: staging
+    name: ⏪ Rollback manual (${{ inputs.rollback_environment }})
+    if: github.event_name == 'workflow_dispatch' && inputs.rollback_environment != '' && inputs.rollback_version != ''
+    environment: ${{ inputs.rollback_environment }}
     runs-on: ubuntu-latest
     env:
       RAILWAY_GRAPHQL: https://backboard.railway.com/graphql/v2
-      ENVIRONMENT_ID: bfeb236f-2012-4a5e-a681-5c4728e6830a
-      API_SERVICE_ID: 45dc82be-fd53-4b80-ba9c-384bbbdba034
-      WEB_SERVICE_ID: 070e5864-c5af-47e3-89d4-89c3041bc98b
-      AUTH_SERVICE_ID: dd1b662a-4bcb-450c-a57e-fa0fe6fb5773
+      # BL-220: IDs de Railway según el entorno elegido.
+      ENVIRONMENT_ID: ${{ inputs.rollback_environment == 'production' && 'b0b1fd5a-e3e7-409e-8847-f2700286a4a0' || 'bfeb236f-2012-4a5e-a681-5c4728e6830a' }}
+      API_SERVICE_ID: ${{ inputs.rollback_environment == 'production' && '24f425e7-e8d5-4c1e-a957-bf5bccccbcec' || '45dc82be-fd53-4b80-ba9c-384bbbdba034' }}
+      WEB_SERVICE_ID: ${{ inputs.rollback_environment == 'production' && '3198c59f-98e9-4a4e-9f39-31c329ad37ac' || '070e5864-c5af-47e3-89d4-89c3041bc98b' }}
+      AUTH_SERVICE_ID: ${{ inputs.rollback_environment == 'production' && '39a31121-afb3-4c1d-9972-01628859e77a' || 'dd1b662a-4bcb-450c-a57e-fa0fe6fb5773' }}
+      # Sufijo de los dominios públicos: bistrolink-api-staging o -production.
+      ENTORNO: ${{ inputs.rollback_environment }}
       ROLLBACK_TAG: ${{ inputs.rollback_version }}
     steps:
-      - name: Validar formato del tag (SHA de 40 caracteres)
+      - name: Validar formato de la versión
+        # Staging despliega por SHA (cada push a develop) y production por tag
+        # semántico (cada release). La Web de production se compila con sus
+        # URLs solo en los tags v*.*.*: una imagen por SHA no sirve ahí.
         run: |
-          if ! [[ "$ROLLBACK_TAG" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "rollback_version debe ser un SHA completo de 40 caracteres hexadecimales (el mismo valor que 'env.TAG' usó ese deploy). Recibido: '$ROLLBACK_TAG'"
+          if [ "$ENTORNO" = "production" ]; then
+            if ! [[ "$ROLLBACK_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+              echo "::error::En production, rollback_version tiene que ser un tag semántico publicado (ej. v0.5.0 o v0.5.0-rc.1). Recibido: '$ROLLBACK_TAG'"
+              exit 1
+            fi
+          elif ! [[ "$ROLLBACK_TAG" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::En staging, rollback_version tiene que ser un SHA completo de 40 caracteres hexadecimales (el mismo valor que 'env.TAG' usó ese deploy). Recibido: '$ROLLBACK_TAG'"
             exit 1
           fi
 
@@ -1272,17 +1295,17 @@ jobs:
               return 1
             fi
           }
-          check https://bistrolink-api-staging.up.railway.app/health
-          check https://bistrolink-api-staging.up.railway.app/health/ready
-          check https://bistrolink-web-staging.up.railway.app
-          check https://bistrolink-auth-staging.up.railway.app/realms/bistrolink/.well-known/openid-configuration
+          check https://bistrolink-api-${ENTORNO}.up.railway.app/health
+          check https://bistrolink-api-${ENTORNO}.up.railway.app/health/ready
+          check https://bistrolink-web-${ENTORNO}.up.railway.app
+          check https://bistrolink-auth-${ENTORNO}.up.railway.app/realms/bistrolink/.well-known/openid-configuration
 
       - name: Confirmar la versión de la API después del rollback
         # /health responde aunque Railway haya dejado la versión anterior
         # (por ejemplo, si falló el pre-deploy). upToDate puede dar false:
         # la imagen vieja no conoce las migraciones más nuevas de la base.
         run: |
-          URL=https://bistrolink-api-staging.up.railway.app/health/version
+          URL=https://bistrolink-api-${ENTORNO}.up.railway.app/health/version
           for i in $(seq 1 30); do
             API=$(curl -fsS --max-time 15 "$URL" 2>/dev/null | jq -r '.api // empty' 2>/dev/null || true)
             if [ "$API" = "$ROLLBACK_TAG" ]; then
@@ -1293,7 +1316,7 @@ jobs:
             echo "Intento $i/30: la API responde '${API:-sin respuesta}'. Reintento en 10 s..."
             sleep 10
           done
-          echo "::error::La API no quedó en $ROLLBACK_TAG. Revisar bistrolink-api → Deployments → logs del pre-deploy."
+          echo "::error::La API no quedó en $ROLLBACK_TAG. Revisar la API de ${ENTORNO} en Railway → Deployments → logs del pre-deploy."
           exit 1
 
   # ── JOB 9B: LIGHTHOUSE (Performance mobile) — staging ────────────────────────
@@ -1703,160 +1726,251 @@ jobs:
           echo "Plan E2E-Playwright: id $TCMS_PLAN_ID, producto $TCMS_PRODUCT"
           tcms-junit.xml-plugin --verbose --summary-template '${name}' playwright-report/kiwi-junit.xml
 
-  # ── JOB 11: DEPLOY PRODUCCIÓN (manual, solo en tag v*.*.*) ───────────────
-  # Disparador: push de un tag v*.*.* (ya declarado en "on:"). Un tag es una
-  # decisión explícita de release — a diferencia de deploy-staging, acá no
-  # hay gate por "changes" (paths-filter): tagear YA es la señal de intención
-  # de desplegar.
+  # ── JOB 11: DEPLOY PRODUCCIÓN (tag v*.*.*, con aprobación) ───────────────
+  # BL-220. Se dispara SOLO con el push de un tag v*.*.* (no con un
+  # workflow_dispatch desde un tag: el rollback de production usa el job
+  # "rollback"). El environment "production" exige la aprobación de un
+  # integrante distinto del que creó el tag (Prevent self-review) y solo
+  # admite tags v*.*.* y main: esa aprobación, con quién y cuándo, es la
+  # evidencia de la "aprobación manual registrada" del Anexo 4 §1.2.3, y cada
+  # corrida queda como deployment de "production" (fuente de DORA).
   #
-  # "needs" NO puede apuntar a deploy-staging/lighthouse: esos jobs corren
-  # solo con github.ref == 'refs/heads/develop', y en el workflow run que
-  # dispara un push de tag esa condición es falsa, así que quedarían
-  # "skipped" y deploy-prod nunca correría. En su lugar se re-exige el mismo
-  # gate de seguridad + build que valida staging (gitleaks, codeql,
-  # sonarcloud, dependencias, build), que sí se re-ejecuta en el push del tag.
+  # Imágenes: en un tag, el job "build" compila las tres con GIT_SHA y
+  # NEXT_PUBLIC_APP_VERSION = el tag (la Web, además, con las URLs de
+  # production) y las publica con el tag semántico. Se despliega siempre por
+  # ese tag, nunca por SHA ni "latest": el rollback vuelve a un tag anterior.
+  # Pendiente (después de v0.5.0): promover las imágenes de API y Auth ya
+  # probadas en staging con "docker buildx imagetools" en lugar de
+  # recompilarlas en el tag.
   #
-  # "playwright-report" SÍ puede ir en needs a pesar de correr solo contra
-  # develop: un tag v*.*.* normalmente sale de un commit de develop que ya
-  # pasó por deploy-staging + playwright(-report) en su propio push, así
-  # que ese job ya tiene un resultado (success) asociado al mismo commit
-  # cuando se tagea. Se apunta a "playwright-report" (el job que mergea los
-  # 4 reportes del matrix y reporta a Kiwi) en vez de "playwright" (el
-  # matrix en sí) para no depender de una sola de las 4 entradas. TODO
-  # resuelto: se agrega a needs para no promover a producción nada que no
-  # haya pasado E2E. Pendiente de BL-181 (estructura/baselines) antes de
-  # que este job pueda depender de un playwright confiable en CI.
+  # E2E: "needs" no puede exigir Playwright. En la corrida del tag no corre
+  # (solo corre en develop, contra staging) y el commit del tag en main es un
+  # merge commit con otro SHA. El control es la regresión de staging en verde,
+  # registrada en el PR de release (plantilla release.md), más esta
+  # aprobación manual.
   #
-  # Rollback: se despliega SIEMPRE por versión semántica (github.ref_name,
-  # ej. v1.4.2), nunca por SHA ni por "latest" — el job "build" ya publica
-  # ese tag inmutable en GHCR cuando el push es un tag (ver "Publicar imagen
-  # en GHCR"). Para revertir: volver a correr este mismo job apuntando
-  # RAILWAY_TOKEN + los mismos SERVICE_ID contra un tag anterior ya
-  # publicado (re-disparo manual vía "workflow_dispatch" sobre el commit del
-  # tag anterior, o re-tageo).
-  # deploy-prod:
-  #   # DESACTIVADO A PROPÓSITO: todavía no queremos deployar a producción
-  #   # de forma automática. El job está completo y probado en config (ver
-  #   # notas arriba), solo comentado. Para reactivarlo: descomentar todo
-  #   # este bloque (job "deploy-prod" completo, hasta el final del archivo).
-  #     name: 🏁 Deploy producción (aprobación manual)
-  #     needs: [gitleaks, codeql, sonarcloud, dependencias, build, playwright-report]
-  #     if: startsWith(github.ref, 'refs/tags/v')
-  #     # GitHub Environment "production": configurar en Settings → Environments
-  #     # → production → Required reviewers, con al menos un integrante distinto
-  #     # de quien crea el tag. Ese check queda registrado en la UI de GitHub
-  #     # (quién aprobó, cuándo) — es la evidencia auditable de "aprobación
-  #     # manual registrada" que pide el Anexo 4 (§1.2.3).
-  #     environment: production
-  #     runs-on: ubuntu-latest
-  #     env:
-  #       RAILWAY_GRAPHQL: https://backboard.railway.com/graphql/v2
-  #       ENVIRONMENT_ID: "b0b1fd5a-e3e7-409e-8847-f2700286a4a0"
-  #       API_SERVICE_ID: "45dc82be-fd53-4b80-ba9c-384bbbdba034"
-  #       WEB_SERVICE_ID: "070e5864-c5af-47e3-89d4-89c3041bc98b"
-  #       AUTH_SERVICE_ID: "dd1b662a-4bcb-450c-a57e-fa0fe6fb5773"
-  #     steps:
-  #       # BL-231: sin migraciones desde GitHub ni secret PROD_DATABASE_URL.
-  #       # Las aplica el pre-deploy command de bistrolink-api en el entorno
-  #       # production de Railway (mismo script que en staging), y
-  #       # bistrolink-db de producción no tiene TCP Proxy (checklist BL-232).
-  #       # Después del paso de la API va un "Esperar la API nueva" igual al de
-  #       # staging, con la URL de producción y ESPERADO="${{ github.ref_name }}"
-  #       # (en un tag, la imagen hornea el tag semántico como versión).
-  #
-  #       - name: Actualizar y deployar API (tag semántico)
-  #         env:
-  #           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-  #         run: |
-  #           set -euo pipefail
-  #           IMAGE="${{ env.IMAGE_API }}:${{ github.ref_name }}"
-  #
-  #           RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
-  #             -H "Authorization: Bearer $RAILWAY_TOKEN" \
-  #             -H "Content-Type: application/json" \
-  #             -d "$(jq -n --arg s "$API_SERVICE_ID" --arg e "$ENVIRONMENT_ID" --arg img "$IMAGE" '{
-  #               query: "mutation($serviceId: String!, $environmentId: String!, $input: ServiceInstanceUpdateInput!) { serviceInstanceUpdate(serviceId: $serviceId, environmentId: $environmentId, input: $input) }",
-  #               variables: { serviceId: $s, environmentId: $e, input: { source: { image: $img } } }
-  #             }')")
-  #           echo "$RESPONSE"
-  #           echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
-  #
-  #           RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
-  #             -H "Authorization: Bearer $RAILWAY_TOKEN" \
-  #             -H "Content-Type: application/json" \
-  #             -d "$(jq -n --arg s "$API_SERVICE_ID" --arg e "$ENVIRONMENT_ID" '{
-  #               query: "mutation($serviceId: String!, $environmentId: String!) { serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId) }",
-  #               variables: { serviceId: $s, environmentId: $e }
-  #             }')")
-  #           echo "$RESPONSE"
-  #           echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
-  #
-  #       - name: Actualizar y deployar Web (tag semántico)
-  #         env:
-  #           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-  #         run: |
-  #           set -euo pipefail
-  #           IMAGE="${{ env.IMAGE_WEB }}:${{ github.ref_name }}"
-  #
-  #           RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
-  #             -H "Authorization: Bearer $RAILWAY_TOKEN" \
-  #             -H "Content-Type: application/json" \
-  #             -d "$(jq -n --arg s "$WEB_SERVICE_ID" --arg e "$ENVIRONMENT_ID" --arg img "$IMAGE" '{
-  #               query: "mutation($serviceId: String!, $environmentId: String!, $input: ServiceInstanceUpdateInput!) { serviceInstanceUpdate(serviceId: $serviceId, environmentId: $environmentId, input: $input) }",
-  #               variables: { serviceId: $s, environmentId: $e, input: { source: { image: $img } } }
-  #             }')")
-  #           echo "$RESPONSE"
-  #           echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
-  #
-  #           RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
-  #             -H "Authorization: Bearer $RAILWAY_TOKEN" \
-  #             -H "Content-Type: application/json" \
-  #             -d "$(jq -n --arg s "$WEB_SERVICE_ID" --arg e "$ENVIRONMENT_ID" '{
-  #               query: "mutation($serviceId: String!, $environmentId: String!) { serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId) }",
-  #               variables: { serviceId: $s, environmentId: $e }
-  #             }')")
-  #           echo "$RESPONSE"
-  #           echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
-  #
-  #       - name: Actualizar y deployar Keycloak (tag semántico)
-  #         env:
-  #           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-  #         run: |
-  #           set -euo pipefail
-  #           IMAGE="${{ env.IMAGE_AUTH }}:${{ github.ref_name }}"
-  #
-  #           RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
-  #             -H "Authorization: Bearer $RAILWAY_TOKEN" \
-  #             -H "Content-Type: application/json" \
-  #             -d "$(jq -n --arg s "$AUTH_SERVICE_ID" --arg e "$ENVIRONMENT_ID" --arg img "$IMAGE" '{
-  #               query: "mutation($serviceId: String!, $environmentId: String!, $input: ServiceInstanceUpdateInput!) { serviceInstanceUpdate(serviceId: $serviceId, environmentId: $environmentId, input: $input) }",
-  #               variables: { serviceId: $s, environmentId: $e, input: { source: { image: $img } } }
-  #             }')")
-  #           echo "$RESPONSE"
-  #           echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
-  #
-  #           RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
-  #             -H "Authorization: Bearer $RAILWAY_TOKEN" \
-  #             -H "Content-Type: application/json" \
-  #             -d "$(jq -n --arg s "$AUTH_SERVICE_ID" --arg e "$ENVIRONMENT_ID" '{
-  #               query: "mutation($serviceId: String!, $environmentId: String!) { serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId) }",
-  #               variables: { serviceId: $s, environmentId: $e }
-  #             }')")
-  #           echo "$RESPONSE"
-  #           echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
-  #
-  #       - name: Health check producción
-  #         run: |
-  #           check() {
-  #             if curl -fsS -o /dev/null --retry 30 --retry-delay 10 --retry-all-errors --max-time 15 "$1"; then
-  #               echo "OK    $1"
-  #             else
-  #               echo "FALLÓ $1 — última respuesta:"
-  #               curl -sS --max-time 15 -w "\nHTTP %{http_code}\n" "$1" || true
-  #               return 1
-  #             fi
-  #           }
-  #           check https://bistrolink-api-production.up.railway.app/health
-  #           check https://bistrolink-api-production.up.railway.app/health/ready
-  #           check https://bistrolink-web-production.up.railway.app
-  #           check https://bistrolink-auth-production.up.railway.app/realms/bistrolink/.well-known/openid-configuration
+  # Migraciones: las aplica el pre-deploy de la API de production dentro de
+  # Railway (BL-231); GitHub no tiene acceso a la base. Antes, el paso
+  # "Verificar el respaldo de producción" exige un respaldo reciente de las
+  # dos bases (RNF.06, Anexo 4 §1.2.8): ejecutar db-backup-prod con "Run now"
+  # en Railway justo antes de aprobar.
+  deploy-prod:
+    name: 🏁 Deploy producción (aprobación manual)
+    needs: [gitleaks, codeql, sonarcloud, dependencias, build]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    environment:
+      name: production
+      url: https://bistrolink-web-production.up.railway.app
+    runs-on: ubuntu-latest
+    # Para crear el GitHub Release del tag.
+    permissions:
+      contents: write
+    env:
+      RAILWAY_GRAPHQL: https://backboard.railway.com/graphql/v2
+      ENVIRONMENT_ID: b0b1fd5a-e3e7-409e-8847-f2700286a4a0
+      API_SERVICE_ID: 24f425e7-e8d5-4c1e-a957-bf5bccccbcec
+      WEB_SERVICE_ID: 3198c59f-98e9-4a4e-9f39-31c329ad37ac
+      AUTH_SERVICE_ID: 39a31121-afb3-4c1d-9972-01628859e77a
+      VERSION: ${{ github.ref_name }}
+      API_URL: https://bistrolink-api-production.up.railway.app
+      WEB_URL: https://bistrolink-web-production.up.railway.app
+      AUTH_URL: https://bistrolink-auth-production.up.railway.app
+    steps:
+      - name: Verificar el respaldo de producción (antes de migrar)
+        # Usa las credenciales de bistrolink-backup-ci (solo lectura y listado
+        # sobre los buckets de respaldo). Si falla, no se tocó nada: ejecutar
+        # db-backup-prod con "Run now" en Railway y volver a correr este job.
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_BACKUP_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_BACKUP_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          BUCKET: bistrolink-backups-prod
+          MAX_MINUTOS: ${{ vars.BACKUP_PRE_DEPLOY_MAX_MIN || 120 }}
+        run: |
+          set -euo pipefail
+          ahora=$(date -u +%s)
+          for base in bistrolink-db keycloak-db; do
+            ultimo=$(aws s3api list-objects-v2 --bucket "$BUCKET" --prefix "daily/$base/" \
+              --query 'sort_by(Contents[?ends_with(Key, `.dump`)], &LastModified)[-1].LastModified' \
+              --output text)
+            if [ -z "$ultimo" ] || [ "$ultimo" = "None" ]; then
+              echo "::error::$base: no hay ningún respaldo en s3://$BUCKET/daily/$base/. Ejecutar db-backup-prod (Run now) y volver a correr este job."
+              exit 1
+            fi
+            minutos=$(( (ahora - $(date -u -d "$ultimo" +%s)) / 60 ))
+            if [ "$minutos" -gt "$MAX_MINUTOS" ]; then
+              echo "::error::$base: el último respaldo es de hace $minutos min (máximo $MAX_MINUTOS). Ejecutar db-backup-prod (Run now) en Railway y volver a correr este job."
+              exit 1
+            fi
+            echo "OK: $base respaldada hace $minutos min ($ultimo)"
+          done
+
+      - name: Actualizar y deployar API (tag semántico)
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          set -euo pipefail
+          IMAGE="${{ env.IMAGE_API }}:${VERSION}"
+
+          RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg s "$API_SERVICE_ID" --arg e "$ENVIRONMENT_ID" --arg img "$IMAGE" '{
+              query: "mutation($serviceId: String!, $environmentId: String!, $input: ServiceInstanceUpdateInput!) { serviceInstanceUpdate(serviceId: $serviceId, environmentId: $environmentId, input: $input) }",
+              variables: { serviceId: $s, environmentId: $e, input: { source: { image: $img } } }
+            }')")
+          echo "$RESPONSE"
+          echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
+
+          RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg s "$API_SERVICE_ID" --arg e "$ENVIRONMENT_ID" '{
+              query: "mutation($serviceId: String!, $environmentId: String!) { serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId) }",
+              variables: { serviceId: $s, environmentId: $e }
+            }')")
+          echo "$RESPONSE"
+          echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
+
+      - name: Esperar la API nueva (pre-deploy con migraciones)
+        # Igual que en staging: espera a que /health/version devuelva el tag
+        # de esta corrida (la imagen del tag hornea GIT_SHA = tag) con
+        # upToDate == true. Va antes de Web y Keycloak: si el pre-deploy
+        # falla, Railway deja la versión anterior y no se toca nada más.
+        run: |
+          URL="${API_URL}/health/version"
+          BODY=""
+          for i in $(seq 1 60); do
+            BODY=$(curl -fsS --max-time 15 "$URL" 2>/dev/null || true)
+            API=$(echo "$BODY" | jq -r '.api // empty' 2>/dev/null || true)
+            UPTODATE=$(echo "$BODY" | jq -r '.upToDate' 2>/dev/null || true)
+            if [ "$API" = "$VERSION" ]; then
+              if [ "$UPTODATE" = "true" ]; then
+                echo "OK: la API $API está en línea con las migraciones al día"
+                echo "$BODY" | jq .
+                exit 0
+              fi
+              echo "::error::La API $API está en línea pero upToDate=$UPTODATE: la última migración de la base no coincide con la de la imagen."
+              echo "$BODY" | jq . || echo "$BODY"
+              exit 1
+            fi
+            echo "Intento $i/60: la API responde '${API:-sin respuesta}', se espera $VERSION. Reintento en 10 s..."
+            sleep 10
+          done
+          echo "::error::A los 10 minutos la API sigue sin la versión $VERSION. Si falló el pre-deploy (migraciones), Railway dejó la versión anterior: revisar bistrolink-prod-api → Deployments → logs del pre-deploy. Web y Keycloak no se desplegaron."
+          echo "Última respuesta: $BODY"
+          exit 1
+
+      - name: Actualizar y deployar Web (tag semántico)
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          set -euo pipefail
+          IMAGE="${{ env.IMAGE_WEB }}:${VERSION}"
+
+          RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg s "$WEB_SERVICE_ID" --arg e "$ENVIRONMENT_ID" --arg img "$IMAGE" '{
+              query: "mutation($serviceId: String!, $environmentId: String!, $input: ServiceInstanceUpdateInput!) { serviceInstanceUpdate(serviceId: $serviceId, environmentId: $environmentId, input: $input) }",
+              variables: { serviceId: $s, environmentId: $e, input: { source: { image: $img } } }
+            }')")
+          echo "$RESPONSE"
+          echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
+
+          RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg s "$WEB_SERVICE_ID" --arg e "$ENVIRONMENT_ID" '{
+              query: "mutation($serviceId: String!, $environmentId: String!) { serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId) }",
+              variables: { serviceId: $s, environmentId: $e }
+            }')")
+          echo "$RESPONSE"
+          echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
+
+      - name: Actualizar y deployar Keycloak (tag semántico)
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          set -euo pipefail
+          IMAGE="${{ env.IMAGE_AUTH }}:${VERSION}"
+
+          RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg s "$AUTH_SERVICE_ID" --arg e "$ENVIRONMENT_ID" --arg img "$IMAGE" '{
+              query: "mutation($serviceId: String!, $environmentId: String!, $input: ServiceInstanceUpdateInput!) { serviceInstanceUpdate(serviceId: $serviceId, environmentId: $environmentId, input: $input) }",
+              variables: { serviceId: $s, environmentId: $e, input: { source: { image: $img } } }
+            }')")
+          echo "$RESPONSE"
+          echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
+
+          RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg s "$AUTH_SERVICE_ID" --arg e "$ENVIRONMENT_ID" '{
+              query: "mutation($serviceId: String!, $environmentId: String!) { serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId) }",
+              variables: { serviceId: $s, environmentId: $e }
+            }')")
+          echo "$RESPONSE"
+          echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
+
+      - name: Smoke test producción (solo lectura)
+        # Sin E2E contra production: solo lecturas que no crean datos.
+        run: |
+          set -uo pipefail
+          check() {
+            if curl -fsS -o /dev/null --retry 30 --retry-delay 10 --retry-all-errors --max-time 15 "$1"; then
+              echo "OK    $1"
+            else
+              echo "FALLÓ $1 — última respuesta:"
+              curl -sS --max-time 15 -w "\nHTTP %{http_code}\n" "$1" || true
+              return 1
+            fi
+          }
+          fallos=0
+          check "${API_URL}/health" || fallos=1
+          check "${API_URL}/health/ready" || fallos=1
+          check "${WEB_URL}/api/health" || fallos=1
+          check "${AUTH_URL}/realms/bistrolink/.well-known/openid-configuration" || fallos=1
+
+          # El emisor de los tokens tiene que ser el de production: si no, la
+          # API rechaza todos los logins (Anexo 12, A9).
+          ISSUER=$(curl -fsS --max-time 15 "${AUTH_URL}/realms/bistrolink/.well-known/openid-configuration" | jq -r '.issuer // empty' || true)
+          if [ "$ISSUER" = "${AUTH_URL}/realms/bistrolink" ]; then
+            echo "OK    issuer $ISSUER"
+          else
+            echo "::error::El issuer de Keycloak es '${ISSUER:-vacío}', se esperaba ${AUTH_URL}/realms/bistrolink"
+            fallos=1
+          fi
+
+          # BL-285 (ADR 0011): la limpieza de datos de prueba no existe en
+          # production. Sin token, tiene que dar 404 (en staging da 401).
+          CODIGO=$(curl -s -o /dev/null -w "%{http_code}" -X POST --max-time 15 "${API_URL}/testing/limpieza" || true)
+          if [ "$CODIGO" = "404" ]; then
+            echo "OK    /testing/limpieza no existe (404)"
+          else
+            echo "::error::POST /testing/limpieza respondió $CODIGO en production (se esperaba 404): revisar que bistrolink-prod-api no tenga E2E_CLEANUP_ENABLED."
+            fallos=1
+          fi
+
+          exit $fallos
+
+      - name: Publicar el GitHub Release
+        # Notas generadas por GitHub a partir de los PRs. Los tags con sufijo
+        # (v0.5.0-rc.1) quedan como pre-release. Si se vuelve a correr el job,
+        # no lo crea de nuevo.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "El release $VERSION ya existe: no se crea de nuevo."
+            exit 0
+          fi
+          EXTRA=""
+          if [[ "$VERSION" == *-* ]]; then
+            EXTRA="--prerelease"
+          fi
+          gh release create "$VERSION" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes --title "$VERSION" $EXTRA
+          echo "Release $VERSION publicado."
