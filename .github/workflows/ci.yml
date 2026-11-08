@@ -571,9 +571,19 @@ jobs:
           # v8.12.0 -> v8.30.1: última versión estable (Gitleaks quedó feature-complete,
           # solo recibe parches de seguridad; conviene revisar este número cada tanto).
           VERSION=8.30.1
+          # SHA-256 oficial de gitleaks_8.30.1_linux_x64.tar.gz (archivo
+          # gitleaks_8.30.1_checksums.txt del release). Al subir VERSION hay que
+          # actualizarlo también.
+          SHA256=551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
           TMPDIR=$(mktemp -d)
-          curl -sSL -o "${TMPDIR}/gitleaks.tar.gz" \
-            "https://github.com/zricethezav/gitleaks/releases/download/v${VERSION}/gitleaks_${VERSION}_linux_x64.tar.gz"
+          # -f: si GitHub responde con un error (5xx, límite de descargas), curl
+          # falla en lugar de guardar la página de error como si fuera el .tar.gz
+          # (antes terminaba en «gzip: stdin: not in gzip format»). --retry
+          # reintenta los cortes transitorios de la descarga.
+          curl -fsSL --retry 3 --retry-delay 5 --retry-all-errors \
+            -o "${TMPDIR}/gitleaks.tar.gz" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}/gitleaks_${VERSION}_linux_x64.tar.gz"
+          echo "${SHA256}  ${TMPDIR}/gitleaks.tar.gz" | sha256sum --check --strict
           mkdir -p "${TMPDIR}/bin"
           tar -xzf "${TMPDIR}/gitleaks.tar.gz" -C "${TMPDIR}/bin"
           "${TMPDIR}/bin/gitleaks" detect \
