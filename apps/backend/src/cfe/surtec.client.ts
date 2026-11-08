@@ -115,14 +115,6 @@ export function leerPdf(datos: unknown): PdfCfe {
   return { contenido };
 }
 
-/** HU-009 (BL-455): consulta de los CFE emitidos por un emisor. */
-export interface ConsultaEmitidos {
-  rutEmisor: string;
-  /** Fechas de emisión, AAAA-MM-DD (hora de Uruguay). */
-  fechaDesde: string;
-  fechaHasta: string;
-}
-
 /** Lo que BistroLink lee de cada CFE de la consulta (sin datos del receptor). */
 export interface CfeEmitidoConEstado {
   id: string;
@@ -133,39 +125,45 @@ export interface CfeEmitidoConEstado {
   motivoDgi: string | null;
 }
 
+const textoONulo = (valor: unknown): string | null =>
+  typeof valor === 'string' && valor.trim() !== '' ? valor.trim() : null;
+
 /**
- * Lee la respuesta de la consulta. La guía de Surtec no es consistente con
- * los nombres: la tabla dice `comprobante` (array) y `estado_dgi`, y el
- * ejemplo usa `comprobantes` y `estado`. Se aceptan las dos formas; lo que
- * no tiene id, serie o número se descarta.
+ * Lee un CFE de la consulta de emitidos (HU-009, BL-455 y BL-471). El
+ * estado ante la DGI llega como objeto en el detalle de la v2 y en la v1
+ * (`estado_dgi: { codigo, razon }`) y como texto en el listado de la v2
+ * (`estado_dgi: "AE"`); la guía también nombra `estado`. Sin id, serie o
+ * número, null.
  */
-export function leerEmitidos(datos: unknown): CfeEmitidoConEstado[] {
+export function leerEmitido(dato: unknown): CfeEmitidoConEstado | null {
+  const c = dato as Record<string, any> | null | undefined;
+  if (c?.id === undefined || !c.serie || c.numero === undefined) return null;
+  const estado: unknown = c.estado_dgi ?? c.estado;
+  const objeto =
+    estado !== null && typeof estado === 'object'
+      ? (estado as Record<string, unknown>)
+      : {};
+  const codigo = textoONulo(
+    typeof estado === 'string' ? estado : objeto.codigo,
+  );
+  return {
+    id: String(c.id),
+    serie: String(c.serie),
+    numero: Number(c.numero),
+    codigoDgi: codigo?.toUpperCase() ?? null,
+    motivoDgi: textoONulo(objeto.motivo ?? objeto.razon ?? objeto.descripcion),
+  };
+}
+
+/**
+ * La lista de una consulta de emitidos: `items` en la v2 (paginada), y
+ * `comprobantes` o `comprobante` en la v1. Lo que no es una lista, vacía.
+ */
+export function listaDeEmitidos(datos: unknown): unknown[] {
+  if (Array.isArray(datos)) return datos;
   const raiz = (datos ?? {}) as Record<string, unknown>;
-  const lista = Array.isArray(datos)
-    ? datos
-    : (raiz.comprobantes ?? raiz.comprobante);
-  if (!Array.isArray(lista)) return [];
-  return lista.flatMap((c: Record<string, any>) => {
-    if (c?.id === undefined || !c.serie || c.numero === undefined) return [];
-    const estado = (c.estado_dgi ?? c.estado ?? {}) as Record<string, unknown>;
-    const codigo = typeof estado === 'string' ? estado : estado.codigo;
-    const motivo = estado.motivo ?? estado.razon ?? estado.descripcion;
-    return [
-      {
-        id: String(c.id),
-        serie: String(c.serie),
-        numero: Number(c.numero),
-        codigoDgi:
-          typeof codigo === 'string' && codigo.trim() !== ''
-            ? codigo.trim().toUpperCase()
-            : null,
-        motivoDgi:
-          typeof motivo === 'string' && motivo.trim() !== ''
-            ? motivo.trim()
-            : null,
-      },
-    ];
-  });
+  const lista = raiz.items ?? raiz.comprobantes ?? raiz.comprobante;
+  return Array.isArray(lista) ? lista : [];
 }
 
 export interface CfeEmitido {
@@ -323,23 +321,46 @@ export class SurtecClient {
   }
 
   /**
-   * HU-009 (BL-455): CFE emitidos en un rango de fechas de emisión, con su
-   * estado ante la DGI (GET /consulta/comprobantes/emitidos). La API no
-   * filtra por id: se pide el rango y se empareja del lado de BistroLink.
+   * HU-009 (BL-471): un CFE emitido con su estado ante la DGI, por el id de
+   * Surtec (comprobante_fiscal.proveedor_ref), con la API v2
+   * (GET /v2/consulta/comprobantes/emitidos/{id}). Reemplaza a la consulta
+   * por rango de fechas de la v1, deprecada. null si Surtec no lo tiene (404).
    */
-  async consultarEmitidos(
-    consulta: ConsultaEmitidos,
-  ): Promise<CfeEmitidoConEstado[]> {
-    const parametros = new URLSearchParams({
-      FechaDesde: consulta.fechaDesde,
-      FechaHasta: consulta.fechaHasta,
-      Sucursal: String(Number(process.env.SURTEC_SUCURSAL ?? 1)),
-    });
+  async consultarEmitido(
+    rutEmisor: string,
+    idSurtec: string,
+  ): Promise<CfeEmitidoConEstado | null> {
+    try {
+      const datos = await this.llamar(
+        `${apiUrl()}/v2/consulta/comprobantes/emitidos/${encodeURIComponent(idSurtec)}`,
+        rutEmisor,
+      );
+      return leerEmitido(datos);
+    } catch (error) {
+      if (error instanceof SurtecError && error.status === 404) return null;
+      throw error;
+    }
+  }
+
+  /**
+   * HU-009 (BL-471): el CFE con ese id_externo (el que manda BistroLink al
+   * emitir), para los comprobantes sin id de Surtec. Se compara el
+   * id_externo de cada resultado: si Surtec ignorara el filtro, devolvería
+   * otros comprobantes y no se toma ninguno.
+   */
+  async buscarEmitidoPorIdExterno(
+    rutEmisor: string,
+    idExterno: string,
+  ): Promise<CfeEmitidoConEstado | null> {
+    const parametros = new URLSearchParams({ id_externo: idExterno });
     const datos = await this.llamar(
-      `${apiUrl()}/consulta/comprobantes/emitidos?${parametros.toString()}`,
-      consulta.rutEmisor,
+      `${apiUrl()}/v2/consulta/comprobantes/emitidos?${parametros.toString()}`,
+      rutEmisor,
     );
-    return leerEmitidos(datos);
+    const encontrado = listaDeEmitidos(datos).find(
+      (c) => (c as Record<string, unknown> | null)?.id_externo === idExterno,
+    );
+    return encontrado === undefined ? null : leerEmitido(encontrado);
   }
 
   /**

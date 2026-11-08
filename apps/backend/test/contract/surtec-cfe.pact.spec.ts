@@ -8,8 +8,10 @@
 //     `cliente`. Leemos id, serie, numero, hash, cae_numero, cae_vencimiento
 //     y url.
 //
-//   - GET {SURTEC_API_URL}/consulta/comprobantes/emitidos: estado ante la DGI
-//     de los CFE emitidos en un rango de fechas (HU-009, BL-455). Leemos id,
+//   - GET {SURTEC_API_URL}/v2/consulta/comprobantes/emitidos/{id} y
+//     /v2/consulta/comprobantes/emitidos?id_externo=: estado ante la DGI de
+//     un CFE, con la API v2 (HU-009, BL-455; v2 desde BL-471, la consulta
+//     por rango de fechas de la v1 está deprecada). Leemos id, id_externo,
 //     serie, numero y estado_dgi (código y motivo).
 //
 //   - GET {SURTEC_API_URL}/comprobantes/{id}/pdf: PDF A4 de un CFE emitido,
@@ -366,88 +368,88 @@ describe('Contrato Surtec — facturación electrónica (BL-216)', () => {
     });
   });
 
-  describe('GET /consulta/comprobantes/emitidos — estado ante la DGI (HU-009, BL-455)', () => {
-    const CONSULTA = {
-      rutEmisor: RUT_EMISOR,
-      fechaDesde: '2026-11-01',
-      fechaHasta: '2026-11-03',
+  describe('GET /v2/consulta/comprobantes/emitidos — estado ante la DGI (HU-009, BL-455 y BL-471)', () => {
+    const cabeceras = {
+      Authorization: regex('^Bearer \\S+$', `Bearer ${TOKEN_1}`),
+      'X-Emisor': regex(RUT, RUT_EMISOR),
     };
-    const FECHA = '^\\d{4}-\\d{2}-\\d{2}$';
 
-    function consultaEmitidos(i: V4UnconfiguredInteraction) {
-      return i.withRequest('GET', '/consulta/comprobantes/emitidos', (b) => {
-        b.headers({
-          Authorization: regex('^Bearer \\S+$', `Bearer ${TOKEN_1}`),
-          'X-Emisor': regex(RUT, RUT_EMISOR),
-        }).query({
-          FechaDesde: regex(FECHA, '2026-11-01'),
-          FechaHasta: regex(FECHA, '2026-11-03'),
-          Sucursal: regex('^\\d+$', '1'),
-        });
-      });
-    }
-
-    it('[TC-C-017] Surtec CFE: GET /consulta/comprobantes/emitidos con un rango de fechas responde 200 con cada CFE (id, serie, número) y su estado ante la DGI', async () => {
+    it('[TC-C-017] Surtec CFE: GET /v2/consulta/comprobantes/emitidos/{id} responde 200 con el CFE (id, serie, número) y su estado ante la DGI', async () => {
       loginConUsuario(pact.addInteraction());
-      await consultaEmitidos(
-        pact
-          .addInteraction()
-          .given(
-            'el emisor tiene CFE emitidos en el rango con respuesta de DGI',
-          )
-          .uponReceiving(
-            'una consulta de los CFE emitidos en un rango de fechas',
-          ),
-      )
-        // Nombres de la tabla de la guía de Surtec (`comprobante` y
-        // `estado_dgi`); el ejemplo de la guía usa `comprobantes` y
-        // `estado`. SurtecClient acepta los dos (leerEmitidos).
+      await pact
+        .addInteraction()
+        .given('el emisor tiene el CFE 541759 con respuesta de DGI')
+        .uponReceiving('una consulta v2 de un CFE emitido por su id')
+        .withRequest(
+          'GET',
+          '/v2/consulta/comprobantes/emitidos/541759',
+          (b) => {
+            b.headers(cabeceras);
+          },
+        )
+        // En el detalle, `estado_dgi` es un objeto (visto en el ambiente de
+        // pruebas de Surtec el 08/11/2026).
         .willRespondWith(200, (b) => {
           b.jsonBody({
-            comprobante: eachLike({
-              id: like(541759),
-              serie: regex('^[A-Z]{1,2}$', 'A'),
-              numero: like(49),
-              estado_dgi: {
-                codigo: regex('^(AE|BE|CE)$', 'AE'),
-              },
-            }),
+            id: like(541759),
+            serie: regex('^[A-Z]{1,2}$', 'A'),
+            numero: like(49),
+            estado_dgi: {
+              codigo: regex('^(AE|BE|CE|NE)$', 'AE'),
+            },
           });
         })
         .executeTest(async (mock) => {
-          const emitidos = await clienteContra(mock.url).consultarEmitidos(
-            CONSULTA,
-          );
-
-          expect(emitidos).toEqual([
-            {
-              id: '541759',
-              serie: 'A',
-              numero: 49,
-              codigoDgi: 'AE',
-              motivoDgi: null,
-            },
-          ]);
+          await expect(
+            clienteContra(mock.url).consultarEmitido(RUT_EMISOR, '541759'),
+          ).resolves.toEqual({
+            id: '541759',
+            serie: 'A',
+            numero: 49,
+            codigoDgi: 'AE',
+            motivoDgi: null,
+          });
         });
     });
 
-    it('[TC-C-018] Surtec CFE: GET /consulta/comprobantes/emitidos sin CFE en el rango responde 200 con la lista vacía y BistroLink no actualiza nada', async () => {
+    it('[TC-C-018] Surtec CFE: GET /v2/consulta/comprobantes/emitidos?id_externo= responde 200 con la página que contiene el CFE de ese id_externo y su estado ante la DGI', async () => {
       loginConUsuario(pact.addInteraction());
-      await consultaEmitidos(
-        pact
-          .addInteraction()
-          .given('el emisor no tiene CFE emitidos en el rango')
-          .uponReceiving(
-            'una consulta de CFE emitidos en un rango sin comprobantes',
-          ),
-      )
+      await pact
+        .addInteraction()
+        .given('el emisor tiene un CFE con el id_externo bl-pago-1')
+        .uponReceiving('una consulta v2 de CFE emitidos por id_externo')
+        .withRequest('GET', '/v2/consulta/comprobantes/emitidos', (b) => {
+          b.headers(cabeceras).query({ id_externo: 'bl-pago-1' });
+        })
+        // En el listado, `estado_dgi` es un texto y la respuesta va paginada.
         .willRespondWith(200, (b) => {
-          b.jsonBody({ comprobante: [] });
+          b.jsonBody({
+            items: [
+              {
+                id: like(541760),
+                id_externo: 'bl-pago-1',
+                serie: regex('^[A-Z]{1,2}$', 'A'),
+                numero: like(50),
+                estado_dgi: regex('^(AE|BE|CE|NE)$', 'NE'),
+              },
+            ],
+            page_number: like(1),
+            page_size: like(25),
+          });
         })
         .executeTest(async (mock) => {
           await expect(
-            clienteContra(mock.url).consultarEmitidos(CONSULTA),
-          ).resolves.toEqual([]);
+            clienteContra(mock.url).buscarEmitidoPorIdExterno(
+              RUT_EMISOR,
+              'bl-pago-1',
+            ),
+          ).resolves.toEqual({
+            id: '541760',
+            serie: 'A',
+            numero: 50,
+            codigoDgi: 'NE',
+            motivoDgi: null,
+          });
         });
     });
   });

@@ -13,12 +13,25 @@ const RESUMEN = {
 };
 
 describe('configuracionEstadoDgi', () => {
-  it('por defecto: habilitada, cada 10 min, los de los últimos 7 días', () => {
+  it('por defecto: habilitada, cada 10 min, los de los últimos 7 días, hasta 100 por corrida con 500 ms entre consultas', () => {
     expect(configuracionEstadoDgi({ NODE_ENV: 'production' })).toEqual({
       habilitada: true,
       intervaloMs: 600_000,
       dias: 7,
+      maxPorCorrida: 100,
+      pausaMs: 500,
     });
+  });
+
+  it('en los tests la pausa entre consultas es 0, salvo que se indique (BL-471)', () => {
+    expect(configuracionEstadoDgi({ NODE_ENV: 'test' }).pausaMs).toBe(0);
+    expect(
+      configuracionEstadoDgi({ NODE_ENV: 'test', CFE_ESTADO_DGI_PAUSA_MS: '0' })
+        .pausaMs,
+    ).toBe(0);
+    expect(
+      configuracionEstadoDgi({ CFE_ESTADO_DGI_PAUSA_MS: '-5' }).pausaMs,
+    ).toBe(500);
   });
 
   it('se puede apagar con CFE_ESTADO_DGI_HABILITADA=false', () => {
@@ -42,14 +55,22 @@ describe('configuracionEstadoDgi', () => {
       configuracionEstadoDgi({
         CFE_ESTADO_DGI_INTERVALO_MIN: '5',
         CFE_ESTADO_DGI_DIAS: '3',
+        CFE_ESTADO_DGI_MAX_POR_CORRIDA: '20',
+        CFE_ESTADO_DGI_PAUSA_MS: '1000',
       }),
-    ).toMatchObject({ intervaloMs: 300_000, dias: 3 });
+    ).toMatchObject({
+      intervaloMs: 300_000,
+      dias: 3,
+      maxPorCorrida: 20,
+      pausaMs: 1000,
+    });
     expect(
       configuracionEstadoDgi({
         CFE_ESTADO_DGI_INTERVALO_MIN: 'abc',
         CFE_ESTADO_DGI_DIAS: '-1',
+        CFE_ESTADO_DGI_MAX_POR_CORRIDA: '0',
       }),
-    ).toMatchObject({ intervaloMs: 600_000, dias: 7 });
+    ).toMatchObject({ intervaloMs: 600_000, dias: 7, maxPorCorrida: 100 });
   });
 });
 

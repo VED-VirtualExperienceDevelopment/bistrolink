@@ -1,6 +1,7 @@
 import {
   cuerpoParaLog,
-  leerEmitidos,
+  leerEmitido,
+  listaDeEmitidos,
   leerPdf,
   SurtecClient,
   SurtecError,
@@ -447,66 +448,53 @@ describe('SurtecClient', () => {
     });
   });
 
-  describe('HU-009 (BL-455): consulta de emitidos', () => {
-    const CONSULTA = {
-      rutEmisor: '214198620015',
-      fechaDesde: '2026-11-01',
-      fechaHasta: '2026-11-03',
-    };
+  describe('HU-009 (BL-471): consulta de emitidos con la API v2', () => {
+    const RUT = '214198620015';
 
-    it('GET con el rango de fechas, la sucursal y X-Emisor, sin cuerpo', async () => {
-      process.env.SURTEC_SUCURSAL = '2';
+    it('por id: GET /v2/consulta/comprobantes/emitidos/{id} con X-Emisor, sin cuerpo', async () => {
       fetchMock
         .mockReturnValueOnce(json({ access_token: 'AT' }))
         .mockReturnValueOnce(
           json({
-            comprobantes: [
-              {
-                id: 541759,
-                serie: 'A',
-                numero: 49,
-                estado_dgi: { codigo: 'AE', motivo: 'Recibido' },
-              },
-            ],
+            id: 541759,
+            serie: 'A',
+            numero: 49,
+            estado_dgi: { codigo: 'AE' },
           }),
         );
 
-      const emitidos = await client.consultarEmitidos(CONSULTA);
+      const emitido = await client.consultarEmitido(RUT, '541759');
 
       const [url, opts] = fetchMock.mock.calls[1];
-      const consulta = new URL(url);
-      expect(consulta.pathname).toBe('/consulta/comprobantes/emitidos');
-      expect(Object.fromEntries(consulta.searchParams)).toEqual({
-        FechaDesde: '2026-11-01',
-        FechaHasta: '2026-11-03',
-        Sucursal: '2',
-      });
+      expect(new URL(url).pathname).toBe(
+        '/v2/consulta/comprobantes/emitidos/541759',
+      );
       expect(opts.method).toBe('GET');
       expect(opts.body).toBeUndefined();
       expect(opts.headers).toEqual({
         Authorization: 'Bearer AT',
-        'X-Emisor': '214198620015',
+        'X-Emisor': RUT,
       });
-      expect(emitidos).toEqual([
-        {
-          id: '541759',
-          serie: 'A',
-          numero: 49,
-          codigoDgi: 'AE',
-          motivoDgi: 'Recibido',
-        },
-      ]);
+      expect(emitido).toEqual({
+        id: '541759',
+        serie: 'A',
+        numero: 49,
+        codigoDgi: 'AE',
+        motivoDgi: null,
+      });
     });
 
-    it('un error de la consulta lanza SurtecError con el status y sin datos del receptor', async () => {
+    it('por id: si Surtec no lo tiene (404) devuelve null; otro error lanza SurtecError sin datos del receptor', async () => {
       fetchMock
         .mockReturnValueOnce(json({ access_token: 'AT' }))
+        .mockReturnValueOnce(json({ mensaje: 'No encontrado' }, 404))
         .mockReturnValueOnce(
           json({ receptor: { nro_doc: '219999830019' } }, 503),
         );
 
+      await expect(client.consultarEmitido(RUT, '1')).resolves.toBeNull();
       const error = await client
-        .consultarEmitidos(CONSULTA)
+        .consultarEmitido(RUT, '2')
         .catch((e: unknown) => e);
 
       expect(error).toBeInstanceOf(SurtecError);
@@ -514,47 +502,120 @@ describe('SurtecClient', () => {
       expect((error as SurtecError).message).toContain('la consulta');
       expect((error as SurtecError).message).not.toContain('219999830019');
     });
+
+    it('por id_externo: filtra con ?id_externo= y toma el que coincide', async () => {
+      fetchMock
+        .mockReturnValueOnce(json({ access_token: 'AT' }))
+        .mockReturnValueOnce(
+          json({
+            items: [
+              {
+                id: 1,
+                id_externo: 'bl-otro',
+                serie: 'A',
+                numero: 1,
+                estado_dgi: 'BE',
+              },
+              {
+                id: 2,
+                id_externo: 'bl-pago-1',
+                serie: 'A',
+                numero: 2,
+                estado_dgi: 'ae',
+              },
+            ],
+            page_number: 1,
+            page_size: 25,
+          }),
+        );
+
+      const emitido = await client.buscarEmitidoPorIdExterno(RUT, 'bl-pago-1');
+
+      const consulta = new URL(fetchMock.mock.calls[1][0]);
+      expect(consulta.pathname).toBe('/v2/consulta/comprobantes/emitidos');
+      expect(Object.fromEntries(consulta.searchParams)).toEqual({
+        id_externo: 'bl-pago-1',
+      });
+      expect(emitido).toMatchObject({ id: '2', numero: 2, codigoDgi: 'AE' });
+    });
+
+    it('por id_externo: si ninguno coincide (Surtec ignoró el filtro) devuelve null', async () => {
+      fetchMock
+        .mockReturnValueOnce(json({ access_token: 'AT' }))
+        .mockReturnValueOnce(
+          json({
+            items: [{ id: 1, id_externo: 'bl-otro', serie: 'A', numero: 1 }],
+          }),
+        );
+
+      await expect(
+        client.buscarEmitidoPorIdExterno(RUT, 'bl-pago-1'),
+      ).resolves.toBeNull();
+    });
   });
 
-  describe('leerEmitidos (BL-455)', () => {
-    it('acepta `comprobante` o `comprobantes`, y `estado_dgi` o `estado`', () => {
-      const uno = { id: 1, serie: 'A', numero: 1, estado: { codigo: 'be' } };
-      expect(leerEmitidos({ comprobante: [uno] })).toEqual([
-        { id: '1', serie: 'A', numero: 1, codigoDgi: 'BE', motivoDgi: null },
-      ]);
-      expect(leerEmitidos({ comprobantes: [uno] })).toHaveLength(1);
-      expect(leerEmitidos([uno])).toHaveLength(1);
-    });
-
-    it('estado como texto, motivo en `razon`, o sin estado (DGI no respondió)', () => {
+  describe('leerEmitido y listaDeEmitidos (BL-455, BL-471)', () => {
+    it('estado como objeto (detalle v2 y v1) o como texto (listado v2), también en `estado`', () => {
       expect(
-        leerEmitidos({
-          comprobantes: [
-            { id: 1, serie: 'A', numero: 1, estado_dgi: 'CE' },
-            {
-              id: 2,
-              serie: 'A',
-              numero: 2,
-              estado_dgi: { codigo: 'BE', razon: 'Firma inválida' },
-            },
-            { id: 3, serie: 'A', numero: 3 },
-          ],
-        }).map((e) => [e.codigoDgi, e.motivoDgi]),
-      ).toEqual([
-        ['CE', null],
-        ['BE', 'Firma inválida'],
-        [null, null],
-      ]);
-    });
-
-    it('descarta lo que no tiene id, serie o número, y una respuesta sin lista', () => {
-      expect(
-        leerEmitidos({
-          comprobantes: [{ serie: 'A', numero: 1 }, { id: 1, numero: 1 }, null],
+        leerEmitido({
+          id: 1,
+          serie: 'A',
+          numero: 1,
+          estado_dgi: { codigo: 'be', razon: 'Firma inválida' },
         }),
-      ).toEqual([]);
-      expect(leerEmitidos({})).toEqual([]);
-      expect(leerEmitidos(null)).toEqual([]);
+      ).toEqual({
+        id: '1',
+        serie: 'A',
+        numero: 1,
+        codigoDgi: 'BE',
+        motivoDgi: 'Firma inválida',
+      });
+      expect(
+        leerEmitido({ id: 2, serie: 'A', numero: 2, estado_dgi: ' ce ' }),
+      ).toMatchObject({
+        codigoDgi: 'CE',
+        motivoDgi: null,
+      });
+      expect(
+        leerEmitido({
+          id: 3,
+          serie: 'A',
+          numero: 3,
+          estado: { codigo: 'AE', motivo: 'Recibido' },
+        }),
+      ).toMatchObject({ codigoDgi: 'AE', motivoDgi: 'Recibido' });
+      expect(
+        leerEmitido({
+          id: 4,
+          serie: 'A',
+          numero: 4,
+          estado_dgi: { descripcion: ' ' },
+        }),
+      ).toMatchObject({ codigoDgi: null, motivoDgi: null });
+    });
+
+    it('sin estado: DGI todavía no respondió', () => {
+      expect(leerEmitido({ id: 1, serie: 'A', numero: 1 })).toMatchObject({
+        codigoDgi: null,
+        motivoDgi: null,
+      });
+    });
+
+    it('sin id, serie o número, null', () => {
+      expect(leerEmitido({ serie: 'A', numero: 1 })).toBeNull();
+      expect(leerEmitido({ id: 1, numero: 1 })).toBeNull();
+      expect(leerEmitido({ id: 1, serie: 'A' })).toBeNull();
+      expect(leerEmitido(null)).toBeNull();
+    });
+
+    it('la lista sale de `items` (v2), `comprobantes` o `comprobante` (v1), o de un array', () => {
+      const uno = { id: 1 };
+      expect(listaDeEmitidos({ items: [uno] })).toEqual([uno]);
+      expect(listaDeEmitidos({ comprobantes: [uno] })).toEqual([uno]);
+      expect(listaDeEmitidos({ comprobante: [uno] })).toEqual([uno]);
+      expect(listaDeEmitidos([uno])).toEqual([uno]);
+      expect(listaDeEmitidos({ items: 'x' })).toEqual([]);
+      expect(listaDeEmitidos(null)).toEqual([]);
     });
   });
 
