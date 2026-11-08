@@ -12,6 +12,7 @@ import { ResumenVentasModule } from '../reportes/resumen-ventas.module';
 import { MenuModule } from '../menu/menu.module';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { DescuentoStockService } from '../stock/descuento-stock.service';
+import { PosModule } from '../pos/pos.module';
 
 @Module({
   // BL-413: TenantEstadoModule, para WsAuthService.
@@ -26,6 +27,8 @@ import { DescuentoStockService } from '../stock/descuento-stock.service';
     TenantEstadoModule,
     ResumenVentasModule,
     MenuModule,
+    // HU-011 (BL-488): la venta va al POS del local al confirmarse el pago.
+    PosModule,
   ],
   controllers: [PedidosController],
   providers: [

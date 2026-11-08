@@ -39,6 +39,8 @@ const NAV_ITEMS = [
   { href: '/admin/comprobantes', label: 'Comprobantes', icon: 'receipt_long', roles: ['ADMIN'] },
   // HU-012 (BL-108): reportes de ventas y métricas; solo Administrador.
   { href: '/admin/reportes', label: 'Reportes', icon: 'monitoring', roles: ['ADMIN'] },
+  // HU-011 (BL-488): ventas mandadas al POS del local; solo Administrador.
+  { href: '/admin/pos', label: 'POS del local', icon: 'point_of_sale', roles: ['ADMIN'] },
   // HU-020 (BL-72): datos fiscales, CFE, medios de pago y propinas; solo Administrador.
   { href: '/admin/configuracion', label: 'Configuración', icon: 'settings', roles: ['ADMIN'] },
   // Próximos módulos (HU-001, HU-003, etc.) se suman acá a medida que

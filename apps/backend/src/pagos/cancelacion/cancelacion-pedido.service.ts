@@ -5,6 +5,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { PedidoEstado, Prisma, PrismaClient } from '@prisma/client';
 import { TenantPrismaService } from '../../prisma/tenant-prisma.service';
@@ -16,6 +17,7 @@ import { AuditAction } from '../../audit-log/audit-action.enum';
 import { MercadoPagoGateway } from '../gateways/mercadopago.gateway';
 import { MEDIO_EFECTIVO } from '../efectivo/cobro-efectivo.service';
 import { CancelarPedidoDto, MOTIVOS_CANCELACION } from './cancelar-pedido.dto';
+import { SincronizacionPosService } from '../../pos/sincronizacion-pos.service';
 
 /** HU-024 (BL-104): estados en los que el personal puede cancelar. */
 export const ESTADOS_CANCELABLES: readonly PedidoEstado[] = [
@@ -133,6 +135,8 @@ export class CancelacionPedidoService {
     private readonly cfe: CfeService,
     private readonly auditLog: AuditLogService,
     private readonly mercadoPago: MercadoPagoGateway,
+    // HU-011 (BL-488): opcional, para los tests que arman el servicio a mano.
+    @Optional() private readonly pos?: SincronizacionPosService,
   ) {}
 
   async vistaPrevia(
@@ -228,6 +232,8 @@ export class CancelacionPedidoService {
     for (const pago of devueltos) {
       this.cfe.emitirNotaDeCreditoEnSegundoPlano(tenantId, pago.id);
     }
+    // HU-011 (BL-488): la anulación de la venta en el POS del local.
+    this.pos?.enviarEnSegundoPlano(tenantId, pedidoId);
     return cancelado;
   }
 
@@ -379,6 +385,10 @@ export class CancelacionPedidoService {
 
     // HU-042 (BL-463): si estaba en preparación, liberó un lugar.
     const promovidos = await completarCapacidad(tx, tenantId);
+
+    // HU-011 (BL-488): si la venta ya está en el POS del local, su anulación
+    // queda en la bandeja de salida; si no se había mandado, se descarta.
+    await this.pos?.encolarAnulacionEnTx(tx, tenantId, pedidoId);
 
     // HU-035: con el motivo, lo devuelto y por qué medio. En la misma
     // transacción: sin auditoría no hay cancelación.

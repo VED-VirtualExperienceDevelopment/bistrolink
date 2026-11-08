@@ -10,11 +10,13 @@ cambia, sin depender del sandbox del proveedor.
 | Mercado Pago, API Orders | `mercadopago-orders.pact.spec.ts`  | `bistrolink-backend-mercadopago-orders-api.json` | TC-C-001 a 007 | BL-215 |
 | Mercado Pago, webhook    | `mercadopago-webhook.pact.spec.ts` | `bistrolink-backend-mercadopago-webhooks.json`   | TC-C-008 y 009 | BL-215 |
 | Surtec (CFE)             | `surtec-cfe.pact.spec.ts`          | `bistrolink-backend-surtec-cfe-api.json`         | TC-C-010 a 014 | BL-216 |
+| API de POS (HU-011)      | `pos-api.pact.spec.ts`             | `bistrolink-backend-pos-api.json`                | TC-C-023 a 026 | BL-488 |
 
 ## Cómo funcionan
 
 - **Consumidor:** `bistrolink-backend`. **Proveedor:** uno por API
-  (`mercadopago-orders-api`, `mercadopago-webhooks`, `surtec-cfe-api`).
+  (`mercadopago-orders-api`, `mercadopago-webhooks`, `surtec-cfe-api`,
+  `pos-api`).
 - **HTTP** (BistroLink llama al proveedor): `addInteraction()` con el mock
   server de Pact. El test llama al gateway real (por ejemplo,
   `MercadoPagoGateway`) apuntado al mock.

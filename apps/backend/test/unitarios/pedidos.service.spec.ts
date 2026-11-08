@@ -737,6 +737,38 @@ describe('PedidosService.confirmarPagoEnTx / notificarPedidoConfirmado (BL-311, 
     );
   });
 
+  it('HU-011 (BL-488): encola la venta al POS en la misma transacción y la manda después del commit', async () => {
+    const pos = {
+      encolarVentaEnTx: jest.fn().mockResolvedValue(true),
+      enviarEnSegundoPlano: jest.fn(),
+    };
+    const conPos = new PedidosService(
+      {} as any,
+      mockKdsGateway,
+      mockResumenVentas,
+      mockDescuentoStock,
+      pos as any,
+    );
+
+    const confirmado = await conPos.confirmarPagoEnTx(
+      mockTx,
+      TENANT_ID,
+      'pedido-nuevo',
+    );
+    expect(pos.encolarVentaEnTx).toHaveBeenCalledWith(
+      mockTx,
+      TENANT_ID,
+      'pedido-nuevo',
+    );
+    expect(pos.enviarEnSegundoPlano).not.toHaveBeenCalled();
+
+    conPos.notificarPedidoConfirmado(TENANT_ID, confirmado!);
+    expect(pos.enviarEnSegundoPlano).toHaveBeenCalledWith(
+      TENANT_ID,
+      'pedido-nuevo',
+    );
+  });
+
   it('pasa el pedido de PENDIENTE_PAGO a RECIBIDO solo si sigue en PENDIENTE_PAGO', async () => {
     await service.confirmarPagoEnTx(mockTx, TENANT_ID, 'pedido-nuevo');
 

@@ -21,10 +21,19 @@ import { SolicitudEfectivoService } from './efectivo/solicitud-efectivo.service'
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { CancelacionPedidoController } from './cancelacion/cancelacion-pedido.controller';
 import { CancelacionPedidoService } from './cancelacion/cancelacion-pedido.service';
+import { PosModule } from '../pos/pos.module';
 
 @Module({
   // BL-311: QrMesaModule para MesaQrGuard en el pago (RD.05).
-  imports: [PrismaModule, AuthModule, CfeModule, PedidosModule, QrMesaModule],
+  // HU-011 (BL-488): PosModule, para anular la venta en el POS al cancelar.
+  imports: [
+    PrismaModule,
+    AuthModule,
+    CfeModule,
+    PedidosModule,
+    QrMesaModule,
+    PosModule,
+  ],
   controllers: [
     PagosController,
     PagosWebhookController,
