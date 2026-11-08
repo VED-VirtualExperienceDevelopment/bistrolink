@@ -318,7 +318,7 @@ jobs:
         run: |
           if ! git diff --exit-code -- apps/backend/pacts \
              || [ -n "$(git status --porcelain -- apps/backend/pacts)" ]; then
-            echo "::error::Un contrato con un proveedor (Mercado Pago o Surtec) cambió y no está commiteado. Corré 'npm run test:pact --workspace=backend', revisá el diff de apps/backend/pacts y commitealo."
+            echo "::error::Un contrato con un proveedor (Mercado Pago, Surtec o el POS) cambió y no está commiteado. Corré 'npm run test:pact --workspace=backend', revisá el diff de apps/backend/pacts y commitealo."
             exit 1
           fi
 
