@@ -43,9 +43,8 @@ describe("pagina", () => {
 
   test("el enlace al estado abre en otra pestaña sin acceso a esta", () => {
     const html = pagina({ ...base, externos: enlacesExternos(PUBLICO) });
-    assert.match(
-      html,
-      new RegExp(`<a href="${PUBLICO}" target="_blank" rel="noopener noreferrer">Estado del servicio ↗</a>`),
-    );
+    // Comparación literal (no RegExp): los "." de la URL no actúan como comodín.
+    const esperado = `<a href="${PUBLICO}" target="_blank" rel="noopener noreferrer">Estado del servicio ↗</a>`;
+    assert.ok(html.includes(esperado), `no se encontró el enlace esperado:\n${esperado}`);
   });
 });
