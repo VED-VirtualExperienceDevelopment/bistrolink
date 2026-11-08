@@ -20,6 +20,8 @@ export const CANALES_DEL_FILTRO: Record<
   LOCAL: [PedidoCanal.QR, PedidoCanal.MOZO],
   WEB: [PedidoCanal.WEB],
   WHATSAPP: [PedidoCanal.WHATSAPP],
+  // HU-011 (BL-489): ventas importadas del POS del local.
+  POS: [PedidoCanal.POS],
 };
 
 /** Los canales del pedido de un filtro, o null si no filtra (TODOS). */

@@ -54,8 +54,11 @@ export interface ReporteVentas {
     ticketPromedio: number;
     anterior: TotalesVentas;
   };
-  /** Ventas dentro y fuera del local, siempre de todos los canales. */
-  porLugar: { local: number; web: number; whatsapp: number };
+  /**
+   * Ventas dentro y fuera del local, siempre de todos los canales. `pos`
+   * (BL-489): las hechas directamente en el POS del local.
+   */
+  porLugar: { local: number; web: number; whatsapp: number; pos: number };
   ventasPorHora: VentaPorHora[];
   platosMasPedidos: {
     porCantidad: PlatoVendido[];
@@ -177,6 +180,7 @@ export class ReportesService {
           local: totales(porCanal, CANALES_DEL_FILTRO.LOCAL).totalVendido,
           web: totales(porCanal, CANALES_DEL_FILTRO.WEB).totalVendido,
           whatsapp: totales(porCanal, CANALES_DEL_FILTRO.WHATSAPP).totalVendido,
+          pos: totales(porCanal, CANALES_DEL_FILTRO.POS).totalVendido,
         },
         ventasPorHora: await consulta.ventasPorHora(rango, canales),
         platosMasPedidos: {
