@@ -101,15 +101,22 @@ test.describe("HU-002: menú vía URL directa (verificado en mobile)", () => {
     await page.goto(MENU_URL_PATH);
 
     // Todo item disponible aparece (escalable: no depende de nombres).
+    // exact: el nombre de un ítem puede estar contenido en el de otro
+    // («Fritas» y «Papas fritas»).
     for (const item of disponibles) {
       await expect(
-        page.getByRole("heading", { name: item.nombre }),
+        page.getByRole("heading", { name: item.nombre, exact: true }),
       ).toBeVisible();
     }
 
     // Y todo item agotado se ve, pero marcado y bloqueado (BL-397).
     for (const item of agotados) {
-      const tarjeta = page.locator("article", { hasText: item.nombre });
+      // La tarjeta se busca por su título exacto y no por texto: con
+      // hasText, un agotado llamado «Fritas» también encontraba la tarjeta de
+      // la milanesa «con papas fritas» y el test fallaba por strict mode.
+      const tarjeta = page.locator("article").filter({
+        has: page.getByRole("heading", { name: item.nombre, exact: true }),
+      });
       await expect(tarjeta).toBeVisible();
       await expect(tarjeta.getByText("No disponible")).toBeVisible();
       await expect(tarjeta).toHaveAttribute("aria-disabled", "true");
