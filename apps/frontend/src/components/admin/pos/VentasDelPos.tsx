@@ -123,7 +123,7 @@ export default function VentasDelPos({
         >
           <span className="material-symbols-outlined" aria-hidden="true">
             sync
-          </span>
+          </span>{" "}
           Traer ventas ahora
         </button>
       </div>

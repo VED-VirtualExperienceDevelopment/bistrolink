@@ -200,11 +200,11 @@ export function textoResumenVentasPos(r: ResumenVentasDelPos): string {
   if (r.ventas === 0 && r.anuladas === 0) {
     return "Todavía no se trajo ninguna venta del POS.";
   }
-  const ventas = r.ventas === 1 ? "1 venta hecha" : `${r.ventas} ventas hechas`;
+  const ventas = cantidad(r.ventas, "venta hecha", "ventas hechas");
   const anuladas =
     r.anuladas === 0
       ? ""
-      : ` (${r.anuladas === 1 ? "1 anulada" : `${r.anuladas} anuladas`}, no cuentan)`;
+      : ` (${cantidad(r.anuladas, "anulada", "anuladas")}, no cuentan)`;
   return `${ventas} en el POS, por ${formatearPrecio(r.total)}${anuladas}.`;
 }
 
@@ -212,12 +212,17 @@ export function textoResumenVentasPos(r: ResumenVentasDelPos): string {
 export function mensajeImportacionPos(r: ResultadoImportacionPos): string {
   const traidas = r.nuevas + r.actualizadas;
   if (traidas === 0) return "Listo: no había ventas nuevas en el POS.";
-  const nuevas = r.nuevas === 1 ? "1 venta nueva" : `${r.nuevas} ventas nuevas`;
+  const nuevas = cantidad(r.nuevas, "venta nueva", "ventas nuevas");
   const actualizadas =
     r.actualizadas === 0
       ? ""
-      : ` y ${r.actualizadas === 1 ? "1 actualizada" : `${r.actualizadas} actualizadas`}`;
+      : ` y ${cantidad(r.actualizadas, "actualizada", "actualizadas")}`;
   return `Listo: ${nuevas}${actualizadas}. Ya se ven en Reportes, canal «POS del local».`;
+}
+
+/** «1 venta nueva», «3 ventas nuevas». */
+function cantidad(n: number, singular: string, plural: string): string {
+  return `${n} ${n === 1 ? singular : plural}`;
 }
 
 /** El total del formulario de simulación: pesos de 1 a 100.000, con hasta 2 decimales. */
