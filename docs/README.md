@@ -35,6 +35,7 @@
 |---|---|
 | [Avance de la EDT](dashboard-avance-edt.md) · [sitio](https://ved-virtualexperiencedevelopment.github.io/bistrolink/avance-edt.html) | Avance por capa y sprint, generado desde Linear |
 | [Bugs](dashboard-bugs-github.md) · [sitio](https://ved-virtualexperiencedevelopment.github.io/bistrolink/bugs.html) | Bugs abiertos y resueltos, generado desde GitHub Issues |
+| Estado del servicio · desde el [sitio](https://ved-virtualexperiencedevelopment.github.io/bistrolink/) | Disponibilidad y tiempo de respuesta de la API y Keycloak (Grafana Synthetic Monitoring, BL-243). El link al dashboard público de Grafana está en la variable de Actions `GRAFANA_ESTADO_URL` |
 
 Los `.md` de los dashboards los regenera el workflow `publicar-dashboards.yml`. La versión actualizada está siempre en el sitio.
 
