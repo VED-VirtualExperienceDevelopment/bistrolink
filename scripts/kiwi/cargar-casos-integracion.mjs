@@ -802,6 +802,22 @@ const DATOS_INTEGRACION = {
     priority: "P1",
     tags: ["seguridad", "auditoria"],
   }),
+  // HU-011 (BL-489): ventas hechas en el POS, traídas al dashboard.
+  187: sincronizacionPos({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-489", "HU-012", "dashboard", "multi-tenant"],
+  }),
+  188: sincronizacionPos({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-489", "resiliencia"],
+  }),
+  189: sincronizacionPos({
+    category: "Seguridad",
+    priority: "P2",
+    tags: ["BL-489", "seguridad"],
+  }),
 };
 /**
  * BL-435: datos de los E2E TC-E-017 en adelante, con los criterios de
@@ -1235,6 +1251,8 @@ const DATOS_CONTRATO = {
     tags: ["BL-488", "resiliencia"],
   }),
   26: contrato("HU-011", "pos", { priority: "P1", tags: ["BL-488"] }),
+  // HU-011 (BL-489): ventas hechas en el POS.
+  27: contrato("HU-011", "pos", { priority: "P1", tags: ["BL-489"] }),
 };
 const DATOS = CONTRATO ? DATOS_CONTRATO : E2E ? DATOS_E2E : DATOS_INTEGRACION;
 

@@ -13,6 +13,7 @@
 | 1.6     | 07/11/2026 | Se borran los bloques de TC-C-021 y 022, ya cargados en Kiwi. TC-C-020: PDF de un CFE emitido en Surtec (HU-009, BL-454).                                        |
 | 1.7     | 08/11/2026 | TC-C-017 y 018: la consulta del estado ante la DGI pasa a la API v2 de Surtec, por id y por id_externo (HU-009, BL-471); cambian el título y la descripción.     |
 | 1.8     | 08/11/2026 | Se borran los bloques de TC-C-017, 018 y 020, ya cargados en Kiwi. TC-C-023 a 026: API de POS que define BistroLink (HU-011, BL-488), proveedor nuevo `pos-api`. |
+| 1.9     | 09/11/2026 | Se borran los bloques de TC-C-023 a 026, ya cargados en Kiwi. TC-C-027: listado de las ventas hechas en el POS (HU-011, BL-489).                                 |
 
 Texto del campo de descripción de cada caso TC-C en Kiwi. Lo carga
 `cargar-casos-integracion.mjs --contrato --descripciones`: cada bloque
@@ -39,58 +40,16 @@ repositorio es público.
 
 ## Casos para cargar
 
-## TC-C-023
+## TC-C-027
 
 ### Precondición
 
-El POS no tiene ninguna venta con esa referencia.
+El POS tiene una venta de mostrador del establecimiento.
 
 ### Pasos
 
-1. BistroLink manda POST /ventas con Bearer token y la venta: `referencia` (id del pedido, UUID), `fecha` ISO 8601, `moneda` UYU, `total`, `medioPago`, `mesa` y `lineas` (descripción, cantidad, precio unitario y subtotal).
+1. BistroLink manda GET /ventas con Bearer token y los parámetros `establecimiento` (id del tenant, UUID), `desde` (ISO 8601) y `limite`.
 
 ### Resultado esperado
 
-El POS responde 201 con el `id` de la venta. BistroLink lo guarda como referencia del POS.
-
-## TC-C-024
-
-### Precondición
-
-El POS ya tiene una venta con esa referencia (BistroLink la manda por segunda vez, por ejemplo después de un timeout).
-
-### Pasos
-
-1. BistroLink manda POST /ventas con la misma venta.
-
-### Resultado esperado
-
-El POS responde 409 con el `id` de la venta que ya tenía, sin crear otra. BistroLink lo toma como enviada (idempotencia).
-
-## TC-C-025
-
-### Precondición
-
-El POS está en mantenimiento.
-
-### Pasos
-
-1. BistroLink manda POST /ventas.
-
-### Resultado esperado
-
-El POS responde 503. BistroLink lanza PosNoDisponibleError («El POS no pudo registrar la venta (HTTP 503)»): la venta queda pendiente y se reintenta después.
-
-## TC-C-026
-
-### Precondición
-
-El POS tiene la venta registrada y sin anular.
-
-### Pasos
-
-1. BistroLink manda POST /ventas/{id}/anulacion con el `motivo` (el pedido se canceló en BistroLink).
-
-### Resultado esperado
-
-El POS responde 200 y la venta queda anulada.
+El POS responde 200 con `ventas`: cada una con `id`, `referencia` (null si se hizo en el POS; el id del pedido si la mandó BistroLink), `fecha`, `total`, `medioPago`, `anulada` y `actualizadaEn`. BistroLink la convierte en una venta del POS para importar.
