@@ -5,6 +5,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { PrismaClient, MesaEstado, Prisma } from '@prisma/client';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
@@ -21,6 +22,7 @@ import {
 } from '../stock/descuento-stock.service';
 import { cantidadesPorItem, faltaStock } from '../stock/estado-stock';
 import { completarCapacidad, type PedidoPromovido } from './cola-kds';
+import { SincronizacionPosService } from '../pos/sincronizacion-pos.service';
 
 // BL-311 (RD.03, prepago): el pedido espera el pago aprobado antes de ir a
 // cocina. La transición a RECIBIDO la hace la confirmación del pago.
@@ -103,6 +105,8 @@ export class PedidosService {
     private readonly kdsGateway: KdsGateway,
     private readonly resumenVentas: ResumenVentasService,
     private readonly descuentoStock: DescuentoStockService,
+    // HU-011 (BL-488): opcional, para los tests que arman el servicio a mano.
+    @Optional() private readonly pos?: SincronizacionPosService,
   ) {}
 
   /**
@@ -225,6 +229,11 @@ export class PedidosService {
       pedidoId,
     );
 
+    // HU-011 (BL-488): la venta queda en la bandeja de salida hacia el POS
+    // del local, en esta misma transacción: si el POS no responde, no se
+    // pierde. Se manda después del commit (notificarPedidoConfirmado).
+    await this.pos?.encolarVentaEnTx(tx, tenantId, pedidoId);
+
     // HU-042 (BL-463, ADR 0010): con la cola activa y lugar en cocina, el
     // pedido pasa a EN_PREPARACION en esta misma transacción; si no, queda
     // en RECIBIDO («en espera»). Se lee después, así el KDS y el comensal
@@ -313,6 +322,8 @@ export class PedidosService {
     if (pedido.avisosStock) {
       this.descuentoStock.avisar(tenantId, pedido.avisosStock);
     }
+    // HU-011 (BL-488): la venta al POS del local, en segundo plano.
+    this.pos?.enviarEnSegundoPlano(tenantId, pedido.id);
   }
 
   /**

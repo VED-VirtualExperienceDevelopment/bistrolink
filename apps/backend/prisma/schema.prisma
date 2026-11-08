@@ -175,6 +175,10 @@ model Restaurante {
   // (Ley 19.210 de inclusión financiera); el administrador lo apaga en
   // Configuración si no lo usa.
   posHabilitado               Boolean      @default(true) @map("pos_habilitado")
+  // HU-011 (BL-488): las ventas cobradas se mandan al POS del local
+  // (sincronizacion_pos). Default false: el administrador la activa cuando
+  // el local tiene un POS conectado.
+  posSincronizacionHabilitada Boolean      @default(false) @map("pos_sincronizacion_habilitada")
   // Porcentajes de propina sugeridos, enteros (ej. [10, 15, 20]). Vacío =
   // sin sugerencias. Entre 1 y 100 y hasta 5 valores: CHECK en la migración
   // (Prisma no los declara); el DTO valida lo mismo con mensajes claros.
@@ -383,6 +387,7 @@ model Pedido {
   pagos            Pago[]
   comprobantes     ComprobanteFiscal[]
   historialEstados PedidoEstadoHistorial[]
+  sincronizacionesPos SincronizacionPos[]
 
   @@index([tenantId])
   // BL-213: KDS y listado de pedidos (por fecha y por estado), dentro
@@ -631,4 +636,53 @@ model ResumenPlatosHora {
 
   @@id([tenantId, hora, canal, itemCartaId])
   @@map("resumen_platos_hora")
+}
+
+// ── HU-011 (BL-488) Sincronización con el POS del local ───────────────────────
+// Bandeja de salida: cada venta (y su anulación) que hay que mandar al POS.
+// La fila de la VENTA se escribe en la misma transacción que confirma el
+// pago, así no se pierde si el POS no responde; un envío inmediato y un job
+// de reintentos la mandan. Con RLS.
+
+enum PosSincronizacionTipo {
+  VENTA
+  ANULACION
+}
+
+enum PosSincronizacionEstado {
+  // Falta mandarla (o falló y se reintenta sola).
+  PENDIENTE
+  ENVIADA
+  // El POS la rechazó (4xx) o se agotaron los intentos: no se reintenta
+  // sola; el administrador puede reintentarla.
+  ERROR
+  // Venta que no llegó a mandarse porque el pedido se canceló antes: ya no
+  // hay nada que registrar ni anular.
+  DESCARTADA
+}
+
+model SincronizacionPos {
+  id              String                  @id @default(uuid()) @db.Uuid
+  tenantId        String                  @map("tenant_id") @db.Uuid
+  pedidoId        String                  @map("pedido_id") @db.Uuid
+  tipo            PosSincronizacionTipo
+  estado          PosSincronizacionEstado @default(PENDIENTE)
+  // Id de la venta en el POS (lo devuelve al registrarla).
+  posRef          String?                 @map("pos_ref") @db.VarChar(64)
+  intentos        Int                     @default(0)
+  ultimoIntentoEn DateTime?               @map("ultimo_intento_en") @db.Timestamptz(3)
+  // Motivo del último fallo, sin datos personales.
+  ultimoError     String?                 @map("ultimo_error") @db.VarChar(200)
+  enviadaEn       DateTime?               @map("enviada_en") @db.Timestamptz(3)
+  createdAt       DateTime                @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime                @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  pedido Pedido @relation(fields: [pedidoId], references: [id])
+
+  // Una venta y a lo sumo una anulación por pedido.
+  @@unique([pedidoId, tipo])
+  // Pendientes del job y listado del panel, dentro del tenant.
+  @@index([tenantId, estado, createdAt])
+  @@index([tenantId, createdAt])
+  @@map("sincronizacion_pos")
 }
