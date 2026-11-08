@@ -3,7 +3,10 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { HealthController } from './health.controller';
 import { LoggerModule } from 'nestjs-pino';
-import { CAMPOS_PERSONALES_EN_LOGS } from './logs-datos-personales';
+import {
+  CABECERAS_CON_IP_EN_LOGS,
+  CAMPOS_PERSONALES_EN_LOGS,
+} from './logs-datos-personales';
 import { AuthModule } from './auth/auth.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { TestController } from './test/test.controller';
@@ -64,6 +67,7 @@ const configuracionLog = construirConfiguracionLog(process.env);
             'req.headers.cookie',
             'res.headers["set-cookie"]',
             ...CAMPOS_PERSONALES_EN_LOGS,
+            ...CABECERAS_CON_IP_EN_LOGS,
           ],
           censor: '[REDACTED]',
         },

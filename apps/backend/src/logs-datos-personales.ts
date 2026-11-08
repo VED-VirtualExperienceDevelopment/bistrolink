@@ -28,3 +28,18 @@ export const CAMPOS_PERSONALES_EN_LOGS: string[] = CAMPOS.flatMap((campo) => [
   campo,
   `*.${campo}`,
 ]);
+
+/**
+ * BL-214: la IP pública de quien hace el request. Detrás del proxy de
+ * Railway llega en estas cabeceras, y el log "request completed" guarda
+ * las cabeceras del request, así que la IP terminaba en stdout y en Loki.
+ * La IP es un dato personal (Ley 18.331) y la política de privacidad dice
+ * que los registros técnicos no los guardan.
+ *
+ * No afecta al registro de auditoría (HU-035): ese toma la IP del request
+ * directamente (audit-log/contexto-auditoria.ts), no de los logs.
+ */
+export const CABECERAS_CON_IP_EN_LOGS: string[] = [
+  'req.headers["x-forwarded-for"]',
+  'req.headers["x-real-ip"]',
+];
