@@ -76,6 +76,12 @@ jobs:
         run: node scripts/update-github-bugs-dashboard.mjs
 
       - name: Armar el sitio (HTML)
+        env:
+          # BL-243: link público del dashboard de estado de Grafana Cloud.
+          # Es una variable de Actions (Settings → Secrets and variables →
+          # Actions → Variables), no un secret: el link es público, pero no se
+          # escribe en el repositorio. Si falta, el sitio sale sin ese enlace.
+          GRAFANA_ESTADO_URL: ${{ vars.GRAFANA_ESTADO_URL }}
         run: node scripts/publicar-dashboards.mjs _site
 
       - name: Subir el sitio

@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 // BL-298: arma el sitio de GitHub Pages con los dos dashboards.
+// BL-243: suma un enlace al estado del servicio (dashboard público de Grafana
+// Cloud), si el workflow pasa GRAFANA_ESTADO_URL.
 //
 // Se corre DESPUÉS de update-dashboard-from-linear.mjs y
 // update-github-bugs-dashboard.mjs, que actualizan los bloques AUTO de los
@@ -11,6 +13,7 @@
 // autoalojada (la misma de BL-222, sin Google Fonts).
 //
 // Uso: node scripts/publicar-dashboards.mjs [carpeta de salida]   (por defecto _site)
+//      GRAFANA_ESTADO_URL (opcional): link público del dashboard de estado.
 
 import { execFileSync } from "node:child_process";
 import fs from "node:fs/promises";
@@ -61,6 +64,41 @@ const DASHBOARDS = [
     descripcion: "Bugs abiertos y cerrados, por severidad y por semana, desde GitHub Issues.",
   },
 ];
+
+// BL-243: el estado del servicio no se copia al sitio; es un enlace al
+// dashboard público de Grafana, que muestra los datos al momento. El link no
+// se escribe en el repositorio (es público): llega por la variable de Actions
+// GRAFANA_ESTADO_URL. Si falta o no es un dashboard público de Grafana Cloud,
+// el sitio se publica igual, sin el enlace.
+export function enlacesExternos(url) {
+  if (!url) return [];
+  let destino;
+  try {
+    destino = new URL(url.trim());
+  } catch {
+    console.warn("⚠️ GRAFANA_ESTADO_URL no es una URL válida: se publica sin el enlace al estado.");
+    return [];
+  }
+  const esPublicoDeGrafana =
+    destino.protocol === "https:" &&
+    destino.hostname.endsWith(".grafana.net") &&
+    destino.pathname.startsWith("/public-dashboards/");
+  if (!esPublicoDeGrafana) {
+    console.warn(
+      "⚠️ GRAFANA_ESTADO_URL tiene que ser un dashboard público de Grafana Cloud " +
+        "(https://<stack>.grafana.net/public-dashboards/…): se publica sin el enlace al estado.",
+    );
+    return [];
+  }
+  return [
+    {
+      url: destino.href,
+      titulo: "Estado del servicio",
+      descripcion:
+        "Disponibilidad y tiempo de respuesta de la API y Keycloak, al momento, desde Grafana. Se abre en otra pestaña.",
+    },
+  ];
+}
 
 // Lo que está entre estos marcadores es solo para quien lee el .md en el
 // repositorio (por ejemplo, el aviso de que la versión al día está en Pages).
@@ -164,10 +202,17 @@ export function temaMermaid() {
   };
 }
 
-export function pagina({ titulo, contenido, actualizado, conMermaid }) {
+// Enlace a un sitio externo: abre en otra pestaña, sin darle acceso a esta.
+function enlaceExterno(e, clase) {
+  const atributoClase = clase ? ` class="${clase}"` : "";
+  return `<a${atributoClase} href="${escaparHtml(e.url)}" target="_blank" rel="noopener noreferrer">`;
+}
+
+export function pagina({ titulo, contenido, actualizado, conMermaid, externos = [] }) {
   const nav = [
     `<a href="./">Inicio</a>`,
     ...DASHBOARDS.map((d) => `<a href="./${d.salida}">${escaparHtml(d.titulo)}</a>`),
+    ...externos.map((e) => `${enlaceExterno(e)}${escaparHtml(e.titulo)} ↗</a>`),
   ].join("\n        ");
   const scriptMermaid = conMermaid
     ? `
@@ -277,6 +322,7 @@ async function main() {
   await fs.mkdir(SALIDA, { recursive: true });
   const tmpDir = await fs.mkdtemp(path.join(SALIDA, ".tmp-"));
   const actualizado = fechaActualizacion();
+  const externos = enlacesExternos(process.env.GRAFANA_ESTADO_URL);
 
   for (const fuente of FUENTES) {
     await fs.copyFile(path.join(ROOT, fuente), path.join(SALIDA, path.basename(fuente)));
@@ -287,25 +333,34 @@ async function main() {
     const contenido = await markdownAHtml(md, tmpDir, `dashboard-${i}`);
     await fs.writeFile(
       path.join(SALIDA, d.salida),
-      pagina({ titulo: d.titulo, contenido, actualizado, conMermaid: true }),
+      pagina({ titulo: d.titulo, contenido, actualizado, conMermaid: true, externos }),
       "utf-8",
     );
   }
 
-  const tarjetas = DASHBOARDS.map(
-    (d) => `      <a class="tarjeta" href="./${d.salida}">
+  const tarjetas = [
+    ...DASHBOARDS.map(
+      (d) => `      <a class="tarjeta" href="./${d.salida}">
         <strong>${escaparHtml(d.titulo)}</strong>
         ${escaparHtml(d.descripcion)}
       </a>`,
-  ).join("\n");
+    ),
+    ...externos.map(
+      (e) => `      ${enlaceExterno(e, "tarjeta")}
+        <strong>${escaparHtml(e.titulo)} ↗</strong>
+        ${escaparHtml(e.descripcion)}
+      </a>`,
+    ),
+  ].join("\n");
+  const fuentes = externos.length > 0 ? "Linear, GitHub Issues y Grafana" : "Linear y GitHub Issues";
   const indice = `    <h1>Dashboards de BistroLink</h1>
-    <p>Estado del proyecto, generado automáticamente desde Linear y GitHub Issues.</p>
+    <p>Estado del proyecto, generado automáticamente desde ${fuentes}.</p>
     <div class="tarjetas">
 ${tarjetas}
     </div>`;
   await fs.writeFile(
     path.join(SALIDA, "index.html"),
-    pagina({ titulo: "Dashboards", contenido: indice, actualizado, conMermaid: false }),
+    pagina({ titulo: "Dashboards", contenido: indice, actualizado, conMermaid: false, externos }),
     "utf-8",
   );
 
