@@ -8,6 +8,9 @@ import {
   rutaSincronizaciones,
   sePuedeReintentar,
   textoIntegracion,
+  mensajeImportacionPos,
+  textoResumenVentasPos,
+  totalSimulacionValido,
   type SincronizacionPos,
 } from "@/components/admin/pos/pos.utils";
 
@@ -144,10 +147,75 @@ describe("mensajes", () => {
       /no tiene un POS configurado/,
     );
     expect(textoIntegracion({ habilitada: true, adaptador: "mock" })).toMatch(
-      /se manda al POS de prueba en segundos/,
+      /se manda al POS de prueba en segundos, y las ventas hechas en el POS se traen al dashboard/,
     );
     expect(textoIntegracion({ habilitada: false, adaptador: "http" })).toBe(
-      "El envío está desactivado: las ventas no se mandan al POS del local.",
+      "La sincronización está desactivada: las ventas no se mandan al POS del local ni se traen de ahí.",
     );
+  });
+});
+
+// HU-011 (BL-489): ventas hechas en el POS, traídas al dashboard.
+describe("ventas del POS (BL-489)", () => {
+  it("resumen: sin ventas, con ventas y con anuladas", () => {
+    expect(
+      textoResumenVentasPos({
+        ventas: 0,
+        anuladas: 0,
+        total: 0,
+        ultimaVentaEn: null,
+      }),
+    ).toBe("Todavía no se trajo ninguna venta del POS.");
+    expect(
+      textoResumenVentasPos({
+        ventas: 1,
+        anuladas: 0,
+        total: 350,
+        ultimaVentaEn: "2026-11-09T14:10:00.000Z",
+      }),
+    ).toMatch(/^1 venta hecha en el POS, por .*350/);
+    expect(
+      textoResumenVentasPos({
+        ventas: 3,
+        anuladas: 2,
+        total: 1050.5,
+        ultimaVentaEn: "2026-11-09T14:10:00.000Z",
+      }),
+    ).toMatch(/^3 ventas hechas en el POS, .*\(2 anuladas, no cuentan\)\.$/);
+    expect(
+      textoResumenVentasPos({
+        ventas: 0,
+        anuladas: 1,
+        total: 0,
+        ultimaVentaEn: "2026-11-09T14:10:00.000Z",
+      }),
+    ).toMatch(/\(1 anulada, no cuentan\)/);
+  });
+
+  it("aviso al traer las ventas", () => {
+    const base = { recibidas: 3, omitidas: 1 };
+    expect(mensajeImportacionPos({ ...base, nuevas: 0, actualizadas: 0 })).toBe(
+      "Listo: no había ventas nuevas en el POS.",
+    );
+    expect(mensajeImportacionPos({ ...base, nuevas: 1, actualizadas: 0 })).toBe(
+      "Listo: 1 venta nueva. Ya se ven en Reportes, canal «POS del local».",
+    );
+    expect(mensajeImportacionPos({ ...base, nuevas: 2, actualizadas: 1 })).toBe(
+      "Listo: 2 ventas nuevas y 1 actualizada. Ya se ven en Reportes, canal «POS del local».",
+    );
+    expect(
+      mensajeImportacionPos({ ...base, nuevas: 0, actualizadas: 2 }),
+    ).toMatch(/0 ventas nuevas y 2 actualizadas/);
+  });
+
+  it("total de la simulación: 1 a 100.000 con hasta 2 decimales, coma o punto", () => {
+    expect(totalSimulacionValido("350")).toBe(350);
+    expect(totalSimulacionValido(" 123,45 ")).toBe(123.45);
+    expect(totalSimulacionValido("99.9")).toBe(99.9);
+    expect(totalSimulacionValido("0.5")).toBeNull();
+    expect(totalSimulacionValido("100000.01")).toBeNull();
+    expect(totalSimulacionValido("10.123")).toBeNull();
+    expect(totalSimulacionValido("abc")).toBeNull();
+    expect(totalSimulacionValido("")).toBeNull();
   });
 });

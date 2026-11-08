@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useKeycloakAuth } from "@/components/providers/KeycloakProvider";
 import { apiFetch, ApiError } from "@/lib/api-client";
 import Switch from "@/components/ui/Switch";
+import VentasDelPos from "@/components/admin/pos/VentasDelPos";
 import {
   claseEstadoPos,
   filaSincronizacion,
@@ -27,8 +28,9 @@ const CLASE_CONTROL =
 
 /**
  * HU-011 (BL-488): ventas que BistroLink manda al POS del local. El
- * administrador activa el envío, ve el estado de cada venta y anulación y
- * reintenta las que fallaron. Solo Administrador.
+ * administrador activa la sincronización, ve el estado de cada venta y
+ * anulación y reintenta las que fallaron. BL-489: también ve las ventas que
+ * se trajeron del POS (VentasDelPos). Solo Administrador.
  */
 export default function PosPage() {
   const { token, hasRole } = useKeycloakAuth();
@@ -141,7 +143,8 @@ export default function PosPage() {
         <p className="text-body-md text-on-surface-variant">
           Las ventas que cobra BistroLink se mandan al POS del local, para que
           las tengas también en tu sistema. Si un pedido se cancela, la venta se
-          anula en el POS.
+          anula en el POS. Y las ventas hechas directamente en el POS se traen
+          al dashboard de Reportes.
         </p>
       </div>
 
@@ -169,6 +172,14 @@ export default function PosPage() {
             disabled={guardando || datos.adaptador === null}
           />
         </section>
+      )}
+
+      {datos && token && (
+        <VentasDelPos
+          token={token}
+          habilitada={datos.habilitada}
+          adaptador={datos.adaptador}
+        />
       )}
 
       <p
