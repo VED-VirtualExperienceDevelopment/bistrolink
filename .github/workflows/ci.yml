@@ -318,7 +318,7 @@ jobs:
         run: |
           if ! git diff --exit-code -- apps/backend/pacts \
              || [ -n "$(git status --porcelain -- apps/backend/pacts)" ]; then
-            echo "::error::Un contrato con un proveedor (Mercado Pago, Surtec o el POS) cambió y no está commiteado. Corré 'npm run test:pact --workspace=backend', revisá el diff de apps/backend/pacts y commitealo."
+            echo "::error::Un contrato con un proveedor (Mercado Pago o Surtec) cambió y no está commiteado. Corré 'npm run test:pact --workspace=backend', revisá el diff de apps/backend/pacts y commitealo."
             exit 1
           fi
 
@@ -739,6 +739,8 @@ jobs:
               --build-arg NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=bistrolink-frontend
               --build-arg NEXT_PUBLIC_APP_VERSION=${{ needs.version.outputs.app_version }}
               --build-arg NEXT_PUBLIC_MP_PUBLIC_KEY=${MP_PUBLIC_KEY}
+              --build-arg NEXT_PUBLIC_FARO_URL=${FARO_URL}
+              --build-arg NEXT_PUBLIC_APP_ENV=${ENTORNO_WEB}
           - name: Auth
             image: ghcr.io/ved-virtualexperiencedevelopment/bistrolink-auth
             dockerfile: keycloak/Dockerfile.auth
@@ -760,6 +762,10 @@ jobs:
           # Variables). Sin clave, la pantalla de pago avisa que no está
           # configurada y los E2E de pago fallan.
           MP_PUBLIC_KEY: ${{ startsWith(github.ref, 'refs/tags/v') && vars.MP_PUBLIC_KEY_PRODUCTION || vars.MP_PUBLIC_KEY_STAGING }}
+          # BL-214: URL del colector de Grafana Faro (errores del navegador).
+          # No es un secreto: queda en el JavaScript que baja el navegador.
+          # Una sola app para los dos entornos; los separa NEXT_PUBLIC_APP_ENV.
+          FARO_URL: ${{ vars.GRAFANA_FARO_URL }}
         run: |
           if [ "${{ matrix.name }}" = "Web" ]; then
             echo "Web: URLs de ${ENTORNO_WEB} (bistrolink-api-${ENTORNO_WEB}, bistrolink-auth-${ENTORNO_WEB})"
@@ -770,6 +776,11 @@ jobs:
               echo "::warning::Web sin NEXT_PUBLIC_MP_PUBLIC_KEY: falta la variable del repo MP_PUBLIC_KEY_STAGING (o MP_PUBLIC_KEY_PRODUCTION en un tag). El pago con tarjeta queda deshabilitado."
             else
               echo "Web: clave pública de Mercado Pago cargada (${MP_PUBLIC_KEY:0:12}…)"
+            fi
+            # BL-214: sin la URL, la imagen funciona igual pero los errores
+            # del navegador no llegan a Grafana.
+            if [ -z "${FARO_URL}" ]; then
+              echo "::warning::Web sin NEXT_PUBLIC_FARO_URL: falta la variable del repo GRAFANA_FARO_URL. Los errores del navegador no se envían a Grafana."
             fi
           fi
           docker build \
