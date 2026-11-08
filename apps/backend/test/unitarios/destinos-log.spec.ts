@@ -56,6 +56,33 @@ describe('construirConfiguracionLog (BL-273)', () => {
     });
   });
 
+  it('[TC-U-464] con NODE_ENV=test no se manda a Grafana Loki aunque LOKI_URL esté definida (BL-214)', () => {
+    const config = construirConfiguracionLog({
+      NODE_ENV: 'test',
+      LOKI_URL: 'https://loki.example.com',
+      LOKI_USERNAME: 'usuario',
+      LOKI_PASSWORD: 'clave',
+    });
+
+    expect(config.targets.map((t) => t.target)).toEqual(['pino-pretty']);
+  });
+
+  it('[TC-U-465] en local (development) con LOKI_URL sí se manda a Grafana Loki, con el nombre de quien desarrolla', () => {
+    const config = construirConfiguracionLog({
+      NODE_ENV: 'development',
+      LOKI_URL: 'https://loki.example.com',
+      DEV_NAME: 'daiana',
+    });
+
+    expect(config.targets.map((t) => t.target)).toEqual([
+      'pino-pretty',
+      'pino-loki',
+    ]);
+    expect(config.targets[1].options).toMatchObject({
+      labels: { app: 'bistrolink', env: 'development', developer: 'daiana' },
+    });
+  });
+
   it('[TC-U-034] LOG_LEVEL fija el nivel del logger y de todos los destinos', () => {
     const config = construirConfiguracionLog({
       NODE_ENV: 'staging',
