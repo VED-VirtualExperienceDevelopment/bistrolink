@@ -30,6 +30,22 @@ export function resumenEstadoDgiVacio(): ResumenEstadoDgi {
   };
 }
 
+/** Un CFE PENDIENTE, con lo que hace falta para buscarlo en Surtec. */
+interface ComprobantePendiente {
+  id: string;
+  proveedorRef: string | null;
+  idExterno: string | null;
+  serie: string;
+  numero: number;
+}
+
+/** Estado definitivo de un CFE para guardar. */
+interface CambioEstado {
+  id: string;
+  estado: CfeEstadoDgi;
+  motivo: string | null;
+}
+
 /**
  * HU-009 (BL-455): actualiza el estado ante la DGI de los CFE PENDIENTES de
  * un establecimiento.
@@ -96,14 +112,35 @@ export class EstadoDgiService {
     if (pendientes.length === 0 || !rut) return resumen;
     resumen.revisados = pendientes.length;
 
+    const { cambios, noEncontrados, sinRespuestaDgi } =
+      await this.consultarEnSurtec(rut, pendientes);
+    resumen.sinRespuestaDgi = sinRespuestaDgi;
+    resumen.noEncontrados = noEncontrados.length;
+    this.avisarNoEncontrados(tenantId, noEncontrados, pendientes.length);
+    if (cambios.length === 0) return resumen;
+
+    const aplicados = await this.guardarCambios(tenantId, cambios, ahora);
+    resumen.actualizados = aplicados.length;
+    resumen.rechazados = this.avisarRechazos(tenantId, aplicados);
+    return resumen;
+  }
+
+  /**
+   * Consulta en Surtec cada pendiente y separa los que tienen un estado
+   * definitivo. Secuencial a propósito (Sonar S9382): una consulta por vez,
+   * con pausa, para no pasar el límite de Surtec.
+   */
+  private async consultarEnSurtec(
+    rut: string,
+    pendientes: ComprobantePendiente[],
+  ): Promise<{
+    cambios: CambioEstado[];
+    noEncontrados: string[];
+    sinRespuestaDgi: number;
+  }> {
+    const cambios: CambioEstado[] = [];
     const noEncontrados: string[] = [];
-    const cambios: {
-      id: string;
-      estado: CfeEstadoDgi;
-      motivo: string | null;
-    }[] = [];
-    // Secuencial a propósito (Sonar S9382): una consulta por vez, con pausa,
-    // para no pasar el límite de Surtec.
+    let sinRespuestaDgi = 0;
     for (const [indice, c] of pendientes.entries()) {
       if (indice > 0 && this.configuracion.pausaMs > 0) {
         await /* NOSONAR */ this.esperar(this.configuracion.pausaMs);
@@ -117,52 +154,60 @@ export class EstadoDgiService {
       if (esEstadoDefinitivo(estado)) {
         cambios.push({ id: c.id, estado, motivo: emitido.motivoDgi });
       } else {
-        resumen.sinRespuestaDgi++;
+        sinRespuestaDgi++;
       }
     }
-    resumen.noEncontrados = noEncontrados.length;
-    // Para diagnosticar en staging sin correr nada a mano: qué devolvió
-    // Surtec y qué no se encontró (serie y número, sin datos personales).
-    if (noEncontrados.length > 0) {
-      this.logger.warn(
-        `Estado DGI del tenant ${tenantId}: Surtec no tiene ${noEncontrados.length} de ${pendientes.length} CFE consultados: ${noEncontrados.slice(0, 10).join(', ')}${noEncontrados.length > 10 ? '…' : ''}`,
-      );
-    }
-    if (cambios.length === 0) return resumen;
+    return { cambios, noEncontrados, sinRespuestaDgi };
+  }
 
-    const aplicados = await this.tenantPrisma.runInTenantContext(
-      tenantId,
-      async (tx) => {
-        const resultado: { id: string; estado: CfeEstadoDgi }[] = [];
-        // Secuencial a propósito: pocos por corrida y una sola conexión.
-        for (const cambio of cambios) {
-          const { count } = await /* NOSONAR */ tx.comprobanteFiscal.updateMany(
-            {
-              where: { id: cambio.id, estadoDgi: 'PENDIENTE' },
-              data: {
-                estadoDgi: cambio.estado,
-                estadoDgiMotivo: cambio.motivo?.slice(0, 200) ?? null,
-                estadoDgiActualizadoEn: ahora,
-              },
-            },
-          );
-          if (count > 0) resultado.push(cambio);
-        }
-        return resultado;
-      },
+  /**
+   * Para diagnosticar en staging sin correr nada a mano: qué no tiene
+   * Surtec (serie y número, sin datos personales).
+   */
+  private avisarNoEncontrados(
+    tenantId: string,
+    noEncontrados: string[],
+    consultados: number,
+  ): void {
+    if (noEncontrados.length === 0) return;
+    const lista = noEncontrados.slice(0, 10).join(', ');
+    const mas = noEncontrados.length > 10 ? '…' : '';
+    this.logger.warn(
+      `Estado DGI del tenant ${tenantId}: Surtec no tiene ${noEncontrados.length} de ${consultados} CFE consultados: ${lista}${mas}`,
     );
+  }
 
-    resumen.actualizados = aplicados.length;
-    for (const { id, estado } of aplicados) {
-      if (estado === 'RECHAZADO') {
-        resumen.rechazados++;
-        // Un rechazo de DGI hay que mirarlo: va al log como advertencia.
-        this.logger.warn(
-          `CFE ${id} del tenant ${tenantId}: DGI lo rechazó (BE)`,
-        );
+  /** Guarda los estados con un UPDATE condicionado a PENDIENTE. */
+  private guardarCambios(
+    tenantId: string,
+    cambios: CambioEstado[],
+    ahora: Date,
+  ): Promise<CambioEstado[]> {
+    return this.tenantPrisma.runInTenantContext(tenantId, async (tx) => {
+      const aplicados: CambioEstado[] = [];
+      // Secuencial a propósito: pocos por corrida y una sola conexión.
+      for (const cambio of cambios) {
+        const { count } = await /* NOSONAR */ tx.comprobanteFiscal.updateMany({
+          where: { id: cambio.id, estadoDgi: 'PENDIENTE' },
+          data: {
+            estadoDgi: cambio.estado,
+            estadoDgiMotivo: cambio.motivo?.slice(0, 200) ?? null,
+            estadoDgiActualizadoEn: ahora,
+          },
+        });
+        if (count > 0) aplicados.push(cambio);
       }
+      return aplicados;
+    });
+  }
+
+  /** Un rechazo de DGI hay que mirarlo: va al log como advertencia. */
+  private avisarRechazos(tenantId: string, aplicados: CambioEstado[]): number {
+    const rechazados = aplicados.filter((c) => c.estado === 'RECHAZADO');
+    for (const { id } of rechazados) {
+      this.logger.warn(`CFE ${id} del tenant ${tenantId}: DGI lo rechazó (BE)`);
     }
-    return resumen;
+    return rechazados.length;
   }
 
   /** Por el id de Surtec y, si no está, por el id_externo. */
