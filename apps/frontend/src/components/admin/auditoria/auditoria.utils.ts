@@ -165,6 +165,8 @@ const NOMBRE_CAMPO: Record<string, string> = {
   efectivoHabilitado: "Efectivo",
   mercadoPagoHabilitado: "Mercado Pago",
   posHabilitado: "POS del local",
+  // HU-011 (BL-488): envío de las ventas al POS del local.
+  posSincronizacionHabilitada: "Envío de ventas al POS",
   plexoHabilitado: "Plexo",
   handyHabilitado: "Handy",
   propinasSugeridas: "Propinas sugeridas (%)",
