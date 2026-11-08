@@ -634,7 +634,7 @@ const DATOS_INTEGRACION = {
     component: "api",
     requirement: "HU-009",
     priority: "P1",
-    tags: ["HU-009", "BL-455", "cfe", "multi-tenant"],
+    tags: ["HU-009", "BL-455", "BL-471", "cfe", "multi-tenant"],
   },
   143: {
     category: "Seguridad",
@@ -1175,8 +1175,15 @@ const DATOS_CONTRATO = {
   15: contrato("HU-009", "surtec", { priority: "P1", tags: ["BL-453"] }),
   16: contrato("HU-009", "surtec", { priority: "P2", tags: ["BL-453"] }),
   // Surtec: estado de los CFE ante la DGI (BL-455).
-  17: contrato("HU-009", "surtec", { priority: "P1", tags: ["BL-455"] }),
-  18: contrato("HU-009", "surtec", { priority: "P2", tags: ["BL-455"] }),
+  // Estado ante la DGI con la API v2 de Surtec (BL-471): por id y por id_externo.
+  17: contrato("HU-009", "surtec", {
+    priority: "P1",
+    tags: ["BL-455", "BL-471"],
+  }),
+  18: contrato("HU-009", "surtec", {
+    priority: "P2",
+    tags: ["BL-455", "BL-471"],
+  }),
   // Surtec: emisión con el servicio no disponible (BL-96).
   19: contrato("HU-023", "surtec", { priority: "P1", tags: ["BL-96"] }),
   // Surtec: PDF de un CFE emitido (BL-454).

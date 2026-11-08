@@ -1,13 +1,13 @@
 import { Logger } from '@nestjs/common';
 import { EstadoDgiService } from '../../src/cfe/estado-dgi/estado-dgi.service';
 import {
-  claveSerieNumero,
   esEstadoDefinitivo,
   estadoDgiDesdeCodigo,
   fechaUruguay,
 } from '../../src/cfe/estado-dgi/estado-dgi';
 
-// HU-009 (BL-455): estado de los CFE ante la DGI.
+// HU-009 (BL-455): estado de los CFE ante la DGI. Desde BL-471 se consulta
+// cada CFE en la API v2 de Surtec (por id o por id_externo).
 
 const TENANT_ID = '11111111-1111-1111-1111-111111111111';
 const AHORA = new Date('2026-11-03T15:00:00.000Z');
@@ -42,27 +42,28 @@ describe('estado-dgi (helpers)', () => {
       '2026-11-03',
     );
   });
-
-  it('la clave de serie y número no depende de mayúsculas ni espacios', () => {
-    expect(claveSerieNumero(' a ', 49)).toBe(claveSerieNumero('A', 49));
-  });
 });
 
 describe('EstadoDgiService.actualizarTenant', () => {
+  const entornoOriginal = process.env;
   let tx: {
     comprobanteFiscal: { findMany: jest.Mock; updateMany: jest.Mock };
     tenant: { findUnique: jest.Mock };
   };
   let tenantPrisma: { runInTenantContext: jest.Mock };
-  let surtec: { configurado: jest.Mock; consultarEmitidos: jest.Mock };
+  let surtec: {
+    configurado: jest.Mock;
+    consultarEmitido: jest.Mock;
+    buscarEmitidoPorIdExterno: jest.Mock;
+  };
   let service: EstadoDgiService;
 
   const pendiente = (id: string, extra: Record<string, unknown> = {}) => ({
     id,
     proveedorRef: `${id}-ref`,
+    idExterno: `bl-${id}`,
     serie: 'A',
     numero: Number(id.replace(/\D/g, '')) || 1,
-    fechaEmision: new Date('2026-11-01T14:00:00.000Z'),
     ...extra,
   });
   const emitido = (extra: Record<string, unknown>) => ({
@@ -73,8 +74,10 @@ describe('EstadoDgiService.actualizarTenant', () => {
     motivoDgi: null,
     ...extra,
   });
+  const crear = () => new EstadoDgiService(tenantPrisma as any, surtec as any);
 
   beforeEach(() => {
+    process.env = { ...entornoOriginal, NODE_ENV: 'test' };
     jest.spyOn(Logger.prototype, 'warn').mockImplementation();
     tx = {
       comprobanteFiscal: {
@@ -90,14 +93,18 @@ describe('EstadoDgiService.actualizarTenant', () => {
     };
     surtec = {
       configurado: jest.fn().mockReturnValue(true),
-      consultarEmitidos: jest.fn().mockResolvedValue([]),
+      consultarEmitido: jest.fn().mockResolvedValue(null),
+      buscarEmitidoPorIdExterno: jest.fn().mockResolvedValue(null),
     };
-    service = new EstadoDgiService(tenantPrisma as any, surtec as any);
+    service = crear();
   });
 
-  afterEach(() => jest.restoreAllMocks());
+  afterEach(() => {
+    process.env = entornoOriginal;
+    jest.restoreAllMocks();
+  });
 
-  it('busca los PENDIENTES de Surtec de los últimos días, dentro del tenant', async () => {
+  it('busca los PENDIENTES de Surtec de los últimos días, dentro del tenant, los más nuevos primero y con tope', async () => {
     await service.actualizarTenant(TENANT_ID, 7, AHORA);
 
     expect(tenantPrisma.runInTenantContext).toHaveBeenCalledWith(
@@ -111,27 +118,34 @@ describe('EstadoDgiService.actualizarTenant', () => {
           estadoDgi: 'PENDIENTE',
           fechaEmision: { gte: new Date('2026-10-27T15:00:00.000Z') },
         },
+        orderBy: { fechaEmision: 'desc' },
+        take: 100,
       }),
     );
   });
 
-  it('consulta a Surtec con el RUT del local, desde el más viejo hasta hoy (hora de Uruguay)', async () => {
-    await service.actualizarTenant(TENANT_ID, 7, AHORA);
+  it('el tope sale de CFE_ESTADO_DGI_MAX_POR_CORRIDA', async () => {
+    process.env.CFE_ESTADO_DGI_MAX_POR_CORRIDA = '20';
 
-    expect(surtec.consultarEmitidos).toHaveBeenCalledWith({
-      rutEmisor: '214198620015',
-      fechaDesde: '2026-11-01',
-      fechaHasta: '2026-11-03',
-    });
+    await crear().actualizarTenant(TENANT_ID, 7, AHORA);
+
+    expect(tx.comprobanteFiscal.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ take: 20 }),
+    );
   });
 
-  it('empareja por el id de Surtec y guarda el estado con el motivo, condicionado a PENDIENTE', async () => {
-    surtec.consultarEmitidos.mockResolvedValue([
+  it('consulta cada CFE por su id de Surtec, con el RUT del local, y guarda el estado con el motivo, condicionado a PENDIENTE', async () => {
+    surtec.consultarEmitido.mockResolvedValue(
       emitido({ id: 'c1-ref', codigoDgi: 'AE', motivoDgi: 'Recibido' }),
-    ]);
+    );
 
     const resumen = await service.actualizarTenant(TENANT_ID, 7, AHORA);
 
+    expect(surtec.consultarEmitido).toHaveBeenCalledWith(
+      '214198620015',
+      'c1-ref',
+    );
+    expect(surtec.buscarEmitidoPorIdExterno).not.toHaveBeenCalled();
     expect(tx.comprobanteFiscal.updateMany).toHaveBeenCalledWith({
       where: { id: 'c1', estadoDgi: 'PENDIENTE' },
       data: {
@@ -149,28 +163,36 @@ describe('EstadoDgiService.actualizarTenant', () => {
     });
   });
 
-  it('sin id de Surtec, empareja por serie y número', async () => {
+  it('sin id de Surtec, lo busca por el id_externo; sin ninguno de los dos, no consulta', async () => {
     tx.comprobanteFiscal.findMany.mockResolvedValue([
       pendiente('c7', { proveedorRef: null }),
+      pendiente('c8', { proveedorRef: null, idExterno: null }),
     ]);
-    surtec.consultarEmitidos.mockResolvedValue([
-      emitido({ id: 'otro', serie: 'A', numero: 7, codigoDgi: 'CE' }),
-    ]);
+    surtec.buscarEmitidoPorIdExterno.mockResolvedValue(
+      emitido({ id: 'otro', codigoDgi: 'CE' }),
+    );
 
-    await service.actualizarTenant(TENANT_ID, 7, AHORA);
+    const resumen = await service.actualizarTenant(TENANT_ID, 7, AHORA);
 
+    expect(surtec.buscarEmitidoPorIdExterno).toHaveBeenCalledTimes(1);
+    expect(surtec.buscarEmitidoPorIdExterno).toHaveBeenCalledWith(
+      '214198620015',
+      'bl-c7',
+    );
+    expect(surtec.consultarEmitido).not.toHaveBeenCalled();
     expect(tx.comprobanteFiscal.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'c7', estadoDgi: 'PENDIENTE' },
         data: expect.objectContaining({ estadoDgi: 'OBSERVADO' }),
       }),
     );
+    expect(resumen.noEncontrados).toBe(1);
   });
 
   it('un rechazo de DGI (BE) se cuenta y queda como advertencia en el log', async () => {
-    surtec.consultarEmitidos.mockResolvedValue([
+    surtec.consultarEmitido.mockResolvedValue(
       emitido({ id: 'c1-ref', codigoDgi: 'BE' }),
-    ]);
+    );
 
     const resumen = await service.actualizarTenant(TENANT_ID, 7, AHORA);
 
@@ -180,14 +202,14 @@ describe('EstadoDgiService.actualizarTenant', () => {
     );
   });
 
-  it('sin respuesta de DGI o si Surtec no lo devuelve, sigue PENDIENTE', async () => {
+  it('sin respuesta de DGI (NE) o si Surtec no lo tiene, sigue PENDIENTE', async () => {
     tx.comprobanteFiscal.findMany.mockResolvedValue([
       pendiente('c1'),
       pendiente('c2'),
     ]);
-    surtec.consultarEmitidos.mockResolvedValue([
-      emitido({ id: 'c1-ref', codigoDgi: null }),
-    ]);
+    surtec.consultarEmitido
+      .mockResolvedValueOnce(emitido({ id: 'c1-ref', codigoDgi: 'NE' }))
+      .mockResolvedValueOnce(null);
 
     const resumen = await service.actualizarTenant(TENANT_ID, 7, AHORA);
 
@@ -201,14 +223,61 @@ describe('EstadoDgiService.actualizarTenant', () => {
     });
     // El que no está se avisa con serie y número, para diagnosticar.
     expect(Logger.prototype.warn).toHaveBeenCalledWith(
-      expect.stringMatching(/devolvió 1 CFE y no están A-2/),
+      expect.stringMatching(/no tiene 1 de 2 CFE consultados: A-2/),
     );
   });
 
-  it('si otra corrida ya lo actualizó (count 0), no lo cuenta dos veces', async () => {
-    surtec.consultarEmitidos.mockResolvedValue([
-      emitido({ id: 'c1-ref', codigoDgi: 'AE' }),
+  it('con más de 10 no encontrados, el aviso lista 10 y sigue con «…»', async () => {
+    tx.comprobanteFiscal.findMany.mockResolvedValue(
+      Array.from({ length: 12 }, (_, i) => pendiente(`c${i + 1}`)),
+    );
+
+    await service.actualizarTenant(TENANT_ID, 7, AHORA);
+
+    expect(Logger.prototype.warn).toHaveBeenCalledWith(
+      expect.stringMatching(/A-10…$/),
+    );
+  });
+
+  it('entre una consulta y la siguiente hace la pausa de CFE_ESTADO_DGI_PAUSA_MS', async () => {
+    process.env.CFE_ESTADO_DGI_PAUSA_MS = '1';
+    const conPausa = crear();
+    const esperar = jest
+      .spyOn(conPausa as any, 'esperar')
+      .mockResolvedValue(undefined);
+    tx.comprobanteFiscal.findMany.mockResolvedValue([
+      pendiente('c1'),
+      pendiente('c2'),
+      pendiente('c3'),
     ]);
+
+    await conPausa.actualizarTenant(TENANT_ID, 7, AHORA);
+
+    expect(esperar).toHaveBeenCalledTimes(2);
+    expect(esperar).toHaveBeenCalledWith(1);
+  });
+
+  it('la pausa espera de verdad los milisegundos indicados', async () => {
+    jest.useFakeTimers();
+    try {
+      let listo = false;
+      const promesa = (service as any).esperar(500).then(() => {
+        listo = true;
+      });
+      await jest.advanceTimersByTimeAsync(499);
+      expect(listo).toBe(false);
+      await jest.advanceTimersByTimeAsync(1);
+      await promesa;
+      expect(listo).toBe(true);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('si otra corrida ya lo actualizó (count 0), no lo cuenta dos veces', async () => {
+    surtec.consultarEmitido.mockResolvedValue(
+      emitido({ id: 'c1-ref', codigoDgi: 'AE' }),
+    );
     tx.comprobanteFiscal.updateMany.mockResolvedValue({ count: 0 });
 
     const resumen = await service.actualizarTenant(TENANT_ID, 7, AHORA);
@@ -234,11 +303,11 @@ describe('EstadoDgiService.actualizarTenant', () => {
       sinRespuestaDgi: 0,
     });
 
-    expect(surtec.consultarEmitidos).not.toHaveBeenCalled();
+    expect(surtec.consultarEmitido).not.toHaveBeenCalled();
   });
 
   it('si Surtec falla, lanza (el job lo registra y sigue)', async () => {
-    surtec.consultarEmitidos.mockRejectedValue(new Error('HTTP 503'));
+    surtec.consultarEmitido.mockRejectedValue(new Error('HTTP 503'));
 
     await expect(service.actualizarTenant(TENANT_ID, 7, AHORA)).rejects.toThrow(
       'HTTP 503',
