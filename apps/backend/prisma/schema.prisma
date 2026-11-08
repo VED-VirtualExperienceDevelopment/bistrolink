@@ -61,6 +61,9 @@ enum PedidoCanal {
   VOZ
   // HU-039 (BL-209): lo cargó el mozo para un comensal sin celular.
   MOZO
+  // HU-011 (BL-489): venta hecha directamente en el POS del local. Ningún
+  // pedido tiene este canal: solo lo usa el resumen del dashboard.
+  POS
 }
 
 enum PagoEstado {
@@ -685,4 +688,32 @@ model SincronizacionPos {
   @@index([tenantId, estado, createdAt])
   @@index([tenantId, createdAt])
   @@map("sincronizacion_pos")
+}
+
+// HU-011 (BL-489): ventas hechas directamente en el POS del local (no en
+// BistroLink), importadas para el dashboard (canal POS). Las que mandó
+// BistroLink no se importan: ya están como pagos. Idempotente por el id del
+// POS dentro del tenant.
+model VentaPosImportada {
+  id               String   @id @default(uuid()) @db.Uuid
+  tenantId         String   @map("tenant_id") @db.Uuid
+  // Id de la venta en el POS.
+  idPos            String   @map("id_pos") @db.VarChar(64)
+  // Cuándo se hizo la venta en el POS: la hora del dashboard.
+  vendidaEn        DateTime @map("vendida_en") @db.Timestamptz(3)
+  total            Decimal  @db.Decimal(12, 2)
+  // Como lo informa el POS (EFECTIVO, CREDITO, DEBITO…).
+  medioPago        String   @map("medio_pago") @db.VarChar(30)
+  // Anulada en el POS: deja de contar en el dashboard.
+  anulada          Boolean  @default(false)
+  // Último cambio de la venta en el POS: de acá sigue la próxima importación.
+  actualizadaEnPos DateTime @map("actualizada_en_pos") @db.Timestamptz(3)
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([tenantId, idPos])
+  // Resumen por hora y próxima importación, dentro del tenant.
+  @@index([tenantId, vendidaEn])
+  @@index([tenantId, actualizadaEnPos])
+  @@map("venta_pos_importada")
 }
