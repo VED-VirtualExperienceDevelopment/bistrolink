@@ -384,11 +384,11 @@
       "type": "Synchronous/HTTP"
     },
     {
-      "description": "una consulta de CFE emitidos en un rango sin comprobantes",
+      "description": "una consulta v2 de CFE emitidos por id_externo",
       "pending": false,
       "providerStates": [
         {
-          "name": "el emisor no tiene CFE emitidos en el rango"
+          "name": "el emisor tiene un CFE con el id_externo bl-pago-1"
         }
       ],
       "request": {
@@ -420,163 +420,30 @@
                 }
               ]
             }
-          },
-          "query": {
-            "FechaDesde": {
-              "combine": "AND",
-              "matchers": [
-                {
-                  "match": "regex",
-                  "regex": "^\\d{4}-\\d{2}-\\d{2}$"
-                }
-              ]
-            },
-            "FechaHasta": {
-              "combine": "AND",
-              "matchers": [
-                {
-                  "match": "regex",
-                  "regex": "^\\d{4}-\\d{2}-\\d{2}$"
-                }
-              ]
-            },
-            "Sucursal": {
-              "combine": "AND",
-              "matchers": [
-                {
-                  "match": "regex",
-                  "regex": "^\\d+$"
-                }
-              ]
-            }
           }
         },
         "method": "GET",
-        "path": "/consulta/comprobantes/emitidos",
+        "path": "/v2/consulta/comprobantes/emitidos",
         "query": {
-          "FechaDesde": [
-            "2026-11-01"
-          ],
-          "FechaHasta": [
-            "2026-11-03"
-          ],
-          "Sucursal": [
-            "1"
+          "id_externo": [
+            "bl-pago-1"
           ]
         }
       },
       "response": {
         "body": {
           "content": {
-            "comprobante": []
-          },
-          "contentType": "application/json",
-          "encoded": false
-        },
-        "headers": {
-          "Content-Type": [
-            "application/json"
-          ]
-        },
-        "status": 200
-      },
-      "type": "Synchronous/HTTP"
-    },
-    {
-      "description": "una consulta de los CFE emitidos en un rango de fechas",
-      "pending": false,
-      "providerStates": [
-        {
-          "name": "el emisor tiene CFE emitidos en el rango con respuesta de DGI"
-        }
-      ],
-      "request": {
-        "headers": {
-          "Authorization": [
-            "Bearer token-acceso-contrato-1"
-          ],
-          "X-Emisor": [
-            "219999990019"
-          ]
-        },
-        "matchingRules": {
-          "header": {
-            "Authorization": {
-              "combine": "AND",
-              "matchers": [
-                {
-                  "match": "regex",
-                  "regex": "^Bearer \\S+$"
-                }
-              ]
-            },
-            "X-Emisor": {
-              "combine": "AND",
-              "matchers": [
-                {
-                  "match": "regex",
-                  "regex": "^\\d{12}$"
-                }
-              ]
-            }
-          },
-          "query": {
-            "FechaDesde": {
-              "combine": "AND",
-              "matchers": [
-                {
-                  "match": "regex",
-                  "regex": "^\\d{4}-\\d{2}-\\d{2}$"
-                }
-              ]
-            },
-            "FechaHasta": {
-              "combine": "AND",
-              "matchers": [
-                {
-                  "match": "regex",
-                  "regex": "^\\d{4}-\\d{2}-\\d{2}$"
-                }
-              ]
-            },
-            "Sucursal": {
-              "combine": "AND",
-              "matchers": [
-                {
-                  "match": "regex",
-                  "regex": "^\\d+$"
-                }
-              ]
-            }
-          }
-        },
-        "method": "GET",
-        "path": "/consulta/comprobantes/emitidos",
-        "query": {
-          "FechaDesde": [
-            "2026-11-01"
-          ],
-          "FechaHasta": [
-            "2026-11-03"
-          ],
-          "Sucursal": [
-            "1"
-          ]
-        }
-      },
-      "response": {
-        "body": {
-          "content": {
-            "comprobante": [
+            "items": [
               {
-                "estado_dgi": {
-                  "codigo": "AE"
-                },
-                "id": 541759,
-                "numero": 49,
+                "estado_dgi": "NE",
+                "id": 541760,
+                "id_externo": "bl-pago-1",
+                "numero": 50,
                 "serie": "A"
               }
-            ]
+            ],
+            "page_number": 1,
+            "page_size": 25
           },
           "contentType": "application/json",
           "encoded": false
@@ -588,25 +455,16 @@
         },
         "matchingRules": {
           "body": {
-            "$.comprobante": {
-              "combine": "AND",
-              "matchers": [
-                {
-                  "match": "type",
-                  "min": 1
-                }
-              ]
-            },
-            "$.comprobante[*].estado_dgi.codigo": {
+            "$.items[0].estado_dgi": {
               "combine": "AND",
               "matchers": [
                 {
                   "match": "regex",
-                  "regex": "^(AE|BE|CE)$"
+                  "regex": "^(AE|BE|CE|NE)$"
                 }
               ]
             },
-            "$.comprobante[*].id": {
+            "$.items[0].id": {
               "combine": "AND",
               "matchers": [
                 {
@@ -614,7 +472,7 @@
                 }
               ]
             },
-            "$.comprobante[*].numero": {
+            "$.items[0].numero": {
               "combine": "AND",
               "matchers": [
                 {
@@ -622,7 +480,125 @@
                 }
               ]
             },
-            "$.comprobante[*].serie": {
+            "$.items[0].serie": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^[A-Z]{1,2}$"
+                }
+              ]
+            },
+            "$.page_number": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.page_size": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      },
+      "type": "Synchronous/HTTP"
+    },
+    {
+      "description": "una consulta v2 de un CFE emitido por su id",
+      "pending": false,
+      "providerStates": [
+        {
+          "name": "el emisor tiene el CFE 541759 con respuesta de DGI"
+        }
+      ],
+      "request": {
+        "headers": {
+          "Authorization": [
+            "Bearer token-acceso-contrato-1"
+          ],
+          "X-Emisor": [
+            "219999990019"
+          ]
+        },
+        "matchingRules": {
+          "header": {
+            "Authorization": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^Bearer \\S+$"
+                }
+              ]
+            },
+            "X-Emisor": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^\\d{12}$"
+                }
+              ]
+            }
+          }
+        },
+        "method": "GET",
+        "path": "/v2/consulta/comprobantes/emitidos/541759"
+      },
+      "response": {
+        "body": {
+          "content": {
+            "estado_dgi": {
+              "codigo": "AE"
+            },
+            "id": 541759,
+            "numero": 49,
+            "serie": "A"
+          },
+          "contentType": "application/json",
+          "encoded": false
+        },
+        "headers": {
+          "Content-Type": [
+            "application/json"
+          ]
+        },
+        "matchingRules": {
+          "body": {
+            "$.estado_dgi.codigo": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^(AE|BE|CE|NE)$"
+                }
+              ]
+            },
+            "$.id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.numero": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.serie": {
               "combine": "AND",
               "matchers": [
                 {
