@@ -18,14 +18,18 @@ import { RolesGuard, Roles } from '../auth/roles.guard';
 import { AuthenticatedUser } from '../auth/keycloak-jwt.strategy';
 import { SEGURIDAD_KEYCLOAK } from '../openapi';
 import { SincronizacionPosService } from './sincronizacion-pos.service';
+import { ImportacionVentasPosService } from './importacion-ventas-pos.service';
 import {
   CambiarSincronizacionPosDto,
   ConsultarSincronizacionesPosDto,
+  SimularVentaPosDto,
 } from './dto/sincronizacion-pos.dto';
 
 /**
  * HU-011 (BL-488): el administrador ve qué ventas llegaron al POS del local,
- * reintenta las que fallaron y activa o desactiva el envío. Solo ADMIN.
+ * reintenta las que fallaron y activa o desactiva la sincronización. BL-489:
+ * ve cuántas ventas del POS se trajeron y puede traerlas en el momento (o
+ * simular una con el POS de prueba). Solo ADMIN.
  */
 @ApiTags('POS del local')
 @ApiBearerAuth(SEGURIDAD_KEYCLOAK)
@@ -33,7 +37,10 @@ import {
 @UseGuards(AuthGuard('jwt'), RolesGuard)
 @Roles('ADMIN')
 export class SincronizacionPosController {
-  constructor(private readonly sincronizacion: SincronizacionPosService) {}
+  constructor(
+    private readonly sincronizacion: SincronizacionPosService,
+    private readonly importacion: ImportacionVentasPosService,
+  ) {}
 
   @Get('sincronizaciones')
   listar(
@@ -62,5 +69,24 @@ export class SincronizacionPosController {
       req.user.sub,
       dto.habilitada,
     );
+  }
+
+  @Get('ventas')
+  ventasDelPos(@Req() req: { user: AuthenticatedUser }) {
+    return this.importacion.resumen(req.user.tenantId);
+  }
+
+  @Post('ventas/importar')
+  @HttpCode(HttpStatus.OK)
+  importar(@Req() req: { user: AuthenticatedUser }) {
+    return this.importacion.importarAhora(req.user.tenantId);
+  }
+
+  @Post('ventas/simular')
+  simular(
+    @Req() req: { user: AuthenticatedUser },
+    @Body() dto: SimularVentaPosDto,
+  ) {
+    return this.importacion.simularVenta(req.user.tenantId, dto);
   }
 }

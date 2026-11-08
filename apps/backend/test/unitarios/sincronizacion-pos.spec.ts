@@ -738,8 +738,29 @@ describe('SincronizacionPosController (BL-488)', () => {
       reintentar: jest.fn().mockResolvedValue('reintento'),
       cambiarHabilitada: jest.fn().mockResolvedValue('cambio'),
     };
-    const controller = new SincronizacionPosController(servicio as any);
+    const importacion = {
+      resumen: jest.fn().mockResolvedValue('resumen'),
+      importarAhora: jest.fn().mockResolvedValue('importadas'),
+      simularVenta: jest.fn().mockResolvedValue('simulada'),
+    };
+    const controller = new SincronizacionPosController(
+      servicio as any,
+      importacion as any,
+    );
     const req = { user: { tenantId: TENANT_ID, sub: 'admin-kc' } } as any;
+
+    // BL-489: ventas hechas en el POS.
+    await expect(controller.ventasDelPos(req)).resolves.toBe('resumen');
+    await expect(controller.importar(req)).resolves.toBe('importadas');
+    await expect(
+      controller.simular(req, { total: 350, medioPago: 'EFECTIVO' }),
+    ).resolves.toBe('simulada');
+    expect(importacion.resumen).toHaveBeenCalledWith(TENANT_ID);
+    expect(importacion.importarAhora).toHaveBeenCalledWith(TENANT_ID);
+    expect(importacion.simularVenta).toHaveBeenCalledWith(TENANT_ID, {
+      total: 350,
+      medioPago: 'EFECTIVO',
+    });
 
     await expect(controller.listar(req, { pagina: 2 })).resolves.toBe('lista');
     await expect(controller.reintentar(req, FILA_ID)).resolves.toBe(
@@ -759,7 +780,7 @@ describe('SincronizacionPosController (BL-488)', () => {
 });
 
 describe('SincronizacionPosJob (BL-488)', () => {
-  let servicio: { sincronizarTenant: jest.Mock };
+  let servicio: { sincronizarTenant: jest.Mock; importarTenant: jest.Mock };
   let job: SincronizacionPosJob;
 
   beforeEach(() => {
@@ -771,6 +792,13 @@ describe('SincronizacionPosJob (BL-488)', () => {
         .mockResolvedValueOnce({ revisados: 2, enviados: 1, fallidos: 1 })
         .mockRejectedValueOnce(new Error('falló'))
         .mockResolvedValue({ revisados: 1, enviados: 1, fallidos: 0 }),
+      // BL-489: el mismo objeto hace de ImportacionVentasPosService.
+      importarTenant: jest.fn().mockResolvedValue({
+        recibidas: 2,
+        nuevas: 1,
+        actualizadas: 0,
+        omitidas: 1,
+      }),
     };
     job = new SincronizacionPosJob(
       { resolve: jest.fn().mockResolvedValue(servicio) } as any,
@@ -795,13 +823,21 @@ describe('SincronizacionPosJob (BL-488)', () => {
       revisados: 3,
       enviados: 2,
       fallidos: 1,
+      // t2 falló antes de importar: solo t1 y t3.
+      importadas: { recibidas: 4, nuevas: 2, actualizadas: 0, omitidas: 2 },
     });
     expect(servicio.sincronizarTenant).toHaveBeenCalledTimes(3);
+    expect(servicio.importarTenant).toHaveBeenCalledTimes(2);
     expect(Logger.prototype.error).toHaveBeenCalledWith(
       'Sincronización con el POS: falló en el tenant t2: falló',
     );
     expect(Logger.prototype.log).toHaveBeenCalledWith(
-      expect.objectContaining({ revisados: 3, enviados: 2, errores: 1 }),
+      expect.objectContaining({
+        revisados: 3,
+        enviados: 2,
+        ventasDelPos: 2,
+        errores: 1,
+      }),
     );
   });
 
@@ -811,12 +847,34 @@ describe('SincronizacionPosJob (BL-488)', () => {
     await primera;
   });
 
-  it('sin nada que mandar, no escribe el resumen', async () => {
+  it('sin nada que mandar ni traer, no escribe el resumen', async () => {
     servicio.sincronizarTenant = jest
       .fn()
       .mockResolvedValue({ revisados: 0, enviados: 0, fallidos: 0 });
+    servicio.importarTenant = jest.fn().mockResolvedValue({
+      recibidas: 1,
+      nuevas: 0,
+      actualizadas: 0,
+      omitidas: 1,
+    });
     await job.ejecutar();
     expect(Logger.prototype.log).not.toHaveBeenCalled();
+  });
+
+  it('BL-489: si solo trae ventas del POS, igual escribe el resumen', async () => {
+    servicio.sincronizarTenant = jest
+      .fn()
+      .mockResolvedValue({ revisados: 0, enviados: 0, fallidos: 0 });
+    servicio.importarTenant = jest.fn().mockResolvedValue({
+      recibidas: 1,
+      nuevas: 0,
+      actualizadas: 1,
+      omitidas: 0,
+    });
+    await job.ejecutar();
+    expect(Logger.prototype.log).toHaveBeenCalledWith(
+      expect.objectContaining({ ventasDelPos: 3, errores: 0 }),
+    );
   });
 
   it('si no puede leer los establecimientos, no lanza', async () => {
@@ -832,6 +890,7 @@ describe('SincronizacionPosJob (BL-488)', () => {
       revisados: 0,
       enviados: 0,
       fallidos: 0,
+      importadas: { recibidas: 0, nuevas: 0, actualizadas: 0, omitidas: 0 },
     });
     expect(Logger.prototype.error).toHaveBeenCalledWith(
       'Sincronización con el POS: no se pudo ejecutar: sin base',
