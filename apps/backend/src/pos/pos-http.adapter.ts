@@ -34,7 +34,7 @@ export class PosHttpAdapter implements PosAdapter {
     if (!urlPosValida(url)) {
       throw new Error('POS_API_URL tiene que ser una URL HTTPS');
     }
-    this.url = url.replace(/\/+$/, '');
+    this.url = sinBarraFinal(url);
   }
 
   async registrarVenta(venta: VentaPos): Promise<VentaRegistradaPos> {
@@ -101,4 +101,11 @@ export class PosHttpAdapter implements PosAdapter {
       status,
     );
   }
+}
+
+/** Saca las barras del final sin regex (evita el backtracking de /\/+$/). */
+function sinBarraFinal(url: string): string {
+  let fin = url.length;
+  while (fin > 0 && url[fin - 1] === '/') fin--;
+  return url.slice(0, fin);
 }

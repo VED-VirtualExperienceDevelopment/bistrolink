@@ -39,7 +39,9 @@ function entero(valor: string | undefined, porDefecto: number): number {
 
 function texto(valor: string | undefined): string | null {
   const limpio = valor?.trim();
-  return limpio ? limpio : null;
+  // Vacío o solo espacios cuenta como no configurado.
+  if (!limpio) return null;
+  return limpio;
 }
 
 function tipoAdaptador(valor: string | undefined): TipoAdaptadorPos {
