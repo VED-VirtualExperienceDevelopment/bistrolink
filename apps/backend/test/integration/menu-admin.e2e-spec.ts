@@ -1,0 +1,514 @@
+import 'dotenv/config';
+
+// ── 1. MOCKS DE VARIABLES DE ENTORNO (Obligatorio para que AppModule inicie) ──
+process.env.MP_ACCESS_TOKEN =
+  process.env.MP_ACCESS_TOKEN || 'TEST_MP_ACCESS_TOKEN';
+process.env.MP_PUBLIC_KEY = process.env.MP_PUBLIC_KEY || 'TEST_MP_PUBLIC_KEY';
+process.env.PLEXO_API_KEY = process.env.PLEXO_API_KEY || 'TEST_PLEXO_API_KEY';
+process.env.PLEXO_ENDPOINT =
+  process.env.PLEXO_ENDPOINT || 'https://api.test.plexo.com.uy';
+
+import { Test, TestingModule } from '@nestjs/testing';
+import { INestApplication, HttpStatus, ValidationPipe } from '@nestjs/common';
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+import request = require('supertest');
+import { AppModule } from '../../src/app.module';
+import { MenuAdminService } from '../../src/menu/menu-admin.service';
+import { MenuGateway } from '../../src/menu/menu.gateway';
+
+// ── 2. CONFIG DE KEYCLOAK (Patrón oficial del repo para e2e) ──
+const KEYCLOAK_URL = process.env.KEYCLOAK_URL ?? 'http://localhost:8080';
+const REALM = process.env.KEYCLOAK_REALM ?? 'bistrolink';
+const CLIENT_ID = process.env.KEYCLOAK_CLIENT_ID ?? 'bistrolink-backend';
+const CLIENT_SECRET = process.env.KEYCLOAK_CLIENT_SECRET ?? 'admin-test';
+
+const ADMIN_USER = process.env.TEST_ADMIN_USERNAME;
+const ADMIN_PASS = process.env.TEST_ADMIN_PASSWORD;
+const COCINA_USER = process.env.TEST_COCINA_USERNAME;
+const COCINA_PASS = process.env.TEST_COCINA_PASSWORD;
+const MOZO_USER = process.env.TEST_MOZO_USERNAME;
+const MOZO_PASS = process.env.TEST_MOZO_PASSWORD;
+
+async function getToken(username: string, password: string): Promise<string> {
+  const res = await fetch(
+    `${KEYCLOAK_URL}/realms/${REALM}/protocol/openid-connect/token`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'password',
+        client_id: CLIENT_ID,
+        client_secret: CLIENT_SECRET,
+        username,
+        password,
+      }),
+    },
+  );
+  if (!res.ok) {
+    throw new Error(
+      `No se pudo obtener token para ${username}: ${res.status} ${await res.text()}`,
+    );
+  }
+  const data = await res.json();
+  return data.access_token as string;
+}
+
+// Condicionales para saltar tests si no hay fixtures configuradas
+const itConAdmin = ADMIN_USER && ADMIN_PASS ? it : it.skip;
+const itConCocina = COCINA_USER && COCINA_PASS ? it : it.skip;
+const itConMozo = MOZO_USER && MOZO_PASS ? it : it.skip;
+
+const CATEGORIA_ID = '22222222-2222-2222-2222-222222222222';
+const ITEM_ID = '33333333-3333-3333-3333-333333333333';
+
+// ── 3. MOCKS DE SERVICIOS (Para tests sin dependencias de DB) ──
+const mockMenuGateway = {
+  emitItemDataUpdated: jest.fn(),
+  emitItemUpdated: jest.fn(),
+  emitCategoriaUpdated: jest.fn(),
+  emitItemRetirado: jest.fn(),
+  emitCategoriaRetirada: jest.fn(),
+};
+
+const mockMenuAdminService = {
+  updateItem: jest.fn().mockImplementation(async (tenantId, itemId, dto) => {
+    const updatedItem = {
+      id: itemId,
+      tenantId,
+      ...dto,
+      updatedAt: new Date(),
+    };
+
+    mockMenuGateway.emitItemDataUpdated(tenantId, {
+      itemId,
+      data: updatedItem,
+    });
+
+    return updatedItem;
+  }),
+  // BL-394: DELETE es la eliminación definitiva (solo sin historial).
+  eliminarItem: jest.fn().mockImplementation(async (tenantId, itemId) => {
+    mockMenuGateway.emitItemRetirado(tenantId, { itemId });
+    return { id: itemId, eliminado: true };
+  }),
+  eliminarCategoria: jest
+    .fn()
+    .mockImplementation(async (tenantId, categoriaId) => {
+      mockMenuGateway.emitCategoriaRetirada(tenantId, { categoriaId });
+      return { id: categoriaId, eliminada: true };
+    }),
+};
+
+// BL-435: los casos del CRUD (BL-52/BL-53) tenían el prefijo de los E2E
+// ([TC-E-001] a [TC-E-011]) y chocaban con los TC-E de Playwright. Son de
+// integración: pasan a TC-I-099 a 108, cargados en el plan «Integration
+// tests» de Kiwi.
+describe('Menu Admin (BL-52/BL-53) - CRUD Completo con Soft Delete', () => {
+  let app: INestApplication;
+
+  beforeAll(async () => {
+    const moduleRef: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    })
+      .overrideProvider(MenuAdminService)
+      .useValue(mockMenuAdminService)
+      .overrideProvider(MenuGateway)
+      .useValue(mockMenuGateway)
+      .compile();
+
+    app = moduleRef.createNestApplication();
+
+    // Replicar el ValidationPipe de main.ts
+    app.useGlobalPipes(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true,
+        transform: true,
+      }),
+    );
+
+    await app.init();
+    await app.listen(0);
+  }, 30000);
+
+  afterAll(async () => {
+    if (app) {
+      await app.close();
+    }
+  }, 30000);
+
+  describe('Validación de DTOs (400 Bad Request)', () => {
+    itConAdmin(
+      '[TC-I-099] Menú: POST /admin/menu/item: devuelve 400 si el nombre está vacío',
+      async () => {
+        const token = await getToken(
+          ADMIN_USER as string,
+          ADMIN_PASS as string,
+        );
+
+        await request(app.getHttpServer())
+          .post('/admin/menu/item')
+          .set('Authorization', `Bearer ${token}`)
+          .send({
+            categoriaId: CATEGORIA_ID,
+            nombre: '',
+            precio: '10.50',
+          })
+          .expect(HttpStatus.BAD_REQUEST)
+          .expect((res) => {
+            expect(res.body.message).toEqual(
+              expect.arrayContaining([
+                expect.stringContaining('El nombre no puede estar vacío'),
+              ]),
+            );
+          });
+      },
+    );
+
+    itConAdmin(
+      '[TC-I-100] Menú: POST /admin/menu/item: devuelve 400 si el precio es negativo',
+      async () => {
+        const token = await getToken(
+          ADMIN_USER as string,
+          ADMIN_PASS as string,
+        );
+
+        await request(app.getHttpServer())
+          .post('/admin/menu/item')
+          .set('Authorization', `Bearer ${token}`)
+          .send({
+            categoriaId: CATEGORIA_ID,
+            nombre: 'Hamburguesa',
+            precio: '-5.00',
+          })
+          .expect(HttpStatus.BAD_REQUEST)
+          .expect((res) => {
+            expect(res.body.message).toEqual(
+              expect.arrayContaining([
+                expect.stringContaining(
+                  'El precio debe ser un número positivo válido',
+                ),
+              ]),
+            );
+          });
+      },
+    );
+
+    itConAdmin(
+      '[TC-I-101] Menú: PATCH /admin/menu/item/:id: devuelve 400 si el precio es negativo',
+      async () => {
+        const token = await getToken(
+          ADMIN_USER as string,
+          ADMIN_PASS as string,
+        );
+
+        await request(app.getHttpServer())
+          .patch(`/admin/menu/item/${ITEM_ID}`)
+          .set('Authorization', `Bearer ${token}`)
+          .send({
+            precio: '-10.00',
+          })
+          .expect(HttpStatus.BAD_REQUEST)
+          .expect((res) => {
+            expect(res.body.message).toEqual(
+              expect.arrayContaining([
+                expect.stringContaining(
+                  'El precio debe ser un número positivo válido',
+                ),
+              ]),
+            );
+          });
+      },
+    );
+  });
+
+  describe('Autorización por Rol (403 Forbidden)', () => {
+    itConCocina(
+      '[TC-I-102] Menú: POST /admin/menu/item: devuelve 403 si el rol es COCINA',
+      async () => {
+        const token = await getToken(
+          COCINA_USER as string,
+          COCINA_PASS as string,
+        );
+
+        await request(app.getHttpServer())
+          .post('/admin/menu/item')
+          .set('Authorization', `Bearer ${token}`)
+          .send({
+            categoriaId: CATEGORIA_ID,
+            nombre: 'Pizza',
+            precio: '15.00',
+          })
+          .expect(HttpStatus.FORBIDDEN);
+      },
+    );
+
+    itConCocina(
+      '[TC-I-103] Menú: PATCH /admin/menu/item/:id: devuelve 403 si el rol es COCINA',
+      async () => {
+        const token = await getToken(
+          COCINA_USER as string,
+          COCINA_PASS as string,
+        );
+
+        await request(app.getHttpServer())
+          .patch(`/admin/menu/item/${ITEM_ID}`)
+          .set('Authorization', `Bearer ${token}`)
+          .send({
+            nombre: 'Pizza Actualizada',
+          })
+          .expect(HttpStatus.FORBIDDEN);
+      },
+    );
+
+    itConCocina(
+      '[TC-I-104] Menú: DELETE /admin/menu/item/:id: devuelve 403 si el rol es COCINA',
+      async () => {
+        const token = await getToken(
+          COCINA_USER as string,
+          COCINA_PASS as string,
+        );
+
+        await request(app.getHttpServer())
+          .delete(`/admin/menu/item/${ITEM_ID}`)
+          .set('Authorization', `Bearer ${token}`)
+          .expect(HttpStatus.FORBIDDEN);
+      },
+    );
+
+    itConCocina(
+      '[TC-I-105] Menú: DELETE /admin/menu/categoria/:id: devuelve 403 si el rol es COCINA',
+      async () => {
+        const token = await getToken(
+          COCINA_USER as string,
+          COCINA_PASS as string,
+        );
+
+        await request(app.getHttpServer())
+          .delete(`/admin/menu/categoria/${CATEGORIA_ID}`)
+          .set('Authorization', `Bearer ${token}`)
+          .expect(HttpStatus.FORBIDDEN);
+      },
+    );
+  });
+
+  // BL-394: el «soft delete» pasó a ser «archivar» (POST …/archivar); DELETE
+  // elimina definitivamente, y el servicio responde 409 si hay historial.
+  describe('Eliminación definitiva de ítems (DELETE)', () => {
+    itConAdmin(
+      '[TC-I-106] Menú: DELETE /admin/menu/item/:id: elimina definitivamente un ítem sin historial (200)',
+      async () => {
+        const token = await getToken(
+          ADMIN_USER as string,
+          ADMIN_PASS as string,
+        );
+
+        // Limpiar mocks
+        mockMenuGateway.emitItemRetirado.mockClear();
+
+        const inicio = Date.now();
+        const res = await request(app.getHttpServer())
+          .delete(`/admin/menu/item/${ITEM_ID}`)
+          .set('Authorization', `Bearer ${token}`)
+          .expect(HttpStatus.OK);
+
+        const duracionMs = Date.now() - inicio;
+
+        expect(res.status).toBe(200);
+        expect(res.body).toEqual({ id: ITEM_ID, eliminado: true });
+        expect(duracionMs).toBeLessThan(2000);
+
+        // Verificar que se emitió el evento WebSocket
+        expect(mockMenuGateway.emitItemRetirado).toHaveBeenCalledWith(
+          expect.any(String),
+          { itemId: ITEM_ID },
+        );
+      },
+    );
+  });
+
+  describe('Eliminación definitiva de categorías (DELETE)', () => {
+    itConAdmin(
+      '[TC-I-107] Menú: DELETE /admin/menu/categoria/:id: elimina definitivamente una categoría sin ítems (200)',
+      async () => {
+        const token = await getToken(
+          ADMIN_USER as string,
+          ADMIN_PASS as string,
+        );
+
+        // Limpiar mocks
+        mockMenuGateway.emitCategoriaRetirada.mockClear();
+
+        const inicio = Date.now();
+        const res = await request(app.getHttpServer())
+          .delete(`/admin/menu/categoria/${CATEGORIA_ID}`)
+          .set('Authorization', `Bearer ${token}`)
+          .expect(HttpStatus.OK);
+
+        const duracionMs = Date.now() - inicio;
+
+        expect(res.status).toBe(200);
+        expect(res.body).toEqual({ id: CATEGORIA_ID, eliminada: true });
+        expect(duracionMs).toBeLessThan(2000);
+
+        // Verificar que se emitió el evento WebSocket
+        expect(mockMenuGateway.emitCategoriaRetirada).toHaveBeenCalledWith(
+          expect.any(String),
+          { categoriaId: CATEGORIA_ID },
+        );
+      },
+    );
+  });
+
+  describe('Integración WebSocket - Tiempo Real (<2s)', () => {
+    itConAdmin(
+      '[TC-I-108] Menú: PATCH /admin/menu/item/:id: emite evento WebSocket en menos de 2s',
+      async () => {
+        const token = await getToken(
+          ADMIN_USER as string,
+          ADMIN_PASS as string,
+        );
+
+        // Limpiar el mock antes del test
+        mockMenuGateway.emitItemDataUpdated.mockClear();
+
+        const inicio = Date.now();
+
+        // Hacer el PATCH request
+        const res = await request(app.getHttpServer())
+          .patch(`/admin/menu/item/${ITEM_ID}`)
+          .set('Authorization', `Bearer ${token}`)
+          .send({
+            nombre: 'Pizza Actualizada',
+          });
+
+        const duracionMs = Date.now() - inicio;
+
+        // Verificar que el request fue exitoso
+        expect(res.status).toBe(200);
+
+        // Verificar que el gateway fue llamado con los parámetros correctos
+        expect(mockMenuGateway.emitItemDataUpdated).toHaveBeenCalledTimes(1);
+
+        expect(mockMenuGateway.emitItemDataUpdated).toHaveBeenCalledWith(
+          expect.any(String),
+          expect.objectContaining({
+            itemId: ITEM_ID,
+            data: expect.objectContaining({
+              nombre: 'Pizza Actualizada',
+            }),
+          }),
+        );
+
+        // Verificar que se completó en menos de 2 segundos
+        expect(duracionMs).toBeLessThan(2000);
+
+        console.log(`⏱️ Tiempo de emisión WebSocket: ${duracionMs}ms`);
+      },
+      10000,
+    );
+  });
+
+  // BL-391 (BL-385): subida y confirmación de imágenes solo para ADMIN, con
+  // límite por usuario. Ninguno de estos casos llega a S3: el rol, el formato
+  // de la key y el límite se controlan antes.
+  describe('Carga segura de imágenes (BL-385)', () => {
+    const UUID = '0b4f6a3e-1111-4c2d-9e8f-123456789abc';
+    const KEY_DE_OTRO_TENANT = `incoming/99999999-9999-4999-8999-999999999999/${UUID}`;
+
+    itConCocina(
+      '[TC-I-077] Menú: POST /admin/menu/presigned-url: devuelve 403 si el rol es COCINA',
+      async () => {
+        const token = await getToken(
+          COCINA_USER as string,
+          COCINA_PASS as string,
+        );
+
+        await request(app.getHttpServer())
+          .post('/admin/menu/presigned-url')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ contentType: 'image/png', fileSize: 1024 })
+          .expect(HttpStatus.FORBIDDEN);
+      },
+    );
+
+    itConMozo(
+      '[TC-I-078] Menú: POST /admin/menu/presigned-url: devuelve 403 si el rol es MOZO',
+      async () => {
+        const token = await getToken(MOZO_USER as string, MOZO_PASS as string);
+
+        await request(app.getHttpServer())
+          .post('/admin/menu/presigned-url')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ contentType: 'image/png', fileSize: 1024 })
+          .expect(HttpStatus.FORBIDDEN);
+      },
+    );
+
+    itConMozo(
+      '[TC-I-079] Menú: POST /admin/menu/imagenes/confirmar: devuelve 403 si el rol es MOZO',
+      async () => {
+        const token = await getToken(MOZO_USER as string, MOZO_PASS as string);
+
+        await request(app.getHttpServer())
+          .post('/admin/menu/imagenes/confirmar')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ key: KEY_DE_OTRO_TENANT })
+          .expect(HttpStatus.FORBIDDEN);
+      },
+    );
+
+    itConAdmin(
+      '[TC-I-080] Menú: POST /admin/menu/imagenes/confirmar: devuelve 400 con una key de otro tenant',
+      async () => {
+        const token = await getToken(
+          ADMIN_USER as string,
+          ADMIN_PASS as string,
+        );
+
+        await request(app.getHttpServer())
+          .post('/admin/menu/imagenes/confirmar')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ key: KEY_DE_OTRO_TENANT })
+          .expect(HttpStatus.BAD_REQUEST)
+          .expect((res) => {
+            expect(res.body.message).toBe(
+              'La imagen no es válida para este establecimiento',
+            );
+          });
+      },
+    );
+
+    itConAdmin(
+      '[TC-I-081] Menú: POST /admin/menu/imagenes/confirmar: devuelve 429 al pasar el límite por minuto',
+      async () => {
+        const token = await getToken(
+          ADMIN_USER as string,
+          ADMIN_PASS as string,
+        );
+
+        // Límite: 20 por minuto y por usuario. Con 21 pedidos seguidos al
+        // menos uno tiene que dar 429 (el contador puede traer pedidos de
+        // otros tests de este archivo).
+        const estados: number[] = [];
+        for (let i = 0; i < 21; i++) {
+          const res = await request(app.getHttpServer())
+            .post('/admin/menu/imagenes/confirmar')
+            .set('Authorization', `Bearer ${token}`)
+            .send({ key: KEY_DE_OTRO_TENANT });
+          estados.push(res.status);
+        }
+
+        expect(estados).toContain(HttpStatus.TOO_MANY_REQUESTS);
+        expect(
+          estados.every(
+            (e) =>
+              e === HttpStatus.BAD_REQUEST ||
+              e === HttpStatus.TOO_MANY_REQUESTS,
+          ),
+        ).toBe(true);
+      },
+      30000,
+    );
+  });
+});

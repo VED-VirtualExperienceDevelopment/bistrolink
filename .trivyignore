@@ -1,0 +1,306 @@
+# picomatch CVE - dependencia transitiva, override npm no resuelve correctamente
+
+# Pendiente: verificar cuando dependencias upstream actualicen a 4.0.4
+
+CVE-2026-33671
+CVE-2024-47068
+CVE-2026-27606
+CVE-2026-48779
+
+# Keycloak (imagen keycloak/Dockerfile.auth) — CVEs de dependencias internas
+
+# de Keycloak 26.7.0 (la versión estable más reciente disponible hoy,
+
+# 22/08). Los 4 CVEs específicos de Keycloak que motivaron el upgrade desde
+
+# 26.5.7 (CVE-2026-7504, 7507, 7571, 9795) YA NO APARECEN en el escaneo de
+
+# 26.7.0 — confirmado, el upgrade los resolvió. Lo que queda acá son CVEs
+
+# nuevos y distintos, de librerías de terceros empaquetadas dentro de la
+
+# imagen (jackson, netty, micrometer, mssql-jdbc, el driver JDBC interno de
+
+# postgresql que usa Keycloak) — no de código propio del proyecto. La
+
+# mayoría ya tiene "Fixed Version" publicada por esas librerías, pero
+
+# Keycloak todavía no las empaquetó en un patch release. No hay una versión
+
+# de Keycloak más nueva disponible que ya las incluya.
+
+# Pendiente (BL-137): revisar en el próximo patch release de Keycloak
+
+# (26.7.x) si estos CVEs ya se resolvieron, y sacar las excepciones que
+
+# correspondan en vez de dejarlas indefinidamente.
+
+CVE-2026-22020
+GHSA-r7wm-3cxj-wff9
+CVE-2026-54512
+CVE-2026-54513
+CVE-2025-59250
+CVE-2026-40983
+CVE-2026-40984
+CVE-2026-59901
+CVE-2026-55851
+CVE-2026-55831
+CVE-2026-55833
+CVE-2026-56745
+CVE-2026-56819
+CVE-2026-54291
+
+# CVE-2026-68497 (HIGH) — com.fasterxml.jackson.core:jackson-databind 2.21.5,
+
+# bundleado por la imagen oficial de Keycloak (quay.io/keycloak/keycloak:26.7.2),
+
+# también dentro de keycloak-admin-cli-26.7.2.jar. DoS por consumo de CPU al
+
+# parsear números sin límite. Fix en jackson 2.21.6, pero Keycloak todavía no lo
+
+# empaquetó: issue keycloak/keycloak#53278 abierto el 29/09/2026, en "triage",
+
+# afecta también a 26.7.4. No es código propio ni una dependencia que gestionemos.
+
+# Pendiente (BL-137): revisar cuando Keycloak publique un patch que actualice jackson.
+
+CVE-2026-68497
+
+# CVE-2026-91776 y CVE-2026-91777 (HIGH) — com.fasterxml.jackson.core:jackson-databind
+
+# 2.21.5, bundleado por la imagen oficial de Keycloak (quay.io/keycloak/keycloak:26.7.2),
+
+# también dentro de keycloak-admin-cli-26.7.2.jar. Fix en jackson 2.21.7 / 2.22.3, pero
+
+# Keycloak todavía no lo empaquetó (mismo caso que CVE-2026-68497). No es código propio
+
+# ni una dependencia que gestionemos. Agregadas el 30/09/2026 (BL-248).
+
+# Pendiente: revisar al actualizar Keycloak (26.7.5 / 26.8.0).
+
+CVE-2026-91776
+CVE-2026-91777
+
+# CVE-2026-103111 (HIGH) — pcre2 / pcre2-syntax 10.40-6.el9 del SO base RHEL 9.8 de la
+
+# imagen oficial de Keycloak (quay.io/keycloak/keycloak:26.7.2). Estado "affected", sin
+
+# fixed version publicada por Red Hat. No es código propio. Agregada el 30/09/2026 (BL-248).
+
+# Pendiente: revisar junto con CVE-2026-86145 y CVE-2026-89161 cuando haya imagen base nueva.
+
+CVE-2026-103111
+
+# pcre2 / pcre2-syntax — CVEs del paquete PCRE2 del SO base RHEL 9.8 de la
+
+# imagen oficial de Keycloak (quay.io/keycloak/keycloak:26.7.2). No es
+
+# código propio del proyecto ni una dependencia que gestionemos nosotros.
+
+# CVE-2026-86145: Red Hat la marcó "will_not_fix" en RHEL 9 — no va a haber
+
+# fixed version para esta rama del SO.
+
+# CVE-2026-89161: "affected", todavía sin fixed version publicada por
+
+# upstream/Red Hat.
+
+# Pendiente (BL-137): revisar junto con el resto de las excepciones de
+
+# Keycloak cuando haya una imagen base más nueva.
+
+CVE-2026-86145
+CVE-2026-89161
+
+# CVE-2026-84939 (CRITICAL) — org.freemarker:freemarker 2.3.32, bundleado por
+
+# la imagen oficial de Keycloak (quay.io/keycloak/keycloak:26.7.2). Fix
+
+# existe en freemarker 2.3.35, pero Keycloak todavía no lo empaquetó: el
+
+# issue que lo trackea (keycloak/keycloak#52888) lo asocia a los milestones
+
+# 26.4.17 / 26.6.8 / 26.7.5 / 26.8.0, ninguno publicado todavía (la última
+
+# release real es 26.7.4, del 09/2026, que confirmadamente NO lo incluye).
+
+# Pendiente (BL-137): revisar cuando salga 26.7.5 o 26.8.0 y actualizar
+
+# la imagen base en Dockerfile.auth, sacando esta excepción.
+
+CVE-2026-84939
+
+# testmgmt (Kiwi TCMS) — CVEs de dependencias empaquetadas dentro de la
+
+# imagen oficial kiwitcms/kiwi, no de código propio. No podemos actualizar
+
+# msgpack/setuptools nosotros: viven en el venv que arma la imagen upstream.
+
+# Pendiente: revisar cuando kiwitcms/kiwi publique una imagen más nueva.
+
+GHSA-6v7p-g79w-8964
+CVE-2025-47273
+
+# CVE-2026-114613 (HIGH) — msgpack 1.1.2 de la imagen oficial kiwitcms/kiwi:latest
+
+# (DoS por memoria al deserializar mapas; corregido en 1.2.3). Mismo caso que las de
+
+# arriba: vive en el venv de la imagen upstream, no es código propio, y Kiwi solo se usa
+
+# en staging, sin datos de producción. Apareció en la base de Trivy del 27/10/2026, en el
+
+# escaneo de testmgmt de una corrida manual del CI.
+
+# Pendiente: revisar cuando kiwitcms/kiwi publique una imagen con msgpack >= 1.2.3.
+
+CVE-2026-114613
+
+# CVE-2026-97687 y CVE-2026-97689 (HIGH) — urllib3 2.7.0 del venv de la imagen
+
+# oficial kiwitcms/kiwi:latest (corregido en 2.8.0). No es código propio y Kiwi
+
+# solo se usa en staging, sin datos de producción. BL-278 (07/10/2026).
+
+# Pendiente: revisar cuando kiwitcms/kiwi publique una imagen con urllib3 >= 2.8.0.
+
+CVE-2026-97687
+CVE-2026-97689
+
+# CVE-2025-59250 — mssql-jdbc HIGH, bundleado por defecto en la imagen oficial
+
+# de Keycloak (quay.io/keycloak/keycloak:26.7.2). No usamos SQL Server como
+
+# base de datos (usamos Postgres), así que este driver nunca se carga ni se
+
+# ejecuta en runtime. Revisar cuando Keycloak libere un rebuild que actualice
+
+# el driver, o si en algún momento se agrega soporte a SQL Server.
+
+CVE-2025-59250
+
+# CVE-2026-75595 — Netty CRITICAL en netty-handler 4.1.136.Final,
+
+# bundleado por la imagen oficial de Keycloak (quay.io/keycloak/keycloak:26.7.2).
+
+# Confirmado en el issue tracker oficial (keycloak/keycloak#52549, abierto
+
+# 09/09/2026): afecta TODAS las versiones actuales, incluyendo 26.7.3
+
+# (la más reciente disponible). Fix existe en Netty (4.1.137.Final /
+
+# 4.2.17.Final) pero Keycloak aún no lo empaquetó — issue en estado "triage".
+
+# No es código propio del proyecto. https://github.com/keycloak/keycloak/issues/52549
+
+# Pendiente: revisar cuando Keycloak libere un patch release que actualice Netty.
+
+CVE-2026-75595
+
+# CVE-2026-8763 (CRITICAL) y CVE-2026-13506 (HIGH) — org.bouncycastle:bcprov-jdk18on
+
+# 1.84, bundleado por la imagen oficial de Keycloak (quay.io/keycloak/keycloak:26.7.2/26.7.3).
+
+# ...
+
+CVE-2026-8763
+CVE-2026-13506
+
+# CVE-2026-89407 y CVE-2026-89425 (HIGH) — com.fasterxml.jackson.core:jackson-core
+
+# bundleado por la imagen oficial de Keycloak (quay.io/keycloak/keycloak:26.7.2),
+
+# específicamente dentro de keycloak-admin-cli-26.7.2.jar.
+
+# No es código propio ni una dependencia que gestionemos directamente.
+
+# Pendiente (BL-137): revisar cuando Keycloak publique un patch release que actualice
+
+# jackson-core y sacar estas excepciones.
+
+CVE-2026-89407
+CVE-2026-89425
+
+# CVE-2026-114406 (CRITICAL) — ca-certificates 2025.2.80_v9.0.305-91.el9 de la imagen
+
+# base de Keycloak (quay.io/keycloak/keycloak:26.7.2, Red Hat UBI 9.8). Red Hat todavía
+
+# no publicó la versión corregida (estado "affected"). Es el retiro de confianza de CAs
+
+# intermedias de eMudhra; Keycloak no hace conexiones TLS salientes a sitios externos
+
+# en este proyecto. No es código propio ni una dependencia que gestionemos.
+
+# Agregada el 23/10/2026. Pendiente (BL-137): quitar cuando Keycloak publique una imagen
+
+# con ca-certificates corregido.
+
+CVE-2026-114406
+
+# CVE-2026-91415 (HIGH) — java-21-openjdk-headless 1:21.0.12.1.1-1.2.el9 de la imagen
+
+# base de Keycloak (Oracle Critical Patch Update de octubre de 2026, renderizado de
+
+# fuentes). Sin versión corregida de Red Hat todavía. Keycloak no renderiza fuentes de
+
+# terceros. No es código propio ni una dependencia que gestionemos.
+
+# Agregada el 23/10/2026. Pendiente (BL-137): quitar cuando Keycloak publique una imagen
+
+# con el JDK actualizado.
+
+CVE-2026-91415
+
+# CVE-2026-91403 (CRITICAL) — java-21-openjdk-headless 1:21.0.12.1.1-1.2.el9 de la imagen
+
+# base de Keycloak (quay.io/keycloak/keycloak:26.7.2, Red Hat UBI 9.8). Es el mismo
+
+# retiro de confianza de las CAs intermedias de eMudhra que CVE-2026-114406, ahora en el
+
+# almacén de certificados del JDK. Red Hat lo tiene "under investigation", sin versión
+
+# corregida. Keycloak no hace conexiones TLS salientes a sitios externos en este
+
+# proyecto. No es código propio ni una dependencia que gestionemos.
+
+# Agregada el 23/10/2026 (BL-356, apareció en la base de Trivy del día). Pendiente
+
+# (BL-137): quitar cuando Keycloak publique una imagen con el JDK corregido.
+
+CVE-2026-91403
+
+# CVE-2026-102554 (HIGH) — com.google.guava:guava 33.5.0-jre, bundleado por la imagen
+
+# oficial de Keycloak (quay.io/keycloak/keycloak:26.7.2). DoS por asignación de memoria
+
+# sin límite al deserializar ciertas colecciones de Guava. Fix en guava 33.7.2, pero
+
+# Keycloak todavía no lo empaquetó: issue keycloak/keycloak#54110 abierto el 19/10/2026,
+
+# "blocked-external", sin milestone ni PR. Los mantenedores indican que Keycloak muy
+
+# probablemente no es afectado. Ninguna release publicada de Keycloak lo incluye aún.
+
+# No es código propio ni una dependencia que gestionemos.
+
+# Agregada el 27/10/2026 (BL-XXX). Pendiente: quitar cuando Keycloak publique una
+
+# versión con guava >= 33.7.2.
+
+CVE-2026-102554
+
+# CVE-2026-119373 y CVE-2026-119586 (HIGH) — sqlite-libs 3.34.1-11.el9_8 del SO base
+
+# de la imagen oficial de Keycloak (quay.io/keycloak/keycloak:26.7.2, Red Hat UBI 9.8).
+
+# Estado "affected", sin fixed version publicada por Red Hat. Keycloak usa PostgreSQL
+
+# (keycloak-db) y no usa SQLite; la segunda afecta al comando .recover de la consola
+
+# sqlite3, que no se ejecuta en el contenedor. No es código propio ni una dependencia
+
+# que gestionemos. Agregada el 31/10/2026 (aparecieron en la base de Trivy del día).
+
+# Pendiente (BL-137): quitar cuando Keycloak publique una imagen con sqlite corregido.
+
+CVE-2026-119373
+CVE-2026-119586

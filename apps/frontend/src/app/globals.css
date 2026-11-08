@@ -1,0 +1,62 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+/*
+  BistroLink usa un tema claro fijo (tokens M3 de tailwind.config.ts, sin
+  variante .dark implementada). Este archivo venía con el boilerplate por
+  defecto de create-next-app, que redefine --background/--foreground a
+  valores oscuros según el prefers-color-scheme del SO/navegador — con eso
+  activo, cualquier sección sin una clase Tailwind explícita (como el
+  <body> o el wrapper de contenido de /admin/mesas) hereda un fondo casi
+  negro apenas el sistema está en modo oscuro, aunque el meta
+  "color-scheme" del layout raíz ya le pida al navegador un tema claro
+  (ese meta solo controla los controles nativos del navegador, no frena
+  esta media query). Se elimina el bloque para que el fondo quede siempre
+  blanco, consistente con el resto del diseño.
+*/
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* Material Symbols (íconos) — usados en el panel de admin (sidebar, header,
+   diálogos). Sin esto, los <span className="material-symbols-outlined">
+   muestran el nombre del ícono como texto plano en vez del glifo. */
+.material-symbols-outlined {
+  font-variation-settings:
+    'FILL' 0,
+    'wght' 400,
+    'GRAD' 0,
+    'opsz' 24;
+}
+
+/* BL-311: campos de tarjeta de Mercado Pago (Secure Fields). El SDK monta un
+   <iframe> dentro de un <div id="…SecureField_container"> y el iframe toma
+   el tamaño de ese contenedor; sin una altura definida queda con el tamaño
+   por defecto de un iframe (300x150), se sale del recuadro y tapa los otros
+   campos: el clic cae en otro iframe y no se puede escribir.
+   Sin !important: el tamaño por defecto viene de los atributos del iframe,
+   y cualquier regla de CSS les gana. */
+.campo-seguro > [id$="SecureField_container"] {
+  height: 100%;
+  width: 100%;
+}
+.campo-seguro > [id$="SecureField_container"] iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}

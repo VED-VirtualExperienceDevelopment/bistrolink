@@ -1,0 +1,121 @@
+# Dockerfile.auth
+# Imagen de Keycloak para BistroLink con el realm "bistrolink" ya incluido.
+# Se usa para el servicio bistrolink-auth en Railway (Staging/Producción).
+#
+# Motivo: en local, docker-compose.yml monta ./keycloak/realm-export.json como
+# bind mount desde el disco del desarrollador. Railway no puede montar un bind
+# mount de una máquina local, así que el archivo tiene que copiarse DENTRO de
+# la imagen en build time para que --import-realm tenga algo que importar.
+#
+# 24.0.5 -> 26.7.2 (BL-137): la 24.0.5 acumuló 67 CVEs sin parche disponible
+# en esa serie (varios específicos de Keycloak: CVE-2026-7504, 7507, 7571,
+# 4634, 4636, 9795), varios con fix confirmado recién en 26.x. Verificado
+# localmente que el realm-export.json importa sin errores bloqueantes y que
+# el login end-to-end (token + rutas protegidas) funciona igual en 26.7.2.
+#
+# Único cambio de comportamiento notado: los clientScopes estándar (profile,
+# email, web-origins) ya no se crean automáticamente al importar un realm en
+# 26.x como sí pasaba en 24.x — el JWT resultante no incluye email/nombre
+# (el backend no los usa, solo tenant_id y roles, así que no rompe nada hoy).
+# Pendiente como mejora: definir esos clientScopes explícitamente en
+# realm-export.json si en algún momento se necesita mostrar email/nombre real
+# del usuario en la UI.
+#
+# BL-185: el client secret de "bistrolink-backend" YA NO se hornea en la
+# imagen ni se declara en realm-export.json. Primer intento (guardarlo como
+# "${vault.keycloak_client_secret}" y resolverlo vía Vault SPI) NO
+# funcionaba: Keycloak solo soporta expresiones ${vault.x} para 3 campos
+# específicos (password SMTP, bind credential LDAP, y el client secret de un
+# Identity Provider EXTERNO) — no para el secret de un client propio del
+# realm. Confirmado contra la doc oficial: https://www.keycloak.org/server/vault
+#
+# Solución real: realm-export.json no declara "secret" para bistrolink-backend
+# (Keycloak genera uno random al importar). keycloak/set-client-secret.sh
+# arranca Keycloak, espera a que esté listo, y pisa ese secret random con el
+# valor real (env var KEYCLOAK_CLIENT_SECRET_RUNTIME, configurada en Railway)
+# vía la Admin REST API (kcadm.sh) — el valor real nunca queda escrito en
+# ninguna capa de la imagen.
+#
+# BL-264 (BL-262 · R2): la imagen ya NO lleva usuarios de prueba ni sus
+# contraseñas. Antes realm-export.json traía los usuarios de test y un primer
+# stage con envsubst les escribía las contraseñas en el build (build-args
+# TEST_*): quedaban dentro de una capa de la imagen publicada en GHCR, y como
+# la misma imagen va a producción, producción nacía con esos usuarios.
+#
+# Ahora:
+#   - realm-export.json tiene solo la configuración del realm y se copia tal
+#     cual (sin stage de envsubst). Los "${...}" que quedan son de Keycloak
+#     (${client_id} del mapper de roles, ${username} etc. del user profile) y
+#     el import los deja intactos (verificado en 26.7.2 el 03/10/2026).
+#   - test-users.json (usuarios sin contraseña) y load-test-users.sh se copian
+#     a la imagen, pero solo se usan si el contenedor arranca con
+#     KC_LOAD_TEST_USERS=true (local y staging). En producción esa variable no
+#     existe y no se carga ningún usuario de prueba. Las contraseñas llegan por
+#     variables de entorno en tiempo de ejecución (Railway), nunca en el build.
+#
+# test-users.json NO va en data/import/: --import-realm intentaría importarlo
+# como un realm completo.
+
+# Cache del navegador para el CSS del tema: Keycloak sirve los archivos del
+# tema bajo /resources/<versión>/..., con caché de 30 días en el navegador, y
+# esa <versión> depende solo de la versión de Keycloak, no del contenido del
+# tema. Sin esto, después de cambiar styles.css, quien ya había entrado al
+# login seguía viendo el CSS viejo (pasó en staging con BL-347). Este stage
+# renombra styles.css con un hash de su contenido (styles.<hash>.css) y
+# actualiza theme.properties: cada cambio del CSS es una URL nueva y el
+# navegador la descarga sí o sí. En local (bind mount, start-dev) no hace
+# falta: start-dev desactiva esa caché, y el tema usa styles.css tal cual.
+# El grep final corta el build si theme.properties ya no tiene la línea
+# esperada, en lugar de publicar un tema que pide un archivo inexistente.
+FROM alpine:3.22 AS tema
+COPY keycloak/themes/bistrolink /tema
+RUN set -eu; \
+    css=/tema/login/resources/css; \
+    hash=$(sha256sum "$css/styles.css" | cut -c1-10); \
+    mv "$css/styles.css" "$css/styles.$hash.css"; \
+    sed -i "s|^styles=css/styles.css\$|styles=css/styles.$hash.css|" /tema/login/theme.properties; \
+    grep -qx "styles=css/styles.$hash.css" /tema/login/theme.properties
+
+FROM quay.io/keycloak/keycloak:26.7.2
+
+# realm-export.json a la carpeta de importación estándar. Al arrancar con
+# --import-realm, Keycloak busca acá y lo carga automáticamente (solo si el
+# realm no existe). No tiene campo "secret" para bistrolink-backend — lo
+# genera random el import, y set-client-secret.sh lo pisa después con el
+# valor real (BL-185).
+COPY keycloak/realm-export.json /opt/keycloak/data/import/realm-export.json
+
+# BL-264: usuarios de prueba (sin contraseñas). Solo se cargan con
+# KC_LOAD_TEST_USERS=true; ver keycloak/load-test-users.sh.
+COPY keycloak/test-users.json /opt/keycloak/data/test-users/test-users.json
+
+# Tema custom de login (paleta/tipografía de BistroLink) — en local se monta
+# vía bind mount en docker-compose.yml (./keycloak/themes/bistrolink), pero
+# igual que con realm-export.json, Railway no puede montar nada del disco
+# local, así que acá se copia dentro de la imagen en build time. Probado
+# primero en local (bind mount) antes de este COPY para no depender de un
+# build completo en cada iteración de CSS.
+# Viene del stage "tema", con el CSS ya renombrado por su hash (ver arriba).
+COPY --from=tema /tema /opt/keycloak/themes/bistrolink
+
+# BL-185: entrypoint propio que arranca Keycloak, espera a que esté listo, y
+# setea el client secret real de bistrolink-backend vía Admin REST API
+# (kcadm.sh) usando KEYCLOAK_CLIENT_SECRET_RUNTIME (env var de Railway) —
+# nunca horneado en la imagen. Ver keycloak/set-client-secret.sh para el
+# detalle completo del mecanismo.
+#
+# Se usa "COPY --chmod=0755" en vez de un "RUN chmod +x" separado: la imagen
+# base de Keycloak ya cambió a un usuario no-root en este punto, y ese
+# usuario no es dueño del archivo recien copiado, asi que un "RUN chmod"
+# posterior falla con "Operation not permitted". Con --chmod, el permiso se
+# setea en el mismo paso de copia (a nivel de capa), sin depender de que el
+# usuario activo tenga derecho a modificar el archivo despues.
+COPY --chmod=0755 keycloak/set-client-secret.sh /opt/keycloak/bin/set-client-secret.sh
+COPY --chmod=0755 keycloak/load-test-users.sh /opt/keycloak/bin/load-test-users.sh
+
+ENTRYPOINT ["/bin/bash", "/opt/keycloak/bin/set-client-secret.sh"]
+
+# El comando real (flags de start) lo puede seguir pisando el "Custom Start
+# Command" de Railway si hace falta, pero queda seteado acá como default:
+# "start" (no "start-dev") para modo producción.
+CMD ["start", "--http-port=8080", "--import-realm"]

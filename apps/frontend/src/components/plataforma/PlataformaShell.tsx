@@ -1,0 +1,75 @@
+"use client";
+
+import { useEffect } from "react";
+import { useRouter, usePathname } from "next/navigation";
+import { useKeycloakAuth } from "@/components/providers/KeycloakProvider";
+import UsuarioSesion from "@/components/sesion/UsuarioSesion";
+
+/**
+ * BL-163 (HU-027): pantalla del equipo de BistroLink (rol PLATAFORMA) para
+ * dar de alta establecimientos. Mismo patrón que kds/layout.tsx: sin sesión
+ * va a /login; con sesión pero sin el rol, a "/".
+ *
+ * Este guard solo ordena la navegación: quien decide es el backend. Los
+ * endpoints /plataforma/* aceptan únicamente tokens con rol PLATAFORMA y sin
+ * tenant_id (PlataformaJwtStrategy), y un token PLATAFORMA no sirve en
+ * ninguna ruta de un restaurante.
+ *
+ * BL-224: antes era app/plataforma/layout.tsx; pasó a componente porque un
+ * layout con 'use client' no puede exportar `metadata`.
+ *
+ * BL-405: la carga inicial se anuncia al lector de pantalla.
+ */
+export default function PlataformaShell({
+  children,
+}: Readonly<{ children: React.ReactNode }>) {
+  const { initializing, authenticated, hasRole } = useKeycloakAuth();
+  const router = useRouter();
+  const pathname = usePathname();
+  const esPlataforma = hasRole("PLATAFORMA");
+
+  useEffect(() => {
+    if (initializing) return;
+    if (!authenticated) {
+      router.replace(`/login?redirect=${encodeURIComponent(pathname)}`);
+      return;
+    }
+    if (!esPlataforma) {
+      router.replace("/");
+    }
+  }, [initializing, authenticated, esPlataforma, router, pathname]);
+
+  if (initializing) {
+    return (
+      <output className="flex h-screen items-center justify-center bg-background">
+        <span
+          className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent"
+          aria-hidden="true"
+        />
+        <span className="sr-only">Cargando…</span>
+      </output>
+    );
+  }
+
+  if (!authenticated || !esPlataforma) {
+    return null;
+  }
+
+  return (
+    <div className="flex h-screen flex-col overflow-hidden bg-background">
+      <header className="flex h-16 shrink-0 items-center justify-between border-b border-outline-variant bg-surface px-4 shadow-sm md:px-6">
+        <div>
+          <div className="text-headline-sm font-bold text-primary">
+            BistroLink
+          </div>
+          <div className="text-label-md text-on-surface-variant">
+            Plataforma
+          </div>
+        </div>
+        {/* BL-350: quién inició sesión. «Cerrar sesión» está en su panel. */}
+        <UsuarioSesion />
+      </header>
+      <main className="min-h-0 flex-1 overflow-y-auto">{children}</main>
+    </div>
+  );
+}

@@ -1,0 +1,170 @@
+{
+  "consumer": {
+    "name": "bistrolink-backend"
+  },
+  "interactions": [
+    {
+      "contents": {
+        "content": {
+          "action": "order.failed",
+          "data": {
+            "id": "ORD01JQ4S4KY8HWQ6NA5PXB65B3D3"
+          },
+          "type": "order"
+        },
+        "contentType": "application/json",
+        "encoded": false
+      },
+      "description": "una notificación de webhook de una order fallida (pago rechazado)",
+      "matchingRules": {
+        "body": {
+          "$.action": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "type"
+              }
+            ]
+          },
+          "$.data.id": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "type"
+              }
+            ]
+          }
+        },
+        "metadata": {
+          "query.data.id": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "type"
+              }
+            ]
+          },
+          "x-request-id": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "type"
+              }
+            ]
+          },
+          "x-signature": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "regex",
+                "regex": "^ts=\\d+,v1=[0-9a-f]{64}$"
+              }
+            ]
+          }
+        }
+      },
+      "metadata": {
+        "query.data.id": "ORD01JQ4S4KY8HWQ6NA5PXB65B3D3",
+        "query.type": "order",
+        "x-request-id": "bb56a2f1-6aae-46ac-982e-9dcd3581d08e",
+        "x-signature": "ts=1742505638683,v1=ced36ab6d33566bb1e16c125819b8d840d6b8ef136b0b9127c76064466f5229b"
+      },
+      "pending": false,
+      "providerStates": [
+        {
+          "name": "Mercado Pago notifica una order fallida (pago rechazado)"
+        }
+      ],
+      "type": "Asynchronous/Messages"
+    },
+    {
+      "contents": {
+        "content": {
+          "action": "order.processed",
+          "data": {
+            "id": "ORD01JQ4S4KY8HWQ6NA5PXB65B3D3"
+          },
+          "type": "order"
+        },
+        "contentType": "application/json",
+        "encoded": false
+      },
+      "description": "una notificación de webhook de una order procesada (pago aprobado)",
+      "matchingRules": {
+        "body": {
+          "$.action": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "type"
+              }
+            ]
+          },
+          "$.data.id": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "type"
+              }
+            ]
+          }
+        },
+        "metadata": {
+          "query.data.id": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "type"
+              }
+            ]
+          },
+          "x-request-id": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "type"
+              }
+            ]
+          },
+          "x-signature": {
+            "combine": "AND",
+            "matchers": [
+              {
+                "match": "regex",
+                "regex": "^ts=\\d+,v1=[0-9a-f]{64}$"
+              }
+            ]
+          }
+        }
+      },
+      "metadata": {
+        "query.data.id": "ORD01JQ4S4KY8HWQ6NA5PXB65B3D3",
+        "query.type": "order",
+        "x-request-id": "bb56a2f1-6aae-46ac-982e-9dcd3581d08e",
+        "x-signature": "ts=1742505638683,v1=ced36ab6d33566bb1e16c125819b8d840d6b8ef136b0b9127c76064466f5229b"
+      },
+      "pending": false,
+      "providerStates": [
+        {
+          "name": "Mercado Pago notifica una order procesada (pago aprobado)"
+        }
+      ],
+      "type": "Asynchronous/Messages"
+    }
+  ],
+  "metadata": {
+    "pact-js": {
+      "version": "17.1.4"
+    },
+    "pactRust": {
+      "ffi": "0.5.8",
+      "models": "1.3.16"
+    },
+    "pactSpecification": {
+      "version": "4.0"
+    }
+  },
+  "provider": {
+    "name": "mercadopago-webhooks"
+  }
+}

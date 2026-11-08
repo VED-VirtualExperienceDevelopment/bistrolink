@@ -1,0 +1,170 @@
+import 'reflect-metadata';
+import { plainToInstance } from 'class-transformer';
+import { validate, ValidationError } from 'class-validator';
+import { AprovisionarEstablecimientoDto } from '../../src/plataforma/dto/aprovisionar-establecimiento.dto';
+
+/**
+ * BL-163 (HU-027): validación de los datos del alta de establecimiento.
+ * Mismas opciones que el ValidationPipe global de main.ts y que el script.
+ */
+
+const OPCIONES = { whitelist: true, forbidNonWhitelisted: true };
+
+const VALIDO = {
+  razonSocial: 'Restaurante de Prueba SRL',
+  rut: '219999990016',
+  restaurante: { nombre: 'Restaurante de Prueba', direccion: 'Calle 123' },
+  admin: {
+    username: 'prueba-admin',
+    email: 'prueba-admin@prueba.bistrolink.local',
+    nombre: 'Admin',
+    apellido: 'De Prueba',
+  },
+  cocina: { username: 'prueba-cocina' },
+};
+
+async function validar(plano: Record<string, unknown>) {
+  return validate(
+    plainToInstance(AprovisionarEstablecimientoDto, plano),
+    OPCIONES,
+  );
+}
+
+function rutas(errores: ValidationError[], prefijo = ''): string[] {
+  return errores.flatMap((e) => {
+    const ruta = prefijo ? `${prefijo}.${e.property}` : e.property;
+    return e.children?.length ? rutas(e.children, ruta) : [ruta];
+  });
+}
+
+describe('AprovisionarEstablecimientoDto (BL-163)', () => {
+  it('acepta un alta mínima válida (sin ids, sin plan ni timezone)', async () => {
+    expect(await validar(VALIDO)).toHaveLength(0);
+  });
+
+  it('acepta tenantId y restaurante.id con formato UUID del seed (no RFC 4122)', async () => {
+    expect(
+      await validar({
+        ...VALIDO,
+        tenantId: '11111111-1111-1111-1111-111111111111',
+        restaurante: {
+          ...VALIDO.restaurante,
+          id: '22222222-2222-2222-2222-222222222222',
+        },
+      }),
+    ).toHaveLength(0);
+  });
+
+  it.each([
+    '21999999001', // 11 dígitos
+    '2199999900166', // 13 dígitos
+    '21999999001A',
+    '21.999999-001-6', // con separadores: el frontend los saca antes
+    '219999990017', // dígito verificador equivocado
+    '219999999901', // sin «001» (el RUT de prueba anterior a BL-409)
+    '210000000019', // número 000000
+    '239999990013', // registro fuera de 01–22
+    '211000060010', // los 11 primeros no admiten verificador (da 10)
+  ])('BL-409: rechaza el RUT %p', async (rut) => {
+    expect(rutas(await validar({ ...VALIDO, rut }))).toEqual(['rut']);
+  });
+
+  it.each(['219999990016', '219999980010', '019999990013', '229999990013'])(
+    'BL-409: acepta el RUT %p',
+    async (rut) => {
+      expect(await validar({ ...VALIDO, rut })).toHaveLength(0);
+    },
+  );
+
+  it.each([
+    'Prueba-Admin',
+    'ab',
+    'admin con espacio',
+    '-admin',
+    // BL-356 (H-02): tiene que empezar con una letra.
+    '12345678',
+    '1admin',
+  ])('rechaza el username %p', async (username) => {
+    expect(
+      rutas(await validar({ ...VALIDO, admin: { ...VALIDO.admin, username } })),
+    ).toEqual(['admin.username']);
+  });
+
+  it('[TC-U-107] BL-356: acepta un correo de 254 caracteres y rechaza uno de 255', async () => {
+    // Correo válido del largo pedido: usuario de 64 caracteres (el máximo que
+    // admite IsEmail) y un dominio con etiquetas de hasta 63. Así el rechazo
+    // de 255 es por el tope de largo y no por un formato inválido.
+    const correo = (largo: number) => {
+      const usuario = 'a'.repeat(64);
+      const resto = largo - usuario.length - 1 - '.uy'.length;
+      const etiquetas: string[] = [];
+      for (let quedan = resto; quedan > 0; quedan -= 64) {
+        etiquetas.push(
+          'b'.repeat(Math.min(63, quedan - (quedan > 63 ? 1 : 0))),
+        );
+      }
+      return `${usuario}@${etiquetas.join('.')}.uy`;
+    };
+    expect(correo(254)).toHaveLength(254);
+    expect(correo(255)).toHaveLength(255);
+
+    expect(
+      rutas(
+        await validar({
+          ...VALIDO,
+          admin: { ...VALIDO.admin, email: correo(254) },
+        }),
+      ),
+    ).toEqual([]);
+    expect(
+      rutas(
+        await validar({
+          ...VALIDO,
+          admin: { ...VALIDO.admin, email: correo(255) },
+        }),
+      ),
+    ).toEqual(['admin.email']);
+  });
+
+  it('rechaza un email inválido', async () => {
+    expect(
+      rutas(
+        await validar({
+          ...VALIDO,
+          cocina: { username: 'prueba-cocina', email: 'no-es-email' },
+        }),
+      ),
+    ).toEqual(['cocina.email']);
+  });
+
+  it('rechaza propiedades que no forman parte del alta (por ejemplo, una contraseña)', async () => {
+    expect(
+      rutas(
+        await validar({
+          ...VALIDO,
+          admin: { ...VALIDO.admin, password: 'no-va-acá' },
+        }),
+      ),
+    ).toEqual(['admin.password']);
+  });
+
+  it.each(['email', 'nombre', 'apellido'])(
+    'rechaza el alta si al Administrador le falta %s (el realm lo exige)',
+    async (campo) => {
+      const admin: Record<string, unknown> = { ...VALIDO.admin };
+      delete admin[campo];
+      expect(rutas(await validar({ ...VALIDO, admin }))).toEqual([
+        `admin.${campo}`,
+      ]);
+    },
+  );
+
+  it.each(['razonSocial', 'rut', 'restaurante', 'admin', 'cocina'])(
+    'rechaza el alta si falta %s',
+    async (campo) => {
+      const incompleto: Record<string, unknown> = { ...VALIDO };
+      delete incompleto[campo];
+      expect(rutas(await validar(incompleto))).toContain(campo);
+    },
+  );
+});

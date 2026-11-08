@@ -1,0 +1,1976 @@
+name: CI/CD BistroLink
+
+on:
+  push:
+    branches: [develop, main]
+    tags: ["v*.*.*"]
+  pull_request:
+    branches: [develop, main]
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "Motivo del deploy manual"
+        required: false
+        default: "deploy manual"
+      # ── Rollback manual ──────────────────────────────────────────────────
+      # Completar estos dos para revertir un entorno a una imagen YA
+      # publicada en GHCR (sin reconstruir nada). Dejar ambos vacíos para un
+      # workflow_dispatch normal (no rollback).
+      rollback_environment:
+        description: "Rollback: entorno a revertir (vacío = no es un rollback)"
+        required: false
+        type: choice
+        options:
+          - ""
+          - staging
+          # BL-220: production revierte por tag semántico (vX.Y.Z). El
+          # environment "production" solo admite despliegues desde tags v* y
+          # desde main, así que el rollback de producción se dispara con
+          # "Use workflow from" = main (ver docs/RELEASE.md).
+          - production
+      rollback_version:
+        description: "Rollback: imagen a restaurar en GHCR. Staging: el SHA completo (40 caracteres) del commit. Production: el tag semántico (ej. v0.5.0)"
+        required: false
+        default: ""
+      # ── E2E manual (Playwright) ──────────────────────────────────────────
+      # Permite disparar el job "playwright" (JOB 10) a mano vía
+      # workflow_dispatch, sin esperar a un push a develop. Sigue
+      # requiriendo que "deploy-staging" corra antes (needs: deploy-staging),
+      # así que un run manual solo tiene sentido apuntando a la rama develop.
+      playwright_report_kiwi:
+        description: "E2E y Lighthouse manual: reportar los resultados a Kiwi TCMS (tildado = sí)"
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  security-events: write
+  packages: write
+
+# BL-251: en un PR, un push nuevo cancela la corrida anterior del mismo PR
+# (solo importa el último commit). En develop, main y tags nunca se cancela:
+# esas corridas publican imágenes y despliegan, y cortarlas a la mitad puede
+# dejar un deploy incompleto.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  IMAGE_API: ghcr.io/ved-virtualexperiencedevelopment/bistrolink-api
+  IMAGE_WEB: ghcr.io/ved-virtualexperiencedevelopment/bistrolink-web
+  IMAGE_AUTH: ghcr.io/ved-virtualexperiencedevelopment/bistrolink-auth
+  TAG: ${{ github.sha }}
+  # prisma.config.ts usa env() de 'prisma/config', que desde Prisma 6 valida
+  # de forma estricta que DATABASE_URL exista — incluso en "prisma generate",
+  # que no necesita conexión real. Se define acá (nivel workflow) para que
+  # TODOS los jobs que corren npm install/ci (postinstall dispara ese
+  # generate) lo tengan disponible, no solo el job "jest".
+  DATABASE_URL: "postgresql://dummy:dummy@localhost:5432/dummy"
+
+jobs:
+  # ── JOB 0: DETECTAR CAMBIOS ────────────────────────────────────────────────
+  # Reemplaza la detección vía github.event.head_commit.modified/added: ese
+  # campo se calcula comparando el commit contra su padre inmediato, y con
+  # "Squash and merge" hecho desde la UI de GitHub, ese cálculo viene vacío o
+  # incompleto de forma no confiable (limitación documentada del payload del
+  # evento push, no un bug de este workflow). dorny/paths-filter en cambio
+  # hace un git diff explícito contra el commit anterior al push
+  # (github.event.before), así que detecta los cambios reales sin importar
+  # si el commit vino de un push directo, un merge commit o un squash.
+  changes:
+    name: 🔎 Detectar cambios (paths-filter)
+    runs-on: ubuntu-latest
+    outputs:
+      apps: ${{ steps.filter.outputs.apps }}
+      testmgmt: ${{ steps.filter.outputs.testmgmt }}
+      code: ${{ steps.code.outputs.code }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          filters: |
+            apps:
+              - 'apps/**'
+              - 'packages/**'
+              - 'keycloak/**'
+              - 'package.json'
+              - 'package-lock.json'
+            testmgmt:
+              - 'testmgmt/docker/**'
+
+      # BL-251: "code" es true si el cambio toca algo que NO sea
+      # documentación. Va en un paso aparte porque necesita
+      # predicate-quantifier "every" (el archivo tiene que cumplir TODOS los
+      # patrones: no ser .md Y no estar en docs/), y eso cambiaría el sentido
+      # de los filtros de arriba, que son "alguno de".
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: code
+        with:
+          predicate-quantifier: every
+          filters: |
+            code:
+              - '**'
+              - '!**/*.md'
+              - '!docs/**'
+
+  # ── JOB 0B: VERSION LABEL (compartido) ─────────────────────────────────────
+  # Calcula UNA sola vez el label legible (fecha del commit + SHA corto) que
+  # después reutilizan el job "jest" (TCMS_BUILD) y el job "build" (versión
+  # mostrada en la app de API/Web). Evita triplicar la misma lógica de "git
+  # log" en tres jobs distintos. NO reemplaza env.TAG (github.sha crudo),
+  # que sigue siendo el tag inmutable de las imágenes en GHCR usado por
+  # deploy-staging — este label es solo para lectura humana.
+  version:
+    name: 🏷️ Version label
+    runs-on: ubuntu-latest
+    outputs:
+      label: ${{ steps.build_label.outputs.value }}
+      # Valor canónico para GIT_SHA / NEXT_PUBLIC_APP_VERSION: el SHA
+      # completo en pushes normales, o el tag semántico cuando el build lo
+      # dispara un push de tag v*.*.* — así producción hornea "v1.4.2" en
+      # vez del SHA, y staging sigue mostrando el SHA corto en el badge.
+      # Se calcula ACÁ (no inline en strategy.matrix del job "build") porque
+      # el contexto "env" no está disponible dentro de matrix — solo
+      # github/needs/vars/inputs lo están.
+      app_version: ${{ steps.app_version.outputs.value }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set build label
+        id: build_label
+        run: echo "value=$(git log -1 --date=format:'%Y-%m-%d_%H-%M' --format='%cd')-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Set app version (SHA o tag semántico)
+        id: app_version
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "value=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ── JOB 1: LINT ───────────────────────────────────────────────────────────
+  lint:
+    name: 🔍 Lint (ESLint + Prettier)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # BL-251: npm ci + caché, igual que el job "jest". npm install no usa
+      # la caché y además puede reescribir el lock dentro de CI.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          # Fuerza la última 22.x publicada: la caché del runner puede ir atrasada
+          # y quedarse con una versión sin los parches de seguridad.
+          check-latest: true
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+  # ── JOB 2: TESTS UNITARIOS (Jest) ─────────────────────────────────────────
+  jest:
+    name: 🧪 Tests unitarios (Jest)
+    needs: [version]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          # Fuerza la última 22.x publicada: la caché del runner puede ir atrasada
+          # y quedarse con una versión sin los parches de seguridad.
+          check-latest: true
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+        env:
+          # prisma generate corre solo (postinstall) y necesita que la variable
+          # exista, aunque no se conecte a ninguna base real durante "generate".
+          DATABASE_URL: "postgresql://dummy:dummy@localhost:5432/dummy"
+
+      - name: Tests Jest (cobertura mínima 80%)
+        run: npm run test:cov --workspace=backend
+        env:
+          CI: true
+          # keycloak-admin.service.spec.ts instancia KeycloakAdminService sin
+          # mockear nada y sí ejercita getAdminToken() (con fetch mockeado) —
+          # necesita que el getter clientSecret encuentre algo, aunque sea
+          # dummy, para no lanzar. No se conecta a un Keycloak real en CI.
+          KEYCLOAK_URL: "http://localhost:8080"
+          KEYCLOAK_REALM: "bistrolink"
+          KEYCLOAK_CLIENT_ID: "bistrolink-backend-test"
+          KEYCLOAK_CLIENT_SECRET: "dummy-secret-for-ci"
+
+      # continue-on-error: sin esto, un 403 transitorio de GitHub acá
+      # (conocido, ver "Failed to FinalizeArtifact" en issues de
+      # actions/upload-artifact) deja el job marcado en falla, y el step
+      # "Tests Jest (frontend)" de abajo -sin "if:" propio, o sea
+      # "if: success()" implícito- se SALTEA por completo en vez de correr.
+      # No es negociable perder la corrida real de tests por un artifact
+      # que no se pudo subir.
+      - name: Upload coverage artifact (backend)
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-report-backend
+          path: apps/backend/coverage/
+          retention-days: 14
+
+      - name: Upload coverage to Codecov (backend)
+        if: always()
+        continue-on-error: true
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          files: apps/backend/coverage/lcov.info
+          flags: backend
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+      # BL-160: primeros tests de Jest del frontend (antes solo tenía
+      # Playwright en /e2e). Sin cobertura mínima todavía a propósito — recién
+      # arranca, tapar la mayor parte de src/ es trabajo aparte, y un gate acá
+      # rompería CI por código que ni este PR tocó.
+      - name: Tests Jest (frontend)
+        run: npm run test:cov --workspace=frontend
+        env:
+          CI: true
+
+      - name: Upload coverage artifact (frontend)
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-report-frontend
+          path: apps/frontend/coverage/
+          retention-days: 14
+
+      - name: Upload coverage to Codecov (frontend)
+        if: always()
+        continue-on-error: true
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          files: apps/frontend/coverage/lcov.info
+          flags: frontend
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+      # Los resultados de los tests unitarios NO se suben a Kiwi TCMS
+      # (decisión del 27/09/2026, Anexo 11 §9.4; BL-269/BL-268): no se cargan
+      # como casos en Kiwi porque son demasiados y cambian con el código. Su
+      # evidencia es este job (check obligatorio), el junit.xml dentro del
+      # artifact coverage-report-<workspace> y la cobertura en Codecov.
+
+  # NOTA: este job corre solo los tests UNITARIOS (npm run test:cov). Los de
+  # integración (test:e2e, con Postgres y Keycloak reales) corren en el job
+  # "integracion" (BL-177, EDT 1.8.6).
+
+  # ── JOB 3: TESTS DE CONTRATO (PactJS) ────────────────────────────────────
+  # BL-215 (RNF.04, EDT 1.6.2): contratos del consumidor contra Mercado Pago
+  # (API Orders + notificación del webhook) y, desde BL-216, contra Surtec
+  # (autenticación + emisión del e-Ticket). Los pacts generados se
+  # versionan en apps/backend/pacts. El job falla — y bloquea el merge vía
+  # "build" (needs) — en dos casos:
+  #   1. Un test de contrato falla: el código dejó de cumplir lo que el
+  #      contrato dice que mandamos/esperamos del proveedor.
+  #   2. El pact regenerado difiere del versionado: el contrato cambió y no
+  #      se commiteó (hay que revisarlo y commitearlo a propósito).
+  # Alcance: detecta cambios NUESTROS. Un cambio unilateral del proveedor
+  # se detecta verificando el pact contra el sandbox (job aparte, pendiente).
+  pact:
+    name: 🤝 Tests de contrato (PactJS)
+    needs: [version]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          # Fuerza la última 22.x publicada: la caché del runner puede ir atrasada
+          # y quedarse con una versión sin los parches de seguridad.
+          check-latest: true
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Tests de contrato PactJS
+        run: npm run test:pact --workspace=backend
+        env:
+          # El bloque "jest-junit" de apps/backend/package.json manda el
+          # reporte a coverage/junit.xml (el de los unitarios); las variables
+          # de entorno tienen prioridad y lo separan.
+          JEST_JUNIT_OUTPUT_DIR: reports
+          JEST_JUNIT_OUTPUT_NAME: contract-junit.xml
+
+      - name: El pact versionado coincide con el generado
+        run: |
+          if ! git diff --exit-code -- apps/backend/pacts \
+             || [ -n "$(git status --porcelain -- apps/backend/pacts)" ]; then
+            echo "::error::Un contrato con un proveedor (Mercado Pago o Surtec) cambió y no está commiteado. Corré 'npm run test:pact --workspace=backend', revisá el diff de apps/backend/pacts y commitealo."
+            exit 1
+          fi
+
+      - name: Upload contract artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: contract-report
+          path: |
+            apps/backend/pacts/
+            apps/backend/reports/contract-junit.xml
+          retention-days: 14
+
+      # Un TestRun propio con sufijo "-contract". A diferencia de los
+      # unitarios, los contratos SÍ se cargan en Kiwi (BL-215: "resultados
+      # reportados a Kiwi TCMS"). Mismo mecanismo que el reporte E2E:
+      # - el plan «Contract-PactJS» y su producto se buscan por nombre (sin
+      #   plan fijo, el plugin los mandaba a un plan propio, TP-4);
+      # - --summary-template '${name}': busca cada caso por el título del
+      #   it() (jest-contract.json ya lo deja como nombre del testcase).
+      # Los casos se cargan con scripts/kiwi/cargar-casos-integracion.mjs
+      # --contrato antes de mergear (ver apps/backend/test/contract/README.md).
+      - name: Upload results to Kiwi TCMS (contract)
+        if: always() && github.event_name != 'pull_request'
+        continue-on-error: true
+        timeout-minutes: 5
+        env:
+          TCMS_PRODUCT_VERSION: ${{ github.ref_name }}
+          TCMS_BUILD: ${{ needs.version.outputs.label }}-contract
+        run: |
+          pip install kiwitcms-junit.xml-plugin --break-system-packages
+          cat <<EOF > ~/.tcms.conf
+          [tcms]
+          url = ${{ secrets.KIWI_TCMS_URL }}/xml-rpc/
+          username = ${{ secrets.KIWI_TCMS_USERNAME }}
+          password = ${{ secrets.KIWI_TCMS_PASSWORD }}
+          EOF
+          # Plan «Contract-PactJS» y su producto: el plugin busca los casos
+          # en el producto del plan y arma la versión y el build con
+          # TCMS_PRODUCT (tienen que ser el mismo).
+          variables="$(python3 - <<'PY'
+          from tcms_api import TCMS
+          planes = TCMS().exec.TestPlan.filter({"name": "Contract-PactJS"})
+          if len(planes) != 1:
+              raise SystemExit(f"::error::Se esperaba un Test Plan «Contract-PactJS» y hay {len(planes)}")
+          print(f"export TCMS_PLAN_ID={planes[0]['id']}")
+          print(f"export TCMS_PRODUCT='{planes[0]['product__name']}'")
+          PY
+          )"
+          eval "$variables"
+          echo "Plan Contract-PactJS: id $TCMS_PLAN_ID, producto $TCMS_PRODUCT"
+          tcms-junit.xml-plugin --verbose --summary-template '${name}' apps/backend/reports/contract-junit.xml
+
+  # ── JOB 3b: TESTS DE INTEGRACIÓN (Jest + Postgres + Keycloak) ─────────────
+  # BL-177 (EDT 1.8.6): corre los *.e2e-spec.ts de apps/backend/test/integration
+  # contra un Postgres y un Keycloak reales, levantados con el mismo
+  # docker-compose.yml que se usa en local (solo bistrolink-db y
+  # bistrolink-auth), y sube los resultados a Kiwi como un TestRun propio.
+  #
+  # Todo es descartable: la base y el Keycloak viven solo durante el job, y
+  # las contraseñas de los usuarios de prueba, el client secret y la clave de
+  # los QR se generan al azar en cada corrida (no hay secrets nuevos). Las
+  # credenciales de la base y del admin de Keycloak son las de desarrollo
+  # local de docker-compose.yml: no sirven fuera de este runner.
+  #
+  # Por ahora NO está en el "needs" de build: primero hay que ver que sea
+  # estable en el runner (algunos casos miden tiempos, como TC-I-020 y 024).
+  # Cuando lo sea, se suma a build y como check obligatorio del PR.
+  integracion:
+    name: 🔗 Tests de integración (Postgres + Keycloak)
+    needs: [version]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      # Pisan el DATABASE_URL de prueba del nivel del workflow: acá hay una
+      # base de verdad. Usuario de migraciones (dueño del esquema) y usuario
+      # de la aplicación, sin bypass de RLS (scripts/db/init.sql).
+      DATABASE_URL: "postgresql://bistrolink:bistrolink_dev@localhost:5432/bistrolink_dev"
+      RUNTIME_DATABASE_URL: "postgresql://bistrolink_app:bistrolink_app_dev@localhost:5432/bistrolink_dev"
+      KEYCLOAK_URL: "http://localhost:8080"
+      KEYCLOAK_REALM: "bistrolink"
+      KEYCLOAK_CLIENT_ID: "bistrolink-backend"
+      # Admin del Keycloak descartable (el de docker-compose.yml).
+      KEYCLOAK_ADMIN: "admin"
+      KEYCLOAK_ADMIN_PASSWORD: "admin"
+      # Usuarios de prueba: los nombres son fijos; las contraseñas se generan
+      # en el paso "Credenciales de esta corrida".
+      TEST_ADMIN_USERNAME: "ci-admin-test"
+      TEST_COCINA_USERNAME: "ci-cocina-test"
+      TEST_NO_TENANT_USERNAME: "ci-sin-tenant-test"
+      TEST_TENANT_B_USERNAME: "ci-admin-b-test"
+      TEST_MOZO_USERNAME: "ci-mozo-test"
+      TEST_COCINA_B_USERNAME: "ci-cocina-b-test"
+      # MercadoPagoGateway exige un access token al arrancar la app (el resto
+      # de las pasarelas lo piden recién al cobrar). Los tests de integración
+      # no cobran: va uno de mentira y la API de Mercado Pago apunta a un
+      # puerto cerrado, así ningún pedido sale del runner por error.
+      MP_ACCESS_TOKEN: "TEST-0000000000000000-000000-ci-integracion"
+      MP_API_BASE_URL: "http://localhost:9"
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          # Fuerza la última 22.x publicada: la caché del runner puede ir atrasada
+          # y quedarse con una versión sin los parches de seguridad.
+          check-latest: true
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      # Contraseñas, client secret y clave de los QR al azar, enmascarados en
+      # el log. Van al entorno de los pasos siguientes y al apps/backend/.env
+      # que lee el contenedor de Keycloak (env_file de docker-compose.yml):
+      # set-client-secret.sh pone el client secret y load-test-users.sh crea
+      # los usuarios de prueba con esas contraseñas.
+      - name: Credenciales de esta corrida
+        run: |
+          set -euo pipefail
+          generar() {
+            local valor
+            valor="$(openssl rand -hex 16)"
+            echo "::add-mask::${valor}"
+            echo "$1=${valor}" >> "$GITHUB_ENV"
+            echo "$1=${valor}" >> apps/backend/.env
+          }
+          : > apps/backend/.env
+          for var in KEYCLOAK_CLIENT_SECRET KEYCLOAK_COMENSAL_PASSWORD \
+                     TEST_ADMIN_PASSWORD TEST_COCINA_PASSWORD \
+                     TEST_NO_TENANT_PASSWORD TEST_TENANT_B_PASSWORD \
+                     TEST_MOZO_PASSWORD TEST_COCINA_B_PASSWORD; do
+            generar "$var"
+          done
+          for var in TEST_ADMIN_USERNAME TEST_COCINA_USERNAME \
+                     TEST_NO_TENANT_USERNAME TEST_TENANT_B_USERNAME \
+                     TEST_MOZO_USERNAME TEST_COCINA_B_USERNAME; do
+            echo "${var}=${!var}" >> apps/backend/.env
+          done
+          qr="$(openssl rand -base64 32)"
+          echo "::add-mask::${qr}"
+          echo "QR_TOKEN_KEY=${qr}" >> "$GITHUB_ENV"
+
+      # --wait espera los healthchecks de docker-compose.yml (Postgres listo
+      # y Keycloak con /health/ready en 200).
+      - name: Levantar Postgres y Keycloak
+        run: docker compose up -d --wait --wait-timeout 300 bistrolink-db bistrolink-auth
+
+      # El healthcheck pasa cuando Keycloak arranca, pero set-client-secret.sh
+      # termina de configurarlo (client secret, roles de la cuenta de
+      # servicio y usuarios de prueba) un poco después. Se espera a que el
+      # Admin de prueba pueda obtener un token.
+      - name: Esperar a que Keycloak tenga los usuarios de prueba
+        run: |
+          for intento in $(seq 1 60); do
+            codigo=$(curl -s -o /dev/null -w '%{http_code}' \
+              -d grant_type=password \
+              -d client_id="$KEYCLOAK_CLIENT_ID" \
+              --data-urlencode client_secret="$KEYCLOAK_CLIENT_SECRET" \
+              --data-urlencode username="$TEST_ADMIN_USERNAME" \
+              --data-urlencode password="$TEST_ADMIN_PASSWORD" \
+              "$KEYCLOAK_URL/realms/$KEYCLOAK_REALM/protocol/openid-connect/token")
+            if [ "$codigo" = "200" ]; then
+              echo "Keycloak listo (intento ${intento})."
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::Keycloak no quedó listo en 5 minutos (último código: ${codigo})."
+          exit 1
+
+      - name: Migraciones y datos de prueba
+        working-directory: apps/backend
+        run: |
+          npx prisma migrate deploy
+          npx prisma db seed
+
+      # jest-junit con el título del it() como nombre de cada caso
+      # (JEST_JUNIT_TITLE): así coincide con el título del caso en Kiwi
+      # («[TC-I-NNN] …»). Archivo propio, separado del de los unitarios.
+      - name: Tests de integración
+        run: npm run test:e2e --workspace=backend -- --reporters=default --reporters=jest-junit
+        env:
+          CI: true
+          JEST_JUNIT_OUTPUT_DIR: reports
+          JEST_JUNIT_OUTPUT_NAME: integration-junit.xml
+          JEST_JUNIT_TITLE: "{title}"
+          JEST_JUNIT_CLASSNAME: "{classname}"
+
+      # Solo si falló: el log de Keycloak ayuda a ver si el problema fue el
+      # entorno (realm, usuarios, client secret) y no el código.
+      - name: Log de Keycloak (si falló)
+        if: failure()
+        run: docker compose logs --no-color --tail=300 bistrolink-auth
+
+      - name: Upload integration artifacts
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: integration-report
+          path: apps/backend/reports/integration-junit.xml
+          retention-days: 14
+
+      # TestRun propio con sufijo "-integration", en el Test Plan
+      # «Integration tests» (TCMS_PLAN_ID: "1"), mismo mecanismo que
+      # performance.yml:
+      # - TCMS_PLAN_ID fijo: el plugin no crea un Test Plan nuevo.
+      # - --summary-template '${name}': busca cada caso por el título del it()
+      #   tal cual. Sin el flag usa «classname.name» y no encuentra ninguno.
+      # Los casos se cargan en Kiwi con scripts/kiwi/
+      # cargar-casos-integracion.mjs ANTES de mergear el PR que los agrega o
+      # les cambia el título: así el plugin los encuentra y no crea
+      # duplicados. Un test nuevo sin cargar se crea solo con el título.
+      - name: Upload results to Kiwi TCMS (integration)
+        if: always() && github.event_name != 'pull_request'
+        continue-on-error: true
+        timeout-minutes: 5
+        env:
+          TCMS_PRODUCT: "Bistrolink"
+          TCMS_PRODUCT_VERSION: ${{ github.ref_name }}
+          TCMS_BUILD: ${{ needs.version.outputs.label }}-integration
+          TCMS_PLAN_ID: "1"
+        run: |
+          pip install kiwitcms-junit.xml-plugin --break-system-packages
+          cat <<EOF > ~/.tcms.conf
+          [tcms]
+          url = ${{ secrets.KIWI_TCMS_URL }}/xml-rpc/
+          username = ${{ secrets.KIWI_TCMS_USERNAME }}
+          password = ${{ secrets.KIWI_TCMS_PASSWORD }}
+          EOF
+          tcms-junit.xml-plugin --verbose --summary-template '${name}' apps/backend/reports/integration-junit.xml
+
+  # ── JOB 4: GITLEAKS ───────────────────────────────────────────────────────
+  gitleaks:
+    name: 🔐 Secretos (Gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Escaneo de secretos con Gitleaks
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+        run: |
+          set -euo pipefail
+          # v8.12.0 -> v8.30.1: última versión estable (Gitleaks quedó feature-complete,
+          # solo recibe parches de seguridad; conviene revisar este número cada tanto).
+          VERSION=8.30.1
+          # SHA-256 oficial de gitleaks_8.30.1_linux_x64.tar.gz (archivo
+          # gitleaks_8.30.1_checksums.txt del release). Al subir VERSION hay que
+          # actualizarlo también.
+          SHA256=551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+          TMPDIR=$(mktemp -d)
+          # -f: si GitHub responde con un error (5xx, límite de descargas), curl
+          # falla en lugar de guardar la página de error como si fuera el .tar.gz
+          # (antes terminaba en «gzip: stdin: not in gzip format»). --retry
+          # reintenta los cortes transitorios de la descarga.
+          curl -fsSL --retry 3 --retry-delay 5 --retry-all-errors \
+            -o "${TMPDIR}/gitleaks.tar.gz" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}/gitleaks_${VERSION}_linux_x64.tar.gz"
+          echo "${SHA256}  ${TMPDIR}/gitleaks.tar.gz" | sha256sum --check --strict
+          mkdir -p "${TMPDIR}/bin"
+          tar -xzf "${TMPDIR}/gitleaks.tar.gz" -C "${TMPDIR}/bin"
+          "${TMPDIR}/bin/gitleaks" detect \
+            --redact -v \
+            --exit-code=2 \
+            --report-format=sarif \
+            --report-path=gitleaks-results \
+            --log-level=info \
+            --log-opts="--no-merges"
+
+      - name: Subir reporte Gitleaks al Code Scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: gitleaks-results
+          category: "gitleaks"
+
+  # ── JOB 5: CODEQL ─────────────────────────────────────────────────────────
+  codeql:
+    name: 🛡️ SAST (CodeQL)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: CodeQL — init
+        uses: github/codeql-action/init@v4
+        with:
+          languages: javascript
+
+      - name: CodeQL — análisis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:javascript"
+          upload: always
+
+  # ── JOB 6: SONARCLOUD ─────────────────────────────────────────────────────
+  sonarcloud:
+    name: 📊 SAST (SonarCloud)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # BL-292: sonarcloud-github-action (deprecada) construía un contenedor
+      # desde Docker Hub (sonarsource/sonar-scanner-cli) y fallaba con 429
+      # cuando se agotaba el límite de descargas anónimas de los runners.
+      # sonarqube-scan-action descarga el scanner de SonarSource, sin Docker
+      # Hub, y desde la v8 verifica su firma antes de ejecutarlo. Lee
+      # sonar-project.properties igual que la anterior y, sin SONAR_HOST_URL,
+      # analiza contra SonarQube Cloud. Versión fija: se sube a propósito,
+      # revisando las notas de la versión.
+      - name: SonarCloud
+        uses: SonarSource/sonarqube-scan-action@4d1dc0c91ee400dcf8a6dddf2f705ac36542e304 # v8.4.0
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+  # ── JOB 7: DEPENDENCIAS (TRIVY) ───────────────────────────────────────────
+  # BL-300: reemplaza a Snyk. Snyk cortó el pipeline dos veces por causas
+  # externas (CLI 1.1308.0 con 404 el 08/10, BL-290; cupo del plan gratuito
+  # agotado el 10/10) y dependía de un token personal. Trivy es la misma
+  # herramienta y la misma base de vulnerabilidades que el escaneo de las
+  # imágenes, sin token ni cupo. Lee package-lock.json (no hace falta npm ci)
+  # y, por defecto, no reporta las dependencias de desarrollo: el criterio es
+  # el mismo que tenía Snyk (sin críticas ni altas en lo que llega a
+  # producción). La base de Trivy sale de la misma caché diaria que usan los
+  # builds (cache-trivy-<fecha>, BL-260).
+  dependencias:
+    name: 📦 Dependencias (Trivy)
+    runs-on: ubuntu-latest
+    needs: [changes]
+    # BL-251: en un PR que solo toca documentación tampoco corre (no es un
+    # check obligatorio, así que no bloquea el merge). En push a develop,
+    # main y tags corre siempre.
+    if: |
+      (github.event_name != 'pull_request' || needs.changes.outputs.code == 'true')
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Escaneo de dependencias (Trivy fs)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          trivyignores: .trivyignore
+
+      # BL-300: en los PR, frena las dependencias nuevas o actualizadas que
+      # traen vulnerabilidades altas o críticas (por defecto solo las de
+      # producción), con la base de avisos de GitHub. Gratis en repositorios
+      # públicos. Fijada por SHA, como las demás actions de terceros.
+      - name: Revisión de dependencias del PR
+        if: github.event_name == 'pull_request'
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
+
+  # ── JOB 8: BUILD + TRIVY ──────────────────────────────────────────────────
+  # Matrix: las 3 imágenes se buildean y escanean en paralelo (3 runners
+  # simultáneos) en vez de secuencialmente en uno solo. "needs: [build]" en
+  # deploy-staging sigue funcionando igual — GitHub Actions espera a que las
+  # 3 entradas del matrix terminen antes de considerar el job completo.
+  # BL-260: la base de vulnerabilidades de Trivy (y la de Java, en Auth) la
+  # cachea la propia trivy-action (cache: true por defecto), con clave
+  # "cache-trivy-<fecha UTC>": una por día, que es lo que tarda Trivy en
+  # publicar una base nueva. Antes había un actions/cache propio con
+  # cache-dir "~/.cache/trivy": Trivy no expande "~", guardaba la base en
+  # una carpeta literal "~" del workspace, y ninguna de las dos cachés
+  # encontraba la ruta al final del job ("Path Validation Error"): cada
+  # build descargaba ~120 MB (y ~930 MB de la base de Java en Auth). No
+  # pasar cache-dir con "~"; la ruta por defecto de la acción es absoluta.
+  build:
+    name: 🐳 Build + Escaneo (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    # BL-215: pact en needs, una ruptura de contrato frena el build.
+    needs: [lint, jest, pact, version, changes]
+    # BL-251: en un PR que solo toca documentación (*.md, docs/) se saltean
+    # los tres builds: no hay imagen que cambie. OJO (BL-281): como este job
+    # tiene matriz, al saltearlo GitHub no la expande y no reporta los checks
+    # "… (API/Web/Auth)". Por eso la protección de develop y main exige el
+    # job "build-ok" (más abajo), que resume el resultado de los tres, y no
+    # estos checks. En push a develop, main y tags corre siempre (de ahí
+    # salen las imágenes que se publican y despliegan). Jest, CodeQL y
+    # SonarCloud NO se saltean: sus checks externos (codecov/patch, CodeQL de
+    # Advanced Security, SonarCloud Code Analysis) solo aparecen si el job
+    # sube resultados, y si faltan quedan "pendientes" y bloquean el merge.
+    if: |
+      (github.event_name != 'pull_request' || needs.changes.outputs.code == 'true')
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: API
+            image: ghcr.io/ved-virtualexperiencedevelopment/bistrolink-api
+            dockerfile: apps/backend/Dockerfile
+            extra_args: --build-arg GIT_SHA=${{ needs.version.outputs.app_version }}
+          - name: Web
+            image: ghcr.io/ved-virtualexperiencedevelopment/bistrolink-web
+            dockerfile: apps/frontend/Dockerfile
+            # BL-220: las URLs de Next.js quedan grabadas en el build, así que
+            # la imagen de Web se construye por entorno. ${ENTORNO_WEB} lo
+            # expande bash en el paso "Construir imagen": "production" en los
+            # tags v*.*.* y "staging" en todo lo demás (develop, main, PRs).
+            extra_args: >-
+              --build-arg NEXT_PUBLIC_API_URL=https://bistrolink-api-${ENTORNO_WEB}.up.railway.app
+              --build-arg NEXT_PUBLIC_WS_URL=wss://bistrolink-api-${ENTORNO_WEB}.up.railway.app
+              --build-arg NEXT_PUBLIC_KEYCLOAK_URL=https://bistrolink-auth-${ENTORNO_WEB}.up.railway.app
+              --build-arg NEXT_PUBLIC_KEYCLOAK_REALM=bistrolink
+              --build-arg NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=bistrolink-frontend
+              --build-arg NEXT_PUBLIC_APP_VERSION=${{ needs.version.outputs.app_version }}
+              --build-arg NEXT_PUBLIC_MP_PUBLIC_KEY=${MP_PUBLIC_KEY}
+          - name: Auth
+            image: ghcr.io/ved-virtualexperiencedevelopment/bistrolink-auth
+            dockerfile: keycloak/Dockerfile.auth
+            extra_args: ""
+    steps:
+      - uses: actions/checkout@v7
+
+      # BL-264: la imagen de Auth ya no recibe las contraseñas de los usuarios
+      # de prueba como build-args (quedaban dentro de una capa de la imagen).
+      # Los usuarios de prueba se cargan al arrancar el contenedor, solo con
+      # KC_LOAD_TEST_USERS=true (ver keycloak/load-test-users.sh).
+      - name: Construir imagen (${{ matrix.name }})
+        env:
+          ENTORNO_WEB: ${{ startsWith(github.ref, 'refs/tags/v') && 'production' || 'staging' }}
+          # BL-311: clave PÚBLICA de Mercado Pago para los Secure Fields. No es
+          # un secreto (va al navegador), pero es distinta por entorno: la de
+          # prueba (sandbox) en staging, la productiva en los tags v*.*.*. Son
+          # variables del repo (Settings > Secrets and variables > Actions >
+          # Variables). Sin clave, la pantalla de pago avisa que no está
+          # configurada y los E2E de pago fallan.
+          MP_PUBLIC_KEY: ${{ startsWith(github.ref, 'refs/tags/v') && vars.MP_PUBLIC_KEY_PRODUCTION || vars.MP_PUBLIC_KEY_STAGING }}
+        run: |
+          if [ "${{ matrix.name }}" = "Web" ]; then
+            echo "Web: URLs de ${ENTORNO_WEB} (bistrolink-api-${ENTORNO_WEB}, bistrolink-auth-${ENTORNO_WEB})"
+            # BL-311: sin la clave pública, la imagen se construye igual pero la
+            # pantalla de pago queda deshabilitada y los E2E de pago fallan
+            # por timeout, sin un error claro. Se avisa acá.
+            if [ -z "${MP_PUBLIC_KEY}" ]; then
+              echo "::warning::Web sin NEXT_PUBLIC_MP_PUBLIC_KEY: falta la variable del repo MP_PUBLIC_KEY_STAGING (o MP_PUBLIC_KEY_PRODUCTION en un tag). El pago con tarjeta queda deshabilitado."
+            else
+              echo "Web: clave pública de Mercado Pago cargada (${MP_PUBLIC_KEY:0:12}…)"
+            fi
+          fi
+          docker build \
+            -t ${{ matrix.image }}:${{ env.TAG }} \
+            ${{ matrix.extra_args }} \
+            -f ${{ matrix.dockerfile }} \
+            .
+
+      # Smoke test de la imagen de la API: la arranca tal como queda en GHCR
+      # (NODE_ENV=production, sin npm, solo dependencias de producción) y
+      # espera a que responda /health. Los tests de Jest, Pact e integración
+      # corren con node_modules completo, así que no detectan lo que falta en
+      # la imagen final: con ece8404 (BL-211) el Dockerfile borraba lodash,
+      # que @nestjs/swagger requiere, y la API caía al arrancar recién en
+      # Railway. Va antes de Trivy y de publicar, para que una imagen que no
+      # levanta no llegue a GHCR ni a staging.
+      # Sin base ni Keycloak: Prisma y Keycloak se conectan recién al primer
+      # uso, así que alcanza con valores de relleno para pasar
+      # startup-env-check. No son secretos: la clave del QR se genera en
+      # cada corrida y el resto apunta a hosts que no existen.
+      # MercadoPagoGateway exige un access token al construirse (las demás
+      # pasarelas lo piden recién al cobrar): va uno de mentira, igual que en
+      # el job de integración, y la API de Mercado Pago apunta a un puerto
+      # cerrado del propio contenedor, así nada sale del runner.
+      # OPENAPI_HABILITADO=true para que también se genere el contrato
+      # OpenAPI, que en staging está prendido.
+      - name: Smoke test de la imagen (API)
+        if: matrix.name == 'API'
+        run: |
+          set -euo pipefail
+          IMAGEN="${{ matrix.image }}:${{ env.TAG }}"
+          docker run -d --name api-smoke -p 3001:3001 \
+            -e DATABASE_URL="postgresql://smoke:smoke@db-inexistente:5432/smoke" \
+            -e KEYCLOAK_CLIENT_SECRET="smoke-sin-keycloak" \
+            -e QR_TOKEN_KEY="$(openssl rand -base64 32)" \
+            -e MP_ACCESS_TOKEN="TEST-0000000000000000-000000-ci-smoke" \
+            -e MP_API_BASE_URL="http://localhost:9" \
+            -e OPENAPI_HABILITADO=true \
+            "$IMAGEN" > /dev/null
+
+          fallar() {
+            echo "::error::$1"
+            echo "── Log del contenedor ──"
+            docker logs api-smoke 2>&1 | tail -n 80 || true
+            docker rm -f api-smoke > /dev/null 2>&1 || true
+            exit 1
+          }
+
+          for i in $(seq 1 30); do
+            if [ "$(docker inspect -f '{{.State.Running}}' api-smoke)" != "true" ]; then
+              fallar "La API se cayó al arrancar (revisar el log: módulo faltante, variable de entorno, etc.)."
+            fi
+            if curl -fsS --max-time 5 http://localhost:3001/health > /dev/null 2>&1; then
+              echo "OK: /health responde (intento $i)"
+              break
+            fi
+            if [ "$i" = "30" ]; then
+              fallar "La API no respondió /health en 60 s."
+            fi
+            sleep 2
+          done
+
+          # El contrato OpenAPI se genera al arrancar: si /api/docs-json no
+          # devuelve un documento OpenAPI 3, algo del plugin o de los DTOs falló.
+          VERSION_OPENAPI=$(curl -fsS --max-time 10 http://localhost:3001/api/docs-json | jq -r '.openapi // empty' || true)
+          case "$VERSION_OPENAPI" in
+            3.*) echo "OK: contrato OpenAPI $VERSION_OPENAPI" ;;
+            *) fallar "/api/docs-json no devolvió un contrato OpenAPI 3 (respuesta: '${VERSION_OPENAPI:-vacía}')." ;;
+          esac
+
+          docker rm -f api-smoke > /dev/null
+
+      - name: Trivy — escaneo (${{ matrix.name }})
+        # @master -> @0.35.0: fijar a una versión concreta. En marzo de 2026 se
+        # reescribieron 75 de 76 tags de este repo con un payload malicioso que
+        # robaba secrets del pipeline; @master queda expuesto a que el próximo
+        # push del mantenedor se ejecute acá sin revisión de nadie del equipo.
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ matrix.image }}:${{ env.TAG }}
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          trivyignores: .trivyignore
+
+      - name: Publicar imagen en GHCR (${{ matrix.name }})
+        if: github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/tags/')
+        run: |
+          echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          docker push ${{ matrix.image }}:${{ env.TAG }}
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/}
+            docker tag ${{ matrix.image }}:${{ env.TAG }} ${{ matrix.image }}:${VERSION}
+            docker push ${{ matrix.image }}:${VERSION}
+          fi
+
+  # ── JOB 8A: RESULTADO DEL BUILD (check obligatorio) ───────────────────────
+  # BL-281: "portero" que siempre corre y resume el resultado de los tres
+  # builds de la matriz en un solo check, que es el que exige la protección
+  # de develop y main en lugar de "🐳 Build + Escaneo (API/Web/Auth)".
+  # Hace falta porque, cuando el filtro de BL-251 saltea "build" en un PR de
+  # solo documentación, GitHub no expande la matriz: los tres checks nunca
+  # se reportan y el PR queda bloqueado esperándolos.
+  #   - build exitoso → pasa.
+  #   - build salteado por el filtro de documentación (pull_request, changes
+  #     exitoso y code != 'true') → pasa.
+  #   - cualquier otro caso (build fallido o cancelado, o salteado porque
+  #     falló lint, jest, version o changes) → falla.
+  # "!cancelled()" en vez de "always()": si se cancela la corrida, este job
+  # tampoco corre, así no queda un check en verde de una corrida a medias.
+  build-ok:
+    name: ✅ Build + Escaneo (resultado)
+    runs-on: ubuntu-latest
+    needs: [build, changes]
+    if: ${{ !cancelled() }}
+    steps:
+      - name: Verificar el resultado de los builds
+        env:
+          BUILD_RESULT: ${{ needs.build.result }}
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          CODE_CHANGED: ${{ needs.changes.outputs.code }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          echo "build=$BUILD_RESULT changes=$CHANGES_RESULT code=$CODE_CHANGED evento=$EVENT"
+          if [ "$BUILD_RESULT" = "success" ]; then
+            echo "✅ Los tres builds terminaron bien."
+          elif [ "$BUILD_RESULT" = "skipped" ] && [ "$EVENT" = "pull_request" ] \
+               && [ "$CHANGES_RESULT" = "success" ] && [ "$CODE_CHANGED" != "true" ]; then
+            echo "✅ PR de solo documentación: los builds se saltean a propósito (BL-251)."
+          else
+            echo "::error::El build no terminó bien (build=$BUILD_RESULT, changes=$CHANGES_RESULT, code=$CODE_CHANGED). Revisá los jobs de Build, Lint, Jest, Contratos (PactJS) y Detectar cambios."
+            exit 1
+          fi
+
+  # ── JOB 8B: ESCANEO SEGURIDAD — TESTMGMT (Kiwi TCMS custom image) ──────────
+  # Kiwi TCMS (test management) se deploya directo en Railway vía "Connect
+  # Repo" — Railway buildea su propia copia y no consume nada de GHCR, así
+  # que este job NO publica la imagen a ningún lado. Solo la buildea de
+  # forma efímera para que Trivy la escanee (queda expuesta públicamente
+  # para que los tutores la consulten, así que igual amerita el chequeo).
+  # Corre solo si algo bajo testmgmt/docker/ cambió, para no gastar minutos
+  # de CI en cada push que no la toca.
+  scan-testmgmt:
+    name: 🐳 Escaneo seguridad (testmgmt / Kiwi TCMS)
+    runs-on: ubuntu-latest
+    needs: [changes]
+    # Corre si cambió testmgmt/ o si se dispara a mano (para forzar el escaneo).
+    if: |
+      (needs.changes.outputs.testmgmt == 'true' || github.event_name == 'workflow_dispatch')
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Construir imagen (efímera, sin push)
+        run: |
+          docker build \
+            -t testmgmt-scan:${{ env.TAG }} \
+            -f testmgmt/docker/Dockerfile \
+            testmgmt/docker
+
+      - name: Trivy — escaneo (testmgmt)
+        # scanners: vuln (sin "secret") — la imagen base de Kiwi TCMS trae
+        # de fábrica un certificado self-signed de ejemplo en
+        # /Kiwi/ssl/localhost.key (documentado oficialmente, no algo que
+        # nuestro Dockerfile de 3 líneas pueda filtrar). El scanner de
+        # secrets siempre lo va a marcar como HIGH sin que sea un secret
+        # real — así que acá solo nos importa el escaneo de vulnerabilidades.
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: testmgmt-scan:${{ env.TAG }}
+          scanners: vuln
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          trivyignores: .trivyignore
+
+  # ── JOB 9: DEPLOY STAGING ─────────────────────────────────────────────────
+  deploy-staging:
+    name: 🚀 Deploy staging (Railway)
+    needs: [gitleaks, codeql, sonarcloud, dependencias, build, changes]
+    if: |
+      github.ref == 'refs/heads/develop' &&
+      (
+        github.event_name == 'workflow_dispatch' ||
+        needs.changes.outputs.apps == 'true'
+      )
+    # BL-220: GitHub registra cada corrida de este job como un deployment del
+    # environment "staging" (pestaña Deployments del repo). Es la fuente de
+    # datos de las métricas DORA (Anexo 9 §10.2), para comparar staging con
+    # production, y deja el link a la web desplegada en el resumen de la
+    # corrida.
+    environment:
+      name: staging
+      url: https://bistrolink-web-staging.up.railway.app
+    runs-on: ubuntu-latest
+    env:
+      RAILWAY_GRAPHQL: https://backboard.railway.com/graphql/v2
+      ENVIRONMENT_ID: bfeb236f-2012-4a5e-a681-5c4728e6830a
+      API_SERVICE_ID: 45dc82be-fd53-4b80-ba9c-384bbbdba034
+      WEB_SERVICE_ID: 070e5864-c5af-47e3-89d4-89c3041bc98b
+      AUTH_SERVICE_ID: dd1b662a-4bcb-450c-a57e-fa0fe6fb5773
+    steps:
+      # BL-231: las migraciones ya NO se aplican desde acá. La base de
+      # staging no tiene acceso público (se borró el TCP Proxy, hallazgo D2
+      # del Anexo 12) y GitHub ya no tiene su URL (se eliminó el secret
+      # STAGING_DATABASE_URL). Las aplica Railway con el pre-deploy command
+      # de bistrolink-api (apps/backend/docker/predeploy-migrate.sh), con la
+      # imagen nueva, dentro de la red privada y antes de ponerla en línea.
+      # El paso "Esperar la API nueva" confirma que quedaron aplicadas.
+      # NOTA: ya NO usamos "railway redeploy" — ese comando solo vuelve a
+      # desplegar el commit/imagen que el servicio ya tenía configurado, no
+      # fuerza un pull nuevo del tag actualizado. Por eso el servicio se
+      # quedaba corriendo la imagen vieja aunque GHCR ya tuviera una nueva.
+      # En su lugar: serviceInstanceUpdate (cambia el tag de imagen) +
+      # serviceInstanceDeployV2 (dispara el deploy con ese tag ya seteado).
+      - name: Actualizar y deployar API (tag por SHA)
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          set -euo pipefail
+          IMAGE="${{ env.IMAGE_API }}:${{ env.TAG }}"
+
+          # La API GraphQL de Railway devuelve HTTP 200 incluso cuando hay un
+          # error (ej. "Not Authorized" por token inválido/mal scopeado): el
+          # error viaja dentro del body JSON, no como status code. "curl -f"
+          # no lo detecta, así que cada respuesta se valida explícitamente
+          # con jq para que el step falle de verdad si Railway devolvió
+          # "errors", en vez de seguir de largo en silencio.
+          RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg s "$API_SERVICE_ID" --arg e "$ENVIRONMENT_ID" --arg img "$IMAGE" '{
+              query: "mutation($serviceId: String!, $environmentId: String!, $input: ServiceInstanceUpdateInput!) { serviceInstanceUpdate(serviceId: $serviceId, environmentId: $environmentId, input: $input) }",
+              variables: { serviceId: $s, environmentId: $e, input: { source: { image: $img } } }
+            }')")
+          echo "$RESPONSE"
+          echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
+
+          RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg s "$API_SERVICE_ID" --arg e "$ENVIRONMENT_ID" '{
+              query: "mutation($serviceId: String!, $environmentId: String!) { serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId) }",
+              variables: { serviceId: $s, environmentId: $e }
+            }')")
+          echo "$RESPONSE"
+          echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
+
+      - name: Esperar la API nueva (pre-deploy con migraciones)
+        # Railway corre primero el pre-deploy (migrate deploy) y recién
+        # después pone la imagen en línea. Si el pre-deploy falla, deja la
+        # versión anterior y el deploy queda en FAILED: sin este paso el
+        # pipeline no se enteraba, porque /health responde igual con la
+        # versión vieja. Espera a que /health/version devuelva el SHA de esta
+        # corrida y upToDate == true (la última migración aplicada en la base
+        # es la última de la imagen). Va ANTES de Web y Keycloak para que, si
+        # la API no cambió, el frontend nuevo no quede apuntando a un backend
+        # viejo. Cubre también el hallazgo BL-137 (base sin migraciones sin
+        # que nadie lo notara).
+        run: |
+          URL=https://bistrolink-api-staging.up.railway.app/health/version
+          ESPERADO="${{ env.TAG }}"
+          BODY=""
+          for i in $(seq 1 60); do
+            BODY=$(curl -fsS --max-time 15 "$URL" 2>/dev/null || true)
+            API=$(echo "$BODY" | jq -r '.api // empty' 2>/dev/null || true)
+            UPTODATE=$(echo "$BODY" | jq -r '.upToDate' 2>/dev/null || true)
+            if [ "$API" = "$ESPERADO" ]; then
+              if [ "$UPTODATE" = "true" ]; then
+                echo "OK: la API $API está en línea con las migraciones al día"
+                echo "$BODY" | jq .
+                exit 0
+              fi
+              echo "::error::La API $API está en línea pero upToDate=$UPTODATE: la última migración de la base no coincide con la de la imagen."
+              echo "$BODY" | jq . || echo "$BODY"
+              exit 1
+            fi
+            echo "Intento $i/60: la API responde '${API:-sin respuesta}', se espera $ESPERADO. Reintento en 10 s..."
+            sleep 10
+          done
+          echo "::error::A los 10 minutos la API sigue sin la versión $ESPERADO. Si falló el pre-deploy (migraciones), Railway dejó la versión anterior: revisar bistrolink-api → Deployments → deploy de este SHA → logs del pre-deploy. Web y Keycloak no se desplegaron."
+          echo "Última respuesta: $BODY"
+          exit 1
+
+      - name: Actualizar y deployar Web (tag por SHA)
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          set -euo pipefail
+          IMAGE="${{ env.IMAGE_WEB }}:${{ env.TAG }}"
+
+          RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg s "$WEB_SERVICE_ID" --arg e "$ENVIRONMENT_ID" --arg img "$IMAGE" '{
+              query: "mutation($serviceId: String!, $environmentId: String!, $input: ServiceInstanceUpdateInput!) { serviceInstanceUpdate(serviceId: $serviceId, environmentId: $environmentId, input: $input) }",
+              variables: { serviceId: $s, environmentId: $e, input: { source: { image: $img } } }
+            }')")
+          echo "$RESPONSE"
+          echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
+
+          RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg s "$WEB_SERVICE_ID" --arg e "$ENVIRONMENT_ID" '{
+              query: "mutation($serviceId: String!, $environmentId: String!) { serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId) }",
+              variables: { serviceId: $s, environmentId: $e }
+            }')")
+          echo "$RESPONSE"
+          echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
+
+      - name: Actualizar y deployar Keycloak (tag por SHA)
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          set -euo pipefail
+          IMAGE="${{ env.IMAGE_AUTH }}:${{ env.TAG }}"
+
+          RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg s "$AUTH_SERVICE_ID" --arg e "$ENVIRONMENT_ID" --arg img "$IMAGE" '{
+              query: "mutation($serviceId: String!, $environmentId: String!, $input: ServiceInstanceUpdateInput!) { serviceInstanceUpdate(serviceId: $serviceId, environmentId: $environmentId, input: $input) }",
+              variables: { serviceId: $s, environmentId: $e, input: { source: { image: $img } } }
+            }')")
+          echo "$RESPONSE"
+          echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
+
+          RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg s "$AUTH_SERVICE_ID" --arg e "$ENVIRONMENT_ID" '{
+              query: "mutation($serviceId: String!, $environmentId: String!) { serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId) }",
+              variables: { serviceId: $s, environmentId: $e }
+            }')")
+          echo "$RESPONSE"
+          echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
+
+      - name: Health check staging
+        run: |
+          # Reintenta cada endpoint hasta 30 veces cada 10 s (~5 min) en vez de
+          # un sleep fijo: Keycloak tarda bastante más de 40 s en arrancar después
+          # del redeploy y Railway le pasa tráfico antes de que esté listo (no
+          # tiene healthcheck configurado, ver BL-229), así que respondía 503 y el
+          # job fallaba aunque el deploy estuviera bien. Si se agotan los
+          # reintentos, muestra el body y el código HTTP de la última respuesta
+          # ("curl -f" solo no los muestra).
+          check() {
+            if curl -fsS -o /dev/null --retry 30 --retry-delay 10 --retry-all-errors --max-time 15 "$1"; then
+              echo "OK    $1"
+            else
+              echo "FALLÓ $1 — última respuesta:"
+              curl -sS --max-time 15 -w "\nHTTP %{http_code}\n" "$1" || true
+              return 1
+            fi
+          }
+          check https://bistrolink-api-staging.up.railway.app/health
+          check https://bistrolink-api-staging.up.railway.app/health/ready
+          check https://bistrolink-web-staging.up.railway.app
+          check https://bistrolink-auth-staging.up.railway.app/realms/bistrolink/.well-known/openid-configuration
+
+  # ── JOB 9A: ROLLBACK MANUAL (staging y production) ───────────────────────
+  # Revierte un entorno a una imagen YA publicada en GHCR, sin reconstruir
+  # nada: staging por SHA y production por tag semántico (BL-220). En
+  # production, el environment pide la misma aprobación que un deploy. Se dispara a mano completando "rollback_environment" y
+  # "rollback_version" en workflow_dispatch — con cualquiera de los dos
+  # vacío, este job no corre (ver "if").
+  #
+  # Política: este job NUNCA revierte la base de datos. Desde BL-231, al
+  # cambiar la imagen Railway vuelve a correr el pre-deploy de la API
+  # ("prisma migrate deploy" con la carpeta de migraciones de la imagen
+  # vieja): solo aplica migraciones pendientes, así que con una imagen
+  # anterior no hace nada. Solo se puede volver a imágenes posteriores a
+  # BL-231 (las anteriores no tienen el script del pre-deploy y Railway no
+  # las pondría en línea); lo verifica el paso "Verificar que la API tenga
+  # el pre-deploy". El equipo trabaja con el patrón expand/contract:
+  # todo cambio de schema se vuelve compatible con la versión anterior del
+  # código ANTES de eliminar lo viejo, así que revertir la imagen nunca
+  # debería requerir revertir el schema. Prisma tampoco tiene un comando de
+  # rollback nativo ("migrate down") — si alguna vez hace falta deshacer una
+  # migración puntual, se hace a mano con una migración nueva "hacia
+  # adelante" (prisma migrate diff --script), nunca de forma automática
+  # desde CI.
+  rollback:
+    name: ⏪ Rollback manual (${{ inputs.rollback_environment }})
+    if: github.event_name == 'workflow_dispatch' && inputs.rollback_environment != '' && inputs.rollback_version != ''
+    environment: ${{ inputs.rollback_environment }}
+    runs-on: ubuntu-latest
+    env:
+      RAILWAY_GRAPHQL: https://backboard.railway.com/graphql/v2
+      # BL-220: IDs de Railway según el entorno elegido.
+      ENVIRONMENT_ID: ${{ inputs.rollback_environment == 'production' && 'b0b1fd5a-e3e7-409e-8847-f2700286a4a0' || 'bfeb236f-2012-4a5e-a681-5c4728e6830a' }}
+      API_SERVICE_ID: ${{ inputs.rollback_environment == 'production' && '24f425e7-e8d5-4c1e-a957-bf5bccccbcec' || '45dc82be-fd53-4b80-ba9c-384bbbdba034' }}
+      WEB_SERVICE_ID: ${{ inputs.rollback_environment == 'production' && '3198c59f-98e9-4a4e-9f39-31c329ad37ac' || '070e5864-c5af-47e3-89d4-89c3041bc98b' }}
+      AUTH_SERVICE_ID: ${{ inputs.rollback_environment == 'production' && '39a31121-afb3-4c1d-9972-01628859e77a' || 'dd1b662a-4bcb-450c-a57e-fa0fe6fb5773' }}
+      # Sufijo de los dominios públicos: bistrolink-api-staging o -production.
+      ENTORNO: ${{ inputs.rollback_environment }}
+      ROLLBACK_TAG: ${{ inputs.rollback_version }}
+    steps:
+      - name: Validar formato de la versión
+        # Staging despliega por SHA (cada push a develop) y production por tag
+        # semántico (cada release). La Web de production se compila con sus
+        # URLs solo en los tags v*.*.*: una imagen por SHA no sirve ahí.
+        run: |
+          if [ "$ENTORNO" = "production" ]; then
+            if ! [[ "$ROLLBACK_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+              echo "::error::En production, rollback_version tiene que ser un tag semántico publicado (ej. v0.5.0 o v0.5.0-rc.1). Recibido: '$ROLLBACK_TAG'"
+              exit 1
+            fi
+          elif ! [[ "$ROLLBACK_TAG" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::En staging, rollback_version tiene que ser un SHA completo de 40 caracteres hexadecimales (el mismo valor que 'env.TAG' usó ese deploy). Recibido: '$ROLLBACK_TAG'"
+            exit 1
+          fi
+
+      - name: Verificar que las 3 imágenes existan en GHCR
+        run: |
+          set -euo pipefail
+          echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          for IMAGE in "${{ env.IMAGE_API }}" "${{ env.IMAGE_WEB }}" "${{ env.IMAGE_AUTH }}"; do
+            docker manifest inspect "${IMAGE}:${ROLLBACK_TAG}" > /dev/null \
+              || { echo "No existe ${IMAGE}:${ROLLBACK_TAG} en GHCR — no se puede revertir a un tag que nunca se publicó."; exit 1; }
+          done
+
+      - name: Verificar que la API tenga el pre-deploy (BL-231)
+        # Railway corre /app/migrate/predeploy-migrate.sh en cada deploy de
+        # bistrolink-api, también en un rollback. Una imagen anterior a
+        # BL-231 no lo tiene: el pre-deploy fallaría y Railway no la pondría
+        # en línea. Se corta acá, antes de tocar ningún servicio.
+        run: |
+          set -euo pipefail
+          IMAGE="${{ env.IMAGE_API }}:${ROLLBACK_TAG}"
+          docker pull -q "$IMAGE" > /dev/null
+          docker run --rm --entrypoint /bin/sh "$IMAGE" -c 'test -x /app/migrate/predeploy-migrate.sh' \
+            || { echo "::error::$IMAGE es anterior a BL-231 (no tiene /app/migrate/predeploy-migrate.sh): con el pre-deploy configurado, Railway no puede ponerla en línea. Elegir un SHA posterior."; exit 1; }
+          echo "OK: $IMAGE tiene el script del pre-deploy"
+
+      - name: Revertir API al tag indicado
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          set -euo pipefail
+          IMAGE="${{ env.IMAGE_API }}:${ROLLBACK_TAG}"
+
+          RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg s "$API_SERVICE_ID" --arg e "$ENVIRONMENT_ID" --arg img "$IMAGE" '{
+              query: "mutation($serviceId: String!, $environmentId: String!, $input: ServiceInstanceUpdateInput!) { serviceInstanceUpdate(serviceId: $serviceId, environmentId: $environmentId, input: $input) }",
+              variables: { serviceId: $s, environmentId: $e, input: { source: { image: $img } } }
+            }')")
+          echo "$RESPONSE"
+          echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
+
+          RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg s "$API_SERVICE_ID" --arg e "$ENVIRONMENT_ID" '{
+              query: "mutation($serviceId: String!, $environmentId: String!) { serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId) }",
+              variables: { serviceId: $s, environmentId: $e }
+            }')")
+          echo "$RESPONSE"
+          echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
+
+      - name: Revertir Web al tag indicado
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          set -euo pipefail
+          IMAGE="${{ env.IMAGE_WEB }}:${ROLLBACK_TAG}"
+
+          RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg s "$WEB_SERVICE_ID" --arg e "$ENVIRONMENT_ID" --arg img "$IMAGE" '{
+              query: "mutation($serviceId: String!, $environmentId: String!, $input: ServiceInstanceUpdateInput!) { serviceInstanceUpdate(serviceId: $serviceId, environmentId: $environmentId, input: $input) }",
+              variables: { serviceId: $s, environmentId: $e, input: { source: { image: $img } } }
+            }')")
+          echo "$RESPONSE"
+          echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
+
+          RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg s "$WEB_SERVICE_ID" --arg e "$ENVIRONMENT_ID" '{
+              query: "mutation($serviceId: String!, $environmentId: String!) { serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId) }",
+              variables: { serviceId: $s, environmentId: $e }
+            }')")
+          echo "$RESPONSE"
+          echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
+
+      - name: Revertir Keycloak al tag indicado
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          set -euo pipefail
+          IMAGE="${{ env.IMAGE_AUTH }}:${ROLLBACK_TAG}"
+
+          RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg s "$AUTH_SERVICE_ID" --arg e "$ENVIRONMENT_ID" --arg img "$IMAGE" '{
+              query: "mutation($serviceId: String!, $environmentId: String!, $input: ServiceInstanceUpdateInput!) { serviceInstanceUpdate(serviceId: $serviceId, environmentId: $environmentId, input: $input) }",
+              variables: { serviceId: $s, environmentId: $e, input: { source: { image: $img } } }
+            }')")
+          echo "$RESPONSE"
+          echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
+
+          RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg s "$AUTH_SERVICE_ID" --arg e "$ENVIRONMENT_ID" '{
+              query: "mutation($serviceId: String!, $environmentId: String!) { serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId) }",
+              variables: { serviceId: $s, environmentId: $e }
+            }')")
+          echo "$RESPONSE"
+          echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
+
+      - name: Health check post-rollback
+        run: |
+          check() {
+            if curl -fsS -o /dev/null --retry 30 --retry-delay 10 --retry-all-errors --max-time 15 "$1"; then
+              echo "OK    $1"
+            else
+              echo "FALLÓ $1 — última respuesta:"
+              curl -sS --max-time 15 -w "\nHTTP %{http_code}\n" "$1" || true
+              return 1
+            fi
+          }
+          check https://bistrolink-api-${ENTORNO}.up.railway.app/health
+          check https://bistrolink-api-${ENTORNO}.up.railway.app/health/ready
+          check https://bistrolink-web-${ENTORNO}.up.railway.app
+          check https://bistrolink-auth-${ENTORNO}.up.railway.app/realms/bistrolink/.well-known/openid-configuration
+
+      - name: Confirmar la versión de la API después del rollback
+        # /health responde aunque Railway haya dejado la versión anterior
+        # (por ejemplo, si falló el pre-deploy). upToDate puede dar false:
+        # la imagen vieja no conoce las migraciones más nuevas de la base.
+        run: |
+          URL=https://bistrolink-api-${ENTORNO}.up.railway.app/health/version
+          for i in $(seq 1 30); do
+            API=$(curl -fsS --max-time 15 "$URL" 2>/dev/null | jq -r '.api // empty' 2>/dev/null || true)
+            if [ "$API" = "$ROLLBACK_TAG" ]; then
+              echo "OK: la API quedó en $API"
+              curl -fsS --max-time 15 "$URL" | jq . || true
+              exit 0
+            fi
+            echo "Intento $i/30: la API responde '${API:-sin respuesta}'. Reintento en 10 s..."
+            sleep 10
+          done
+          echo "::error::La API no quedó en $ROLLBACK_TAG. Revisar la API de ${ENTORNO} en Railway → Deployments → logs del pre-deploy."
+          exit 1
+
+  # ── JOB 9B: LIGHTHOUSE (Performance mobile) — staging ────────────────────────
+  # BL-437: mismo comportamiento que los E2E (JOB 10): corre contra staging
+  # después de cada deploy de develop (o a mano) y reporta a Kiwi TCMS, al
+  # caso TC-P-003 del plan «Performance-k6-Lighthouse». El umbral
+  # (performance >= 0.8, lighthouserc.json) está en "warn": un puntaje bajo
+  # no hace fallar el job; queda como FAILED en Kiwi y con ❌ en el resumen.
+  #
+  # URL (lighthouserc.json): el menú por el link web del local
+  # (/m/<tenant>/restaurante/<restaurante>), público y con la misma carta
+  # que por QR. La ruta vieja de la mesa por ids (/m/<tenant>/<mesa>) desde
+  # HU-034 solo muestra «Este enlace ya no se usa.» (TC-E-019), y la del QR
+  # (/q/<token>) necesita un token generado por el Administrador.
+  lighthouse:
+    name: 🔦 Lighthouse Performance (mobile) — staging
+    needs: [deploy-staging, version]
+    if: github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          # Fuerza la última 22.x publicada: la caché del runner puede ir atrasada
+          # y quedarse con una versión sin los parches de seguridad.
+          check-latest: true
+
+      - name: Lighthouse CI — menú digital (HU-001)
+        run: npx @lhci/cli@0.14.x autorun
+        env:
+          LHCI_GITHUB_APP_TOKEN: ${{ secrets.LHCI_GITHUB_APP_TOKEN }}
+
+      # Puntajes de cada corrida en el resumen de GitHub y lighthouse-junit.xml
+      # con TC-P-003 para Kiwi. Corre aunque lhci haya fallado: en ese caso
+      # el caso queda fallido con el motivo.
+      - name: Resultado de Lighthouse (resumen y JUnit)
+        if: always()
+        run: node scripts/kiwi/lighthouse-a-junit.mjs lighthouse-junit.xml
+
+      - name: Upload Lighthouse report (artifact)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: lighthouse-report
+          path: |
+            lighthouse-results/
+            lighthouse-junit.xml
+          retention-days: 14
+
+      # Mismo patrón que el reporte E2E: plan buscado por nombre, título del
+      # caso como Summary, y se saltea solo en un workflow_dispatch con
+      # «reportar a Kiwi» destildado.
+      - name: Upload results to Kiwi TCMS (lighthouse)
+        if: always() && (github.event_name != 'workflow_dispatch' || inputs.playwright_report_kiwi == true)
+        continue-on-error: true
+        timeout-minutes: 5
+        env:
+          TCMS_PRODUCT_VERSION: ${{ github.ref_name }}
+          TCMS_BUILD: ${{ needs.version.outputs.label }}-lighthouse
+        run: |
+          pip install kiwitcms-junit.xml-plugin --break-system-packages
+          cat <<EOF > ~/.tcms.conf
+          [tcms]
+          url = ${{ secrets.KIWI_TCMS_URL }}/xml-rpc/
+          username = ${{ secrets.KIWI_TCMS_USERNAME }}
+          password = ${{ secrets.KIWI_TCMS_PASSWORD }}
+          EOF
+          # Plan «Performance-k6-Lighthouse» y su producto: el plugin busca
+          # los casos en el producto del plan y arma la versión y el build
+          # con TCMS_PRODUCT (tienen que ser el mismo).
+          variables="$(python3 - <<'PY'
+          from tcms_api import TCMS
+          planes = TCMS().exec.TestPlan.filter({"name": "Performance-k6-Lighthouse"})
+          if len(planes) != 1:
+              raise SystemExit(f"::error::Se esperaba un Test Plan «Performance-k6-Lighthouse» y hay {len(planes)}")
+          print(f"export TCMS_PLAN_ID={planes[0]['id']}")
+          print(f"export TCMS_PRODUCT='{planes[0]['product__name']}'")
+          PY
+          )"
+          eval "$variables"
+          echo "Plan Performance-k6-Lighthouse: id $TCMS_PLAN_ID, producto $TCMS_PRODUCT"
+          tcms-junit.xml-plugin --verbose --summary-template '${name}' lighthouse-junit.xml
+
+  # ── JOB 10: TESTS E2E (Playwright) — matrix por browser ───────────────────
+  # Corre después de deploy-staging (push a develop) o a mano vía
+  # workflow_dispatch — en ambos casos contra el ambiente de staging ya
+  # desplegado por ese job (needs: deploy-staging). Cada proyecto
+  # (chromium/mobile-chrome/mobile-safari/desktop-safari) corre en su propio
+  # runner en paralelo, en vez de los 4 secuenciales sobre un mismo runner.
+  # "fail-fast: false" para que un browser roto no cancele los otros tres.
+  #
+  # Depende de BL-181 (estructura de e2e/ reorganizada + baselines Linux)
+  # para poder pasar en CI — hasta que ese trabajo esté mergeado, este job
+  # puede fallar o quedar inestable en corridas reales.
+  #
+  # BL-250 — E2E informativo en develop, bloqueante en release:
+  # la suite corre sobre staging DESPUÉS del deploy y condiciona la
+  # promoción a producción, no el merge a develop (Anexo 4 §1.8.3). Por eso,
+  # fuera de un tag v*.*.* o de main, un fallo deja este job en rojo (se ve
+  # en la corrida, en el resumen y en Kiwi) pero NO hace fallar el workflow.
+  # En tag v*.*.* o main la expresión da false y un fallo sí bloquea.
+  # Todo fallo E2E en develop se registra y se triagea como defecto antes
+  # del siguiente release.
+  playwright:
+    name: 🎭 Tests E2E (Playwright, ${{ matrix.project }})
+    needs: [deploy-staging, version]
+    if: |
+      (github.ref == 'refs/heads/develop' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    # BL-280: los E2E corren dentro de la imagen oficial de Playwright, que ya
+    # trae Chromium (con el headless shell) y WebKit con todas sus
+    # dependencias del sistema. Antes, cada job de Safari instalaba WebKit con
+    # apt (~15 min) y solo ese motor, así que el fixture qrMesas
+    # (e2e/support/auth.ts), que loguea al ADMIN siempre en Chromium, fallaba
+    # con "Executable doesn't exist" (TC-E-007 en mobile-safari y
+    # desktop-safari).
+    #
+    # ⚠️ La versión de la imagen tiene que ser la MISMA que @playwright/test
+    # en package-lock.json. Dependabot actualiza el paquete pero no esta
+    # línea: si no coinciden, el paso "Verificar imagen de Playwright" corta
+    # el job con un mensaje claro.
+    # --user 1001: el usuario del runner, para poder escribir en el workspace
+    # (lo recomienda la documentación de Playwright para GitHub Actions).
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble
+      options: --user 1001
+    continue-on-error: ${{ !startsWith(github.ref, 'refs/tags/v') && github.ref != 'refs/heads/main' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [chromium, mobile-chrome, mobile-safari, desktop-safari]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          # Fuerza la última 22.x publicada: la caché del runner puede ir atrasada
+          # y quedarse con una versión sin los parches de seguridad.
+          check-latest: true
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      # BL-280: ya no se instalan navegadores (los trae la imagen). Este paso
+      # compara los navegadores que espera @playwright/test (lockfile) con
+      # los que hay en la imagen, y corta con un mensaje claro si no
+      # coinciden, en vez de fallar después en cada test.
+      - name: Verificar imagen de Playwright
+        run: |
+          node -e '
+          const fs = require("fs");
+          const path = require("path");
+          const pkg = require("@playwright/test/package.json").version;
+          const dirCore = path.dirname(require.resolve("playwright-core/package.json"));
+          const { browsers } = JSON.parse(fs.readFileSync(path.join(dirCore, "browsers.json"), "utf8"));
+          const base = process.env.PLAYWRIGHT_BROWSERS_PATH || "/ms-playwright";
+          const necesarios = ["chromium", "chromium-headless-shell", "webkit"];
+          const faltan = browsers
+            .filter((b) => necesarios.includes(b.name))
+            .map((b) => `${b.name.replaceAll("-", "_")}-${b.revision}`)
+            .filter((dir) => !fs.existsSync(path.join(base, dir)));
+          if (faltan.length > 0) {
+            console.log(`::error::La imagen de Playwright no coincide con @playwright/test ${pkg} del lockfile (faltan ${faltan.join(", ")} en ${base}). Actualizá container.image a mcr.microsoft.com/playwright:v${pkg}-noble.`);
+            process.exit(1);
+          }
+          console.log(`OK: la imagen trae los navegadores de @playwright/test ${pkg}.`);
+          '
+
+      - name: Tests E2E Playwright en staging (${{ matrix.project }})
+        run: npx playwright test --project=${{ matrix.project }}
+        env:
+          # staging.bistrolink.app no tiene registro DNS propio
+          # (ERR_NAME_NOT_RESOLVED en CI) — se usa la misma URL de Railway
+          # que ya healthchequea "deploy-staging" más arriba.
+          BASE_URL: https://bistrolink-web-staging.up.railway.app
+          # e2e/comensal/menu-publico.spec.ts (línea 21) cae a
+          # http://localhost:3001 si esto no está seteado, y este job no
+          # levanta ninguna API local → ECONNREFUSED. Misma URL de Railway
+          # que ya usa el build-arg NEXT_PUBLIC_API_URL del job "build".
+          API_URL:
+            https://bistrolink-api-staging.up.railway.app
+            # BL-303: credenciales de los usuarios de prueba desde los secrets.
+          # e2e/support/auth.ts ya no tiene valores por defecto.
+          TEST_MOZO_USERNAME: ${{ secrets.TEST_MOZO_USERNAME }}
+          TEST_MOZO_PASSWORD: ${{ secrets.TEST_MOZO_PASSWORD }}
+          TEST_ADMIN_USERNAME: ${{ secrets.TEST_ADMIN_USERNAME }}
+          TEST_ADMIN_PASSWORD: ${{ secrets.TEST_ADMIN_PASSWORD }}
+          # BL-416: usuario de plataforma de E2E, con OTP (la clave de su app
+          # de autenticación, para generar el código). Sin estos tres
+          # secrets, e2e/plataforma/gestion-establecimientos.spec.ts se
+          # saltea.
+          TEST_PLATAFORMA_USERNAME: ${{ secrets.TEST_PLATAFORMA_USERNAME }}
+          TEST_PLATAFORMA_PASSWORD: ${{ secrets.TEST_PLATAFORMA_PASSWORD }}
+          TEST_PLATAFORMA_OTP_SECRET: ${{ secrets.TEST_PLATAFORMA_OTP_SECRET }}
+
+      # BL-250: aviso visible en el resumen de la corrida cuando E2E falla
+      # (el workflow sigue en verde en develop, así que el aviso es lo que
+      # evita que el fallo pase desapercibido).
+      - name: Aviso de E2E con fallos (${{ matrix.project }})
+        if: failure()
+        run: |
+          {
+            echo "### ⚠️ E2E con fallos — ${{ matrix.project }}"
+            echo ""
+            echo "La suite Playwright falló en **${{ matrix.project }}**. En develop es **informativa**: no hace fallar el pipeline (BL-250)."
+            echo "Ver el artifact \`playwright-report-${{ matrix.project }}\` y el Test Run \`-e2e\` en Kiwi TCMS, y registrar el defecto antes del próximo release."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Un artifact por proyecto (nombre único) para que el job
+      # "playwright-report" pueda bajarlos todos con un patrón y mergearlos.
+      # continue-on-error: un 403 transitorio acá (mismo issue conocido de
+      # actions/upload-artifact, ver el job "jest" para el detalle) no debe
+      # marcar este matrix-run en falla — el job "playwright-report" igual
+      # puede mergear con los artifacts que sí llegaron a subir.
+      - name: Upload Playwright report (artifact, ${{ matrix.project }})
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-${{ matrix.project }}
+          path: playwright-report/
+          retention-days: 14
+
+  # ── JOB 10B: MERGE + REPORTE A KIWI (Playwright) ──────────────────────────
+  # Junta los 4 junit.xml (uno por proyecto, generados por el matrix de
+  # arriba) en uno solo, para que el TestRun de Kiwi quede único ("-e2e"),
+  # igual que antes de paralelizar por browser. "if: always()" porque
+  # interesa reportar aunque algún proyecto haya fallado (matrix con
+  # fail-fast: false). "!cancelled()" en vez de "always()": reporta igual
+  # si hubo fallos, pero no corre si alguien canceló la corrida (BL-250).
+  playwright-report:
+    name: 📋 Merge + reporte E2E a Kiwi TCMS
+    needs: [playwright, version]
+    # Corre solo si los E2E corrieron de verdad (push a develop con deploy a
+    # staging, o un workflow_dispatch sobre develop). Con "!cancelled()" solo,
+    # el job corría también en PRs, en main y en tags con playwright
+    # "skipped": mergeaba 0 reportes y podía abrir un Test Run vacío en Kiwi.
+    if: ${{ !cancelled() && needs.playwright.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar los 4 reportes
+        uses: actions/download-artifact@v8
+        with:
+          pattern: playwright-report-*
+          path: reports
+          merge-multiple: false
+
+      - name: Crear playwright-report/ antes del merge
+        run: mkdir -p playwright-report
+
+      # Cada carpeta bajo reports/ es un artifact (playwright-report-chromium,
+      # etc.), cada uno con su propio junit.xml. Se combinan los <testsuite>
+      # de los 4 bajo una única raíz <testsuites>, con la stdlib (sin
+      # dependencias nuevas) — alcanza para lo que necesita Kiwi.
+      - name: Mergear los junit.xml en uno solo
+        run: |
+          python3 - <<'PY'
+          import glob
+          import xml.etree.ElementTree as ET
+
+          merged = ET.Element("testsuites")
+          for path in sorted(glob.glob("reports/*/junit.xml")):
+              tree = ET.parse(path)
+              root = tree.getroot()
+              suites = [root] if root.tag == "testsuite" else list(root)
+              for suite in suites:
+                  merged.append(suite)
+
+          ET.ElementTree(merged).write("playwright-report/junit.xml", encoding="utf-8", xml_declaration=True)
+          PY
+
+      # BL-435: reporte para Kiwi, con un resultado por caso TC-E.
+      # - Nombre: Playwright arma «describe › título»; se deja solo el
+      #   título desde «[TC-E-NNN]», que es el Summary del caso en Kiwi
+      #   (cargado con scripts/kiwi/cargar-casos-integracion.mjs --e2e).
+      # - Un mismo test corre en varios proyectos (chromium, mobile-chrome,
+      #   mobile-safari, desktop-safari): se junta en un solo resultado.
+      #   Falla si falló en alguno (el mensaje dice en cuál), pasa si pasó
+      #   en alguno y los demás lo saltearon, y queda salteado solo si se
+      #   salteó en todos. Sin esto, el último proyecto pisaba a los otros.
+      # - Un test sin [TC-E-NNN] no se reporta (se avisa): el plugin
+      #   crearía un caso nuevo con ese nombre.
+      # - El timestamp va sin la «Z» final: el plugin 15.0 no la acepta.
+      - name: Preparar el reporte para Kiwi (un resultado por TC-E)
+        run: |
+          python3 - <<'PY'
+          import re
+          import xml.etree.ElementTree as ET
+
+          raiz = ET.parse("playwright-report/junit.xml").getroot()
+          casos = {}
+          inicio = None
+          for suite in raiz.iter("testsuite"):
+              proyecto = suite.get("hostname") or "?"
+              marca = (suite.get("timestamp") or "").removesuffix("Z")
+              if marca and (inicio is None or marca < inicio):
+                  inicio = marca
+              for caso in suite.iter("testcase"):
+                  nombre = caso.get("name", "")
+                  m = re.search(r"\[TC-E-\d{3}\].*$", nombre)
+                  if not m:
+                      print(f"::warning::Test sin [TC-E-NNN], no se reporta a Kiwi: {nombre}")
+                      continue
+                  falla = caso.find("failure")
+                  if falla is None:
+                      falla = caso.find("error")
+                  if falla is not None:
+                      estado = "falla"
+                  elif caso.find("skipped") is not None:
+                      estado = "salteado"
+                  else:
+                      estado = "pasa"
+                  casos.setdefault(m.group(0), []).append((proyecto, estado, caso))
+
+          salida = ET.Element("testsuites")
+          suite = ET.SubElement(salida, "testsuite", name="e2e", tests=str(len(casos)))
+          if inicio:
+              suite.set("timestamp", inicio)
+          resumen = {"falla": 0, "salteado": 0, "pasa": 0}
+          for nombre, corridas in sorted(casos.items()):
+              estados = [e for _, e, _ in corridas]
+              nuevo = ET.SubElement(suite, "testcase", name=nombre,
+                                    classname=corridas[0][2].get("classname", ""),
+                                    time=str(max(float(c.get("time") or 0) for _, _, c in corridas)))
+              if "falla" in estados:
+                  resumen["falla"] += 1
+                  for proyecto, estado, original in corridas:
+                      if estado != "falla":
+                          continue
+                      detalle = original.find("failure")
+                      if detalle is None:
+                          detalle = original.find("error")
+                      copia = ET.SubElement(nuevo, "failure",
+                                            message=f"[{proyecto}] {detalle.get('message', '')}",
+                                            type=detalle.get("type", "FAILURE"))
+                      copia.text = detalle.text
+                      for etiqueta in ("system-out", "system-err"):
+                          log = original.find(etiqueta)
+                          if log is not None:
+                              ET.SubElement(nuevo, etiqueta).text = log.text
+                      break
+              elif "pasa" in estados:
+                  resumen["pasa"] += 1
+              else:
+                  resumen["salteado"] += 1
+                  ET.SubElement(nuevo, "skipped", message="Salteado en todos los proyectos")
+          ET.ElementTree(salida).write("playwright-report/kiwi-junit.xml", encoding="utf-8", xml_declaration=True)
+          print(f"Casos TC-E: {len(casos)} (pasan {resumen['pasa']}, fallan {resumen['falla']}, salteados {resumen['salteado']}).")
+          PY
+
+      - name: Upload Playwright report combinado (artifact)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/junit.xml
+            playwright-report/kiwi-junit.xml
+          retention-days: 14
+
+      # Mismo plugin y patrón que el job "integracion" (BL-177). TCMS_BUILD
+      # lleva sufijo "-e2e" para que quede en su propio TestRun.
+      # BL-435: los resultados van a los casos del plan «E2E-Playwright»:
+      # - TCMS_PLAN_ID y TCMS_PRODUCT se buscan por el nombre del plan (el
+      #   plugin, sin plan fijo, armaba un plan propio con casos duplicados);
+      # - --summary-template '${name}': busca cada caso por su título exacto
+      #   (el «[TC-E-NNN] …» que deja el paso anterior).
+      # Antes de mergear un PR con tests nuevos o con títulos cambiados, se
+      # corre scripts/kiwi/cargar-casos-integracion.mjs --e2e --aplicar.
+      #
+      # Se saltea el reporte solo si es un workflow_dispatch manual con
+      # "playwright_report_kiwi" destildado — en push a develop (o un
+      # workflow_dispatch con el toggle en su default "true") reporta
+      # siempre, corran o no todos los tests ("if: always()").
+      - name: Upload results to Kiwi TCMS (e2e)
+        if: always() && (github.event_name != 'workflow_dispatch' || inputs.playwright_report_kiwi == true)
+        continue-on-error: true
+        timeout-minutes: 5
+        env:
+          TCMS_PRODUCT_VERSION: ${{ github.event_name == 'pull_request' && github.base_ref || github.ref_name }}
+          TCMS_BUILD: ${{ needs.version.outputs.label }}-e2e
+        run: |
+          pip install kiwitcms-junit.xml-plugin --break-system-packages
+          cat <<EOF > ~/.tcms.conf
+          [tcms]
+          url = ${{ secrets.KIWI_TCMS_URL }}/xml-rpc/
+          username = ${{ secrets.KIWI_TCMS_USERNAME }}
+          password = ${{ secrets.KIWI_TCMS_PASSWORD }}
+          EOF
+          # Plan «E2E-Playwright» y su producto (el plugin busca los casos en
+          # el producto del plan y arma la versión y el build con
+          # TCMS_PRODUCT: tienen que ser el mismo).
+          variables="$(python3 - <<'PY'
+          from tcms_api import TCMS
+          planes = TCMS().exec.TestPlan.filter({"name": "E2E-Playwright"})
+          if len(planes) != 1:
+              raise SystemExit(f"::error::Se esperaba un Test Plan «E2E-Playwright» y hay {len(planes)}")
+          print(f"export TCMS_PLAN_ID={planes[0]['id']}")
+          print(f"export TCMS_PRODUCT='{planes[0]['product__name']}'")
+          PY
+          )"
+          eval "$variables"
+          echo "Plan E2E-Playwright: id $TCMS_PLAN_ID, producto $TCMS_PRODUCT"
+          tcms-junit.xml-plugin --verbose --summary-template '${name}' playwright-report/kiwi-junit.xml
+
+  # ── JOB 11: DEPLOY PRODUCCIÓN (tag v*.*.*, con aprobación) ───────────────
+  # BL-220. Se dispara SOLO con el push de un tag v*.*.* (no con un
+  # workflow_dispatch desde un tag: el rollback de production usa el job
+  # "rollback"). El environment "production" exige la aprobación de un
+  # integrante distinto del que creó el tag (Prevent self-review) y solo
+  # admite tags v*.*.* y main: esa aprobación, con quién y cuándo, es la
+  # evidencia de la "aprobación manual registrada" del Anexo 4 §1.2.3, y cada
+  # corrida queda como deployment de "production" (fuente de DORA).
+  #
+  # Imágenes: en un tag, el job "build" compila las tres con GIT_SHA y
+  # NEXT_PUBLIC_APP_VERSION = el tag (la Web, además, con las URLs de
+  # production) y las publica con el tag semántico. Se despliega siempre por
+  # ese tag, nunca por SHA ni "latest": el rollback vuelve a un tag anterior.
+  # Pendiente (después de v0.5.0): promover las imágenes de API y Auth ya
+  # probadas en staging con "docker buildx imagetools" en lugar de
+  # recompilarlas en el tag.
+  #
+  # E2E: "needs" no puede exigir Playwright. En la corrida del tag no corre
+  # (solo corre en develop, contra staging) y el commit del tag en main es un
+  # merge commit con otro SHA. El control es la regresión de staging en verde,
+  # registrada en el PR de release (plantilla release.md), más esta
+  # aprobación manual.
+  #
+  # Migraciones: las aplica el pre-deploy de la API de production dentro de
+  # Railway (BL-231); GitHub no tiene acceso a la base. Antes, el paso
+  # "Verificar el respaldo de producción" exige un respaldo reciente de las
+  # dos bases (RNF.06, Anexo 4 §1.2.8): ejecutar db-backup-prod con "Run now"
+  # en Railway justo antes de aprobar.
+  deploy-prod:
+    name: 🏁 Deploy producción (aprobación manual)
+    needs: [gitleaks, codeql, sonarcloud, dependencias, build]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    environment:
+      name: production
+      url: https://bistrolink-web-production.up.railway.app
+    runs-on: ubuntu-latest
+    # Para crear el GitHub Release del tag.
+    permissions:
+      contents: write
+    env:
+      RAILWAY_GRAPHQL: https://backboard.railway.com/graphql/v2
+      ENVIRONMENT_ID: b0b1fd5a-e3e7-409e-8847-f2700286a4a0
+      API_SERVICE_ID: 24f425e7-e8d5-4c1e-a957-bf5bccccbcec
+      WEB_SERVICE_ID: 3198c59f-98e9-4a4e-9f39-31c329ad37ac
+      AUTH_SERVICE_ID: 39a31121-afb3-4c1d-9972-01628859e77a
+      VERSION: ${{ github.ref_name }}
+      API_URL: https://bistrolink-api-production.up.railway.app
+      WEB_URL: https://bistrolink-web-production.up.railway.app
+      AUTH_URL: https://bistrolink-auth-production.up.railway.app
+    steps:
+      - name: Verificar el respaldo de producción (antes de migrar)
+        # Usa las credenciales de bistrolink-backup-ci (solo lectura y listado
+        # sobre los buckets de respaldo). Si falla, no se tocó nada: ejecutar
+        # db-backup-prod con "Run now" en Railway y volver a correr este job.
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_BACKUP_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_BACKUP_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          BUCKET: bistrolink-backups-prod
+          MAX_MINUTOS: ${{ vars.BACKUP_PRE_DEPLOY_MAX_MIN || 120 }}
+        run: |
+          set -euo pipefail
+          ahora=$(date -u +%s)
+          for base in bistrolink-db keycloak-db; do
+            ultimo=$(aws s3api list-objects-v2 --bucket "$BUCKET" --prefix "daily/$base/" \
+              --query 'sort_by(Contents[?ends_with(Key, `.dump`)], &LastModified)[-1].LastModified' \
+              --output text)
+            if [ -z "$ultimo" ] || [ "$ultimo" = "None" ]; then
+              echo "::error::$base: no hay ningún respaldo en s3://$BUCKET/daily/$base/. Ejecutar db-backup-prod (Run now) y volver a correr este job."
+              exit 1
+            fi
+            minutos=$(( (ahora - $(date -u -d "$ultimo" +%s)) / 60 ))
+            if [ "$minutos" -gt "$MAX_MINUTOS" ]; then
+              echo "::error::$base: el último respaldo es de hace $minutos min (máximo $MAX_MINUTOS). Ejecutar db-backup-prod (Run now) en Railway y volver a correr este job."
+              exit 1
+            fi
+            echo "OK: $base respaldada hace $minutos min ($ultimo)"
+          done
+
+      - name: Actualizar y deployar API (tag semántico)
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          set -euo pipefail
+          IMAGE="${{ env.IMAGE_API }}:${VERSION}"
+
+          RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg s "$API_SERVICE_ID" --arg e "$ENVIRONMENT_ID" --arg img "$IMAGE" '{
+              query: "mutation($serviceId: String!, $environmentId: String!, $input: ServiceInstanceUpdateInput!) { serviceInstanceUpdate(serviceId: $serviceId, environmentId: $environmentId, input: $input) }",
+              variables: { serviceId: $s, environmentId: $e, input: { source: { image: $img } } }
+            }')")
+          echo "$RESPONSE"
+          echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
+
+          RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg s "$API_SERVICE_ID" --arg e "$ENVIRONMENT_ID" '{
+              query: "mutation($serviceId: String!, $environmentId: String!) { serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId) }",
+              variables: { serviceId: $s, environmentId: $e }
+            }')")
+          echo "$RESPONSE"
+          echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
+
+      - name: Esperar la API nueva (pre-deploy con migraciones)
+        # Igual que en staging: espera a que /health/version devuelva el tag
+        # de esta corrida (la imagen del tag hornea GIT_SHA = tag) con
+        # upToDate == true. Va antes de Web y Keycloak: si el pre-deploy
+        # falla, Railway deja la versión anterior y no se toca nada más.
+        run: |
+          URL="${API_URL}/health/version"
+          BODY=""
+          for i in $(seq 1 60); do
+            BODY=$(curl -fsS --max-time 15 "$URL" 2>/dev/null || true)
+            API=$(echo "$BODY" | jq -r '.api // empty' 2>/dev/null || true)
+            UPTODATE=$(echo "$BODY" | jq -r '.upToDate' 2>/dev/null || true)
+            if [ "$API" = "$VERSION" ]; then
+              if [ "$UPTODATE" = "true" ]; then
+                echo "OK: la API $API está en línea con las migraciones al día"
+                echo "$BODY" | jq .
+                exit 0
+              fi
+              echo "::error::La API $API está en línea pero upToDate=$UPTODATE: la última migración de la base no coincide con la de la imagen."
+              echo "$BODY" | jq . || echo "$BODY"
+              exit 1
+            fi
+            echo "Intento $i/60: la API responde '${API:-sin respuesta}', se espera $VERSION. Reintento en 10 s..."
+            sleep 10
+          done
+          echo "::error::A los 10 minutos la API sigue sin la versión $VERSION. Si falló el pre-deploy (migraciones), Railway dejó la versión anterior: revisar bistrolink-prod-api → Deployments → logs del pre-deploy. Web y Keycloak no se desplegaron."
+          echo "Última respuesta: $BODY"
+          exit 1
+
+      - name: Actualizar y deployar Web (tag semántico)
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          set -euo pipefail
+          IMAGE="${{ env.IMAGE_WEB }}:${VERSION}"
+
+          RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg s "$WEB_SERVICE_ID" --arg e "$ENVIRONMENT_ID" --arg img "$IMAGE" '{
+              query: "mutation($serviceId: String!, $environmentId: String!, $input: ServiceInstanceUpdateInput!) { serviceInstanceUpdate(serviceId: $serviceId, environmentId: $environmentId, input: $input) }",
+              variables: { serviceId: $s, environmentId: $e, input: { source: { image: $img } } }
+            }')")
+          echo "$RESPONSE"
+          echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
+
+          RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg s "$WEB_SERVICE_ID" --arg e "$ENVIRONMENT_ID" '{
+              query: "mutation($serviceId: String!, $environmentId: String!) { serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId) }",
+              variables: { serviceId: $s, environmentId: $e }
+            }')")
+          echo "$RESPONSE"
+          echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
+
+      - name: Actualizar y deployar Keycloak (tag semántico)
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          set -euo pipefail
+          IMAGE="${{ env.IMAGE_AUTH }}:${VERSION}"
+
+          RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg s "$AUTH_SERVICE_ID" --arg e "$ENVIRONMENT_ID" --arg img "$IMAGE" '{
+              query: "mutation($serviceId: String!, $environmentId: String!, $input: ServiceInstanceUpdateInput!) { serviceInstanceUpdate(serviceId: $serviceId, environmentId: $environmentId, input: $input) }",
+              variables: { serviceId: $s, environmentId: $e, input: { source: { image: $img } } }
+            }')")
+          echo "$RESPONSE"
+          echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
+
+          RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg s "$AUTH_SERVICE_ID" --arg e "$ENVIRONMENT_ID" '{
+              query: "mutation($serviceId: String!, $environmentId: String!) { serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId) }",
+              variables: { serviceId: $s, environmentId: $e }
+            }')")
+          echo "$RESPONSE"
+          echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
+
+      - name: Smoke test producción (solo lectura)
+        # Sin E2E contra production: solo lecturas que no crean datos.
+        run: |
+          set -uo pipefail
+          check() {
+            if curl -fsS -o /dev/null --retry 30 --retry-delay 10 --retry-all-errors --max-time 15 "$1"; then
+              echo "OK    $1"
+            else
+              echo "FALLÓ $1 — última respuesta:"
+              curl -sS --max-time 15 -w "\nHTTP %{http_code}\n" "$1" || true
+              return 1
+            fi
+          }
+          fallos=0
+          check "${API_URL}/health" || fallos=1
+          check "${API_URL}/health/ready" || fallos=1
+          check "${WEB_URL}/api/health" || fallos=1
+          check "${AUTH_URL}/realms/bistrolink/.well-known/openid-configuration" || fallos=1
+
+          # El emisor de los tokens tiene que ser el de production: si no, la
+          # API rechaza todos los logins (Anexo 12, A9).
+          ISSUER=$(curl -fsS --max-time 15 "${AUTH_URL}/realms/bistrolink/.well-known/openid-configuration" | jq -r '.issuer // empty' || true)
+          if [ "$ISSUER" = "${AUTH_URL}/realms/bistrolink" ]; then
+            echo "OK    issuer $ISSUER"
+          else
+            echo "::error::El issuer de Keycloak es '${ISSUER:-vacío}', se esperaba ${AUTH_URL}/realms/bistrolink"
+            fallos=1
+          fi
+
+          # BL-285 (ADR 0011): la limpieza de datos de prueba no existe en
+          # production. Sin token, tiene que dar 404 (en staging da 401).
+          CODIGO=$(curl -s -o /dev/null -w "%{http_code}" -X POST --max-time 15 "${API_URL}/testing/limpieza" || true)
+          if [ "$CODIGO" = "404" ]; then
+            echo "OK    /testing/limpieza no existe (404)"
+          else
+            echo "::error::POST /testing/limpieza respondió $CODIGO en production (se esperaba 404): revisar que bistrolink-prod-api no tenga E2E_CLEANUP_ENABLED."
+            fallos=1
+          fi
+
+          exit $fallos
+
+      - name: Publicar el GitHub Release
+        # Notas generadas por GitHub a partir de los PRs. Los tags con sufijo
+        # (v0.5.0-rc.1) quedan como pre-release. Si se vuelve a correr el job,
+        # no lo crea de nuevo.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "El release $VERSION ya existe: no se crea de nuevo."
+            exit 0
+          fi
+          EXTRA=""
+          if [[ "$VERSION" == *-* ]]; then
+            EXTRA="--prerelease"
+          fi
+          gh release create "$VERSION" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes --title "$VERSION" $EXTRA
+          echo "Release $VERSION publicado."

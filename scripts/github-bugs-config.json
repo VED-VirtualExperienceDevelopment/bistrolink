@@ -1,0 +1,8 @@
+{
+  "_comentario": "Ajusta 'query' según cómo marcan los bugs en tu repo. Si usan el label 'bug', dejalo así. Si usan el Issue Type nuevo de GitHub, cambiá a \"is:issue type:Bug\". owner/repo se toman automáticamente de GITHUB_REPOSITORY cuando corre en Actions; solo hace falta completarlos acá si corrés el script en tu máquina.",
+
+  "owner": "",
+  "repo": "",
+  "query": "is:issue label:bug",
+  "semanasATrackear": 8
+}

@@ -1,0 +1,468 @@
+import { Injectable, Logger } from '@nestjs/common';
+
+// Las URLs se leen en cada llamada (no al cargar el módulo): así los tests
+// de contrato pueden apuntar el cliente al mock de Pact (BL-216).
+const authUrl = () =>
+  process.env.SURTEC_AUTH_URL ?? 'https://auth-test.facturaelectronica.com.uy';
+const apiUrl = () =>
+  process.env.SURTEC_API_URL ?? 'https://api-test.facturaelectronica.com.uy';
+
+// El token dura 12 h; se renueva antes de que venza.
+const VIDA_TOKEN_MS = 11 * 60 * 60 * 1000;
+
+export interface ItemCfe {
+  concepto: string;
+  cantidad: number;
+  /** Precio unitario con IVA incluido. */
+  precio: number;
+}
+
+export interface SolicitudEmision {
+  /** RUT del emisor (header X-Emisor): el del tenant. */
+  rutEmisor: string;
+  /** Clave de idempotencia: el mismo id devuelve el mismo comprobante. */
+  idExterno: string;
+  items: ItemCfe[];
+  adenda?: string;
+}
+
+/** Tipos de CFE que emite BistroLink (códigos de DGI). */
+export const TIPO_CFE = {
+  E_TICKET: 101,
+  E_FACTURA: 111,
+  // HU-024 (BL-104): notas de crédito que anulan un e-Ticket o una e-Factura.
+  NC_E_TICKET: 102,
+  NC_E_FACTURA: 112,
+} as const;
+
+/**
+ * HU-024 (BL-104): CFE al que se refiere una nota de crédito (campo
+ * `referencias` de POST /comprobantes/crear, referencia específica).
+ */
+export interface ReferenciaCfe {
+  /** Código DGI del CFE referenciado: 101 o 111. */
+  tipoComprobante: number;
+  serie: string;
+  numero: number;
+  /** Fecha de emisión del referenciado, AAAA-MM-DD. */
+  fecha: string;
+  /** Motivo (hasta 90 caracteres). */
+  razon: string;
+}
+
+/** HU-009 (BL-453): receptor de la e-Factura, ya validado. */
+export interface ReceptorEFactura {
+  /** 12 dígitos, sin separadores. */
+  rut: string;
+  razonSocial: string;
+}
+
+// Objeto `cliente` de POST /comprobantes/crear (guía de la API de Surtec).
+interface ClienteCfe {
+  tipo_doc: number;
+  cod_pais_doc: string;
+  nro_doc: string;
+  denominacion: string;
+}
+
+/**
+ * Campos con datos del receptor que no van al mensaje del error (termina en
+ * los logs): si Surtec los repite en su respuesta, se ocultan.
+ */
+const CAMPOS_DEL_RECEPTOR = new Set([
+  'cliente',
+  'receptor',
+  'nro_doc',
+  'denominacion',
+]);
+
+/** El cuerpo de un error de Surtec, para el log, sin datos del receptor. */
+export function cuerpoParaLog(datos: unknown): string {
+  return JSON.stringify(datos, (clave, valor: unknown) =>
+    CAMPOS_DEL_RECEPTOR.has(clave) ? '[oculto]' : valor,
+  );
+}
+
+/** HU-009 (BL-454): el PDF de un CFE emitido, ya validado. */
+export interface PdfCfe {
+  contenido: Buffer;
+}
+
+/** Tope del PDF que se acepta de Surtec (un A4 ronda los 200 KB). */
+export const TAMANO_MAXIMO_PDF_CFE = 10 * 1024 * 1024;
+
+/**
+ * Valida la respuesta de GET /comprobantes/{id}/pdf: Surtec devuelve un JSON
+ * `{ file_name, mime_type, format, data }` con el PDF en base64 en `data`.
+ * Lanza SurtecError si no es un PDF.
+ */
+export function leerPdf(datos: unknown): PdfCfe {
+  const raiz = (datos ?? {}) as Record<string, unknown>;
+  const tipo = raiz.mime_type;
+  if (typeof tipo === 'string' && !tipo.toLowerCase().includes('pdf')) {
+    throw new SurtecError(`Surtec devolvió un archivo que no es PDF (${tipo})`);
+  }
+  if (typeof raiz.data !== 'string' || raiz.data.length === 0) {
+    throw new SurtecError('Surtec devolvió el PDF vacío');
+  }
+  const contenido = Buffer.from(raiz.data, 'base64');
+  if (contenido.length > TAMANO_MAXIMO_PDF_CFE) {
+    throw new SurtecError('El PDF de Surtec supera el tamaño máximo');
+  }
+  if (contenido.subarray(0, 5).toString('latin1') !== '%PDF-') {
+    throw new SurtecError('Surtec devolvió un archivo que no es PDF');
+  }
+  return { contenido };
+}
+
+/** Lo que BistroLink lee de cada CFE de la consulta (sin datos del receptor). */
+export interface CfeEmitidoConEstado {
+  id: string;
+  serie: string;
+  numero: number;
+  /** AE, BE o CE; null si DGI todavía no respondió. */
+  codigoDgi: string | null;
+  motivoDgi: string | null;
+}
+
+const textoONulo = (valor: unknown): string | null =>
+  typeof valor === 'string' && valor.trim() !== '' ? valor.trim() : null;
+
+/**
+ * Lee un CFE de la consulta de emitidos (HU-009, BL-455 y BL-471). El
+ * estado ante la DGI llega como objeto en el detalle de la v2 y en la v1
+ * (`estado_dgi: { codigo, razon }`) y como texto en el listado de la v2
+ * (`estado_dgi: "AE"`); la guía también nombra `estado`. Sin id, serie o
+ * número, null.
+ */
+export function leerEmitido(dato: unknown): CfeEmitidoConEstado | null {
+  const c = dato as Record<string, any> | null | undefined;
+  if (c?.id === undefined || !c.serie || c.numero === undefined) return null;
+  const estado: unknown = c.estado_dgi ?? c.estado;
+  const objeto =
+    estado !== null && typeof estado === 'object'
+      ? (estado as Record<string, unknown>)
+      : {};
+  const codigo = textoONulo(
+    typeof estado === 'string' ? estado : objeto.codigo,
+  );
+  return {
+    id: String(c.id),
+    serie: String(c.serie),
+    numero: Number(c.numero),
+    codigoDgi: codigo?.toUpperCase() ?? null,
+    motivoDgi: textoONulo(objeto.motivo ?? objeto.razon ?? objeto.descripcion),
+  };
+}
+
+/**
+ * La lista de una consulta de emitidos: `items` en la v2 (paginada), y
+ * `comprobantes` o `comprobante` en la v1. Lo que no es una lista, vacía.
+ */
+export function listaDeEmitidos(datos: unknown): unknown[] {
+  if (Array.isArray(datos)) return datos;
+  const raiz = (datos ?? {}) as Record<string, unknown>;
+  const lista = raiz.items ?? raiz.comprobantes ?? raiz.comprobante;
+  return Array.isArray(lista) ? lista : [];
+}
+
+export interface CfeEmitido {
+  id: string;
+  serie: string;
+  numero: number;
+  hash?: string;
+  caeNumero?: string;
+  caeVencimiento?: Date;
+  /** Consulta QR de DGI. */
+  url?: string;
+}
+
+export class SurtecError extends Error {
+  constructor(
+    message: string,
+    readonly status?: number,
+  ) {
+    super(message);
+  }
+}
+
+interface RespuestaToken {
+  access_token?: string;
+  refresh_token?: string;
+}
+
+@Injectable()
+export class SurtecClient {
+  private accessToken?: string;
+  private refreshToken?: string;
+  private venceEn = 0;
+
+  configurado(): boolean {
+    return Boolean(process.env.SURTEC_USER && process.env.SURTEC_PASSWORD);
+  }
+
+  /** e-Ticket (101): consumidor final, sin datos del receptor. */
+  emitirETicket(solicitud: SolicitudEmision): Promise<CfeEmitido> {
+    return this.emitir(TIPO_CFE.E_TICKET, solicitud);
+  }
+
+  /**
+   * HU-009 (BL-453): e-Factura (111) a nombre del RUT del comensal. Surtec
+   * exige el objeto `cliente` con el documento y la denominación; dirección
+   * y ciudad son opcionales (Surtec pone «N/D»).
+   */
+  emitirEFactura(
+    solicitud: SolicitudEmision,
+    receptor: ReceptorEFactura,
+  ): Promise<CfeEmitido> {
+    return this.emitir(TIPO_CFE.E_FACTURA, solicitud, {
+      tipo_doc: 2, // RUT
+      cod_pais_doc: 'UY',
+      nro_doc: receptor.rut,
+      denominacion: receptor.razonSocial,
+    });
+  }
+
+  /**
+   * HU-024 (BL-104): nota de crédito (102 de un e-Ticket, 112 de una
+   * e-Factura) que anula el CFE referenciado. Los importes van positivos;
+   * el tipo dice que es una nota de crédito. La de una e-Factura lleva el
+   * mismo receptor.
+   */
+  async emitirNotaDeCredito(
+    solicitud: SolicitudEmision,
+    referencia: ReferenciaCfe,
+    receptor?: ReceptorEFactura,
+  ): Promise<CfeEmitido> {
+    const deEFactura = referencia.tipoComprobante === TIPO_CFE.E_FACTURA;
+    const referencias = [
+      {
+        tipo_comprobante: referencia.tipoComprobante,
+        serie: referencia.serie,
+        numero: referencia.numero,
+        fecha: referencia.fecha,
+        razon: referencia.razon.slice(0, 90),
+      },
+    ];
+    if (!deEFactura) {
+      return this.emitir(
+        TIPO_CFE.NC_E_TICKET,
+        solicitud,
+        undefined,
+        referencias,
+      );
+    }
+    if (!receptor) {
+      throw new SurtecError(
+        'La nota de crédito de una e-Factura necesita el receptor de la e-Factura',
+      );
+    }
+    return this.emitir(
+      TIPO_CFE.NC_E_FACTURA,
+      solicitud,
+      {
+        tipo_doc: 2, // RUT
+        cod_pais_doc: 'UY',
+        nro_doc: receptor.rut,
+        denominacion: receptor.razonSocial,
+      },
+      referencias,
+    );
+  }
+
+  private async emitir(
+    tipoComprobante: number,
+    solicitud: SolicitudEmision,
+    cliente?: ClienteCfe,
+    referencias?: Record<string, unknown>[],
+  ): Promise<CfeEmitido> {
+    const cuerpo = {
+      sucursal: Number(process.env.SURTEC_SUCURSAL ?? 1),
+      tipo_comprobante: tipoComprobante,
+      forma_pago: 1, // contado
+      moneda: 'UYU',
+      cod_montos_brutos: 1, // los precios incluyen IVA
+      id_externo: solicitud.idExterno,
+      ...(cliente ? { cliente } : {}),
+      items: solicitud.items.map((i) => ({
+        cantidad: i.cantidad,
+        concepto: i.concepto,
+        precio: i.precio,
+        indicador_facturacion: 3, // tasa básica (22 %)
+        unidad: 'Un',
+      })),
+      ...(referencias ? { referencias } : {}),
+      ...(solicitud.adenda ? { adenda: { texto: solicitud.adenda } } : {}),
+    };
+
+    const respuesta = await this.llamar(
+      `${apiUrl()}/comprobantes/crear`,
+      solicitud.rutEmisor,
+      cuerpo,
+    );
+    if (respuesta.numero === undefined || !respuesta.serie) {
+      throw new SurtecError('Surtec respondió sin serie o número');
+    }
+
+    return {
+      id: String(respuesta.id),
+      serie: respuesta.serie,
+      numero: respuesta.numero,
+      hash: respuesta.hash,
+      caeNumero:
+        respuesta.cae_numero === undefined
+          ? undefined
+          : String(respuesta.cae_numero),
+      caeVencimiento: respuesta.cae_vencimiento
+        ? new Date(respuesta.cae_vencimiento)
+        : undefined,
+      url: respuesta.url,
+    };
+  }
+
+  /**
+   * HU-009 (BL-471): un CFE emitido con su estado ante la DGI, por el id de
+   * Surtec (comprobante_fiscal.proveedor_ref), con la API v2
+   * (GET /v2/consulta/comprobantes/emitidos/{id}). Reemplaza a la consulta
+   * por rango de fechas de la v1, deprecada. null si Surtec no lo tiene (404).
+   */
+  async consultarEmitido(
+    rutEmisor: string,
+    idSurtec: string,
+  ): Promise<CfeEmitidoConEstado | null> {
+    try {
+      const datos = await this.llamar(
+        `${apiUrl()}/v2/consulta/comprobantes/emitidos/${encodeURIComponent(idSurtec)}`,
+        rutEmisor,
+      );
+      return leerEmitido(datos);
+    } catch (error) {
+      if (error instanceof SurtecError && error.status === 404) return null;
+      throw error;
+    }
+  }
+
+  /**
+   * HU-009 (BL-471): el CFE con ese id_externo (el que manda BistroLink al
+   * emitir), para los comprobantes sin id de Surtec. Se compara el
+   * id_externo de cada resultado: si Surtec ignorara el filtro, devolvería
+   * otros comprobantes y no se toma ninguno.
+   */
+  async buscarEmitidoPorIdExterno(
+    rutEmisor: string,
+    idExterno: string,
+  ): Promise<CfeEmitidoConEstado | null> {
+    const parametros = new URLSearchParams({ id_externo: idExterno });
+    const datos = await this.llamar(
+      `${apiUrl()}/v2/consulta/comprobantes/emitidos?${parametros.toString()}`,
+      rutEmisor,
+    );
+    const encontrado = listaDeEmitidos(datos).find(
+      (c) => (c as Record<string, unknown> | null)?.id_externo === idExterno,
+    );
+    return encontrado === undefined ? null : leerEmitido(encontrado);
+  }
+
+  /**
+   * HU-009 (BL-454): el PDF A4 de un CFE emitido, por el id de Surtec
+   * (comprobante_fiscal.proveedor_ref). No se guarda: Surtec conserva los
+   * comprobantes los 5 años que exige la DGI.
+   */
+  async obtenerPdf(rutEmisor: string, idSurtec: string): Promise<PdfCfe> {
+    const datos = await this.llamar(
+      `${apiUrl()}/comprobantes/${encodeURIComponent(idSurtec)}/pdf`,
+      rutEmisor,
+    );
+    return leerPdf(datos);
+  }
+
+  // Si el token fue rechazado (401) se pide uno nuevo y se reintenta una vez.
+  // Con cuerpo es un POST (emisión); sin cuerpo, un GET (consulta).
+  private async llamar(
+    url: string,
+    rutEmisor: string,
+    cuerpo?: unknown,
+    reintento = true,
+  ): Promise<Record<string, any>> {
+    const token = await this.token();
+    const respuesta = await fetch(url, {
+      method: cuerpo === undefined ? 'GET' : 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'X-Emisor': rutEmisor,
+        ...(cuerpo === undefined ? {} : { 'Content-Type': 'application/json' }),
+      },
+      ...(cuerpo === undefined ? {} : { body: JSON.stringify(cuerpo) }),
+      signal: AbortSignal.timeout(20_000),
+    });
+
+    if (respuesta.status === 401 && reintento) {
+      this.accessToken = undefined;
+      this.venceEn = 0;
+      return this.llamar(url, rutEmisor, cuerpo, false);
+    }
+
+    const datos = (await respuesta.json().catch(() => ({}))) as Record<
+      string,
+      any
+    >;
+    if (!respuesta.ok) {
+      throw new SurtecError(
+        `Surtec rechazó ${cuerpo === undefined ? 'la consulta' : 'la emisión'} (HTTP ${respuesta.status}): ${cuerpoParaLog(datos).slice(0, 500)}`,
+        respuesta.status,
+      );
+    }
+    return datos;
+  }
+
+  private async token(): Promise<string> {
+    if (this.accessToken && Date.now() < this.venceEn) {
+      return this.accessToken;
+    }
+    if (!this.configurado()) {
+      throw new SurtecError('SURTEC_USER/SURTEC_PASSWORD no configurados');
+    }
+
+    // Primero se intenta renovar con el refresh token; si falla, con usuario
+    // y contraseña.
+    if (this.refreshToken) {
+      const renovado = await this.pedirToken({
+        grant_type: 'refresh_token',
+        refresh_token: this.refreshToken,
+      });
+      if (renovado) return renovado;
+    }
+    const nuevo = await this.pedirToken({
+      grant_type: 'password',
+      username: process.env.SURTEC_USER,
+      password: process.env.SURTEC_PASSWORD,
+    });
+    if (!nuevo) {
+      throw new SurtecError('Surtec no aceptó las credenciales');
+    }
+    return nuevo;
+  }
+
+  private async pedirToken(
+    cuerpo: { grant_type: string } & Record<string, unknown>,
+  ) {
+    const respuesta = await fetch(`${authUrl()}/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cuerpo),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!respuesta.ok) {
+      // Nunca se loguea el cuerpo enviado: lleva la contraseña.
+      Logger.warn(SurtecClient.name);
+      this.refreshToken = undefined;
+      return null;
+    }
+    const datos = (await respuesta.json()) as RespuestaToken;
+    if (!datos.access_token) return null;
+    this.accessToken = datos.access_token;
+    this.refreshToken = datos.refresh_token;
+    this.venceEn = Date.now() + VIDA_TOKEN_MS;
+    return datos.access_token;
+  }
+}

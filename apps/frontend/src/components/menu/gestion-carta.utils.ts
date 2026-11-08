@@ -1,0 +1,481 @@
+/**
+ * BL-398 (BL-392): funciones puras de la pantalla Gestión de Carta. Están
+ * fuera del componente para probarlas solas y para no anidar funciones
+ * dentro de los efectos (regla de Sonar).
+ */
+
+import { normalizarParaBuscar as normalizar } from "@/components/admin/usuarios/Usuarios.utils";
+
+export interface ItemGestion {
+  readonly id: string;
+  readonly nombre: string;
+  readonly descripcion?: string;
+  readonly precio: string;
+  readonly disponible: boolean;
+  readonly imagenKey?: string;
+  readonly imagenUrl?: string | null;
+  readonly categoriaId: string;
+  readonly tieneHistorial?: boolean;
+  /** BL-394: fecha de archivo (ISO); null o ausente si está activo. */
+  readonly archivadoEn?: string | null;
+  /** BL-394: versión para el bloqueo optimista al editar. */
+  readonly updatedAt?: string;
+}
+
+export interface CategoriaGestion {
+  readonly id: string;
+  readonly nombre: string;
+  readonly descripcion?: string | null;
+  readonly activo: boolean;
+  readonly orden: number;
+  readonly items: readonly ItemGestion[];
+  /** BL-394: fecha de archivo (ISO); null o ausente si está activa. */
+  readonly archivadaEn?: string | null;
+  /** BL-394: versión para el bloqueo optimista al editar. */
+  readonly updatedAt?: string;
+}
+
+type Categorias = readonly CategoriaGestion[];
+
+/** Cambia la disponibilidad de un ítem, esté en la categoría que esté. */
+export function conDisponibilidad(
+  categorias: Categorias,
+  itemId: string,
+  disponible: boolean,
+): CategoriaGestion[] {
+  return categorias.map((cat) => ({
+    ...cat,
+    items: cat.items.map((item) =>
+      item.id === itemId ? { ...item, disponible } : item,
+    ),
+  }));
+}
+
+/** Cambia la visibilidad (`activo`) de una categoría. */
+export function conVisibilidad(
+  categorias: Categorias,
+  categoriaId: string,
+  activo: boolean,
+): CategoriaGestion[] {
+  return categorias.map((cat) =>
+    cat.id === categoriaId ? { ...cat, activo } : cat,
+  );
+}
+
+/** BL-394: saca un ítem archivado o eliminado de todas las categorías. */
+export function sinItem(
+  categorias: Categorias,
+  itemId: string,
+): CategoriaGestion[] {
+  return categorias.map((cat) => ({
+    ...cat,
+    items: cat.items.filter((item) => item.id !== itemId),
+  }));
+}
+
+/** BL-394: saca una categoría archivada o eliminada. */
+export function sinCategoria(
+  categorias: Categorias,
+  categoriaId: string,
+): CategoriaGestion[] {
+  return categorias.filter((cat) => cat.id !== categoriaId);
+}
+
+function cantidad(n: number, singular: string, plural: string): string {
+  return `${n} ${n === 1 ? singular : plural}`;
+}
+
+/**
+ * Contador del encabezado: «12 ítems · 2 agotados». Los agotados solo se
+ * nombran si hay alguno.
+ */
+export function textoContadorCarta(categorias: Categorias): string {
+  const items = categorias.flatMap((cat) => cat.items);
+  const agotados = items.filter((item) => !item.disponible).length;
+  const total = cantidad(items.length, "ítem", "ítems");
+  return agotados > 0
+    ? `${total} · ${cantidad(agotados, "agotado", "agotados")}`
+    : total;
+}
+
+/** Contador de una categoría: «3 ítems». */
+export function textoItemsDeCategoria(categoria: CategoriaGestion): string {
+  return cantidad(categoria.items.length, "ítem", "ítems");
+}
+
+// ── BL-398 (parte 2): búsqueda y filtros ────────────────────────────────────
+
+export type FiltroEstadoCarta =
+  | "TODOS"
+  | "DISPONIBLES"
+  | "AGOTADOS"
+  | "OCULTOS"
+  // BL-398 (parte 3): lo archivado se carga aparte (incluirArchivados).
+  | "ARCHIVADOS";
+
+export interface FiltrosCarta {
+  readonly busqueda: string;
+  readonly estado: FiltroEstadoCarta;
+  /** Id de la categoría, o "TODAS". */
+  readonly categoriaId: string;
+}
+
+export const FILTROS_CARTA_INICIALES: FiltrosCarta = {
+  busqueda: "",
+  estado: "TODOS",
+  categoriaId: "TODAS",
+};
+
+export function hayFiltrosCarta(filtros: FiltrosCarta): boolean {
+  return (
+    filtros.busqueda.trim() !== "" ||
+    filtros.estado !== FILTROS_CARTA_INICIALES.estado ||
+    filtros.categoriaId !== FILTROS_CARTA_INICIALES.categoriaId
+  );
+}
+
+function itemPasaElEstado(
+  item: ItemGestion,
+  estado: FiltroEstadoCarta,
+): boolean {
+  if (estado === "DISPONIBLES") return item.disponible;
+  if (estado === "AGOTADOS") return !item.disponible;
+  return true;
+}
+
+function categoriaPasaElEstado(
+  categoria: CategoriaGestion,
+  estado: FiltroEstadoCarta,
+): boolean {
+  // «Ocultos»: los ítems de las categorías que no se ven en la carta.
+  return estado === "OCULTOS" ? !categoria.activo : true;
+}
+
+/**
+ * Categorías con los ítems que cumplen los filtros. La búsqueda mira el
+ * nombre y la descripción del ítem, sin distinguir mayúsculas ni tildes, y
+ * también el nombre de la categoría (buscar «postres» trae todos sus
+ * ítems). Sin filtros devuelve todo, incluidas las categorías vacías; con
+ * filtros, solo las categorías que tienen algún ítem que coincide.
+ */
+export function filtrarCarta(
+  categorias: Categorias,
+  filtros: FiltrosCarta,
+): CategoriaGestion[] {
+  if (!hayFiltrosCarta(filtros)) return [...categorias];
+  const termino = normalizar(filtros.busqueda);
+  return categorias
+    .filter(
+      (cat) =>
+        (filtros.categoriaId === "TODAS" || cat.id === filtros.categoriaId) &&
+        categoriaPasaElEstado(cat, filtros.estado),
+    )
+    .map((cat) => {
+      const coincideCategoria =
+        termino !== "" && normalizar(cat.nombre).includes(termino);
+      const items = cat.items.filter(
+        (item) =>
+          itemPasaElEstado(item, filtros.estado) &&
+          (termino === "" ||
+            coincideCategoria ||
+            normalizar(`${item.nombre} ${item.descripcion ?? ""}`).includes(
+              termino,
+            )),
+      );
+      return { ...cat, items };
+    })
+    .filter((cat) => cat.items.length > 0);
+}
+
+/** Con filtros: «3 de 12 ítems». Lo que se anuncia al lector de pantalla. */
+export function textoResultadoFiltros(
+  filtradas: Categorias,
+  todas: Categorias,
+): string {
+  const encontrados = filtradas.flatMap((cat) => cat.items).length;
+  const total = todas.flatMap((cat) => cat.items).length;
+  return `${encontrados} de ${cantidad(total, "ítem", "ítems")}`;
+}
+
+// ── BL-398 (parte 3): archivados ────────────────────────────────────────────
+
+/**
+ * De la carta pedida con `incluirArchivados=true`, deja solo lo archivado:
+ * las categorías archivadas (con todos sus ítems) y, de las activas, los
+ * ítems archivados.
+ */
+export function soloArchivados(categorias: Categorias): CategoriaGestion[] {
+  return categorias
+    .map((cat) =>
+      cat.archivadaEn
+        ? cat
+        : { ...cat, items: cat.items.filter((item) => item.archivadoEn) },
+    )
+    .filter((cat) => cat.archivadaEn || cat.items.length > 0);
+}
+
+/** «3 ítems y 1 categoría archivados», o «Nada archivado». */
+export function textoArchivados(categorias: Categorias): string {
+  const items = categorias.flatMap((cat) => cat.items).length;
+  const cats = categorias.filter((cat) => cat.archivadaEn).length;
+  if (items === 0 && cats === 0) return "Nada archivado";
+  const partes = [
+    items > 0 ? cantidad(items, "ítem", "ítems") : null,
+    cats > 0 ? cantidad(cats, "categoría", "categorías") : null,
+  ].filter(Boolean);
+  const plural = items + cats > 1 ? "archivados" : "archivado";
+  return `${partes.join(" y ")} ${plural}`;
+}
+
+/**
+ * BL-394: un ítem se puede eliminar definitivamente si no figura en ningún
+ * pedido; una categoría, si no tiene ningún ítem (ni archivado). Si no, solo
+ * se ofrece «Restaurar». La API lo vuelve a verificar (409).
+ */
+export function sePuedeEliminarItem(item: ItemGestion): boolean {
+  return item.tieneHistorial === false;
+}
+
+export function sePuedeEliminarCategoria(categoria: CategoriaGestion): boolean {
+  return categoria.items.length === 0;
+}
+
+const FORMATO_FECHA_ARCHIVO = new Intl.DateTimeFormat("es-UY", {
+  timeZone: "America/Montevideo",
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+});
+
+/** «Archivado el 31/10/2026», en hora de Uruguay. */
+export function textoFechaArchivo(
+  iso: string | null | undefined,
+  genero: "o" | "a",
+): string | null {
+  if (!iso) return null;
+  return `Archivad${genero} el ${FORMATO_FECHA_ARCHIVO.format(new Date(iso))}`;
+}
+
+// ── BL-398 (parte 4): formularios ───────────────────────────────────────────
+
+/** Mismos límites que CreateCategoriaDto en el backend (BL-395). */
+export const LARGO_MAXIMO_NOMBRE_CATEGORIA = 60;
+export const LARGO_MAXIMO_DESCRIPCION_CATEGORIA = 200;
+
+/** Error del nombre de una categoría, o null si es válido. */
+export function errorNombreCategoria(nombre: string): string | null {
+  const limpio = nombre.trim();
+  if (!limpio) return "Ingresá el nombre de la categoría.";
+  if (limpio.length > LARGO_MAXIMO_NOMBRE_CATEGORIA) {
+    return `Tiene que tener ${LARGO_MAXIMO_NOMBRE_CATEGORIA} caracteres como máximo.`;
+  }
+  return null;
+}
+
+/**
+ * BL-394: la API responde 409 «Otra persona modificó este dato…» cuando el
+ * formulario manda una versión (`updatedAt`) vieja. Se distingue del 409 por
+ * nombre repetido para ofrecer «Recargar» en lugar de corregir el nombre.
+ */
+export function esConflictoDeEdicion(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const status = (error as { status?: number }).status;
+  return status === 409 && error.message.startsWith("Otra persona modificó");
+}
+
+/**
+ * BL-398: después de un cambio propio (switch de visibilidad o de
+ * disponibilidad) se guarda la versión nueva que devolvió la API. Si no, el
+ * formulario de edición mandaría una versión vieja y daría un conflicto
+ * falso.
+ */
+export function conVersionCategoria(
+  categorias: Categorias,
+  categoriaId: string,
+  updatedAt: string | undefined,
+): CategoriaGestion[] {
+  if (!updatedAt) return [...categorias];
+  return categorias.map((cat) =>
+    cat.id === categoriaId ? { ...cat, updatedAt } : cat,
+  );
+}
+
+export function conVersionItem(
+  categorias: Categorias,
+  itemId: string,
+  updatedAt: string | undefined,
+): CategoriaGestion[] {
+  if (!updatedAt) return [...categorias];
+  return categorias.map((cat) => ({
+    ...cat,
+    items: cat.items.map((item) =>
+      item.id === itemId ? { ...item, updatedAt } : item,
+    ),
+  }));
+}
+
+/** Error del nombre de un ítem, o null si es válido. */
+export function errorNombreItem(nombre: string): string | null {
+  return nombre.trim() ? null : "Ingresá el nombre del ítem.";
+}
+
+/**
+ * El precio se puede escribir con coma o con punto («590,50» o «590.50»).
+ * Se manda a la API con punto, sin espacios.
+ */
+export function normalizarPrecio(precio: string): string {
+  return precio.trim().replace(",", ".");
+}
+
+/** Misma regla que CreateItemDto en el backend: hasta 2 decimales, sin ceros a la izquierda. */
+const FORMATO_PRECIO = /^(0|[1-9]\d*)(\.\d{1,2})?$/;
+
+/** Error del precio, o null si es válido. */
+export function errorPrecioItem(precio: string): string | null {
+  const limpio = normalizarPrecio(precio);
+  if (!limpio) return "Ingresá el precio.";
+  if (!FORMATO_PRECIO.test(limpio)) {
+    return "Usá solo números, con hasta 2 decimales (por ejemplo, 590 o 590,50).";
+  }
+  return null;
+}
+
+// ── BL-399: ordenar con Subir / Bajar ───────────────────────────────────────
+
+/** Hacia dónde se mueve: -1 sube un lugar y 1 baja un lugar. */
+export type Desplazamiento = -1 | 1;
+
+/**
+ * Mueve un elemento un lugar hacia arriba o hacia abajo. Devuelve null si
+ * no está en la lista o si ya está en el borde (no hay nada que guardar).
+ */
+export function moverUnLugar<T extends { readonly id: string }>(
+  lista: readonly T[],
+  id: string,
+  desplazamiento: Desplazamiento,
+): T[] | null {
+  const desde = lista.findIndex((elemento) => elemento.id === id);
+  const hasta = desde + desplazamiento;
+  if (desde < 0 || hasta < 0 || hasta >= lista.length) return null;
+  const copia = [...lista];
+  [copia[desde], copia[hasta]] = [copia[hasta], copia[desde]];
+  return copia;
+}
+
+/**
+ * La carta con una categoría movida un lugar. `orden` queda igual a la
+ * posición (desde 1), como lo guarda la API.
+ */
+export function conCategoriaMovida(
+  categorias: Categorias,
+  categoriaId: string,
+  desplazamiento: Desplazamiento,
+): CategoriaGestion[] | null {
+  const movidas = moverUnLugar(categorias, categoriaId, desplazamiento);
+  if (!movidas) return null;
+  return movidas.map((cat, indice) => ({ ...cat, orden: indice + 1 }));
+}
+
+/** La carta con un ítem movido un lugar dentro de su categoría. */
+export function conItemMovido(
+  categorias: Categorias,
+  categoriaId: string,
+  itemId: string,
+  desplazamiento: Desplazamiento,
+): CategoriaGestion[] | null {
+  const categoria = categorias.find((cat) => cat.id === categoriaId);
+  if (!categoria) return null;
+  const items = moverUnLugar(categoria.items, itemId, desplazamiento);
+  if (!items) return null;
+  return categorias.map((cat) =>
+    cat.id === categoriaId ? { ...cat, items } : cat,
+  );
+}
+
+/** Lo que se anuncia al lector de pantalla después de mover. */
+export function textoPosicion(
+  nombre: string,
+  posicion: number,
+  total: number,
+): string {
+  return `«${nombre}» quedó en la posición ${posicion} de ${total}`;
+}
+// ── BL-399 (parte 2): arrastrar para ordenar ────────────────────────────────
+
+/**
+ * Lleva un elemento al lugar de otro, corriendo los del medio. Devuelve
+ * null si alguno no está o si se soltó en el mismo lugar.
+ */
+export function moverA<T extends { readonly id: string }>(
+  lista: readonly T[],
+  id: string,
+  destinoId: string,
+): T[] | null {
+  const desde = lista.findIndex((elemento) => elemento.id === id);
+  const hasta = lista.findIndex((elemento) => elemento.id === destinoId);
+  if (desde < 0 || hasta < 0 || desde === hasta) return null;
+  const copia = [...lista];
+  const [movido] = copia.splice(desde, 1);
+  copia.splice(hasta, 0, movido);
+  return copia;
+}
+
+/** La carta con una categoría llevada al lugar de otra. */
+export function conCategoriaEn(
+  categorias: Categorias,
+  categoriaId: string,
+  destinoId: string,
+): CategoriaGestion[] | null {
+  const movidas = moverA(categorias, categoriaId, destinoId);
+  if (!movidas) return null;
+  return movidas.map((cat, indice) => ({ ...cat, orden: indice + 1 }));
+}
+
+/** La carta con un ítem llevado al lugar de otro de su misma categoría. */
+export function conItemEn(
+  categorias: Categorias,
+  categoriaId: string,
+  itemId: string,
+  destinoId: string,
+): CategoriaGestion[] | null {
+  const categoria = categorias.find((cat) => cat.id === categoriaId);
+  if (!categoria) return null;
+  const items = moverA(categoria.items, itemId, destinoId);
+  if (!items) return null;
+  return categorias.map((cat) =>
+    cat.id === categoriaId ? { ...cat, items } : cat,
+  );
+}
+
+/** Instrucciones que el lector de pantalla lee al llegar a una manija. */
+export const INSTRUCCIONES_ARRASTRE =
+  "Para cambiar el orden, presioná Espacio para levantar. Usá las flechas para moverlo, Espacio para soltarlo o Escape para cancelar.";
+
+/** Avisos al lector de pantalla mientras se arrastra (en español). */
+export function anuncioLevantado(
+  nombre: string,
+  posicion: number,
+  total: number,
+): string {
+  return `Levantaste «${nombre}», en la posición ${posicion} de ${total}.`;
+}
+
+export function anuncioSobre(
+  nombre: string,
+  posicion: number,
+  total: number,
+): string {
+  return `«${nombre}» está sobre la posición ${posicion} de ${total}.`;
+}
+
+export function anuncioSoltado(
+  nombre: string,
+  posicion: number,
+  total: number,
+): string {
+  return `Soltaste «${nombre}» en la posición ${posicion} de ${total}.`;
+}
+
+export function anuncioCancelado(nombre: string): string {
+  return `Cancelaste. «${nombre}» volvió a su lugar.`;
+}

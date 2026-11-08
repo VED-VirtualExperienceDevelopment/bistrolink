@@ -1,0 +1,17 @@
+{
+  "_comentario": "'storyPointsPlanificadosPorSprint' es la línea base fija acordada en planning — no se recalcula sola. Los totales (HU y SP) SÍ se recalculan automáticamente desde Linear en cada corrida, para reflejar historias nuevas que se agreguen después del kickoff.",
+
+  "capas": [
+    { "nombre": "Núcleo",                 "emoji": "🟩", "sprints": [1, 2, 3, 4, 5] },
+    { "nombre": "Integración",            "emoji": "🟦", "sprints": [6, 7, 8] },
+    { "nombre": "Valor Agregado (cond.)", "emoji": "🟪", "sprints": [9] }
+  ],
+
+  "storyPointsPlanificadosPorSprint": [18, 24, 5, 16, 13, 37, 37, 8, 44],
+
+  "baselineOriginal": {
+    "_comentario": "Solo de referencia, para mostrar cuánto creció el alcance vs. lo planificado al inicio. No se usa para calcular % de avance.",
+    "totalStoryPoints": 202,
+    "totalHistoriasUsuario": 26
+  }
+}

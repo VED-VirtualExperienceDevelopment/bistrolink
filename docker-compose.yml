@@ -1,0 +1,124 @@
+# docker-compose.yml
+# Levanta la infraestructura local de BistroLink.
+# bistrolink-api y bistrolink-web corren fuera de Docker con 'npm run dev'.
+services:
+  # ── PostgreSQL ──────────────────────────────────────────────────────────
+  bistrolink-db:
+    image: postgres:16.4-alpine
+    container_name: bistrolink-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: bistrolink
+      POSTGRES_PASSWORD: bistrolink_dev
+      POSTGRES_DB: bistrolink_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - bistrolink-db-data:/var/lib/postgresql/data
+      - ./scripts/db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bistrolink -d bistrolink_dev"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+
+  # ── Keycloak ────────────────────────────────────────────────────────────
+  bistrolink-auth:
+    # 26.7.0 -> 26.7.2: alineado con la versión que usa keycloak/Dockerfile.auth
+    # (imagen de Railway), para no tener dos versiones de Keycloak distintas
+    # corriendo entre local y Railway.
+    image: quay.io/keycloak/keycloak:26.7.2
+    container_name: bistrolink-auth
+    restart: unless-stopped
+    # BL-185: entrypoint propio (bind-mounted, ver volumes abajo) que arranca
+    # Keycloak, espera a que esté listo, y pisa el client secret random que
+    # generó el import con el valor real de KEYCLOAK_CLIENT_SECRET (ya
+    # cargado vía env_file) — vía Admin REST API (kcadm.sh), nunca escrito en
+    # el realm-export.json. Ver keycloak/set-client-secret.sh para el detalle
+    # completo (incluye por qué el enfoque anterior con Vault SPI no
+    # funcionaba para este campo).
+    #
+    # Se invoca como "/bin/bash <script>" (no exec directo del archivo) para
+    # no depender del bit de ejecución del bind mount, que en Windows/NTFS
+    # puede no viajar igual que en Linux.
+    entrypoint: ["/bin/bash", "/opt/keycloak/bin/set-client-secret.sh"]
+    command: ["start-dev", "--import-realm"]
+    # Carga KEYCLOAK_CLIENT_SECRET y las variables de los usuarios de prueba
+    # (TEST_*_USERNAME/PASSWORD y KEYCLOAK_COMENSAL_PASSWORD) directo del
+    # .env del backend — así cualquiera del equipo levanta lo mismo con solo
+    # correr 'docker compose up -d'. BL-264: los usuarios de prueba ya no
+    # están en realm-export.json; los carga keycloak/load-test-users.sh al
+    # arrancar porque acá KC_LOAD_TEST_USERS=true (ver keycloak/README.md).
+    env_file:
+      - ./apps/backend/.env
+    environment:
+      # Neutraliza el leak de DATABASE_URL/RUNTIME_DATABASE_URL del backend
+      # hacia este contenedor (env_file de arriba carga el .env completo,
+      # sin filtrar). No confirmado que esto por sí solo resuelva un
+      # crash-loop de JDBC visto una vez en un volumen recién importado
+      # (ver notas del hallazgo) — se trata como higiene de configuración,
+      # no como fix garantizado de ese incidente puntual.
+      DATABASE_URL: ""
+      RUNTIME_DATABASE_URL: ""
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin # solo desarrollo local
+      KC_DB: dev-file
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_ENABLED: "true"
+      KC_HEALTH_ENABLED: "true"
+      KC_LOAD_TEST_USERS: "true" # BL-264: en local sí van los usuarios de prueba
+    ports:
+      - "8080:8080"
+      - "9000:9000" # management interface — expone /health/ready desde Keycloak 26.x
+    volumes:
+      - bistrolink-auth-data:/opt/keycloak/data
+      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+      - ./keycloak/themes/bistrolink:/opt/keycloak/themes/bistrolink:ro
+      - ./keycloak/set-client-secret.sh:/opt/keycloak/bin/set-client-secret.sh:ro
+      - ./keycloak/load-test-users.sh:/opt/keycloak/bin/load-test-users.sh:ro
+      - ./keycloak/test-users.json:/opt/keycloak/data/test-users/test-users.json:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - |-
+            bash -c 'exec 3<>/dev/tcp/127.0.0.1/9000 && printf "GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n" >&3 && read -r line <&3 && [[ $$line == *200* ]]'
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+
+  # ── Portainer ───────────────────────────────────────────────────────────
+  bistrolink-portainer:
+    image: portainer/portainer-ce:2.21.0
+    container_name: bistrolink-portainer
+    restart: unless-stopped
+    ports:
+      - "9009:9000" # externo:interno — Portainer siempre escucha en 9000 internamente
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - bistrolink-portainer-data:/data
+
+  # ── Evolution API (WhatsApp) ─────────────────────────────────────────────
+  bistrolink-evo:
+    image: evoapicloud/evolution-api:v2.1.1
+    container_name: bistrolink-evo
+    restart: unless-stopped
+    ports:
+      - "8081:8080" # 8081 externo para no colisionar con Keycloak en 8080
+    environment:
+      SERVER_TYPE: http
+      SERVER_PORT: 8080
+      AUTHENTICATION_TYPE: apikey
+      AUTHENTICATION_API_KEY: dev_key_local
+    volumes:
+      - bistrolink-evo-data:/evolution/instances
+
+volumes:
+  bistrolink-db-data:
+  bistrolink-auth-data:
+  bistrolink-portainer-data:
+  bistrolink-evo-data:
+  

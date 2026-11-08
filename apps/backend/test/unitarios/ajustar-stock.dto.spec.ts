@@ -1,0 +1,75 @@
+import { plainToInstance } from 'class-transformer';
+import { validateSync } from 'class-validator';
+import { AjustarStockDto } from '../../src/stock/dto/ajustar-stock.dto';
+
+// HU-015 (BL-120): body de PATCH /admin/stock.
+
+const ITEM_ID = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
+// Ítems del seed del tenant A (Milanesa, Agua con gas): no son UUID v4.
+const ITEM_MILANESA_SEED = '55555555-5555-5555-5555-555555555555';
+const ITEM_AGUA_SEED = '66666666-6666-6666-6666-666666666666';
+
+function errores(body: unknown): string[] {
+  const dto = plainToInstance(AjustarStockDto, body);
+  const mensajes: string[] = [];
+  const recorrer = (lista: ReturnType<typeof validateSync>) => {
+    for (const e of lista) {
+      mensajes.push(...Object.values(e.constraints ?? {}));
+      recorrer(e.children ?? []);
+    }
+  };
+  recorrer(validateSync(dto));
+  return mensajes;
+}
+
+describe('AjustarStockDto', () => {
+  it('[TC-U-327] acepta el ajuste de un ítem con cualquiera de los tres campos', () => {
+    expect(
+      errores({
+        items: [
+          {
+            itemId: ITEM_ID,
+            controlaStock: true,
+            stockActual: 12,
+            umbralAlerta: 3,
+          },
+        ],
+      }),
+    ).toEqual([]);
+    expect(errores({ items: [{ itemId: ITEM_ID, stockActual: 0 }] })).toEqual(
+      [],
+    );
+  });
+
+  it('[TC-U-328] BL-121: un umbral o un stock negativo, o con decimales, se rechaza', () => {
+    expect(
+      errores({ items: [{ itemId: ITEM_ID, umbralAlerta: -1 }] }),
+    ).toContain('umbralAlerta no puede ser negativo');
+    expect(
+      errores({ items: [{ itemId: ITEM_ID, stockActual: -3 }] }),
+    ).toContain('stockActual no puede ser negativo');
+    expect(
+      errores({ items: [{ itemId: ITEM_ID, stockActual: 2.5 }] }),
+    ).toContain('stockActual debe ser un número entero');
+  });
+
+  it('[TC-U-329] sin ítems o con un id que no es UUID, se rechaza', () => {
+    expect(errores({ items: [] })).toContain('Indicá al menos un ítem');
+    expect(errores({ items: [{ itemId: 'abc', stockActual: 1 }] })).toContain(
+      'itemId debe ser un UUID',
+    );
+  });
+
+  it.each([ITEM_MILANESA_SEED, ITEM_AGUA_SEED])(
+    '[TC-U-463] acepta el ítem del seed %s aunque no sea UUID v4',
+    (itemId) => {
+      expect(
+        errores({
+          items: [
+            { itemId, controlaStock: true, stockActual: 10, umbralAlerta: 5 },
+          ],
+        }),
+      ).toEqual([]);
+    },
+  );
+});

@@ -1,0 +1,42 @@
+# docker-compose.testmgmt.yml
+# Kiwi TCMS (test management) — instancia de prueba LOCAL, uso individual.
+# No es el compose compartido del equipo (ver docker-compose.yml del repo).
+# Correr con: docker compose -f docker-compose.testmgmt.yml up -d
+services:
+  bistrolink-testmgmt-db:
+    image: mariadb:latest
+    container_name: bistrolink-testmgmt-db
+    restart: unless-stopped
+    command:
+      --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: testmgmt-root-password # cambiar antes de usar
+      MYSQL_DATABASE: testmgmt
+      MYSQL_USER: testmgmt
+      MYSQL_PASSWORD: testmgmt-password # cambiar antes de usar
+    volumes:
+      - bistrolink-testmgmt-db-data:/var/lib/mysql
+
+  bistrolink-testmgmt-web:
+    image: pub.kiwitcms.eu/kiwitcms/kiwi:latest
+    container_name: bistrolink-testmgmt-web
+    restart: unless-stopped
+    depends_on:
+      - bistrolink-testmgmt-db
+    ports:
+      - "80:8080"
+      - "443:8443"
+    environment:
+      KIWI_DB_HOST: bistrolink-testmgmt-db
+      KIWI_DB_PORT: 3306
+      KIWI_DB_NAME: testmgmt
+      KIWI_DB_USER: testmgmt
+      KIWI_DB_PASSWORD: testmgmt-password # debe matchear con MYSQL_PASSWORD de arriba
+    volumes:
+      - bistrolink-testmgmt-uploads:/Kiwi/uploads:Z
+    cap_drop:
+      - ALL
+
+volumes:
+  bistrolink-testmgmt-db-data:
+  bistrolink-testmgmt-uploads:

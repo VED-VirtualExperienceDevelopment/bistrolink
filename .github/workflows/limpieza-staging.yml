@@ -1,0 +1,81 @@
+name: Limpieza de staging
+
+# BL-478 (BL-285, ADR 0011). Deja los datos de prueba de staging como el
+# seed: pedidos abiertos (cerrar, no borrar), mesas y plano, carta y stock,
+# configuración y usuarios «e2e-…» de los tenants de testing A y B, y los
+# establecimientos «E2E Plataforma …». Lo hace scripts/limpieza/
+# limpiar-entorno.mjs contra la API (POST /testing/limpieza), que solo existe
+# con E2E_CLEANUP_ENABLED=true en la API de staging. En producción no existe
+# (checklist de BL-232).
+#
+# Cuándo corre:
+#   - Todas las noches, 06:13 UTC (03:13 en Uruguay), cuando no corren los
+#     E2E. Minuto 13 para no caer en la hora en punto, cuando GitHub demora
+#     o saltea crons. Solo corre desde la rama por defecto. Aplica los
+#     cambios, con pedidos de más de 24 h.
+#   - Manual: Actions → «Limpieza de staging» → «Run workflow». Por defecto
+#     en dry-run. Antes de una demo: dry_run sin tildar y antiguedad_horas 0.
+#     No correrlo mientras corren los E2E de staging: les saca las mesas,
+#     ítems y usuarios que están usando.
+#
+# Secrets: los usuarios de prueba de staging (los mismos de los E2E, más el
+# Admin del tenant B) y el client secret de bistrolink-backend de staging,
+# para pedir los tokens por password grant.
+
+on:
+  schedule:
+    - cron: "13 6 * * *"
+  workflow_dispatch:
+    inputs:
+      antiguedad_horas:
+        description: "Pedidos abiertos con más de N horas (0 = todos)"
+        required: false
+        default: "24"
+      dry_run:
+        description: "Dry run (no cambia nada, solo muestra qué haría)"
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: limpieza-staging
+  cancel-in-progress: false
+
+jobs:
+  limpiar:
+    name: 🧹 Limpieza de staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      # El script no tiene dependencias: no hace falta npm ci.
+      - name: Tests del script
+        run: node --test scripts/limpieza/limpiar-entorno.test.mjs
+
+      - name: Limpiar (o simular)
+        env:
+          KEYCLOAK_CLIENT_SECRET: ${{ secrets.STAGING_KEYCLOAK_CLIENT_SECRET }}
+          TEST_ADMIN_USERNAME: ${{ secrets.TEST_ADMIN_USERNAME }}
+          TEST_ADMIN_PASSWORD: ${{ secrets.TEST_ADMIN_PASSWORD }}
+          TEST_TENANT_B_USERNAME: ${{ secrets.TEST_TENANT_B_USERNAME }}
+          TEST_TENANT_B_PASSWORD: ${{ secrets.TEST_TENANT_B_PASSWORD }}
+          TEST_PLATAFORMA_USERNAME: ${{ secrets.TEST_PLATAFORMA_USERNAME }}
+          TEST_PLATAFORMA_PASSWORD: ${{ secrets.TEST_PLATAFORMA_PASSWORD }}
+          TEST_PLATAFORMA_OTP_SECRET: ${{ secrets.TEST_PLATAFORMA_OTP_SECRET }}
+          # En el cron no hay inputs: aplica, con 24 h. Manual: lo elegido.
+          APLICAR: ${{ github.event_name == 'schedule' && 'true' || (inputs.dry_run && 'false' || 'true') }}
+          ANTIGUEDAD_HORAS: ${{ inputs.antiguedad_horas || '24' }}
+        run: |
+          set -euo pipefail
+          args=(--entorno staging --antiguedad-horas "$ANTIGUEDAD_HORAS")
+          if [ "$APLICAR" = "true" ]; then args+=(--aplicar); fi
+          node scripts/limpieza/limpiar-entorno.mjs "${args[@]}"
+          

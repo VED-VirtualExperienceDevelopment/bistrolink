@@ -1,0 +1,198 @@
+"use client";
+
+import { forwardRef } from "react";
+import { Circle, Group, Rect, Text } from "react-konva";
+import type Konva from "konva";
+import type { EstadoMesa, FormaMesa } from "@/types/mesa";
+import {
+  BORDE_POR_ESTADO,
+  COLOR_POR_ESTADO,
+  dimensionesTrasTransformar,
+  limitarCentroEnPantalla,
+  semiExtension,
+  TEXTO_POR_ESTADO,
+  type Lienzo,
+} from "./mapa-mesas.utils";
+
+const COLOR_SELECCION = "#8069BF"; // primary de tailwind.config.ts, para consistencia visual con el resto del admin
+const COLOR_BORDE = "#494551"; // on-surface-variant
+// Sombra suave debajo de cada mesa: la separa del fondo de la zona y le da
+// volumen sin cambiar los colores de estado.
+const SOMBRA_MESA = {
+  shadowColor: "#1C1B1F", // on-surface
+  shadowBlur: 6,
+  shadowOffsetY: 2,
+  shadowOpacity: 0.18,
+  // La sombra solo para el relleno: con el borde punteado se duplicaría.
+  shadowForStrokeEnabled: false,
+} as const;
+// Caja del número: se centra en ella (en vez de correrlo "a ojo") para que
+// quede en el medio con cualquier fuente.
+const ANCHO_TEXTO = 80;
+const ALTO_TEXTO = 24;
+
+export interface MesaShapeProps {
+  numero: number;
+  estado: EstadoMesa;
+  x: number;
+  y: number;
+  forma: FormaMesa;
+  ancho: number;
+  alto: number;
+  rotacion: number;
+  seleccionada: boolean;
+  editable: boolean;
+  /** Área dibujable del editor: la mesa no se puede arrastrar fuera de ella. */
+  lienzo: Lienzo;
+  /** HU-028 (BL-173): zoom actual del Stage, para acotar el arrastre. */
+  zoom: number;
+  onSeleccionar: () => void;
+  onArrastrar: (x: number, y: number) => void;
+  onTransformar: (cambios: {
+    x: number;
+    y: number;
+    ancho: number;
+    alto: number;
+    rotacion: number;
+  }) => void;
+  onEditarNumero: () => void;
+  /**
+   * Zona de toque extra alrededor del borde, en unidades del lienzo
+   * (`configuracionTactil`). "auto" con mouse: la zona es la figura.
+   */
+  zonaToque?: number | "auto";
+  /** Familia tipográfica del número (la de la app, ver useNitidezLienzo). */
+  fuente?: string;
+}
+
+/**
+ * Cada mesa es un Group de Konva (no un Rect/Circle suelto) para que el
+ * Transformer pueda escalar/rotar la forma y el número como una sola
+ * unidad. La forma vive centrada en el origen del Group (offset = mitad de
+ * sus dimensiones) para que "x, y" siempre represente el CENTRO de la mesa
+ * sin importar si es un círculo o un rectángulo — más natural para un mapa
+ * de mesas, y hace que la rotación gire alrededor del centro en vez de una
+ * esquina.
+ *
+ * El número se contra-rota (rotation={-rotacion}) para quedar siempre
+ * legible en pantalla aunque la mesa esté rotada — girar los dígitos junto
+ * con una mesa rectangular no ayuda a nadie a leerlos.
+ */
+export const MesaShape = forwardRef<Konva.Group, MesaShapeProps>(
+  function MesaShape(
+    {
+      numero,
+      estado,
+      x,
+      y,
+      forma,
+      ancho,
+      alto,
+      rotacion,
+      seleccionada,
+      editable,
+      lienzo,
+      zoom,
+      onSeleccionar,
+      onArrastrar,
+      onTransformar,
+      onEditarNumero,
+      zonaToque = "auto",
+      fuente,
+    },
+    ref,
+  ) {
+    const fill = COLOR_POR_ESTADO[estado];
+    // HU-028 (BL-173): el patrón del borde también indica el estado (no solo
+    // el color). 2.5 px como mínimo para que el patrón se distinga.
+    const dash = BORDE_POR_ESTADO[estado];
+    const strokeWidth = seleccionada ? 3.5 : 2.5;
+    const stroke = seleccionada ? COLOR_SELECCION : COLOR_BORDE;
+
+    const handleTransformEnd = (e: Konva.KonvaEventObject<Event>) => {
+      const node = e.target as Konva.Group;
+      const scaleX = node.scaleX();
+      const scaleY = node.scaleY();
+      // Konva expresa un resize como escala (scaleX/scaleY), no como cambio de
+      // width/height — si no la "consumimos" acá reseteándola a 1, el próximo
+      // resize se compone sobre una escala que ya no arranca en 1 y las
+      // dimensiones divergen de lo que se ve en pantalla.
+      node.scaleX(1);
+      node.scaleY(1);
+
+      onTransformar({
+        x: node.x(),
+        y: node.y(),
+        ...dimensionesTrasTransformar(ancho, alto, scaleX, scaleY),
+        rotacion: node.rotation(),
+      });
+    };
+
+    return (
+      <Group
+        ref={ref}
+        x={x}
+        y={y}
+        rotation={rotacion}
+        draggable={editable}
+        // Konva pasa la posición absoluta, en píxeles de pantalla: con zoom
+        // (HU-028) ya no coincide con x/y del layout, por eso se convierte.
+        dragBoundFunc={(pos) =>
+          limitarCentroEnPantalla(
+            pos,
+            semiExtension({ forma, ancho, alto, rotacion }),
+            lienzo,
+            zoom,
+          )
+        }
+        onClick={onSeleccionar}
+        onTap={onSeleccionar}
+        onDragEnd={(e) => onArrastrar(e.target.x(), e.target.y())}
+        onDblClick={editable ? onEditarNumero : undefined}
+        onDblTap={editable ? onEditarNumero : undefined}
+        onTransformEnd={handleTransformEnd}
+      >
+        {forma === "CIRCULO" ? (
+          <Circle
+            radius={ancho / 2}
+            fill={fill}
+            stroke={stroke}
+            strokeWidth={strokeWidth}
+            dash={dash}
+            hitStrokeWidth={zonaToque}
+            {...SOMBRA_MESA}
+          />
+        ) : (
+          <Rect
+            width={ancho}
+            height={alto}
+            offsetX={ancho / 2}
+            offsetY={alto / 2}
+            cornerRadius={forma === "RECTANGULO" ? 6 : 4}
+            fill={fill}
+            stroke={stroke}
+            strokeWidth={strokeWidth}
+            dash={dash}
+            hitStrokeWidth={zonaToque}
+            {...SOMBRA_MESA}
+          />
+        )}
+        <Text
+          text={String(numero)}
+          rotation={-rotacion}
+          width={ANCHO_TEXTO}
+          height={ALTO_TEXTO}
+          align="center"
+          verticalAlign="middle"
+          offsetX={ANCHO_TEXTO / 2}
+          offsetY={ALTO_TEXTO / 2}
+          fontSize={16}
+          fontFamily={fuente}
+          fontStyle="700"
+          fill={TEXTO_POR_ESTADO[estado]}
+          listening={false}
+        />
+      </Group>
+    );
+  },
+);

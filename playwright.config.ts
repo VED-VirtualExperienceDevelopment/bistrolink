@@ -1,0 +1,92 @@
+import { defineConfig, devices } from "@playwright/test";
+import dotenv from "dotenv";
+import path from "path";
+
+// El .env está en apps/backend/.env, no en la raíz del monorepo
+dotenv.config({ path: path.resolve(__dirname, "apps/backend/.env") });
+// Config a nivel raíz del monorepo, a propósito: el job de CI comentado en
+// .github/workflows/ci.yml (JOB 10) corre `npx playwright test` desde acá,
+// contra un BASE_URL de staging ya desplegado — no levanta servidores
+// nuevos. En local, BASE_URL cae a localhost y hay que tener el backend y
+// el frontend corriendo a mano (con datos del seed) antes de correr esto,
+// como venimos haciendo manualmente en esta sesión.
+export default defineConfig({
+  // BL-181: los specs viven en subcarpetas por dominio (e2e/comensal/,
+  // e2e/kds/) más e2e/support/ (fixtures e IDs de seed compartidos, sin
+  // tests propios). testDir sigue siendo './e2e' sin cambios: Playwright ya
+  // busca specs recursivamente, y los testMatch de abajo no están anclados
+  // al path, así que "menu-publico.spec.ts" sigue matcheando
+  // "e2e/comensal/menu-publico.spec.ts" sin tocar nada más.
+  testDir: "./e2e",
+  fullyParallel: true,
+  retries: process.env.CI ? 2 : 0,
+  // En local el backend y el frontend (`next dev`) corren en la misma
+  // máquina que los navegadores: con el default de Playwright (la mitad de
+  // los núcleos) se saturan y fallan por tiempo tests que en staging pasan.
+  // 2 workers mantiene algo de paralelismo sin ahogar la PC. Se puede
+  // cambiar con E2E_WORKERS (p. ej. E2E_WORKERS=1) o con --workers.
+  // En CI se deja el default.
+  workers: process.env.CI ? undefined : Number(process.env.E2E_WORKERS ?? 2),
+  // BL-182: reporter pasa de string a array. 'junit' es el que consume el
+  // job "playwright" de ci.yml (paso "Upload results to Kiwi TCMS (e2e)",
+  // que lee playwright-report/junit.xml) y el artifact que sube a CI incluye
+  // también el 'html' para inspección manual del run.
+  // 'github' solo en CI: en local también imprime cada error como una
+  // anotación «::error …» en una sola línea, que duplica el detalle del
+  // 'list' y ensucia la terminal.
+  reporter: [
+    ["list"],
+    ...(process.env.CI ? [["github"] as const] : []),
+    ["junit", { outputFile: "playwright-report/junit.xml" }],
+    ["html", { outputFolder: "playwright-report/html", open: "never" }],
+  ],
+  use: {
+    baseURL: process.env.BASE_URL ?? "http://localhost:3000",
+    trace: "on-first-retry",
+  },
+  projects: [
+    {
+      name: "chromium",
+      use: { ...devices["Desktop Chrome"] },
+      // BL-452: los specs que cambian la configuración del establecimiento
+      // corren aparte (proyecto de abajo).
+      testIgnore: /pago-medios\.spec\.ts/,
+    },
+    // BL-452: specs que cambian la configuración del establecimiento del seed
+    // (medios de pago). Mientras corren, un test de pago de otro spec vería
+    // esos medios apagados; por eso van en su propio proyecto, que arranca
+    // cuando termina `chromium`. En local, para correrlo solo:
+    //   npm run test:e2e -- --project=chromium-configuracion --no-deps
+    {
+      name: "chromium-configuracion",
+      use: { ...devices["Desktop Chrome"] },
+      testMatch: /pago-medios\.spec\.ts/,
+      dependencies: ["chromium"],
+    },
+    // HU-002 (subtask Testing): el criterio del ticket pide verificar el
+    // acceso por URL directa en Chrome y Safari mobile; se suma Safari de
+    // escritorio para cubrir también el caso desktop (si bien en el mercado de UY no es lo mas frecuente, es un navegador que va ganando terreno dado el acceso a macOS).
+    // testMatch acota estos
+    // proyectos al spec nuevo para no alterar la corrida desktop de HU-001.
+    {
+      name: "mobile-chrome",
+      use: { ...devices["Pixel 5"] },
+      // BL-355: la landing también se prueba en celular.
+      testMatch: /(menu-publico|landing-institucional)\.spec\.ts/,
+    },
+    {
+      name: "mobile-safari",
+      use: { ...devices["iPhone 12"] },
+      testMatch: /(menu-publico|landing-institucional)\.spec\.ts/,
+    },
+    {
+      name: "desktop-safari",
+      use: { ...devices["Desktop Safari"] },
+      // BL-351: ingreso.spec.ts también corre en Safari (pantalla /login y
+      // login de Keycloak). Los casos que necesitan sesión se saltean en
+      // WebKit dentro del spec: ver el comentario de qrMesas en
+      // support/auth.ts.
+      testMatch: /(menu-publico|ingreso|landing-institucional)\.spec\.ts/,
+    },
+  ],
+});
