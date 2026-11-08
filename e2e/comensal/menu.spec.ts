@@ -65,8 +65,10 @@ test.describe("HU-001: Menú digital vía QR", () => {
   }) => {
     await page.goto(qrMesas.ruta(MESA_ID));
 
-    const itemNoDisponible = page.locator("article", {
-      hasText: ITEM_NO_DISPONIBLE,
+    // Por el título exacto, no por texto: así no la confunde con otra
+    // tarjeta que mencione el mismo nombre en su descripción (ver TC-E-007).
+    const itemNoDisponible = page.locator("article").filter({
+      has: page.getByRole("heading", { name: ITEM_NO_DISPONIBLE, exact: true }),
     });
 
     // Sigue visible (no se filtra/oculta) — criterio de aceptación explícito.
