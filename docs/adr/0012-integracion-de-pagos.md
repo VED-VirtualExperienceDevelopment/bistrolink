@@ -7,6 +7,13 @@
 | Referencias | BL-491; HU-007 (BL-77, BL-78, BL-90, BL-311); HU-007b (BL-80, BL-485); HU-020 (BL-72, BL-452); HU-024 (BL-104); HU-031 (BL-201); HU-031b (BL-442); HU-032 (BL-202); BL-215; RD.03; RD.05; ADR 0001; ADR 0002; ADR 0004; ADR 0006 |
 | Autores | E. Arenas, V. Couto, D. Silvera |
 
+| Campo | Valor |
+| --- | --- |
+| Estado | Aceptada |
+| Fecha | 08/11/2026 |
+| Referencias | BL-491; HU-007 (BL-77, BL-78, BL-90, BL-311); HU-007b (BL-80, BL-485); HU-020 (BL-72, BL-452); HU-024 (BL-104); HU-031 (BL-201); HU-031b (BL-442); HU-032 (BL-202); BL-215; RD.03; RD.05; ADR 0001; ADR 0002; ADR 0004; ADR 0006 |
+| 1.1 | 08/11/2026 | Aceptada por el equipo. |
+| Autores | E. Arenas, V. Couto, D. Silvera |
 ## Contexto
 
 BistroLink cobra los pedidos antes de mandarlos a cocina (prepago, RD.03 y ADR 0006). El comensal paga desde el celular con tarjeta, y también se puede cobrar en efectivo o con el POS del local. Las decisiones sobre cómo se integra la pasarela se tomaron historia por historia y quedaron repartidas en comentarios del código. Este ADR las junta en un solo lugar.
