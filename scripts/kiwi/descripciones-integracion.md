@@ -30,6 +30,7 @@
 | 1.23    | 07/11/2026 | TC-I-179 a 182: cancelación de un pedido pagado y devolución del pago (HU-024 / BL-104), para cargar con el script antes de mergear el PR.                                                                                                |
 | 1.24    | 07/11/2026 | Se borran los bloques de TC-I-177 a 182, ya cargados en Kiwi. TC-I-175 y 176: PDF del comprobante y su copia en S3 (HU-009 / BL-454), para cargar con el script antes de mergear el PR.                                                   |
 | 1.25    | 08/11/2026 | Se borran los bloques de TC-I-168 a 176, ya cargados en Kiwi. TC-I-142: el estado ante la DGI se consulta con la API v2 de Surtec, CFE por CFE (HU-009 / BL-471); cambia el título y la descripción.                                      |
+| 1.26    | 08/11/2026 | Se borra el bloque de TC-I-142, ya cargado en Kiwi. TC-I-183 a 186: ventas de BistroLink al POS del local (HU-011 / BL-488), para cargar con el script antes de mergear el PR.                                                            |
 
 Texto del campo de descripción de cada caso TC-I en Kiwi. Lo carga
 `cargar-casos-integracion.mjs --descripciones`: cada bloque `## TC-I-NNN`
@@ -41,22 +42,76 @@ esperado`, igual que los casos cargados a mano desde TC-I-029.
 
 ## Casos para cargar
 
-## TC-I-142
+## TC-I-183
 
 ### Precondición
 
-Tenant A del seed. Cuatro e-Tickets PENDIENTES ante la DGI: tres emitidos ahora (uno sin id de Surtec, solo con id_externo) y uno de hace 10 días. Surtec falso: responde la consulta v2 de cada CFE (por id de Surtec o por id_externo) con lo que arma el test.
+Tenant A del seed con «Mandar las ventas al POS» activado. POS de prueba (adaptador mock) en línea. Mesa 74 abierta con un pedido en PENDIENTE_PAGO de un ítem de $ 590.
 
 ### Pasos
 
-1. Correr la actualización del estado DGI para el tenant B.
-2. Cargar en el Surtec falso: el primero AE (por id), el que no tiene id de Surtec BE con el motivo «Firma inválida» (por id_externo), el tercero NE y el de hace 10 días AE.
-3. Correr la actualización para el tenant A.
-4. Cambiar el primero a BE en el Surtec falso y volver a correr la actualización.
+1. Cobrar el pedido con el POS del local (débito).
+2. Esperar a que la venta figure como enviada.
+3. Buscar la sincronización del pedido como tenant B.
 
 ### Resultado esperado
 
-1. No cambia ningún comprobante del tenant A (RLS).
-2. —
-3. Cada consulta va con el RUT del establecimiento (12 dígitos). El primero queda ACEPTADO, el segundo RECHAZADO con «Firma inválida», el tercero sigue PENDIENTE (DGI no respondió) y el de hace 10 días sigue PENDIENTE (fuera de los 7 días).
-4. El primero sigue ACEPTADO: un estado definitivo no se vuelve a cambiar.
+1. El cobro se confirma y la venta queda encolada en la misma transacción.
+2. En menos de 5 s la venta está ENVIADA, con 1 intento, sin error y con el id que devolvió el POS. El POS recibió la venta con el id del pedido como referencia, moneda UYU, total 590, medio POS_DEBITO, la mesa 74 y la línea del ítem.
+3. El tenant B no ve la fila (RLS).
+
+## TC-I-184
+
+### Precondición
+
+Igual que TC-I-183, con el POS de prueba fuera de línea.
+
+### Pasos
+
+1. Cobrar el pedido.
+2. Ver la sincronización y el estado del pedido.
+3. Volver a poner el POS en línea y correr el job de reintentos para el tenant A.
+
+### Resultado esperado
+
+1. El cobro se confirma igual.
+2. La venta queda PENDIENTE, con 1 intento y el motivo «El POS de prueba está fuera de línea». El pedido ya no está en PENDIENTE_PAGO: la falla del POS no deshace el cobro.
+3. El job manda la venta: queda ENVIADA con 2 intentos y el POS la tiene registrada.
+
+## TC-I-185
+
+### Precondición
+
+Igual que TC-I-183. Motivo de cancelación «Reclamo del cliente», con la devolución en efectivo confirmada.
+
+### Pasos
+
+1. Cobrar un pedido, esperar a que la venta esté ENVIADA y cancelar el pedido.
+2. Con el POS fuera de línea, cobrar otro pedido (la venta queda PENDIENTE) y cancelarlo antes de que se mande.
+
+### Resultado esperado
+
+1. Se crea la ANULACION del pedido, queda ENVIADA y la venta figura anulada en el POS.
+2. La VENTA queda DESCARTADA, no se crea ninguna anulación y el POS nunca recibe esa venta.
+
+## TC-I-186
+
+### Precondición
+
+Usuarios Administrador y Cocina del tenant A (Keycloak de pruebas). Una venta que el POS rechazó (HTTP 422) y quedó con error.
+
+### Pasos
+
+1. Como Administrador, GET /admin/pos/sincronizaciones.
+2. POST /admin/pos/sincronizaciones/{id}/reintentar de la venta con error.
+3. Repetir el reintento.
+4. PATCH /admin/pos/configuracion con `habilitada: "si"` y después con `habilitada: true`.
+5. Como Cocina, GET /admin/pos/sincronizaciones.
+
+### Resultado esperado
+
+1. 200 con `habilitada: true`, adaptador «mock» y la venta con error (tipo VENTA, total 590, mesa 74).
+2. 200: la venta queda ENVIADA y sin error.
+3. 409: ya está en el POS.
+4. 400 con el valor inválido; 200 con `habilitada: true`.
+5. 403.

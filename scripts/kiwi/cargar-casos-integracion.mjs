@@ -179,6 +179,13 @@ const cancelacion = (extra = {}) => ({
   ...extra,
   tags: ["HU-024", "BL-104", "pagos", ...(extra.tags ?? [])],
 });
+// HU-011 (BL-488): ventas de BistroLink al POS del local.
+const sincronizacionPos = (extra = {}) => ({
+  component: "api",
+  requirement: "HU-011",
+  ...extra,
+  tags: ["HU-011", "BL-488", "BL-100", "pos", ...(extra.tags ?? [])],
+});
 // HU-031b (BL-442): el comensal de una mesa pide pagar en efectivo.
 const solicitudEfectivo = (extra = {}) => ({
   component: "api",
@@ -775,6 +782,26 @@ const DATOS_INTEGRACION = {
     priority: "P1",
     tags: ["seguridad"],
   }),
+  183: sincronizacionPos({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["outbox", "multi-tenant", "RD.07"],
+  }),
+  184: sincronizacionPos({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["resiliencia", "reintentos"],
+  }),
+  185: sincronizacionPos({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["HU-024", "cancelacion"],
+  }),
+  186: sincronizacionPos({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["seguridad", "auditoria"],
+  }),
 };
 /**
  * BL-435: datos de los E2E TC-E-017 en adelante, con los criterios de
@@ -1122,6 +1149,12 @@ const DATOS_E2E = {
     priority: "P2",
     tags: ["BL-485", "BL-209", "pagos", "pos", ...axe],
   }),
+  // HU-011 (BL-488): ventas al POS del local desde /admin/pos.
+  83: e2e("admin", "HU-011", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-488", "BL-100", "pos", ...axe],
+  }),
 };
 /**
  * Datos de los contratos PactJS (TC-C). Requirement con la HU que usa el
@@ -1191,6 +1224,17 @@ const DATOS_CONTRATO = {
   // HU-024 (BL-104): nota de crédito en Surtec y reembolso en Mercado Pago.
   21: contrato("HU-024", "surtec", { priority: "P1", tags: ["BL-104"] }),
   22: contrato("HU-024", "mercadopago", { priority: "P1", tags: ["BL-104"] }),
+  // HU-011 (BL-488): API de POS (venta, duplicado, no disponible, anulación).
+  23: contrato("HU-011", "pos", { priority: "P1", tags: ["BL-488"] }),
+  24: contrato("HU-011", "pos", {
+    priority: "P1",
+    tags: ["BL-488", "idempotencia"],
+  }),
+  25: contrato("HU-011", "pos", {
+    priority: "P2",
+    tags: ["BL-488", "resiliencia"],
+  }),
+  26: contrato("HU-011", "pos", { priority: "P1", tags: ["BL-488"] }),
 };
 const DATOS = CONTRATO ? DATOS_CONTRATO : E2E ? DATOS_E2E : DATOS_INTEGRACION;
 
