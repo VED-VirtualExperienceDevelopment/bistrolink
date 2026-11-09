@@ -47,7 +47,7 @@ esperado`, igual que los casos cargados a mano desde TC-I-029.
 
 ### Precondición
 
-Tenant A del seed con la sincronización con el POS activada. POS de prueba (adaptador mock) en línea, con dos ventas de mostrador del tenant A en efectivo ($ 350,50 y $ 149,50) a las 10:15 UTC de un día del pasado, y una venta que mandó BistroLink (con la referencia de un pedido).
+Tenant A del seed con la sincronización con el POS activada. POS de prueba (adaptador mock) en línea, con dos ventas de mostrador del tenant A en efectivo ($ 350,50 y $ 149,50) a las 10:15 UTC de un día al azar entre 2041 y 2065 (para no cruzarse con los días fijos de otros tests de reportes), y una venta que mandó BistroLink (con la referencia de un pedido).
 
 ### Pasos
 

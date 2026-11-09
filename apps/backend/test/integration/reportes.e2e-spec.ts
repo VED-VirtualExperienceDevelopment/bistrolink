@@ -299,7 +299,7 @@ describe('HU-012 (BL-108): reportes de ventas', () => {
           ticketPromedio: 666.67,
           anterior: { totalVendido: 0, pedidos: 0 },
         },
-        porLugar: { local: 1500, web: 500, whatsapp: 0 },
+        porLugar: { local: 1500, web: 500, whatsapp: 0, pos: 0 },
         ventasPorHora: [
           { hora: 12, monto: 1500, pedidos: 2 },
           { hora: 20, monto: 500, pedidos: 1 },
@@ -353,7 +353,12 @@ describe('HU-012 (BL-108): reportes de ventas', () => {
       ]);
       expect(web.rotacionMesas).toEqual({ aplica: false });
       // La comparación dentro y fuera del local no depende del filtro.
-      expect(web.porLugar).toEqual({ local: 1500, web: 500, whatsapp: 0 });
+      expect(web.porLugar).toEqual({
+        local: 1500,
+        web: 500,
+        whatsapp: 0,
+        pos: 0,
+      });
 
       const whatsapp = (await pedir('WHATSAPP')).body;
       expect(whatsapp.resumen).toMatchObject({ totalVendido: 0, pedidos: 0 });

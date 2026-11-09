@@ -20,9 +20,10 @@ import { conPagoFalso } from './support/pago-falso';
 // simular ventas de mostrador y "apagarlo". Todo lo demás es real: base, RLS,
 // la tabla de ventas importadas, el resumen por hora y el reporte.
 //
-// Las ventas del test son de un día del pasado al azar, a las 10:15 UTC, para
-// que el resumen de esa hora tenga solo lo que crea el test. Activa la
-// sincronización del tenant A durante el test y la vuelve a apagar al final.
+// Las ventas del test son de un día al azar (entre 2041 y 2065), a las
+// 10:15 UTC, para que el resumen de esa hora tenga solo lo que crea el
+// test. Activa la sincronización del tenant A durante el test y la vuelve a
+// apagar al final.
 
 const KEYCLOAK_URL = process.env.KEYCLOAK_URL ?? 'http://localhost:8080';
 const REALM = process.env.KEYCLOAK_REALM ?? 'bistrolink';
@@ -62,9 +63,13 @@ async function getToken(username: string, password: string): Promise<string> {
   return (await res.json()).access_token as string;
 }
 
-/** Un día al azar entre 2001 y 2027, a las 10:15 UTC (07:15 en Montevideo). */
+/**
+ * Un día al azar entre 2041 y 2065, a las 10:15 UTC (07:15 en Montevideo).
+ * En el futuro a propósito: los otros tests de reportes usan días fijos del
+ * pasado (por ejemplo, TC-I-145 espera 0 ventas del POS el 10/03/2020).
+ */
 function horaDePrueba(): Date {
-  const dia = Date.UTC(2001, 0, 1) + Math.floor(Math.random() * 9000) * DIA_MS;
+  const dia = Date.UTC(2041, 0, 1) + Math.floor(Math.random() * 9000) * DIA_MS;
   return new Date(dia + (10 * 60 + 15) * 60 * 1000);
 }
 
