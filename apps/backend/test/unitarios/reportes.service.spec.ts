@@ -121,7 +121,12 @@ describe('ReportesService', () => {
       ticketPromedio: 575.13,
       anterior: { totalVendido: 900, pedidos: 3 },
     });
-    expect(reporte.porLugar).toEqual({ local: 1500.5, web: 800, whatsapp: 0 });
+    expect(reporte.porLugar).toEqual({
+      local: 1500.5,
+      web: 800,
+      whatsapp: 0,
+      pos: 0,
+    });
     expect(reporte.ventasPorHora).toEqual([
       { hora: 12, monto: 1300, pedidos: 3 },
       { hora: 21, monto: 1000.5, pedidos: 1 },
@@ -219,7 +224,7 @@ describe('ReportesService', () => {
     });
   });
 
-  it.each(['WEB', 'WHATSAPP'] as const)(
+  it.each(['WEB', 'WHATSAPP', 'POS'] as const)(
     '[TC-U-304] con %s la rotación no aplica y no se consulta',
     async (canal) => {
       const reporte = await service.obtener(
@@ -235,6 +240,29 @@ describe('ReportesService', () => {
       expect(tx.mesa.count).not.toHaveBeenCalled();
     },
   );
+
+  it('[TC-U-464] HU-011 (BL-489): canal POS del local en totales y en dentro y fuera del local', async () => {
+    porCanal.push({ canal: 'POS', monto: decimal(350), pedidos: 2 });
+
+    const todos = await service.obtener(TENANT_ID, filtros(), AHORA);
+    expect(todos.resumen.totalVendido).toBe(2650.5);
+    expect(todos.porLugar.pos).toBe(350);
+
+    tx.$queryRaw.mockClear();
+    const pos = await service.obtener(
+      TENANT_ID,
+      filtros({ canal: 'POS' }),
+      AHORA,
+    );
+    expect(pos.resumen).toMatchObject({ totalVendido: 350, pedidos: 2 });
+    const filtradas = consultas().filter(
+      (c) =>
+        c.sql.includes('canal::text IN') &&
+        c.values.includes('POS') &&
+        !c.values.includes('QR'),
+    );
+    expect(filtradas).toHaveLength(2);
+  });
 
   it('[TC-U-305] sin ventas: todo en cero, sin dividir por cero', async () => {
     porCanal = [];

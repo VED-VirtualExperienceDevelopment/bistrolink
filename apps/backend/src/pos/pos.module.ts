@@ -8,6 +8,8 @@ import { ConfiguracionPos, configuracionPos } from './configuracion-pos';
 import { SincronizacionPosService } from './sincronizacion-pos.service';
 import { SincronizacionPosJob } from './sincronizacion-pos.job';
 import { SincronizacionPosController } from './sincronizacion-pos.controller';
+import { ImportacionVentasPosService } from './importacion-ventas-pos.service';
+import { ResumenVentasModule } from '../reportes/resumen-ventas.module';
 
 /**
  * El adaptador según POS_ADAPTER. Con «http» sin URL HTTPS o sin token, no
@@ -45,10 +47,11 @@ export function adaptadorPosDelEntorno(): PosAdapter | null {
 
 /**
  * HU-011 (BL-488): integración con el POS del local. PedidosModule usa el
- * servicio al confirmar un pago y PagosModule al cancelar un pedido.
+ * servicio al confirmar un pago y PagosModule al cancelar un pedido. BL-489:
+ * trae las ventas hechas en el POS al resumen del dashboard.
  */
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, ResumenVentasModule],
   controllers: [SincronizacionPosController],
   providers: [
     {
@@ -56,6 +59,7 @@ export function adaptadorPosDelEntorno(): PosAdapter | null {
       useFactory: adaptadorPosDelEntorno,
     },
     SincronizacionPosService,
+    ImportacionVentasPosService,
     SincronizacionPosJob,
     AuditLogService,
   ],

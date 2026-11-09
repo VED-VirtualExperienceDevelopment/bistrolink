@@ -9,7 +9,7 @@ import { formatearPrecio } from "@/components/pago/pago.utils";
 export type Periodo =
   "HOY" | "AYER" | "ULTIMOS_7_DIAS" | "MES_ACTUAL" | "PERSONALIZADO";
 
-export type Canal = "TODOS" | "LOCAL" | "WEB" | "WHATSAPP";
+export type Canal = "TODOS" | "LOCAL" | "WEB" | "WHATSAPP" | "POS";
 
 export type MetricaVentas = "monto" | "pedidos";
 export type MetricaPlatos = "cantidad" | "recaudado";
@@ -49,6 +49,12 @@ export const CANALES: readonly {
     descripcion: "Todavía no recibe pedidos",
     proximamente: true,
   },
+  // HU-011 (BL-489): ventas traídas del POS del local.
+  {
+    valor: "POS",
+    etiqueta: "POS del local",
+    descripcion: "Ventas hechas directamente en el POS, fuera de BistroLink",
+  },
 ];
 
 /** Respuesta de GET /admin/reportes. */
@@ -85,7 +91,8 @@ export interface ReporteVentas {
   rango: { desde: string; hasta: string; timezone: string };
   canal: Canal;
   resumen: TotalesVentas & { ticketPromedio: number; anterior: TotalesVentas };
-  porLugar: { local: number; web: number; whatsapp: number };
+  /** `pos` (BL-489) es opcional: un backend anterior no lo trae. */
+  porLugar: { local: number; web: number; whatsapp: number; pos?: number };
   ventasPorHora: VentaPorHora[];
   platosMasPedidos: {
     porCantidad: PlatoVendido[];
@@ -218,7 +225,7 @@ export function platosSegun(
 }
 
 export interface PartePorLugar {
-  clave: "local" | "web" | "whatsapp";
+  clave: "local" | "web" | "whatsapp" | "pos";
   etiqueta: string;
   monto: number;
   /** % del total vendido, entero. */
@@ -229,22 +236,31 @@ export interface PartePorLugar {
 export function partesPorLugar(
   porLugar: ReporteVentas["porLugar"],
 ): PartePorLugar[] {
-  const total = porLugar.local + porLugar.web + porLugar.whatsapp;
+  const montos = { ...porLugar, pos: porLugar.pos ?? 0 };
+  const total = montos.local + montos.web + montos.whatsapp + montos.pos;
   const parte = (
     clave: PartePorLugar["clave"],
     etiqueta: string,
   ): PartePorLugar => ({
     clave,
     etiqueta,
-    monto: porLugar[clave],
-    porcentaje: total > 0 ? Math.round((porLugar[clave] / total) * 100) : 0,
+    monto: montos[clave],
+    porcentaje: total > 0 ? Math.round((montos[clave] / total) * 100) : 0,
   });
   return [
     parte("local", "En el local"),
     parte("web", "Web"),
     parte("whatsapp", "WhatsApp"),
+    parte("pos", "POS del local"),
   ];
 }
+
+/**
+ * BL-489: el POS no informa qué platos se vendieron (no usa la carta de
+ * BistroLink), así que con ese canal el ranking queda vacío.
+ */
+export const MENSAJE_PLATOS_POS =
+  "El POS del local no informa los platos de sus ventas.";
 
 export const MENSAJE_ROTACION_NO_APLICA =
   "La rotación de mesas se mide solo con las ventas en el local.";

@@ -14,6 +14,7 @@ const COLOR: Record<string, string> = {
   local: "bg-primary",
   web: "bg-tertiary-container",
   whatsapp: "bg-outline",
+  pos: "bg-secondary",
 };
 
 /**

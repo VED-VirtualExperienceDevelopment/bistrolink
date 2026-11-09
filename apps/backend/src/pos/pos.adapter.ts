@@ -5,9 +5,10 @@
  * negocio. Hoy hay dos: el mock en memoria (desarrollo, pruebas y demo) y el
  * HTTP contra la API de POS que define BistroLink (contrato PactJS).
  *
- * Integración de tipo add-on: BistroLink le manda al POS las ventas que ya
- * cobró, para que el local las tenga en su sistema, y nunca modifica lo que
- * el POS registra por su cuenta.
+ * Integración de tipo add-on y en los dos sentidos: BistroLink le manda al
+ * POS las ventas que ya cobró (BL-488) y trae las que se hicieron
+ * directamente en el POS para el dashboard (BL-489). Nunca modifica lo que el
+ * POS registra por su cuenta.
  */
 
 /** Una línea de la venta, con los precios del momento del pedido. */
@@ -43,6 +44,39 @@ export interface VentaRegistradaPos {
 }
 
 /**
+ * HU-011 (BL-489): una venta tal como la tiene el POS, para traer al
+ * dashboard las que se hicieron directamente ahí.
+ */
+export interface VentaDelPos {
+  /** Id de la venta en el POS. */
+  idPos: string;
+  /**
+   * La referencia con que la mandó BistroLink (id del pedido), o null si se
+   * hizo en el POS. Las que tienen referencia no se importan: ya son pagos.
+   */
+  referencia: string | null;
+  /** Cuándo se hizo la venta, ISO 8601. */
+  fecha: string;
+  /** Pesos uruguayos, con 2 decimales. */
+  total: number;
+  /** Como lo informa el POS (EFECTIVO, CREDITO, DEBITO…). */
+  medioPago: string;
+  anulada: boolean;
+  /** Último cambio de la venta (alta o anulación), ISO 8601. */
+  actualizadaEn: string;
+}
+
+/** Qué ventas pedirle al POS. */
+export interface ConsultaVentasPos {
+  /** Id del establecimiento en BistroLink (tenant). */
+  establecimiento: string;
+  /** Ventas creadas o cambiadas desde este momento (incluido). */
+  desde: Date;
+  /** Máximo de ventas por consulta, ordenadas por `actualizadaEn`. */
+  limite: number;
+}
+
+/**
  * El POS no respondió o no está disponible (red, timeout, 5xx). La venta se
  * reintenta sola.
  */
@@ -74,6 +108,11 @@ export interface PosAdapter {
   registrarVenta(venta: VentaPos): Promise<VentaRegistradaPos>;
   /** Idempotente: anular una venta ya anulada no es un error. */
   anularVenta(idPos: string, motivo: string): Promise<void>;
+  /**
+   * HU-011 (BL-489): las ventas del establecimiento creadas o cambiadas
+   * desde `desde`, de la más vieja a la más nueva, hasta `limite`.
+   */
+  listarVentas(consulta: ConsultaVentasPos): Promise<VentaDelPos[]>;
 }
 
 /** Token de inyección del adaptador elegido por POS_ADAPTER. */

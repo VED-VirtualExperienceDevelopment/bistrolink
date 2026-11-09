@@ -1,9 +1,10 @@
-// BL-488 (HU-011) — Contrato del consumidor: BistroLink (backend) → API de
-// POS. La API la define BistroLink: un POS que quiera recibir las ventas
+// BL-488 y BL-489 (HU-011) — Contrato del consumidor: BistroLink (backend)
+// → API de POS. La API la define BistroLink: un POS que quiera recibir las ventas
 // implementa estos endpoints (o se le escribe un adaptador propio). Cubre lo
 // que usa PosHttpAdapter:
 //   - POST /ventas                 registrar la venta cobrada (idempotente)
 //   - POST /ventas/{id}/anulacion  anularla si el pedido se cancela (HU-024)
+//   - GET  /ventas                 las ventas hechas en el POS (BL-489)
 //
 // Igual que los otros contratos: se fija solo lo que BistroLink manda o lee,
 // con matchers de tipo/formato, y valores exactos solo donde el código toma
@@ -28,6 +29,9 @@ const ID_POS = 'V-000123';
 
 const UUID = '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
 const FECHA_ISO = '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$';
+
+const TENANT_ID = '6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b';
+const DESDE = '2026-11-09T00:00:00.000Z';
 
 const pact = new PactV4({
   consumer: 'bistrolink-backend',
@@ -164,6 +168,58 @@ describe('Contrato API de POS (BL-488)', () => {
               'Pedido cancelado en BistroLink',
             ),
           ).resolves.toBeUndefined();
+        });
+    });
+  });
+
+  describe('GET /ventas — ventas hechas en el POS (BL-489)', () => {
+    it('[TC-C-027] API de POS: GET /ventas con el establecimiento, desde y límite responde 200 con las ventas creadas o cambiadas desde ese momento', async () => {
+      await pact
+        .addInteraction()
+        .given('el POS tiene una venta de mostrador del establecimiento')
+        .uponReceiving('la consulta de las ventas desde la última importación')
+        .withRequest('GET', '/ventas', (b) => {
+          b.query({
+            establecimiento: regex(UUID, TENANT_ID),
+            desde: regex(FECHA_ISO, DESDE),
+            limite: regex('^\\d+$', '100'),
+          }).headers({
+            Authorization: regex('^Bearer \\S+$', `Bearer ${TOKEN}`),
+          });
+        })
+        .willRespondWith(200, (b) => {
+          // `referencia` es null en una venta hecha en el POS; en las que
+          // mandó BistroLink trae el id del pedido (y no se importan).
+          b.jsonBody({
+            ventas: eachLike({
+              id: like('V-000124'),
+              referencia: null,
+              fecha: regex(FECHA_ISO, '2026-11-09T14:10:00.000Z'),
+              total: number(350.5),
+              medioPago: like('EFECTIVO'),
+              anulada: like(false),
+              actualizadaEn: regex(FECHA_ISO, '2026-11-09T14:10:00.000Z'),
+            }),
+          });
+        })
+        .executeTest(async (mock) => {
+          await expect(
+            adaptadorContra(mock.url).listarVentas({
+              establecimiento: TENANT_ID,
+              desde: new Date(DESDE),
+              limite: 100,
+            }),
+          ).resolves.toEqual([
+            {
+              idPos: 'V-000124',
+              referencia: null,
+              fecha: '2026-11-09T14:10:00.000Z',
+              total: 350.5,
+              medioPago: 'EFECTIVO',
+              anulada: false,
+              actualizadaEn: '2026-11-09T14:10:00.000Z',
+            },
+          ]);
         });
     });
   });

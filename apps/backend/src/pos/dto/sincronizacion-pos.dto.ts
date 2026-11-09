@@ -1,5 +1,13 @@
 import { Type } from 'class-transformer';
-import { IsBoolean, IsIn, IsInt, IsOptional, Max, Min } from 'class-validator';
+import {
+  IsBoolean,
+  IsIn,
+  IsInt,
+  IsNumber,
+  IsOptional,
+  Max,
+  Min,
+} from 'class-validator';
 
 /** HU-011 (BL-488): estados que se pueden filtrar en el panel. */
 export const ESTADOS_SINCRONIZACION_POS = [
@@ -31,4 +39,28 @@ export class ConsultarSincronizacionesPosDto {
 export class CambiarSincronizacionPosDto {
   @IsBoolean({ message: 'habilitada debe ser verdadero o falso' })
   habilitada!: boolean;
+}
+
+/** BL-489: medios que acepta la simulación del POS de prueba. */
+export const MEDIOS_VENTA_POS = ['EFECTIVO', 'CREDITO', 'DEBITO'] as const;
+export type MedioVentaPos = (typeof MEDIOS_VENTA_POS)[number];
+
+/**
+ * POST /admin/pos/ventas/simular (BL-489): una venta en el POS de prueba,
+ * para la demo. Pesos con hasta 2 decimales.
+ */
+export class SimularVentaPosDto {
+  @Type(() => Number)
+  @IsNumber(
+    { maxDecimalPlaces: 2 },
+    { message: 'total debe ser un número con hasta 2 decimales' },
+  )
+  @Min(1, { message: 'total debe ser 1 o más' })
+  @Max(100000, { message: 'total debe ser 100000 o menos' })
+  total!: number;
+
+  @IsIn(MEDIOS_VENTA_POS, {
+    message: `medioPago debe ser uno de: ${MEDIOS_VENTA_POS.join(', ')}`,
+  })
+  medioPago!: MedioVentaPos;
 }

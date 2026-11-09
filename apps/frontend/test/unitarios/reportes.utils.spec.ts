@@ -1,5 +1,6 @@
 import {
   CANALES,
+  MENSAJE_PLATOS_POS,
   crearRefrescoDiferido,
   filtrosIniciales,
   formatearHora,
@@ -126,12 +127,31 @@ describe("reportes.utils", () => {
       { clave: "local", etiqueta: "En el local", monto: 750, porcentaje: 75 },
       { clave: "web", etiqueta: "Web", monto: 250, porcentaje: 25 },
       { clave: "whatsapp", etiqueta: "WhatsApp", monto: 0, porcentaje: 0 },
+      // Un backend anterior a BL-489 no trae `pos`: cuenta como 0.
+      { clave: "pos", etiqueta: "POS del local", monto: 0, porcentaje: 0 },
     ]);
     expect(
-      partesPorLugar({ local: 0, web: 0, whatsapp: 0 }).map(
+      partesPorLugar({ local: 0, web: 0, whatsapp: 0, pos: 0 }).map(
         (p) => p.porcentaje,
       ),
-    ).toEqual([0, 0, 0]);
+    ).toEqual([0, 0, 0, 0]);
+  });
+
+  it("[TC-U-465] HU-011 (BL-489): el POS del local suma al total y es un canal del filtro", () => {
+    expect(
+      partesPorLugar({ local: 500, web: 250, whatsapp: 0, pos: 250 }).map(
+        (p) => [p.clave, p.porcentaje],
+      ),
+    ).toEqual([
+      ["local", 50],
+      ["web", 25],
+      ["whatsapp", 0],
+      ["pos", 25],
+    ]);
+    expect(CANALES.find((c) => c.valor === "POS")).toMatchObject({
+      etiqueta: "POS del local",
+    });
+    expect(MENSAJE_PLATOS_POS).toMatch(/no informa los platos/);
   });
 
   it("[TC-U-320] el ranking de platos según cantidad o recaudado", () => {

@@ -156,6 +156,79 @@ export function textoIntegracion(
   const pos =
     datos.adaptador === "mock" ? "al POS de prueba" : "al POS del local";
   return datos.habilitada
-    ? `Cada venta cobrada se manda ${pos} en segundos. Si el POS no responde, se reintenta sola.`
-    : `El envío está desactivado: las ventas no se mandan ${pos}.`;
+    ? `Cada venta cobrada se manda ${pos} en segundos, y las ventas hechas en el POS se traen al dashboard cada minuto. Si el POS no responde, se reintenta sola.`
+    : `La sincronización está desactivada: las ventas no se mandan ${pos} ni se traen de ahí.`;
+}
+
+// ── HU-011 (BL-489): ventas hechas en el POS, traídas al dashboard ─────────
+
+/** GET /admin/pos/ventas. */
+export interface ResumenVentasDelPos {
+  /** Ventas que cuentan en el dashboard (sin las anuladas). */
+  ventas: number;
+  anuladas: number;
+  total: number;
+  /** ISO 8601, o null si todavía no se trajo ninguna. */
+  ultimaVentaEn: string | null;
+}
+
+/** POST /admin/pos/ventas/importar y /simular. */
+export interface ResultadoImportacionPos {
+  recibidas: number;
+  nuevas: number;
+  actualizadas: number;
+  omitidas: number;
+}
+
+export const RUTA_VENTAS_POS = "/admin/pos/ventas";
+export const RUTA_IMPORTAR_POS = "/admin/pos/ventas/importar";
+export const RUTA_SIMULAR_POS = "/admin/pos/ventas/simular";
+
+export type MedioVentaPos = "EFECTIVO" | "CREDITO" | "DEBITO";
+
+export const MEDIOS_VENTA_POS: readonly {
+  valor: MedioVentaPos;
+  texto: string;
+}[] = [
+  { valor: "EFECTIVO", texto: "Efectivo" },
+  { valor: "CREDITO", texto: "Crédito" },
+  { valor: "DEBITO", texto: "Débito" },
+];
+
+/** «12 ventas por $ 4.500» (sin las anuladas). */
+export function textoResumenVentasPos(r: ResumenVentasDelPos): string {
+  if (r.ventas === 0 && r.anuladas === 0) {
+    return "Todavía no se trajo ninguna venta del POS.";
+  }
+  const ventas = cantidad(r.ventas, "venta hecha", "ventas hechas");
+  const anuladas =
+    r.anuladas === 0
+      ? ""
+      : ` (${cantidad(r.anuladas, "anulada", "anuladas")}, no cuentan)`;
+  return `${ventas} en el POS, por ${formatearPrecio(r.total)}${anuladas}.`;
+}
+
+/** Lo que pasó al traer las ventas, para el aviso. */
+export function mensajeImportacionPos(r: ResultadoImportacionPos): string {
+  const traidas = r.nuevas + r.actualizadas;
+  if (traidas === 0) return "Listo: no había ventas nuevas en el POS.";
+  const nuevas = cantidad(r.nuevas, "venta nueva", "ventas nuevas");
+  const actualizadas =
+    r.actualizadas === 0
+      ? ""
+      : ` y ${cantidad(r.actualizadas, "actualizada", "actualizadas")}`;
+  return `Listo: ${nuevas}${actualizadas}. Ya se ven en Reportes, canal «POS del local».`;
+}
+
+/** «1 venta nueva», «3 ventas nuevas». */
+function cantidad(n: number, singular: string, plural: string): string {
+  return `${n} ${n === 1 ? singular : plural}`;
+}
+
+/** El total del formulario de simulación: pesos de 1 a 100.000, con hasta 2 decimales. */
+export function totalSimulacionValido(texto: string): number | null {
+  const limpio = texto.trim();
+  if (!/^\d{1,6}([.,]\d{1,2})?$/.test(limpio)) return null;
+  const valor = Number(limpio.replace(",", "."));
+  return valor >= 1 && valor <= 100000 ? valor : null;
 }

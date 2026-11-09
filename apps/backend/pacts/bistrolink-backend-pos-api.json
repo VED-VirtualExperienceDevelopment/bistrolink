@@ -59,6 +59,166 @@
       "type": "Synchronous/HTTP"
     },
     {
+      "description": "la consulta de las ventas desde la última importación",
+      "pending": false,
+      "providerStates": [
+        {
+          "name": "el POS tiene una venta de mostrador del establecimiento"
+        }
+      ],
+      "request": {
+        "headers": {
+          "Authorization": [
+            "Bearer pos-token-de-contrato"
+          ]
+        },
+        "matchingRules": {
+          "header": {
+            "Authorization": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^Bearer \\S+$"
+                }
+              ]
+            }
+          },
+          "query": {
+            "desde": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"
+                }
+              ]
+            },
+            "establecimiento": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                }
+              ]
+            },
+            "limite": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^\\d+$"
+                }
+              ]
+            }
+          }
+        },
+        "method": "GET",
+        "path": "/ventas",
+        "query": {
+          "desde": [
+            "2026-11-09T00:00:00.000Z"
+          ],
+          "establecimiento": [
+            "6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b"
+          ],
+          "limite": [
+            "100"
+          ]
+        }
+      },
+      "response": {
+        "body": {
+          "content": {
+            "ventas": [
+              {
+                "actualizadaEn": "2026-11-09T14:10:00.000Z",
+                "anulada": false,
+                "fecha": "2026-11-09T14:10:00.000Z",
+                "id": "V-000124",
+                "medioPago": "EFECTIVO",
+                "referencia": null,
+                "total": 350.5
+              }
+            ]
+          },
+          "contentType": "application/json",
+          "encoded": false
+        },
+        "headers": {
+          "Content-Type": [
+            "application/json"
+          ]
+        },
+        "matchingRules": {
+          "body": {
+            "$.ventas": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.ventas[*].actualizadaEn": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"
+                }
+              ]
+            },
+            "$.ventas[*].anulada": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.ventas[*].fecha": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"
+                }
+              ]
+            },
+            "$.ventas[*].id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.ventas[*].medioPago": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.ventas[*].total": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "number"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      },
+      "type": "Synchronous/HTTP"
+    },
+    {
       "description": "la misma venta mandada por segunda vez",
       "pending": false,
       "providerStates": [

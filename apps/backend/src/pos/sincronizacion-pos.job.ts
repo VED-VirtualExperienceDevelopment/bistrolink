@@ -12,10 +12,16 @@ import {
   resumenSincronizacionPosVacio,
 } from './sincronizacion-pos.service';
 import { ConfiguracionPos, configuracionPos } from './configuracion-pos';
+import {
+  ImportacionVentasPosService,
+  ResultadoImportacionPos,
+  resultadoImportacionVacio,
+} from './importacion-ventas-pos.service';
 
 /**
  * HU-011 (BL-488): cada `intervaloMs` reintenta mandar al POS las ventas y
- * anulaciones PENDIENTES, establecimiento por establecimiento.
+ * anulaciones PENDIENTES, establecimiento por establecimiento. BL-489: en la
+ * misma corrida trae las ventas hechas en el POS (ImportacionVentasPosService).
  *
  * Mismo esquema que RespaldoPdfJob: timer de Node con unref(), nunca dos
  * corridas a la vez en el mismo proceso, la lista de establecimientos sale
@@ -33,6 +39,7 @@ export class SincronizacionPosJob
   );
   private readonly contextId = ContextIdFactory.create();
   private servicio?: SincronizacionPosService;
+  private importacion?: ImportacionVentasPosService;
   private timer?: NodeJS.Timeout;
   private enCurso = false;
 
@@ -68,14 +75,22 @@ export class SincronizacionPosJob
    */
   async ejecutar(
     ahora: Date = new Date(),
-  ): Promise<ResumenSincronizacionPos | null> {
+  ): Promise<
+    (ResumenSincronizacionPos & { importadas: ResultadoImportacionPos }) | null
+  > {
     if (this.enCurso) return null;
     this.enCurso = true;
     const total = resumenSincronizacionPosVacio();
+    const importadas = resultadoImportacionVacio();
     let errores = 0;
     try {
       this.servicio ??= await this.moduleRef.resolve(
         SincronizacionPosService,
+        this.contextId,
+        { strict: false },
+      );
+      this.importacion ??= await this.moduleRef.resolve(
+        ImportacionVentasPosService,
         this.contextId,
         { strict: false },
       );
@@ -93,6 +108,14 @@ export class SincronizacionPosJob
           total.revisados += resumen.revisados;
           total.enviados += resumen.enviados;
           total.fallidos += resumen.fallidos;
+          const traidas = await /* NOSONAR */ this.importacion.importarTenant(
+            id,
+            ahora,
+          );
+          importadas.recibidas += traidas.recibidas;
+          importadas.nuevas += traidas.nuevas;
+          importadas.actualizadas += traidas.actualizadas;
+          importadas.omitidas += traidas.omitidas;
         } catch (error) {
           errores++;
           this.logger.error(
@@ -100,10 +123,12 @@ export class SincronizacionPosJob
           );
         }
       }
-      if (total.revisados > 0 || errores > 0) {
+      const traidas = importadas.nuevas + importadas.actualizadas;
+      if (total.revisados > 0 || traidas > 0 || errores > 0) {
         this.logger.log({
-          message: `Sincronización con el POS: ${total.revisados} revisados, ${total.enviados} enviados, ${total.fallidos} fallidos, ${errores} establecimientos con error`,
+          message: `Sincronización con el POS: ${total.revisados} revisados, ${total.enviados} enviados, ${total.fallidos} fallidos, ${traidas} ventas del POS traídas, ${errores} establecimientos con error`,
           ...total,
+          ventasDelPos: traidas,
           errores,
         });
       }
@@ -114,6 +139,6 @@ export class SincronizacionPosJob
     } finally {
       this.enCurso = false;
     }
-    return total;
+    return { ...total, importadas };
   }
 }

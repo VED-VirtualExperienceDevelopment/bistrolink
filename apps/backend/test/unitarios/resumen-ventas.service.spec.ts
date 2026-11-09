@@ -38,13 +38,14 @@ describe('ResumenVentasService', () => {
 
   beforeEach(() => {
     // Lo que devuelve cada llamada: candado, borrar, insertar ventas,
-    // borrar, insertar platos.
+    // insertar ventas del POS (BL-489), borrar, insertar platos.
     tx = {
       $executeRaw: jest
         .fn()
         .mockResolvedValueOnce(1)
         .mockResolvedValueOnce(4)
         .mockResolvedValueOnce(3)
+        .mockResolvedValueOnce(2)
         .mockResolvedValueOnce(9)
         .mockResolvedValueOnce(7),
     };
@@ -64,15 +65,20 @@ describe('ResumenVentasService', () => {
       TENANT_ID,
       expect.any(Function),
     );
-    expect(tx.$executeRaw).toHaveBeenCalledTimes(5);
+    expect(tx.$executeRaw).toHaveBeenCalledTimes(6);
     expect(consulta(0).sql).toContain('pg_advisory_xact_lock');
     expect(consulta(0).values).toEqual([`resumen_ventas:${TENANT_ID}`]);
     expect(consulta(1).sql).toContain('DELETE FROM resumen_ventas_hora');
     expect(consulta(2).sql).toContain('INSERT INTO resumen_ventas_hora');
     expect(consulta(2).sql).toContain("pg.estado = 'APROBADO'");
-    expect(consulta(3).sql).toContain('DELETE FROM resumen_platos_hora');
-    expect(consulta(4).sql).toContain('INSERT INTO resumen_platos_hora');
-    expect(consulta(4).sql).toContain("estado = 'APROBADO'");
+    // HU-011 (BL-489): las ventas del POS, con el canal POS y sin anuladas.
+    expect(consulta(3).sql).toContain('INSERT INTO resumen_ventas_hora');
+    expect(consulta(3).sql).toContain('FROM venta_pos_importada');
+    expect(consulta(3).sql).toContain(`'POS'::"PedidoCanal"`);
+    expect(consulta(3).sql).toContain('NOT v.anulada');
+    expect(consulta(4).sql).toContain('DELETE FROM resumen_platos_hora');
+    expect(consulta(5).sql).toContain('INSERT INTO resumen_platos_hora');
+    expect(consulta(5).sql).toContain("estado = 'APROBADO'");
   });
 
   it('[TC-U-277] recalcularVentana: el tenant y la ventana (truncada a horas) van como parámetros, nunca en el texto', async () => {
@@ -81,7 +87,7 @@ describe('ResumenVentasService', () => {
       hasta: new Date('2026-11-01T13:00:00.000Z'),
     });
 
-    for (let n = 1; n <= 4; n++) {
+    for (let n = 1; n <= 5; n++) {
       const { sql, values } = consulta(n);
       expect(sql).not.toContain(TENANT_ID);
       expect(values).toEqual(
@@ -100,7 +106,8 @@ describe('ResumenVentasService', () => {
       hasta: new Date('2026-11-01T11:00:00.000Z'),
     });
 
-    expect(resultado).toEqual({ ventas: 3, platos: 7 });
+    // 3 de los pagos y 2 del POS.
+    expect(resultado).toEqual({ ventas: 5, platos: 7 });
   });
 
   it('[TC-U-279] recalcularRecientes: la hora en curso y la anterior (el pago se reserva antes de aprobarse)', async () => {

@@ -37,7 +37,8 @@ export function ventanaReciente(ahora: Date, horas: number): VentanaHoras {
 /**
  * HU-012 (BL-219): mantiene las tablas de resumen del dashboard
  * (resumen_ventas_hora y resumen_platos_hora) a partir de los pagos
- * APROBADOS.
+ * APROBADOS y, desde HU-011 (BL-489), de las ventas importadas del POS del
+ * local (canal POS).
  *
  * - Idempotente: borra la ventana y la vuelve a calcular desde pago, pedido y
  *   linea_pedido, en una transacción. Correrlo dos veces deja lo mismo, y
@@ -106,6 +107,26 @@ export class ResumenVentasService {
           AND pg.created_at < ${hasta}::timestamptz
         GROUP BY 1, 2, 3, 4`);
 
+      // HU-011 (BL-489): las ventas hechas directamente en el POS del local,
+      // con el canal POS, en la hora en que se vendieron. Las anuladas no
+      // cuentan. No suman platos: el POS no usa los ítems de la carta.
+      const ventasPos = await tx.$executeRaw(Prisma.sql`
+        INSERT INTO resumen_ventas_hora
+          (tenant_id, hora, canal, medio_pago, pedidos, monto, actualizado_en)
+        SELECT v.tenant_id,
+               date_trunc('hour', v.vendida_en AT TIME ZONE 'UTC') AT TIME ZONE 'UTC',
+               'POS'::"PedidoCanal",
+               v.medio_pago,
+               COUNT(*)::int,
+               SUM(v.total),
+               now()
+        FROM venta_pos_importada v
+        WHERE v.tenant_id = ${tenantId}::uuid
+          AND NOT v.anulada
+          AND v.vendida_en >= ${desde}::timestamptz
+          AND v.vendida_en < ${hasta}::timestamptz
+        GROUP BY 1, 2, 3, 4`);
+
       await tx.$executeRaw(Prisma.sql`
         DELETE FROM resumen_platos_hora
         WHERE tenant_id = ${tenantId}::uuid
@@ -146,7 +167,7 @@ export class ResumenVentasService {
         JOIN linea_pedido lp ON lp.pedido_id = p.id
         GROUP BY 1, 2, 3, 4`);
 
-      return { ventas, platos };
+      return { ventas: ventas + ventasPos, platos };
     });
   }
 }
