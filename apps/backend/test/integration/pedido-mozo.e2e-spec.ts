@@ -9,9 +9,11 @@ import { TenantPrismaService } from '../../src/prisma/tenant-prisma.service';
 import { PedidosService } from '../../src/pedidos/pedidos.service';
 import { CobroEfectivoService } from '../../src/pagos/efectivo/cobro-efectivo.service';
 import { MesasService } from '../../src/mesas/mesas.service';
+import { CancelacionPendienteService } from '../../src/pagos/efectivo/cancelacion-pendiente.service';
 import { conPagoFalso } from './support/pago-falso';
 
 // HU-039 (BL-209): el mozo carga el pedido de un comensal sin celular.
+// BL-501: y lo puede cancelar mientras no se cobró.
 //
 // El CFE está apagado (conPagoFalso). Todo lo demás es real: base, RLS,
 // transacciones, cobro en efectivo (BL-201) y cierre de mesa (HU-017).
@@ -65,6 +67,7 @@ describe('HU-039 (BL-209): pedido cargado por el mozo', () => {
   let pedidos: PedidosService;
   let cobros: CobroEfectivoService;
   let mesas: MesasService;
+  let cancelacion: CancelacionPendienteService;
   let mesaId: string;
   let mozo: { id: string; keycloakId: string };
 
@@ -122,6 +125,7 @@ describe('HU-039 (BL-209): pedido cargado por el mozo', () => {
     pedidos = await app.resolve(PedidosService);
     cobros = await app.resolve(CobroEfectivoService);
     mesas = await app.resolve(MesasService);
+    cancelacion = await app.resolve(CancelacionPendienteService);
 
     mozo = await enTenant((tx) =>
       tx.usuario.findFirstOrThrow({
@@ -276,6 +280,148 @@ describe('HU-039 (BL-209): pedido cargado por el mozo', () => {
       });
       // El usuario que lo cargó sale del token (el mozo de prueba).
       expect((await leer(res.body.id)).usuarioId).not.toBeNull();
+    },
+  );
+
+  it('[TC-I-190] BL-501: el mozo cancela un pedido sin cobrar: queda CANCELADO con historial y auditoría, sale de los pendientes y no toca los otros pedidos de la mesa; uno cobrado, ya cancelado o con un pago con tarjeta en curso no se cancela', async () => {
+    const cargado = await pedidos.crearPorMozo(
+      TENANT_ID,
+      mozo.keycloakId,
+      solicitud(),
+    );
+    const otro = await pedidos.crearPorMozo(
+      TENANT_ID,
+      mozo.keycloakId,
+      solicitud(),
+    );
+
+    const cancelado = await cancelacion.cancelar(
+      TENANT_ID,
+      mozo.keycloakId,
+      cargado.id,
+    );
+    expect(cancelado).toEqual({
+      pedidoId: cargado.id,
+      estado: 'CANCELADO',
+      total: cargado.total,
+    });
+
+    const rastro = await enTenant<{
+      pedido: { estado: string; pagos: unknown[] };
+      historial: { usuarioId: string | null; estadoAnterior: string | null }[];
+      auditoria: { accion: string; actorKeycloakId: string }[];
+      mesa: { estado: string };
+    }>(async (tx) => ({
+      pedido: await tx.pedido.findUniqueOrThrow({
+        where: { id: cargado.id },
+        select: { estado: true, pagos: { select: { id: true } } },
+      }),
+      historial: await tx.pedidoEstadoHistorial.findMany({
+        where: { pedidoId: cargado.id, estadoNuevo: 'CANCELADO' },
+        select: { usuarioId: true, estadoAnterior: true },
+      }),
+      auditoria: await tx.registroAuditoria.findMany({
+        where: { entidadId: cargado.id, accion: 'PEDIDO_PENDIENTE_CANCELADO' },
+        select: { accion: true, actorKeycloakId: true },
+      }),
+      mesa: await tx.mesa.findUniqueOrThrow({
+        where: { id: mesaId },
+        select: { estado: true },
+      }),
+    }));
+    // Sin pagos: no hubo nada que devolver.
+    expect(rastro.pedido).toEqual({ estado: 'CANCELADO', pagos: [] });
+    expect(rastro.historial).toEqual([
+      { usuarioId: mozo.id, estadoAnterior: 'PENDIENTE_PAGO' },
+    ]);
+    expect(rastro.auditoria).toEqual([
+      {
+        accion: 'PEDIDO_PENDIENTE_CANCELADO',
+        actorKeycloakId: mozo.keycloakId,
+      },
+    ]);
+    // La mesa sigue abierta y el otro pedido sigue esperando el pago.
+    expect(rastro.mesa.estado).toBe('OCUPADA');
+    expect((await leer(otro.id)).estado).toBe('PENDIENTE_PAGO');
+    const ids = (await cobros.pendientes(TENANT_ID)).pedidos.map((p) => p.id);
+    expect(ids).not.toContain(cargado.id);
+    expect(ids).toContain(otro.id);
+
+    // Otra vez: ya está cancelado.
+    await expect(
+      cancelacion.cancelar(TENANT_ID, mozo.keycloakId, cargado.id),
+    ).rejects.toThrow('El pedido ya está cancelado');
+
+    // Con un pago con tarjeta en curso, no.
+    const clavePago = `bl-501-${randomUUID()}`;
+    await enTenant((tx) =>
+      tx.pago.create({
+        data: {
+          tenantId: TENANT_ID,
+          pedidoId: otro.id,
+          idempotencyKey: clavePago,
+          monto: otro.total,
+          medioPago: 'MERCADOPAGO',
+          estado: 'PENDIENTE',
+        },
+      }),
+    );
+    try {
+      await expect(
+        cancelacion.cancelar(TENANT_ID, mozo.keycloakId, otro.id),
+      ).rejects.toThrow('El comensal tiene un pago con tarjeta en curso');
+      expect((await leer(otro.id)).estado).toBe('PENDIENTE_PAGO');
+    } finally {
+      await enTenant((tx) =>
+        tx.pago.update({
+          where: { idempotencyKey: clavePago },
+          data: { estado: 'RECHAZADO' },
+        }),
+      );
+    }
+
+    // Cobrado, no: ese se cancela con la devolución (HU-024).
+    await cobros.registrar(TENANT_ID, mozo.keycloakId, {
+      pedidoId: otro.id,
+      idempotencyKey: `bl-501-${randomUUID()}`,
+      montoRecibido: '100000',
+    });
+    await expect(
+      cancelacion.cancelar(TENANT_ID, mozo.keycloakId, otro.id),
+    ).rejects.toThrow(
+      'Este pedido ya se cobró: se cancela con la devolución del pago',
+    );
+    expect((await leer(otro.id)).estado).toBe('RECIBIDO');
+  });
+
+  itConMozoYCocina(
+    '[TC-I-191] BL-501: el mozo cancela por HTTP un pedido sin cobrar (200); un id que no es UUID da 400, uno que no existe 404 y Cocina recibe 403',
+    async () => {
+      const tokenMozo = await getToken(MOZO_USER!, MOZO_PASS!);
+      const tokenCocina = await getToken(COCINA_USER!, COCINA_PASS!);
+      const servidor = app.getHttpServer();
+      const cargado = await pedidos.crearPorMozo(
+        TENANT_ID,
+        mozo.keycloakId,
+        solicitud(),
+      );
+      const cancelar = (id: string, token: string) =>
+        request(servidor)
+          .post(`/cobros/pendientes/${id}/cancelar`)
+          .set('Authorization', `Bearer ${token}`);
+
+      await cancelar(cargado.id, tokenCocina).expect(403);
+      expect((await leer(cargado.id)).estado).toBe('PENDIENTE_PAGO');
+
+      const res = await cancelar(cargado.id, tokenMozo).expect(200);
+      expect(res.body).toEqual({
+        pedidoId: cargado.id,
+        estado: 'CANCELADO',
+        total: cargado.total,
+      });
+      await cancelar(cargado.id, tokenMozo).expect(409);
+      await cancelar('no-es-un-uuid', tokenMozo).expect(400);
+      await cancelar(randomUUID(), tokenMozo).expect(404);
     },
   );
 });

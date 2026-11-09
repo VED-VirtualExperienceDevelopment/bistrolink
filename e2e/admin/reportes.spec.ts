@@ -129,4 +129,46 @@ test.describe("BL-108: reportes de ventas del administrador", () => {
     await page.goto(REPORTES_PATH);
     await expect(page).toHaveURL(/\/admin\/mesas$/);
   });
+
+  test("[TC-E-084] BL-500: al hacer scroll en Reportes solo se desplaza el contenido; el menú con «Cerrar sesión» y el encabezado quedan fijos", async ({
+    kdsPageAdmin: page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await Promise.all([
+      respuestaReportes(page, (url) => url.includes("periodo=HOY")),
+      page.goto(REPORTES_PATH),
+    ]);
+    // Las tablas para lectores de pantalla (sr-only) quedan muy abajo: antes
+    // del arreglo estiraban la página más allá de la ventana.
+    await expect(
+      page.getByRole("table", { name: "Platos más pedidos" }),
+    ).toHaveCount(1);
+
+    const alto = () =>
+      page.evaluate(() => ({
+        pagina: document.documentElement.scrollHeight,
+        ventana: window.innerHeight,
+      }));
+    const { pagina, ventana } = await alto();
+    expect(pagina).toBeLessThanOrEqual(ventana);
+
+    const cerrarSesion = page
+      .getByRole("complementary", { name: "Menú principal" })
+      .getByRole("button", { name: "Cerrar sesión" });
+    const antes = await cerrarSesion.boundingBox();
+
+    // Scroll con la rueda sobre el contenido.
+    await page.getByRole("heading", { name: "Total vendido" }).hover();
+    await page.mouse.wheel(0, 2000);
+    await expect
+      .poll(() =>
+        page
+          .getByRole("heading", { name: "Reportes", level: 1 })
+          .evaluate((h) => h.getBoundingClientRect().top),
+      )
+      .toBeLessThan(0);
+
+    expect(await page.evaluate(() => window.scrollY)).toBe(0);
+    expect(await cerrarSesion.boundingBox()).toEqual(antes);
+  });
 });

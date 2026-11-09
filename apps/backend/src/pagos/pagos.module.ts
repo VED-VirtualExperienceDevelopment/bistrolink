@@ -17,6 +17,7 @@ import { ConciliacionPagosService } from './conciliacion/conciliacion-pagos.serv
 import { ConciliacionPagosJob } from './conciliacion/conciliacion-pagos.job';
 import { CobrosController } from './efectivo/cobros.controller';
 import { CobroEfectivoService } from './efectivo/cobro-efectivo.service';
+import { CancelacionPendienteService } from './efectivo/cancelacion-pendiente.service';
 import { SolicitudEfectivoService } from './efectivo/solicitud-efectivo.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { CancelacionPedidoController } from './cancelacion/cancelacion-pedido.controller';
@@ -54,6 +55,7 @@ import { PosModule } from '../pos/pos.module';
     ConciliacionPagosService,
     ConciliacionPagosJob,
     CobroEfectivoService,
+    CancelacionPendienteService,
     // HU-031b (BL-442): el comensal pide pagar en efectivo.
     SolicitudEfectivoService,
     CancelacionPedidoService,

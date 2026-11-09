@@ -818,6 +818,17 @@ const DATOS_INTEGRACION = {
     priority: "P2",
     tags: ["BL-489", "seguridad"],
   }),
+  // BL-501 (bug): cancelar un pedido que todavía no se cobró.
+  190: pedidoMozo({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-501", "bug", "cancelacion", "auditoria"],
+  }),
+  191: pedidoMozo({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["BL-501", "bug", "seguridad"],
+  }),
 };
 /**
  * BL-435: datos de los E2E TC-E-017 en adelante, con los criterios de
@@ -1170,6 +1181,23 @@ const DATOS_E2E = {
     category: "Funcional",
     priority: "P2",
     tags: ["BL-488", "BL-100", "pos", ...axe],
+  }),
+  // BL-500 (bug): el panel del administrador no se desplaza entero.
+  84: e2e("admin", "HU-012", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-500", "bug", "regresion"],
+  }),
+  // BL-501 (bug): el mozo cancela un pedido antes de cobrarlo.
+  85: e2e("mozo", "HU-039", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-501", "BL-209", "bug", "cancelacion", ...axe],
+  }),
+  86: e2e("mozo", "HU-039", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-501", "BL-201", "bug", "cancelacion"],
   }),
 };
 /**
