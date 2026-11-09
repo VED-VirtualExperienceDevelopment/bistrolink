@@ -41,6 +41,8 @@ function pagoGuardado(overrides: Record<string, unknown> = {}) {
     id: 'pago-1',
     pedidoId: PEDIDO,
     monto: new Prisma.Decimal('590.00'),
+    // HU-022 (BL-494): sin propina salvo que el test diga lo contrario.
+    propina: new Prisma.Decimal('0.00'),
     medioPago: 'EFECTIVO',
     estado: 'APROBADO',
     ...overrides,
@@ -119,6 +121,7 @@ describe('CobroEfectivoService (HU-031, BL-201)', () => {
           pedidoId: PEDIDO,
           idempotencyKey: 'efectivo-1',
           monto: new Prisma.Decimal('590.00'),
+          propina: new Prisma.Decimal(0),
           medioPago: 'EFECTIVO',
           estado: 'APROBADO',
         },
@@ -171,6 +174,8 @@ describe('CobroEfectivoService (HU-031, BL-201)', () => {
         pagoId: 'pago-1',
         pedidoId: PEDIDO,
         monto: '590.00',
+        consumo: '590.00',
+        propina: '0.00',
         montoRecibido: '1000.00',
         vuelto: '410.00',
       });
@@ -192,6 +197,8 @@ describe('CobroEfectivoService (HU-031, BL-201)', () => {
         entidadId: 'pago-1',
         despues: {
           monto: '590.00',
+          consumo: '590.00',
+          propina: '0.00',
           montoRecibido: '1000.00',
           vuelto: '410.00',
         },
@@ -297,6 +304,8 @@ describe('CobroEfectivoService (HU-031, BL-201)', () => {
           pagoId: 'pago-1',
           pedidoId: PEDIDO,
           monto: '590.00',
+          consumo: '590.00',
+          propina: '0.00',
           montoRecibido: '1000.00',
           vuelto: '410.00',
         });
@@ -409,6 +418,7 @@ describe('CobroEfectivoService (HU-031, BL-201)', () => {
             pedidoId: PEDIDO,
             idempotencyKey: 'pos-1',
             monto: new Prisma.Decimal('590.00'),
+            propina: new Prisma.Decimal(0),
             medioPago,
             estado: 'APROBADO',
             pasarelaReferencia: 'A1B2C3',
@@ -422,6 +432,8 @@ describe('CobroEfectivoService (HU-031, BL-201)', () => {
         pagoId: 'pago-1',
         pedidoId: PEDIDO,
         monto: '590.00',
+        consumo: '590.00',
+        propina: '0.00',
         tarjeta: 'DEBITO',
         autorizacion: 'A1B2C3',
       });
@@ -430,7 +442,13 @@ describe('CobroEfectivoService (HU-031, BL-201)', () => {
         tenantId: TENANT,
         actorKeycloakId: ACTOR,
         entidadId: 'pago-1',
-        despues: { monto: '590.00', medio: 'Débito', autorizacion: 'A1B2C3' },
+        despues: {
+          monto: '590.00',
+          consumo: '590.00',
+          propina: '0.00',
+          medio: 'Débito',
+          autorizacion: 'A1B2C3',
+        },
         detalle: { pedidoId: PEDIDO },
       });
     });
@@ -602,6 +620,9 @@ describe('CobroEfectivoService (HU-031, BL-201)', () => {
             createdAt: AHORA,
             mesa: { id: 'mesa-3', numero: 3, esVirtual: false },
             total: '590.00',
+            consumo: '590.00',
+            propina: '0.00',
+            propinaPorcentaje: null,
             lineas: [
               {
                 id: 'l-1',
