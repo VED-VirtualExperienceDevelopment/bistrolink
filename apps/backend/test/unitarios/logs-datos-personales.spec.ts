@@ -1,6 +1,9 @@
 import { Writable } from 'node:stream';
 import pino from 'pino';
-import { CAMPOS_PERSONALES_EN_LOGS } from '../../src/logs-datos-personales';
+import {
+  CABECERAS_CON_IP_EN_LOGS,
+  CAMPOS_PERSONALES_EN_LOGS,
+} from '../../src/logs-datos-personales';
 
 // HU-036 (BL-206): los datos personales no quedan en texto plano en los
 // logs (Ley 18.331). Se prueba con una instancia real de Pino configurada
@@ -15,7 +18,12 @@ function logger() {
     },
   });
   const log = pino(
-    { redact: { paths: CAMPOS_PERSONALES_EN_LOGS, censor: '[REDACTED]' } },
+    {
+      redact: {
+        paths: [...CAMPOS_PERSONALES_EN_LOGS, ...CABECERAS_CON_IP_EN_LOGS],
+        censor: '[REDACTED]',
+      },
+    },
     destino,
   );
   return { log, salida: () => lineas.join('') };
@@ -80,5 +88,32 @@ describe('logs sin datos personales (HU-036, BL-206)', () => {
       expect(texto).not.toContain(dato);
     }
     expect(texto).toContain('pago-1');
+  });
+
+  it('[TC-U-466] BL-214: reemplaza la IP del usuario en las cabeceras del request', () => {
+    const { log, salida } = logger();
+
+    log.info(
+      {
+        req: {
+          method: 'GET',
+          url: '/menu',
+          headers: {
+            host: 'bistrolink-api-staging.up.railway.app',
+            'x-forwarded-for': '203.0.113.7, 198.51.100.20',
+            'x-real-ip': '203.0.113.7',
+          },
+        },
+      },
+      'request completed',
+    );
+
+    const texto = salida();
+    expect(texto).not.toContain('203.0.113.7');
+    expect(texto).not.toContain('198.51.100.20');
+    expect(texto).toContain('[REDACTED]');
+    // El resto del request se sigue viendo.
+    expect(texto).toContain('bistrolink-api-staging.up.railway.app');
+    expect(texto).toContain('/menu');
   });
 });

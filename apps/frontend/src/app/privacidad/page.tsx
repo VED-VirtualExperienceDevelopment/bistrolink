@@ -118,6 +118,13 @@ export default async function PoliticaPrivacidadPage({ searchParams }: PageProps
             pedido en curso para que puedas retomarlo si recargás la página. No
             guarda datos de la tarjeta y se borra al cerrar la pestaña.
           </li>
+          <li className={LI}>
+            <strong>Errores de la página:</strong> si algo falla en la
+            pantalla, se registra el error técnico junto con la página, el
+            navegador, el sistema operativo y los tiempos de carga, para poder
+            corregirlo. No incluye tu pedido, tus datos de pago ni nada que te
+            identifique.
+          </li>
         </ul>
 
         <h2 className={H2}>Con quién se comparten</h2>

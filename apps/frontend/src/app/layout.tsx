@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
+import { FrontendObservability } from "@/components/providers/FrontendObservability";
 import { KeycloakProvider } from "@/components/providers/KeycloakProvider";
 import { VersionInfo } from "@/components/ui/VersionInfo";
 import "./globals.css";
@@ -39,6 +40,8 @@ export default function RootLayout({
       <body
         className={`${plusJakarta.className} antialiased`}
       >
+        {/* BL-214: errores del navegador en Grafana Cloud (Faro). */}
+        <FrontendObservability />
         <KeycloakProvider>{children}</KeycloakProvider>
         <VersionInfo />
       </body>

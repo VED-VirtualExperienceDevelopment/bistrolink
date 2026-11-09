@@ -15,6 +15,7 @@
 |---|---|
 | [Migraciones y seed](runbooks/migraciones-y-seed.md) | Cómo llegan las migraciones a cada entorno, cómo correr el seed y qué hacer si falla el *pre-deploy* |
 | [Respaldo y restauración](runbooks/respaldo-y-restauracion.md) | Configuración, operación y restauración de los respaldos de las bases |
+| [Respuesta a incidentes](runbooks/respuesta-a-incidentes.md) | Quién hace qué en los primeros 30 minutos de un incidente: severidad, bitácora, contención y revocación de credenciales |
 
 ### Seguridad
 

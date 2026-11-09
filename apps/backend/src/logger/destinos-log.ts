@@ -14,7 +14,10 @@
 //     línea por evento. Railway lo toma como log estructurado: muestra el
 //     campo "message", convierte el nivel numérico de Pino (30 → info) y deja
 //     filtrar por cualquier otro campo (@action:USUARIO_DESACTIVADO).
-//   - Grafana Loki: además de lo anterior, solo si LOKI_URL está definida.
+//   - Grafana Loki: además de lo anterior, solo si LOKI_URL está definida y
+//     no se están corriendo tests (BL-214): con LOKI_URL en el .env local,
+//     Jest mandaba a Loki los logs de los tests y ensuciaba los paneles y
+//     las alertas de Grafana.
 //   - LOG_LEVEL fija el nivel mínimo. Por defecto: debug en local, info en
 //     staging y producción.
 
@@ -65,7 +68,7 @@ export function construirConfiguracionLog(
 
   const targets: DestinoLog[] = [salidaConsola];
 
-  if (env.LOKI_URL) {
+  if (env.LOKI_URL && env.NODE_ENV !== 'test') {
     targets.push({
       target: 'pino-loki',
       level,

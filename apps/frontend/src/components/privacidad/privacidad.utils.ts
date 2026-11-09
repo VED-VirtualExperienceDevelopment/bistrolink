@@ -15,7 +15,7 @@ import {
 export const RUTA_PRIVACIDAD = "/privacidad";
 
 /** Fecha de la última versión del texto de la política. */
-export const ACTUALIZACION_POLITICA = "02/11/2026";
+export const ACTUALIZACION_POLITICA = "08/11/2026";
 
 /** Enlace a la política desde la carta o el pago. */
 export function rutaPrivacidad(origen: OrigenMenu): string {
