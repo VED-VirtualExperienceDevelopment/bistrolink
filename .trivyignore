@@ -304,3 +304,40 @@ CVE-2026-102554
 
 CVE-2026-119373
 CVE-2026-119586
+
+# CVE-2026-119379 y CVE-2026-119374 (HIGH) — sqlite-libs 3.34.1-11.el9_8 del SO base de la
+
+# imagen oficial de Keycloak (quay.io/keycloak/keycloak:26.7.2, Red Hat UBI 9.8), misma
+
+# capa que CVE-2026-119373 y CVE-2026-119586. Estado "affected", sin fixed version de
+
+# Red Hat; upstream se corrigieron en SQLite 3.54.0.
+
+# - CVE-2026-119379: desbordamiento de heap en la extensión session
+
+#   (sqlite3changeset_apply). Solo se explota aplicando un changeset armado por un
+
+#   atacante.
+
+# - CVE-2026-119374: desbordamiento de heap en FTS5 (fts5DoSecureDelete). Solo se
+
+#   explota abriendo una base SQLite armada por un atacante, con un índice FTS5
+
+#   corrupto, y borrando de ella con secure-delete.
+
+# No aplican: en el contenedor nadie aplica changesets ni abre bases SQLite de terceros
+
+# (Keycloak es Java y usa PostgreSQL; sqlite-libs viene en la imagen base y Keycloak no
+
+# la usa). La imagen de Keycloak (UBI micro) no trae gestor de paquetes, así que no se
+
+# puede actualizar el paquete desde nuestro Dockerfile.
+
+# Agregadas el 09/11/2026 (BL-500, aparecieron en la base de Trivy del día). Vencen a fin
+
+# de año para que se revisen sí o sí. Pendiente (BL-137): quitar cuando Keycloak publique
+
+# una imagen con sqlite-libs corregido.
+
+CVE-2026-119379 exp:2026-12-31
+CVE-2026-119374 exp:2026-12-31
