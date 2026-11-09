@@ -2,7 +2,6 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
-  NotFoundException,
 } from '@nestjs/common';
 import { Pago, PrismaClient, Prisma } from '@prisma/client';
 import { TenantPrismaService } from '../../prisma/tenant-prisma.service';
@@ -11,6 +10,8 @@ import { PedidoParaKds } from '../../pedidos/pedido-kds.mapper';
 import { CfeService } from '../../cfe/cfe.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { AuditAction } from '../../audit-log/audit-action.enum';
+import { exigirPedidoPorPagar } from '../pedido-por-pagar';
+import { calcularTotales, totalCobrado } from '../totales-pedido';
 import { RegistrarCobroEfectivoDto } from './registrar-cobro-efectivo.dto';
 import {
   RegistrarCobroPosDto,
@@ -59,8 +60,19 @@ export interface PedidoPendienteDeCobro {
   canal: string;
   createdAt: Date;
   mesa: { id: string; numero: number; esVirtual: boolean };
-  /** Total del pedido (suma de las líneas), con 2 decimales. */
+  /**
+   * Total a cobrar, con 2 decimales: el consumo más la propina que eligió el
+   * comensal (HU-022).
+   */
   total: string;
+  /**
+   * HU-022 (BL-494): el consumo (suma de las líneas, lo que se factura) y la
+   * propina elegida. El personal solo los ve: no los puede cambiar.
+   */
+  consumo: string;
+  propina: string;
+  /** Porcentaje elegido; null si fue un monto libre o no eligió propina. */
+  propinaPorcentaje: number | null;
   lineas: { id: string; nombre: string; cantidad: number; subtotal: string }[];
   /** El comensal tiene un pago con tarjeta en curso: no se puede cobrar en efectivo. */
   pagoEnCurso: boolean;
@@ -98,8 +110,11 @@ export interface PendientesDeCobro {
 export interface CobroEfectivoRegistrado {
   pagoId: string;
   pedidoId: string;
-  /** Total cobrado. */
+  /** Total cobrado (consumo + propina). */
   monto: string;
+  /** HU-022 (BL-494): lo que se factura, y la propina cobrada aparte. */
+  consumo: string;
+  propina: string;
   montoRecibido: string;
   vuelto: string;
 }
@@ -108,8 +123,11 @@ export interface CobroEfectivoRegistrado {
 export interface CobroPosRegistrado {
   pagoId: string;
   pedidoId: string;
-  /** Total cobrado (el del pedido, calculado en el backend). */
+  /** Total cobrado (consumo + propina, calculado en el backend). */
   monto: string;
+  /** HU-022 (BL-494): lo que se factura, y la propina cobrada aparte. */
+  consumo: string;
+  propina: string;
   tarjeta: TarjetaPos;
   /** Número de autorización del voucher del POS. */
   autorizacion: string;
@@ -126,6 +144,12 @@ type ResultadoTx<R> =
 interface CobroManual<R> {
   pedidoId: string;
   idempotencyKey: string;
+  /**
+   * HU-022 (BL-494): el total que el personal vio en pantalla. Si el comensal
+   * cambió la propina mientras tanto, el total ya no coincide: 409 y no se
+   * cobra. Opcional (los clientes anteriores no lo mandan).
+   */
+  totalEsperado?: string;
   /** Columna de restaurante que habilita el medio. */
   habilitadoPor: 'efectivoHabilitado' | 'posHabilitado';
   mensajeDeshabilitado: string;
@@ -138,7 +162,12 @@ interface CobroManual<R> {
   resumen(
     pago: Pick<
       Pago,
-      'id' | 'pedidoId' | 'monto' | 'medioPago' | 'pasarelaReferencia'
+      | 'id'
+      | 'pedidoId'
+      | 'monto'
+      | 'propina'
+      | 'medioPago'
+      | 'pasarelaReferencia'
     >,
   ): R;
   auditoria(cobro: R): {
@@ -154,23 +183,19 @@ function esClaveDuplicada(error: unknown): boolean {
   );
 }
 
-function sumarLineas(lineas: { subtotal: Prisma.Decimal }[]): Prisma.Decimal {
-  return lineas.reduce(
-    (acumulado, linea) => acumulado.plus(linea.subtotal),
-    new Prisma.Decimal(0),
-  );
-}
-
 function resumenDelCobro(
-  pago: Pick<Pago, 'id' | 'pedidoId' | 'monto'>,
+  pago: Pick<Pago, 'id' | 'pedidoId' | 'monto' | 'propina'>,
   recibido: Prisma.Decimal,
 ): CobroEfectivoRegistrado {
+  const total = totalCobrado(pago);
   return {
     pagoId: pago.id,
     pedidoId: pago.pedidoId,
-    monto: pago.monto.toFixed(2),
+    monto: total.toFixed(2),
+    consumo: pago.monto.toFixed(2),
+    propina: pago.propina.toFixed(2),
     montoRecibido: recibido.toFixed(2),
-    vuelto: recibido.minus(pago.monto).toFixed(2),
+    vuelto: recibido.minus(total).toFixed(2),
   };
 }
 
@@ -192,6 +217,10 @@ function resumenDelCobro(
  * Stock (HU-015, BL-120): antes de registrar el cobro se verifica que
  * alcance (409 si no); se descuenta en confirmarPagoEnTx, que comparten todos
  * los medios.
+ *
+ * Propina (HU-022, BL-494): se cobra la que el comensal eligió y quedó
+ * guardada en el pedido. El pago guarda el consumo en `monto` (lo que se
+ * factura) y la propina aparte; el personal no puede cambiarla.
  */
 @Injectable()
 export class CobroEfectivoService {
@@ -231,6 +260,8 @@ export class CobroEfectivoService {
           createdAt: true,
           efectivoSolicitadoEn: true,
           efectivoPagaCon: true,
+          propinaPorcentaje: true,
+          propinaMonto: true,
           mesa: { select: { id: true, numero: true, esVirtual: true } },
           lineas: {
             orderBy: { createdAt: 'asc' },
@@ -248,26 +279,32 @@ export class CobroEfectivoService {
         efectivoHabilitado: restaurante?.efectivoHabilitado ?? false,
         posHabilitado: restaurante?.posHabilitado ?? false,
         pedidos: ordenarPendientes(
-          pedidos.map((pedido) => ({
-            id: pedido.id,
-            canal: pedido.canal,
-            createdAt: pedido.createdAt,
-            mesa: pedido.mesa,
-            total: sumarLineas(pedido.lineas).toFixed(2),
-            lineas: pedido.lineas.map((linea) => ({
-              id: linea.id,
-              nombre: linea.nombreSnapshot,
-              cantidad: linea.cantidad,
-              subtotal: linea.subtotal.toFixed(2),
-            })),
-            pagoEnCurso: pedido.pagos.length > 0,
-            efectivoSolicitado: pedido.efectivoSolicitadoEn
-              ? {
-                  en: pedido.efectivoSolicitadoEn,
-                  pagaCon: pedido.efectivoPagaCon?.toFixed(2) ?? null,
-                }
-              : null,
-          })),
+          pedidos.map((pedido) => {
+            const totales = calcularTotales(pedido.lineas, pedido);
+            return {
+              id: pedido.id,
+              canal: pedido.canal,
+              createdAt: pedido.createdAt,
+              mesa: pedido.mesa,
+              total: totales.total.toFixed(2),
+              consumo: totales.consumo.toFixed(2),
+              propina: totales.propina.toFixed(2),
+              propinaPorcentaje: pedido.propinaPorcentaje ?? null,
+              lineas: pedido.lineas.map((linea) => ({
+                id: linea.id,
+                nombre: linea.nombreSnapshot,
+                cantidad: linea.cantidad,
+                subtotal: linea.subtotal.toFixed(2),
+              })),
+              pagoEnCurso: pedido.pagos.length > 0,
+              efectivoSolicitado: pedido.efectivoSolicitadoEn
+                ? {
+                    en: pedido.efectivoSolicitadoEn,
+                    pagaCon: pedido.efectivoPagaCon?.toFixed(2) ?? null,
+                  }
+                : null,
+            };
+          }),
         ),
       };
     });
@@ -282,6 +319,7 @@ export class CobroEfectivoService {
     return this.cobrar(tenantId, actorKeycloakId, {
       pedidoId: dto.pedidoId,
       idempotencyKey: dto.idempotencyKey,
+      totalEsperado: dto.totalEsperado,
       habilitadoPor: 'efectivoHabilitado',
       mensajeDeshabilitado:
         'El cobro en efectivo no está habilitado en este establecimiento',
@@ -299,9 +337,11 @@ export class CobroEfectivoService {
       auditoria: (cobro) => ({
         action: AuditAction.PAGO_EFECTIVO_REGISTRADO,
         // Un alta: no hay valores antes. La pantalla de Auditoría muestra
-        // los de después (total, recibido y vuelto).
+        // los de después (total, consumo, propina, recibido y vuelto).
         despues: {
           monto: cobro.monto,
+          consumo: cobro.consumo,
+          propina: cobro.propina,
           montoRecibido: cobro.montoRecibido,
           vuelto: cobro.vuelto,
         },
@@ -324,6 +364,7 @@ export class CobroEfectivoService {
     return this.cobrar(tenantId, actorKeycloakId, {
       pedidoId: dto.pedidoId,
       idempotencyKey: dto.idempotencyKey,
+      totalEsperado: dto.totalEsperado,
       habilitadoPor: 'posHabilitado',
       mensajeDeshabilitado:
         'El cobro con el POS del local no está habilitado en este establecimiento',
@@ -336,7 +377,9 @@ export class CobroEfectivoService {
       resumen: (pago) => ({
         pagoId: pago.id,
         pedidoId: pago.pedidoId,
-        monto: pago.monto.toFixed(2),
+        monto: totalCobrado(pago).toFixed(2),
+        consumo: pago.monto.toFixed(2),
+        propina: pago.propina.toFixed(2),
         tarjeta: tarjetaDelMedio(pago.medioPago) ?? dto.tarjeta,
         autorizacion: pago.pasarelaReferencia ?? dto.autorizacion,
       }),
@@ -346,6 +389,8 @@ export class CobroEfectivoService {
         // llame como un dato de tarjeta (HU-035), y esto no lo es.
         despues: {
           monto: cobro.monto,
+          consumo: cobro.consumo,
+          propina: cobro.propina,
           medio: NOMBRE_TARJETA[cobro.tarjeta],
           autorizacion: cobro.autorizacion,
         },
@@ -421,35 +466,40 @@ export class CobroEfectivoService {
       throw new ConflictException(cobro.mensajeDeshabilitado);
     }
 
-    const pedido = await tx.pedido.findUnique({
-      where: { id: cobro.pedidoId },
-      select: {
-        id: true,
-        estado: true,
-        lineas: { select: { subtotal: true } },
-        pagos: { where: { estado: 'PENDIENTE' }, select: { id: true } },
-      },
-    });
-    if (!pedido) {
-      throw new NotFoundException('Pedido no encontrado');
-    }
-    if (pedido.estado === 'CANCELADO') {
-      throw new ConflictException('El pedido está cancelado');
-    }
-    if (pedido.estado !== 'PENDIENTE_PAGO') {
-      throw new ConflictException('Este pedido ya fue pagado');
-    }
+    const pedido = exigirPedidoPorPagar(
+      await tx.pedido.findUnique({
+        where: { id: cobro.pedidoId },
+        select: {
+          id: true,
+          estado: true,
+          propinaPorcentaje: true,
+          propinaMonto: true,
+          lineas: { select: { subtotal: true } },
+          pagos: { where: { estado: 'PENDIENTE' }, select: { id: true } },
+        },
+      }),
+    );
     if (pedido.pagos.length > 0) {
       throw new ConflictException(
         'El comensal tiene un pago con tarjeta en curso para este pedido. Esperá a que termine: si no se confirma, vence solo en unos minutos.',
       );
     }
 
-    const monto = sumarLineas(pedido.lineas);
-    if (monto.lessThanOrEqualTo(0)) {
+    // HU-022 (BL-494): consumo (lo que se factura) y propina elegida por el
+    // comensal; se cobra el total. El personal no cambia la propina.
+    const totales = calcularTotales(pedido.lineas, pedido);
+    if (totales.consumo.lessThanOrEqualTo(0)) {
       throw new BadRequestException('El pedido no tiene monto a cobrar');
     }
-    cobro.validarMonto(monto);
+    if (
+      cobro.totalEsperado !== undefined &&
+      !totales.total.equals(cobro.totalEsperado)
+    ) {
+      throw new ConflictException(
+        `El total del pedido cambió: ahora es $ ${totales.total.toFixed(2)}. Actualizá la lista antes de cobrar.`,
+      );
+    }
+    cobro.validarMonto(totales.total);
     // HU-015 (BL-120): el cobro ya ocurrió en mano (efectivo o POS): si el
     // stock ya no alcanza, 409 antes de registrarlo (D3, ADR 0009).
     await this.pedidos.verificarStockEnTx(tx, pedido.id);
@@ -465,7 +515,8 @@ export class CobroEfectivoService {
         tenantId,
         pedidoId: pedido.id,
         idempotencyKey: cobro.idempotencyKey,
-        monto,
+        monto: totales.consumo,
+        propina: totales.propina,
         medioPago: cobro.medioPago,
         estado: 'APROBADO',
         ...(cobro.pasarelaReferencia

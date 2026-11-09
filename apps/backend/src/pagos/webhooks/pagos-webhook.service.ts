@@ -15,6 +15,7 @@ import {
   registrarCambioPago,
   textoCorto,
 } from '../historial-pago';
+import { totalCobrado } from '../totales-pedido';
 
 // TODO(Plexo): este servicio y la verificación de firma son específicos de
 // Mercado Pago. Cuando lleguen las credenciales de Plexo y se conozca su
@@ -210,9 +211,12 @@ export class PagosWebhookService {
     }
 
     // Defensa: nunca se da por resuelto un pago cuyo monto no coincide.
-    if (!montoCoincide(orden.totalAmount, pago.monto)) {
+    // HU-022 (BL-494): la order se creó por el total cobrado (consumo +
+    // propina), no solo por el consumo.
+    const cobrado = totalCobrado(pago);
+    if (!montoCoincide(orden.totalAmount, cobrado)) {
       Logger.error(
-        `Webhook: el monto de la order ${orden.id} (${orden.totalAmount}) no coincide con el del pago ${pago.id} (${pago.monto})`,
+        `Webhook: el monto de la order ${orden.id} (${orden.totalAmount}) no coincide con el del pago ${pago.id} (${cobrado})`,
         undefined,
         PagosWebhookService.name,
       );

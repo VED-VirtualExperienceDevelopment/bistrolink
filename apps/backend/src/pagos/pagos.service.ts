@@ -22,6 +22,7 @@ import { receptorParaGuardar } from '../cfe/receptor-fiscal';
 import { PedidosService } from '../pedidos/pedidos.service';
 import { PedidoParaKds } from '../pedidos/pedido-kds.mapper';
 import { registrarCambioPago, textoCorto } from './historial-pago';
+import { calcularTotales, totalCobrado } from './totales-pedido';
 
 /** BL-311: respuesta de GET /pedidos/:pedidoId/pagos. */
 export interface EstadoPagoDelPedido {
@@ -36,6 +37,20 @@ export interface EstadoPagoDelPedido {
     // un mensaje distinto. Null si no fue rechazado.
     motivoRechazo: string | null;
   } | null;
+  /**
+   * HU-022 (BL-494): lo que se cobra por el pedido, calculado en el backend
+   * con las líneas y la propina que eligió el comensal. `consumo` es lo que
+   * se factura; `total` = consumo + propina. Ambos `propina*` en null = sin
+   * propina elegida. Está también antes del primer pago, para que la pantalla
+   * muestre la elección al recargar.
+   */
+  totales: {
+    consumo: string;
+    propina: string;
+    total: string;
+    propinaPorcentaje: number | null;
+    propinaMonto: number | null;
+  };
   // Null mientras el CFE no fue emitido (el frontend consulta de nuevo).
   comprobante: ResumenComprobante | null;
   /**
@@ -137,7 +152,8 @@ export class PagosService {
     let resultado: ResultadoCobro;
     try {
       resultado = await gateway.cobrar({
-        monto: pago.monto,
+        // HU-022 (BL-494): a la pasarela viaja consumo + propina.
+        monto: totalCobrado(pago),
         idempotencyKey: dto.idempotencyKey,
         pedidoId: dto.pedidoId,
         tenantId,
@@ -277,6 +293,10 @@ export class PagosService {
             canal: true,
             efectivoSolicitadoEn: true,
             efectivoPagaCon: true,
+            // HU-022 (BL-494): para calcular el desglose en el backend.
+            propinaPorcentaje: true,
+            propinaMonto: true,
+            lineas: { select: { subtotal: true } },
             pagos: {
               orderBy: { createdAt: 'desc' },
               select: {
@@ -316,6 +336,7 @@ export class PagosService {
       pedido.pagos[0] ??
       null;
     const comprobante = pago?.comprobantes[0] ?? null;
+    const totales = calcularTotales(pedido.lineas, pedido);
 
     return {
       pedidoId: pedido.id,
@@ -326,6 +347,13 @@ export class PagosService {
         medioPago: pago.medioPago,
         monto: pago.monto.toFixed(2),
         motivoRechazo: pago.motivoRechazo,
+      },
+      totales: {
+        consumo: totales.consumo.toFixed(2),
+        propina: totales.propina.toFixed(2),
+        total: totales.total.toFixed(2),
+        propinaPorcentaje: pedido.propinaPorcentaje,
+        propinaMonto: pedido.propinaMonto,
       },
       comprobante: comprobante && {
         tipoCfe: comprobante.tipoCfe,
@@ -390,11 +418,12 @@ export class PagosService {
             );
           }
 
-          const monto = pedido.lineas.reduce(
-            (acumulado, linea) => acumulado.plus(linea.subtotal),
-            new Prisma.Decimal(0),
-          );
-          if (monto.lessThanOrEqualTo(0)) {
+          // HU-022 (BL-494): el consumo (las líneas) es lo que se factura; la
+          // propina es la elección guardada en el pedido, que no puede
+          // cambiar mientras haya un pago en curso. Se cobra consumo +
+          // propina, y el pago guarda cada uno por separado.
+          const totales = calcularTotales(pedido.lineas, pedido);
+          if (totales.consumo.lessThanOrEqualTo(0)) {
             throw new BadRequestException('El pedido no tiene monto a cobrar');
           }
           // HU-015 (BL-120): antes de cobrar, 409 si el stock ya no alcanza
@@ -420,7 +449,8 @@ export class PagosService {
               tenantId,
               pedidoId: pedido.id,
               idempotencyKey: dto.idempotencyKey,
-              monto,
+              monto: totales.consumo,
+              propina: totales.propina,
               medioPago: dto.medioPago,
               estado: 'PENDIENTE',
             },
