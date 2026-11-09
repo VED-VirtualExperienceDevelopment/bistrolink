@@ -1171,6 +1171,12 @@ const DATOS_E2E = {
     priority: "P2",
     tags: ["BL-488", "BL-100", "pos", ...axe],
   }),
+  // BL-500 (bug): el panel del administrador no se desplaza entero.
+  84: e2e("admin", "HU-012", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-500", "bug", "regresion"],
+  }),
 };
 /**
  * Datos de los contratos PactJS (TC-C). Requirement con la HU que usa el

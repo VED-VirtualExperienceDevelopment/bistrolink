@@ -25,6 +25,7 @@
 | 1.18    | 07/11/2026 | Se borran los bloques de TC-E-072, 080 y 081, ya cargados en Kiwi. TC-E-079: PDF del comprobante desde Comprobantes (HU-009, BL-454).                |
 | 1.19    | 07/11/2026 | TC-E-082: el mozo cobra con el POS del local al confirmar el pedido de una mesa (HU-007b, BL-485).                                                   |
 | 1.20    | 08/11/2026 | Se borran los bloques de TC-E-073 a 079 y 082, ya cargados en Kiwi. TC-E-083: ventas al POS del local desde «POS del local» (HU-011, BL-488).        |
+| 1.21    | 09/11/2026 | Se borra el bloque de TC-E-083, ya cargado en Kiwi. TC-E-084: al hacer scroll en Reportes solo se desplaza el contenido (bug BL-500).                |
 
 Plantilla para cargar en Kiwi la descripción de casos TC-E (Playwright)
 nuevos o que cambiaron (BL-435). La usa
@@ -69,24 +70,20 @@ Reglas:
 
 ## Casos para cargar
 
-## TC-E-083
+## TC-E-084
 
 ### Precondición
 
-Administrador del establecimiento del seed logueado. El backend usa el POS de prueba (POS_ADAPTER sin configurar o «mock»). Efectivo y POS del local habilitados en Configuración.
+Administrador del establecimiento del seed logueado. Ventana de escritorio de 1280 × 720 px.
 
 ### Pasos
 
-1. Abrir «POS del local» y activar «Mandar las ventas al POS» (si ya estaba activado, apagarlo y volver a prenderlo).
-2. Como comensal, armar un pedido para retirar desde la carta y quedarse en «Pagá tu pedido».
-3. En «Cobros pendientes», tocar «Cobrar con el POS» en ese pedido, elegir «Crédito», cargar la autorización «e2e083» y tocar «Registrar cobro».
-4. Volver a «POS del local».
-5. Al terminar, dejar «Mandar las ventas al POS» como estaba.
+1. Abrir Reportes y esperar a que cargue el período «Hoy».
+2. Comparar el alto de la página con el de la ventana.
+3. Con el mouse sobre el contenido, hacer scroll hacia abajo con la rueda.
 
 ### Resultado esperado
 
-1. El switch queda activado y aparece «Envío al POS activado.».
-2. —
-3. Se registra el cobro.
-4. La venta del pedido aparece como «Venta», «Para retirar», «En el POS». Sin errores graves de accesibilidad (axe).
-5. La configuración vuelve a su valor original.
+1. Se ve el dashboard, con las tablas para lectores de pantalla de los gráficos.
+2. La página no es más alta que la ventana: no tiene scroll propio.
+3. Se desplaza solo el contenido (el título «Reportes» sale de la vista). La página no se mueve y «Cerrar sesión» del menú lateral queda en el mismo lugar.
