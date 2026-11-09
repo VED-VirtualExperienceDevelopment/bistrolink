@@ -339,6 +339,20 @@ export class PedidosService {
   }
 
   /**
+   * BL-501: el personal canceló un pedido que todavía no se había cobrado.
+   * Nunca llegó a cocina ni descontó stock: solo hay que avisarle al
+   * comensal que lo sigue y a las pantallas del personal.
+   */
+  notificarPendienteCancelado(tenantId: string, pedidoId: string) {
+    const cancelado = {
+      id: pedidoId,
+      estado: 'CANCELADO',
+      actualizadoEn: new Date().toISOString(),
+    };
+    this.kdsGateway.emitirPedidoActualizado(tenantId, cancelado);
+  }
+
+  /**
    * HU-024 (BL-104): después de confirmar la cancelación. El pedido sale del
    * KDS y el comensal que lo sigue lo ve cancelado; si liberó un lugar en
    * la cola, entran los siguientes; el dashboard se recalcula y la carta se

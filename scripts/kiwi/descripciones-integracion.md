@@ -32,6 +32,7 @@
 | 1.25    | 08/11/2026 | Se borran los bloques de TC-I-168 a 176, ya cargados en Kiwi. TC-I-142: el estado ante la DGI se consulta con la API v2 de Surtec, CFE por CFE (HU-009 / BL-471); cambia el título y la descripción.                                      |
 | 1.26    | 08/11/2026 | Se borra el bloque de TC-I-142, ya cargado en Kiwi. TC-I-183 a 186: ventas de BistroLink al POS del local (HU-011 / BL-488), para cargar con el script antes de mergear el PR.                                                            |
 | 1.27    | 09/11/2026 | Se borran los bloques de TC-I-183 a 186, ya cargados en Kiwi. TC-I-187 a 189: ventas hechas en el POS del local, traídas al dashboard (HU-011 / BL-489), para cargar con el script antes de mergear el PR.                                |
+| 1.28    | 09/11/2026 | Se borran los bloques de TC-I-187 a 189, ya cargados en Kiwi. TC-I-190 y 191: cancelar un pedido que todavía no se cobró (bug BL-501), para cargar con el script antes de mergear el PR.                                                  |
 
 Texto del campo de descripción de cada caso TC-I en Kiwi. Lo carga
 `cargar-casos-integracion.mjs --descripciones`: cada bloque `## TC-I-NNN`
@@ -43,70 +44,44 @@ esperado`, igual que los casos cargados a mano desde TC-I-029.
 
 ## Casos para cargar
 
-## TC-I-187
+## TC-I-190
 
 ### Precondición
 
-Tenant A del seed con la sincronización con el POS activada. POS de prueba (adaptador mock) en línea, con dos ventas de mostrador del tenant A en efectivo ($ 350,50 y $ 149,50) a las 10:15 UTC de un día al azar entre 2041 y 2065 (para no cruzarse con los días fijos de otros tests de reportes), y una venta que mandó BistroLink (con la referencia de un pedido).
+Tenant A del seed. Mesa 92 abierta, con dos pedidos cargados por el usuario Mozo del seed, los dos esperando el pago.
 
 ### Pasos
 
-1. Traer las ventas del POS para el tenant A.
-2. Ver las ventas importadas y el resumen por hora del canal POS.
-3. Traer las ventas otra vez.
-4. Pedir el reporte de ese día con el canal «POS del local».
-5. Buscar las ventas importadas como tenant B.
+1. Como Mozo, cancelar el primer pedido.
+2. Ver el pedido, su historial, la auditoría, la mesa, el segundo pedido y los cobros pendientes.
+3. Cancelar el primer pedido otra vez.
+4. Con un pago con tarjeta en curso en el segundo pedido, intentar cancelarlo.
+5. Cobrar el segundo pedido en efectivo e intentar cancelarlo.
 
 ### Resultado esperado
 
-1. Se importan las dos ventas de mostrador; la de BistroLink se omite.
-2. Están las dos ventas, y el resumen de esa hora (canal POS, efectivo) tiene 2 ventas por $ 500.
-3. No hay ventas nuevas ni duplicadas, y el resumen no cambia.
-4. Total vendido $ 500 con 2 ventas; «POS del local» suma $ 500 en «Dentro y fuera del local»; sin platos.
-5. El tenant B no ve ninguna (RLS).
+1. Devuelve el pedido como CANCELADO, con su total.
+2. El pedido está CANCELADO y sin pagos; el historial registra el paso de PENDIENTE_PAGO a CANCELADO con el usuario del mozo; la auditoría tiene PEDIDO_PENDIENTE_CANCELADO con el mozo como actor; la mesa sigue OCUPADA; el segundo pedido sigue esperando el pago; el primero ya no está entre los cobros pendientes y el segundo sí.
+3. Conflicto: «El pedido ya está cancelado».
+4. Conflicto: el comensal tiene un pago con tarjeta en curso. El pedido sigue esperando el pago.
+5. Conflicto: «Este pedido ya se cobró: se cancela con la devolución del pago». El pedido queda en RECIBIDO.
 
-## TC-I-188
+## TC-I-191
 
 ### Precondición
 
-Igual que TC-I-187, con dos ventas de mostrador con crédito ($ 800 y $ 200) ya importadas.
+Usuarios Mozo y Cocina del tenant A (Keycloak de pruebas). Un pedido cargado por el mozo en la mesa 92, esperando el pago.
 
 ### Pasos
 
-1. Anular en el POS la venta de $ 800 y apagar el POS.
-2. Traer las ventas.
-3. Volver a prender el POS y traer las ventas.
-4. Ver el resumen de esa hora y el reporte del día con el canal «POS del local».
+1. Como Cocina, POST /cobros/pendientes/{id}/cancelar.
+2. Como Mozo, POST /cobros/pendientes/{id}/cancelar.
+3. Repetir el paso 2.
+4. Como Mozo, cancelar con un id que no es UUID y con un UUID que no existe.
 
 ### Resultado esperado
 
-1. —
-2. Falla porque el POS no está disponible; el resumen no cambia (2 ventas).
-3. Se actualiza la venta anulada.
-4. Queda 1 venta por $ 200: la anulada dejó de contar.
-
-## TC-I-189
-
-### Precondición
-
-Usuarios Administrador y Cocina del tenant A (Keycloak de pruebas). Sincronización activada y POS de prueba.
-
-### Pasos
-
-1. Como Administrador, GET /admin/pos/ventas.
-2. POST /admin/pos/ventas/simular con total 123,45 y débito.
-3. GET /admin/pos/ventas.
-4. POST /admin/pos/ventas/importar.
-5. POST /admin/pos/ventas/simular con total 0.
-6. Apagar la sincronización y POST /admin/pos/ventas/importar.
-7. Como Cocina, GET /admin/pos/ventas.
-
-### Resultado esperado
-
-1. 200 con la cantidad de ventas y el total.
-2. 201: se importa 1 venta nueva, con un id del POS de prueba.
-3. Una venta más y $ 123,45 más que en el paso 1.
-4. 200 sin ventas nuevas.
-5. 400.
-6. 409.
-7. 403.
+1. 403, y el pedido sigue esperando el pago.
+2. 200 con el pedido CANCELADO y su total.
+3. 409.
+4. 400 y 404.
