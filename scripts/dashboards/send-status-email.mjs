@@ -1,4 +1,4 @@
-// scripts/send-status-email.mjs
+// scripts/dashboards/send-status-email.mjs
 //
 // Genera y prepara UN email combinado de estado del proyecto:
 //   - Avance general (recalculado desde Linear, misma lógica que
@@ -31,16 +31,16 @@
 // Uso local:
 //   LINEAR_API_KEY=xxx LINEAR_TEAM_KEY=BIST GITHUB_TOKEN=yyy \
 //   GITHUB_REPOSITORY=owner/repo DASHBOARD_EMAIL_RECIPIENTS=a@x.com,b@y.com \
-//   node scripts/send-status-email.mjs
+//   node scripts/dashboards/send-status-email.mjs
 
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { calcularAvance, leerConfiguracion, traerIssuesDeLinear } from "./avance-mvp.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.resolve(__dirname, "..");
+const ROOT = path.resolve(__dirname, "..", "..");
 
-const SPRINT_CONFIG_PATH = path.join(__dirname, "sprint-config.json");
 const BUGS_CONFIG_PATH = path.join(__dirname, "github-bugs-config.json");
 const EMAIL_CONFIG_PATH = path.join(__dirname, "email-config.json");
 // Archivo de trabajo del job, NO se commitea al repo (no forma parte de la
@@ -71,109 +71,25 @@ function pct(part, total) {
 }
 
 // ---------------------------------------------------------------------------
-// 1. Avance (Linear) — misma lógica que update-dashboard-from-linear.mjs
+// 1. Avance (Linear) — BL-493: mismo cálculo que el dashboard (avance-mvp.mjs)
 // ---------------------------------------------------------------------------
 
-const LINEAR_QUERY = `
-  query Issues($teamKey: String!, $after: String) {
-    issues(
-      first: 100
-      after: $after
-      filter: { team: { key: { eq: $teamKey } } }
-    ) {
-      nodes {
-        estimate
-        state { type }
-        cycle { number startsAt endsAt }
-      }
-      pageInfo { hasNextPage endCursor }
-    }
-  }
-`;
-
-async function fetchAllLinearIssues() {
-  const issues = [];
-  let after = null;
-  let hasNextPage = true;
-
-  while (hasNextPage) {
-    const res = await fetch("https://api.linear.app/graphql", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: LINEAR_API_KEY },
-      body: JSON.stringify({ query: LINEAR_QUERY, variables: { teamKey: LINEAR_TEAM_KEY, after } }),
-    });
-    if (!res.ok) throw new Error(`Linear API respondió ${res.status}: ${await res.text()}`);
-
-    const json = await res.json();
-    if (json.errors) throw new Error(`Linear API error: ${JSON.stringify(json.errors)}`);
-
-    const page = json.data.issues;
-    for (const n of page.nodes) {
-      if (n.state?.type === "canceled") continue;
-      issues.push({
-        estimate: n.estimate ?? 0,
-        stateType: n.state?.type ?? "unknown",
-        cycleNumber: n.cycle?.number ?? null,
-        cycleStartsAt: n.cycle?.startsAt ?? null,
-        cycleEndsAt: n.cycle?.endsAt ?? null,
-      });
-    }
-    hasNextPage = page.pageInfo.hasNextPage;
-    after = page.pageInfo.endCursor;
-  }
-  return issues;
-}
-
-function isCompleted(issue) {
-  return issue.stateType === "completed";
-}
-
-// Mismo criterio por fecha que el fix aplicado en update-dashboard-from-linear.mjs:
-// el ciclo con el número más alto no es necesariamente el activo, porque en
-// Linear se pueden precargar historias en ciclos futuros.
-function computeSprintActual(issues, hoy = new Date()) {
-  const ciclos = new Map();
-  for (const i of issues) {
-    if (i.cycleNumber != null && i.cycleStartsAt && i.cycleEndsAt) {
-      ciclos.set(i.cycleNumber, { start: new Date(i.cycleStartsAt), end: new Date(i.cycleEndsAt) });
-    }
-  }
-  for (const [numero, { start, end }] of ciclos) {
-    if (hoy >= start && hoy <= end) return numero;
-  }
-  const yaEmpezados = [...ciclos.entries()].filter(([, r]) => hoy >= r.start);
-  return yaEmpezados.length ? Math.max(...yaEmpezados.map(([n]) => n)) : "—";
-}
-
 async function computeProgreso() {
-  const config = JSON.parse(await fs.readFile(SPRINT_CONFIG_PATH, "utf-8"));
-  const issues = await fetchAllLinearIssues();
-
-  const totalHistoriasUsuario = issues.length;
-  const totalStoryPoints = issues.reduce((a, i) => a + i.estimate, 0);
-  const spCompletados = issues.filter(isCompleted).reduce((a, i) => a + i.estimate, 0);
-  const sprintActual = computeSprintActual(issues);
-
-  const capas = config.capas.map((capa) => {
-    const issuesCapa = issues.filter((i) => capa.sprints.includes(i.cycleNumber));
-    const huCompletadas = issuesCapa.filter(isCompleted).length;
-    const huTotales = issuesCapa.length;
-    return { ...capa, huTotales, huCompletadas, pctAvance: pct(huCompletadas, huTotales) };
-  });
-
-  const baseline = config.baselineOriginal ?? {};
-  const scopeCambio =
-    baseline.totalHistoriasUsuario != null && totalHistoriasUsuario !== baseline.totalHistoriasUsuario;
-
+  const { backlog, config } = await leerConfiguracion();
+  const issues = await traerIssuesDeLinear({ apiKey: LINEAR_API_KEY, teamKey: LINEAR_TEAM_KEY });
+  const av = calcularAvance({ issues, backlog, config });
+  let sprintActual = "—";
+  if (av.terminoTodo) sprintActual = "Entregado";
+  else if (av.sprintActual) sprintActual = av.sprintActual.nombre;
   return {
     sprintActual,
-    totalHistoriasUsuario,
-    totalStoryPoints,
-    spCompletados,
-    pctAvanceGlobal: pct(spCompletados, totalStoryPoints),
-    scopeCambio,
-    baseline,
-    capas,
+    pctAvanceGlobal: `${av.mvp.pct}%`,
+    spCompletados: av.mvp.spTerminados,
+    totalStoryPoints: av.mvp.sp,
+    huTerminadas: av.mvp.huTerminadas,
+    totalHistoriasUsuario: av.mvp.hu,
+    planALaFecha: av.planALaFecha,
+    grupos: av.grupos,
   };
 }
 
@@ -233,7 +149,7 @@ async function computeCalidad() {
     [owner, repo] = process.env.GITHUB_REPOSITORY.split("/");
   }
   if (!owner || !repo) {
-    throw new Error("No se pudo determinar owner/repo para leer bugs. Completá scripts/github-bugs-config.json.");
+    throw new Error("No se pudo determinar owner/repo para leer bugs. Completá scripts/dashboards/github-bugs-config.json.");
   }
 
   const issues = await fetchAllBugIssues(owner, repo, config.query);
@@ -307,14 +223,14 @@ function renderEmailBody(progreso, calidad, fechaHoy) {
   const dashboardUrl = buildPagesUrl("avance-edt.html");
   const bugsUrl = buildPagesUrl("bugs.html");
 
-  const filasCapas = progreso.capas
+  const filasGrupos = progreso.grupos
     .map(
-      (c) => `
+      (g) => `
       <tr>
-        <td style="padding:6px 10px; border:1px solid #cbc4d2;">${c.emoji} ${c.nombre}</td>
-        <td style="padding:6px 10px; border:1px solid #cbc4d2; text-align:center;">${c.sprints[0]}–${c.sprints[c.sprints.length - 1]}</td>
-        <td style="padding:6px 10px; border:1px solid #cbc4d2; text-align:center;">${c.huCompletadas}/${c.huTotales}</td>
-        <td style="padding:6px 10px; border:1px solid #cbc4d2; text-align:center;">${c.pctAvance}</td>
+        <td style="padding:6px 10px; border:1px solid #cbc4d2;">${g.emoji} ${g.nombre}</td>
+        <td style="padding:6px 10px; border:1px solid #cbc4d2; text-align:center;">${g.huTerminadas}/${g.hu}</td>
+        <td style="padding:6px 10px; border:1px solid #cbc4d2; text-align:center;">${g.spTerminados}/${g.sp}</td>
+        <td style="padding:6px 10px; border:1px solid #cbc4d2; text-align:center;">${g.pct}%</td>
       </tr>`
     )
     .join("");
@@ -345,33 +261,29 @@ function renderEmailBody(progreso, calidad, fechaHoy) {
                 <td style="width:8px;"></td>
                 <td style="padding:10px; background-color:#e0d4fd; border-radius:6px; text-align:center; width:33%;">
                   <div style="font-size:22px; font-weight:bold; color:#381e72;">${progreso.pctAvanceGlobal}</div>
-                  <div style="font-size:12px; color:#494551;">Avance global</div>
+                  <div style="font-size:12px; color:#494551;">Avance del MVP (SP)</div>
                 </td>
                 <td style="width:8px;"></td>
                 <td style="padding:10px; background-color:#f1ecf4; border-radius:6px; text-align:center; width:33%;">
                   <div style="font-size:22px; font-weight:bold; color:#4f378a;">${progreso.spCompletados}/${progreso.totalStoryPoints}</div>
-                  <div style="font-size:12px; color:#494551;">Story Points</div>
+                  <div style="font-size:12px; color:#494551;">Story Points del MVP</div>
                 </td>
               </tr>
             </table>
 
             <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse; font-size:13px; color:#1c1b20; margin-bottom:8px;">
               <tr style="background-color:#e0d4fd; color:#381e72;">
-                <th style="padding:6px 10px; border:1px solid #cbc4d2; text-align:left;">Capa</th>
-                <th style="padding:6px 10px; border:1px solid #cbc4d2;">Sprints</th>
+                <th style="padding:6px 10px; border:1px solid #cbc4d2; text-align:left;">Grupo del backlog</th>
                 <th style="padding:6px 10px; border:1px solid #cbc4d2;">HU</th>
-                <th style="padding:6px 10px; border:1px solid #cbc4d2;">% Avance</th>
+                <th style="padding:6px 10px; border:1px solid #cbc4d2;">SP</th>
+                <th style="padding:6px 10px; border:1px solid #cbc4d2;">% SP</th>
               </tr>
-              ${filasCapas}
+              ${filasGrupos}
             </table>
 
-            ${
-              progreso.scopeCambio
-                ? `<p style="margin:0 0 16px; padding:10px 12px; background-color:#e9ddff; border-left:3px solid #4f378a; font-size:12px; color:#494551;">
-                    ℹ️ El alcance actual (${progreso.totalHistoriasUsuario} HU / ${progreso.totalStoryPoints} pts) difiere de la línea base de planning (${progreso.baseline.totalHistoriasUsuario} HU / ${progreso.baseline.totalStoryPoints} pts).
-                  </p>`
-                : ""
-            }
+            <p style="margin:0 0 16px; padding:10px 12px; background-color:#e9ddff; border-left:3px solid #4f378a; font-size:12px; color:#494551;">
+              ℹ️ ${progreso.huTerminadas} de ${progreso.totalHistoriasUsuario} historias del MVP terminadas. Plan de la Línea de Base al último Sprint cerrado: ${progreso.planALaFecha} SP. El trabajo técnico se ve aparte en el dashboard.
+            </p>
 
             ${
               dashboardUrl
@@ -432,7 +344,7 @@ async function main() {
   const html = renderEmailBody(progreso, calidad, fechaHoy);
   await fs.writeFile(EMAIL_BODY_PATH, html, "utf-8");
 
-  const asunto = `${emailConfig.asuntoPrefijo} — Sprint ${progreso.sprintActual} (${progreso.pctAvanceGlobal}, ${calidad.abiertos} bugs abiertos)`;
+  const asunto = `${emailConfig.asuntoPrefijo} — ${progreso.sprintActual} (MVP ${progreso.pctAvanceGlobal}, ${calidad.abiertos} bugs abiertos)`;
 
   if (process.env.GITHUB_OUTPUT) {
     // Formato "key<<EOF\nvalor\nEOF" para el asunto: puede traer paréntesis,

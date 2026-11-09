@@ -1,6 +1,6 @@
 // BL-243: tests del enlace al estado del servicio en el sitio de dashboards.
 // Sin dependencias:
-//   node --test scripts/publicar-dashboards.test.mjs
+//   node --test scripts/dashboards/publicar-dashboards.test.mjs
 
 import { strict as assert } from "node:assert";
 import { describe, test } from "node:test";
