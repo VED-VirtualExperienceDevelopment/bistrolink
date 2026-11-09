@@ -90,9 +90,7 @@ export function motivoSinPos(
   if (!posHabilitado) {
     return "El cobro con el POS del local no está habilitado en este establecimiento.";
   }
-  if (pedido.pagoEnCurso) {
-    return "El comensal está pagando con tarjeta. Si no se confirma, vence solo en unos minutos.";
-  }
+  if (pedido.pagoEnCurso) return MOTIVO_PAGO_EN_CURSO;
   return null;
 }
 
@@ -200,6 +198,10 @@ export function evaluarMontoRecibido(
   return { tipo: "ok", recibido, vuelto: (diferencia / 100).toFixed(2) };
 }
 
+/** El comensal tiene un pago con tarjeta en curso (cobrar y cancelar). */
+const MOTIVO_PAGO_EN_CURSO =
+  "El comensal está pagando con tarjeta. Si no se confirma, vence solo en unos minutos.";
+
 /** Motivo por el que no se puede cobrar en efectivo, o null si se puede. */
 export function motivoSinEfectivo(
   pedido: PedidoPendienteDeCobro,
@@ -208,9 +210,7 @@ export function motivoSinEfectivo(
   if (!efectivoHabilitado) {
     return "El cobro en efectivo no está habilitado en este establecimiento.";
   }
-  if (pedido.pagoEnCurso) {
-    return "El comensal está pagando con tarjeta. Si no se confirma, vence solo en unos minutos.";
-  }
+  if (pedido.pagoEnCurso) return MOTIVO_PAGO_EN_CURSO;
   return null;
 }
 
@@ -250,4 +250,36 @@ export function textoSolicitudEfectivo(
 /** Lo que se precarga en «Monto recibido»: con cuánto dijo que paga. */
 export function montoRecibidoInicial(pedido: PedidoPendienteDeCobro): string {
   return pedido.efectivoSolicitado?.pagaCon ?? "";
+}
+
+// ── BL-501: cancelar un pedido que todavía no se cobró ─────────────────────
+
+/** POST: cancela un pedido que espera el pago. */
+export function rutaCancelarPendiente(pedidoId: string): string {
+  return `${RUTA_PENDIENTES}/${encodeURIComponent(pedidoId)}/cancelar`;
+}
+
+/** Respuesta de la cancelación. */
+export interface PendienteCancelado {
+  pedidoId: string;
+  estado: "CANCELADO";
+  total: string;
+}
+
+/**
+ * Por qué no se puede cancelar desde acá, o null si se puede. Con un pago
+ * con tarjeta en curso, se espera a que se resuelva o venza (es el mismo
+ * motivo que el del efectivo, así que se muestra una sola vez).
+ */
+export function motivoSinCancelar(
+  pedido: PedidoPendienteDeCobro,
+): string | null {
+  return pedido.pagoEnCurso ? MOTIVO_PAGO_EN_CURSO : null;
+}
+
+/** Aviso después de cancelar. */
+export function mensajePendienteCancelado(
+  cancelado: PendienteCancelado,
+): string {
+  return `Pedido ${codigoDelPedido(cancelado.pedidoId)} cancelado. No se cobró y no pasa a cocina.`;
 }

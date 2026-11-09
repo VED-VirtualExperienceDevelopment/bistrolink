@@ -3,12 +3,15 @@
 import { useState } from "react";
 import { CobrarEfectivoDialog } from "./CobrarEfectivoDialog";
 import { CobrarPosDialog } from "./CobrarPosDialog";
+import { CancelarPendienteDialog } from "./CancelarPendienteDialog";
 import {
   codigoDelPedido,
   formatearMonto,
   horaDelPedido,
   mensajeCobroPosRegistrado,
   mensajeCobroRegistrado,
+  mensajePendienteCancelado,
+  motivoSinCancelar,
   motivoSinEfectivo,
   motivoSinPos,
   resumenDeLineas,
@@ -16,6 +19,7 @@ import {
   type CobroEfectivoRegistrado,
   type CobroPosRegistrado,
   type PedidoPendienteDeCobro,
+  type PendienteCancelado,
 } from "./cobros.utils";
 
 interface Props {
@@ -28,13 +32,14 @@ interface Props {
   readonly vacio: string;
   /** Muestra la mesa de cada pedido (en la pantalla de cobros). */
   readonly conMesa?: boolean;
-  /** Después de cobrar: la lista se vuelve a pedir al backend. */
+  /** Después de cobrar o cancelar: la lista se vuelve a pedir al backend. */
   readonly onCobrado: () => void;
 }
 
 /**
  * HU-031 (BL-201): pedidos que esperan el pago, con «Cobrar en efectivo» y
  * (HU-007b, BL-80) «Cobrar con el POS», si el local lo tiene habilitado.
+ * BL-501: «Cancelar pedido», si el comensal se arrepintió o se cargó mal.
  * La usan el panel de la mesa del mapa y la pantalla de cobros pendientes.
  */
 export function PedidosPorCobrar({
@@ -49,6 +54,9 @@ export function PedidosPorCobrar({
   const [seleccionado, setSeleccionado] =
     useState<PedidoPendienteDeCobro | null>(null);
   const [conPos, setConPos] = useState<PedidoPendienteDeCobro | null>(null);
+  const [aCancelar, setACancelar] = useState<PedidoPendienteDeCobro | null>(
+    null,
+  );
   const [aviso, setAviso] = useState<string | null>(null);
 
   function cobrado(cobro: CobroEfectivoRegistrado) {
@@ -60,6 +68,12 @@ export function PedidosPorCobrar({
   function cobradoConPos(cobro: CobroPosRegistrado) {
     setConPos(null);
     setAviso(mensajeCobroPosRegistrado(cobro));
+    onCobrado();
+  }
+
+  function cancelado(pedido: PendienteCancelado) {
+    setACancelar(null);
+    setAviso(mensajePendienteCancelado(pedido));
     onCobrado();
   }
 
@@ -89,6 +103,14 @@ export function PedidosPorCobrar({
             let descripcionPos: string | undefined;
             if (otroMotivoPos) descripcionPos = idMotivoPos;
             else if (motivoPos) descripcionPos = idMotivo;
+            // BL-501: con un pago con tarjeta en curso no se cancela.
+            const motivoCancelar = motivoSinCancelar(pedido);
+            const idMotivoCancelar = `motivo-cancelar-${pedido.id}`;
+            const otroMotivoCancelar =
+              motivoCancelar !== null && motivoCancelar !== motivo;
+            let descripcionCancelar: string | undefined;
+            if (otroMotivoCancelar) descripcionCancelar = idMotivoCancelar;
+            else if (motivoCancelar) descripcionCancelar = idMotivo;
             return (
               <li
                 key={pedido.id}
@@ -120,6 +142,11 @@ export function PedidosPorCobrar({
                   {otroMotivoPos && (
                     <p id={idMotivoPos} className="text-label-sm text-on-surface-variant">
                       {motivoPos}
+                    </p>
+                  )}
+                  {otroMotivoCancelar && (
+                    <p id={idMotivoCancelar} className="text-label-sm text-on-surface-variant">
+                      {motivoCancelar}
                     </p>
                   )}
                 </div>
@@ -164,6 +191,25 @@ export function PedidosPorCobrar({
                       <span>Cobrar con el POS</span>
                     </button>
                   )}
+                  {/* BL-501: el comensal se arrepintió o se cargó mal. */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAviso(null);
+                      setACancelar(pedido);
+                    }}
+                    disabled={motivoCancelar !== null}
+                    aria-describedby={descripcionCancelar}
+                    className="flex min-h-12 flex-1 items-center justify-center gap-2 rounded-lg border border-outline-variant px-4 text-body-md text-error hover:bg-error-container disabled:cursor-not-allowed disabled:opacity-50 md:flex-none"
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="material-symbols-outlined text-[20px]"
+                    >
+                      close
+                    </span>
+                    <span>Cancelar pedido</span>
+                  </button>
                 </div>
               </li>
             );
@@ -182,6 +228,12 @@ export function PedidosPorCobrar({
         token={token}
         onClose={() => setConPos(null)}
         onCobrado={cobradoConPos}
+      />
+      <CancelarPendienteDialog
+        pedido={aCancelar}
+        token={token}
+        onClose={() => setACancelar(null)}
+        onCancelado={cancelado}
       />
     </div>
   );

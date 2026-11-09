@@ -7,12 +7,14 @@ import { useKeycloakAuth } from "@/components/providers/KeycloakProvider";
 import { apiFetch, ApiError } from "@/lib/api-client";
 import { CobrarEfectivoDialog } from "@/components/admin/cobros/CobrarEfectivoDialog";
 import { CobrarPosDialog } from "@/components/admin/cobros/CobrarPosDialog";
+import { CancelarPendienteDialog } from "@/components/admin/cobros/CancelarPendienteDialog";
 import { usePendientesDeCobro } from "@/components/admin/cobros/usePendientesDeCobro";
 import {
   codigoDelPedido,
   formatearMonto,
   mensajeCobroPosRegistrado,
   mensajeCobroRegistrado,
+  mensajePendienteCancelado,
 } from "@/components/admin/cobros/cobros.utils";
 import {
   armarPedido,
@@ -47,7 +49,8 @@ const CLASE_STEPPER =
  * una mesa abierta. Misma carta y mismas reglas que el comensal; el pedido
  * queda esperando el pago (prepago, RD.03) y el mozo lo cobra acá mismo, en
  * efectivo o con el POS del local (HU-007b, BL-485), o después, desde
- * «Cobros pendientes». Pensada para usar con una mano en el celular (RNF.01): botones de 48 px y el total fijo abajo.
+ * «Cobros pendientes». BL-501: si el comensal se arrepiente o se cargó
+ * mal, el mozo lo cancela mientras no se cobró. Pensada para usar con una mano en el celular (RNF.01): botones de 48 px y el total fijo abajo.
  */
 export default function CargarPedidoPage() {
   return (
@@ -71,7 +74,8 @@ function CargarPedido() {
   const [error, setError] = useState<string | null>(null);
   const [cargado, setCargado] = useState<PedidoCargado | null>(null);
   // HU-007b (BL-485): diálogo de cobro abierto, en efectivo o con el POS.
-  const [cobrando, setCobrando] = useState<"EFECTIVO" | "POS" | null>(null);
+  // BL-501: o el de cancelar el pedido.
+  const [cobrando, setCobrando] = useState<"EFECTIVO" | "POS" | "CANCELAR" | null>(null);
   const [cobrado, setCobrado] = useState<string | null>(null);
   // Medios habilitados en el local; se consultan recién con el pedido cargado.
   const { datos: pendientes } = usePendientesDeCobro(token, cargado !== null);
@@ -170,6 +174,17 @@ function CargarPedido() {
                 )}
               </div>
               <p className="text-body-sm text-on-surface-variant">{ayudaCobroAlCargar(medios)}</p>
+              {/* BL-501: el comensal se arrepintió o se cargó mal. */}
+              <button
+                type="button"
+                onClick={() => setCobrando("CANCELAR")}
+                className="flex min-h-12 items-center justify-center gap-2 rounded-lg border border-outline-variant px-5 text-body-md text-error hover:bg-error-container"
+              >
+                <span aria-hidden="true" className="material-symbols-outlined text-[20px]">
+                  close
+                </span>
+                <span>Cancelar pedido</span>
+              </button>
             </>
           )}
           <div className="flex flex-wrap gap-3">
@@ -197,6 +212,15 @@ function CargarPedido() {
           onCobrado={(registrado) => {
             setCobrando(null);
             setCobrado(mensajeCobroPosRegistrado(registrado));
+          }}
+        />
+        <CancelarPendienteDialog
+          pedido={cobrando === "CANCELAR" ? cargado : null}
+          token={token}
+          onClose={() => setCobrando(null)}
+          onCancelado={(cancelado) => {
+            setCobrando(null);
+            setCobrado(mensajePendienteCancelado(cancelado));
           }}
         />
       </div>

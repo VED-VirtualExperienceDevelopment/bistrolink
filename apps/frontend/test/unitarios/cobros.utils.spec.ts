@@ -5,6 +5,8 @@ import {
   horaDelPedido,
   mensajeCobroPosRegistrado,
   mensajeCobroRegistrado,
+  mensajePendienteCancelado,
+  motivoSinCancelar,
   motivoSinEfectivo,
   motivoSinPos,
   normalizarAutorizacion,
@@ -15,6 +17,7 @@ import {
   pendientesEnMesas,
   pendientesParaRetirar,
   resumenDeLineas,
+  rutaCancelarPendiente,
   type PedidoPendienteDeCobro,
 } from "@/components/admin/cobros/cobros.utils";
 
@@ -155,7 +158,11 @@ describe("cobros.utils (HU-031, BL-201)", () => {
       /^Cobro registrado: pedido #3F2A9C\. Vuelto: .*410\. Ya está en cocina\.$/,
     );
     expect(
-      mensajeCobroRegistrado({ ...cobro, montoRecibido: "590.00", vuelto: "0.00" }),
+      mensajeCobroRegistrado({
+        ...cobro,
+        montoRecibido: "590.00",
+        vuelto: "0.00",
+      }),
     ).toBe("Cobro registrado: pedido #3F2A9C, sin vuelto. Ya está en cocina.");
   });
 
@@ -214,5 +221,33 @@ describe("cobros.utils: POS del local (HU-007b, BL-80)", () => {
     expect(a).toMatch(/^pos-/);
     expect(a.length).toBeLessThanOrEqual(64);
     expect(nuevaClaveDeCobroPos()).not.toBe(a);
+  });
+});
+
+// BL-501: cancelar un pedido que todavía no se cobró.
+describe("cancelar un pedido sin cobrar (BL-501)", () => {
+  it("la ruta lleva el id del pedido", () => {
+    expect(rutaCancelarPendiente("3f2a9c1e-0000-4000-8000-000000000001")).toBe(
+      "/cobros/pendientes/3f2a9c1e-0000-4000-8000-000000000001/cancelar",
+    );
+  });
+
+  it("con un pago con tarjeta en curso no se cancela, con el mismo motivo que el efectivo", () => {
+    expect(motivoSinCancelar(pedido())).toBeNull();
+    const enCurso = pedido({ pagoEnCurso: true });
+    expect(motivoSinCancelar(enCurso)).toBe(motivoSinEfectivo(enCurso, true));
+    expect(motivoSinCancelar(enCurso)).toMatch(/pagando con tarjeta/);
+  });
+
+  it("aviso con el código del pedido", () => {
+    expect(
+      mensajePendienteCancelado({
+        pedidoId: "3f2a9c1e-0000-4000-8000-000000000001",
+        estado: "CANCELADO",
+        total: "590.00",
+      }),
+    ).toBe(
+      `Pedido ${codigoDelPedido("3f2a9c1e-0000-4000-8000-000000000001")} cancelado. No se cobró y no pasa a cocina.`,
+    );
   });
 });
