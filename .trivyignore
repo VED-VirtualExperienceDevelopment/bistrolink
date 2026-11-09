@@ -305,28 +305,39 @@ CVE-2026-102554
 CVE-2026-119373
 CVE-2026-119586
 
-# CVE-2026-119379 (HIGH) — sqlite-libs del SO base de la imagen oficial de Keycloak
+# CVE-2026-119379 y CVE-2026-119374 (HIGH) — sqlite-libs 3.34.1-11.el9_8 del SO base de la
 
-# (quay.io/keycloak/keycloak:26.7.2, Red Hat UBI 9.8), misma capa que CVE-2026-119373
+# imagen oficial de Keycloak (quay.io/keycloak/keycloak:26.7.2, Red Hat UBI 9.8), misma
 
-# y CVE-2026-119586. Desbordamiento de heap en la extensión session de SQLite
+# capa que CVE-2026-119373 y CVE-2026-119586. Estado "affected", sin fixed version de
 
-# (sqlite3changeset_apply), corregido upstream en SQLite 3.54.0; Red Hat todavía no
+# Red Hat; upstream se corrigieron en SQLite 3.54.0.
 
-# publicó un sqlite-libs corregido para RHEL 9. No aplica: solo se explota aplicando un
+# - CVE-2026-119379: desbordamiento de heap en la extensión session
 
-# changeset de sesión armado por un atacante, y en el contenedor nadie lo hace (Keycloak
+#   (sqlite3changeset_apply). Solo se explota aplicando un changeset armado por un
 
-# es Java y usa PostgreSQL; sqlite-libs viene en la imagen base y Keycloak no la usa).
+#   atacante.
 
-# La imagen de Keycloak (UBI micro) no trae gestor de paquetes, así que no se puede
+# - CVE-2026-119374: desbordamiento de heap en FTS5 (fts5DoSecureDelete). Solo se
 
-# actualizar el paquete desde nuestro Dockerfile.
+#   explota abriendo una base SQLite armada por un atacante, con un índice FTS5
 
-# Agregada el 09/11/2026 (BL-500, apareció en la base de Trivy del día). Vence a fin de
+#   corrupto, y borrando de ella con secure-delete.
 
-# año para que se revise sí o sí. Pendiente (BL-137): quitar cuando Keycloak publique
+# No aplican: en el contenedor nadie aplica changesets ni abre bases SQLite de terceros
+
+# (Keycloak es Java y usa PostgreSQL; sqlite-libs viene en la imagen base y Keycloak no
+
+# la usa). La imagen de Keycloak (UBI micro) no trae gestor de paquetes, así que no se
+
+# puede actualizar el paquete desde nuestro Dockerfile.
+
+# Agregadas el 09/11/2026 (BL-500, aparecieron en la base de Trivy del día). Vencen a fin
+
+# de año para que se revisen sí o sí. Pendiente (BL-137): quitar cuando Keycloak publique
 
 # una imagen con sqlite-libs corregido.
 
 CVE-2026-119379 exp:2026-12-31
+CVE-2026-119374 exp:2026-12-31
