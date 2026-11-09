@@ -37,6 +37,20 @@ export interface EstadoPagoDelPedido {
     // un mensaje distinto. Null si no fue rechazado.
     motivoRechazo: string | null;
   } | null;
+  /**
+   * HU-022 (BL-494): lo que se cobra por el pedido, calculado en el backend
+   * con las líneas y la propina que eligió el comensal. `consumo` es lo que
+   * se factura; `total` = consumo + propina. Ambos `propina*` en null = sin
+   * propina elegida. Está también antes del primer pago, para que la pantalla
+   * muestre la elección al recargar.
+   */
+  totales: {
+    consumo: string;
+    propina: string;
+    total: string;
+    propinaPorcentaje: number | null;
+    propinaMonto: number | null;
+  };
   // Null mientras el CFE no fue emitido (el frontend consulta de nuevo).
   comprobante: ResumenComprobante | null;
   /**
@@ -279,6 +293,10 @@ export class PagosService {
             canal: true,
             efectivoSolicitadoEn: true,
             efectivoPagaCon: true,
+            // HU-022 (BL-494): para calcular el desglose en el backend.
+            propinaPorcentaje: true,
+            propinaMonto: true,
+            lineas: { select: { subtotal: true } },
             pagos: {
               orderBy: { createdAt: 'desc' },
               select: {
@@ -318,6 +336,7 @@ export class PagosService {
       pedido.pagos[0] ??
       null;
     const comprobante = pago?.comprobantes[0] ?? null;
+    const totales = calcularTotales(pedido.lineas, pedido);
 
     return {
       pedidoId: pedido.id,
@@ -328,6 +347,13 @@ export class PagosService {
         medioPago: pago.medioPago,
         monto: pago.monto.toFixed(2),
         motivoRechazo: pago.motivoRechazo,
+      },
+      totales: {
+        consumo: totales.consumo.toFixed(2),
+        propina: totales.propina.toFixed(2),
+        total: totales.total.toFixed(2),
+        propinaPorcentaje: pedido.propinaPorcentaje,
+        propinaMonto: pedido.propinaMonto,
       },
       comprobante: comprobante && {
         tipoCfe: comprobante.tipoCfe,
