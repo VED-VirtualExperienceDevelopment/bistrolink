@@ -83,3 +83,15 @@ export function calcularTotales(
   const propina = calcularPropina(consumo, eleccion);
   return { consumo, propina, total: consumo.plus(propina) };
 }
+
+/**
+ * Lo que se le cobró (o se le cobra) al comensal con un pago: el consumo
+ * (`monto`) más la propina. Un pago sin propina (los anteriores a HU-022)
+ * cobra solo el monto.
+ */
+export function totalCobrado(pago: {
+  monto: Prisma.Decimal;
+  propina?: Prisma.Decimal | null;
+}): Prisma.Decimal {
+  return pago.monto.plus(pago.propina ?? CERO);
+}

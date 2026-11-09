@@ -4,6 +4,7 @@ import {
   calcularTotales,
   sumarConsumo,
   topeDePropina,
+  totalCobrado,
 } from '../../src/pagos/totales-pedido';
 
 // HU-022 (BL-494, BL-85): totales de un pedido con propina.
@@ -101,6 +102,22 @@ describe('totales de un pedido con propina (HU-022)', () => {
       expect(pesos(calcularPropina(consumo, { propinaMonto: 5000 }))).toBe(
         '1250.00',
       );
+    });
+  });
+
+  describe('totalCobrado', () => {
+    it('suma el consumo y la propina del pago', () => {
+      const pago = {
+        monto: new Prisma.Decimal('1250'),
+        propina: new Prisma.Decimal('188'),
+      };
+      expect(pesos(totalCobrado(pago))).toBe('1438.00');
+    });
+
+    it('un pago sin propina (anterior a HU-022) cobra solo el monto', () => {
+      const monto = new Prisma.Decimal('590');
+      expect(pesos(totalCobrado({ monto }))).toBe('590.00');
+      expect(pesos(totalCobrado({ monto, propina: null }))).toBe('590.00');
     });
   });
 });
