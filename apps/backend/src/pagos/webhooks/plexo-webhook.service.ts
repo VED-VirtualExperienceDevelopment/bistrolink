@@ -7,6 +7,7 @@ import { CfeService } from '../../cfe/cfe.service';
 import { PedidosService } from '../../pedidos/pedidos.service';
 import { PedidoParaKds } from '../../pedidos/pedido-kds.mapper';
 import { registrarCambioPago } from '../historial-pago';
+import { totalCobrado } from '../totales-pedido';
 
 type EstadoPago = 'PENDIENTE' | 'APROBADO' | 'RECHAZADO' | 'REEMBOLSADO';
 
@@ -133,12 +134,15 @@ export class PlexoWebhookService {
       return { resultado: 'pago_no_encontrado' };
     }
 
+    // HU-022 (BL-494): el checkout se creó por el total cobrado (consumo +
+    // propina), no solo por el consumo.
+    const cobrado = totalCobrado(pagoBd);
     if (
       pago.totalAmount === undefined ||
-      !new Prisma.Decimal(pago.totalAmount).equals(pagoBd.monto)
+      !new Prisma.Decimal(pago.totalAmount).equals(cobrado)
     ) {
       Logger.error(
-        `Webhook Plexo: el monto de ${pago.id} (${pago.totalAmount}) no coincide con el del pago ${pagoBd.id} (${pagoBd.monto})`,
+        `Webhook Plexo: el monto de ${pago.id} (${pago.totalAmount}) no coincide con el del pago ${pagoBd.id} (${cobrado})`,
         undefined,
         PlexoWebhookService.name,
       );
