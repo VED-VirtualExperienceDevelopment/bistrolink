@@ -1,0 +1,232 @@
+# ============================================================================
+# .github/workflows/dast.yml
+#
+# BL-218: análisis dinámico de seguridad (DAST) con OWASP ZAP sobre staging
+# (Línea de Base §3.4.4, Anexo 4 §1.8.7, Anexo 11 «Seguridad dinámica»).
+#
+# Dos modos:
+#   - baseline: escaneo pasivo (encabezados, cookies, exposición de
+#     información) de la web, de la API y de Keycloak. Corre solo después de
+#     cada deploy a staging (cuando «CI/CD BistroLink» termina bien en un push
+#     a develop) y también se puede correr a mano.
+#   - completo: escaneo activo de la API con su contrato OpenAPI, autenticado
+#     con el Admin del tenant de testing B. Solo a mano: Actions → «DAST
+#     (OWASP ZAP)» → Run workflow → modo «completo». Manda requests de ataque
+#     (inyección, XSS, path traversal) y puede crear o modificar datos del
+#     tenant B: no correrlo mientras corren los E2E, y después correr
+#     «Limpieza de staging».
+#
+# Criterio de salida: sin hallazgos de riesgo alto. El job falla si hay
+# alguno; los medios quedan en el resumen para registrarlos como defectos en
+# GitHub Issues (Anexo 11 §9.5). Los descartes revisados van en
+# scripts/dast/reglas-zap.tsv con su motivo.
+#
+# No bloquea el deploy: es un workflow aparte que corre después.
+#
+# Fuera de alcance (Respuestas a la revisión de ciberseguridad): producción,
+# pasarelas de pago y proveedores de CFE, la plataforma Railway y pruebas de
+# denegación de servicio.
+#
+# Secrets (los mismos que usa «Limpieza de staging»):
+#   STAGING_KEYCLOAK_CLIENT_SECRET, TEST_TENANT_B_USERNAME, TEST_TENANT_B_PASSWORD
+# ============================================================================
+
+name: DAST (OWASP ZAP)
+
+on:
+  workflow_run:
+    workflows: ["CI/CD BistroLink"]
+    types: [completed]
+    branches: [develop]
+  workflow_dispatch:
+    inputs:
+      modo:
+        description: "baseline (pasivo, web + API + Keycloak) o completo (activo y autenticado sobre la API)"
+        type: choice
+        options: [baseline, completo]
+        default: baseline
+
+permissions:
+  contents: read
+
+# Un solo escaneo de staging a la vez. Un deploy nuevo cancela el baseline
+# anterior; una corrida manual no se cancela.
+concurrency:
+  group: dast-staging
+  cancel-in-progress: ${{ github.event_name == 'workflow_run' }}
+
+env:
+  # Versión fija de ZAP: una versión nueva puede sumar reglas y cambiar el
+  # resultado sin que cambie el código. Se actualiza a mano.
+  ZAP_IMAGEN: ghcr.io/zaproxy/zaproxy:2.17.0
+  API_HOST: bistrolink-api-staging.up.railway.app
+  OPENAPI_URL: https://bistrolink-api-staging.up.railway.app/api/docs-json
+  KEYCLOAK_TOKEN_URL: https://bistrolink-auth-staging.up.railway.app/realms/bistrolink/protocol/openid-connect/token
+
+jobs:
+  # ── BASELINE (pasivo) ─────────────────────────────────────────────────────
+  baseline:
+    name: 🛡️ ZAP baseline — ${{ matrix.objetivo }}
+    # Después de un deploy: solo si el CI terminó bien en un push (no en PR).
+    if: >-
+      (github.event_name == 'workflow_dispatch' && inputs.modo == 'baseline') ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - objetivo: web
+            url: https://bistrolink-web-staging.up.railway.app
+            # Spider de 3 minutos sobre las páginas públicas y el login.
+            comando: zap-baseline.py -t https://bistrolink-web-staging.up.railway.app -m 3
+          - objetivo: api
+            url: https://bistrolink-api-staging.up.railway.app/health
+            # -S (modo seguro): importa el contrato OpenAPI y analiza las
+            # respuestas sin escaneo activo. Sin token, casi todo responde 401.
+            comando: zap-api-scan.py -t https://bistrolink-api-staging.up.railway.app/api/docs-json -f openapi -S
+          - objetivo: auth
+            url: https://bistrolink-auth-staging.up.railway.app/realms/bistrolink/.well-known/openid-configuration
+            # La consola de cuenta redirige a la pantalla de login del realm.
+            comando: zap-baseline.py -t https://bistrolink-auth-staging.up.railway.app/realms/bistrolink/account/ -m 2
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      - name: Tests del resumen
+        if: matrix.objetivo == 'web'
+        run: node --test scripts/dast/resumen-zap.test.mjs
+
+      # Railway duerme los servicios sin tráfico: sin esto, ZAP escanea un 502.
+      - name: Despertar staging
+        run: curl -fsS --retry 12 --retry-delay 5 --retry-all-errors --max-time 20 -o /dev/null "${{ matrix.url }}"
+
+      - name: Escaneo de ZAP
+        run: |
+          mkdir -p zap && chmod 777 zap
+          cp scripts/dast/reglas-zap.tsv zap/
+          set +e
+          docker run --rm -v "$PWD/zap:/zap/wrk:rw" "$ZAP_IMAGEN" \
+            ${{ matrix.comando }} -c reglas-zap.tsv -I \
+            -r "${{ matrix.objetivo }}.html" -J "${{ matrix.objetivo }}.json" -w "${{ matrix.objetivo }}.md"
+          codigo=$?
+          set -e
+          # 0 = sin alertas, 1 = alguna FAIL, 2 = alguna WARN, 3 = error de ZAP.
+          # Qué cuenta como falla lo decide el paso siguiente.
+          echo "ZAP terminó con código $codigo"
+          if [ "$codigo" -ge 3 ]; then
+            echo "::error::ZAP no pudo completar el escaneo de ${{ matrix.objetivo }} (código $codigo)."
+            exit 1
+          fi
+
+      - name: Resumen y criterio de salida
+        run: >-
+          node scripts/dast/resumen-zap.mjs
+          --informe "zap/${{ matrix.objetivo }}.json"
+          --objetivo "${{ matrix.objetivo }} (baseline)"
+          --reglas scripts/dast/reglas-zap.tsv
+
+      - name: Subir informes
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: dast-baseline-${{ matrix.objetivo }}
+          path: zap/
+          retention-days: 30
+          if-no-files-found: ignore
+
+  # ── COMPLETO (activo y autenticado sobre la API) ─────────────────────────
+  completo:
+    name: 🛡️ ZAP completo — API autenticada
+    if: github.event_name == 'workflow_dispatch' && inputs.modo == 'completo'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      - name: Despertar staging
+        run: |
+          curl -fsS --retry 12 --retry-delay 5 --retry-all-errors --max-time 20 -o /dev/null "https://$API_HOST/health"
+          curl -fsS --retry 12 --retry-delay 5 --retry-all-errors --max-time 20 -o /dev/null "${KEYCLOAK_TOKEN_URL%/protocol/*}/.well-known/openid-configuration"
+
+      # Admin del tenant B (no el A, que usan los E2E). El token dura 15
+      # minutos (accessTokenLifespan del realm): por eso el escaneo activo se
+      # corta a los 13.
+      - name: Token del Admin del tenant de testing B
+        env:
+          KEYCLOAK_CLIENT_SECRET: ${{ secrets.STAGING_KEYCLOAK_CLIENT_SECRET }}
+          USUARIO: ${{ secrets.TEST_TENANT_B_USERNAME }}
+          CLAVE: ${{ secrets.TEST_TENANT_B_PASSWORD }}
+        run: |
+          respuesta=$(curl -sS --retry 5 --retry-delay 5 --max-time 20 -X POST "$KEYCLOAK_TOKEN_URL" \
+            --data-urlencode grant_type=password \
+            --data-urlencode client_id=bistrolink-backend \
+            --data-urlencode "client_secret=$KEYCLOAK_CLIENT_SECRET" \
+            --data-urlencode "username=$USUARIO" \
+            --data-urlencode "password=$CLAVE")
+          token=$(echo "$respuesta" | jq -r '.access_token // empty')
+          if [ -z "$token" ]; then
+            echo "::error::Keycloak no devolvió el token: $(echo "$respuesta" | jq -r '.error_description // .error // "sin detalle"')"
+            exit 1
+          fi
+          echo "::add-mask::$token"
+          echo "ZAP_AUTH_HEADER_VALUE=Bearer $token" >> "$GITHUB_ENV"
+
+      # ZAP_AUTH_HEADER_*: ZAP agrega el header a cada request, pero solo hacia
+      # la API (ZAP_AUTH_HEADER_SITE). threadPerHost bajo para no chocar tanto
+      # con el rate limiting de la API.
+      - name: Escaneo activo de ZAP
+        run: |
+          mkdir -p zap && chmod 777 zap
+          cp scripts/dast/reglas-zap.tsv zap/
+          set +e
+          docker run --rm -v "$PWD/zap:/zap/wrk:rw" \
+            -e ZAP_AUTH_HEADER=Authorization \
+            -e ZAP_AUTH_HEADER_VALUE \
+            -e ZAP_AUTH_HEADER_SITE="$API_HOST" \
+            "$ZAP_IMAGEN" \
+            zap-api-scan.py -t "$OPENAPI_URL" -f openapi -c reglas-zap.tsv -I \
+            -z "-config scanner.maxScanDurationInMins=13 -config scanner.threadPerHost=4" \
+            -r api-completo.html -J api-completo.json -w api-completo.md
+          codigo=$?
+          set -e
+          echo "ZAP terminó con código $codigo"
+          if [ "$codigo" -ge 3 ]; then
+            echo "::error::ZAP no pudo completar el escaneo activo (código $codigo)."
+            exit 1
+          fi
+
+      - name: Resumen y criterio de salida
+        run: >-
+          node scripts/dast/resumen-zap.mjs
+          --informe zap/api-completo.json
+          --objetivo "API (completo, autenticado)"
+          --reglas scripts/dast/reglas-zap.tsv
+
+      - name: Recordatorio
+        if: always()
+        run: |
+          {
+            echo ""
+            echo "> El escaneo activo pudo crear o cambiar datos del tenant de testing B."
+            echo "> Correr **Limpieza de staging** (dry_run sin tildar, antiguedad_horas 0) antes de la próxima demo."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Subir informes
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: dast-completo-api
+          path: zap/
+          retention-days: 90
+          if-no-files-found: ignore

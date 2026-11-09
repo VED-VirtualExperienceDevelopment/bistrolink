@@ -1,0 +1,14 @@
+# BL-218 — Reglas de OWASP ZAP para el DAST de staging.
+#
+# Formato (separado por TAB, no por espacios):
+#   <id de la regla>	<IGNORE|INFO|WARN|FAIL>	<motivo>
+#
+# Se agrega una línea IGNORE solo después de revisar la alerta y concluir que
+# es un falso positivo o un riesgo aceptado. El motivo es obligatorio (lo
+# controla resumen-zap.test.mjs) y tiene que decir qué se revisó y dónde
+# quedó la evidencia (issue, ADR o informe en docs/security/).
+#
+# El id es el «ID» de la tabla del resumen del job (pluginid de ZAP). La
+# lista de reglas está en https://www.zaproxy.org/docs/alerts/
+#
+# Todavía no hay alertas revisadas: la primera corrida define la línea base.

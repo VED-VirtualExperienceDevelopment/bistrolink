@@ -22,6 +22,7 @@
 | Documento | Para qué |
 |---|---|
 | [Endpoints públicos](security/public-endpoints.md) | Modelo de amenazas y capas de defensa de los endpoints sin autenticación (menú del comensal) |
+| [Análisis dinámico (DAST)](security/dast.md) | Escaneo de staging con OWASP ZAP: alcance, cómo correrlo, criterio de salida y cómo registrar los hallazgos |
 
 ### Proceso
 
