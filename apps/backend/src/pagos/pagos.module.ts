@@ -18,6 +18,7 @@ import { ConciliacionPagosJob } from './conciliacion/conciliacion-pagos.job';
 import { CobrosController } from './efectivo/cobros.controller';
 import { CobroEfectivoService } from './efectivo/cobro-efectivo.service';
 import { SolicitudEfectivoService } from './efectivo/solicitud-efectivo.service';
+import { PropinaPedidoService } from './propina/propina-pedido.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { CancelacionPedidoController } from './cancelacion/cancelacion-pedido.controller';
 import { CancelacionPedidoService } from './cancelacion/cancelacion-pedido.service';
@@ -56,6 +57,8 @@ import { PosModule } from '../pos/pos.module';
     CobroEfectivoService,
     // HU-031b (BL-442): el comensal pide pagar en efectivo.
     SolicitudEfectivoService,
+    // HU-022 (BL-494): el comensal elige la propina antes de pagar.
+    PropinaPedidoService,
     CancelacionPedidoService,
     AuditLogService,
   ],
