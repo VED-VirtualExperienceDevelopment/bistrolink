@@ -877,6 +877,24 @@ describe('PedidosService.confirmarPagoEnTx / notificarPedidoConfirmado (BL-311, 
     expect(mockDescuentoStock.avisarReposicion).not.toHaveBeenCalled();
   });
 
+  it('BL-501: notificarPendienteCancelado solo avisa el pedido cancelado (no estaba en la cola ni en los reportes)', () => {
+    mockKdsGateway.emitirPedidoActualizado.mockClear();
+    mockKdsGateway.avisarEstadoCola.mockClear();
+
+    service.notificarPendienteCancelado(TENANT_ID, 'pedido-1');
+
+    expect(mockKdsGateway.emitirPedidoActualizado).toHaveBeenCalledTimes(1);
+    expect(mockKdsGateway.emitirPedidoActualizado).toHaveBeenCalledWith(
+      TENANT_ID,
+      {
+        id: 'pedido-1',
+        estado: 'CANCELADO',
+        actualizadoEn: expect.any(String),
+      },
+    );
+    expect(mockKdsGateway.avisarEstadoCola).not.toHaveBeenCalled();
+  });
+
   it('notificarPedidoConfirmado: al KDS va con la forma del snapshot, con mesaNumero (BL-244)', () => {
     service.notificarPedidoConfirmado(TENANT_ID, pedidoConfirmado as any);
 

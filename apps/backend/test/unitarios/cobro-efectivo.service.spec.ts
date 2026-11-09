@@ -658,7 +658,8 @@ describe('CobrosController (HU-031, BL-201)', () => {
       registrarPos: jest.fn(),
       pendientes: jest.fn(),
     };
-    const controller = new CobrosController(cobro as any);
+    const cancelacion = { cancelar: jest.fn() };
+    const controller = new CobrosController(cobro as any, cancelacion as any);
     const req = { user: { tenantId: TENANT, sub: ACTOR, roles: ['MOZO'] } };
     const pos = {
       pedidoId: PEDIDO,
@@ -670,10 +671,13 @@ describe('CobrosController (HU-031, BL-201)', () => {
     await controller.registrarEfectivo(req as any, dto());
     await controller.registrarPos(req as any, pos);
     await controller.pendientes(req as any);
+    await controller.cancelarPendiente(req as any, PEDIDO);
 
     expect(cobro.registrar).toHaveBeenCalledWith(TENANT, ACTOR, dto());
     expect(cobro.registrarPos).toHaveBeenCalledWith(TENANT, ACTOR, pos);
     expect(cobro.pendientes).toHaveBeenCalledWith(TENANT);
+    // BL-501
+    expect(cancelacion.cancelar).toHaveBeenCalledWith(TENANT, ACTOR, PEDIDO);
   });
 
   const guard = new RolesGuard(new Reflector());
@@ -689,6 +693,7 @@ describe('CobrosController (HU-031, BL-201)', () => {
       CobrosController.prototype.registrarEfectivo,
       CobrosController.prototype.registrarPos,
       CobrosController.prototype.pendientes,
+      CobrosController.prototype.cancelarPendiente,
     ]) {
       expect(guard.canActivate(contexto(handler, [rol]))).toBe(true);
     }
@@ -711,6 +716,12 @@ describe('CobrosController (HU-031, BL-201)', () => {
       expect(() =>
         guard.canActivate(
           contexto(CobrosController.prototype.registrarPos, [rol]),
+        ),
+      ).toThrow(ForbiddenException);
+      // BL-501: ni cancelan pedidos sin pagar.
+      expect(() =>
+        guard.canActivate(
+          contexto(CobrosController.prototype.cancelarPendiente, [rol]),
         ),
       ).toThrow(ForbiddenException);
     },
