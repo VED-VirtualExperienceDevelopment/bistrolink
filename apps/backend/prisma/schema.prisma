@@ -368,6 +368,12 @@ model Pedido {
   // sigue en PENDIENTE_PAGO hasta que el mozo registra el cobro (BL-201).
   efectivoSolicitadoEn  DateTime?    @map("efectivo_solicitado_en") @db.Timestamptz(3)
   efectivoPagaCon       Decimal?     @map("efectivo_paga_con") @db.Decimal(10, 2)
+  // HU-022 (BL-494): la propina que eligió el comensal, antes de pagar. Se
+  // guarda la ELECCIÓN y no el monto: el backend calcula el monto sobre las
+  // líneas al cobrar (BL-90). Como mucho uno de los dos tiene valor
+  // (porcentaje, o monto libre en pesos enteros); ninguno = sin propina.
+  propinaPorcentaje     Int?         @map("propina_porcentaje")
+  propinaMonto          Int?         @map("propina_monto")
   // HU-009 (BL-453): el comensal pidió e-Factura (tipo 111) en lugar del
   // e-Ticket. Solo se guardan si aceptó el aviso de privacidad (HU-036):
   // sin aceptar, quedan nulos y se emite un e-Ticket. El administrador los
@@ -435,7 +441,11 @@ model Pago {
   tenantId           String     @map("tenant_id") @db.Uuid
   pedidoId           String     @map("pedido_id") @db.Uuid
   idempotencyKey     String     @unique @map("idempotency_key") @db.VarChar(64)
+  // Consumo (lo que se factura). La propina va aparte (HU-022): lo cobrado
+  // es monto + propina; el CFE, la rebaja de IVA y las ventas usan `monto`.
   monto              Decimal    @db.Decimal(10, 2)
+  // HU-022 (BL-494): propina cobrada con este pago, en pesos. 0 = sin propina.
+  propina            Decimal    @default(0) @db.Decimal(10, 2)
   medioPago          String     @map("medio_pago") // sin enum: no está cerrado en el Anexo 6
   estado             PagoEstado
   pasarelaReferencia String?    @map("pasarela_referencia")
