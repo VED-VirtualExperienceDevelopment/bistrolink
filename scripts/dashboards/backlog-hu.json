@@ -1,0 +1,84 @@
+{
+  "_comentario": [
+    "Fuente: Anexo 5 (Product Backlog) v2.3, Tabla 7 y Tabla 8, más las solicitudes de cambio posteriores.",
+    "Este archivo dice QUÉ historias forman el MVP y con qué SP y prioridad (la del backlog, no la etiqueta de Linear).",
+    "El ESTADO sale de Linear en cada corrida: una HU está terminada cuando todos sus issues de 'linear' están Done.",
+    "Todo issue que no figure acá cuenta como trabajo técnico (pipeline, seguridad, testing, defectos, documentación).",
+    "Los sub-issues de una HU cuentan como trabajo de la HU, aunque no figuren en la lista.",
+    "Al aprobar una solicitud de cambio: agregar la HU con 'origen' y actualizar 'alcance'."
+  ],
+  "alcance": {
+    "backlog": "Anexo 5 v2.3 (30/10/2026)",
+    "historias": 37,
+    "storyPoints": 206,
+    "solicitudesDeCambio": [
+      { "hu": "HU-042", "fecha": "2026-11-05", "storyPoints": 5, "detalle": "KDS: cola de pedidos y límite de elaboración (BL-461)" }
+    ]
+  },
+  "grupos": [
+    { "id": "nucleo", "nombre": "Núcleo", "emoji": "🟩", "fechaPlan": "2026-10-09", "hito": "H5" },
+    { "id": "integracion", "nombre": "Integración", "emoji": "🟦", "fechaPlan": "2026-11-20", "hito": "H8" },
+    { "id": "linea-base", "nombre": "Incorporadas en la Línea de Base", "emoji": "🟨", "fechaPlan": "2026-11-20", "hito": "H8" },
+    { "id": "post-lb", "nombre": "Incorporadas después de la Línea de Base", "emoji": "🟧", "fechaPlan": "2026-11-20", "hito": "H8" },
+    { "id": "cambio", "nombre": "Solicitudes de cambio", "emoji": "🟪", "fechaPlan": "2026-11-20", "hito": "H8" }
+  ],
+  "historias": [
+    { "hu": "HU-001", "linear": ["BL-24"], "sp": 8, "prioridad": "Must", "grupo": "nucleo", "nivel": 1 },
+    { "hu": "HU-002", "linear": ["BL-28"], "sp": 5, "prioridad": "Should", "grupo": "nucleo", "nivel": 1 },
+    { "hu": "HU-013", "linear": ["BL-32"], "sp": 5, "prioridad": "Must", "grupo": "nucleo", "nivel": 1 },
+    { "hu": "HU-003", "linear": ["BL-36"], "sp": 13, "prioridad": "Must", "grupo": "nucleo", "nivel": 1 },
+    { "hu": "HU-021", "linear": ["BL-40"], "sp": 3, "prioridad": "Should", "grupo": "nucleo", "nivel": 1 },
+    { "hu": "HU-004", "linear": ["BL-44"], "sp": 8, "prioridad": "Must", "grupo": "nucleo", "nivel": 1 },
+    { "hu": "HU-006", "linear": ["BL-48"], "sp": 8, "prioridad": "Must", "grupo": "nucleo", "nivel": 1 },
+    { "hu": "HU-005", "linear": ["BL-52"], "sp": 8, "prioridad": "Must", "grupo": "nucleo", "nivel": 1 },
+    { "hu": "HU-016", "linear": ["BL-56"], "sp": 8, "prioridad": "Must", "grupo": "nucleo", "nivel": 1 },
+    { "hu": "HU-017", "linear": ["BL-60"], "sp": 5, "prioridad": "Must", "grupo": "nucleo", "nivel": 1 },
+    { "hu": "HU-018", "linear": ["BL-64"], "sp": 5, "prioridad": "Must", "grupo": "nucleo", "nivel": 1 },
+    { "hu": "HU-019", "linear": ["BL-68"], "sp": 3, "prioridad": "Should", "grupo": "nucleo", "nivel": 1 },
+
+    { "hu": "HU-020", "linear": ["BL-72"], "sp": 5, "prioridad": "Must", "grupo": "integracion", "nivel": 1 },
+    { "hu": "HU-007", "linear": ["BL-76", "BL-311"], "sp": 8, "prioridad": "Must", "grupo": "integracion", "nivel": 1 },
+    { "hu": "HU-007b", "linear": ["BL-80", "BL-485"], "sp": 3, "prioridad": "Must", "grupo": "integracion", "nivel": 1 },
+    { "hu": "HU-022", "linear": ["BL-84"], "sp": 3, "prioridad": "Should", "grupo": "integracion", "nivel": 2 },
+    { "hu": "HU-009", "linear": ["BL-92"], "sp": 8, "prioridad": "Must", "grupo": "integracion", "nivel": 1 },
+    { "hu": "HU-023", "linear": ["BL-96"], "sp": 8, "prioridad": "Should", "grupo": "integracion", "nivel": 2 },
+    { "hu": "HU-011", "linear": ["BL-100", "BL-488", "BL-489"], "sp": 13, "prioridad": "Must", "grupo": "integracion", "nivel": 1 },
+    { "hu": "HU-012", "linear": ["BL-108"], "sp": 8, "prioridad": "Must", "grupo": "integracion", "nivel": 1 },
+    { "hu": "HU-024", "linear": ["BL-104"], "sp": 8, "prioridad": "Must", "grupo": "integracion", "nivel": 1 },
+
+    { "hu": "HU-027", "linear": ["BL-163"], "sp": 8, "prioridad": "Must", "grupo": "linea-base", "nivel": 1 },
+    { "hu": "HU-029", "linear": ["BL-183"], "sp": 3, "prioridad": "Must", "grupo": "linea-base", "nivel": 1 },
+    { "hu": "HU-030", "linear": ["BL-184"], "sp": 3, "prioridad": "Should", "grupo": "linea-base", "nivel": 2 },
+
+    { "hu": "HU-008", "linear": ["BL-88"], "sp": 8, "prioridad": "Should", "grupo": "post-lb", "nivel": 2 },
+    { "hu": "HU-031", "linear": ["BL-201"], "sp": 5, "prioridad": "Must", "grupo": "post-lb", "nivel": 1 },
+    { "hu": "HU-031b", "linear": ["BL-442"], "sp": 3, "prioridad": "Should", "grupo": "post-lb", "nivel": 1 },
+    { "hu": "HU-032", "linear": ["BL-202"], "sp": 3, "prioridad": "Must", "grupo": "post-lb", "nivel": 1 },
+    { "hu": "HU-033", "linear": ["BL-203"], "sp": 3, "prioridad": "Should", "grupo": "post-lb", "nivel": 2 },
+    { "hu": "HU-034", "linear": ["BL-204"], "sp": 5, "prioridad": "Must", "grupo": "post-lb", "nivel": 1 },
+    { "hu": "HU-035", "linear": ["BL-205"], "sp": 3, "prioridad": "Must", "grupo": "post-lb", "nivel": 1 },
+    { "hu": "HU-036", "linear": ["BL-206"], "sp": 3, "prioridad": "Must", "grupo": "post-lb", "nivel": 1 },
+    { "hu": "HU-037", "linear": ["BL-207"], "sp": 3, "prioridad": "Must", "grupo": "post-lb", "nivel": 1 },
+    { "hu": "HU-038", "linear": ["BL-208"], "sp": 3, "prioridad": "Should", "grupo": "post-lb", "nivel": 2 },
+    { "hu": "HU-039", "linear": ["BL-209"], "sp": 5, "prioridad": "Must", "grupo": "post-lb", "nivel": 1 },
+    { "hu": "HU-040", "linear": ["BL-210"], "sp": 5, "prioridad": "Should", "grupo": "post-lb", "nivel": 2 },
+    { "hu": "HU-041", "linear": ["BL-404"], "sp": 0, "prioridad": "Should", "grupo": "post-lb", "nivel": 2, "nota": "Sin estimación en Linear (el trabajo se registró en sub-issues)." },
+
+    { "hu": "HU-042", "linear": ["BL-461"], "sp": 5, "prioridad": "Should", "grupo": "cambio", "nivel": 1, "origen": "Solicitud de cambio del 05/11/2026" }
+  ],
+  "fueraDelMvp": [
+    { "hu": "HU-010", "linear": ["BL-112"], "sp": 13, "prioridad": "Could", "nivel": 4, "motivo": "Trabajo futuro" },
+    { "hu": "HU-014", "linear": ["BL-116"], "sp": 13, "prioridad": "Could", "nivel": 4, "motivo": "Trabajo futuro" },
+    { "hu": "HU-015", "linear": ["BL-120"], "sp": 5, "prioridad": "Could", "nivel": 3, "motivo": "Condicional a holgura en H7" },
+    { "hu": "HU-026", "linear": ["BL-124"], "sp": 13, "prioridad": "Could", "nivel": 4, "motivo": "Trabajo futuro" },
+    { "hu": "HU-028", "linear": ["BL-173"], "sp": 8, "prioridad": "Could", "nivel": null, "motivo": "Terminada fuera del MVP" },
+    { "hu": null, "linear": ["BL-293"], "sp": 5, "prioridad": "Should", "nivel": 4, "motivo": "Trabajo futuro (09/11/2026)" },
+    { "hu": null, "linear": ["BL-329"], "sp": 3, "prioridad": "Could", "nivel": 4, "motivo": "Trabajo futuro (09/11/2026)" }
+  ],
+  "_comentarioReclasificados": "Issues con «HU» en el título que no son historias del backlog. Se cuentan como trabajo técnico y no generan aviso.",
+  "reclasificados": [
+    { "linear": "BL-341", "motivo": "Tarea de producción de HU-007: verificar el webhook real de Mercado Pago" },
+    { "linear": "BL-342", "motivo": "Mejora técnica de identidad y accesibilidad del ingreso del personal" },
+    { "linear": "BL-272", "motivo": "Sub-issue de BL-262 (seguridad del realm de Keycloak): cierre de sesiones al desactivar un usuario" }
+  ]
+}

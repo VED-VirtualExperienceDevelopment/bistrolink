@@ -16,18 +16,18 @@ on:
         type: boolean
         default: false
   schedule:
-    # Fechas de cierre de sprint del plan ORIGINAL (Anexo 7). El email de
+    # BL-493: fechas de cierre de Sprint de la Línea de Base (Tabla 17 y
+    # Gantt v2.0, Anexo 8), a las 18:00 UTC (15:00 de Uruguay). El email de
     # estado se manda solo en estas corridas.
-    - cron: "0 18 14 8 *" # Cierre Sprint 1 - 14/08
-    - cron: "0 18 28 8 *" # Cierre Sprint 2 - 28/08
-    - cron: "0 18 11 9 *" # Cierre Sprint 3 - 11/09
-    - cron: "0 18 25 9 *" # Cierre Sprint 4 - 25/09
-    - cron: "0 18 9 10 *" # Cierre Sprint 5 - 09/10
-    - cron: "0 18 23 10 *" # Cierre Sprint 6 - 23/10
-    - cron: "0 18 6 11 *" # Cierre Sprint 7 - 06/11
-    - cron: "0 18 20 11 *" # Cierre Sprint 8 - 20/11
-    - cron: "0 18 4 12 *" # Cierre Sprint 9 - 04/12
-    - cron: "0 18 10 12 *" # Entrega final - 10/12
+    - cron: "0 18 14 8 *" # Cierre S1 - 14/08 (H1)
+    - cron: "0 18 28 8 *" # Cierre S2 - 28/08 (H2)
+    - cron: "0 18 11 9 *" # Cierre S3 - 11/09 (H3)
+    - cron: "0 18 25 9 *" # Cierre S4 - 25/09 (H4)
+    - cron: "0 18 9 10 *" # Cierre S5 - 09/10 (H5, capa Núcleo)
+    - cron: "0 18 23 10 *" # Cierre S6 - 23/10 (H6)
+    - cron: "0 18 6 11 *" # Cierre S7 - 06/11 (H7)
+    - cron: "0 18 20 11 *" # Cierre S8 - 20/11 (H8, capa Integración)
+    - cron: "0 18 27 11 *" # Entrega final - 27/11
   # El dashboard de bugs se actualiza con cada cambio de un issue.
   issues:
     types: [opened, closed, reopened, labeled, unlabeled]
@@ -68,12 +68,12 @@ jobs:
         env:
           LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
           LINEAR_TEAM_KEY: ${{ secrets.LINEAR_TEAM_KEY }}
-        run: node scripts/update-dashboard-from-linear.mjs
+        run: node scripts/dashboards/update-dashboard-from-linear.mjs
 
       - name: Dashboard de bugs (GitHub Issues)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: node scripts/update-github-bugs-dashboard.mjs
+        run: node scripts/dashboards/update-github-bugs-dashboard.mjs
 
       - name: Armar el sitio (HTML)
         env:
@@ -82,7 +82,7 @@ jobs:
           # Actions → Variables), no un secret: el link es público, pero no se
           # escribe en el repositorio. Si falta, el sitio sale sin ese enlace.
           GRAFANA_ESTADO_URL: ${{ vars.GRAFANA_ESTADO_URL }}
-        run: node scripts/publicar-dashboards.mjs _site
+        run: node scripts/dashboards/publicar-dashboards.mjs _site
 
       - name: Subir el sitio
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
@@ -138,7 +138,7 @@ jobs:
           LINEAR_TEAM_KEY: ${{ secrets.LINEAR_TEAM_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DASHBOARD_EMAIL_RECIPIENTS: ${{ secrets.DASHBOARD_EMAIL_RECIPIENTS }}
-        run: node scripts/send-status-email.mjs
+        run: node scripts/dashboards/send-status-email.mjs
 
       - name: Enviar email de estado
         uses: dawidd6/action-send-mail@v23

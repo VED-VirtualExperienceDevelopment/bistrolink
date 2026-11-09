@@ -1,4 +1,4 @@
-// scripts/update-github-bugs-dashboard.mjs
+// scripts/dashboards/update-github-bugs-dashboard.mjs
 //
 // Consulta issues marcados como bug en GitHub (via Search API), calcula:
 //   - conteo de abiertos / cerrados
@@ -14,17 +14,17 @@
 //                        no hace falta crear nada nuevo.
 //   GITHUB_REPOSITORY -> "owner/repo", GitHub Actions la define sola.
 //                        Si corrés local, seteala vos o completá owner/repo
-//                        en scripts/github-bugs-config.json.
+//                        en scripts/dashboards/github-bugs-config.json.
 //
 // Uso local:
-//   GITHUB_TOKEN=xxx GITHUB_REPOSITORY=owner/repo node scripts/update-github-bugs-dashboard.mjs
+//   GITHUB_TOKEN=xxx GITHUB_REPOSITORY=owner/repo node scripts/dashboards/update-github-bugs-dashboard.mjs
 
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.resolve(__dirname, "..");
+const ROOT = path.resolve(__dirname, "..", "..");
 const DASHBOARD_PATH = path.join(ROOT, "docs", "dashboard-bugs-github.md");
 const CONFIG_PATH = path.join(__dirname, "github-bugs-config.json");
 
@@ -259,7 +259,7 @@ async function main() {
     [owner, repo] = process.env.GITHUB_REPOSITORY.split("/");
   }
   if (!owner || !repo) {
-    console.error("No se pudo determinar owner/repo. Completá scripts/github-bugs-config.json.");
+    console.error("No se pudo determinar owner/repo. Completá scripts/dashboards/github-bugs-config.json.");
     process.exit(1);
   }
 

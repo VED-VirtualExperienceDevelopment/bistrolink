@@ -12,7 +12,7 @@
 // (apps/frontend/tailwind.config.ts) y la tipografía Plus Jakarta Sans
 // autoalojada (la misma de BL-222, sin Google Fonts).
 //
-// Uso: node scripts/publicar-dashboards.mjs [carpeta de salida]   (por defecto _site)
+// Uso: node scripts/dashboards/publicar-dashboards.mjs [carpeta de salida]   (por defecto _site)
 //      GRAFANA_ESTADO_URL (opcional): link público del dashboard de estado.
 
 import { execFileSync } from "node:child_process";
@@ -20,7 +20,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const SALIDA = path.resolve(ROOT, process.argv[2] ?? "_site");
 
 // Versiones fijas, como el resto del pipeline: se suben a propósito.
@@ -55,7 +55,7 @@ const DASHBOARDS = [
     archivo: "docs/dashboard-avance-edt.md",
     salida: "avance-edt.html",
     titulo: "Avance del proyecto (EDT)",
-    descripcion: "Historias de usuario y story points por capa y por sprint, desde Linear.",
+    descripcion: "Avance del MVP contra la Línea de Base y trabajo cerrado por sprint, desde Linear.",
   },
   {
     archivo: "docs/dashboard-bugs-github.md",
@@ -184,8 +184,9 @@ export function temaMermaid() {
     pieTitleTextColor: c.texto,
     pieLegendTextColor: c.texto,
     pieSectionTextColor: "#ffffff",
-    // Barras (xychart): primera serie dorada (planificado / abiertos),
-    // segunda violeta (completado / cerrados).
+    // xychart: primera serie dorada (real acumulado / total / abiertos),
+    // segunda violeta (plan / historias / cerrados) y tercera gris
+    // (alcance vigente del burn-up, BL-493).
     xyChart: {
       backgroundColor: c.superficie,
       titleColor: c.texto,
@@ -197,7 +198,7 @@ export function temaMermaid() {
       yAxisTitleColor: c.textoSuave,
       yAxisTickColor: c.borde,
       yAxisLineColor: c.borde,
-      plotColorPalette: `${c.terciario}, ${c.primarioContenedor}`,
+      plotColorPalette: `${c.terciario}, ${c.primarioContenedor}, #79747e`,
     },
   };
 }
