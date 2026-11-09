@@ -2,7 +2,6 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
-  NotFoundException,
 } from '@nestjs/common';
 import { Pago, PrismaClient, Prisma } from '@prisma/client';
 import { TenantPrismaService } from '../../prisma/tenant-prisma.service';
@@ -11,6 +10,7 @@ import { PedidoParaKds } from '../../pedidos/pedido-kds.mapper';
 import { CfeService } from '../../cfe/cfe.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { AuditAction } from '../../audit-log/audit-action.enum';
+import { exigirPedidoPorPagar } from '../pedido-por-pagar';
 import { calcularTotales, totalCobrado } from '../totales-pedido';
 import { RegistrarCobroEfectivoDto } from './registrar-cobro-efectivo.dto';
 import {
@@ -466,26 +466,19 @@ export class CobroEfectivoService {
       throw new ConflictException(cobro.mensajeDeshabilitado);
     }
 
-    const pedido = await tx.pedido.findUnique({
-      where: { id: cobro.pedidoId },
-      select: {
-        id: true,
-        estado: true,
-        propinaPorcentaje: true,
-        propinaMonto: true,
-        lineas: { select: { subtotal: true } },
-        pagos: { where: { estado: 'PENDIENTE' }, select: { id: true } },
-      },
-    });
-    if (!pedido) {
-      throw new NotFoundException('Pedido no encontrado');
-    }
-    if (pedido.estado === 'CANCELADO') {
-      throw new ConflictException('El pedido está cancelado');
-    }
-    if (pedido.estado !== 'PENDIENTE_PAGO') {
-      throw new ConflictException('Este pedido ya fue pagado');
-    }
+    const pedido = exigirPedidoPorPagar(
+      await tx.pedido.findUnique({
+        where: { id: cobro.pedidoId },
+        select: {
+          id: true,
+          estado: true,
+          propinaPorcentaje: true,
+          propinaMonto: true,
+          lineas: { select: { subtotal: true } },
+          pagos: { where: { estado: 'PENDIENTE' }, select: { id: true } },
+        },
+      }),
+    );
     if (pedido.pagos.length > 0) {
       throw new ConflictException(
         'El comensal tiene un pago con tarjeta en curso para este pedido. Esperá a que termine: si no se confirma, vence solo en unos minutos.',

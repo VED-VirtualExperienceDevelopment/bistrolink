@@ -1,12 +1,6 @@
 import { Transform } from 'class-transformer';
-import {
-  IsIn,
-  IsOptional,
-  IsString,
-  IsUUID,
-  Length,
-  Matches,
-} from 'class-validator';
+import { IsIn, IsString, IsUUID, Length, Matches } from 'class-validator';
+import { TotalEsperado } from '../total-esperado.decorator';
 
 /** HU-007b (BL-80): tipo de tarjeta que cobró el POS del local. */
 export const TARJETAS_POS = ['CREDITO', 'DEBITO'] as const;
@@ -48,16 +42,7 @@ export class RegistrarCobroPosDto {
   })
   autorizacion: string;
 
-  /**
-   * HU-022 (BL-494): el total que el personal vio en pantalla (consumo +
-   * propina). No define lo que se cobra: es un control. Si el comensal cambió
-   * la propina mientras tanto y el total ya no coincide, la API responde 409
-   * y no cobra. Opcional.
-   */
-  @IsOptional()
-  @Matches(/^\d{1,8}(\.\d{1,2})?$/, {
-    message:
-      'totalEsperado debe ser un monto positivo, con hasta 2 decimales (por ejemplo, 1000 o 1000.50)',
-  })
+  /** HU-022 (BL-494): el total que vio el personal; ver TotalEsperado. */
+  @TotalEsperado()
   totalEsperado?: string;
 }

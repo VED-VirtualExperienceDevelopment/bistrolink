@@ -2,10 +2,10 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
-  NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { TenantPrismaService } from '../../prisma/tenant-prisma.service';
+import { exigirPedidoPorPagar } from '../pedido-por-pagar';
 import {
   calcularTotales,
   sumarConsumo,
@@ -57,23 +57,16 @@ export class PropinaPedidoService {
     }
 
     return this.tenantPrisma.runInTenantContext(tenantId, async (tx) => {
-      const pedido = await tx.pedido.findUnique({
-        where: { id: pedidoId },
-        select: {
-          estado: true,
-          lineas: { select: { subtotal: true } },
-          pagos: { where: { estado: 'PENDIENTE' }, select: { id: true } },
-        },
-      });
-      if (!pedido) {
-        throw new NotFoundException('Pedido no encontrado');
-      }
-      if (pedido.estado === 'CANCELADO') {
-        throw new ConflictException('El pedido está cancelado');
-      }
-      if (pedido.estado !== 'PENDIENTE_PAGO') {
-        throw new ConflictException('Este pedido ya fue pagado');
-      }
+      const pedido = exigirPedidoPorPagar(
+        await tx.pedido.findUnique({
+          where: { id: pedidoId },
+          select: {
+            estado: true,
+            lineas: { select: { subtotal: true } },
+            pagos: { where: { estado: 'PENDIENTE' }, select: { id: true } },
+          },
+        }),
+      );
       if (pedido.pagos.length > 0) {
         throw new ConflictException(
           'Ya hay un pago con tarjeta en curso: no se puede cambiar la propina.',

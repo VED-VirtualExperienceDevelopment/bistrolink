@@ -1,4 +1,5 @@
-import { IsOptional, IsString, IsUUID, Length, Matches } from 'class-validator';
+import { IsString, IsUUID, Length, Matches } from 'class-validator';
+import { TotalEsperado } from '../total-esperado.decorator';
 
 /**
  * HU-031 (BL-201): cobro en efectivo que registra el mozo o el administrador.
@@ -30,16 +31,7 @@ export class RegistrarCobroEfectivoDto {
   })
   montoRecibido: string;
 
-  /**
-   * HU-022 (BL-494): el total que el personal vio en pantalla (consumo +
-   * propina). No define lo que se cobra: es un control. Si el comensal cambió
-   * la propina mientras tanto y el total ya no coincide, la API responde 409
-   * y no cobra. Opcional.
-   */
-  @IsOptional()
-  @Matches(/^\d{1,8}(\.\d{1,2})?$/, {
-    message:
-      'totalEsperado debe ser un monto positivo, con hasta 2 decimales (por ejemplo, 1000 o 1000.50)',
-  })
+  /** HU-022 (BL-494): el total que vio el personal; ver TotalEsperado. */
+  @TotalEsperado()
   totalEsperado?: string;
 }
