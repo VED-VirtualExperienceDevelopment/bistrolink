@@ -159,7 +159,12 @@ export default function AdminShell({
 
   return (
     <AlertasProvider>
-      <div className="flex h-screen overflow-hidden">
+      {/* BL-500: `relative` acá, en el <nav> y en el contenedor del contenido
+          hace que los elementos `sr-only` (position: absolute) queden
+          contenidos y recortados ahí. Sin eso se ubican respecto de la
+          página, la estiran más que la ventana y todo el panel se desplaza
+          al hacer scroll. */}
+      <div className="relative flex h-screen overflow-hidden">
         {/* Velo del panel en pantallas angostas. Es un <button> y no un <div>
             con onClick por la misma regla de accesibilidad que Dialog.tsx;
             tabIndex -1 porque con teclado alcanza con Esc. */}
@@ -195,7 +200,7 @@ export default function AdminShell({
             </div>
           </div>
 
-          <nav className="mt-4 flex-1 overflow-y-auto">
+          <nav className="relative mt-4 flex-1 overflow-y-auto">
             {NAV_ITEMS.filter(
               (item) => !item.roles || item.roles.some((rol) => hasRole(rol)),
             ).map((item) => {
@@ -289,7 +294,7 @@ export default function AdminShell({
               <UsuarioSesion />
             </div>
           </header>
-          <div className="flex-1 overflow-y-auto">{children}</div>
+          <div className="relative flex-1 overflow-y-auto">{children}</div>
         </main>
       </div>
     </AlertasProvider>

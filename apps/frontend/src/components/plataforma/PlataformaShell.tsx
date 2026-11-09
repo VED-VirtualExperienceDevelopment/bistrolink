@@ -56,7 +56,9 @@ export default function PlataformaShell({
   }
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-background">
+    // BL-500: `relative` contiene los elementos sr-only (position: absolute)
+    // del contenido, para que no estiren la página (ver AdminShell).
+    <div className="relative flex h-screen flex-col overflow-hidden bg-background">
       <header className="flex h-16 shrink-0 items-center justify-between border-b border-outline-variant bg-surface px-4 shadow-sm md:px-6">
         <div>
           <div className="text-headline-sm font-bold text-primary">
@@ -69,7 +71,9 @@ export default function PlataformaShell({
         {/* BL-350: quién inició sesión. «Cerrar sesión» está en su panel. */}
         <UsuarioSesion />
       </header>
-      <main className="min-h-0 flex-1 overflow-y-auto">{children}</main>
+      <main className="relative min-h-0 flex-1 overflow-y-auto">
+        {children}
+      </main>
     </div>
   );
 }
