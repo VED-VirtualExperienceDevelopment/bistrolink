@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { randomUUID } from 'node:crypto';
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication } from '@nestjs/common';
+import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 import request = require('supertest');
@@ -138,6 +138,14 @@ describe('BL-502: Mis pedidos en la mesa', () => {
       Test.createTestingModule({ imports: [AppModule] }),
     ).compile();
     app = moduleRef.createNestApplication();
+    // El mismo ValidationPipe que main.ts (TC-I-204 valida los ids del body).
+    app.useGlobalPipes(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true,
+        transform: true,
+      }),
+    );
     await app.init();
     tenantPrisma = await app.resolve(TenantPrismaService);
 
