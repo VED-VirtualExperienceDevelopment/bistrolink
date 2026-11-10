@@ -3,8 +3,15 @@
  *
  * La carta (MenuDigital) tiene en memoria el pedido que se está pagando; con
  * una recarga se perdía y el comensal volvía a la carta (y podía duplicar el
- * pedido). Ahora se guarda lo mínimo en sessionStorage (por pestaña) y, al
- * volver a abrir la carta, se consulta el estado real del pedido.
+ * pedido). Ahora se guarda lo mínimo y, al volver a abrir la carta, se
+ * consulta el estado real del pedido.
+ *
+ * BL-502: en la mesa se guarda en localStorage, con la sesión de la mesa en
+ * la clave. Al volver a escanear el QR el teléfono abre otra pestaña, y
+ * sessionStorage (que es por pestaña) empieza vacío: el pago pendiente se
+ * perdía. Con la sesión en la clave, al cerrarse la mesa lo guardado queda
+ * viejo. El pedido para retirar sigue en sessionStorage, porque guarda su
+ * token de acceso y no tiene una sesión que lo haga caducar.
  *
  * Qué se guarda: id del pedido, firma y líneas del carrito, nota general y,
  * solo en un pedido para retirar, su token de acceso (RD.05: sin él no se
@@ -54,19 +61,25 @@ export interface Almacen {
 }
 
 /**
- * Una entrada por mesa (el QR identifica la mesa) o por local para retirar.
- * Así, en la misma pestaña, el pedido de una mesa no aparece en otra.
+ * Una entrada por mesa y sesión de la mesa (BL-502), o por local para
+ * retirar. Así el pedido de una mesa no aparece en otra, ni en el grupo
+ * siguiente de la misma mesa.
  */
 export function clavePedidoEnCurso(origen: OrigenMenu): string {
   return origen.tipo === "mesa"
-    ? `${PREFIJO_CLAVE}:mesa:${origen.qrToken}`
+    ? `${PREFIJO_CLAVE}:mesa:${origen.qrToken}:${origen.sesionMesa}`
     : `${PREFIJO_CLAVE}:web:${origen.restauranteId}`;
 }
 
-/** sessionStorage, o null si no hay (SSR) o el navegador lo bloquea. */
-export function almacenDelNavegador(): Almacen | null {
+/**
+ * BL-502: localStorage en la mesa (sobrevive a la pestaña nueva del QR);
+ * sessionStorage en el pedido para retirar. null si no hay (SSR) o el
+ * navegador lo bloquea.
+ */
+export function almacenDelNavegador(origen: OrigenMenu): Almacen | null {
   try {
-    return typeof window === "undefined" ? null : window.sessionStorage;
+    if (typeof window === "undefined") return null;
+    return origen.tipo === "mesa" ? window.localStorage : window.sessionStorage;
   } catch {
     return null;
   }

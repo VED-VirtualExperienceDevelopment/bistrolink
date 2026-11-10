@@ -12,6 +12,10 @@ import dynamic from "next/dynamic";
 import ItemImagen from "@/components/menu/ItemImagen";
 import { rutaPrivacidad } from "@/components/privacidad/privacidad.utils";
 import { LlamarMozoButton } from "@/components/LlamarMozoButton";
+import { MisPedidosBoton } from "@/components/mis-pedidos/MisPedidosBoton";
+import { MisPedidosPanel } from "@/components/mis-pedidos/MisPedidosPanel";
+import { pedidosEnCamino } from "@/components/mis-pedidos/mis-pedidos.utils";
+import { useMisPedidos } from "@/components/mis-pedidos/useMisPedidos";
 import { apiFetch, ApiError } from "@/lib/api-client";
 import {
   alcanzoCantidadMaxima,
@@ -254,10 +258,16 @@ export default function MenuDigital({
   const [avisoRetoma, setAvisoRetoma] = useState<string | null>(null);
   const clave = clavePedidoEnCurso(origen);
 
+  // BL-502: «Mis pedidos» en la mesa (los que pagó desde este teléfono en
+  // la sesión abierta), con su estado en vivo.
+  const misPedidos = useMisPedidos(origen, identificarComensal);
+  const { recordar: recordarEnMisPedidos } = misPedidos;
+  const [misPedidosAbierto, setMisPedidosAbierto] = useState(false);
+
   // BL-448: al abrir la carta (por ejemplo, después de recargar), si había
   // un pedido en curso en esta pestaña, se vuelve a donde estaba.
   useEffect(() => {
-    const almacen = almacenDelNavegador();
+    const almacen = almacenDelNavegador(origen);
     const guardado = leerPedidoEnCurso(almacen, clave);
     if (!guardado) return;
     let cancelado = false;
@@ -284,6 +294,7 @@ export default function MenuDigital({
           setVista("pago");
         } else if (retoma.accion === "aprobado" && accessToken) {
           guardarPedidoEnCurso(almacen, clave, { ...guardado, aprobado: true });
+          recordarEnMisPedidos(guardado.pedidoId);
           setPagoAprobado({
             pedido,
             accessToken,
@@ -429,7 +440,7 @@ export default function MenuDigital({
       setPedidoPorPagar({ pedido, accessToken, firma });
       // BL-448: para retomarlo si se recarga la página. Reemplaza al pedido
       // anterior guardado (el carrito cambió).
-      guardarPedidoEnCurso(almacenDelNavegador(), clave, {
+      guardarPedidoEnCurso(almacenDelNavegador(origen), clave, {
         pedidoId: pedido.id,
         tokenAcceso: pedido.tokenAcceso,
         firma,
@@ -451,8 +462,10 @@ export default function MenuDigital({
   // aprobado (código, estado en vivo y comprobante).
   const alAprobarPago = useCallback(() => {
     if (!pedidoPorPagar) return;
+    // BL-502: queda en «Mis pedidos» aunque después haga otro pedido.
+    recordarEnMisPedidos(pedidoPorPagar.pedido.id);
     // BL-448: si recarga en la confirmación, vuelve a la confirmación.
-    guardarPedidoEnCurso(almacenDelNavegador(), clave, {
+    guardarPedidoEnCurso(almacenDelNavegador(origen), clave, {
       pedidoId: pedidoPorPagar.pedido.id,
       tokenAcceso: pedidoPorPagar.pedido.tokenAcceso,
       firma: pedidoPorPagar.firma,
@@ -471,16 +484,33 @@ export default function MenuDigital({
     setObservacionGeneral("");
     setVista("aprobado");
     window.scrollTo({ top: 0 });
-  }, [pedidoPorPagar, carrito, totalCarrito, clave, observacionGeneral]);
+  }, [
+    pedidoPorPagar,
+    carrito,
+    totalCarrito,
+    clave,
+    observacionGeneral,
+    origen,
+    recordarEnMisPedidos,
+  ]);
 
   const hacerOtroPedido = useCallback(() => {
     // BL-448: el pedido terminó; no queda nada guardado (ni el token de
     // acceso de un pedido para retirar).
-    borrarPedidoEnCurso(almacenDelNavegador(), clave);
+    // BL-502: el pedido sigue en «Mis pedidos».
+    borrarPedidoEnCurso(almacenDelNavegador(origen), clave);
     setPagoAprobado(null);
     setVista("carta");
     window.scrollTo({ top: 0 });
-  }, [clave]);
+  }, [clave, origen]);
+
+  // BL-502: «Pedir algo más» desde «Mis pedidos»: a la carta.
+  const pedirAlgoMas = useCallback(() => {
+    setMisPedidosAbierto(false);
+    if (vista === "aprobado") hacerOtroPedido();
+    else setVista("carta");
+  }, [vista, hacerOtroPedido]);
+  const hayMisPedidos = misPedidos.pedidos.length > 0;
 
   // BL-320: mide el panel "Tu pedido" mientras está visible.
   useEffect(() => {
@@ -526,6 +556,11 @@ export default function MenuDigital({
         total={pagoAprobado.total}
         numeroMesa={numeroMesa}
         onOtroPedido={hacerOtroPedido}
+        nombreLocal={restaurante.nombre}
+        pedidosEnCamino={pedidosEnCamino(
+          misPedidos.pedidos.filter((p) => p.id !== pagoAprobado.pedido.id),
+        )}
+        onVerMisPedidos={() => setMisPedidosAbierto(true)}
       />
     );
   } else if (vista === "pago" && pedidoPorPagar) {
@@ -559,7 +594,15 @@ export default function MenuDigital({
             BistroLink
           </span>
         </div>
-        <div className="flex items-center gap-4 text-[#6e54ad]">
+        <div className="flex items-center gap-2 md:gap-4 text-[#6e54ad]">
+          {/* BL-502: en el celular, solo el ícono y la cantidad. */}
+          {hayMisPedidos && (
+            <MisPedidosBoton
+              variante="nav"
+              pedidos={misPedidos.pedidos}
+              onAbrir={() => setMisPedidosAbierto(true)}
+            />
+          )}
           <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-[#6e54ad]/10 rounded-full">
             <span className="text-sm font-medium">
               {tipo === "mesa"
@@ -918,7 +961,33 @@ export default function MenuDigital({
               </div>
             </div>
           )}
+
+          {/* BL-502: en el celular, «Mis pedidos» abajo mientras no hay
+          carrito (con carrito, el panel del pedido ocupa ese lugar y queda
+          el botón de la barra superior). Desde lg, solo el de la barra. */}
+          {hayMisPedidos && !hayCarrito && (
+            <div className="fixed bottom-4 left-4 right-4 z-20 lg:hidden">
+              <MisPedidosBoton
+                variante="barra"
+                pedidos={misPedidos.pedidos}
+                onAbrir={() => setMisPedidosAbierto(true)}
+              />
+            </div>
+          )}
         </>
+      )}
+
+      {origen.tipo === "mesa" && (
+        <MisPedidosPanel
+          abierto={misPedidosAbierto}
+          onCerrar={() => setMisPedidosAbierto(false)}
+          onPedirAlgoMas={pedirAlgoMas}
+          origen={origen}
+          numeroMesa={numeroMesa}
+          pedidos={misPedidos.pedidos}
+          lugares={misPedidos.lugares}
+          accessToken={misPedidos.accessToken}
+        />
       )}
 
       <ItemNotaModal
