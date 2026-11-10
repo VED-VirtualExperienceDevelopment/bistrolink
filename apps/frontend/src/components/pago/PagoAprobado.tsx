@@ -20,6 +20,11 @@ import {
   type EstadoPagoDelPedido,
   type RebajaIva,
 } from './pago.utils';
+import {
+  eleccionGuardada,
+  etiquetaDePropina,
+  type TotalesDelPedido,
+} from './propina.utils';
 
 // Usa socket.io (solo en el navegador), igual que en la carta.
 const SeguimientoPedido = dynamic(
@@ -38,6 +43,11 @@ interface PagoAprobadoProps {
   /** JWT del comensal técnico del tenant. */
   readonly accessToken: string;
   readonly lineas: readonly LineaResumen[];
+  /**
+   * El consumo del carrito (sin propina). HU-022 (BL-495): lo abonado, con la
+   * propina, lo informa el backend en GET .../pagos; este valor solo se usa
+   * si el backend no lo informa.
+   */
   readonly total: number;
   readonly numeroMesa?: number;
   readonly onOtroPedido: () => void;
@@ -56,6 +66,10 @@ const CLASE_TARJETA =
  * /pedidos/:id/pagos cada pocos segundos hasta que aparece, con tope.
  * «CFE disponible» = emitido y firmado por el proveedor (BL-212), no
  * aceptado por DGI.
+ *
+ * HU-022 (BL-495): la misma consulta trae lo abonado. Con propina se muestra
+ * el consumo, la propina y el total; el comprobante y la rebaja de IVA son
+ * solo sobre el consumo.
  */
 export function PagoAprobado({
   origen,
@@ -70,6 +84,11 @@ export function PagoAprobado({
   const [comprobante, setComprobante] = useState<EstadoComprobante>({ tipo: 'emitiendo' });
   const [agotado, setAgotado] = useState(false);
   const [consulta, setConsulta] = useState(0);
+  // HU-022 (BL-495): consumo, propina y total que informa el backend. `consultado`
+  // es true desde la primera respuesta (con o sin esos datos, según la versión
+  // del backend): hasta entonces no se muestra un total que podría ser parcial.
+  const [totales, setTotales] = useState<TotalesDelPedido | null>(null);
+  const [consultado, setConsultado] = useState(false);
   // HU-009 (BL-454): descarga del PDF del comprobante.
   const [descarga, setDescarga] = useState<EstadoDescarga>('lista');
   const tituloRef = useRef<HTMLHeadingElement>(null);
@@ -89,6 +108,8 @@ export function PagoAprobado({
       try {
         const estado = await apiFetch<EstadoPagoDelPedido>(rutaPagos(pedidoId), accessToken, { headers });
         if (cancelado) return;
+        if (estado.totales) setTotales(estado.totales);
+        setConsultado(true);
         const resultado = estadoComprobante(estado);
         if (resultado.tipo === 'emitido') {
           setComprobante(resultado);
@@ -116,6 +137,13 @@ export function PagoAprobado({
   }, [pedidoId, accessToken, consulta]);
 
   const esMesa = origen.tipo === 'mesa';
+
+  // Lo abonado: el total del backend (con propina). Si no lo informa (backend
+  // anterior), el consumo del carrito; mientras no hay respuesta, nada.
+  let abonado: number | null = null;
+  if (totales) abonado = Number(totales.total);
+  else if (consultado || agotado) abonado = total;
+  const conPropina = totales !== null && Number(totales.propina) > 0;
 
   async function descargarPdf() {
     setDescarga('descargando');
@@ -193,9 +221,34 @@ export function PagoAprobado({
             </li>
           ))}
         </ul>
-        <div className="pt-4 border-t border-culinary-neutral/15 flex items-center justify-between">
-          <span className="font-bold text-foreground">Total abonado</span>
-          <span className="text-2xl font-bold text-foreground">{formatearPrecio(total)}</span>
+        <div className="pt-4 border-t border-culinary-neutral/15">
+          {/* HU-022 (BL-495): con propina se separa el consumo de la propina. */}
+          {totales && conPropina && (
+            <dl className="mb-3 flex flex-col gap-1 text-sm">
+              <div className="flex items-center justify-between gap-3">
+                <dt className="text-[#5a575e]">Consumo (IVA incluido)</dt>
+                <dd className="font-semibold text-foreground">{formatearPrecio(totales.consumo)}</dd>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <dt className="text-[#5a575e]">{etiquetaDePropina(eleccionGuardada(totales))}</dt>
+                <dd className="font-semibold text-foreground">{formatearPrecio(totales.propina)}</dd>
+              </div>
+            </dl>
+          )}
+          <div className="flex items-center justify-between">
+            <span className="font-bold text-foreground">Total abonado</span>
+            <span
+              aria-busy={abonado === null}
+              className="text-2xl font-bold text-foreground"
+            >
+              {abonado === null ? '…' : formatearPrecio(abonado)}
+            </span>
+          </div>
+          {conPropina && (
+            <p className="mt-2 text-xs text-[#5a575e]">
+              El comprobante fiscal es por el consumo: la propina no forma parte de él.
+            </p>
+          )}
         </div>
       </section>
 

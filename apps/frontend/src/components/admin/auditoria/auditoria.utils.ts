@@ -151,6 +151,9 @@ const NOMBRE_CAMPO: Record<string, string> = {
   monto: "Total",
   montoRecibido: "Recibido",
   vuelto: "Vuelto",
+  // HU-022 (BL-495): lo que se factura y la propina, que se cobra aparte.
+  consumo: "Consumo",
+  propina: "Propina",
   // HU-007b (BL-80): cobro con el POS del local.
   medio: "Tarjeta",
   autorizacion: "N.° de autorización",
