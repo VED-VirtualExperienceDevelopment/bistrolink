@@ -83,6 +83,7 @@ describe('MesasService.obtenerLayout', () => {
       emitirLlamado: jest.fn(),
       emitirEstadoMesa: jest.fn(),
       emitirLlamadoResuelto: jest.fn(),
+      emitirSesionCerrada: jest.fn(),
     };
     service = new MesasService(mockTenantPrisma, mockKdsGateway, mockAuditLog);
   });
@@ -138,6 +139,7 @@ describe('MesasService.guardarLayout', () => {
       emitirLlamado: jest.fn(),
       emitirEstadoMesa: jest.fn(),
       emitirLlamadoResuelto: jest.fn(),
+      emitirSesionCerrada: jest.fn(),
     };
     service = new MesasService(mockTenantPrisma, mockKdsGateway, mockAuditLog);
   });
@@ -265,6 +267,7 @@ describe('MesasService.actualizarLayoutMesa', () => {
       emitirLlamado: jest.fn(),
       emitirEstadoMesa: jest.fn(),
       emitirLlamadoResuelto: jest.fn(),
+      emitirSesionCerrada: jest.fn(),
     };
     service = new MesasService(mockTenantPrisma, mockKdsGateway, mockAuditLog);
   });
@@ -356,6 +359,7 @@ describe('MesasService: sesión de mesa (HU-017, BL-60)', () => {
       emitirLlamado: jest.fn(),
       emitirEstadoMesa: jest.fn(),
       emitirLlamadoResuelto: jest.fn(),
+      emitirSesionCerrada: jest.fn(),
     };
     service = new MesasService(mockTenantPrisma, mockKdsGateway, mockAuditLog);
   });
@@ -496,6 +500,21 @@ describe('MesasService: sesión de mesa (HU-017, BL-60)', () => {
       );
       expect(resultado.estado).toBe(MesaEstado.REQUIERE_LIMPIEZA);
       expect(pedidosCancelados).toBe(0);
+    });
+
+    it('BL-518: al cerrar, avisa a los comensales de esa sesión', async () => {
+      await service.cerrarSesion(TENANT_ID, MESA_ID, MOZO_KEYCLOAK_ID);
+
+      expect(mockKdsGateway.emitirSesionCerrada).toHaveBeenCalledWith(SESION);
+    });
+
+    it('BL-518: si no se pudo cerrar (409), no avisa a nadie', async () => {
+      mockTx.pedido.count.mockResolvedValue(1);
+
+      await expect(
+        service.cerrarSesion(TENANT_ID, MESA_ID, MOZO_KEYCLOAK_ID),
+      ).rejects.toThrow(/Hay 1 pedido sin entregar/);
+      expect(mockKdsGateway.emitirSesionCerrada).not.toHaveBeenCalled();
     });
 
     it('BL-448: al cerrar, saca el aviso de la mesa de todos los KDS', async () => {
