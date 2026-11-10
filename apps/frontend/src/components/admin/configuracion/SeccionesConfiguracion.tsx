@@ -266,9 +266,8 @@ export function SeccionPropinas({
         />
       </div>
       {aviso && (
-        <p role="status" className="text-body-sm text-error">
-          {aviso}
-        </p>
+        // <output>: rol «status» implícito, el lector de pantalla lo anuncia.
+        <output className="block text-body-sm text-error">{aviso}</output>
       )}
     </section>
   );
