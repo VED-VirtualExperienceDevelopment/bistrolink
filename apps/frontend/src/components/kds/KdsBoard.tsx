@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import { useKeycloakAuth } from '@/components/providers/KeycloakProvider';
 import { useAlertas } from '@/components/alertas/AlertasProvider';
@@ -35,6 +35,193 @@ interface PedidoActualizadoPayload {
   mesaNumero?: number;
 }
 
+/** Props que comparten todas las comandas del tablero. */
+interface PropsComanda {
+  puedeOperarTransiciones: boolean;
+  onTransicion: (pedidoId: string, nuevoEstado: EstadoPedido) => void;
+  ahora: number;
+  umbrales: UmbralesEspera;
+  onCancelar?: (pedido: Pedido) => void;
+}
+
+interface GrupoMesa {
+  mesaNumero: number;
+  pedidos: Pedido[];
+}
+
+const msDe = (pedido: Pedido) => new Date(pedido.createdAt).getTime();
+
+/**
+ * Agrupa los pedidos por mesa: dentro de cada mesa, por hora de llegada; las
+ * mesas, por su pedido más viejo.
+ */
+function agruparPorMesa(activos: Pedido[]): GrupoMesa[] {
+  const mapa = new Map<number, Pedido[]>();
+  for (const pedido of activos) {
+    const grupo = mapa.get(pedido.mesaNumero) ?? [];
+    grupo.push(pedido);
+    mapa.set(pedido.mesaNumero, grupo);
+  }
+  return [...mapa.entries()]
+    .map(([mesaNumero, pedidosDeLaMesa]) => ({
+      mesaNumero,
+      pedidos: [...pedidosDeLaMesa].sort((a, b) => msDe(a) - msDe(b)),
+    }))
+    .sort((a, b) => msDe(a.pedidos[0]) - msDe(b.pedidos[0]));
+}
+
+const CLASE_TITULO_SECCION =
+  'shrink-0 rounded-md bg-surface-container-low px-2 py-1 text-label-sm font-semibold text-on-surface-variant';
+
+/** Tablero de comandas agrupadas por mesa. */
+function TableroPorMesa({
+  grupos,
+  colaActiva,
+  comanda,
+}: Readonly<{ grupos: GrupoMesa[]; colaActiva: boolean; comanda: PropsComanda }>) {
+  return (
+    <div className="flex h-full gap-gutter overflow-x-auto overflow-y-hidden pb-4">
+      {grupos.map(({ mesaNumero, pedidos }) => (
+        <div key={mesaNumero} className="flex h-full shrink-0 flex-col gap-1.5">
+          {pedidos.length > 1 && (
+            <div className={CLASE_TITULO_SECCION}>
+              Mesa {mesaNumero} · {pedidos.length} pedidos
+            </div>
+          )}
+          <div className="flex h-full gap-gutter">
+            {pedidos.map((pedido) => (
+              <OrderTicket
+                key={pedido.id}
+                pedido={pedido}
+                colaActiva={colaActiva}
+                {...comanda}
+              />
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** HU-042 (BL-466): cola de espera, en orden de llegada. */
+function SeccionEnEspera({
+  enEspera,
+  comanda,
+}: Readonly<{
+  enEspera: ReturnType<typeof separarPorCola>['enEspera'];
+  comanda: PropsComanda;
+}>) {
+  return (
+    <section
+      aria-labelledby="titulo-en-espera"
+      className="flex h-full shrink-0 flex-col gap-1.5"
+    >
+      <h2 id="titulo-en-espera" className={CLASE_TITULO_SECCION}>
+        En espera · {enEspera.length}
+      </h2>
+      {enEspera.length === 0 ? (
+        <p className="w-[300px] px-2 text-body-sm text-on-surface-variant">
+          No hay pedidos esperando.
+        </p>
+      ) : (
+        <ol className="flex h-full gap-gutter overflow-x-auto overflow-y-hidden pb-4">
+          {enEspera.map(({ pedido, posicion }) => (
+            <li key={pedido.id} className="h-full">
+              <OrderTicket
+                pedido={pedido}
+                colaActiva
+                posicionEnCola={posicion}
+                {...comanda}
+              />
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
+  );
+}
+
+/**
+ * Lo que se ve mientras no hay comandas para mostrar (cargando, sin
+ * conexión, error o sin pedidos); si hay, el tablero (`children`).
+ */
+function ContenidoKds({
+  loading,
+  sinConexion,
+  loadError,
+  hayPedidos,
+  children,
+}: Readonly<{
+  loading: boolean;
+  sinConexion: boolean;
+  loadError: string | null;
+  hayPedidos: boolean;
+  children: ReactNode;
+}>) {
+  if (loading && sinConexion) {
+    // HU-038 (BL-504): antes, si la primera conexión fallaba, el tablero
+    // quedaba con la ruedita para siempre.
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center text-body-lg text-on-surface-variant">
+        <span>No se pudo conectar con el servidor.</span>
+        <span className="text-body-md">
+          Se sigue intentando: los pedidos aparecen solos cuando vuelva la
+          conexión.
+        </span>
+      </div>
+    );
+  }
+  if (loading) {
+    return (
+      <div className="flex flex-1 items-center justify-center">
+        <span className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+      </div>
+    );
+  }
+  if (loadError) {
+    return (
+      <div role="alert" className="rounded-xl bg-error-container px-4 py-3 text-body-md text-on-error-container">
+        {loadError}
+      </div>
+    );
+  }
+  if (!hayPedidos) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center gap-2 text-body-md text-on-surface-variant">
+        <span>No hay pedidos activos en este momento.</span>
+      </div>
+    );
+  }
+  return <>{children}</>;
+}
+
+/**
+ * HU-042 (BL-466): ocupación de la cocina y alerta de alta demanda.
+ * aria-live para que el lector de pantalla lo anuncie sin mover el foco.
+ */
+function AvisoCola({ cola }: Readonly<{ cola: EstadoCola }>) {
+  return (
+    <div aria-live="polite" className="flex shrink-0 flex-col gap-1">
+      <p
+        data-testid="cola-contador"
+        className="text-label-md font-semibold text-on-surface-variant"
+      >
+        {textoContadorCola(cola)}
+      </p>
+      {cola.altaDemanda && (
+        <p
+          data-testid="cola-alta-demanda"
+          className="flex items-center gap-2 rounded-lg bg-error-container px-3 py-1.5 text-label-md font-semibold text-on-error-container"
+        >
+          <span aria-hidden="true">⚠</span>
+          {textoAltaDemanda(cola)}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function KdsBoard() {
   const { token, hasRole } = useKeycloakAuth();
   // BL-441: dentro de /admin/* el socket y las alertas vienen de
@@ -42,7 +229,7 @@ export function KdsBoard() {
   // ese proveedor y sigue abriendo el suyo.
   const alertas = useAlertas();
   const enShell = alertas !== null;
-  const socketCompartido = alertas ? alertas.socket : null;
+  const socketCompartido = alertas?.socket ?? null;
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -198,140 +385,22 @@ export function KdsBoard() {
   const { enEspera, activos } = separarPorCola(pedidos, cola);
   const colaActiva = cola !== null;
 
-  const gruposPorMesa = (() => {
-    const mapa = new Map<number, Pedido[]>();
-    for (const pedido of activos) {
-      const grupo = mapa.get(pedido.mesaNumero) ?? [];
-      grupo.push(pedido);
-      mapa.set(pedido.mesaNumero, grupo);
-    }
-    return [...mapa.entries()]
-      .map(([mesaNumero, pedidosDeLaMesa]) => ({
-        mesaNumero,
-        pedidos: [...pedidosDeLaMesa].sort(
-          (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
-        ),
-      }))
-      .sort(
-        (a, b) =>
-          new Date(a.pedidos[0].createdAt).getTime() -
-          new Date(b.pedidos[0].createdAt).getTime(),
-      );
-  })();
-
-  let contenido;
-  if (loading && estadoConexion === 'desconectado') {
-    // HU-038 (BL-504): antes, si la primera conexión fallaba, el tablero
-    // quedaba con la ruedita para siempre.
-    contenido = (
-      <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center text-body-lg text-on-surface-variant">
-        <span>No se pudo conectar con el servidor.</span>
-        <span className="text-body-md">
-          Se sigue intentando: los pedidos aparecen solos cuando vuelva la
-          conexión.
-        </span>
-      </div>
-    );
-  } else if (loading) {
-    contenido = (
-      <div className="flex flex-1 items-center justify-center">
-        <span className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-      </div>
-    );
-  } else if (loadError) {
-    contenido = (
-      <div role="alert" className="rounded-xl bg-error-container px-4 py-3 text-body-md text-on-error-container">
-        {loadError}
-      </div>
-    );
-  } else if (pedidos.length === 0) {
-    contenido = (
-      <div className="flex flex-1 flex-col items-center justify-center gap-2 text-body-md text-on-surface-variant">
-        <span>No hay pedidos activos en este momento.</span>
-      </div>
-    );
-  } else {
-    const tablero = (
-      <div className="flex h-full gap-gutter overflow-x-auto overflow-y-hidden pb-4">
-        {gruposPorMesa.map(({ mesaNumero, pedidos: pedidosDeLaMesa }) => (
-          <div key={mesaNumero} className="flex h-full shrink-0 flex-col gap-1.5">
-            {pedidosDeLaMesa.length > 1 && (
-              <div className="shrink-0 rounded-md bg-surface-container-low px-2 py-1 text-label-sm font-semibold text-on-surface-variant">
-                Mesa {mesaNumero} · {pedidosDeLaMesa.length} pedidos
-              </div>
-            )}
-            <div className="flex h-full gap-gutter">
-              {pedidosDeLaMesa.map((pedido) => (
-                <OrderTicket
-                  key={pedido.id}
-                  pedido={pedido}
-                  puedeOperarTransiciones={puedeOperarTransiciones}
-                  onTransicion={emitirTransicion}
-                  ahora={ahora}
-                  umbrales={umbrales}
-                  colaActiva={colaActiva}
-                  onCancelar={abrirCancelacion}
-                />
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-    );
-
-    contenido = colaActiva ? (
-      <div className="flex min-h-0 flex-1 gap-gutter">
-        {/* HU-042 (BL-466): cola de espera, en orden de llegada. */}
-        <section
-          aria-labelledby="titulo-en-espera"
-          className="flex h-full shrink-0 flex-col gap-1.5"
-        >
-          <h2
-            id="titulo-en-espera"
-            className="shrink-0 rounded-md bg-surface-container-low px-2 py-1 text-label-sm font-semibold text-on-surface-variant"
-          >
-            En espera · {enEspera.length}
-          </h2>
-          {enEspera.length === 0 ? (
-            <p className="w-[300px] px-2 text-body-sm text-on-surface-variant">
-              No hay pedidos esperando.
-            </p>
-          ) : (
-            <ol className="flex h-full gap-gutter overflow-x-auto overflow-y-hidden pb-4">
-              {enEspera.map(({ pedido, posicion }) => (
-                <li key={pedido.id} className="h-full">
-                  <OrderTicket
-                    pedido={pedido}
-                    puedeOperarTransiciones={puedeOperarTransiciones}
-                    onTransicion={emitirTransicion}
-                    ahora={ahora}
-                    umbrales={umbrales}
-                    colaActiva
-                    posicionEnCola={posicion}
-                    onCancelar={abrirCancelacion}
-                  />
-                </li>
-              ))}
-            </ol>
-          )}
-        </section>
-        <section
-          aria-labelledby="titulo-en-preparacion"
-          className="flex min-w-0 flex-1 flex-col gap-1.5"
-        >
-          <h2
-            id="titulo-en-preparacion"
-            className="shrink-0 rounded-md bg-surface-container-low px-2 py-1 text-label-sm font-semibold text-on-surface-variant"
-          >
-            En cocina
-          </h2>
-          {tablero}
-        </section>
-      </div>
-    ) : (
-      tablero
-    );
-  }
+  // SonarQube (complejidad cognitiva): el tablero, la cola y los estados de
+  // carga están en componentes aparte, arriba en este archivo.
+  const comanda: PropsComanda = {
+    puedeOperarTransiciones,
+    onTransicion: emitirTransicion,
+    ahora,
+    umbrales,
+    onCancelar: abrirCancelacion,
+  };
+  const tablero = (
+    <TableroPorMesa
+      grupos={agruparPorMesa(activos)}
+      colaActiva={colaActiva}
+      comanda={comanda}
+    />
+  );
 
   return (
     <div className="flex h-full flex-col gap-2">
@@ -352,29 +421,30 @@ export function KdsBoard() {
       <div className="flex shrink-0 justify-end">
         <IndicadorConexion estado={estadoConexion} />
       </div>
-      {/* HU-042 (BL-466): ocupación de la cocina y alerta de alta demanda.
-          aria-live para que el lector de pantalla lo anuncie sin mover el
-          foco. */}
-      {cola && !loading && (
-        <div aria-live="polite" className="flex shrink-0 flex-col gap-1">
-          <p
-            data-testid="cola-contador"
-            className="text-label-md font-semibold text-on-surface-variant"
-          >
-            {textoContadorCola(cola)}
-          </p>
-          {cola.altaDemanda && (
-            <p
-              data-testid="cola-alta-demanda"
-              className="flex items-center gap-2 rounded-lg bg-error-container px-3 py-1.5 text-label-md font-semibold text-on-error-container"
+      {cola && !loading && <AvisoCola cola={cola} />}
+      <ContenidoKds
+        loading={loading}
+        sinConexion={estadoConexion === 'desconectado'}
+        loadError={loadError}
+        hayPedidos={pedidos.length > 0}
+      >
+        {colaActiva ? (
+          <div className="flex min-h-0 flex-1 gap-gutter">
+            <SeccionEnEspera enEspera={enEspera} comanda={comanda} />
+            <section
+              aria-labelledby="titulo-en-preparacion"
+              className="flex min-w-0 flex-1 flex-col gap-1.5"
             >
-              <span aria-hidden="true">⚠</span>
-              {textoAltaDemanda(cola)}
-            </p>
-          )}
-        </div>
-      )}
-      {contenido}
+              <h2 id="titulo-en-preparacion" className={CLASE_TITULO_SECCION}>
+                En cocina
+              </h2>
+              {tablero}
+            </section>
+          </div>
+        ) : (
+          tablero
+        )}
+      </ContenidoKds>
     </div>
   );
 }
