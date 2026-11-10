@@ -29,6 +29,7 @@
 | 1.22    | 09/11/2026 | Se borra el bloque de TC-E-084, ya cargado en Kiwi. TC-E-085 y 086: el mozo cancela un pedido antes de cobrarlo, en la pantalla del pedido y desde «Cobros pendientes» (bug BL-501). |
 | 1.23    | 10/11/2026 | TC-E-087 a 090: tiempo de espera de las comandas, indicador de conexión y accesibilidad del KDS (HU-038, BL-505). |
 | 1.24    | 10/11/2026 | TC-E-091 y 092: monitor de Cocina de solo lectura, sin scroll, con resumen grande y accesible (HU-038, BL-510). |
+| 1.25    | 10/11/2026 | TC-E-093 a 097: propina en el pago del comensal, en los cobros del mozo y en Reportes (HU-022, BL-496). Renumerados desde TC-E-087 a 091, que ya eran de KDS (BL-512). |
 
 Plantilla para cargar en Kiwi la descripción de casos TC-E (Playwright)
 nuevos o que cambiaron (BL-435). La usa
@@ -226,3 +227,95 @@ Igual que TC-E-091.
 
 1. —
 2. Se ve la tarjeta del pedido en el monitor. Sin errores graves de accesibilidad (axe, WCAG 2.1 AA).
+
+## TC-E-093
+
+### Precondición
+
+Usuario Mozo del tenant de testing (Keycloak de pruebas). El establecimiento no trae propinas sugeridas: se usa «Otro monto». Consumo de $ 590 (Milanesa a la napolitana, seed).
+
+### Pasos
+
+1. Como comensal, en la mesa, pedir una Milanesa a la napolitana y llegar a «Pagá tu pedido».
+2. Elegir «Otro monto», escribir 50 y tocar «Aplicar».
+3. Avisar al mozo para pagar en efectivo.
+4. Como Mozo, en «Cobros pendientes», ver el pedido y tocar «Cobrar en efectivo».
+5. Ver el desglose y tocar «Confirmar cobro».
+
+### Resultado esperado
+
+1. —
+2. El resumen muestra Consumo $ 590, Propina $ 50 y Total $ 640.
+3. La pantalla guarda la propina de $ 50 y avisa al mozo.
+4. La fila dice «Incluye propina de $ 50» y se abre el diálogo de cobro.
+5. El diálogo muestra Consumo, Propina y Total $ 640, y el Mozo no puede cambiar la propina. El cobro responde 201 con el total esperado de $ 640 y el comensal ve «¡Tu pedido ya está en cocina!».
+
+## TC-E-094
+
+### Precondición
+
+Igual que TC-E-093.
+
+### Pasos
+
+1. Como comensal, hacer los pasos 1 a 3 de TC-E-093.
+2. Como Mozo, en «Cobros pendientes», tocar «Cobrar con el POS» en ese pedido.
+3. Ver el desglose, elegir «Débito», escribir el número de autorización y tocar «Registrar cobro».
+
+### Resultado esperado
+
+1. —
+2. Se abre el diálogo con Consumo, Propina y «Total a cobrar en el POS» de $ 640.
+3. El cobro responde 201 con el total esperado de $ 640, aparece «Cobro registrado: pedido #…» y el pedido sale de la lista de pendientes.
+
+## TC-E-095
+
+### Precondición
+
+Usuario Administrador del tenant de testing (Keycloak de pruebas).
+
+### Pasos
+
+1. Abrir Reportes desde el menú.
+
+### Resultado esperado
+
+1. La API responde 200 con las propinas del período (total, pedidos con propina y porcentaje de las ventas) y la propina de cada hora, todos numéricos. La pantalla muestra «Total vendido» y «Propinas» como tarjetas separadas, con el texto «Nadie dejó propina…» o «N de M pedidos dejaron propina».
+
+## TC-E-096
+
+### Precondición
+
+Sin sesión. Igual que TC-E-093 en el pedido; se paga con una tarjeta de prueba del sandbox de Mercado Pago (APRO).
+
+### Pasos
+
+1. Como comensal, en la mesa, pedir una Milanesa a la napolitana y llegar a «Pagá tu pedido».
+2. Ver el botón de pago sin elegir propina.
+3. Elegir «Otro monto», escribir 50 y tocar «Aplicar».
+4. Pagar con la tarjeta de prueba.
+
+### Resultado esperado
+
+1. —
+2. El botón dice «Pagar $ 590».
+3. El resumen muestra Total $ 640 y el botón pasa a «Pagar $ 640».
+4. La pantalla guarda la propina antes de cobrar (PUT de la propina, 200, con $ 50), el pago responde 201 y el comensal ve «¡Tu pedido ya está en cocina!».
+
+## TC-E-097
+
+### Precondición
+
+Igual que TC-E-096, sin llegar a pagar.
+
+### Pasos
+
+1. Como comensal, en la mesa, pedir una Milanesa a la napolitana y llegar a «Pagá tu pedido».
+2. Elegir «Otro monto», escribir 50 y tocar «Aplicar».
+3. Tocar «Sin propina».
+
+### Resultado esperado
+
+1. —
+2. El resumen muestra la línea Propina y el Total $ 640.
+3. Desaparece la línea Propina, el Total vuelve a $ 590 y el botón dice «Pagar $ 590».
