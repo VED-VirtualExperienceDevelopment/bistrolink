@@ -34,6 +34,7 @@
 | 1.27    | 09/11/2026 | Se borran los bloques de TC-I-183 a 186, ya cargados en Kiwi. TC-I-187 a 189: ventas hechas en el POS del local, traídas al dashboard (HU-011 / BL-489), para cargar con el script antes de mergear el PR.                                |
 | 1.28    | 09/11/2026 | Se borran los bloques de TC-I-187 a 189, ya cargados en Kiwi. TC-I-190 y 191: cancelar un pedido que todavía no se cobró (bug BL-501), para cargar con el script antes de mergear el PR.                                                  |
 | 1.29    | 10/11/2026 | TC-I-192 y 193: umbrales de espera del KDS configurables por local (HU-038 / BL-506), para cargar con el script antes de mergear el PR. |
+| 1.30    | 10/11/2026 | TC-I-194: propinas del reporte de ventas, aparte del consumo y por canal (HU-022 / BL-496). Renumerado desde TC-I-153, que ya era de stock (BL-512). |
 
 Texto del campo de descripción de cada caso TC-I en Kiwi. Lo carga
 `cargar-casos-integracion.mjs --descripciones`: cada bloque `## TC-I-NNN`
@@ -124,3 +125,21 @@ Igual que TC-I-192.
 1. 400: «Demora alta desde» tiene que ser mayor que «Demorado desde». No se guarda ni se audita nada.
 2. La base lo rechaza (CHECK restaurante_minutos_espera_orden).
 3. La base lo rechaza (CHECK restaurante_minutos_espera_rango). La configuración queda como estaba.
+
+## TC-I-194
+
+### Precondición
+
+Base de pruebas con el tenant A y ventas aprobadas del día: QR $ 1000 de consumo con $ 100 de propina (Mercado Pago), Mozo $ 500 con $ 50 de propina (efectivo) y Web $ 500 sin propina. También hay un pago rechazado y uno devuelto con propina, que no cuentan.
+
+### Pasos
+
+1. Como administrador, pedir el reporte del día sin filtro de canal.
+2. Pedir el reporte con el canal LOCAL.
+3. Pedir el reporte con el canal WEB.
+
+### Resultado esperado
+
+1. 200. El total vendido es $ 2000: la propina no suma. Las propinas son $ 150, de 2 pedidos, un 7,5 % de las ventas.
+2. 200. Propinas $ 150, de 2 pedidos, un 10 % de las ventas.
+3. 200. Propinas $ 0, de 0 pedidos, 0 %.

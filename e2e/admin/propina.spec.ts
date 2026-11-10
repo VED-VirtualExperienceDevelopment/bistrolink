@@ -11,13 +11,13 @@ import { continuarAlPago, pagarConTarjetaDePrueba } from "../support/pago";
 // establecimiento). Un pedido para retirar no sirve para el cobro del mozo:
 // no puede pedir efectivo y su propina solo se guarda al pagar con tarjeta.
 //
-// - TC-E-087 y TC-E-088: el comensal avisa al mozo (la pantalla guarda la
+// - TC-E-093 y TC-E-094: el comensal avisa al mozo (la pantalla guarda la
 //   propina con un PUT justo antes) y el mozo cobra en efectivo o con el POS
 //   (el aviso de efectivo no bloquea el cobro con el POS).
-// - TC-E-090: el comensal paga con tarjeta (sandbox de Mercado Pago, como
+// - TC-E-096: el comensal paga con tarjeta (sandbox de Mercado Pago, como
 //   pago.spec.ts): ve el total con la propina y la pantalla la guarda.
-// - TC-E-091: «Sin propina» deja el total en el consumo (solo pantalla).
-// - TC-E-089: la forma del reporte, sin depender de que haya ventas.
+// - TC-E-097: «Sin propina» deja el total en el consumo (solo pantalla).
+// - TC-E-095: la forma del reporte, sin depender de que haya ventas.
 //
 // El consumo es $ 590 (Milanesa a la napolitana, seed), así que con la
 // propina el total es $ 640.
@@ -128,7 +128,7 @@ async function filaConPropina(page: Page, codigo: string) {
 }
 
 test.describe("BL-496: propina en el pago, en los cobros del mozo y en los reportes", () => {
-  test("[TC-E-087] HU-022: el mozo ve la propina del comensal en la lista, la cobra en efectivo con el desglose y el comensal pasa a cocina", async ({
+  test("[TC-E-093] HU-022: el mozo ve la propina del comensal en la lista, la cobra en efectivo con el desglose y el comensal pasa a cocina", async ({
     page,
     kdsPageMozo,
     qrMesas,
@@ -172,7 +172,7 @@ test.describe("BL-496: propina en el pago, en los cobros del mozo y en los repor
     ).toBeVisible({ timeout: 20000 });
   });
 
-  test("[TC-E-088] HU-022: el mozo cobra con el POS el total con la propina y el pedido sale de la lista de pendientes", async ({
+  test("[TC-E-094] HU-022: el mozo cobra con el POS el total con la propina y el pedido sale de la lista de pendientes", async ({
     page,
     kdsPageMozo,
     qrMesas,
@@ -216,7 +216,7 @@ test.describe("BL-496: propina en el pago, en los cobros del mozo y en los repor
     await expect(fila).toHaveCount(0, { timeout: 10000 });
   });
 
-  test("[TC-E-089] HU-022: Reportes muestra la tarjeta de propinas y la API trae las propinas del período y de cada hora", async ({
+  test("[TC-E-095] HU-022: Reportes muestra la tarjeta de propinas y la API trae las propinas del período y de cada hora", async ({
     kdsPageAdmin: page,
   }) => {
     const [respuesta] = await Promise.all([
@@ -255,7 +255,7 @@ test.describe("BL-496: propina en el pago, en los cobros del mozo y en los repor
     ).toBeVisible();
   });
 
-  test("[TC-E-090] HU-022: el comensal en la mesa elige una propina, ve el total con la propina en «Pagar», paga con tarjeta y el pedido llega a cocina", async ({
+  test("[TC-E-096] HU-022: el comensal en la mesa elige una propina, ve el total con la propina en «Pagar», paga con tarjeta y el pedido llega a cocina", async ({
     page,
     qrMesas,
   }) => {
@@ -263,7 +263,10 @@ test.describe("BL-496: propina en el pago, en los cobros del mozo y en los repor
     test.slow();
     const pedidoId = await pedirEnLaMesa(page, qrMesas.ruta(MESA_ID));
 
-    // Sin elegir nada, el botón cobra solo el consumo.
+    // El local puede preseleccionar una propina (la configura el
+    // administrador y en staging queda guardada): se parte de «Sin propina»
+    // para que el botón cobre solo el consumo, sin depender de eso.
+    await page.getByRole("button", { name: "Sin propina" }).click();
     await expect(
       page.getByRole("button", { name: /^Pagar\s.*590/ }),
     ).toBeVisible({ timeout: 15000 });
@@ -295,7 +298,7 @@ test.describe("BL-496: propina en el pago, en los cobros del mozo y en los repor
     ).toBeVisible({ timeout: 15000 });
   });
 
-  test("[TC-E-091] HU-022: «Sin propina» quita la propina elegida y el total vuelve a ser el consumo", async ({
+  test("[TC-E-097] HU-022: «Sin propina» quita la propina elegida y el total vuelve a ser el consumo", async ({
     page,
     qrMesas,
   }) => {

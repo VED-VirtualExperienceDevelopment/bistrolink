@@ -484,7 +484,7 @@ describe('HU-012 (BL-108): reportes de ventas', () => {
   });
 
   itConAdmin(
-    '[TC-I-153] HU-022 (BL-496): el reporte muestra las propinas aparte de las ventas, con su peso sobre el consumo, y respeta el filtro de canal',
+    '[TC-I-194] HU-022 (BL-496): el reporte muestra las propinas aparte de las ventas, con su peso sobre el consumo, y respeta el filtro de canal',
     async () => {
       const token = await getToken(ADMIN_USER as string, ADMIN_PASS as string);
       const pedir = (canal?: string) =>
