@@ -7,11 +7,14 @@ import { textoAltaDemanda, type EstadoCola } from './cola-kds.utils';
 import type { UmbralesEspera } from './espera-kds.utils';
 import {
   ANCHO_MINIMO_TARJETA,
+  agruparPorMesa,
   comandasDelMonitor,
+  comandasPorMesa,
   densidadMonitor,
   resumenMonitor,
   textoEnPreparacion,
   textoOcultas,
+  type GrupoMesaMonitor,
   type ResumenMonitor,
 } from './monitor-cocina.utils';
 
@@ -102,9 +105,67 @@ function ResumenCocina({
   );
 }
 
+interface PropsTarjetas {
+  ahora: number;
+  umbrales: UmbralesEspera;
+  /** Ancho de cada tarjeta (px), según la densidad. */
+  ancho: number;
+}
+
+/**
+ * Las comandas de una mesa, juntas. Si la mesa tiene más de una, el bloque
+ * lleva un título grande («Mesa 3 · 2 pedidos») y un fondo que las agrupa.
+ * `total` cuenta también las que no entran en la pantalla.
+ */
+function GrupoMesa({
+  grupo,
+  total,
+  tarjetas,
+}: Readonly<{ grupo: GrupoMesaMonitor; total: number; tarjetas: PropsTarjetas }>) {
+  const varias = total > 1;
+  const idTitulo = `monitor-mesa-${grupo.mesaNumero}`;
+  return (
+    <section
+      data-testid="monitor-mesa"
+      data-mesa={grupo.mesaNumero}
+      aria-labelledby={varias ? idTitulo : undefined}
+      className={
+        varias
+          ? 'flex max-w-full flex-col gap-2 rounded-2xl bg-surface-container p-3'
+          : 'flex max-w-full flex-col'
+      }
+    >
+      {varias && (
+        <h2 id={idTitulo} className="text-headline-sm font-bold text-on-surface">
+          Mesa {grupo.mesaNumero} · {total} pedidos
+        </h2>
+      )}
+      <ol className="flex flex-wrap items-start gap-gutter">
+        {grupo.pedidos.map((pedido) => (
+          <li
+            key={pedido.id}
+            className="max-w-full"
+            style={{ width: tarjetas.ancho }}
+          >
+            <OrderTicket
+              pedido={pedido}
+              puedeOperarTransiciones={false}
+              onTransicion={SIN_TRANSICIONES}
+              ahora={tarjetas.ahora}
+              umbrales={tarjetas.umbrales}
+              variante="monitor"
+            />
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
 /**
  * HU-038 (BL-510): monitor de Cocina. Una tarjeta por pedido en preparación
- * o listo, en una grilla que entra en la pantalla sin scroll:
+ * o listo, agrupadas por mesa, en un área que entra en la pantalla sin
+ * scroll:
  * - el ancho de las tarjetas depende de cuántas hay (densidadMonitor);
  * - cada tarjeta toma el alto de sus ítems (no se corta nada);
  * - si aun así no entran, se ocultan desde el final (las listas más nuevas
@@ -123,7 +184,7 @@ export function MonitorCocina({
 }: Readonly<MonitorCocinaProps>) {
   const comandas = comandasDelMonitor(pedidos);
   const densidad = densidadMonitor(comandas.length);
-  const grillaRef = useRef<HTMLOListElement>(null);
+  const grillaRef = useRef<HTMLDivElement>(null);
   const [tamano, setTamano] = useState(0);
   const [ajuste, setAjuste] = useState({ clave: '', visibles: 0 });
 
@@ -150,6 +211,12 @@ export function MonitorCocina({
   }, [clave, visibles]);
 
   const mostradas = comandas.slice(0, visibles);
+  const totalPorMesa = comandasPorMesa(comandas);
+  const tarjetas: PropsTarjetas = {
+    ahora,
+    umbrales,
+    ancho: ANCHO_MINIMO_TARJETA[densidad],
+  };
 
   return (
     <div data-testid="monitor-cocina" className="flex min-h-0 flex-1 flex-col gap-3">
@@ -163,29 +230,21 @@ export function MonitorCocina({
           No hay pedidos en preparación.
         </p>
       )}
-      <ol
+      <div
         ref={grillaRef}
         data-testid="monitor-grilla"
         data-densidad={densidad}
-        aria-label="Comandas en curso"
-        className="grid min-h-0 flex-1 content-start items-start gap-gutter overflow-hidden"
-        style={{
-          gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${ANCHO_MINIMO_TARJETA[densidad]}px), 1fr))`,
-        }}
+        className="flex min-h-0 flex-1 flex-wrap content-start items-start gap-gutter overflow-hidden"
       >
-        {mostradas.map((pedido) => (
-          <li key={pedido.id}>
-            <OrderTicket
-              pedido={pedido}
-              puedeOperarTransiciones={false}
-              onTransicion={SIN_TRANSICIONES}
-              ahora={ahora}
-              umbrales={umbrales}
-              variante="monitor"
-            />
-          </li>
+        {agruparPorMesa(mostradas).map((grupo) => (
+          <GrupoMesa
+            key={grupo.mesaNumero}
+            grupo={grupo}
+            total={totalPorMesa.get(grupo.mesaNumero) ?? grupo.pedidos.length}
+            tarjetas={tarjetas}
+          />
         ))}
-      </ol>
+      </div>
     </div>
   );
 }
