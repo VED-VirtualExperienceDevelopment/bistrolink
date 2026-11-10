@@ -93,6 +93,12 @@ jobs:
           # y quedarse con una versión sin los parches de seguridad.
           check-latest: true
 
+      # Se corre a mano, muchas veces con staging dormido (serverless de
+      # Railway). Sin esto, los primeros pedidos de k6 y de Lighthouse miden
+      # el arranque de los servicios y no la app.
+      - name: Despertar staging
+        uses: ./.github/actions/despertar-staging
+
       # ── k6 ──────────────────────────────────────────────────────────────
       - name: Instalar k6
         uses: grafana/setup-k6-action@43b9fc21641a76002687994433dd586f56e791b1 # v1.2.2
