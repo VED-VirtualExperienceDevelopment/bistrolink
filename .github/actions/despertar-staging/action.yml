@@ -1,0 +1,42 @@
+name: Despertar staging
+description: >
+  Espera a que respondan los servicios de staging antes de usarlos. Están en
+  modo serverless de Railway: sin tráfico se duermen, el primer pedido los
+  despierta y, mientras arrancan, responden 503 o no responden (Keycloak
+  tarda bastante más de 40 s). Mismo chequeo que «Health check staging» de
+  ci.yml: cada URL, hasta 30 intentos cada 10 s (~5 min). Si ya están
+  despiertos, pasa en el primer intento.
+
+inputs:
+  urls:
+    description: URLs a esperar, una por línea, en el orden en que se piden.
+    required: false
+    default: |
+      https://bistrolink-auth-staging.up.railway.app/realms/bistrolink/.well-known/openid-configuration
+      https://bistrolink-api-staging.up.railway.app/health/ready
+      https://bistrolink-web-staging.up.railway.app
+
+runs:
+  using: composite
+  steps:
+    - name: Esperar a que respondan los servicios
+      shell: bash
+      env:
+        URLS: ${{ inputs.urls }}
+      run: |
+        set -uo pipefail
+        check() {
+          if curl -fsS -o /dev/null --retry 30 --retry-delay 10 --retry-all-errors --max-time 15 "$1"; then
+            echo "OK    $1"
+          else
+            echo "FALLÓ $1 — última respuesta:"
+            curl -sS --max-time 15 -w "\nHTTP %{http_code}\n" "$1" || true
+            return 1
+          fi
+        }
+        estado=0
+        while IFS= read -r url; do
+          [ -z "$url" ] && continue
+          check "$url" || estado=1
+        done <<< "$URLS"
+        exit $estado

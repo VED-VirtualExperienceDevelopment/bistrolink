@@ -1357,6 +1357,12 @@ jobs:
           # y quedarse con una versión sin los parches de seguridad.
           check-latest: true
 
+      # Normalmente staging ya está despierto (corre después del deploy),
+      # pero con «Re-run failed jobs» este job corre solo, a veces horas
+      # después, con los servicios dormidos (serverless de Railway).
+      - name: Despertar staging
+        uses: ./.github/actions/despertar-staging
+
       - name: Lighthouse CI — menú digital (HU-001)
         run: npx @lhci/cli@0.14.x autorun
         env:
@@ -1499,6 +1505,13 @@ jobs:
           }
           console.log(`OK: la imagen trae los navegadores de @playwright/test ${pkg}.`);
           '
+
+      # Normalmente staging ya está despierto (corre después del deploy),
+      # pero con «Re-run failed jobs» este job corre solo, a veces horas
+      # después, con los servicios dormidos (serverless de Railway): el login
+      # de Keycloak y los primeros pedidos fallaban por tiempo.
+      - name: Despertar staging
+        uses: ./.github/actions/despertar-staging
 
       - name: Tests E2E Playwright en staging (${{ matrix.project }})
         run: npx playwright test --project=${{ matrix.project }}
