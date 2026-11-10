@@ -162,6 +162,13 @@ export class ActualizarConfiguracionDto {
   })
   propinasSugeridas?: number[];
 
+  // HU-022 (BL-495): la pantalla de pago del comensal abre con el 10 % marcado
+  // como «Sugerida». Solo surte efecto si el 10 % está en propinasSugeridas;
+  // si no está, la opción queda activa y no se marca nada.
+  @IsOptional()
+  @IsBoolean({ message: 'propinaPreseleccionada debe ser verdadero o falso' })
+  propinaPreseleccionada?: boolean;
+
   @IsOptional()
   @IsIn(PROVEEDORES_CFE_DISPONIBLES, {
     message: `Proveedor de CFE no disponible. Hoy se puede elegir: ${PROVEEDORES_CFE_DISPONIBLES.join(', ')}`,

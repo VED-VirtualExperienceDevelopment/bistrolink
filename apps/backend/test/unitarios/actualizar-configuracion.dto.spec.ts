@@ -24,6 +24,7 @@ describe('ActualizarConfiguracionDto (HU-020, BL-72)', () => {
         plexoHabilitado: false,
         handyHabilitado: false,
         propinasSugeridas: [10, 15, 20],
+        propinaPreseleccionada: true,
         cfeProveedor: 'SURTEC',
       }),
     ).toEqual([]);
@@ -88,6 +89,31 @@ describe('ActualizarConfiguracionDto (HU-020, BL-72)', () => {
       expect(await errores({ propinasSugeridas })).toEqual([
         'propinasSugeridas',
       ]);
+    });
+  });
+
+  describe('HU-022 (BL-495): preselección de la propina', () => {
+    it('se puede activar y desactivar', async () => {
+      expect(await errores({ propinaPreseleccionada: true })).toEqual([]);
+      expect(await errores({ propinaPreseleccionada: false })).toEqual([]);
+    });
+
+    it.each([['si'], [1], ['true']])(
+      'rechaza %p: tiene que ser verdadero o falso',
+      async (valor) => {
+        expect(await errores({ propinaPreseleccionada: valor })).toEqual([
+          'propinaPreseleccionada',
+        ]);
+      },
+    );
+
+    it('se puede mandar junto con los porcentajes sugeridos', async () => {
+      expect(
+        await errores({
+          propinasSugeridas: [5, 10, 15],
+          propinaPreseleccionada: true,
+        }),
+      ).toEqual([]);
     });
   });
 

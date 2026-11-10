@@ -1,6 +1,8 @@
 /**
  * HU-031 (BL-201): cobro en efectivo que registra el mozo o el administrador.
  * HU-007b (BL-80): también el cobro hecho con el POS del local.
+ * HU-022 (BL-495): el personal ve la propina que eligió el comensal (solo
+ * lectura) y el total que cobra incluye esa propina.
  * Lógica pura del panel de la mesa y de la pantalla /admin/cobros (probada
  * en test/unitarios/cobros.utils.spec.ts).
  */
@@ -13,8 +15,17 @@ export interface PedidoPendienteDeCobro {
   canal: string;
   createdAt: string;
   mesa: { id: string; numero: number; esVirtual: boolean };
-  /** Total con 2 decimales, como texto ("590.00"). */
+  /** Total a cobrar con 2 decimales, propina incluida ("649.00"). */
   total: string;
+  /**
+   * HU-022 (BL-495): el consumo (lo que se factura) y la propina elegida.
+   * Opcionales: un backend anterior no los trae y entonces no se muestra
+   * desglose.
+   */
+  consumo?: string;
+  propina?: string;
+  /** Porcentaje elegido; null si fue un monto libre o no eligió propina. */
+  propinaPorcentaje?: number | null;
   lineas: { id: string; nombre: string; cantidad: number; subtotal: string }[];
   /** El comensal tiene un pago con tarjeta en curso. */
   pagoEnCurso: boolean;
@@ -40,7 +51,11 @@ export interface PendientesDeCobro {
 export interface CobroEfectivoRegistrado {
   pagoId: string;
   pedidoId: string;
+  /** Total cobrado (consumo + propina). */
   monto: string;
+  /** HU-022 (BL-495): lo que se factura y la propina cobrada aparte. */
+  consumo?: string;
+  propina?: string;
   montoRecibido: string;
   vuelto: string;
 }
@@ -64,7 +79,11 @@ export const TARJETAS_POS: ReadonlyArray<{
 export interface CobroPosRegistrado {
   pagoId: string;
   pedidoId: string;
+  /** Total cobrado (consumo + propina). */
   monto: string;
+  /** HU-022 (BL-495): lo que se factura y la propina cobrada aparte. */
+  consumo?: string;
+  propina?: string;
   tarjeta: TarjetaPos;
   autorizacion: string;
 }
@@ -98,7 +117,10 @@ export function motivoSinPos(
 export function mensajeCobroPosRegistrado(cobro: CobroPosRegistrado): string {
   const tarjeta =
     TARJETAS_POS.find((t) => t.codigo === cobro.tarjeta)?.nombre ?? "Tarjeta";
-  return `Cobro registrado: pedido ${codigoDelPedido(cobro.pedidoId)}, ${formatearMonto(cobro.monto)} con ${tarjeta.toLowerCase()} (autorización ${cobro.autorizacion}). Ya está en cocina.`;
+  const propina = hayPropina(cobro.propina)
+    ? ` (incluye propina de ${formatearMonto(cobro.propina)})`
+    : "";
+  return `Cobro registrado: pedido ${codigoDelPedido(cobro.pedidoId)}, ${formatearMonto(cobro.monto)}${propina} con ${tarjeta.toLowerCase()} (autorización ${cobro.autorizacion}). Ya está en cocina.`;
 }
 
 /** Clave de idempotencia de un cobro con POS: una por diálogo abierto. */
@@ -217,10 +239,15 @@ export function motivoSinEfectivo(
 /** Aviso después de cobrar. */
 export function mensajeCobroRegistrado(cobro: CobroEfectivoRegistrado): string {
   const codigo = codigoDelPedido(cobro.pedidoId);
+  const propina = hayPropina(cobro.propina)
+    ? ` Propina: ${formatearMonto(cobro.propina)}.`
+    : "";
   if (Number(cobro.vuelto) === 0) {
-    return `Cobro registrado: pedido ${codigo}, sin vuelto. Ya está en cocina.`;
+    return propina
+      ? `Cobro registrado: pedido ${codigo}.${propina} Sin vuelto. Ya está en cocina.`
+      : `Cobro registrado: pedido ${codigo}, sin vuelto. Ya está en cocina.`;
   }
-  return `Cobro registrado: pedido ${codigo}. Vuelto: ${formatearMonto(cobro.vuelto)}. Ya está en cocina.`;
+  return `Cobro registrado: pedido ${codigo}.${propina} Vuelto: ${formatearMonto(cobro.vuelto)}. Ya está en cocina.`;
 }
 
 /**
@@ -250,6 +277,62 @@ export function textoSolicitudEfectivo(
 /** Lo que se precarga en «Monto recibido»: con cuánto dijo que paga. */
 export function montoRecibidoInicial(pedido: PedidoPendienteDeCobro): string {
   return pedido.efectivoSolicitado?.pagaCon ?? "";
+}
+
+// ── HU-022 (BL-495): la propina que eligió el comensal ───────────────────
+
+/** Hay propina si viene un monto mayor que cero. */
+function hayPropina(propina: string | undefined): propina is string {
+  return propina !== undefined && Number(propina) > 0;
+}
+
+/** Lo que el mozo ve del desglose del total de un pedido. */
+export interface DesglosePropina {
+  consumo: string;
+  propina: string;
+  /** «Propina (10 %)» o «Propina» si fue un monto libre. */
+  etiqueta: string;
+}
+
+/**
+ * Desglose de un pedido con propina, o null si no hay (el comensal no dejó
+ * propina o el backend es anterior y no la informa).
+ */
+export function desglosePropina(
+  pedido: PedidoPendienteDeCobro,
+): DesglosePropina | null {
+  if (!hayPropina(pedido.propina) || pedido.consumo === undefined) return null;
+  const porcentaje = pedido.propinaPorcentaje;
+  return {
+    consumo: pedido.consumo,
+    propina: pedido.propina,
+    etiqueta:
+      porcentaje === null || porcentaje === undefined
+        ? "Propina"
+        : `Propina (${porcentaje} %)`,
+  };
+}
+
+/** «Incluye propina de $ 59 (10 %)» para la lista, o null si no hay. */
+export function textoPropinaEnLista(
+  pedido: PedidoPendienteDeCobro,
+): string | null {
+  const desglose = desglosePropina(pedido);
+  if (!desglose) return null;
+  const porcentaje =
+    pedido.propinaPorcentaje === null || pedido.propinaPorcentaje === undefined
+      ? ""
+      : ` (${pedido.propinaPorcentaje} %)`;
+  return `Incluye propina de ${formatearMonto(desglose.propina)}${porcentaje}`;
+}
+
+/**
+ * El backend rechaza el cobro si el comensal cambió la propina después de
+ * que el mozo abrió el pedido: el total ya no es el que está en pantalla.
+ * Ese caso se resuelve actualizando la lista.
+ */
+export function esTotalCambiado(mensaje: string): boolean {
+  return mensaje.startsWith("El total del pedido cambió");
 }
 
 // ── BL-501: cancelar un pedido que todavía no se cobró ─────────────────────

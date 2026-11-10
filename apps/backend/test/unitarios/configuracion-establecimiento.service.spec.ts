@@ -27,6 +27,8 @@ const RESTAURANTE_ACTUAL = {
   plexoHabilitado: false,
   handyHabilitado: false,
   propinasSugeridas: [10],
+  // HU-022 (BL-495): sin preselección del 10 % en la pantalla de pago.
+  propinaPreseleccionada: false,
   cfeProveedor: 'SURTEC',
   // HU-042 (BL-465): cola del KDS desactivada.
   limitePedidosEnPreparacion: null,
@@ -158,6 +160,45 @@ describe('ConfiguracionEstablecimientoService (HU-020, BL-72)', () => {
       });
       expect(configuracion.efectivoHabilitado).toBe(false);
       expect(configuracion.propinasSugeridas).toEqual([10, 15, 20]);
+    });
+
+    it('HU-022 (BL-495): activar la preselección de la propina: escribe solo eso, lo audita con antes y después y no avisa al KDS', async () => {
+      const configuracion = await service.actualizar(
+        TENANT_ID,
+        { propinaPreseleccionada: true },
+        ACTOR,
+      );
+
+      expect(tx.restaurante.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { tenantId: TENANT_ID },
+          data: { propinaPreseleccionada: true },
+        }),
+      );
+      expect(tx.tenant.update).not.toHaveBeenCalled();
+      expect(auditLog.registrarEnTx).toHaveBeenCalledWith(tx, {
+        action: AuditAction.ESTABLECIMIENTO_CONFIGURACION_MODIFICADA,
+        tenantId: TENANT_ID,
+        actorKeycloakId: ACTOR.id,
+        entidadId: TENANT_ID,
+        detalle: { campos: ['propinaPreseleccionada'] },
+        antes: { propinaPreseleccionada: false },
+        despues: { propinaPreseleccionada: true },
+      });
+      expect(kdsGateway.avisarEstadoCola).not.toHaveBeenCalled();
+      expect(configuracion.propinaPreseleccionada).toBe(true);
+    });
+
+    it('HU-022 (BL-495): mandar la preselección que ya tiene el local no escribe ni audita', async () => {
+      const configuracion = await service.actualizar(
+        TENANT_ID,
+        { propinaPreseleccionada: false },
+        ACTOR,
+      );
+
+      expect(tx.restaurante.update).not.toHaveBeenCalled();
+      expect(auditLog.registrarEnTx).not.toHaveBeenCalled();
+      expect(configuracion.propinaPreseleccionada).toBe(false);
     });
 
     it('razón social: la cambia en tenant y la audita sin el valor', async () => {

@@ -34,6 +34,7 @@ import {
   resultadoDeError,
   resultadoDeEstado,
   rutaPagos,
+  rutaPropina,
   rutaSolicitudEfectivo,
   seguirConsultando,
   TOPE_CONSULTA_EFECTIVO_MS,
@@ -45,6 +46,22 @@ import {
   type ResultadoPago,
   type SolicitudEfectivo,
 } from './pago.utils';
+import { SelectorPropina } from './SelectorPropina';
+import {
+  cuerpoDePropina,
+  eleccionAlAbrir,
+  eleccionGuardada,
+  etiquetaDePropina,
+  hayQueGuardarPropina,
+  MENSAJE_ERROR_PROPINA,
+  mensajeErrorPropina,
+  montoDePropina,
+  SIN_PROPINA,
+  totalConPropina,
+  type EleccionPropina,
+  type PropinaDelLocal,
+  type TotalesDelPedido,
+} from './propina.utils';
 
 export interface LineaResumen {
   readonly itemCartaId: string;
@@ -62,6 +79,11 @@ interface PagoPedidoProps {
   /** JWT del comensal técnico del tenant. */
   readonly accessToken: string;
   readonly lineas: readonly LineaResumen[];
+  /**
+   * El consumo del carrito, con IVA incluido y sin propina. HU-022 (BL-495):
+   * lo que se cobra es el consumo más la propina que elige el comensal acá;
+   * si el backend informa su propio consumo, ese manda.
+   */
   readonly total: number;
   readonly numeroMesa?: number;
   readonly onVolver: () => void;
@@ -86,6 +108,15 @@ interface PagoCreado {
   estado: EstadoPago;
 }
 
+/** HU-022 (BL-495): respuesta de PUT .../pagos/propina (backend: PropinaElegida). */
+interface PropinaGuardada {
+  propinaPorcentaje: number | null;
+  propinaMonto: number | null;
+  consumo: string;
+  propina: string;
+  total: string;
+}
+
 /**
  * BL-311 (HU-007): pantalla «Pagar» del comensal (mesa o pedido para retirar).
  *
@@ -101,6 +132,12 @@ interface PagoCreado {
  * BL-452: solo se ofrecen los medios que el local tiene habilitados (HU-020):
  * la tarjeta si tiene Mercado Pago y el efectivo en pedidos de mesa de un
  * local que lo acepta. Sin ninguno, se le avisa al comensal a quién pagarle.
+ *
+ * HU-022 (BL-495): propina voluntaria, para todos los comensales (mesa y para
+ * retirar). Se elige antes de los medios de pago y se guarda en el pedido
+ * (PUT .../propina) justo antes de pagar o de avisar al mozo, para que la
+ * tarjeta, el efectivo y el POS cobren lo mismo. Mientras se confirma un pago
+ * o se espera al mozo, ya no se puede cambiar.
  */
 export function PagoPedido({
   origen,
@@ -127,8 +164,26 @@ export function PagoPedido({
   // HU-009 (BL-453): e-Factura con RUT y razón social.
   const [factura, setFactura] = useState<FormularioFactura>(FACTURA_VACIA);
   const [erroresFacturaVisibles, setErroresFacturaVisibles] = useState(false);
+  // HU-022 (BL-495): propina. El consumo arranca con el del carrito y pasa al
+  // del backend cuando la consulta lo trae. Lo que ofrece el local y lo que
+  // el pedido tiene guardado llegan con la misma consulta; un backend anterior
+  // no los trae y entonces no se ofrece propina.
+  const [consumo, setConsumo] = useState<number>(total);
+  const [propinaLocal, setPropinaLocal] = useState<PropinaDelLocal | null>(null);
+  const [totalesGuardados, setTotalesGuardados] = useState<TotalesDelPedido | null>(
+    null,
+  );
+  const [eleccion, setEleccion] = useState<EleccionPropina>(SIN_PROPINA);
+  // true: la marcó el local (preselección) y el comensal todavía no tocó nada.
+  const [sugerida, setSugerida] = useState(false);
+  const [errorPropina, setErrorPropina] = useState<string | null>(null);
+  const errorPropinaRef = useRef<HTMLParagraphElement>(null);
 
   const headers = headersAccesoPedido(origen, tokenAcceso);
+
+  // Lo que se cobra: consumo más propina. El backend lo vuelve a calcular.
+  const montoPropina = montoDePropina(consumo, eleccion);
+  const totalAPagar = totalConPropina(consumo, eleccion);
 
   /**
    * HU-009 (BL-453): antes de pagar o de avisar al mozo. Si cargó datos de
@@ -147,6 +202,54 @@ export function PagoPedido({
     return false;
   }
   const cantidadItems = lineas.reduce((acc, l) => acc + l.cantidad, 0);
+
+  /**
+   * HU-022 (BL-495): guarda la propina en el pedido antes de pagar o de
+   * avisar al mozo. No hace nada si lo que se ve ya es lo guardado (incluido
+   * «sin propina» sin nada guardado). Devuelve false, con el motivo a la
+   * vista, si no se pudo guardar: en ese caso no se paga.
+   */
+  async function guardarPropina(): Promise<boolean> {
+    if (!totalesGuardados || !hayQueGuardarPropina(eleccion, totalesGuardados)) {
+      return true;
+    }
+    setErrorPropina(null);
+    try {
+      const guardada = await apiFetch<PropinaGuardada>(
+        rutaPropina(pedidoId),
+        accessToken,
+        {
+          method: 'PUT',
+          headers,
+          body: JSON.stringify(cuerpoDePropina(eleccion)),
+        },
+      );
+      setTotalesGuardados({
+        consumo: guardada.consumo,
+        propina: guardada.propina,
+        total: guardada.total,
+        propinaPorcentaje: guardada.propinaPorcentaje,
+        propinaMonto: guardada.propinaMonto,
+      });
+      setConsumo(Number(guardada.consumo));
+      return true;
+    } catch (err) {
+      setErrorPropina(
+        err instanceof ApiError
+          ? mensajeErrorPropina(err.status, err.message)
+          : MENSAJE_ERROR_PROPINA,
+      );
+      return false;
+    }
+  }
+
+  // Un error al guardar la propina se avisa donde se eligió, aunque el
+  // comensal haya tocado el botón de más abajo.
+  useEffect(() => {
+    if (errorPropina) {
+      errorPropinaRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
+  }, [errorPropina]);
 
   const aplicarResultado = useCallback(
     (resultado: ResultadoPago) => {
@@ -171,7 +274,13 @@ export function PagoPedido({
   }, [pantalla.tipo]);
 
   async function pagar(datos: DatosTarjeta) {
+    const anterior = pantalla;
     setPantalla({ tipo: 'procesando' });
+    // HU-022 (BL-495): primero la propina; si no se guarda, no se cobra.
+    if (!(await guardarPropina())) {
+      setPantalla(anterior);
+      return;
+    }
     try {
       const pago = await apiFetch<PagoCreado>(rutaPagos(pedidoId), accessToken, {
         method: 'POST',
@@ -244,6 +353,8 @@ export function PagoPedido({
   //   avisado que paga en efectivo, sigue esperando al mozo.
   // - BL-448: si ya hay un pago con tarjeta en curso, se espera su resultado
   //   en lugar de ofrecer pagar de nuevo (evita un doble cobro).
+  // - HU-022 (BL-495): la propina guardada en el pedido, o la que preselecciona
+  //   el local si no hay nada guardado.
   const esMesa = origen.tipo === 'mesa';
   useEffect(() => {
     let cancelado = false;
@@ -254,6 +365,21 @@ export function PagoPedido({
         setMedios(disponibles);
         setMetodo((actual) => metodoSegunMedios(disponibles, actual));
         const pantallaInicial = pantallaAlAbrir(estado, esMesa);
+
+        if (estado.propina) setPropinaLocal(estado.propina);
+        if (estado.totales) {
+          setConsumo(Number(estado.totales.consumo));
+          setTotalesGuardados(estado.totales);
+          // Con el aviso al mozo o un pago en curso la propina ya está
+          // definida: vale la guardada, no la preselección del local.
+          const inicial =
+            estado.propina && pantallaInicial === 'formulario'
+              ? eleccionAlAbrir(estado.totales, estado.propina)
+              : { eleccion: eleccionGuardada(estado.totales), sugerida: false };
+          setEleccion(inicial.eleccion);
+          setSugerida(inicial.sugerida);
+        }
+
         if (pantallaInicial === 'efectivo') {
           setMetodo('efectivo');
           setPantalla({
@@ -291,6 +417,9 @@ export function PagoPedido({
     setAvisandoMozo(true);
     setErrorEfectivo(null);
     try {
+      // HU-022 (BL-495): el mozo cobra lo que ve el comensal, con la propina
+      // ya guardada en el pedido.
+      if (!(await guardarPropina())) return;
       const solicitud = await apiFetch<SolicitudEfectivo>(
         rutaSolicitudEfectivo(pedidoId),
         accessToken,
@@ -376,6 +505,12 @@ export function PagoPedido({
     pantalla.tipo === 'verificando' ||
     pantalla.tipo === 'esperandoEfectivo';
 
+  // La e-Factura y la propina se piden juntas, antes de los medios de pago.
+  // La propina, solo si el backend informa lo que ofrece el local y lo que
+  // el pedido tiene guardado.
+  const pideDatos = pideComprobante(pantalla, medios);
+  const muestraPropina = pideDatos && propinaLocal !== null && totalesGuardados !== null;
+
   return (
     <div className="pt-20 pb-12 px-4 md:px-8 max-w-[1100px] mx-auto">
       <button
@@ -412,7 +547,7 @@ export function PagoPedido({
             <p className="mt-1 text-sm text-[#5a575e]">{bajadaDe(pantalla)}</p>
 
             {pantalla.tipo === 'rechazado' && (
-              <AvisoRechazo mensaje={pantalla.mensaje} total={total} />
+              <AvisoRechazo mensaje={pantalla.mensaje} total={totalAPagar} />
             )}
             {pantalla.tipo === 'error' && (
               <p role="alert" className="mt-4 p-3 rounded-lg bg-red-50 text-red-700 text-sm font-medium">
@@ -423,7 +558,7 @@ export function PagoPedido({
 
           {/* HU-009 (BL-453): antes de elegir cómo pagar; no mientras se
               confirma un pago ni mientras espera al mozo. */}
-          {pideComprobante(pantalla, medios) && (
+          {pideDatos && (
             <FacturaConRut
               valor={factura}
               onCambiar={(nuevo) => {
@@ -434,6 +569,34 @@ export function PagoPedido({
               rutaPrivacidad={rutaPrivacidad(origen)}
               deshabilitado={pantalla.tipo === 'procesando' || avisandoMozo}
             />
+          )}
+
+          {/* HU-022 (BL-495): propina voluntaria, entre la e-Factura y los
+              medios de pago. Sin elegir nada no hay propina y se puede pagar. */}
+          {muestraPropina && (
+            <>
+              <SelectorPropina
+                consumo={consumo}
+                sugeridas={propinaLocal.sugeridas}
+                eleccion={eleccion}
+                sugerida={sugerida}
+                deshabilitado={pantalla.tipo === 'procesando' || avisandoMozo}
+                onElegir={(nueva) => {
+                  setEleccion(nueva);
+                  setSugerida(false);
+                  setErrorPropina(null);
+                }}
+              />
+              {errorPropina && (
+                <p
+                  ref={errorPropinaRef}
+                  role="alert"
+                  className="-mt-3 p-3 rounded-lg bg-red-50 text-red-700 text-sm font-medium"
+                >
+                  {errorPropina}
+                </p>
+              )}
+            </>
           )}
 
           <MetodosDePago
@@ -472,11 +635,11 @@ export function PagoPedido({
                 </div>
                 <FormularioTarjeta
                   key={intento}
-                  monto={total}
+                  monto={totalAPagar}
                   procesando={pantalla.tipo === 'procesando'}
                   textoBoton={
                     pantalla.tipo === 'rechazado'
-                      ? `Reintentar pago (${formatearPrecio(total)})`
+                      ? `Reintentar pago (${formatearPrecio(totalAPagar)})`
                       : undefined
                   }
                   onPagar={pagar}
@@ -494,7 +657,7 @@ export function PagoPedido({
             }
             efectivo={
               <FormularioEfectivo
-                total={total}
+                total={totalAPagar}
                 enviando={avisandoMozo}
                 error={errorEfectivo}
                 onAvisar={(pagaCon) => void avisarAlMozo(pagaCon)}
@@ -513,7 +676,7 @@ export function PagoPedido({
             esperandoMozo={
               pantalla.tipo === 'esperandoEfectivo' && (
                 <EsperandoMozo
-                  total={total}
+                  total={totalAPagar}
                   pagaCon={pantalla.pagaCon}
                   aviso={pantalla.aviso}
                   agotado={pantalla.agotado}
@@ -549,7 +712,17 @@ export function PagoPedido({
           )}
         </div>
 
-        <ResumenPedido lineas={lineas} total={total} cantidadItems={cantidadItems} />
+        <ResumenPedido
+          lineas={lineas}
+          consumo={consumo}
+          propina={
+            eleccion.tipo === 'ninguna'
+              ? null
+              : { etiqueta: etiquetaDePropina(eleccion), monto: montoPropina }
+          }
+          total={totalAPagar}
+          cantidadItems={cantidadItems}
+        />
       </div>
     </div>
   );
@@ -604,7 +777,8 @@ function MetodosDePago({
 /**
  * HU-009 (BL-453): la e-Factura se pide junto con los medios de pago (mismo
  * criterio que MetodosDePago): no mientras se confirma un pago ni mientras
- * espera al mozo, ni si el local no tiene medios de pago.
+ * espera al mozo, ni si el local no tiene medios de pago. HU-022 (BL-495): la
+ * propina se elige en el mismo momento.
  */
 function pideComprobante(
   pantalla: Pantalla,
@@ -751,10 +925,16 @@ function Verificando({
 
 function ResumenPedido({
   lineas,
+  consumo,
+  propina,
   total,
   cantidadItems,
 }: {
   readonly lineas: readonly LineaResumen[];
+  readonly consumo: number;
+  /** HU-022 (BL-495): null si no eligió propina. */
+  readonly propina: { readonly etiqueta: string; readonly monto: number } | null;
+  /** Lo que se cobra: el consumo más la propina. */
   readonly total: number;
   readonly cantidadItems: number;
 }) {
@@ -806,14 +986,29 @@ function ResumenPedido({
             </li>
           ))}
         </ul>
-        <div className="mt-2 pt-4 border-t border-culinary-neutral/15 flex items-end justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-[#5a575e]">
-              Total a pagar
-            </p>
-            <p className="text-xs text-[#5a575e]">IVA incluido</p>
+        <div className="mt-2 pt-4 border-t border-culinary-neutral/15">
+          {/* HU-022 (BL-495): con propina se separa el consumo (con IVA) de la propina. */}
+          {propina && (
+            <dl className="mb-3 flex flex-col gap-1 text-sm">
+              <div className="flex justify-between gap-3">
+                <dt className="text-[#5a575e]">Consumo (IVA incluido)</dt>
+                <dd className="font-semibold text-foreground">{formatearPrecio(consumo)}</dd>
+              </div>
+              <div className="flex justify-between gap-3">
+                <dt className="text-[#5a575e]">{propina.etiqueta}</dt>
+                <dd className="font-semibold text-foreground">{formatearPrecio(propina.monto)}</dd>
+              </div>
+            </dl>
+          )}
+          <div className="flex items-end justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-[#5a575e]">
+                Total a pagar
+              </p>
+              {!propina && <p className="text-xs text-[#5a575e]">IVA incluido</p>}
+            </div>
+            <p className="text-3xl font-bold text-[#6e54ad]">{formatearPrecio(total)}</p>
           </div>
-          <p className="text-3xl font-bold text-[#6e54ad]">{formatearPrecio(total)}</p>
         </div>
       </div>
     </aside>

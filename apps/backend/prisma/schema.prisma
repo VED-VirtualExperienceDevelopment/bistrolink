@@ -186,6 +186,10 @@ model Restaurante {
   // sin sugerencias. Entre 1 y 100 y hasta 5 valores: CHECK en la migración
   // (Prisma no los declara); el DTO valida lo mismo con mensajes claros.
   propinasSugeridas           Int[]        @default([]) @map("propinas_sugeridas")
+  // HU-022 (BL-495): true = la pantalla de pago del comensal abre con el 10 %
+  // marcado como «Sugerida» (solo si el 10 % está en propinasSugeridas).
+  // Default false: la propina se elige sin nada marcado de antemano.
+  propinaPreseleccionada      Boolean      @default(false) @map("propina_preseleccionada")
   // Default SURTEC: es el proveedor que emite hoy (CfeService).
   cfeProveedor                CfeProveedor @default(SURTEC) @map("cfe_proveedor")
   // HU-036 (BL-206): contacto para los derechos de los titulares de datos

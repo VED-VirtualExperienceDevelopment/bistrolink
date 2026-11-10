@@ -1,4 +1,5 @@
 import {
+  avisoPreseleccion,
   cambiosParaGuardar,
   errorEmailPrivacidad,
   errorRazonSocial,
@@ -84,6 +85,8 @@ describe("cambios para guardar", () => {
       plexoHabilitado: false,
       handyHabilitado: false,
       propinas: "10, 15",
+      // HU-022 (BL-495): un backend anterior no lo trae: apagada.
+      propinaPreseleccionada: false,
       cfeProveedor: "SURTEC",
       emailPrivacidad: "",
       // HU-042 (BL-465): un backend anterior no trae la cola: desactivada,
@@ -120,6 +123,72 @@ describe("HU-007b (BL-80): POS del local", () => {
         posHabilitado: false,
       }),
     ).toEqual({ posHabilitado: false });
+  });
+});
+
+describe("HU-022 (BL-495): preselección de la propina", () => {
+  it("el formulario la lee de lo guardado; un backend anterior (sin el campo) la deja apagada", () => {
+    expect(formularioDesde(GUARDADA).propinaPreseleccionada).toBe(false);
+    expect(
+      formularioDesde({ ...GUARDADA, propinaPreseleccionada: true })
+        .propinaPreseleccionada,
+    ).toBe(true);
+  });
+
+  it("activarla manda solo ese campo; apagarla de nuevo también", () => {
+    expect(
+      cambiosParaGuardar(GUARDADA, {
+        ...formularioDesde(GUARDADA),
+        propinaPreseleccionada: true,
+      }),
+    ).toEqual({ propinaPreseleccionada: true });
+
+    const activa = { ...GUARDADA, propinaPreseleccionada: true };
+    expect(
+      cambiosParaGuardar(activa, {
+        ...formularioDesde(activa),
+        propinaPreseleccionada: false,
+      }),
+    ).toEqual({ propinaPreseleccionada: false });
+  });
+
+  it("igual a lo guardado no se manda (con o sin el campo en el backend)", () => {
+    const activa = { ...GUARDADA, propinaPreseleccionada: true };
+    expect(cambiosParaGuardar(activa, formularioDesde(activa))).toEqual({});
+    expect(cambiosParaGuardar(GUARDADA, formularioDesde(GUARDADA))).toEqual({});
+  });
+
+  it("avisa solo si está activa y el 10 % no está en los porcentajes sugeridos", () => {
+    const activa = {
+      ...formularioDesde(GUARDADA),
+      propinaPreseleccionada: true,
+    };
+
+    // Con el 10 % en la lista: sin aviso.
+    expect(avisoPreseleccion({ ...activa, propinas: "5, 10, 15" })).toBeNull();
+    // Sin el 10 %, o con la lista vacía: aviso.
+    expect(avisoPreseleccion({ ...activa, propinas: "5, 15" })).toMatch(
+      /El 10 % no está en tus porcentajes sugeridos/,
+    );
+    expect(avisoPreseleccion({ ...activa, propinas: "" })).not.toBeNull();
+    // Apagada: nunca avisa.
+    expect(
+      avisoPreseleccion({
+        ...activa,
+        propinaPreseleccionada: false,
+        propinas: "5, 15",
+      }),
+    ).toBeNull();
+  });
+
+  it("si el campo de porcentajes tiene un error, no avisa (ya se ve el error del campo)", () => {
+    expect(
+      avisoPreseleccion({
+        ...formularioDesde(GUARDADA),
+        propinaPreseleccionada: true,
+        propinas: "diez",
+      }),
+    ).toBeNull();
   });
 });
 
