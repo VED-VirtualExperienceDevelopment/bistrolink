@@ -874,6 +874,25 @@ const DATOS_INTEGRACION = {
     priority: "P1",
     tags: ["BL-509", "bug", "pagos", "concurrencia"],
   }),
+  // BL-502: «Mis pedidos» en la mesa y acceso solo en la sesión abierta.
+  203: sesionMesa({
+    requirement: "HU-006",
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-502", "bug", "mis-pedidos", "RD.05"],
+  }),
+  204: sesionMesa({
+    requirement: "HU-006",
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["BL-502", "bug", "mis-pedidos", "RD.05"],
+  }),
+  205: sesionMesa({
+    requirement: "HU-006",
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["BL-502", "bug", "RD.05"],
+  }),
 };
 /**
  * BL-435: datos de los E2E TC-E-017 en adelante, con los criterios de
@@ -1315,6 +1334,17 @@ const DATOS_E2E = {
     category: "Funcional",
     priority: "P2",
     tags: ["BL-470", "alertas", "pagos"],
+  }),
+  // BL-502: «Mis pedidos» en la mesa y «Gracias por tu compra».
+  102: e2e("comensal", "HU-006", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-502", "bug", "mis-pedidos", "websocket", ...axe],
+  }),
+  103: e2e("comensal", "HU-006", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-502", "bug", "gracias", ...axe],
   }),
 };
 /**
