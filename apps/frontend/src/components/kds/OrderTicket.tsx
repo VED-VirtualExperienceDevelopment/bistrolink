@@ -10,6 +10,7 @@ import {
   type NivelEspera,
   type UmbralesEspera,
 } from './espera-kds.utils';
+import { lugarDelPedido } from '@/components/retiro/retiro.utils';
 
 interface OrderTicketProps {
   pedido: Pedido;
@@ -31,6 +32,8 @@ interface OrderTicketProps {
    * grilla y toma el alto de sus ítems, sin scroll).
    */
   variante?: 'tablero' | 'monitor';
+  /** HU-040 (BL-210): abre la entrega con código de un pedido para retirar. */
+  onEntregarRetiro?: (pedido: Pedido) => void;
 }
 
 // Etiqueta legible para mostrar en el badge — separada del valor real del
@@ -91,6 +94,7 @@ export function OrderTicket({
   posicionEnCola = null,
   onCancelar,
   variante = 'tablero',
+  onEntregarRetiro,
 }: Readonly<OrderTicketProps>) {
   const claseVariante = CLASE_VARIANTE[variante];
   const minutos = minutosDeEspera(pedido.createdAt, ahora);
@@ -106,6 +110,10 @@ export function OrderTicket({
   // preparación solo cuando se libera un lugar. El pase manual con la cocina
   // llena el backend lo rechaza, así que el botón no se muestra.
   const esperaLugar = pedido.estado === 'RECIBIDO' && colaActiva;
+  // HU-040 (BL-210): «Para retirar · R-042» o «Mesa 3».
+  const lugar = lugarDelPedido(pedido);
+  // HU-040 (BL-210): el pedido para retirar se entrega con el código.
+  const entregaConCodigo = Boolean(pedido.retiro && onEntregarRetiro);
 
   return (
     <article
@@ -120,7 +128,12 @@ export function OrderTicket({
           secundario. */}
       <div className={`${estilo.encabezado} flex shrink-0 items-start justify-between gap-2 p-3`}>
         <div className="min-w-0">
-          <div className="text-headline-sm font-bold">Mesa {pedido.mesaNumero}</div>
+          <div className="text-headline-sm font-bold">{lugar}</div>
+          {pedido.retiro?.nombre && (
+            <div data-testid="retiro-nombre" className="text-body-sm font-semibold">
+              {pedido.retiro.nombre}
+            </div>
+          )}
           <div data-testid="nivel-espera" className="text-label-lg font-bold">
             {nivel === 'demora-alta' && <span aria-hidden="true">⚠ </span>}
             {ETIQUETA_NIVEL_ESPERA[nivel]}
@@ -198,7 +211,16 @@ export function OrderTicket({
               Listo para entregar
             </button>
           )}
-          {pedido.estado === 'LISTO_PARA_ENTREGAR' && (
+          {pedido.estado === 'LISTO_PARA_ENTREGAR' && entregaConCodigo && (
+            <button
+              type="button"
+              onClick={() => onEntregarRetiro?.(pedido)}
+              className="w-full rounded-lg bg-secondary py-2.5 text-label-lg font-semibold text-on-secondary transition-colors hover:opacity-90"
+            >
+              Entregar con código
+            </button>
+          )}
+          {pedido.estado === 'LISTO_PARA_ENTREGAR' && !entregaConCodigo && (
             <button
               type="button"
               onClick={() => onTransicion(pedido.id, 'ENTREGADO')}
@@ -218,7 +240,7 @@ export function OrderTicket({
             className="min-h-12 w-full rounded-lg text-label-lg text-error hover:bg-error-container/40"
           >
             Cancelar pedido{' '}
-            <span className="sr-only">de la mesa {pedido.mesaNumero}</span>
+            <span className="sr-only">({lugar})</span>
           </button>
         </div>
       )}

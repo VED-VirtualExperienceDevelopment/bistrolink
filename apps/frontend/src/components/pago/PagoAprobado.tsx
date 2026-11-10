@@ -91,6 +91,9 @@ export function PagoAprobado({
   const [consultado, setConsultado] = useState(false);
   // HU-009 (BL-454): descarga del PDF del comprobante.
   const [descarga, setDescarga] = useState<EstadoDescarga>('lista');
+  // HU-040 (BL-210): código de retiro (R-042). Lo asigna el backend al
+  // aprobarse el pago y viene en GET /pedidos/:id/pagos.
+  const [codigoRetiro, setCodigoRetiro] = useState<string | null>(null);
   const tituloRef = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
@@ -110,6 +113,7 @@ export function PagoAprobado({
         if (cancelado) return;
         if (estado.totales) setTotales(estado.totales);
         setConsultado(true);
+        if (estado.codigoRetiro) setCodigoRetiro(estado.codigoRetiro);
         const resultado = estadoComprobante(estado);
         if (resultado.tipo === 'emitido') {
           setComprobante(resultado);
@@ -181,13 +185,13 @@ export function PagoAprobado({
 
         <div className="mt-4 w-full rounded-[0.75rem] bg-culinary-primary-container px-4 py-5">
           <p className="text-xs font-semibold uppercase tracking-wider text-[#5a575e]">
-            {esMesa ? etiquetaMesa(numeroMesa) : 'Código de tu pedido'}
+            {esMesa ? etiquetaMesa(numeroMesa) : 'Código de retiro'}
           </p>
           <p className="mt-1 text-4xl md:text-5xl font-bold tracking-tight text-[#6e54ad]">
-            {codigoPedido(pedidoId)}
+            {codigoRetiro ?? codigoPedido(pedidoId)}
           </p>
           <p className="mt-1 text-sm text-[#5a575e]">
-            {esMesa ? 'Si necesitás algo, mostrá este código al personal.' : 'Mostralo en el mostrador al retirar.'}
+            {esMesa ? 'Si necesitás algo, mostrá este código al personal.' : 'Decilo en el mostrador al retirar.'}
           </p>
         </div>
       </section>
@@ -196,7 +200,13 @@ export function PagoAprobado({
         <h2 id="estado-pedido" className="text-lg font-bold text-foreground">
           Estado de tu pedido
         </h2>
-        <SeguimientoPedido pedidoId={pedidoId} token={accessToken} estadoInicial="RECIBIDO" />
+        <SeguimientoPedido
+          pedidoId={pedidoId}
+          token={accessToken}
+          estadoInicial="RECIBIDO"
+          paraRetirar={!esMesa}
+          codigoRetiro={codigoRetiro}
+        />
       </section>
 
       <Comprobante

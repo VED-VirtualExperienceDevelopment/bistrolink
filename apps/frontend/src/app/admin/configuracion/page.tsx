@@ -4,9 +4,12 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useKeycloakAuth } from "@/components/providers/KeycloakProvider";
 import { apiFetch, ApiError } from "@/lib/api-client";
-import AnonimizarDatosFactura from "@/components/admin/configuracion/AnonimizarDatosFactura";
+import AnonimizarDatosFactura, {
+  AnonimizarContactoRetiro,
+} from "@/components/admin/configuracion/AnonimizarDatosFactura";
 import BarraGuardar from "@/components/admin/configuracion/BarraGuardar";
 import SeccionCocina from "@/components/admin/configuracion/SeccionCocina";
+import SeccionRetiro from "@/components/admin/configuracion/SeccionRetiro";
 import {
   SeccionDatosFiscales,
   SeccionFacturacion,
@@ -206,6 +209,13 @@ export default function ConfiguracionPage() {
               onCambiar={cambiar}
               className="xl:col-span-2"
             />
+            {/* HU-040 (BL-210): pedidos para retirar por el enlace web. */}
+            <SeccionRetiro
+              formulario={formulario}
+              error={errorVisible(errores.retiro)}
+              onCambiar={cambiar}
+              className="xl:col-span-2"
+            />
             {/* HU-036 (BL-206): contacto para los derechos sobre los datos. */}
             <SeccionPrivacidad
               formulario={formulario}
@@ -219,6 +229,8 @@ export default function ConfiguracionPage() {
         {/* HU-009 (BL-453): formulario propio, fuera del de la configuración
             (no se guarda con «Guardar cambios»). */}
         {formulario && token && <AnonimizarDatosFactura token={token} />}
+        {/* HU-040 (BL-210): nombre y contacto de un pedido para retirar. */}
+        {formulario && token && <AnonimizarContactoRetiro token={token} />}
       </div>
 
       {/* BL-473: al final de la pantalla y fija abajo al hacer scroll. */}

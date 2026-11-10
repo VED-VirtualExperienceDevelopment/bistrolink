@@ -11,6 +11,7 @@ import {
 import type { EstadoPedido } from '@/types/pedido';
 import { IndicadorConexion } from './conexion/IndicadorConexion';
 import { useEstadoConexion } from './conexion/useEstadoConexion';
+import { AvisoRetiro } from './retiro/AvisoRetiro';
 
 
 const WS_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
@@ -32,12 +33,18 @@ interface SeguimientoPedidoProps {
   readonly pedidoId: string;
   readonly token: string;
   readonly estadoInicial: EstadoPedido;
+  /** HU-040 (BL-210): pedido para retirar; avisa cuando está listo. */
+  readonly paraRetirar?: boolean;
+  /** HU-040 (BL-210): código que muestra en el mostrador (R-042). */
+  readonly codigoRetiro?: string | null;
 }
 
 export function SeguimientoPedido({
   pedidoId,
   token,
   estadoInicial,
+  paraRetirar = false,
+  codigoRetiro = null,
 }: SeguimientoPedidoProps) {
   const [estado, setEstado] = useState<EstadoPedido>(estadoInicial);
   const [actualizadoEn, setActualizadoEn] = useState<string | null>(null);
@@ -141,6 +148,12 @@ export function SeguimientoPedido({
     <p role="status" className="text-center text-sm font-semibold text-culinary-primary mt-4">
         {lugarActual ? textoEnCola(lugarActual) : ESTADO_LABEL[estado]}
       </p>
+      {paraRetirar && (
+        <AvisoRetiro
+          listo={estado === 'LISTO_PARA_ENTREGAR'}
+          codigo={codigoRetiro}
+        />
+      )}
     </div>
   );
 }

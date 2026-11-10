@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { apiFetch, ApiError } from "@/lib/api-client";
 import { errorDeRut, normalizarRut } from "@/lib/rut";
+import { normalizarContactoRetiro } from "@/components/retiro/retiro.utils";
 import {
   CLASE_AYUDA,
   CLASE_BOTON_PELIGRO,
@@ -16,7 +17,9 @@ import {
 } from "./configuracion.estilos";
 import {
   mensajeAnonimizacion,
+  mensajeAnonimizacionRetiro,
   RUTA_ANONIMIZAR_RECEPTOR,
+  RUTA_ANONIMIZAR_RETIRO,
   type ResultadoAnonimizacion,
 } from "./configuracion.utils";
 
@@ -35,22 +38,106 @@ export default function AnonimizarDatosFactura({
 }: {
   readonly token: string;
 }) {
-  const [rut, setRut] = useState("");
+  return (
+    <FormularioAnonimizar
+      token={token}
+      id="anonimizar"
+      titulo="Anonimizar datos de facturación"
+      ayuda="Si un comensal que pidió e-Factura te pide eliminar sus datos, ingresá su RUT: se borran el RUT y la razón social de sus pedidos. Las e-Facturas ya emitidas y los montos no cambian (se conservan 5 años por obligación fiscal)."
+      etiqueta="RUT del comensal"
+      inputMode="numeric"
+      largoMaximo={20}
+      confirmacion="¿Anonimizar los datos de este RUT? No se puede deshacer."
+      ruta={RUTA_ANONIMIZAR_RECEPTOR}
+      validar={errorDeRut}
+      cuerpo={(valor) => ({ rut: normalizarRut(valor) })}
+      mensaje={mensajeAnonimizacion}
+    />
+  );
+}
+
+/**
+ * HU-040 (BL-210): lo mismo para el nombre y el contacto (teléfono o correo)
+ * que dejó un comensal en un pedido para retirar. El pedido, los montos y el
+ * comprobante no cambian.
+ */
+export function AnonimizarContactoRetiro({
+  token,
+}: {
+  readonly token: string;
+}) {
+  return (
+    <FormularioAnonimizar
+      token={token}
+      id="anonimizar-retiro"
+      titulo="Anonimizar datos de pedidos para retirar"
+      ayuda="Si un comensal te pide eliminar el nombre y el contacto que dejó en un pedido para retirar, ingresá ese teléfono o correo: se borran de todos sus pedidos. Los pedidos, los montos y los comprobantes no cambian."
+      etiqueta="Teléfono o correo del comensal"
+      largoMaximo={100}
+      confirmacion="¿Anonimizar los datos de este contacto? No se puede deshacer."
+      ruta={RUTA_ANONIMIZAR_RETIRO}
+      validar={(valor) =>
+        normalizarContactoRetiro(valor).length < 3
+          ? "Escribí el teléfono o el correo que dejó el comensal."
+          : null
+      }
+      cuerpo={(valor) => ({ contacto: valor.trim() })}
+      mensaje={mensajeAnonimizacionRetiro}
+    />
+  );
+}
+
+interface FormularioAnonimizarProps {
+  readonly token: string;
+  /** Prefijo de los ids del formulario. */
+  readonly id: string;
+  readonly titulo: string;
+  readonly ayuda: string;
+  readonly etiqueta: string;
+  readonly inputMode?: "numeric" | "text";
+  readonly largoMaximo: number;
+  readonly confirmacion: string;
+  readonly ruta: string;
+  /** Error del dato, o null si está bien. */
+  readonly validar: (valor: string) => string | null | undefined;
+  readonly cuerpo: (valor: string) => Record<string, string>;
+  readonly mensaje: (resultado: ResultadoAnonimizacion) => string;
+}
+
+/**
+ * Formulario de anonimización (HU-009 y HU-040): un dato, confirmación y
+ * resultado. Formulario propio, fuera del de la configuración.
+ */
+function FormularioAnonimizar({
+  token,
+  id,
+  titulo,
+  ayuda,
+  etiqueta,
+  inputMode = "text",
+  largoMaximo,
+  confirmacion,
+  ruta,
+  validar,
+  cuerpo,
+  mensaje,
+}: FormularioAnonimizarProps) {
+  const [valor, setValor] = useState("");
   const [intentado, setIntentado] = useState(false);
   const [confirmando, setConfirmando] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [resultado, setResultado] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  const errorRut = errorDeRut(rut);
-  const mostrarError = intentado && Boolean(errorRut);
+  const errorDato = validar(valor);
+  const mostrarError = intentado && Boolean(errorDato);
 
   function pedirConfirmacion(e: React.FormEvent) {
     e.preventDefault();
     setIntentado(true);
     setResultado("");
     setError(null);
-    if (errorRut) return;
+    if (errorDato) return;
     setConfirmando(true);
   }
 
@@ -58,16 +145,12 @@ export default function AnonimizarDatosFactura({
     setEnviando(true);
     setError(null);
     try {
-      const respuesta = await apiFetch<ResultadoAnonimizacion>(
-        RUTA_ANONIMIZAR_RECEPTOR,
-        token,
-        {
-          method: "POST",
-          body: JSON.stringify({ rut: normalizarRut(rut) }),
-        },
-      );
-      setResultado(mensajeAnonimizacion(respuesta));
-      setRut("");
+      const respuesta = await apiFetch<ResultadoAnonimizacion>(ruta, token, {
+        method: "POST",
+        body: JSON.stringify(cuerpo(valor)),
+      });
+      setResultado(mensaje(respuesta));
+      setValor("");
       setIntentado(false);
     } catch (err) {
       setError(
@@ -82,40 +165,35 @@ export default function AnonimizarDatosFactura({
   }
 
   return (
-    <section aria-labelledby="titulo-anonimizar" className={CLASE_TARJETA}>
-      <h2 id="titulo-anonimizar" className={CLASE_TITULO_TARJETA}>
-        Anonimizar datos de facturación
+    <section aria-labelledby={`titulo-${id}`} className={CLASE_TARJETA}>
+      <h2 id={`titulo-${id}`} className={CLASE_TITULO_TARJETA}>
+        {titulo}
       </h2>
-      <p className={CLASE_AYUDA}>
-        Si un comensal que pidió e-Factura te pide eliminar sus datos, ingresá
-        su RUT: se borran el RUT y la razón social de sus pedidos. Las
-        e-Facturas ya emitidas y los montos no cambian (se conservan 5 años por
-        obligación fiscal).
-      </p>
+      <p className={CLASE_AYUDA}>{ayuda}</p>
       <form onSubmit={pedirConfirmacion} noValidate className="space-y-3">
         <div>
-          <label htmlFor="anonimizar-rut" className={CLASE_ETIQUETA}>
-            RUT del comensal
+          <label htmlFor={`${id}-dato`} className={CLASE_ETIQUETA}>
+            {etiqueta}
           </label>
           <input
-            id="anonimizar-rut"
+            id={`${id}-dato`}
             type="text"
-            inputMode="numeric"
+            inputMode={inputMode}
             autoComplete="off"
-            maxLength={20}
-            value={rut}
+            maxLength={largoMaximo}
+            value={valor}
             disabled={enviando || confirmando}
             onChange={(e) => {
-              setRut(e.target.value);
+              setValor(e.target.value);
               setResultado("");
             }}
             aria-invalid={mostrarError}
-            aria-describedby={mostrarError ? "anonimizar-rut-error" : undefined}
+            aria-describedby={mostrarError ? `${id}-error` : undefined}
             className={CLASE_CONTROL}
           />
           {mostrarError && (
-            <p id="anonimizar-rut-error" className={CLASE_ERROR_CAMPO}>
-              {errorRut}
+            <p id={`${id}-error`} className={CLASE_ERROR_CAMPO}>
+              {errorDato}
             </p>
           )}
         </div>
@@ -123,14 +201,14 @@ export default function AnonimizarDatosFactura({
         {confirmando ? (
           <div
             role="alertdialog"
-            aria-labelledby="anonimizar-confirmar"
+            aria-labelledby={`${id}-confirmar`}
             className="space-y-3 rounded-lg bg-error-container p-3"
           >
             <p
-              id="anonimizar-confirmar"
+              id={`${id}-confirmar`}
               className="text-body-md text-on-error-container"
             >
-              ¿Anonimizar los datos de este RUT? No se puede deshacer.
+              {confirmacion}
             </p>
             <div className="flex flex-wrap gap-2">
               <button
