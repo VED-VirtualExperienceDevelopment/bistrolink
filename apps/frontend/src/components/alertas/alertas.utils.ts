@@ -1,5 +1,7 @@
 /**
  * BL-441: lógica pura de la campana y del panel de alertas del mozo.
+ * BL-470: la misma campana muestra también las alertas de stock del
+ * Administrador.
  * Probada en test/unitarios/alertas.utils.spec.ts.
  */
 import { formatearMonto } from "@/components/admin/cobros/cobros.utils";
@@ -67,6 +69,14 @@ export function tituloAlerta(llamado: LlamadoMozo): string {
   return llamado.motivo === "PAGO_EFECTIVO"
     ? `Mesa ${llamado.mesaNumero} quiere pagar en efectivo`
     : `Mesa ${llamado.mesaNumero} solicita atención`;
+}
+
+/**
+ * BL-470: lo que anuncia el lector de pantalla cuando llega una alerta del
+ * salón en vivo (el de stock lo arma anuncioAlerta, en stock.utils).
+ */
+export function anuncioLlamado(llamado: LlamadoMozo): string {
+  return `Nueva alerta: ${tituloAlerta(llamado)}`;
 }
 
 /** Línea de detalle de un aviso de efectivo; null si no corresponde. */
