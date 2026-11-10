@@ -123,4 +123,30 @@ describe('ResumenVentasService', () => {
       hasta: new Date('2026-11-02T16:00:00.000Z'),
     });
   });
+
+  it('HU-022 (BL-496): la propina se suma aparte de las ventas, y las ventas del POS van sin propina', async () => {
+    await service.recalcularVentana(TENANT_ID, {
+      desde: new Date('2026-11-01T10:00:00.000Z'),
+      hasta: new Date('2026-11-01T11:00:00.000Z'),
+    });
+
+    const pagos = consulta(2).sql;
+    expect(pagos).toContain(
+      '(tenant_id, hora, canal, medio_pago, pedidos, monto, propina, pedidos_con_propina, actualizado_en)',
+    );
+    // Las ventas siguen siendo el consumo: la propina no entra en `monto`.
+    expect(pagos).toContain('SUM(pg.monto), SUM(pg.propina),');
+    expect(pagos).not.toContain('pg.monto + pg.propina');
+    // Los pedidos con propina se cuentan aparte, como los pedidos.
+    expect(pagos).toContain(
+      '(COUNT(DISTINCT pg.pedido_id) FILTER (WHERE pg.propina > 0))::int',
+    );
+
+    // El POS no informa propina: 0 en las dos columnas.
+    const pos = consulta(3).sql;
+    expect(pos).toContain(
+      '(tenant_id, hora, canal, medio_pago, pedidos, monto, propina, pedidos_con_propina, actualizado_en)',
+    );
+    expect(pos).toContain('SUM(v.total), 0, 0, now()');
+  });
 });
