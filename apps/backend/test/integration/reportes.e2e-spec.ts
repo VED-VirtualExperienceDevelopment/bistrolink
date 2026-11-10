@@ -18,6 +18,9 @@ import { FiltrosReportesDto } from '../../src/reportes/dto/filtros-reportes.dto'
 // tests, y se borran al terminar. Las ventas se cargan directo en las
 // tablas (sin pasarela) y el resumen se arma con ResumenVentasService, como
 // lo hace el job.
+//
+// HU-022 (BL-496): algunas ventas llevan propina. `monto` del pago es el
+// consumo y `propina` va aparte; el reporte las muestra por separado.
 
 const KEYCLOAK_URL = process.env.KEYCLOAK_URL ?? 'http://localhost:8080';
 const REALM = process.env.KEYCLOAK_REALM ?? 'bistrolink';
@@ -100,6 +103,8 @@ describe('HU-012 (BL-108): reportes de ventas', () => {
     medioPago: string;
     estadoPago: PagoEstado;
     pagadoEn: string;
+    /** HU-022 (BL-496): propina del pago, aparte del consumo. */
+    propina?: number;
   }) {
     const restaurante = await enTenant<{ id: string }>(TENANT_A, (tx) =>
       tx.restaurante.findUniqueOrThrow({
@@ -139,6 +144,7 @@ describe('HU-012 (BL-108): reportes de ventas', () => {
           pedidoId,
           idempotencyKey: `hu-012-${randomUUID()}`,
           monto: subtotal,
+          propina: new Prisma.Decimal(datos.propina ?? 0),
           medioPago: datos.medioPago,
           estado: datos.estadoPago,
           createdAt: new Date(datos.pagadoEn),
@@ -205,7 +211,8 @@ describe('HU-012 (BL-108): reportes de ventas', () => {
     mesasFisicas = seed.mesas;
     await limpiar();
 
-    // En el local (12 h de Montevideo): QR 2 × A y mozo 1 × B.
+    // En el local (12 h de Montevideo): QR 2 × A con $ 100 de propina y mozo
+    // 1 × B con $ 50 de propina.
     await venta({
       canal: 'QR',
       mesaId: seed.fisica.id,
@@ -214,6 +221,7 @@ describe('HU-012 (BL-108): reportes de ventas', () => {
       medioPago: 'MERCADOPAGO',
       estadoPago: 'APROBADO',
       pagadoEn: '2020-03-10T15:10:00.000Z',
+      propina: 100,
     });
     await venta({
       canal: 'MOZO',
@@ -223,8 +231,9 @@ describe('HU-012 (BL-108): reportes de ventas', () => {
       medioPago: 'EFECTIVO',
       estadoPago: 'APROBADO',
       pagadoEn: '2020-03-10T15:40:00.000Z',
+      propina: 50,
     });
-    // Fuera del local (20 h de Montevideo): Web 1 × A.
+    // Fuera del local (20 h de Montevideo): Web 1 × A, sin propina.
     await venta({
       canal: 'WEB',
       mesaId: seed.virtual.id,
@@ -234,7 +243,8 @@ describe('HU-012 (BL-108): reportes de ventas', () => {
       estadoPago: 'APROBADO',
       pagadoEn: '2020-03-10T23:30:00.000Z',
     });
-    // No son ventas: un pago rechazado y uno reembolsado.
+    // No son ventas: un pago rechazado y uno reembolsado. Sus propinas
+    // tampoco cuentan.
     await venta({
       canal: 'QR',
       mesaId: seed.fisica.id,
@@ -243,6 +253,7 @@ describe('HU-012 (BL-108): reportes de ventas', () => {
       medioPago: 'MERCADOPAGO',
       estadoPago: 'RECHAZADO',
       pagadoEn: '2020-03-10T15:20:00.000Z',
+      propina: 999,
     });
     await venta({
       canal: 'WEB',
@@ -252,6 +263,7 @@ describe('HU-012 (BL-108): reportes de ventas', () => {
       medioPago: 'MERCADOPAGO',
       estadoPago: 'REEMBOLSADO',
       pagadoEn: '2020-03-10T16:00:00.000Z',
+      propina: 777,
     });
     // Dos sesiones de mesa cerradas ese día: 30 y 90 minutos.
     await enTenant(TENANT_A, async (tx) => {
@@ -301,8 +313,8 @@ describe('HU-012 (BL-108): reportes de ventas', () => {
         },
         porLugar: { local: 1500, web: 500, whatsapp: 0, pos: 0 },
         ventasPorHora: [
-          { hora: 12, monto: 1500, pedidos: 2 },
-          { hora: 20, monto: 500, pedidos: 1 },
+          { hora: 12, monto: 1500, pedidos: 2, propina: 150 },
+          { hora: 20, monto: 500, pedidos: 1, propina: 0 },
         ],
         rotacionMesas: {
           aplica: true,
@@ -341,13 +353,15 @@ describe('HU-012 (BL-108): reportes de ventas', () => {
       const local = (await pedir('LOCAL')).body;
       expect(local.resumen).toMatchObject({ totalVendido: 1500, pedidos: 2 });
       expect(local.ventasPorHora).toEqual([
-        { hora: 12, monto: 1500, pedidos: 2 },
+        { hora: 12, monto: 1500, pedidos: 2, propina: 150 },
       ]);
       expect(local.rotacionMesas.aplica).toBe(true);
 
       const web = (await pedir('WEB')).body;
       expect(web.resumen).toMatchObject({ totalVendido: 500, pedidos: 1 });
-      expect(web.ventasPorHora).toEqual([{ hora: 20, monto: 500, pedidos: 1 }]);
+      expect(web.ventasPorHora).toEqual([
+        { hora: 20, monto: 500, pedidos: 1, propina: 0 },
+      ]);
       expect(web.platosMasPedidos.porCantidad).toEqual([
         expect.objectContaining({ itemCartaId: platoA.id, cantidad: 1 }),
       ]);
@@ -413,6 +427,7 @@ describe('HU-012 (BL-108): reportes de ventas', () => {
       expect(futuro.body.resumen).toMatchObject({
         totalVendido: 0,
         pedidos: 0,
+        propinas: { total: 0, pedidosConPropina: 0, porcentajeDeVentas: 0 },
       });
       expect(futuro.body.ventasPorHora).toEqual([]);
 
@@ -442,6 +457,8 @@ describe('HU-012 (BL-108): reportes de ventas', () => {
             medioPago: true,
             pedidos: true,
             monto: true,
+            propina: true,
+            pedidosConPropina: true,
           },
         }),
       );
@@ -450,16 +467,56 @@ describe('HU-012 (BL-108): reportes de ventas', () => {
     await resumen.recalcularVentana(TENANT_A, VENTANA_DIA);
 
     expect(await leer()).toEqual(antes);
+    // canal:medio:consumo:propina:pedidos con propina. Las propinas de los
+    // pagos rechazado y reembolsado no están.
     expect(
       antes
-        .map((f: any) => `${f.canal}:${f.medioPago}:${Number(f.monto)}`)
+        .map(
+          (f: any) =>
+            `${f.canal}:${f.medioPago}:${Number(f.monto)}:${Number(f.propina)}:${f.pedidosConPropina}`,
+        )
         .sort(),
     ).toEqual([
-      'MOZO:EFECTIVO:500',
-      'QR:MERCADOPAGO:1000',
-      'WEB:MERCADOPAGO:500',
+      'MOZO:EFECTIVO:500:50:1',
+      'QR:MERCADOPAGO:1000:100:1',
+      'WEB:MERCADOPAGO:500:0:0',
     ]);
   });
+
+  itConAdmin(
+    '[TC-I-153] HU-022 (BL-496): el reporte muestra las propinas aparte de las ventas, con su peso sobre el consumo, y respeta el filtro de canal',
+    async () => {
+      const token = await getToken(ADMIN_USER as string, ADMIN_PASS as string);
+      const pedir = (canal?: string) =>
+        request(app.getHttpServer())
+          .get(`${consultaDelDia}${canal ? `&canal=${canal}` : ''}`)
+          .set('Authorization', `Bearer ${token}`)
+          .expect(200);
+
+      // La propina no suma en las ventas: 2000 de consumo, 150 de propina.
+      const todos = (await pedir()).body;
+      expect(todos.resumen.totalVendido).toBe(2000);
+      expect(todos.resumen.propinas).toEqual({
+        total: 150,
+        pedidosConPropina: 2,
+        porcentajeDeVentas: 7.5,
+      });
+
+      const local = (await pedir('LOCAL')).body;
+      expect(local.resumen.propinas).toEqual({
+        total: 150,
+        pedidosConPropina: 2,
+        porcentajeDeVentas: 10,
+      });
+
+      const web = (await pedir('WEB')).body;
+      expect(web.resumen.propinas).toEqual({
+        total: 0,
+        pedidosConPropina: 0,
+        porcentajeDeVentas: 0,
+      });
+    },
+  );
 
   it('[TC-I-151] BL-110: otro establecimiento no ve el resumen ni las métricas del tenant A (RLS)', async () => {
     const filasDeA = await enTenant<number>(TENANT_B, (tx) =>
@@ -477,6 +534,7 @@ describe('HU-012 (BL-108): reportes de ventas', () => {
       filtros({ periodo: 'PERSONALIZADO', desde: DIA, hasta: DIA }),
     );
     expect(reporteB.resumen.totalVendido).toBe(0);
+    expect(reporteB.resumen.propinas.total).toBe(0);
     expect(reporteB.platosMasPedidos.porCantidad).toEqual([]);
     expect(reporteB.rotacionMesas).toMatchObject({ sesiones: 0 });
   });
@@ -500,6 +558,8 @@ describe('HU-012 (BL-108): reportes de ventas', () => {
               medioPago,
               pedidos: 3,
               monto: new Prisma.Decimal(1500),
+              propina: new Prisma.Decimal(150),
+              pedidosConPropina: 2,
             });
           }
           for (let p = 0; p < 20; p++) {
@@ -533,6 +593,7 @@ describe('HU-012 (BL-108): reportes de ventas', () => {
     const duracionMs = performance.now() - inicio;
 
     expect(reporte.resumen.pedidos).toBeGreaterThan(0);
+    expect(reporte.resumen.propinas.total).toBeGreaterThan(0);
     expect(reporte.platosMasPedidos.porCantidad).toHaveLength(10);
     expect(duracionMs).toBeLessThan(2000);
   }, 60000);
