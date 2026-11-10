@@ -263,7 +263,10 @@ test.describe("BL-496: propina en el pago, en los cobros del mozo y en los repor
     test.slow();
     const pedidoId = await pedirEnLaMesa(page, qrMesas.ruta(MESA_ID));
 
-    // Sin elegir nada, el botón cobra solo el consumo.
+    // El local puede preseleccionar una propina (la configura el
+    // administrador y en staging queda guardada): se parte de «Sin propina»
+    // para que el botón cobre solo el consumo, sin depender de eso.
+    await page.getByRole("button", { name: "Sin propina" }).click();
     await expect(
       page.getByRole("button", { name: /^Pagar\s.*590/ }),
     ).toBeVisible({ timeout: 15000 });
