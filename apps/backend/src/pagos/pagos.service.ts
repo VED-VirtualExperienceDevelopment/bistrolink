@@ -71,6 +71,14 @@ export interface EstadoPagoDelPedido {
    */
   tarjeta: { disponible: boolean };
   /**
+   * HU-022 (BL-495): cómo ofrece propina el local. `sugeridas` son los
+   * porcentajes de HU-020 (de menor a mayor, puede ser vacía) y
+   * `preseleccionada` indica si la pantalla abre con el 10 % marcado como
+   * «Sugerida». El frontend decide si marcarlo: solo si el 10 % está en
+   * `sugeridas` y el comensal todavía no eligió nada.
+   */
+  propina: { sugeridas: number[]; preseleccionada: boolean };
+  /**
    * HU-037 (BL-207): rebaja de IVA de la Ley 17.934, informativa (la aplica
    * la administradora, no BistroLink). Solo en un pago electrónico cobrado
    * de un consumo en el local; null en efectivo, para retirar o sin cobrar.
@@ -322,7 +330,13 @@ export class PagosService {
         }),
         restaurante: await tx.restaurante.findUnique({
           where: { tenantId },
-          select: { efectivoHabilitado: true, mercadoPagoHabilitado: true },
+          select: {
+            efectivoHabilitado: true,
+            mercadoPagoHabilitado: true,
+            // HU-022 (BL-495): cómo ofrece propina el local.
+            propinasSugeridas: true,
+            propinaPreseleccionada: true,
+          },
         }),
       }),
     );
@@ -370,6 +384,10 @@ export class PagosService {
       },
       tarjeta: {
         disponible: Boolean(datos.restaurante?.mercadoPagoHabilitado),
+      },
+      propina: {
+        sugeridas: datos.restaurante?.propinasSugeridas ?? [],
+        preseleccionada: Boolean(datos.restaurante?.propinaPreseleccionada),
       },
       rebajaIva:
         pago && aplicaRebaja17934({ ...pago, canal: pedido.canal })
