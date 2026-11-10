@@ -77,7 +77,7 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     );
   }
 
-  private async resolverQrMesaAcceso(): Promise<QrMesaAccesoService> {
+  private resolverQrMesaAcceso(): Promise<QrMesaAccesoService> {
     const contextId = ContextIdFactory.create();
     return this.moduleRef.resolve(QrMesaAccesoService, contextId, {
       strict: false,
