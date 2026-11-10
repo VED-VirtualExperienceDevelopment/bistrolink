@@ -1,11 +1,15 @@
 import 'dotenv/config';
+import { randomUUID } from 'node:crypto';
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
+import { Prisma, PrismaClient } from '@prisma/client';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 import request = require('supertest');
 import { io, Socket } from 'socket.io-client';
 import { AppModule } from '../../src/app.module';
 import { TenantPrismaService } from '../../src/prisma/tenant-prisma.service';
+import { PagosService } from '../../src/pagos/pagos.service';
+import { liberarMesaDelCobro } from '../../src/pagos/mesa-en-cobro';
 import { asegurarClaveQr, tokenQrDeMesa } from './support/qr-mesa';
 import { conPagoFalso } from './support/pago-falso';
 
@@ -57,6 +61,7 @@ async function getToken(username: string, password: string): Promise<string> {
 describe('HU-017 (BL-60): sesión de mesa', () => {
   let app: INestApplication;
   let tenantPrisma: TenantPrismaService;
+  let pagos: PagosService;
   let baseUrl: string;
   let mesaId: string;
   let qrToken: string;
@@ -96,6 +101,99 @@ describe('HU-017 (BL-60): sesión de mesa', () => {
       }),
     );
 
+  // BL-509: pedido con monto (el cobro con tarjeta rechaza los de $ 0).
+  const crearPedidoConMonto = () =>
+    enTenant<{ id: string }>((tx) =>
+      tx.pedido.create({
+        data: {
+          tenantId: TENANT_ID,
+          restauranteId: RESTAURANTE_ID,
+          mesaId,
+          idempotencyKey: `bl-509-${randomUUID()}`,
+          estado: 'PENDIENTE_PAGO',
+          canal: 'QR',
+          lineas: {
+            create: {
+              tenantId: TENANT_ID,
+              itemCartaId: ITEM_ID,
+              nombreSnapshot: 'Item de prueba BL-509',
+              precioUnitarioSnapshot: new Prisma.Decimal('590'),
+              cantidad: 1,
+              subtotal: new Prisma.Decimal('590'),
+            },
+          },
+        },
+        select: { id: true },
+      }),
+    );
+
+  // BL-509: un cobro con tarjeta en curso de un pedido de la mesa.
+  const crearPagoPendiente = (pedidoId: string) =>
+    enTenant<{ id: string }>((tx) =>
+      tx.pago.create({
+        data: {
+          tenantId: TENANT_ID,
+          pedidoId,
+          idempotencyKey: `bl-509-${randomUUID()}`,
+          monto: new Prisma.Decimal('590'),
+          medioPago: 'MERCADOPAGO',
+          estado: 'PENDIENTE',
+        },
+        select: { id: true },
+      }),
+    );
+
+  const estadoMesa = () =>
+    enTenant<{ estado: string }>((tx) =>
+      tx.mesa.findUniqueOrThrow({
+        where: { id: mesaId },
+        select: { estado: true },
+      }),
+    ).then((m) => m.estado);
+
+  // BL-509: deja la mesa abierta y cobrando, sin pasar por el mozo.
+  const mesaCobrando = () =>
+    enTenant((tx) =>
+      tx.mesa.update({
+        where: { id: mesaId },
+        data: {
+          estado: 'EN_PROCESO_DE_PAGO',
+          sesionId: randomUUID(),
+          sesionAbiertaEn: new Date(),
+        },
+      }),
+    );
+
+  // BL-509: termina un cobro como lo hacen el webhook o la conciliación: en
+  // una transacción, primero el pago y después la mesa. Se usa RECHAZADO (y
+  // no APROBADO) para no dejar pagos aprobados sin comprobante que levante
+  // la conciliación de CFE.
+  const rechazarCobro = (pagoId: string) =>
+    enTenant<boolean>(async (tx) => {
+      await tx.pago.update({
+        where: { id: pagoId },
+        data: { estado: 'RECHAZADO' },
+      });
+      return liberarMesaDelCobro(tx as PrismaClient, mesaId);
+    });
+
+  // BL-509: la mesa vuelve a LIBRE y sus pedidos y cobros de test se cierran.
+  const dejarMesaLibre = (pedidoIds: string[]) =>
+    enTenant(async (tx) => {
+      await tx.pago.updateMany({
+        where: { estado: 'PENDIENTE', pedido: { mesaId } },
+        data: { estado: 'RECHAZADO' },
+      });
+      await tx.pedido.updateMany({
+        where: { id: { in: pedidoIds } },
+        data: { estado: 'CANCELADO' },
+      });
+      await tx.mesa.update({
+        where: { id: mesaId },
+        data: { estado: 'LIBRE', sesionId: null, sesionAbiertaEn: null },
+      });
+    });
+
   beforeAll(async () => {
     asegurarClaveQr();
     const moduleRef: TestingModule = await conPagoFalso(
@@ -109,6 +207,7 @@ describe('HU-017 (BL-60): sesión de mesa', () => {
     baseUrl = `http://localhost:${port}`;
 
     tenantPrisma = await app.resolve(TenantPrismaService);
+    pagos = await app.resolve(PagosService);
 
     // Mesa propia del test, siempre arrancando LIBRE y sin pedidos activos
     // de corridas anteriores.
@@ -118,6 +217,12 @@ describe('HU-017 (BL-60): sesión de mesa', () => {
         select: { id: true },
       });
       if (existente) {
+        // BL-509: un cobro PENDIENTE de una corrida que se cortó impediría
+        // cerrar la mesa (409).
+        await tx.pago.updateMany({
+          where: { estado: 'PENDIENTE', pedido: { mesaId: existente.id } },
+          data: { estado: 'RECHAZADO' },
+        });
         await tx.pedido.updateMany({
           where: {
             mesaId: existente.id,
@@ -284,4 +389,98 @@ describe('HU-017 (BL-60): sesión de mesa', () => {
       await mozo('limpia').expect(200);
     },
   );
+
+  itConMozo(
+    '[TC-I-195] BL-509: cerrar con un cobro PENDIENTE responde 409 y no cancela el pedido que se está cobrando',
+    async () => {
+      await mozo('abrir').expect(200);
+      const pedido = await crearPedidoConMonto();
+      const pago = await crearPagoPendiente(pedido.id);
+      // La mesa sigue OCUPADA (no EN_PROCESO_DE_PAGO), como quedaba con
+      // los datos anteriores a BL-509: el cierre mira los pagos.
+
+      const res = await mozo('cerrar').expect(409);
+      expect(res.body.message).toContain('pago en curso');
+      expect(await estadoMesa()).toBe('OCUPADA');
+      const sigue = await enTenant<{ estado: string }>((tx) =>
+        tx.pedido.findUniqueOrThrow({
+          where: { id: pedido.id },
+          select: { estado: true },
+        }),
+      );
+      expect(sigue.estado).toBe('PENDIENTE_PAGO');
+
+      // Termina el cobro: ahora sí se cierra.
+      await enTenant((tx) =>
+        tx.pago.update({
+          where: { id: pago.id },
+          data: { estado: 'RECHAZADO' },
+        }),
+      );
+      await mozo('cerrar').expect(200);
+      await mozo('limpia').expect(200);
+    },
+  );
+
+  it('[TC-I-196] BL-509: con la mesa cerrada no se puede iniciar un cobro (409) y no se crea el pago', async () => {
+    const pedido = await crearPedidoConMonto();
+    try {
+      await expect(
+        pagos.crear(TENANT_ID, {
+          pedidoId: pedido.id,
+          idempotencyKey: `bl-509-${randomUUID()}`,
+          medioPago: 'MERCADOPAGO',
+          datosPasarela: {},
+        }),
+      ).rejects.toThrow('La mesa está cerrada: no se puede iniciar el cobro');
+
+      const creados = await enTenant<number>((tx) =>
+        tx.pago.count({ where: { pedidoId: pedido.id } }),
+      );
+      expect(creados).toBe(0);
+      expect(await estadoMesa()).toBe('LIBRE');
+    } finally {
+      await dejarMesaLibre([pedido.id]);
+    }
+  });
+
+  it('[TC-I-197] BL-509: con dos cobros en la mesa, sigue EN_PROCESO_DE_PAGO hasta que termina el último', async () => {
+    const a = await crearPedidoConMonto();
+    const b = await crearPedidoConMonto();
+    try {
+      const pagoA = await crearPagoPendiente(a.id);
+      const pagoB = await crearPagoPendiente(b.id);
+      await mesaCobrando();
+
+      expect(await rechazarCobro(pagoA.id)).toBe(false);
+      expect(await estadoMesa()).toBe('EN_PROCESO_DE_PAGO');
+
+      expect(await rechazarCobro(pagoB.id)).toBe(true);
+      expect(await estadoMesa()).toBe('OCUPADA');
+    } finally {
+      await dejarMesaLibre([a.id, b.id]);
+    }
+  });
+
+  it('[TC-I-198] BL-509: dos cobros de la mesa que terminan a la vez la dejan OCUPADA (bloqueo de la mesa)', async () => {
+    const a = await crearPedidoConMonto();
+    const b = await crearPedidoConMonto();
+    try {
+      const pagoA = await crearPagoPendiente(a.id);
+      const pagoB = await crearPagoPendiente(b.id);
+      await mesaCobrando();
+
+      // Sin el bloqueo, cada transacción vería el cobro de la otra todavía
+      // PENDIENTE y la mesa quedaría EN_PROCESO_DE_PAGO sin cobros.
+      const liberadas = await Promise.all([
+        rechazarCobro(pagoA.id),
+        rechazarCobro(pagoB.id),
+      ]);
+
+      expect(liberadas.filter(Boolean)).toHaveLength(1);
+      expect(await estadoMesa()).toBe('OCUPADA');
+    } finally {
+      await dejarMesaLibre([a.id, b.id]);
+    }
+  });
 });

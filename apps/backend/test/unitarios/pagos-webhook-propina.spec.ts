@@ -25,6 +25,8 @@ const PEDIDO_CONFIRMADO = {
 
 function crearTx(pagoBd: Record<string, unknown>) {
   return {
+    // HU-017 (BL-509): bloqueo de la fila de la mesa en liberarMesaDelCobro.
+    $queryRaw: jest.fn().mockResolvedValue([]),
     pago: {
       findMany: jest.fn().mockResolvedValue([pagoBd]),
       update: jest.fn(),

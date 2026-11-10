@@ -8,6 +8,7 @@ import { PedidosService } from '../../pedidos/pedidos.service';
 import { PedidoParaKds } from '../../pedidos/pedido-kds.mapper';
 import { registrarCambioPago } from '../historial-pago';
 import { totalCobrado } from '../totales-pedido';
+import { liberarMesaDelCobro } from '../mesa-en-cobro';
 
 type EstadoPago = 'PENDIENTE' | 'APROBADO' | 'RECHAZADO' | 'REEMBOLSADO';
 
@@ -170,8 +171,9 @@ export class PlexoWebhookService {
 
     // BL-311 (prepago, RD.03): mismo criterio que con Mercado Pago.
     // Aprobado o rechazado, la mesa vuelve a OCUPADA (el comensal paga antes
-    // de comer; la libera el cierre de sesión, HU-017), y con el pago
-    // aprobado el pedido pasa de PENDIENTE_PAGO a RECIBIDO.
+    // de comer; la libera el cierre de sesión, HU-017), salvo que otro
+    // comensal de la mesa siga pagando. Con el pago aprobado el pedido pasa
+    // de PENDIENTE_PAGO a RECIBIDO.
     let pedidoConfirmado: PedidoParaKds | null = null;
     let mesaOcupada: string | undefined;
     if (estado === 'APROBADO' || estado === 'RECHAZADO') {
@@ -179,12 +181,8 @@ export class PlexoWebhookService {
         where: { id: pedidoId },
         select: { mesaId: true },
       });
-      if (pedido) {
-        const mesa = await tx.mesa.updateMany({
-          where: { id: pedido.mesaId, estado: 'EN_PROCESO_DE_PAGO' },
-          data: { estado: 'OCUPADA' },
-        });
-        if (mesa.count > 0) mesaOcupada = pedido.mesaId;
+      if (pedido && (await liberarMesaDelCobro(tx, pedido.mesaId))) {
+        mesaOcupada = pedido.mesaId;
       }
       if (estado === 'APROBADO') {
         pedidoConfirmado = await this.pedidos.confirmarPagoEnTx(

@@ -382,12 +382,12 @@ export function MapaMesasEditor({
   }, [anchoMedido, anchoStage, lienzo.ancho]);
 
   // --- WebSocket: estado de ocupación en vivo ---------------------------------
-  // Se suscribe al evento real que ya emite KdsGateway.emitirEstadoMesa
-  // (backend de HU-016). Lo único "mock" hoy es QUIÉN lo dispara: el único
-  // emisor que existe todavía es el endpoint provisorio
-  // PATCH /mesas/:id/estado, porque HU-017 (el flujo real de pedidos/pagos)
-  // no está implementado. La suscripción de acá no cambia el día que
-  // HU-017 empiece a emitirlo — es el mismo evento, mismo payload.
+  // Se suscribe a mesa:estado_actualizado (KdsGateway.emitirEstadoMesa). Lo
+  // emiten la sesión de mesa (abrir: OCUPADA, cerrar: REQUIERE_LIMPIEZA,
+  // marcar limpia: LIBRE; HU-017) y los cobros con tarjeta (al empezar:
+  // EN_PROCESO_DE_PAGO; al terminar el último cobro en curso de la mesa:
+  // OCUPADA; BL-509). Con varios comensales pagando a la vez, la mesa sigue
+  // EN_PROCESO_DE_PAGO hasta que termina el último.
   useEffect(() => {
     if (!token) return;
 

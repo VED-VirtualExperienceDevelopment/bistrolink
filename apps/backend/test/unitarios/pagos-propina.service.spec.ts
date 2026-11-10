@@ -35,7 +35,11 @@ function pedido(overrides: Record<string, unknown> = {}) {
 function crearTx(datosPedido: Record<string, unknown>) {
   const pagos = new Map<string, any>();
   return {
+    // HU-017 (BL-509): bloqueo de la fila de la mesa en liberarMesaDelCobro.
+    $queryRaw: jest.fn().mockResolvedValue([]),
     pago: {
+      // HU-017 (BL-509): otros cobros en curso en la mesa (ninguno).
+      count: jest.fn().mockResolvedValue(0),
       findUnique: jest.fn().mockResolvedValue(null),
       findFirst: jest.fn().mockResolvedValue(null),
       create: jest.fn(async ({ data }) => {
