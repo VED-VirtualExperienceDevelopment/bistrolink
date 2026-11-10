@@ -2,7 +2,9 @@
 
 import { useEffect, useId, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import type { LlamadoMozo } from '@/components/kds/llamado.utils';
+import { rutaCobrarPedido } from '@/components/admin/cobros/cobros.utils';
 import {
   CLASE_ESTADO_STOCK,
   ETIQUETA_TIPO,
@@ -76,17 +78,25 @@ function EstadoSinConexion() {
   );
 }
 
-/** Un llamado de mesa o un aviso de pago en efectivo. */
+/**
+ * Un llamado de mesa o un aviso de pago en efectivo.
+ *
+ * BL-470: en el aviso de efectivo, «Aceptar» pasa a ser «Ir a cobrar»: marca
+ * el aviso como atendido (igual que «Aceptar») y lleva a Cobros pendientes
+ * con el pedido destacado. Sin pedido en el aviso, va a la lista completa.
+ */
 function TarjetaLlamado({
   llamado,
   ahora,
   puedeResolver,
   resolver,
+  onNavegar,
 }: Readonly<{
   llamado: LlamadoMozo;
   ahora: number;
   puedeResolver: boolean;
   resolver: (mesaId: string, accion: AccionLlamado) => void;
+  onNavegar: (ruta: string) => void;
 }>) {
   const efectivo = llamado.motivo === 'PAGO_EFECTIVO';
   const detalle = detalleEfectivo(llamado);
@@ -139,14 +149,34 @@ function TarjetaLlamado({
       </div>
       {puedeResolver && (
         <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => resolver(llamado.mesaId, 'aceptado')}
-            aria-label={`Aceptar la alerta de la mesa ${llamado.mesaNumero}`}
-            className={CLASE_BOTON_PRIMARIO}
-          >
-            Aceptar
-          </button>
+          {efectivo ? (
+            <button
+              type="button"
+              onClick={() => {
+                resolver(llamado.mesaId, 'aceptado');
+                onNavegar(rutaCobrarPedido(llamado.pedidoId));
+              }}
+              aria-label={`Ir a cobrar la mesa ${llamado.mesaNumero}`}
+              className={`flex items-center justify-center gap-1.5 ${CLASE_BOTON_PRIMARIO}`}
+            >
+              <span>Ir a cobrar</span>
+              <span
+                aria-hidden="true"
+                className="material-symbols-outlined text-[18px]"
+              >
+                arrow_forward
+              </span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => resolver(llamado.mesaId, 'aceptado')}
+              aria-label={`Aceptar la alerta de la mesa ${llamado.mesaNumero}`}
+              className={CLASE_BOTON_PRIMARIO}
+            >
+              Aceptar
+            </button>
+          )}
           <button
             type="button"
             onClick={() => resolver(llamado.mesaId, 'desestimado')}
@@ -221,6 +251,7 @@ function TarjetaStock({
  */
 export function ListaAlertas() {
   const alertas = useAlertas();
+  const router = useRouter();
   const [ahora, setAhora] = useState(() => Date.now());
   // La lista puede estar dos veces en pantalla (la pantalla Alertas y la
   // vista rápida): los ids de los títulos no se pueden repetir.
@@ -259,6 +290,10 @@ export function ListaAlertas() {
           ahora={ahora}
           puedeResolver={puedeResolver}
           resolver={resolver}
+          onNavegar={(ruta) => {
+            cerrarPanel();
+            router.push(ruta);
+          }}
         />
       ))}
     </ul>
