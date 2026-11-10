@@ -43,6 +43,8 @@ function claseColumnas(cantidad: number): string {
  *   cuanto llega cualquier elección.
  * - `deshabilitado`: mientras se guarda o se paga. Con `nota` se le explica
  *   por qué no se puede cambiar.
+ * - Con el panel de «Otro monto» abierto, el resaltado pasa a «Otro monto»
+ *   (se está editando) y el panel aclara qué sigue valiendo hasta «Aplicar».
  *
  * Los montos se calculan acá solo para mostrarlos (propina.utils.ts, mismo
  * redondeo que el backend); el backend los vuelve a calcular al cobrar.
@@ -71,6 +73,7 @@ export function SelectorPropina({
   const idInput = useId();
   const idAyuda = useId();
   const idError = useId();
+  const idVigente = useId();
   const refInput = useRef<HTMLInputElement>(null);
   const [abierto, setAbierto] = useState(false);
   const [texto, setTexto] = useState("");
@@ -87,6 +90,9 @@ export function SelectorPropina({
   const error = errorMontoPropina(estadoMonto);
   const tope = topeDePropina(consumo);
   const conMontoLibre = eleccion.tipo === "monto";
+  // Mientras se edita el monto libre, el resaltado es de «Otro monto»: lo que
+  // estaba aplicado sigue valiendo, pero no se muestra como elegido.
+  const otroMontoActivo = abierto || conMontoLibre;
 
   function elegir(nueva: EleccionPropina) {
     setAbierto(false);
@@ -104,6 +110,11 @@ export function SelectorPropina({
     if (estadoMonto.tipo !== "ok") return;
     elegir({ tipo: "monto", monto: estadoMonto.monto });
   }
+
+  const textoVigente =
+    eleccion.tipo === "ninguna"
+      ? "Hasta que toques «Aplicar», no hay propina."
+      : `Hasta que toques «Aplicar» sigue valiendo: ${etiquetaDePropina(eleccion)} · ${formatearPrecio(montoPropina)}.`;
 
   return (
     <section
@@ -125,7 +136,7 @@ export function SelectorPropina({
         <div className={`grid gap-2 ${claseColumnas(opciones.length)}`}>
           {opciones.map(({ porcentaje, monto }) => {
             const opcion: EleccionPropina = { tipo: "porcentaje", porcentaje };
-            const activa = mismaEleccion(eleccion, opcion);
+            const activa = !abierto && mismaEleccion(eleccion, opcion);
             return (
               <button
                 key={porcentaje}
@@ -160,13 +171,13 @@ export function SelectorPropina({
       <div className="grid grid-cols-2 gap-2">
         <button
           type="button"
-          aria-pressed={conMontoLibre}
+          aria-pressed={otroMontoActivo}
           aria-expanded={abierto}
           aria-controls={idPanel}
           disabled={deshabilitado}
           onClick={alternarOtroMonto}
           className={`${CLASE_BOTON_SECUNDARIO} ${
-            conMontoLibre
+            otroMontoActivo
               ? `${CLASE_OPCION_ACTIVA} text-[#4a3585]`
               : "border-culinary-neutral/30 bg-white text-[#6e54ad] hover:border-[#6e54ad]"
           }`}
@@ -177,14 +188,14 @@ export function SelectorPropina({
         </button>
         <button
           type="button"
-          aria-pressed={eleccion.tipo === "ninguna"}
+          aria-pressed={!abierto && eleccion.tipo === "ninguna"}
           disabled={deshabilitado}
           onClick={() => {
             setTexto("");
             elegir(SIN_PROPINA);
           }}
           className={`${CLASE_BOTON_SECUNDARIO} ${
-            eleccion.tipo === "ninguna"
+            !abierto && eleccion.tipo === "ninguna"
               ? `${CLASE_OPCION_ACTIVA} text-[#4a3585]`
               : "border-culinary-neutral/30 bg-white text-foreground hover:border-[#6e54ad]"
           }`}
@@ -220,7 +231,11 @@ export function SelectorPropina({
                   }
                 }}
                 aria-invalid={error !== null}
-                aria-describedby={error ? `${idAyuda} ${idError}` : idAyuda}
+                aria-describedby={
+                  error
+                    ? `${idAyuda} ${idVigente} ${idError}`
+                    : `${idAyuda} ${idVigente}`
+                }
                 className={`w-full h-12 px-3 rounded-lg border bg-white text-foreground focus:outline-none transition-colors ${
                   error
                     ? "border-[#BA1A1A] bg-[#FFDAD6]/40"
@@ -239,6 +254,9 @@ export function SelectorPropina({
             <p id={idAyuda} className="text-xs text-[#5a575e]">
               Desde {formatearPrecio(1)} hasta {formatearPrecio(tope)}, sin
               centavos.
+            </p>
+            <p id={idVigente} className="text-xs text-[#5a575e]">
+              {textoVigente}
             </p>
             {error && (
               <p
