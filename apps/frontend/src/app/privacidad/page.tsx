@@ -114,9 +114,12 @@ export default async function PoliticaPrivacidadPage({ searchParams }: PageProps
             anonimiza en sus registros; la e-Factura ya emitida no cambia.
           </li>
           <li className={LI}>
-            <strong>Tu navegador:</strong> mientras pagás, la pestaña guarda el
-            pedido en curso para que puedas retomarlo si recargás la página. No
-            guarda datos de la tarjeta y se borra al cerrar la pestaña.
+            <strong>Tu navegador:</strong> guarda el pedido que estás pagando
+            para que puedas retomarlo si recargás la página. En la mesa, además,
+            recuerda los pedidos que hiciste desde ese teléfono para mostrarlos
+            en «Mis pedidos»; se borran cuando el mozo cierra la mesa. No guarda
+            datos de la tarjeta ni datos personales. En el pedido para retirar,
+            se borra al cerrar la pestaña.
           </li>
           <li className={LI}>
             <strong>Errores de la página:</strong> si algo falla en la
