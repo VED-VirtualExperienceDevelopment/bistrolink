@@ -355,10 +355,11 @@ export function ListaAlertas() {
           </span>
         </h3>
         {errorStock && (
-          <p role="status" className={`mb-2 ${CLASE_AVISO}`}>
+          // <output>: rol «status» implícito, el lector de pantalla lo anuncia.
+          <output className={`mb-2 block ${CLASE_AVISO}`}>
             No se pudieron cargar las alertas de stock. Se vuelve a intentar al
             reconectar.
-          </p>
+          </output>
         )}
         {alertasStock.length > 0 && (
           <ul className="flex flex-col gap-2">
