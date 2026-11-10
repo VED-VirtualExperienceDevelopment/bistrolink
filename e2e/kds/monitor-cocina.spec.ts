@@ -3,6 +3,7 @@ import type { BrowserContext, Page } from "@playwright/test";
 import { test, expect } from "../support/auth";
 import { ITEM_DISPONIBLE, MENU_URL_PATH } from "../support/ids";
 import { confirmarYPagar } from "../support/pago";
+import { entregarRetiroConCodigo } from "../support/kds";
 
 // HU-038 (BL-510): monitor de Cocina. El /kds de COCINA es de solo lectura:
 // una tarjeta por pedido en preparación o listo, en una grilla sin scroll, y
@@ -100,10 +101,9 @@ test.describe("HU-038: monitor de Cocina", () => {
       timeout: 10000,
     });
 
-    // Entregado: sale del monitor.
-    await comanda(kdsPageMozo, enCurso)
-      .getByRole("button", { name: "Marcar como entregado" })
-      .click();
+    // Entregado: sale del monitor. HU-040 (BL-210): el pedido del enlace web
+    // es para retirar y se entrega con su código.
+    await entregarRetiroConCodigo(kdsPageMozo, comanda(kdsPageMozo, enCurso));
     await expect(tarjeta).toHaveCount(0, { timeout: 10000 });
     expect(await sinScroll(kdsPageCocina)).toBe(true);
   });

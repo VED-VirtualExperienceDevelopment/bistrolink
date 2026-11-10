@@ -1,6 +1,7 @@
 import { test, expect } from "./support/auth";
 import { MENU_URL_PATH } from "./support/ids";
 import { confirmarYPagar } from "./support/pago";
+import { entregarRetiroConCodigo } from "./support/kds";
 
 test("[TC-E-016] HU-018: cocina mozo comensal, pedido llega a Entregado", async ({
   kdsPageMozo,
@@ -38,16 +39,17 @@ test("[TC-E-016] HU-018: cocina mozo comensal, pedido llega a Entregado", async 
   await ticket.getByRole("button", { name: "Listo para entregar" }).click();
 
   // BL-460: el tablero ya no muestra el aviso de pedido listo; la entrega se
-  // confirma con el botón de la propia comanda.
+  // confirma con el botón de la propia comanda. HU-040 (BL-210): el pedido
+  // del enlace web es para retirar y se entrega con su código.
   const entregar = ticket.getByRole("button", {
-    name: "Marcar como entregado",
+    name: "Entregar con código",
   });
   await expect(entregar).toBeVisible({ timeout: 5000 });
   await expect(estadoActual("Listo para entregar")).toBeVisible({
     timeout: 5000,
   });
 
-  await entregar.click();
+  await entregarRetiroConCodigo(kdsPage, ticket);
 
   await expect(ticket).not.toBeVisible();
   await expect(estadoActual("Entregado")).toBeVisible({ timeout: 5000 });

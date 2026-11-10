@@ -194,6 +194,14 @@ const solicitudEfectivo = (extra = {}) => ({
   tags: ["HU-031b", "BL-442", "pagos", ...(extra.tags ?? [])],
 });
 // HU-039 (BL-209): pedido cargado por el mozo.
+// HU-040 (BL-210): pedidos para retirar por el enlace web del local.
+const retiro = (extra = {}) => ({
+  component: "api",
+  requirement: "HU-040",
+  ...extra,
+  tags: ["HU-040", "BL-210", "pedidos", "retiro", ...(extra.tags ?? [])],
+});
+
 const pedidoMozo = (extra = {}) => ({
   component: "api",
   requirement: "HU-039",
@@ -874,6 +882,27 @@ const DATOS_INTEGRACION = {
     priority: "P1",
     tags: ["BL-509", "bug", "pagos", "concurrencia"],
   }),
+  // HU-040 (BL-210): pedidos para retirar.
+  199: retiro({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["kds", "privacidad", "multi-tenant"],
+  }),
+  200: retiro({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["configuracion", "horario"],
+  }),
+  201: retiro({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["privacidad", "ley-18331", "auditoria"],
+  }),
+  202: retiro({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["kds", "seguridad", "RD.06"],
+  }),
 };
 /**
  * BL-435: datos de los E2E TC-E-017 en adelante, con los criterios de
@@ -1303,6 +1332,17 @@ const DATOS_E2E = {
     category: "Funcional",
     priority: "P2",
     tags: ["BL-496", "BL-495", "propina"],
+  }),
+  // HU-040 (BL-210): pedido para retirar con código.
+  98: e2e("comensal", "HU-040", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-210", "kds", "websocket"],
+  }),
+  99: e2e("kds", "HU-040", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-210", "efectivo", ...axe],
   }),
 };
 /**
