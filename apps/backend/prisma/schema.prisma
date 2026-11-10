@@ -639,7 +639,15 @@ model ResumenVentasHora {
   canal         PedidoCanal
   medioPago     String      @map("medio_pago")
   pedidos       Int
+  // Consumo (lo que se factura): la propina no suma acá.
   monto         Decimal     @db.Decimal(12, 2)
+  // HU-022 (BL-496): propina cobrada en la hora, aparte de las ventas. 0 en
+  // las ventas importadas del POS, que no la informan.
+  propina       Decimal     @default(0) @db.Decimal(12, 2)
+  // Pedidos de la fila con propina mayor que cero. Igual que `pedidos`, se
+  // cuenta por medio de pago: un pedido con dos pagos aprobados de medios
+  // distintos aparece una vez en cada fila.
+  pedidosConPropina Int     @default(0) @map("pedidos_con_propina")
   actualizadoEn DateTime    @default(now()) @map("actualizado_en") @db.Timestamptz(3)
 
   @@id([tenantId, hora, canal, medioPago])

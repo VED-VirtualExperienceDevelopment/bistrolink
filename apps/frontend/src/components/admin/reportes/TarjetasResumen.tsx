@@ -2,6 +2,7 @@ import {
   formatearMonto,
   formatearRotacion,
   MENSAJE_ROTACION_NO_APLICA,
+  textoPropinas,
   variacion,
   type Periodo,
   type ReporteVentas,
@@ -34,14 +35,16 @@ function Variacion({
   );
 }
 
-/** HU-012 (BL-108): las 4 tarjetas de arriba del dashboard. */
+/** HU-012 (BL-108): las tarjetas de arriba del dashboard. */
 export default function TarjetasResumen({
   reporte,
   periodo,
 }: Readonly<{ reporte: ReporteVentas; periodo: Periodo }>) {
   const { resumen, rotacionMesas } = reporte;
+  // HU-022 (BL-496): la propina va aparte de las ventas, sin variación.
+  const propinas = textoPropinas(resumen.propinas, resumen.pedidos);
   return (
-    <ul className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+    <ul className="grid grid-cols-2 gap-3 lg:grid-cols-5">
       <li className={CLASE_KPI}>
         <h2 className="text-label-md text-on-surface-variant">Total vendido</h2>
         <p className="text-headline-md text-on-surface">
@@ -72,6 +75,20 @@ export default function TarjetasResumen({
           {formatearMonto(resumen.ticketPromedio)}
         </p>
         <p className="text-body-sm text-on-surface-variant">por pedido</p>
+      </li>
+      <li className={CLASE_KPI}>
+        <h2 className="text-label-md text-on-surface-variant">Propinas</h2>
+        <p className="text-headline-md text-on-surface">
+          {formatearMonto(resumen.propinas.total)}
+        </p>
+        <p className="text-body-sm text-on-surface-variant">
+          {propinas.detalle}
+        </p>
+        {propinas.equivalencia && (
+          <p className="text-body-sm text-on-surface-variant">
+            {propinas.equivalencia}
+          </p>
+        )}
       </li>
       <li className={CLASE_KPI}>
         <h2 className="text-label-md text-on-surface-variant">

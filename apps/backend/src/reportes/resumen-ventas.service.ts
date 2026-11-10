@@ -53,6 +53,13 @@ export function ventanaReciente(ahora: Date, horas: number): VentanaHoras {
  * - La carga inicial (historial existente) la hizo la migración
  *   20261102120000_reportes_sesion_mesa_y_resumen_ventas con las mismas
  *   consultas.
+ * - HU-022 (BL-496): `monto` es el consumo (lo que se factura) y la propina
+ *   va aparte: `propina` suma pago.propina y `pedidos_con_propina` cuenta los
+ *   pedidos con propina. Igual que `pedidos`, se cuentan por medio de pago:
+ *   un pedido con dos pagos aprobados de medios distintos aparece una vez en
+ *   cada fila (limitación aceptada, es un caso muy raro). Las ventas del POS
+ *   no informan propina: van en 0. El historial lo recalculó la migración
+ *   20261110100000_resumen_ventas_propina.
  */
 @Injectable()
 export class ResumenVentasService {
@@ -91,13 +98,15 @@ export class ResumenVentasService {
 
       const ventas = await tx.$executeRaw(Prisma.sql`
         INSERT INTO resumen_ventas_hora
-          (tenant_id, hora, canal, medio_pago, pedidos, monto, actualizado_en)
+          (tenant_id, hora, canal, medio_pago, pedidos, monto, propina, pedidos_con_propina, actualizado_en)
         SELECT pg.tenant_id,
                date_trunc('hour', pg.created_at AT TIME ZONE 'UTC') AT TIME ZONE 'UTC',
                p.canal,
                pg.medio_pago,
                COUNT(DISTINCT pg.pedido_id)::int,
                SUM(pg.monto),
+               SUM(pg.propina),
+               (COUNT(DISTINCT pg.pedido_id) FILTER (WHERE pg.propina > 0))::int,
                now()
         FROM pago pg
         JOIN pedido p ON p.id = pg.pedido_id
@@ -110,15 +119,18 @@ export class ResumenVentasService {
       // HU-011 (BL-489): las ventas hechas directamente en el POS del local,
       // con el canal POS, en la hora en que se vendieron. Las anuladas no
       // cuentan. No suman platos: el POS no usa los ítems de la carta.
+      // HU-022 (BL-496): el POS no informa propina, va en 0.
       const ventasPos = await tx.$executeRaw(Prisma.sql`
         INSERT INTO resumen_ventas_hora
-          (tenant_id, hora, canal, medio_pago, pedidos, monto, actualizado_en)
+          (tenant_id, hora, canal, medio_pago, pedidos, monto, propina, pedidos_con_propina, actualizado_en)
         SELECT v.tenant_id,
                date_trunc('hour', v.vendida_en AT TIME ZONE 'UTC') AT TIME ZONE 'UTC',
                'POS'::"PedidoCanal",
                v.medio_pago,
                COUNT(*)::int,
                SUM(v.total),
+               0,
+               0,
                now()
         FROM venta_pos_importada v
         WHERE v.tenant_id = ${tenantId}::uuid

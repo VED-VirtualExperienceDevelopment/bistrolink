@@ -32,6 +32,8 @@ function valorDe(venta: VentaPorHora, metrica: MetricaVentas): string {
  * HU-012 (BL-108): ventas por hora del día (hora del local). Columnas
  * violeta claro y la hora pico en violeta fuerte. El gráfico es decorativo
  * para los lectores de pantalla: los datos están en la tabla.
+ *
+ * HU-022 (BL-496): la tabla suma las propinas de cada hora, aparte del monto.
  */
 export default function VentasPorHora({
   ventas,
@@ -107,11 +109,12 @@ export default function VentasPorHora({
       )}
       <TablaAccesible
         titulo="Ventas por hora del día"
-        columnas={["Hora", "Monto", "Pedidos"]}
+        columnas={["Hora", "Pedidos", "Ventas", "Propinas"]}
         filas={horas.map((v) => [
           formatearHora(v.hora),
-          formatearMonto(v.monto),
           `${v.pedidos}`,
+          formatearMonto(v.monto),
+          formatearMonto(v.propina),
         ])}
         visible={verTabla}
       />
