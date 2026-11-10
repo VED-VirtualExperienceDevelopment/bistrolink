@@ -13,6 +13,8 @@ import {
   textoContadorCola,
   type EstadoCola,
 } from './cola-kds.utils';
+import { INTERVALO_RELOJ_MS } from './espera-kds.utils';
+import { useReloj } from './useReloj';
 import type { Pedido } from '@/types/pedido';
 
 const WS_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
@@ -45,6 +47,10 @@ export function KdsBoard() {
   // HU-024 (BL-104): pedido que se está cancelando y aviso del resultado.
   const [aCancelar, setACancelar] = useState<Pedido | null>(null);
   const [avisoCancelacion, setAvisoCancelacion] = useState<string | null>(null);
+  // HU-038 (BL-208): reloj del tablero. Cada 30 s se vuelven a dibujar las
+  // comandas con el tiempo de espera y el color al día, aunque no llegue
+  // ningún evento por el socket.
+  const ahora = useReloj(INTERVALO_RELOJ_MS);
 
   const conectado = alertas ? alertas.conectado : conectadoPropio;
   // BL-460: este tablero solo muestra las comandas. Los llamados de mesa y los
@@ -232,6 +238,7 @@ export function KdsBoard() {
                   pedido={pedido}
                   puedeOperarTransiciones={puedeOperarTransiciones}
                   onTransicion={emitirTransicion}
+                  ahora={ahora}
                   colaActiva={colaActiva}
                   onCancelar={abrirCancelacion}
                 />
@@ -267,6 +274,7 @@ export function KdsBoard() {
                     pedido={pedido}
                     puedeOperarTransiciones={puedeOperarTransiciones}
                     onTransicion={emitirTransicion}
+                    ahora={ahora}
                     colaActiva
                     posicionEnCola={posicion}
                     onCancelar={abrirCancelacion}
