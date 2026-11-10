@@ -843,6 +843,15 @@ const DATOS_INTEGRACION = {
     requirement: "HU-038",
     tags: ["HU-038", "BL-506", "kds", "validacion"],
   }),
+  // HU-022 (BL-496): propinas del reporte de ventas, en
+  // reportes.e2e-spec.ts.
+  194: {
+    component: "api",
+    requirement: "HU-022",
+    category: "Funcional",
+    priority: "P1",
+    tags: ["HU-022", "BL-496", "reportes", "propina"],
+  },
 };
 /**
  * BL-435: datos de los E2E TC-E-017 en adelante, con los criterios de
@@ -1245,6 +1254,33 @@ const DATOS_E2E = {
     category: "Accesibilidad",
     priority: "P2",
     tags: ["BL-208", "BL-510", "kds", "monitor", ...axe],
+  }),
+  // HU-022 (BL-496): propina en el pago, en los cobros del mozo y en los
+  // reportes, en admin/propina.spec.ts.
+  93: e2e("mozo", "HU-022", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-496", "BL-495", "pagos", "propina", "efectivo"],
+  }),
+  94: e2e("mozo", "HU-022", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-496", "BL-495", "pagos", "propina", "pos"],
+  }),
+  95: e2e("admin", "HU-022", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-496", "reportes", "propina"],
+  }),
+  96: e2e("comensal", "HU-022", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-496", "BL-495", "pagos", "propina", "tarjeta"],
+  }),
+  97: e2e("comensal", "HU-022", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-496", "BL-495", "propina"],
   }),
 };
 /**
