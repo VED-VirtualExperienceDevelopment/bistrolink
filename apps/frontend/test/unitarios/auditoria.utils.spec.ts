@@ -176,6 +176,38 @@ describe("cómo se muestra cada registro", () => {
     ).toEqual(["Razón social: modificado", "RUT: modificado"]);
   });
 
+  it("HU-022 (BL-495): la preselección de la propina se ve con su texto, no con el nombre del campo", () => {
+    expect(
+      cambiosDelRegistro({
+        valoresAntes: { propinaPreseleccionada: false },
+        valoresDespues: { propinaPreseleccionada: true },
+        detalle: { campos: ["propinaPreseleccionada"] },
+      }),
+    ).toEqual(["Preseleccionar el 10 % de propina: no → sí"]);
+  });
+
+  it("HU-022 (BL-495): el cobro en efectivo con propina muestra total, consumo, propina, recibido y vuelto", () => {
+    expect(etiquetaAccion("PAGO_EFECTIVO_REGISTRADO")).toBe("Cobro en efectivo");
+    expect(
+      cambiosDelRegistro({
+        valoresAntes: null,
+        valoresDespues: {
+          monto: "649.00",
+          consumo: "590.00",
+          propina: "59.00",
+          montoRecibido: "1000.00",
+          vuelto: "351.00",
+        },
+      }),
+    ).toEqual([
+      "Total: — → 649.00",
+      "Consumo: — → 590.00",
+      "Propina: — → 59.00",
+      "Recibido: — → 1000.00",
+      "Vuelto: — → 351.00",
+    ]);
+  });
+
   it("el autor: el usuario del local, un proceso automático o la plataforma", () => {
     expect(
       autorDelRegistro({

@@ -151,6 +151,9 @@ const NOMBRE_CAMPO: Record<string, string> = {
   monto: "Total",
   montoRecibido: "Recibido",
   vuelto: "Vuelto",
+  // HU-022 (BL-495): lo que se factura y la propina, que se cobra aparte.
+  consumo: "Consumo",
+  propina: "Propina",
   // HU-007b (BL-80): cobro con el POS del local.
   medio: "Tarjeta",
   autorizacion: "N.° de autorización",
@@ -172,6 +175,8 @@ const NOMBRE_CAMPO: Record<string, string> = {
   plexoHabilitado: "Plexo",
   handyHabilitado: "Handy",
   propinasSugeridas: "Propinas sugeridas (%)",
+  // HU-022 (BL-495): preselección del 10 % en la pantalla de pago.
+  propinaPreseleccionada: "Preseleccionar el 10 % de propina",
   cfeProveedor: "Proveedor de CFE",
   // HU-042 (BL-465): cola del KDS. Sin límite (—) = cola desactivada.
   limitePedidosEnPreparacion: "Límite de pedidos en preparación",

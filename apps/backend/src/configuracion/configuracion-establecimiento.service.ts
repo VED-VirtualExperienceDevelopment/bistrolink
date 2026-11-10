@@ -33,6 +33,8 @@ export interface ConfiguracionEstablecimiento {
   mediosPagoDisponibles: MedioPagoConfigurable[];
   /** Porcentajes enteros, de menor a mayor. Vacío = sin sugerencias. */
   propinasSugeridas: number[];
+  /** HU-022 (BL-495): el pago del comensal abre con el 10 % marcado. */
+  propinaPreseleccionada: boolean;
   cfeProveedor: CfeProveedor;
   /** Los que se pueden elegir hoy (Biller quedó fuera del MVP). */
   proveedoresCfeDisponibles: CfeProveedor[];
@@ -54,6 +56,7 @@ const SELECT_RESTAURANTE = {
   plexoHabilitado: true,
   handyHabilitado: true,
   propinasSugeridas: true,
+  propinaPreseleccionada: true,
   cfeProveedor: true,
   emailPrivacidad: true,
   // HU-042 (BL-465): cola del KDS. Van con antes y después a la auditoría.

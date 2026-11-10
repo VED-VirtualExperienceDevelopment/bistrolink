@@ -43,9 +43,12 @@ describe('PagosService.consultar (BL-311: estado del pago y comprobante para el 
 
   beforeEach(() => {
     findUnique = jest.fn();
+    // HU-022 (BL-495): el local sugiere 5, 10 y 15 %, sin preselección.
     restauranteFindUnique = jest.fn().mockResolvedValue({
       efectivoHabilitado: true,
       mercadoPagoHabilitado: true,
+      propinasSugeridas: [5, 10, 15],
+      propinaPreseleccionada: false,
     });
     runInTenantContext = jest.fn((_tenantId, fn) =>
       fn({
@@ -106,6 +109,7 @@ describe('PagosService.consultar (BL-311: estado del pago y comprobante para el 
       },
       efectivo: { disponible: false, solicitadoEn: null, pagaCon: null },
       tarjeta: { disponible: true },
+      propina: { sugeridas: [5, 10, 15], preseleccionada: false },
       rebajaIva: null,
     });
   });
@@ -165,6 +169,7 @@ describe('PagosService.consultar (BL-311: estado del pago y comprobante para el 
       comprobante: null,
       efectivo: { disponible: false, solicitadoEn: null, pagaCon: null },
       tarjeta: { disponible: true },
+      propina: { sugeridas: [5, 10, 15], preseleccionada: false },
       rebajaIva: null,
     });
   });
@@ -353,6 +358,79 @@ describe('PagosService.consultar (BL-311: estado del pago y comprobante para el 
     });
   });
 
+  describe('HU-022 (BL-495): propina que ofrece el local', () => {
+    const pendiente = (overrides: Record<string, unknown> = {}) =>
+      pedidoDe({
+        id: PEDIDO_ID,
+        estado: 'PENDIENTE_PAGO',
+        canal: 'QR',
+        pagos: [],
+        ...overrides,
+      });
+
+    it('devuelve los porcentajes sugeridos del local y que no hay preselección', async () => {
+      findUnique.mockResolvedValue(pendiente());
+
+      const r = await service.consultar(TENANT_ID, PEDIDO_ID);
+
+      expect(r.propina).toEqual({
+        sugeridas: [5, 10, 15],
+        preseleccionada: false,
+      });
+    });
+
+    it('local con la preselección activa: lo informa para que la pantalla marque el 10 %', async () => {
+      restauranteFindUnique.mockResolvedValue({
+        efectivoHabilitado: true,
+        mercadoPagoHabilitado: true,
+        propinasSugeridas: [5, 10, 15],
+        propinaPreseleccionada: true,
+      });
+      findUnique.mockResolvedValue(pendiente());
+
+      const r = await service.consultar(TENANT_ID, PEDIDO_ID);
+
+      expect(r.propina).toEqual({
+        sugeridas: [5, 10, 15],
+        preseleccionada: true,
+      });
+    });
+
+    it('local sin porcentajes sugeridos: lista vacía (la pantalla ofrece solo «Otro monto» y «Sin propina»)', async () => {
+      restauranteFindUnique.mockResolvedValue({
+        efectivoHabilitado: true,
+        mercadoPagoHabilitado: true,
+        propinasSugeridas: [],
+        propinaPreseleccionada: false,
+      });
+      findUnique.mockResolvedValue(pendiente());
+
+      const r = await service.consultar(TENANT_ID, PEDIDO_ID);
+
+      expect(r.propina).toEqual({ sugeridas: [], preseleccionada: false });
+    });
+
+    it('sin restaurante (alta incompleta): lista vacía y sin preselección, sin romper la consulta', async () => {
+      restauranteFindUnique.mockResolvedValue(null);
+      findUnique.mockResolvedValue(pendiente());
+
+      const r = await service.consultar(TENANT_ID, PEDIDO_ID);
+
+      expect(r.propina).toEqual({ sugeridas: [], preseleccionada: false });
+    });
+
+    it('pedido para retirar: recibe la misma configuración (el canal no la cambia)', async () => {
+      findUnique.mockResolvedValue(pendiente({ canal: 'WEB' }));
+
+      const r = await service.consultar(TENANT_ID, PEDIDO_ID);
+
+      expect(r.propina).toEqual({
+        sugeridas: [5, 10, 15],
+        preseleccionada: false,
+      });
+    });
+  });
+
   describe('pago en efectivo (HU-031b, BL-442)', () => {
     const pendiente = (overrides: Record<string, unknown> = {}) =>
       pedidoDe({
@@ -434,7 +512,12 @@ describe('PagosService.consultar (BL-311: estado del pago y comprobante para el 
       expect(r.tarjeta).toEqual({ disponible: true });
       expect(restauranteFindUnique).toHaveBeenCalledWith({
         where: { tenantId: TENANT_ID },
-        select: { efectivoHabilitado: true, mercadoPagoHabilitado: true },
+        select: {
+          efectivoHabilitado: true,
+          mercadoPagoHabilitado: true,
+          propinasSugeridas: true,
+          propinaPreseleccionada: true,
+        },
       });
     });
 

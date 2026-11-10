@@ -1,5 +1,7 @@
 import {
   codigoDelPedido,
+  desglosePropina,
+  esTotalCambiado,
   evaluarMontoRecibido,
   formatearMonto,
   horaDelPedido,
@@ -18,6 +20,7 @@ import {
   pendientesParaRetirar,
   resumenDeLineas,
   rutaCancelarPendiente,
+  textoPropinaEnLista,
   type PedidoPendienteDeCobro,
 } from "@/components/admin/cobros/cobros.utils";
 
@@ -39,6 +42,19 @@ function pedido(
     pagoEnCurso: false,
     ...overrides,
   };
+}
+
+/** Un pedido de 590 con 10 % de propina: total 649. */
+function pedidoConPropina(
+  overrides: Partial<PedidoPendienteDeCobro> = {},
+): PedidoPendienteDeCobro {
+  return pedido({
+    total: "649.00",
+    consumo: "590.00",
+    propina: "59.00",
+    propinaPorcentaje: 10,
+    ...overrides,
+  });
 }
 
 describe("cobros.utils (HU-031, BL-201)", () => {
@@ -126,6 +142,18 @@ describe("cobros.utils (HU-031, BL-201)", () => {
         tipo: "ok",
         recibido: "590",
         vuelto: "0.00",
+      });
+    });
+
+    it("con propina el vuelto se calcula sobre el total (consumo + propina)", () => {
+      expect(evaluarMontoRecibido("1000", "649.00")).toEqual({
+        tipo: "ok",
+        recibido: "1000",
+        vuelto: "351.00",
+      });
+      expect(evaluarMontoRecibido("600", "649.00")).toEqual({
+        tipo: "insuficiente",
+        falta: "49.00",
       });
     });
   });
@@ -249,5 +277,131 @@ describe("cancelar un pedido sin cobrar (BL-501)", () => {
     ).toBe(
       `Pedido ${codigoDelPedido("3f2a9c1e-0000-4000-8000-000000000001")} cancelado. No se cobró y no pasa a cocina.`,
     );
+  });
+});
+
+// HU-022 (BL-495): el mozo ve la propina que eligió el comensal.
+describe("la propina en el cobro (HU-022, BL-495)", () => {
+  const pedidoId = "3f2a9c1e-0000-4000-8000-000000000001";
+
+  describe("desglosePropina", () => {
+    it("con porcentaje: consumo, propina y etiqueta con el porcentaje", () => {
+      expect(desglosePropina(pedidoConPropina())).toEqual({
+        consumo: "590.00",
+        propina: "59.00",
+        etiqueta: "Propina (10 %)",
+      });
+    });
+
+    it("con monto libre (sin porcentaje): etiqueta sin porcentaje", () => {
+      expect(
+        desglosePropina(pedidoConPropina({ propinaPorcentaje: null })),
+      ).toMatchObject({ propina: "59.00", etiqueta: "Propina" });
+    });
+
+    it("sin propina: no hay desglose", () => {
+      expect(desglosePropina(pedido())).toBeNull();
+      expect(
+        desglosePropina(
+          pedido({ consumo: "590.00", propina: "0.00", total: "590.00" }),
+        ),
+      ).toBeNull();
+    });
+
+    it("un backend anterior no informa el consumo: no hay desglose", () => {
+      expect(desglosePropina(pedido({ propina: "59.00" }))).toBeNull();
+    });
+  });
+
+  describe("textoPropinaEnLista", () => {
+    it("con porcentaje", () => {
+      expect(textoPropinaEnLista(pedidoConPropina())).toBe(
+        `Incluye propina de ${formatearMonto("59.00")} (10 %)`,
+      );
+    });
+
+    it("con monto libre: sin porcentaje", () => {
+      expect(
+        textoPropinaEnLista(pedidoConPropina({ propinaPorcentaje: null })),
+      ).toBe(`Incluye propina de ${formatearMonto("59.00")}`);
+    });
+
+    it("sin propina: nada", () => {
+      expect(textoPropinaEnLista(pedido())).toBeNull();
+    });
+  });
+
+  describe("esTotalCambiado", () => {
+    it("reconoce el 409 del backend por cambio de propina", () => {
+      expect(
+        esTotalCambiado(
+          "El total del pedido cambió: ahora es $ 679.00. Actualizá la lista antes de cobrar.",
+        ),
+      ).toBe(true);
+    });
+
+    it("no confunde otros errores", () => {
+      expect(esTotalCambiado("Este pedido ya fue pagado")).toBe(false);
+      expect(esTotalCambiado("")).toBe(false);
+    });
+  });
+
+  describe("mensajeCobroRegistrado con propina", () => {
+    const cobro = {
+      pagoId: "p",
+      pedidoId,
+      monto: "649.00",
+      consumo: "590.00",
+      propina: "59.00",
+      montoRecibido: "1000.00",
+      vuelto: "351.00",
+    };
+
+    it("dice la propina y el vuelto", () => {
+      expect(mensajeCobroRegistrado(cobro)).toBe(
+        `Cobro registrado: pedido #3F2A9C. Propina: ${formatearMonto("59.00")}. Vuelto: ${formatearMonto("351.00")}. Ya está en cocina.`,
+      );
+    });
+
+    it("con el monto justo: dice la propina y que no hay vuelto", () => {
+      expect(
+        mensajeCobroRegistrado({
+          ...cobro,
+          montoRecibido: "649.00",
+          vuelto: "0.00",
+        }),
+      ).toBe(
+        `Cobro registrado: pedido #3F2A9C. Propina: ${formatearMonto("59.00")}. Sin vuelto. Ya está en cocina.`,
+      );
+    });
+
+    it("con propina en cero se avisa igual que sin propina", () => {
+      expect(
+        mensajeCobroRegistrado({
+          ...cobro,
+          monto: "590.00",
+          propina: "0.00",
+          vuelto: "0.00",
+        }),
+      ).toBe("Cobro registrado: pedido #3F2A9C, sin vuelto. Ya está en cocina.");
+    });
+  });
+
+  describe("mensajeCobroPosRegistrado con propina", () => {
+    it("aclara que el total incluye la propina", () => {
+      expect(
+        mensajeCobroPosRegistrado({
+          pagoId: "p-1",
+          pedidoId,
+          monto: "649.00",
+          consumo: "590.00",
+          propina: "59.00",
+          tarjeta: "DEBITO",
+          autorizacion: "A1B2C3",
+        }),
+      ).toBe(
+        `Cobro registrado: pedido #3F2A9C, ${formatearMonto("649.00")} (incluye propina de ${formatearMonto("59.00")}) con débito (autorización A1B2C3). Ya está en cocina.`,
+      );
+    });
   });
 });

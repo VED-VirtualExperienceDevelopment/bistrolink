@@ -15,6 +15,7 @@ import {
   motivoSinEfectivo,
   motivoSinPos,
   resumenDeLineas,
+  textoPropinaEnLista,
   textoSolicitudEfectivo,
   type CobroEfectivoRegistrado,
   type CobroPosRegistrado,
@@ -36,10 +37,15 @@ interface Props {
   readonly onCobrado: () => void;
 }
 
+/** HU-022 (BL-495): el comensal cambió la propina con el pedido abierto. */
+const AVISO_PROPINA_CAMBIADA =
+  "La propina del pedido cambió. Revisá el nuevo total antes de cobrar.";
+
 /**
  * HU-031 (BL-201): pedidos que esperan el pago, con «Cobrar en efectivo» y
  * (HU-007b, BL-80) «Cobrar con el POS», si el local lo tiene habilitado.
  * BL-501: «Cancelar pedido», si el comensal se arrepintió o se cargó mal.
+ * HU-022 (BL-495): cada pedido muestra la propina que eligió el comensal.
  * La usan el panel de la mesa del mapa y la pantalla de cobros pendientes.
  */
 export function PedidosPorCobrar({
@@ -77,6 +83,14 @@ export function PedidosPorCobrar({
     onCobrado();
   }
 
+  // HU-022 (BL-495): el total que veía el mozo ya no es el del pedido.
+  function propinaCambiada() {
+    setSeleccionado(null);
+    setConPos(null);
+    setAviso(AVISO_PROPINA_CAMBIADA);
+    onCobrado();
+  }
+
   return (
     <div className="space-y-2">
       {aviso && (
@@ -94,6 +108,7 @@ export function PedidosPorCobrar({
             const motivo = motivoSinEfectivo(pedido, efectivoHabilitado);
             const motivoPos = motivoSinPos(pedido, posHabilitado);
             const solicitud = textoSolicitudEfectivo(pedido);
+            const propina = textoPropinaEnLista(pedido);
             const idMotivo = `motivo-${pedido.id}`;
             // HU-007b (BL-80): por qué no se puede con el POS, si es otro
             // motivo que el del efectivo (si es el mismo, alcanza con uno).
@@ -127,6 +142,9 @@ export function PedidosPorCobrar({
                     Pedido {codigoDelPedido(pedido.id)} ·{" "}
                     {formatearMonto(pedido.total)}
                   </p>
+                  {propina && (
+                    <p className="text-label-md text-on-surface">{propina}</p>
+                  )}
                   <p className="text-label-sm text-on-surface-variant">
                     {conMesa && !pedido.mesa.esVirtual
                       ? `Mesa ${pedido.mesa.numero} · `
@@ -222,12 +240,14 @@ export function PedidosPorCobrar({
         token={token}
         onClose={() => setSeleccionado(null)}
         onCobrado={cobrado}
+        onActualizar={propinaCambiada}
       />
       <CobrarPosDialog
         pedido={conPos}
         token={token}
         onClose={() => setConPos(null)}
         onCobrado={cobradoConPos}
+        onActualizar={propinaCambiada}
       />
       <CancelarPendienteDialog
         pedido={aCancelar}

@@ -196,10 +196,14 @@ function CargarPedido() {
             </Link>
           </div>
         </section>
+        {/* HU-022 (BL-495): este pedido lo acaba de cargar el mozo, así que
+            no tiene propina del comensal; si el total cambiara igual, se
+            cierra el diálogo y el pedido se revisa en «Cobros pendientes». */}
         <CobrarEfectivoDialog
           pedido={cobrando === "EFECTIVO" ? cargado : null}
           token={token}
           onClose={() => setCobrando(null)}
+          onActualizar={() => setCobrando(null)}
           onCobrado={(registrado) => {
             setCobrando(null);
             setCobrado(mensajeCobroRegistrado(registrado));
@@ -209,6 +213,7 @@ function CargarPedido() {
           pedido={cobrando === "POS" ? cargado : null}
           token={token}
           onClose={() => setCobrando(null)}
+          onActualizar={() => setCobrando(null)}
           onCobrado={(registrado) => {
             setCobrando(null);
             setCobrado(mensajeCobroPosRegistrado(registrado));
