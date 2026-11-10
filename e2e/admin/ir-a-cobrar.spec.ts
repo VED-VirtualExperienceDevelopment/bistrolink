@@ -18,7 +18,7 @@ const codigoDelPedido = (pedidoId: string) =>
   `#${pedidoId.replace(/-/g, "").slice(0, 6).toUpperCase()}`;
 
 test.describe("BL-470: «Ir a cobrar» desde las alertas", () => {
-  test("[TC-E-098] el mozo toca «Ir a cobrar» en el aviso de efectivo y llega a Cobros pendientes con el pedido destacado y el foco en «Cobrar en efectivo»", async ({
+  test("[TC-E-100] el mozo toca «Ir a cobrar» en el aviso de efectivo y llega a Cobros pendientes con el pedido destacado y el foco en «Cobrar en efectivo»", async ({
     page,
     kdsPageMozo,
     qrMesas,
@@ -102,7 +102,7 @@ test.describe("BL-470: «Ir a cobrar» desde las alertas", () => {
     ).toEqual([]);
   });
 
-  test("[TC-E-099] con un pedido que ya no está pendiente, Cobros pendientes lo avisa, no destaca nada y limpia la URL", async ({
+  test("[TC-E-101] con un pedido que ya no está pendiente, Cobros pendientes lo avisa, no destaca nada y limpia la URL", async ({
     kdsPageMozo,
   }) => {
     // Un id con formato válido que no es de ningún pedido pendiente.
