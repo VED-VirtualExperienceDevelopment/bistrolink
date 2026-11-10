@@ -17,6 +17,10 @@ import {
 } from 'class-validator';
 import { CfeProveedor } from '@prisma/client';
 import { limpiarEspacios } from '../../usuarios/dto/create-usuario.dto';
+import {
+  MINUTOS_ESPERA_MAXIMO,
+  MINUTOS_ESPERA_MINIMO,
+} from '../../pedidos/umbrales-espera';
 
 /** HU-020 (BL-72): hasta cuántos porcentajes de propina se sugieren. */
 export const MAXIMO_PROPINAS_SUGERIDAS = 5;
@@ -217,4 +221,39 @@ export class ActualizarConfiguracionDto {
     message: `Los minutos de preparación estimados pueden ser como máximo ${MINUTOS_PREPARACION_MAXIMO}`,
   })
   minutosPreparacionEstimados?: number;
+
+  // HU-038 (BL-506): umbrales de espera de las comandas del KDS. Opcionales,
+  // pero nunca null (columnas NOT NULL). Que queden de menor a mayor lo
+  // controla el servicio, con lo que ya está guardado: el PATCH es parcial.
+  @ValidateIf((_dto, valor) => valor !== undefined)
+  @IsInt({ message: '«Atención desde» debe ser un número entero de minutos' })
+  @Min(MINUTOS_ESPERA_MINIMO, {
+    message: `«Atención desde» debe ser al menos ${MINUTOS_ESPERA_MINIMO} minuto`,
+  })
+  @Max(MINUTOS_ESPERA_MAXIMO, {
+    message: `«Atención desde» puede ser como máximo ${MINUTOS_ESPERA_MAXIMO} minutos`,
+  })
+  minutosEsperaAtencion?: number;
+
+  @ValidateIf((_dto, valor) => valor !== undefined)
+  @IsInt({ message: '«Demorado desde» debe ser un número entero de minutos' })
+  @Min(MINUTOS_ESPERA_MINIMO, {
+    message: `«Demorado desde» debe ser al menos ${MINUTOS_ESPERA_MINIMO} minuto`,
+  })
+  @Max(MINUTOS_ESPERA_MAXIMO, {
+    message: `«Demorado desde» puede ser como máximo ${MINUTOS_ESPERA_MAXIMO} minutos`,
+  })
+  minutosEsperaDemorado?: number;
+
+  @ValidateIf((_dto, valor) => valor !== undefined)
+  @IsInt({
+    message: '«Demora alta desde» debe ser un número entero de minutos',
+  })
+  @Min(MINUTOS_ESPERA_MINIMO, {
+    message: `«Demora alta desde» debe ser al menos ${MINUTOS_ESPERA_MINIMO} minuto`,
+  })
+  @Max(MINUTOS_ESPERA_MAXIMO, {
+    message: `«Demora alta desde» puede ser como máximo ${MINUTOS_ESPERA_MAXIMO} minutos`,
+  })
+  minutosEsperaDemoraAlta?: number;
 }

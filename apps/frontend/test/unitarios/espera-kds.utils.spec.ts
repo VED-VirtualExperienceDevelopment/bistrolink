@@ -3,6 +3,7 @@ import {
   UMBRALES_ESPERA_POR_DEFECTO,
   minutosDeEspera,
   nivelDeEspera,
+  sonUmbralesValidos,
   textoEspera,
 } from "@/components/kds/espera-kds.utils";
 
@@ -99,5 +100,35 @@ describe("ETIQUETA_NIVEL_ESPERA", () => {
       demorado: "Demorado",
       "demora-alta": "Demora alta",
     });
+  });
+});
+
+describe("sonUmbralesValidos (BL-506)", () => {
+  it("[TC-U-483] acepta enteros positivos de menor a mayor y rechaza el resto", () => {
+    expect(
+      sonUmbralesValidos({ atencion: 30, demorado: 60, demoraAlta: 120 }),
+    ).toBe(true);
+    expect(
+      sonUmbralesValidos({ atencion: 1, demorado: 2, demoraAlta: 3 }),
+    ).toBe(true);
+
+    expect(sonUmbralesValidos(null)).toBe(false);
+    expect(sonUmbralesValidos("30,60,120")).toBe(false);
+    expect(sonUmbralesValidos({ atencion: 30, demorado: 60 })).toBe(false);
+    expect(
+      sonUmbralesValidos({ atencion: 0, demorado: 60, demoraAlta: 120 }),
+    ).toBe(false);
+    expect(
+      sonUmbralesValidos({ atencion: 30.5, demorado: 60, demoraAlta: 120 }),
+    ).toBe(false);
+    expect(
+      sonUmbralesValidos({ atencion: "30", demorado: 60, demoraAlta: 120 }),
+    ).toBe(false);
+    expect(
+      sonUmbralesValidos({ atencion: 60, demorado: 60, demoraAlta: 120 }),
+    ).toBe(false);
+    expect(
+      sonUmbralesValidos({ atencion: 30, demorado: 130, demoraAlta: 120 }),
+    ).toBe(false);
   });
 });

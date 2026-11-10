@@ -16,6 +16,9 @@ const COLA_DESACTIVADA = {
   minutosEstimados: 15,
   orden: [],
 };
+// HU-038 (BL-506): umbrales de espera del local.
+const UMBRALES_LOCAL = { atencion: 20, demorado: 40, demoraAlta: 90 };
+
 const COLA_ACTIVA = {
   activa: true,
   limite: 5,
@@ -51,6 +54,7 @@ describe('KdsGateway', () => {
     transicionar: jest.Mock;
     obtenerResumen: jest.Mock;
     estadoCola: jest.Mock;
+    umbralesEspera: jest.Mock;
   };
   let mockModuleRef: { resolve: jest.Mock };
 
@@ -63,6 +67,8 @@ describe('KdsGateway', () => {
       // HU-042 (BL-464): cola desactivada por defecto, así los tests
       // anteriores no reciben eventos de cola.
       estadoCola: jest.fn().mockResolvedValue(COLA_DESACTIVADA),
+      // HU-038 (BL-506): umbrales que el KDS recibe al conectar.
+      umbralesEspera: jest.fn().mockResolvedValue(UMBRALES_LOCAL),
     };
     mockModuleRef = {
       resolve: jest.fn().mockResolvedValue(mockPedidosTransicion),
@@ -607,6 +613,7 @@ describe('KdsGateway', () => {
       ).toHaveBeenCalledWith(TENANT_ID);
       expect(client.emit.mock.calls.map(([evento]) => evento)).toEqual([
         'pedidos:snapshot',
+        'kds:umbrales-espera',
         'llamados:snapshot',
       ]);
       expect(client.emit).toHaveBeenCalledWith('llamados:snapshot', [
@@ -651,6 +658,7 @@ describe('KdsGateway', () => {
       ).not.toHaveBeenCalled();
       expect(client.emit.mock.calls.map(([evento]) => evento)).toEqual([
         'pedidos:snapshot',
+        'kds:umbrales-espera',
       ]);
     });
 
@@ -1093,6 +1101,7 @@ describe('KdsGateway', () => {
 
       expect(client.emit.mock.calls.map(([evento]) => evento)).toEqual([
         'pedidos:snapshot',
+        'kds:umbrales-espera',
         'cola:actualizada',
       ]);
       expect(client.emit).toHaveBeenCalledWith('cola:actualizada', COLA_ACTIVA);
@@ -1257,6 +1266,59 @@ describe('KdsGateway', () => {
       });
 
       expect(mockPedidosTransicion.estadoCola).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('HU-038 (BL-506): umbrales de espera', () => {
+    it('[TC-U-475] al conectarse, el KDS (también Cocina) recibe los umbrales de su local después del snapshot', async () => {
+      mockWsAuth.verify.mockResolvedValue({
+        sub: 'cocina-1',
+        tenantId: TENANT_ID,
+        roles: ['COCINA'],
+      });
+      const client = mockClient();
+
+      await gateway.handleConnection(client as any);
+
+      expect(mockPedidosTransicion.umbralesEspera).toHaveBeenCalledWith(
+        TENANT_ID,
+      );
+      expect(client.emit).toHaveBeenCalledWith(
+        'kds:umbrales-espera',
+        UMBRALES_LOCAL,
+      );
+    });
+
+    it('[TC-U-476] si fallan los umbrales, la conexión sigue y el snapshot de pedidos ya salió', async () => {
+      mockWsAuth.verify.mockResolvedValue({
+        sub: 'mozo-1',
+        tenantId: TENANT_ID,
+        roles: ['MOZO'],
+      });
+      mockPedidosTransicion.umbralesEspera.mockRejectedValue(
+        new Error('timeout'),
+      );
+      const client = mockClient();
+
+      await gateway.handleConnection(client as any);
+
+      expect(client.emit).toHaveBeenCalledWith('pedidos:snapshot', []);
+      expect(client.emit).not.toHaveBeenCalledWith(
+        'kds:umbrales-espera',
+        expect.anything(),
+      );
+      expect(client.disconnect).not.toHaveBeenCalled();
+    });
+
+    it('[TC-U-477] emitirUmbralesEspera avisa a todo el staff del tenant, no a los comensales', () => {
+      gateway.emitirUmbralesEspera(TENANT_ID, UMBRALES_LOCAL);
+
+      expect(mockServer.to).toHaveBeenCalledTimes(1);
+      expect(mockServer.to).toHaveBeenCalledWith(`tenant:${TENANT_ID}`);
+      expect(mockServer.emit).toHaveBeenCalledWith(
+        'kds:umbrales-espera',
+        UMBRALES_LOCAL,
+      );
     });
   });
 });

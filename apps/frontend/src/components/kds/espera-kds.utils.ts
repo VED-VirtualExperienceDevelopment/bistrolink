@@ -21,8 +21,9 @@ export interface UmbralesEspera {
 }
 
 /**
- * Valores por defecto. Cada local los puede cambiar en Configuración › Cocina;
- * mientras no lo haga, se usan estos.
+ * Valores por defecto. Cada local los puede cambiar en Configuración › Cocina
+ * (BL-506): el tablero los recibe por el socket. Mientras no lleguen, se usan
+ * estos. Son los mismos que el backend (src/pedidos/umbrales-espera.ts).
  */
 export const UMBRALES_ESPERA_POR_DEFECTO: Readonly<UmbralesEspera> = {
   atencion: 30,
@@ -75,4 +76,22 @@ export function textoEspera(minutos: number): string {
   const horas = Math.floor(minutos / 60);
   const resto = minutos % 60;
   return resto === 0 ? `hace ${horas} h` : `hace ${horas} h ${resto} min`;
+}
+
+/**
+ * HU-038 (BL-506): controla los umbrales que llegan por el socket
+ * (`kds:umbrales-espera`) antes de usarlos: enteros positivos y de menor a
+ * mayor. Si llegan mal, el tablero sigue con los que tenía.
+ */
+export function sonUmbralesValidos(valor: unknown): valor is UmbralesEspera {
+  if (typeof valor !== "object" || valor === null) return false;
+  const { atencion, demorado, demoraAlta } = valor as Record<string, unknown>;
+  const enteros = [atencion, demorado, demoraAlta].every(
+    (minutos) => Number.isInteger(minutos) && (minutos as number) > 0,
+  );
+  return (
+    enteros &&
+    (atencion as number) < (demorado as number) &&
+    (demorado as number) < (demoraAlta as number)
+  );
 }

@@ -32,6 +32,10 @@ const RESTAURANTE_ACTUAL = {
   limitePedidosEnPreparacion: null,
   umbralAlertaCola: 10,
   minutosPreparacionEstimados: 15,
+  // HU-038 (BL-506): umbrales de espera por defecto.
+  minutosEsperaAtencion: 30,
+  minutosEsperaDemorado: 60,
+  minutosEsperaDemoraAlta: 120,
 };
 
 describe('ConfiguracionEstablecimientoService (HU-020, BL-72)', () => {
@@ -41,6 +45,7 @@ describe('ConfiguracionEstablecimientoService (HU-020, BL-72)', () => {
   let kdsGateway: {
     emitirPedidoActualizado: jest.Mock;
     avisarEstadoCola: jest.Mock;
+    emitirUmbralesEspera: jest.Mock;
   };
   let service: ConfiguracionEstablecimientoService;
 
@@ -79,6 +84,7 @@ describe('ConfiguracionEstablecimientoService (HU-020, BL-72)', () => {
     kdsGateway = {
       emitirPedidoActualizado: jest.fn(),
       avisarEstadoCola: jest.fn().mockResolvedValue(undefined),
+      emitirUmbralesEspera: jest.fn(),
     };
     service = new ConfiguracionEstablecimientoService(
       tenantPrisma as unknown as TenantPrismaService,
@@ -342,6 +348,105 @@ describe('ConfiguracionEstablecimientoService (HU-020, BL-72)', () => {
       );
 
       expect(kdsGateway.avisarEstadoCola).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('HU-038 (BL-506): umbrales de espera del KDS', () => {
+    it('[TC-U-471] cambiar los umbrales: los guarda, los audita con antes y después y avisa al KDS después del commit', async () => {
+      const configuracion = await service.actualizar(
+        TENANT_ID,
+        {
+          minutosEsperaAtencion: 20,
+          minutosEsperaDemorado: 40,
+          minutosEsperaDemoraAlta: 90,
+        },
+        ACTOR,
+      );
+
+      expect(tx.restaurante.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: {
+            minutosEsperaAtencion: 20,
+            minutosEsperaDemorado: 40,
+            minutosEsperaDemoraAlta: 90,
+          },
+        }),
+      );
+      expect(auditLog.registrarEnTx).toHaveBeenCalledWith(
+        tx,
+        expect.objectContaining({
+          antes: {
+            minutosEsperaAtencion: 30,
+            minutosEsperaDemorado: 60,
+            minutosEsperaDemoraAlta: 120,
+          },
+          despues: {
+            minutosEsperaAtencion: 20,
+            minutosEsperaDemorado: 40,
+            minutosEsperaDemoraAlta: 90,
+          },
+        }),
+      );
+      expect(configuracion).toMatchObject({
+        minutosEsperaAtencion: 20,
+        minutosEsperaDemorado: 40,
+        minutosEsperaDemoraAlta: 90,
+      });
+      expect(kdsGateway.emitirUmbralesEspera).toHaveBeenCalledWith(TENANT_ID, {
+        atencion: 20,
+        demorado: 40,
+        demoraAlta: 90,
+      });
+      // No son de la cola: no hace falta avisar el estado de la cola.
+      expect(kdsGateway.avisarEstadoCola).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      [
+        { minutosEsperaAtencion: 60 },
+        '«Demorado desde» tiene que ser mayor que «Atención desde»',
+      ],
+      [
+        { minutosEsperaDemoraAlta: 50 },
+        '«Demora alta desde» tiene que ser mayor que «Demorado desde»',
+      ],
+      [
+        { minutosEsperaDemorado: 120, minutosEsperaDemoraAlta: 120 },
+        '«Demora alta desde» tiene que ser mayor que «Demorado desde»',
+      ],
+    ])(
+      '[TC-U-472] umbrales fuera de orden (%p): 400 sin escribir, auditar ni avisar',
+      async (dto, mensaje) => {
+        await expect(service.actualizar(TENANT_ID, dto, ACTOR)).rejects.toThrow(
+          new BadRequestException(mensaje),
+        );
+        expect(tx.restaurante.update).not.toHaveBeenCalled();
+        expect(auditLog.registrarEnTx).not.toHaveBeenCalled();
+        expect(kdsGateway.emitirUmbralesEspera).not.toHaveBeenCalled();
+      },
+    );
+
+    it('[TC-U-473] el orden se controla con lo guardado: cambiar solo uno que respeta el orden se acepta', async () => {
+      await service.actualizar(TENANT_ID, { minutosEsperaAtencion: 45 }, ACTOR);
+
+      expect(tx.restaurante.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { minutosEsperaAtencion: 45 } }),
+      );
+      expect(kdsGateway.emitirUmbralesEspera).toHaveBeenCalledWith(TENANT_ID, {
+        atencion: 45,
+        demorado: 60,
+        demoraAlta: 120,
+      });
+    });
+
+    it('[TC-U-474] mandar los mismos umbrales o cambiar otra cosa no avisa al KDS', async () => {
+      await service.actualizar(
+        TENANT_ID,
+        { minutosEsperaAtencion: 30, propinasSugeridas: [10, 15] },
+        ACTOR,
+      );
+
+      expect(kdsGateway.emitirUmbralesEspera).not.toHaveBeenCalled();
     });
   });
 });

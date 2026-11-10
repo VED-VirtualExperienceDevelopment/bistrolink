@@ -13,7 +13,12 @@ import {
   textoContadorCola,
   type EstadoCola,
 } from './cola-kds.utils';
-import { INTERVALO_RELOJ_MS } from './espera-kds.utils';
+import {
+  INTERVALO_RELOJ_MS,
+  UMBRALES_ESPERA_POR_DEFECTO,
+  sonUmbralesValidos,
+  type UmbralesEspera,
+} from './espera-kds.utils';
 import { useReloj } from './useReloj';
 import type { Pedido } from '@/types/pedido';
 
@@ -51,6 +56,11 @@ export function KdsBoard() {
   // comandas con el tiempo de espera y el color al día, aunque no llegue
   // ningún evento por el socket.
   const ahora = useReloj(INTERVALO_RELOJ_MS);
+  // HU-038 (BL-506): umbrales de espera del local. Llegan al conectar y cada
+  // vez que el administrador los cambia en Configuración.
+  const [umbrales, setUmbrales] = useState<UmbralesEspera>(
+    UMBRALES_ESPERA_POR_DEFECTO,
+  );
 
   const conectado = alertas ? alertas.conectado : conectadoPropio;
   // BL-460: este tablero solo muestra las comandas. Los llamados de mesa y los
@@ -111,6 +121,12 @@ export function KdsBoard() {
       setCola(estado.activa ? estado : null);
     };
 
+    // HU-038 (BL-506): si llegan mal formados, se ignoran y el tablero sigue
+    // con los que tenía.
+    const alUmbralesEspera = (valor: unknown) => {
+      if (sonUmbralesValidos(valor)) setUmbrales(valor);
+    };
+
     const alError = (err: { message: string }) => {
       setLoadError(err.message);
       setLoading(false);
@@ -120,6 +136,7 @@ export function KdsBoard() {
     socket.on('pedido:nuevo', alPedidoNuevo);
     socket.on('pedido:actualizado', alPedidoActualizado);
     socket.on('cola:actualizada', alColaActualizada);
+    socket.on('kds:umbrales-espera', alUmbralesEspera);
     socket.on('error', alError);
 
     // Solo el /kds de COCINA maneja su propia conexión.
@@ -138,6 +155,7 @@ export function KdsBoard() {
       socket.off('pedido:nuevo', alPedidoNuevo);
       socket.off('pedido:actualizado', alPedidoActualizado);
       socket.off('cola:actualizada', alColaActualizada);
+      socket.off('kds:umbrales-espera', alUmbralesEspera);
       socket.off('error', alError);
       if (propio) {
         socket.off('connect', alConectar);
@@ -239,6 +257,7 @@ export function KdsBoard() {
                   puedeOperarTransiciones={puedeOperarTransiciones}
                   onTransicion={emitirTransicion}
                   ahora={ahora}
+                  umbrales={umbrales}
                   colaActiva={colaActiva}
                   onCancelar={abrirCancelacion}
                 />
@@ -275,6 +294,7 @@ export function KdsBoard() {
                     puedeOperarTransiciones={puedeOperarTransiciones}
                     onTransicion={emitirTransicion}
                     ahora={ahora}
+                    umbrales={umbrales}
                     colaActiva
                     posicionEnCola={posicion}
                     onCancelar={abrirCancelacion}

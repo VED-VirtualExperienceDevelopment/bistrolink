@@ -162,4 +162,33 @@ describe('ActualizarConfiguracionDto (HU-020, BL-72)', () => {
       },
     );
   });
+
+  describe('HU-038 (BL-506): umbrales de espera del KDS', () => {
+    it('[TC-U-469] acepta los tres umbrales enteros dentro del rango', async () => {
+      expect(
+        await errores({
+          minutosEsperaAtencion: 30,
+          minutosEsperaDemorado: 60,
+          minutosEsperaDemoraAlta: 120,
+        }),
+      ).toEqual([]);
+      expect(await errores({ minutosEsperaAtencion: 1 })).toEqual([]);
+      expect(await errores({ minutosEsperaDemoraAlta: 600 })).toEqual([]);
+    });
+
+    it.each([
+      ['minutosEsperaAtencion', 0],
+      ['minutosEsperaAtencion', 601],
+      ['minutosEsperaAtencion', null],
+      ['minutosEsperaDemorado', 12.5],
+      ['minutosEsperaDemorado', '60'],
+      ['minutosEsperaDemoraAlta', -5],
+      ['minutosEsperaDemoraAlta', null],
+    ])(
+      '[TC-U-470] rechaza %s = %p (fuera de rango, no entero o null)',
+      async (campo, valor) => {
+        expect(await errores({ [campo]: valor })).toEqual([campo]);
+      },
+    );
+  });
 });
