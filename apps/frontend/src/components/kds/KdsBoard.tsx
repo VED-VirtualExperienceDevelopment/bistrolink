@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import { useKeycloakAuth } from '@/components/providers/KeycloakProvider';
 import { useAlertas } from '@/components/alertas/AlertasProvider';
+import { IndicadorConexion } from '@/components/conexion/IndicadorConexion';
+import { useEstadoConexion } from '@/components/conexion/useEstadoConexion';
 import { OrderTicket } from './OrderTicket';
 import { CancelarPedidoDialog } from './CancelarPedidoDialog';
 import { nombreDelMedio, type PedidoCancelado } from './cancelacion.utils';
@@ -44,7 +46,9 @@ export function KdsBoard() {
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [conectadoPropio, setConectadoPropio] = useState(false);
+  // HU-038 (BL-504): socket propio del /kds de Cocina, para el indicador de
+  // conexión. Dentro de /admin/* se usa el compartido.
+  const [socketPropio, setSocketPropio] = useState<Socket | null>(null);
   // HU-042 (BL-466): estado de la cola. null = desactivada (o el servidor
   // todavía no lo mandó): el tablero se ve como siempre.
   const [cola, setCola] = useState<EstadoCola | null>(null);
@@ -62,7 +66,10 @@ export function KdsBoard() {
     UMBRALES_ESPERA_POR_DEFECTO,
   );
 
-  const conectado = alertas ? alertas.conectado : conectadoPropio;
+  // HU-038 (BL-504): conectando / conectado / reconectando / desconectado.
+  const estadoConexion = useEstadoConexion(
+    enShell ? socketCompartido : socketPropio,
+  );
   // BL-460: este tablero solo muestra las comandas. Los llamados de mesa y los
   // avisos de pago en efectivo se atienden desde la campana y la pantalla
   // Alertas; el pedido listo se entrega con el botón de su comanda.
@@ -80,6 +87,7 @@ export function KdsBoard() {
         reconnectionDelay: 1000,
         reconnectionDelayMax: 5000,
       });
+      setSocketPropio(socket);
     } else {
       // El socket compartido puede estar ya conectado: el servidor mandó el
       // estado inicial antes de que este tablero existiera, así que se lo
@@ -139,14 +147,9 @@ export function KdsBoard() {
     socket.on('kds:umbrales-espera', alUmbralesEspera);
     socket.on('error', alError);
 
-    // Solo el /kds de COCINA maneja su propia conexión.
-    const alConectar = () => setConectadoPropio(true);
-    const alDesconectar = () => setConectadoPropio(false);
-
-    if (propio) {
-      socket.on('connect', alConectar);
-      socket.on('disconnect', alDesconectar);
-    } else if (socket.connected) {
+    // El estado de la conexión lo sigue useEstadoConexion (HU-038, BL-504).
+    // Con el socket compartido ya conectado, se piden los pedidos de nuevo.
+    if (!propio && socket.connected) {
       socket.emit('pedidos:sync');
     }
 
@@ -158,10 +161,9 @@ export function KdsBoard() {
       socket.off('kds:umbrales-espera', alUmbralesEspera);
       socket.off('error', alError);
       if (propio) {
-        socket.off('connect', alConectar);
-        socket.off('disconnect', alDesconectar);
         // El socket compartido lo cierra AlertasProvider, no este tablero.
         socket.disconnect();
+        setSocketPropio(null);
       }
       socketRef.current = null;
     };
@@ -218,7 +220,19 @@ export function KdsBoard() {
   })();
 
   let contenido;
-  if (loading) {
+  if (loading && estadoConexion === 'desconectado') {
+    // HU-038 (BL-504): antes, si la primera conexión fallaba, el tablero
+    // quedaba con la ruedita para siempre.
+    contenido = (
+      <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center text-body-lg text-on-surface-variant">
+        <span>No se pudo conectar con el servidor.</span>
+        <span className="text-body-md">
+          Se sigue intentando: los pedidos aparecen solos cuando vuelva la
+          conexión.
+        </span>
+      </div>
+    );
+  } else if (loading) {
     contenido = (
       <div className="flex flex-1 items-center justify-center">
         <span className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
@@ -234,9 +248,6 @@ export function KdsBoard() {
     contenido = (
       <div className="flex flex-1 flex-col items-center justify-center gap-2 text-body-md text-on-surface-variant">
         <span>No hay pedidos activos en este momento.</span>
-        {!conectado && (
-          <span className="text-label-md text-error">Reconectando con el servidor…</span>
-        )}
       </div>
     );
   } else {
@@ -336,11 +347,11 @@ export function KdsBoard() {
         onClose={() => setACancelar(null)}
         onCancelado={cancelado}
       />
-      {!conectado && !loading && (
-        <div role="status" className="shrink-0 rounded-lg bg-tertiary-container px-3 py-1.5 text-label-md text-on-tertiary-container">
-          Reconectando…
-        </div>
-      )}
+      {/* HU-038 (BL-504): siempre visible, para saber de un vistazo si la
+          pantalla está al día. */}
+      <div className="flex shrink-0 justify-end">
+        <IndicadorConexion estado={estadoConexion} />
+      </div>
       {/* HU-042 (BL-466): ocupación de la cocina y alerta de alta demanda.
           aria-live para que el lector de pantalla lo anuncie sin mover el
           foco. */}
