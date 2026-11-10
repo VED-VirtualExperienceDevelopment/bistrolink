@@ -14,7 +14,7 @@ import { conPagoFalso } from './support/pago-falso';
 // BL-502: «Mis pedidos» del comensal en la mesa (POST /pedidos/mesa/estado)
 // y acceso a un pedido de mesa solo en la sesión abierta (RD.05).
 //
-// Todo real (Keycloak, base, RLS y guards) salvo la pasarela y el CFE. Las
+// Con Keycloak, base, RLS y guards reales; falsos solo la pasarela y el CFE. Las
 // mesas 82 y 83 son de este test: se abren con una sesión propia y quedan
 // libres al terminar.
 

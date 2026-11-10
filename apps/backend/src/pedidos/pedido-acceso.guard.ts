@@ -45,7 +45,7 @@ export const MENSAJE_PEDIDO_DE_OTRA_SESION =
  * BL-502: margen por diferencia de relojes. La apertura de la sesión la
  * fecha el backend y la creación del pedido, la base. Un grupo nuevo no
  * puede sentarse a la mesa 2 minutos después de un pedido del anterior: la
- * mesa se cierra con todo entregado y pasa por limpieza.
+ * mesa se cierra con los pedidos entregados y pasa por limpieza.
  */
 export const MARGEN_RELOJ_SESION_MS = 2 * 60 * 1000;
 

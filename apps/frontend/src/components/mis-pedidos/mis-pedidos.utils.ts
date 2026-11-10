@@ -206,7 +206,8 @@ const TEXTO_RESUMEN: Partial<Record<EstadoPedido, [string, string]>> = {
 
 /**
  * Segunda línea del botón «Mis pedidos»: el estado más avanzado de los que
- * faltan («1 listo», «2 en preparación») o «Todo entregado».
+ * faltan («1 listo», «2 en preparación») o, si ya llegaron todos, que
+ * están entregados.
  */
 export function resumenMisPedidos(pedidos: readonly PedidoDeLaMesa[]): string {
   for (const estado of PRIORIDAD) {
