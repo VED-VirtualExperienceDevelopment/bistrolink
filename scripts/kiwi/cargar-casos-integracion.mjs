@@ -1304,6 +1304,18 @@ const DATOS_E2E = {
     priority: "P2",
     tags: ["BL-496", "BL-495", "propina"],
   }),
+  // BL-470: «Ir a cobrar» desde el aviso de efectivo de las alertas, en
+  // admin/ir-a-cobrar.spec.ts. TC-E-098 y 099 ya son de HU-040.
+  100: e2e("mozo", "HU-031b", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-470", "BL-441", "alertas", "pagos", "efectivo", ...axe],
+  }),
+  101: e2e("mozo", "HU-031b", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-470", "alertas", "pagos"],
+  }),
 };
 /**
  * Datos de los contratos PactJS (TC-C). Requirement con la HU que usa el

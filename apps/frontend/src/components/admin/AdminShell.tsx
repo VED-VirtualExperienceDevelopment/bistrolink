@@ -7,7 +7,6 @@ import UsuarioSesion from '@/components/sesion/UsuarioSesion';
 import { AlertasProvider } from '@/components/alertas/AlertasProvider';
 import { CampanaAlertas } from '@/components/alertas/CampanaAlertas';
 import { ContadorMenuAlertas } from '@/components/alertas/ContadorMenuAlertas';
-import CampanaStock from '@/components/admin/stock/CampanaStock';
 
 // BL-441: la pantalla de alertas.
 const HREF_ALERTAS = '/admin/alertas';
@@ -286,8 +285,8 @@ export default function AdminShell({
               </div>
             </div>
             <div className="flex items-center gap-2">
-              {/* HU-015 (BL-120): alertas de stock, solo el Administrador. */}
-              {hasRole('ADMIN') && <CampanaStock />}
+              {/* BL-470: una sola campana. El Administrador ve ahí también las
+                  alertas de stock (antes tenía una campana aparte). */}
               <CampanaAlertas />
               {/* BL-350: quién inició sesión. «Cerrar sesión» del menú lateral
                   se mantiene; este también lo ofrece. */}

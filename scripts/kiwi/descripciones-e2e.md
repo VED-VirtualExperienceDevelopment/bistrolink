@@ -31,6 +31,8 @@
 | 1.24    | 10/11/2026 | TC-E-091 y 092: monitor de Cocina de solo lectura, sin scroll, con resumen grande y accesible (HU-038, BL-510). |
 | 1.25    | 10/11/2026 | TC-E-093 a 097: propina en el pago del comensal, en los cobros del mozo y en Reportes (HU-022, BL-496). Renumerados desde TC-E-087 a 091, que ya eran de KDS (BL-512). |
 
+| 1.26    | 10/11/2026 | TC-E-069 a 071 cambian: las alertas de stock están en la campana de Alertas. TC-E-100 y 101: «Ir a cobrar» desde el aviso de efectivo (BL-470). TC-E-098 y 099 ya son de HU-040. |
+
 Plantilla para cargar en Kiwi la descripción de casos TC-E (Playwright)
 nuevos o que cambiaron (BL-435). La usa
 `cargar-casos-integracion.mjs --e2e --descripciones`.
@@ -319,3 +321,103 @@ Igual que TC-E-096, sin llegar a pagar.
 1. —
 2. El resumen muestra la línea Propina y el Total $ 640.
 3. Desaparece la línea Propina, el Total vuelve a $ 590 y el botón dice «Pagar $ 590».
+
+## TC-E-069
+
+### Precondición
+
+Administrador del establecimiento del seed logueado. El test crea por la API una categoría con un ítem de prueba y la borra al terminar.
+
+### Pasos
+
+1. Abrir «Stock» desde el menú.
+2. En el ítem de prueba, activar «Controlar stock», cargar 2 unidades y avisar en 3.
+3. Tocar «Guardar».
+4. Abrir la campana de Alertas.
+5. Revisar la accesibilidad de la pantalla.
+
+### Resultado esperado
+
+1. Se ve «Stock de la jornada». Sin control de stock, los campos y «Guardar» están deshabilitados.
+2. Aparece «Hay 1 ítem con cambios sin guardar.».
+3. Se guarda solo el ítem de prueba y aparece «Se guardó 1 ítem.». La fila dice «Por agotarse».
+4. La vista rápida tiene la sección «Stock» con el ítem: «Quedan 2 · aviso en 3».
+5. Sin errores graves de accesibilidad (axe, WCAG 2.1 AA).
+
+## TC-E-070
+
+### Precondición
+
+Igual que TC-E-069, con el ítem de prueba agotado (0 unidades, aviso en 5).
+
+### Pasos
+
+1. Abrir el mapa de mesas.
+2. Abrir la campana de Alertas y buscar el ítem.
+3. Presionar Esc.
+4. Abrir la campana y tocar «Reponer stock» en el ítem.
+5. Escribir «2,5» y tocar «Guardar».
+6. Escribir «20» y tocar «Guardar».
+7. Abrir la campana.
+
+### Resultado esperado
+
+1. Hay una sola campana (no está la de stock de antes).
+2. La tarjeta del ítem dice «Agotado» y no tiene «Desestimar».
+3. La vista rápida se cierra y el foco vuelve a la campana.
+4. Se abre el diálogo «Reponer stock», con el foco en el campo, y la vista rápida se cierra.
+5. Aparece «Usá un número entero, sin decimales.» y el campo queda marcado como inválido.
+6. El diálogo se cierra y el foco vuelve a la campana.
+7. El ítem ya no está en las alertas.
+
+## TC-E-071
+
+### Precondición
+
+Mozo del establecimiento del seed logueado.
+
+### Pasos
+
+1. Abrir el mapa de mesas.
+2. Abrir la campana de Alertas.
+3. Entrar a la ruta de Stock de la jornada.
+
+### Resultado esperado
+
+1. El menú no tiene «Stock».
+2. La vista rápida no tiene la sección «Stock» ni el enlace «Ver el stock de la jornada».
+3. Vuelve al mapa de mesas.
+
+## TC-E-100
+
+### Precondición
+
+Mozo del establecimiento del seed logueado. Efectivo habilitado (valor por defecto). La mesa del seed abierta.
+
+### Pasos
+
+1. Como comensal, desde el QR de la mesa, agregar un ítem, elegir «Efectivo», decir con cuánto paga y tocar «Avisar al mozo».
+2. Como mozo, abrir la campana de Alertas.
+3. En el aviso de efectivo, tocar «Ir a cobrar».
+4. Revisar la pantalla y su accesibilidad.
+
+### Resultado esperado
+
+1. El comensal ve «Esperando al mozo».
+2. El aviso «Mesa N quiere pagar en efectivo» muestra «Ir a cobrar» y «Desestimar» (no «Aceptar»).
+3. Se llega a Cobros pendientes con el pedido en la dirección.
+4. La fila del pedido tiene la etiqueta «Aviso de efectivo», se anuncia «Pedido #… de la mesa N, esperando cobro.» y el foco está en su «Cobrar en efectivo». El diálogo de cobro no se abre solo. Sin errores graves de accesibilidad (axe, WCAG 2.1 AA).
+
+## TC-E-101
+
+### Precondición
+
+Mozo del establecimiento del seed logueado.
+
+### Pasos
+
+1. Abrir Cobros pendientes con un pedido que no está pendiente de cobro en la dirección.
+
+### Resultado esperado
+
+1. Se anuncia «Ese pedido ya no está pendiente de cobro.», no se destaca ningún pedido y la dirección queda sin el pedido.

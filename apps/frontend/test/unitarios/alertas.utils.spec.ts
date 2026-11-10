@@ -3,6 +3,7 @@ import type { LlamadoMozo } from "@/components/kds/llamado.utils";
 import {
   UMBRAL_DEMORA_MS,
   agregarLlamadoConservandoEspera,
+  anuncioLlamado,
   detalleEfectivo,
   esDemorada,
   etiquetaCampana,
@@ -157,6 +158,20 @@ describe("tituloAlerta y detalleEfectivo", () => {
   it("omite 'paga con' si el comensal no lo indicó", () => {
     expect(detalleEfectivo({ ...efectivo, pagaCon: null })).toBe(
       `Total ${formatearMonto("1220.00")}`,
+    );
+  });
+});
+
+describe("anuncioLlamado (BL-470)", () => {
+  it("anuncia un llamado de mesa", () => {
+    expect(anuncioLlamado(atencion)).toBe(
+      "Nueva alerta: Mesa 5 solicita atención",
+    );
+  });
+
+  it("anuncia un aviso de pago en efectivo", () => {
+    expect(anuncioLlamado(efectivo)).toBe(
+      "Nueva alerta: Mesa 3 quiere pagar en efectivo",
     );
   });
 });

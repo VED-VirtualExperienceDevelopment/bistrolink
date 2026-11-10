@@ -366,3 +366,52 @@ export function mensajePendienteCancelado(
 ): string {
   return `Pedido ${codigoDelPedido(cancelado.pedidoId)} cancelado. No se cobró y no pasa a cocina.`;
 }
+
+// ── BL-470: «Ir a cobrar» desde las alertas ────────────────────────────────
+
+/** Pantalla de cobros pendientes y el parámetro con el pedido a destacar. */
+export const RUTA_PANTALLA_COBROS = "/admin/cobros";
+export const PARAM_PEDIDO = "pedido";
+
+/** Adónde lleva «Ir a cobrar»: con el pedido, si el aviso lo trae. */
+export function rutaCobrarPedido(pedidoId?: string): string {
+  if (!pedidoId) return RUTA_PANTALLA_COBROS;
+  return `${RUTA_PANTALLA_COBROS}?${PARAM_PEDIDO}=${encodeURIComponent(pedidoId)}`;
+}
+
+export const AVISO_PEDIDO_NO_PENDIENTE =
+  "Ese pedido ya no está pendiente de cobro.";
+
+/** Lo que se anuncia al llegar con un pedido destacado. */
+export function anuncioPedidoDestacado(pedido: PedidoPendienteDeCobro): string {
+  const lugar = pedido.mesa.esVirtual
+    ? "para retirar"
+    : `de la mesa ${pedido.mesa.numero}`;
+  return `Pedido ${codigoDelPedido(pedido.id)} ${lugar}, esperando cobro.`;
+}
+
+export type PedidoDestacado =
+  | { tipo: "ninguno" }
+  | { tipo: "pendiente"; pedidoId: string; anuncio: string }
+  | { tipo: "no-pendiente"; anuncio: string };
+
+/**
+ * Qué hacer con el `?pedido=` de la URL una vez cargada la lista. Si el
+ * pedido sigue pendiente, se destaca; si no (ya se cobró, se canceló o no
+ * existe), se avisa y no se destaca nada.
+ */
+export function resolverPedidoDestacado(
+  pedidos: readonly PedidoPendienteDeCobro[],
+  pedidoId: string | null,
+): PedidoDestacado {
+  if (!pedidoId) return { tipo: "ninguno" };
+  const pedido = pedidos.find((p) => p.id === pedidoId);
+  if (!pedido) {
+    return { tipo: "no-pendiente", anuncio: AVISO_PEDIDO_NO_PENDIENTE };
+  }
+  return {
+    tipo: "pendiente",
+    pedidoId: pedido.id,
+    anuncio: anuncioPedidoDestacado(pedido),
+  };
+}
