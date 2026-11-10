@@ -25,6 +25,12 @@ interface MonitorCocinaProps {
 // Cocina no cambia estados (RD.06): las comandas no tienen botones.
 const SIN_TRANSICIONES = () => undefined;
 
+/**
+ * Identifica una comanda y su estado. Si cambia alguna, el monitor vuelve a
+ * medir cuántas tarjetas entran.
+ */
+const firmaDeComanda = (pedido: Pedido) => `${pedido.id}:${pedido.estado}`;
+
 const CLASE_DATO =
   'flex items-baseline gap-2 rounded-xl bg-surface-container px-4 py-2 text-on-surface';
 
@@ -130,7 +136,8 @@ export function MonitorCocina({
     return () => observador.disconnect();
   }, []);
 
-  const clave = `${comandas.map((p) => `${p.id}:${p.estado}`).join('|')}#${tamano}#${ahora}`;
+  const firmaComandas = comandas.map(firmaDeComanda).join('|');
+  const clave = `${firmaComandas}#${tamano}#${ahora}`;
   const visibles = ajuste.clave === clave ? ajuste.visibles : comandas.length;
 
   useLayoutEffect(() => {
