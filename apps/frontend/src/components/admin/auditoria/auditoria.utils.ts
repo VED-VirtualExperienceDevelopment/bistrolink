@@ -172,6 +172,8 @@ const NOMBRE_CAMPO: Record<string, string> = {
   plexoHabilitado: "Plexo",
   handyHabilitado: "Handy",
   propinasSugeridas: "Propinas sugeridas (%)",
+  // HU-022 (BL-495): preselección del 10 % en la pantalla de pago.
+  propinaPreseleccionada: "Preseleccionar el 10 % de propina",
   cfeProveedor: "Proveedor de CFE",
   // HU-042 (BL-465): cola del KDS. Sin límite (—) = cola desactivada.
   limitePedidosEnPreparacion: "Límite de pedidos en preparación",

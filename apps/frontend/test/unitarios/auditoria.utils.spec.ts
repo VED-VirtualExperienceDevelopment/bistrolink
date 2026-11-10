@@ -176,6 +176,16 @@ describe("cómo se muestra cada registro", () => {
     ).toEqual(["Razón social: modificado", "RUT: modificado"]);
   });
 
+  it("HU-022 (BL-495): la preselección de la propina se ve con su texto, no con el nombre del campo", () => {
+    expect(
+      cambiosDelRegistro({
+        valoresAntes: { propinaPreseleccionada: false },
+        valoresDespues: { propinaPreseleccionada: true },
+        detalle: { campos: ["propinaPreseleccionada"] },
+      }),
+    ).toEqual(["Preseleccionar el 10 % de propina: no → sí"]);
+  });
+
   it("el autor: el usuario del local, un proceso automático o la plataforma", () => {
     expect(
       autorDelRegistro({

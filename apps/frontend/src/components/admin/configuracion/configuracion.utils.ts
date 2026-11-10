@@ -22,6 +22,11 @@ export interface ConfiguracionEstablecimiento {
   plexoHabilitado: boolean;
   handyHabilitado: boolean;
   propinasSugeridas: number[];
+  /**
+   * HU-022 (BL-495): marcar el 10 % en la pantalla de pago del comensal.
+   * Opcional en el tipo: un backend anterior no lo trae (vale false).
+   */
+  propinaPreseleccionada?: boolean;
   cfeProveedor: CfeProveedor;
   /** Los que se pueden habilitar hoy (Plexo y Handy, fuera del MVP). */
   mediosPagoDisponibles: MedioPago[];
@@ -56,8 +61,10 @@ export interface FormularioConfiguracion {
   posHabilitado: boolean;
   plexoHabilitado: boolean;
   handyHabilitado: boolean;
-  /** Texto del campo, por ejemplo «10, 15, 20». */
+  /** Texto del campo, por ejemplo «5, 10, 15». */
   propinas: string;
+  /** HU-022 (BL-495): preseleccionar el 10 % para el comensal. */
+  propinaPreseleccionada: boolean;
   cfeProveedor: CfeProveedor;
   /** HU-036 (BL-206): vacío = sin correo. */
   emailPrivacidad: string;
@@ -94,6 +101,9 @@ export const PROPINA_MINIMA = 1;
 export const PROPINA_MAXIMA = 100;
 export const LARGO_MAXIMO_RAZON_SOCIAL = 200;
 export const LARGO_MAXIMO_EMAIL = 254;
+
+/** HU-022 (BL-495): el porcentaje que se marca si el local activa la opción. */
+export const PORCENTAJE_PRESELECCIONADO = 10;
 
 /** HU-042 (BL-465): rangos de la cola, los mismos que el backend. */
 export const LIMITE_PREPARACION = { minimo: 1, maximo: 50 } as const;
@@ -163,6 +173,8 @@ export function formularioDesde(
     plexoHabilitado: configuracion.plexoHabilitado,
     handyHabilitado: configuracion.handyHabilitado,
     propinas: textoDePropinas(configuracion.propinasSugeridas),
+    // HU-022 (BL-495): un backend anterior no lo trae: apagada, como el default.
+    propinaPreseleccionada: configuracion.propinaPreseleccionada ?? false,
     cfeProveedor: configuracion.cfeProveedor,
     emailPrivacidad: configuracion.emailPrivacidad ?? "",
     colaActiva: configuracion.limitePedidosEnPreparacion != null,
@@ -317,8 +329,7 @@ export function leerPropinas(
   if (partes.length === 0) return { propinas: [] };
   if (partes.some((p) => !/^\d+$/.test(p))) {
     return {
-      error:
-        "Escribí porcentajes enteros separados por comas, como 10, 15, 20.",
+      error: "Escribí porcentajes enteros separados por comas, como 5, 10, 15.",
     };
   }
   const propinas = partes.map(Number);
@@ -334,6 +345,22 @@ export function leerPropinas(
     return { error: `Podés sugerir hasta ${MAXIMO_PROPINAS} porcentajes.` };
   }
   return { propinas: [...propinas].sort((a, b) => a - b) };
+}
+
+/**
+ * HU-022 (BL-495): aviso cuando la preselección está activa pero el 10 % no
+ * está entre los porcentajes sugeridos (entonces no se marca nada). No
+ * bloquea el guardado. Si el campo de porcentajes tiene un error, no avisa:
+ * ese error ya se muestra en su campo.
+ */
+export function avisoPreseleccion(
+  formulario: FormularioConfiguracion,
+): string | null {
+  if (!formulario.propinaPreseleccionada) return null;
+  const lectura = leerPropinas(formulario.propinas);
+  if ("error" in lectura) return null;
+  if (lectura.propinas.includes(PORCENTAJE_PRESELECCIONADO)) return null;
+  return `El ${PORCENTAJE_PRESELECCIONADO} % no está en tus porcentajes sugeridos: mientras no lo agregues, no se va a marcar ninguna propina.`;
 }
 
 /** Error de la razón social, o null si está bien. */
@@ -406,6 +433,13 @@ export function cambiosParaGuardar(
     lectura.propinas.join(",") !== guardada.propinasSugeridas.join(",")
   ) {
     cambios.propinasSugeridas = lectura.propinas;
+  }
+  // HU-022 (BL-495): un backend anterior no lo trae: vale el default (false).
+  if (
+    formulario.propinaPreseleccionada !==
+    (guardada.propinaPreseleccionada ?? false)
+  ) {
+    cambios.propinaPreseleccionada = formulario.propinaPreseleccionada;
   }
   if (formulario.cfeProveedor !== guardada.cfeProveedor) {
     cambios.cfeProveedor = formulario.cfeProveedor;
