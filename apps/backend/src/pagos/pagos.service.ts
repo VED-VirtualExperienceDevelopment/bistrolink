@@ -153,9 +153,12 @@ export class PagosService {
     if ('existente' in reserva) {
       return reserva.existente; // idempotencia: misma clave, mismo pago
     }
-    const { pago, mesaId } = reserva;
-    // HU-017 (BL-60): el mapa de mesas muestra el cobro en curso.
-    this.pedidos.notificarEstadoMesa(tenantId, mesaId, 'EN_PROCESO_DE_PAGO');
+    const { pago, mesaId, mesaEnCobro } = reserva;
+    // HU-017 (BL-60): el mapa de mesas muestra el cobro en curso (la mesa
+    // virtual no está en el mapa: BL-509).
+    if (mesaEnCobro) {
+      this.pedidos.notificarEstadoMesa(tenantId, mesaId, 'EN_PROCESO_DE_PAGO');
+    }
 
     // Fase 2: cobrar FUERA de la transacción (la pasarela puede tardar).
     let resultado: ResultadoCobro;
@@ -456,10 +459,33 @@ export class PagosService {
             });
           }
 
-          await tx.mesa.update({
-            where: { id: pedido.mesaId },
+          // HU-017 (BL-509): la mesa pasa a EN_PROCESO_DE_PAGO solo si su
+          // sesión sigue abierta. Condicional y en la misma transacción que
+          // crea el pago: si el mozo la cerró después del control del guard,
+          // 409 en lugar de chocar con el CHECK de sesión (500). La mesa
+          // virtual (pedidos para retirar) no tiene sesión ni aparece en el
+          // mapa: no se toca.
+          const enCobro = await tx.mesa.updateMany({
+            where: {
+              id: pedido.mesaId,
+              esVirtual: false,
+              sesionId: { not: null },
+              estado: { in: ['OCUPADA', 'EN_PROCESO_DE_PAGO'] },
+            },
             data: { estado: 'EN_PROCESO_DE_PAGO' },
           });
+          const mesaEnCobro = enCobro.count > 0;
+          if (!mesaEnCobro) {
+            const mesa = await tx.mesa.findUnique({
+              where: { id: pedido.mesaId },
+              select: { esVirtual: true },
+            });
+            if (!mesa?.esVirtual) {
+              throw new ConflictException(
+                'La mesa está cerrada: no se puede iniciar el cobro',
+              );
+            }
+          }
           const pago = await tx.pago.create({
             data: {
               tenantId,
@@ -471,7 +497,7 @@ export class PagosService {
               estado: 'PENDIENTE',
             },
           });
-          return { pago, mesaId: pedido.mesaId };
+          return { pago, mesaId: pedido.mesaId, mesaEnCobro };
         },
       );
     } catch (error) {

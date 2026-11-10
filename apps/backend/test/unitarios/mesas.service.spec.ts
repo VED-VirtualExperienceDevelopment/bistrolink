@@ -335,6 +335,8 @@ describe('MesasService: sesión de mesa (HU-017, BL-60)', () => {
           }),
         ),
       },
+      // HU-017 (BL-509): cobros en curso en la mesa (default: ninguno).
+      pago: { count: jest.fn().mockResolvedValue(0) },
       pedido: {
         count: jest.fn().mockResolvedValue(0),
         findMany: jest.fn().mockResolvedValue([]),
@@ -530,6 +532,20 @@ describe('MesasService: sesión de mesa (HU-017, BL-60)', () => {
         service.cerrarSesion(TENANT_ID, MESA_ID, MOZO_KEYCLOAK_ID),
       ).rejects.toThrow(/pago en curso/);
       expect(mockTx.pedido.count).not.toHaveBeenCalled();
+    });
+
+    it('[BL-509] 409 si hay un pago PENDIENTE aunque la mesa esté OCUPADA, sin cancelar nada', async () => {
+      mockTx.pago.count.mockResolvedValue(1);
+
+      await expect(
+        service.cerrarSesion(TENANT_ID, MESA_ID, MOZO_KEYCLOAK_ID),
+      ).rejects.toThrow(/pago en curso/);
+      expect(mockTx.pago.count).toHaveBeenCalledWith({
+        where: { estado: 'PENDIENTE', pedido: { mesaId: MESA_ID } },
+      });
+      expect(mockTx.mesa.updateMany).not.toHaveBeenCalled();
+      expect(mockTx.pedido.updateMany).not.toHaveBeenCalled();
+      expect(mockKdsGateway.emitirEstadoMesa).not.toHaveBeenCalled();
     });
 
     it('409 si la mesa no está abierta', async () => {

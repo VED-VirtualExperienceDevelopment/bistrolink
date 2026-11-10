@@ -79,6 +79,8 @@ function crearTx() {
     mesa: {
       update: jest.fn(),
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      // HU-017 (BL-509): si la mesa no entró en cobro, ¿es la virtual?
+      findUnique: jest.fn().mockResolvedValue({ esVirtual: false }),
     },
     // HU-032 (BL-202): historial de estados del pago.
     pagoEstadoHistorial: { create: jest.fn() },
@@ -352,7 +354,7 @@ describe('PagosService.crear', () => {
 
       expect(tenantPrisma.runInTenantContext).not.toHaveBeenCalled();
       expect(tx.pago.create).not.toHaveBeenCalled();
-      expect(tx.mesa.update).not.toHaveBeenCalled();
+      expect(tx.mesa.updateMany).not.toHaveBeenCalled();
     });
   });
 
@@ -379,7 +381,7 @@ describe('PagosService.crear', () => {
           select: { mercadoPagoHabilitado: true, plexoHabilitado: true },
         });
         expect(tx.pago.create).not.toHaveBeenCalled();
-        expect(tx.mesa.update).not.toHaveBeenCalled();
+        expect(tx.mesa.updateMany).not.toHaveBeenCalled();
         expect(gateway.cobrar).not.toHaveBeenCalled();
       },
     );
@@ -611,7 +613,8 @@ describe('PagosService.crear', () => {
 
       await service.crear(TENANT_ID, DTO);
 
-      expect(tx.mesa.updateMany).not.toHaveBeenCalled();
+      // Solo la reserva tocó la mesa: no volvió a OCUPADA (BL-509).
+      expect(estadosDeMesa()).toEqual(['EN_PROCESO_DE_PAGO']);
     });
   });
 
@@ -730,7 +733,8 @@ describe('PagosService.crear', () => {
       );
 
       expect(tx.pagos.get(PAGO_ID)).toMatchObject({ estado: 'APROBADO' });
-      expect(tx.mesa.updateMany).not.toHaveBeenCalled();
+      // Solo la reserva tocó la mesa: no volvió a OCUPADA (BL-509).
+      expect(estadosDeMesa()).toEqual(['EN_PROCESO_DE_PAGO']);
     });
 
     it('un error inesperado (no HTTP, ej. red) no se marca rechazado: el resultado es incierto', async () => {
@@ -833,7 +837,11 @@ describe('PagosService.crear', () => {
     });
 
     it('si la mesa ya no estaba cobrando, no avisa OCUPADA', async () => {
-      tx.mesa.updateMany.mockResolvedValue({ count: 0 });
+      // Primer updateMany: la reserva la pone EN_PROCESO_DE_PAGO (BL-509).
+      // Segundo: al resolverse, la mesa ya no estaba cobrando.
+      tx.mesa.updateMany
+        .mockResolvedValueOnce({ count: 1 })
+        .mockResolvedValueOnce({ count: 0 });
 
       await service.crear(TENANT_ID, DTO);
 
@@ -842,12 +850,56 @@ describe('PagosService.crear', () => {
       ]);
     });
 
+    it('[BL-509] la reserva pone la mesa EN_PROCESO_DE_PAGO solo con la sesión abierta', async () => {
+      await service.crear(TENANT_ID, DTO);
+
+      expect(tx.mesa.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: MESA_ID,
+          esVirtual: false,
+          sesionId: { not: null },
+          estado: { in: ['OCUPADA', 'EN_PROCESO_DE_PAGO'] },
+        },
+        data: { estado: 'EN_PROCESO_DE_PAGO' },
+      });
+      expect(tx.mesa.update).not.toHaveBeenCalled();
+    });
+
+    it('[BL-509] mesa cerrada: 409 sin crear el pago, cobrar ni avisar', async () => {
+      tx.mesa.updateMany.mockResolvedValueOnce({ count: 0 });
+
+      await expect(service.crear(TENANT_ID, DTO)).rejects.toThrow(
+        new ConflictException(
+          'La mesa está cerrada: no se puede iniciar el cobro',
+        ),
+      );
+      expect(tx.pago.create).not.toHaveBeenCalled();
+      expect(gateway.cobrar).not.toHaveBeenCalled();
+      expect(pedidos.notificarEstadoMesa).not.toHaveBeenCalled();
+    });
+
+    it('[BL-509] mesa virtual (para retirar): cobra sin tocar la mesa ni avisar al mapa', async () => {
+      tx.mesa.updateMany.mockResolvedValueOnce({ count: 0 });
+      tx.mesa.findUnique.mockResolvedValue({ esVirtual: true });
+
+      const pago = await service.crear(TENANT_ID, DTO);
+
+      expect(pago).toMatchObject({ estado: 'APROBADO' });
+      expect(tx.pago.create).toHaveBeenCalled();
+      expect(pedidos.notificarEstadoMesa).not.toHaveBeenCalledWith(
+        TENANT_ID,
+        MESA_ID,
+        'EN_PROCESO_DE_PAGO',
+      );
+    });
+
     it('otro comensal de la mesa sigue pagando: al aprobarse este pago la mesa sigue EN_PROCESO_DE_PAGO', async () => {
       tx.pago.count.mockResolvedValue(1);
 
       await service.crear(TENANT_ID, DTO);
 
-      expect(tx.mesa.updateMany).not.toHaveBeenCalled();
+      // Solo la reserva tocó la mesa: no volvió a OCUPADA (BL-509).
+      expect(estadosDeMesa()).toEqual(['EN_PROCESO_DE_PAGO']);
       expect(pedidos.notificarEstadoMesa.mock.calls).toEqual([
         [TENANT_ID, MESA_ID, 'EN_PROCESO_DE_PAGO'],
       ]);
@@ -861,7 +913,8 @@ describe('PagosService.crear', () => {
 
       await expect(service.crear(TENANT_ID, DTO)).rejects.toThrow();
 
-      expect(tx.mesa.updateMany).not.toHaveBeenCalled();
+      // Solo la reserva tocó la mesa: no volvió a OCUPADA (BL-509).
+      expect(estadosDeMesa()).toEqual(['EN_PROCESO_DE_PAGO']);
       expect(pedidos.notificarEstadoMesa.mock.calls).toEqual([
         [TENANT_ID, MESA_ID, 'EN_PROCESO_DE_PAGO'],
       ]);
