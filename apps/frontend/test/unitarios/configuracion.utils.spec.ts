@@ -95,6 +95,11 @@ describe("cambios para guardar", () => {
       limitePreparacion: "5",
       umbralAlertaCola: "10",
       minutosPreparacion: "15",
+      // HU-038 (BL-506): un backend anterior no trae los umbrales de espera:
+      // los de por defecto.
+      esperaAtencion: "30",
+      esperaDemorado: "60",
+      esperaDemoraAlta: "120",
     });
   });
 });
@@ -407,5 +412,81 @@ describe("erroresDelFormulario", () => {
       email: null,
       cola: {},
     });
+  });
+});
+
+describe("HU-038 (BL-506): umbrales de espera del KDS", () => {
+  const CON_UMBRALES: ConfiguracionEstablecimiento = {
+    ...GUARDADA,
+    minutosEsperaAtencion: 20,
+    minutosEsperaDemorado: 40,
+    minutosEsperaDemoraAlta: 90,
+  };
+
+  it("[TC-U-479] el formulario arranca con los umbrales guardados, o con 30/60/120 si el backend no los trae", () => {
+    expect(formularioDesde(CON_UMBRALES)).toEqual(
+      expect.objectContaining({
+        esperaAtencion: "20",
+        esperaDemorado: "40",
+        esperaDemoraAlta: "90",
+      }),
+    );
+    expect(formularioDesde(GUARDADA)).toEqual(
+      expect.objectContaining({
+        esperaAtencion: "30",
+        esperaDemorado: "60",
+        esperaDemoraAlta: "120",
+      }),
+    );
+  });
+
+  it("[TC-U-480] manda solo los umbrales que cambiaron, con la cola activa o apagada", () => {
+    expect(
+      cambiosParaGuardar(CON_UMBRALES, {
+        ...formularioDesde(CON_UMBRALES),
+        esperaDemorado: " 45 ",
+      }),
+    ).toEqual({ minutosEsperaDemorado: 45 });
+    expect(cambiosParaGuardar(GUARDADA, formularioDesde(GUARDADA))).toEqual({});
+  });
+
+  it("[TC-U-481] valida enteros dentro de rango y de menor a mayor, aunque la cola esté apagada", () => {
+    const formulario = { ...formularioDesde(GUARDADA), colaActiva: false };
+    expect(erroresCola(formulario)).toEqual({});
+    expect(
+      erroresCola({
+        ...formulario,
+        esperaAtencion: "0",
+        esperaDemoraAlta: "x",
+      }),
+    ).toEqual({
+      esperaAtencion: "Tiene que estar entre 1 y 600.",
+      esperaDemoraAlta: "Escribí un número entero.",
+    });
+    expect(erroresCola({ ...formulario, esperaDemorado: "30" })).toEqual({
+      esperaDemorado: "Tiene que ser mayor que «Atención desde».",
+    });
+    expect(erroresCola({ ...formulario, esperaDemoraAlta: "60" })).toEqual({
+      esperaDemoraAlta: "Tiene que ser mayor que «Demorado desde».",
+    });
+  });
+
+  it("[TC-U-482] el foco va al primer umbral con error, después de los campos de la cola", () => {
+    expect(
+      primerCampoConError({
+        razonSocial: null,
+        propinas: null,
+        email: "mal",
+        cola: { esperaDemorado: "mal" },
+      }),
+    ).toBe("espera-demorado");
+    expect(
+      primerCampoConError({
+        razonSocial: null,
+        propinas: null,
+        email: null,
+        cola: { minutosPreparacion: "mal", esperaAtencion: "mal" },
+      }),
+    ).toBe("cola-minutos");
   });
 });

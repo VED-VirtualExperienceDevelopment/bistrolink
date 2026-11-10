@@ -829,6 +829,20 @@ const DATOS_INTEGRACION = {
     priority: "P1",
     tags: ["BL-501", "bug", "seguridad"],
   }),
+  // HU-038 (BL-506): umbrales de espera del KDS configurables por local, en
+  // configuracion-establecimiento.e2e-spec.ts.
+  192: configuracionEstablecimiento({
+    category: "Funcional",
+    priority: "P2",
+    requirement: "HU-038",
+    tags: ["HU-038", "BL-506", "kds", "auditoria"],
+  }),
+  193: configuracionEstablecimiento({
+    category: "Funcional",
+    priority: "P2",
+    requirement: "HU-038",
+    tags: ["HU-038", "BL-506", "kds", "validacion"],
+  }),
 };
 /**
  * BL-435: datos de los E2E TC-E-017 en adelante, con los criterios de
@@ -1198,6 +1212,39 @@ const DATOS_E2E = {
     category: "Funcional",
     priority: "P2",
     tags: ["BL-501", "BL-201", "bug", "cancelacion"],
+  }),
+  // HU-038 (BL-505): tiempo de espera e indicador de conexión del KDS, en
+  // kds/espera-conexion-kds.spec.ts.
+  87: e2e("kds", "HU-038", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-208", "BL-503", "kds", "tiempo-espera"],
+  }),
+  88: e2e("kds", "HU-038", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-208", "BL-504", "kds", "conexion", "tiempo-real"],
+  }),
+  89: e2e("kds", "HU-038", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-208", "BL-504", "kds", "conexion"],
+  }),
+  90: e2e("kds", "HU-038", {
+    category: "Accesibilidad",
+    priority: "P2",
+    tags: ["BL-208", "BL-503", "BL-504", "kds", ...axe],
+  }),
+  // HU-038 (BL-510): monitor de Cocina, en kds/monitor-cocina.spec.ts.
+  91: e2e("kds", "HU-038", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-208", "BL-510", "kds", "monitor", "tiempo-real"],
+  }),
+  92: e2e("kds", "HU-038", {
+    category: "Accesibilidad",
+    priority: "P2",
+    tags: ["BL-208", "BL-510", "kds", "monitor", ...axe],
   }),
 };
 /**

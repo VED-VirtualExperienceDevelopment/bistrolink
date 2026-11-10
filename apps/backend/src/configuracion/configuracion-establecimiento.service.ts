@@ -11,6 +11,12 @@ import { AuditAction } from '../audit-log/audit-action.enum';
 import { KdsGateway } from '../pedidos/kds.gateway';
 import { completarCapacidad, type PedidoPromovido } from '../pedidos/cola-kds';
 import {
+  errorOrdenUmbrales,
+  umbralesDelRestaurante,
+  type FilaUmbralesEspera,
+  type UmbralesEspera,
+} from '../pedidos/umbrales-espera';
+import {
   ActualizarConfiguracionDto,
   MEDIOS_PAGO_DISPONIBLES,
   MedioPagoConfigurable,
@@ -46,6 +52,12 @@ export interface ConfiguracionEstablecimiento {
   umbralAlertaCola: number;
   /** HU-042 (BL-465): referencia para el tiempo estimado del comensal. */
   minutosPreparacionEstimados: number;
+  /** HU-038 (BL-506): desde cuántos minutos la comanda pasa a «Atención». */
+  minutosEsperaAtencion: number;
+  /** HU-038 (BL-506): desde cuántos minutos pasa a «Demorado». */
+  minutosEsperaDemorado: number;
+  /** HU-038 (BL-506): desde cuántos minutos pasa a «Demora alta». */
+  minutosEsperaDemoraAlta: number;
 }
 
 /** Campos de la configuración que viven en restaurante. */
@@ -63,6 +75,11 @@ const SELECT_RESTAURANTE = {
   limitePedidosEnPreparacion: true,
   umbralAlertaCola: true,
   minutosPreparacionEstimados: true,
+  // HU-038 (BL-506): umbrales de espera de las comandas del KDS. También
+  // van con antes y después a la auditoría.
+  minutosEsperaAtencion: true,
+  minutosEsperaDemorado: true,
+  minutosEsperaDemoraAlta: true,
 } satisfies Prisma.RestauranteSelect;
 
 /** HU-042 (BL-465): campos que cambian el estado de la cola del KDS. */
@@ -71,6 +88,13 @@ const CAMPOS_DE_LA_COLA: ReadonlySet<CampoConfiguracion> = new Set([
   'umbralAlertaCola',
   'minutosPreparacionEstimados',
 ]);
+
+/** HU-038 (BL-506): campos de los umbrales de espera del KDS. */
+const CAMPOS_DE_ESPERA = [
+  'minutosEsperaAtencion',
+  'minutosEsperaDemorado',
+  'minutosEsperaDemoraAlta',
+] as const satisfies readonly CampoConfiguracion[];
 
 type ConfiguracionDelRestaurante = Prisma.RestauranteGetPayload<{
   select: typeof SELECT_RESTAURANTE;
@@ -104,6 +128,11 @@ interface ResultadoActualizacion {
   cambioLaCola: boolean;
   /** Pedidos que pasaron a preparación al subir el límite. */
   promovidos: PedidoPromovido[];
+  /**
+   * HU-038 (BL-506): umbrales nuevos, si cambió alguno (hay que avisar al
+   * KDS). null si no cambiaron.
+   */
+  umbralesEspera: UmbralesEspera | null;
 }
 
 /** Lo que cambió, listo para escribir y auditar. */
@@ -133,6 +162,8 @@ function igual(a: unknown, b: unknown): boolean {
  *   cuenta). Si no cambió nada, no se escribe ni se audita.
  * - Cambio y auditoría van en la misma transacción (registrarEnTx, HU-035):
  *   si una falla, no queda ninguna de las dos.
+ * - HU-038 (BL-506): los umbrales de espera del KDS tienen que quedar de
+ *   menor a mayor (400 si no); al cambiarlos se avisa a los KDS abiertos.
  * - Auditoría ESTABLECIMIENTO_CONFIGURACION_MODIFICADA con los campos que
  *   cambiaron y, para medios de pago, propinas y CFE, los valores antes y
  *   después. La razón social va sin el valor, mismo criterio que BL-412: en
@@ -170,12 +201,20 @@ export class ConfiguracionEstablecimientoService {
       tenantId,
       async (tx): Promise<ResultadoActualizacion> => {
         const actual = await this.leer(tx, tenantId);
+        // HU-038 (BL-506): el PATCH es parcial, así que el orden de los
+        // umbrales se controla con lo que quedaría guardado (lo nuevo más lo
+        // actual). La base tiene el mismo control (CHECK).
+        const errorOrden = errorOrdenUmbrales(
+          umbralesCombinados(actual.restaurante, dto),
+        );
+        if (errorOrden) throw new BadRequestException(errorOrden);
         const cambios = calcularCambios(actual, dto);
         if (cambios.campos.length === 0) {
           return {
             configuracion: armarRespuesta(actual),
             cambioLaCola: false,
             promovidos: [],
+            umbralesEspera: null,
           };
         }
         return this.guardarCambios(tx, tenantId, actor, actual, cambios);
@@ -190,6 +229,11 @@ export class ConfiguracionEstablecimientoService {
         this.kdsGateway.emitirPedidoActualizado(tenantId, promovido);
       }
       await this.kdsGateway.avisarEstadoCola(tenantId, { forzar: true });
+    }
+    // HU-038 (BL-506): los KDS abiertos (también el /kds de Cocina) toman los
+    // umbrales nuevos sin recargar.
+    if (resultado.umbralesEspera) {
+      this.kdsGateway.emitirUmbralesEspera(tenantId, resultado.umbralesEspera);
     }
     return resultado.configuracion;
   }
@@ -245,6 +289,11 @@ export class ConfiguracionEstablecimientoService {
         CAMPOS_DE_LA_COLA.has(campo),
       ),
       promovidos,
+      umbralesEspera: CAMPOS_DE_ESPERA.some((campo) =>
+        cambios.campos.includes(campo),
+      )
+        ? umbralesDelRestaurante(restaurante)
+        : null,
     };
   }
 
@@ -268,6 +317,21 @@ export class ConfiguracionEstablecimientoService {
     }
     return { ...tenant, restaurante };
   }
+}
+
+/** HU-038 (BL-506): los umbrales que quedarían guardados con este PATCH. */
+function umbralesCombinados(
+  actual: FilaUmbralesEspera,
+  dto: ActualizarConfiguracionDto,
+): FilaUmbralesEspera {
+  return {
+    minutosEsperaAtencion:
+      dto.minutosEsperaAtencion ?? actual.minutosEsperaAtencion,
+    minutosEsperaDemorado:
+      dto.minutosEsperaDemorado ?? actual.minutosEsperaDemorado,
+    minutosEsperaDemoraAlta:
+      dto.minutosEsperaDemoraAlta ?? actual.minutosEsperaDemoraAlta,
+  };
 }
 
 /** Compara lo pedido con lo actual y arma la escritura y el diff. */

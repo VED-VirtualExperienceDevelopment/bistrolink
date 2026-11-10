@@ -44,6 +44,13 @@ export interface ConfiguracionEstablecimiento {
   limitePedidosEnPreparacion?: number | null;
   umbralAlertaCola?: number;
   minutosPreparacionEstimados?: number;
+  /**
+   * HU-038 (BL-506): umbrales de espera de las comandas del KDS, en minutos.
+   * Opcionales en el tipo: un backend anterior no los trae.
+   */
+  minutosEsperaAtencion?: number;
+  minutosEsperaDemorado?: number;
+  minutosEsperaDemoraAlta?: number;
 }
 
 export type CampoMedioPago =
@@ -74,6 +81,10 @@ export interface FormularioConfiguracion {
   limitePreparacion: string;
   umbralAlertaCola: string;
   minutosPreparacion: string;
+  /** HU-038 (BL-506): texto de los umbrales de espera (se validan al guardar). */
+  esperaAtencion: string;
+  esperaDemorado: string;
+  esperaDemoraAlta: string;
 }
 
 /** Body de PATCH /admin/configuracion: solo lo que cambió. */
@@ -86,6 +97,9 @@ export type CambiosConfiguracion = Partial<
     | "limitePreparacion"
     | "umbralAlertaCola"
     | "minutosPreparacion"
+    | "esperaAtencion"
+    | "esperaDemorado"
+    | "esperaDemoraAlta"
   >
 > & {
   propinasSugeridas?: number[];
@@ -93,6 +107,9 @@ export type CambiosConfiguracion = Partial<
   limitePedidosEnPreparacion?: number | null;
   umbralAlertaCola?: number;
   minutosPreparacionEstimados?: number;
+  minutosEsperaAtencion?: number;
+  minutosEsperaDemorado?: number;
+  minutosEsperaDemoraAlta?: number;
 };
 
 /** Mismos límites que el backend (ActualizarConfiguracionDto). */
@@ -113,6 +130,13 @@ export const MINUTOS_PREPARACION = { minimo: 1, maximo: 180 } as const;
 export const LIMITE_PREPARACION_SUGERIDO = 5;
 const UMBRAL_ALERTA_COLA_POR_DEFECTO = 10;
 const MINUTOS_PREPARACION_POR_DEFECTO = 15;
+
+/**
+ * HU-038 (BL-506): rango de los umbrales de espera, el mismo que el backend.
+ * Los valores por defecto son los del tablero (espera-kds.utils.ts).
+ */
+export const MINUTOS_ESPERA = { minimo: 1, maximo: 600 } as const;
+const ESPERA_POR_DEFECTO = { atencion: 30, demorado: 60, demoraAlta: 120 };
 
 export const MEDIOS_PAGO: ReadonlyArray<{
   codigo: MedioPago;
@@ -188,6 +212,15 @@ export function formularioDesde(
       configuracion.minutosPreparacionEstimados ??
         MINUTOS_PREPARACION_POR_DEFECTO,
     ),
+    esperaAtencion: String(
+      configuracion.minutosEsperaAtencion ?? ESPERA_POR_DEFECTO.atencion,
+    ),
+    esperaDemorado: String(
+      configuracion.minutosEsperaDemorado ?? ESPERA_POR_DEFECTO.demorado,
+    ),
+    esperaDemoraAlta: String(
+      configuracion.minutosEsperaDemoraAlta ?? ESPERA_POR_DEFECTO.demoraAlta,
+    ),
   };
 }
 
@@ -210,16 +243,45 @@ function leerEntero(
   return { valor };
 }
 
-/** HU-042 (BL-465): errores de los campos de la cola (solo con la cola activa). */
+/**
+ * Errores de la sección «Cocina»: los de la cola (HU-042, BL-465: solo con la
+ * cola activa) y los de los umbrales de espera (HU-038, BL-506: siempre).
+ */
 export interface ErroresCola {
   limitePreparacion?: string;
   umbralAlertaCola?: string;
   minutosPreparacion?: string;
+  esperaAtencion?: string;
+  esperaDemorado?: string;
+  esperaDemoraAlta?: string;
+}
+
+/**
+ * HU-038 (BL-506): cada umbral, entero dentro del rango; y, si los tres están
+ * bien, de menor a mayor. El error de orden va en el campo que lo rompe.
+ */
+function erroresEspera(formulario: FormularioConfiguracion): ErroresCola {
+  const errores: ErroresCola = {};
+  const atencion = leerEntero(formulario.esperaAtencion, MINUTOS_ESPERA);
+  if ("error" in atencion) errores.esperaAtencion = atencion.error;
+  const demorado = leerEntero(formulario.esperaDemorado, MINUTOS_ESPERA);
+  if ("error" in demorado) errores.esperaDemorado = demorado.error;
+  const demoraAlta = leerEntero(formulario.esperaDemoraAlta, MINUTOS_ESPERA);
+  if ("error" in demoraAlta) errores.esperaDemoraAlta = demoraAlta.error;
+  if ("error" in atencion || "error" in demorado || "error" in demoraAlta) {
+    return errores;
+  }
+  if (demorado.valor <= atencion.valor) {
+    errores.esperaDemorado = "Tiene que ser mayor que «Atención desde».";
+  } else if (demoraAlta.valor <= demorado.valor) {
+    errores.esperaDemoraAlta = "Tiene que ser mayor que «Demorado desde».";
+  }
+  return errores;
 }
 
 export function erroresCola(formulario: FormularioConfiguracion): ErroresCola {
-  if (!formulario.colaActiva) return {};
-  const errores: ErroresCola = {};
+  if (!formulario.colaActiva) return erroresEspera(formulario);
+  const errores: ErroresCola = erroresEspera(formulario);
   const limite = leerEntero(formulario.limitePreparacion, LIMITE_PREPARACION);
   if ("error" in limite) errores.limitePreparacion = limite.error;
   const umbral = leerEntero(formulario.umbralAlertaCola, UMBRAL_ALERTA_COLA);
@@ -274,6 +336,9 @@ export function primerCampoConError(errores: ErroresFormulario): string | null {
     ["cola-limite", errores.cola.limitePreparacion],
     ["cola-umbral", errores.cola.umbralAlertaCola],
     ["cola-minutos", errores.cola.minutosPreparacion],
+    ["espera-atencion", errores.cola.esperaAtencion],
+    ["espera-demorado", errores.cola.esperaDemorado],
+    ["espera-demora-alta", errores.cola.esperaDemoraAlta],
     ["email-privacidad", errores.email],
   ];
   return enOrden.find(([, error]) => Boolean(error))?.[0] ?? null;
@@ -307,6 +372,37 @@ function cambiosDeLaCola(
     (guardada.minutosPreparacionEstimados ?? MINUTOS_PREPARACION_POR_DEFECTO)
   ) {
     cambios.minutosPreparacionEstimados = minutos;
+  }
+  return cambios;
+}
+
+/**
+ * HU-038 (BL-506): cambios de los umbrales de espera para el PATCH, solo los
+ * que cambiaron. No dependen de la cola. Supone que pasó erroresCola.
+ */
+function cambiosDeLaEspera(
+  guardada: ConfiguracionEstablecimiento,
+  formulario: FormularioConfiguracion,
+): Partial<CambiosConfiguracion> {
+  const cambios: Partial<CambiosConfiguracion> = {};
+  const atencion = Number(formulario.esperaAtencion.trim());
+  if (
+    atencion !== (guardada.minutosEsperaAtencion ?? ESPERA_POR_DEFECTO.atencion)
+  ) {
+    cambios.minutosEsperaAtencion = atencion;
+  }
+  const demorado = Number(formulario.esperaDemorado.trim());
+  if (
+    demorado !== (guardada.minutosEsperaDemorado ?? ESPERA_POR_DEFECTO.demorado)
+  ) {
+    cambios.minutosEsperaDemorado = demorado;
+  }
+  const demoraAlta = Number(formulario.esperaDemoraAlta.trim());
+  if (
+    demoraAlta !==
+    (guardada.minutosEsperaDemoraAlta ?? ESPERA_POR_DEFECTO.demoraAlta)
+  ) {
+    cambios.minutosEsperaDemoraAlta = demoraAlta;
   }
   return cambios;
 }
@@ -448,7 +544,11 @@ export function cambiosParaGuardar(
   if (email !== (guardada.emailPrivacidad ?? null)) {
     cambios.emailPrivacidad = email;
   }
-  return { ...cambios, ...cambiosDeLaCola(guardada, formulario) };
+  return {
+    ...cambios,
+    ...cambiosDeLaCola(guardada, formulario),
+    ...cambiosDeLaEspera(guardada, formulario),
+  };
 }
 
 export function hayCambios(cambios: CambiosConfiguracion): boolean {

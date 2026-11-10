@@ -5,6 +5,8 @@ import { Layer, Stage, Transformer } from "react-konva";
 import Konva from "konva";
 import { io, type Socket } from "socket.io-client";
 import { useKeycloakAuth } from "@/components/providers/KeycloakProvider";
+import { IndicadorConexion } from "@/components/conexion/IndicadorConexion";
+import { useEstadoConexion } from "@/components/conexion/useEstadoConexion";
 import { apiFetch, ApiError } from "@/lib/api-client";
 import { SesionMesaPanel } from "./SesionMesaPanel";
 import { CobrosMesaPanel } from "../cobros/CobrosMesaPanel";
@@ -233,6 +235,9 @@ export function MapaMesasEditor({
   // Si el socket ya se conectó alguna vez: a partir de ahí, cada conexión
   // es una reconexión y hay que traer los estados que se perdieron.
   const huboConexionRef = useRef(false);
+  // HU-038 (BL-504): el socket en estado, para el indicador de conexión.
+  const [socketMapa, setSocketMapa] = useState<Socket | null>(null);
+  const estadoConexion = useEstadoConexion(socketMapa);
   const inputNumeroRef = useRef<HTMLInputElement>(null);
   const [anchoStage, setAnchoStage] = useState(800);
   // true cuando el ResizeObserver ya midió el recuadro: antes de eso
@@ -393,6 +398,7 @@ export function MapaMesasEditor({
       reconnectionDelayMax: 5000,
     });
     socketRef.current = socket;
+    setSocketMapa(socket);
 
     socket.on(
       "mesa:estado_actualizado",
@@ -418,6 +424,7 @@ export function MapaMesasEditor({
     return () => {
       socket.disconnect();
       socketRef.current = null;
+      setSocketMapa(null);
     };
   }, [token, refrescarEstados]);
 
@@ -1018,6 +1025,12 @@ export function MapaMesasEditor({
       // no cubra, y se pierden los márgenes de la página: se agregan acá.
       className={clasesEditor(pantallaCompleta)}
     >
+      {/* HU-038 (BL-504): estado de la conexión en tiempo real, siempre
+          visible (también en pantalla completa). */}
+      <div className="flex justify-end">
+        <IndicadorConexion estado={estadoConexion} />
+      </div>
+
       {!puedeEditar && (
         <output className="block rounded-lg bg-surface-container-low px-4 py-2 text-label-md text-on-surface-variant">
           Estás viendo el mapa en modo solo lectura. Solo un Administrador puede
@@ -1422,7 +1435,8 @@ export function MapaMesasEditor({
             </span>
             <span>
               Sin conexión en tiempo real. Los estados de las mesas pueden no
-              estar actualizados. Reconectando…
+              estar actualizados. Se actualizan solos cuando vuelve la
+              conexión.
             </span>
           </span>
         )}

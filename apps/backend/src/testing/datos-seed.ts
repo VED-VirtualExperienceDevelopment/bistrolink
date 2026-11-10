@@ -94,6 +94,10 @@ export const CONFIGURACION_DEL_SEED = {
   limitePedidosEnPreparacion: null,
   umbralAlertaCola: 10,
   minutosPreparacionEstimados: 15,
+  // HU-038 (BL-506): umbrales de espera del KDS, los de por defecto.
+  minutosEsperaAtencion: 30,
+  minutosEsperaDemorado: 60,
+  minutosEsperaDemoraAlta: 120,
 } as const;
 
 /** Razón social de los tenants de testing, como en el seed. */

@@ -35,6 +35,9 @@ function configuracionSeedA() {
     limitePedidosEnPreparacion: null,
     umbralAlertaCola: 10,
     minutosPreparacionEstimados: 15,
+    minutosEsperaAtencion: 30,
+    minutosEsperaDemorado: 60,
+    minutosEsperaDemoraAlta: 120,
   } as any;
 }
 
