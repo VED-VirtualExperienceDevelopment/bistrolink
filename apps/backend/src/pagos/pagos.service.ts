@@ -23,6 +23,7 @@ import { PedidosService } from '../pedidos/pedidos.service';
 import { PedidoParaKds } from '../pedidos/pedido-kds.mapper';
 import { registrarCambioPago, textoCorto } from './historial-pago';
 import { calcularTotales, totalCobrado } from './totales-pedido';
+import { liberarMesaDelCobro } from './mesa-en-cobro';
 
 /** BL-311: respuesta de GET /pedidos/:pedidoId/pagos. */
 export interface EstadoPagoDelPedido {
@@ -223,12 +224,9 @@ export class PagosService {
         if (count > 0 && !resultado.pendiente) {
           // BL-311: aprobado o rechazado, la mesa vuelve a OCUPADA. Con
           // prepago, el comensal paga ANTES de comer: la mesa la libera el
-          // cierre de sesión (HU-017), no el pago.
-          const mesa = await tx.mesa.updateMany({
-            where: { id: mesaId, estado: 'EN_PROCESO_DE_PAGO' },
-            data: { estado: 'OCUPADA' },
-          });
-          volvioAOcupada = mesa.count > 0;
+          // cierre de sesión (HU-017), no el pago. Si otro comensal de la
+          // mesa sigue pagando, la mesa sigue EN_PROCESO_DE_PAGO.
+          volvioAOcupada = await liberarMesaDelCobro(tx, mesaId);
           // BL-311 (RD.03): pago aprobado => el pedido pasa a RECIBIDO.
           if (resultado.aprobado) {
             confirmado = await this.pedidos.confirmarPagoEnTx(
@@ -519,11 +517,7 @@ export class PagosService {
           origen: 'COBRO',
           detalle: MOTIVO_ERROR_PASARELA,
         });
-        const mesa = await tx.mesa.updateMany({
-          where: { id: mesaId, estado: 'EN_PROCESO_DE_PAGO' },
-          data: { estado: 'OCUPADA' },
-        });
-        return mesa.count > 0;
+        return liberarMesaDelCobro(tx, mesaId);
       },
     );
     if (mesaOcupada) {

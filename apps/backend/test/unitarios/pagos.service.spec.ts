@@ -39,7 +39,11 @@ function crearTx() {
   const pagos = new Map<string, any>();
   return {
     pagos,
+    // HU-017 (BL-60): bloqueo de la fila de la mesa en liberarMesaDelCobro.
+    $queryRaw: jest.fn().mockResolvedValue([]),
     pago: {
+      // HU-017 (BL-60): otros cobros en curso en la mesa (default: ninguno).
+      count: jest.fn().mockResolvedValue(0),
       findUnique: jest.fn().mockResolvedValue(null),
       findFirst: jest.fn().mockResolvedValue(null),
       create: jest.fn(async ({ data }) => {
@@ -833,6 +837,31 @@ describe('PagosService.crear', () => {
 
       await service.crear(TENANT_ID, DTO);
 
+      expect(pedidos.notificarEstadoMesa.mock.calls).toEqual([
+        [TENANT_ID, MESA_ID, 'EN_PROCESO_DE_PAGO'],
+      ]);
+    });
+
+    it('otro comensal de la mesa sigue pagando: al aprobarse este pago la mesa sigue EN_PROCESO_DE_PAGO', async () => {
+      tx.pago.count.mockResolvedValue(1);
+
+      await service.crear(TENANT_ID, DTO);
+
+      expect(tx.mesa.updateMany).not.toHaveBeenCalled();
+      expect(pedidos.notificarEstadoMesa.mock.calls).toEqual([
+        [TENANT_ID, MESA_ID, 'EN_PROCESO_DE_PAGO'],
+      ]);
+    });
+
+    it('error de la pasarela con otro cobro en curso en la mesa: la mesa sigue EN_PROCESO_DE_PAGO', async () => {
+      tx.pago.count.mockResolvedValue(1);
+      gateway.cobrar.mockRejectedValue(
+        new BadRequestException('token vencido'),
+      );
+
+      await expect(service.crear(TENANT_ID, DTO)).rejects.toThrow();
+
+      expect(tx.mesa.updateMany).not.toHaveBeenCalled();
       expect(pedidos.notificarEstadoMesa.mock.calls).toEqual([
         [TENANT_ID, MESA_ID, 'EN_PROCESO_DE_PAGO'],
       ]);

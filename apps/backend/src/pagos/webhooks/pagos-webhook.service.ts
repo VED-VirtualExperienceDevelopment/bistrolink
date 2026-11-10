@@ -16,6 +16,7 @@ import {
   textoCorto,
 } from '../historial-pago';
 import { totalCobrado } from '../totales-pedido';
+import { liberarMesaDelCobro } from '../mesa-en-cobro';
 
 // TODO(Plexo): este servicio y la verificación de firma son específicos de
 // Mercado Pago. Cuando lleguen las credenciales de Plexo y se conozca su
@@ -259,22 +260,30 @@ export class PagosWebhookService {
         undefined,
         PagosWebhookService.name,
       );
-      return { resultado: 'requiere_reembolso', pagoId: pago.id };
+      // HU-017 (BL-60): si este pago estaba PENDIENTE, era un cobro en curso
+      // de la mesa; aunque no confirme el pedido, ya terminó. Sin esto la
+      // mesa quedaba EN_PROCESO_DE_PAGO para siempre (no se podía cerrar).
+      // Si ya estaba resuelto (vencido o rechazado), la mesa ya salió del
+      // cobro y no se toca.
+      let mesaOcupada: string | undefined;
+      if (pedido && pago.estado === 'PENDIENTE') {
+        if (await liberarMesaDelCobro(tx, pedido.mesaId)) {
+          mesaOcupada = pedido.mesaId;
+        }
+      }
+      return { resultado: 'requiere_reembolso', pagoId: pago.id, mesaOcupada };
     }
 
-    // La mesa solo se toca si sigue EN_PROCESO_DE_PAGO: una notificación
-    // tardía no debe ocupar una mesa que ya siguió su curso. BL-311: aprobado
-    // o rechazado, vuelve a OCUPADA (con prepago, el comensal paga antes de
-    // comer; la mesa la libera el cierre de sesión, HU-017).
+    // BL-311: aprobado o rechazado, la mesa vuelve a OCUPADA (con prepago,
+    // el comensal paga antes de comer; la mesa la libera el cierre de
+    // sesión, HU-017). Solo si sigue EN_PROCESO_DE_PAGO (una notificación
+    // tardía no mueve una mesa que ya siguió su curso) y si no queda otro
+    // cobro en curso en la mesa.
     let pedidoConfirmado: PedidoParaKds | null = null;
     let mesaOcupada: string | undefined;
     if (estado === 'APROBADO' || estado === 'RECHAZADO') {
-      if (pedido) {
-        const mesa = await tx.mesa.updateMany({
-          where: { id: pedido.mesaId, estado: 'EN_PROCESO_DE_PAGO' },
-          data: { estado: 'OCUPADA' },
-        });
-        if (mesa.count > 0) mesaOcupada = pedido.mesaId;
+      if (pedido && (await liberarMesaDelCobro(tx, pedido.mesaId))) {
+        mesaOcupada = pedido.mesaId;
       }
       // BL-311 (RD.03): pago aprobado => el pedido pasa a RECIBIDO.
       if (estado === 'APROBADO') {
