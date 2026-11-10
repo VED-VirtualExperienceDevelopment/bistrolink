@@ -28,6 +28,7 @@ function configuracionSeedA() {
     handyHabilitado: false,
     mediosPagoDisponibles: ['EFECTIVO', 'MERCADO_PAGO'],
     propinasSugeridas: [],
+    propinaPreseleccionada: false,
     cfeProveedor: 'SURTEC',
     proveedoresCfeDisponibles: ['SURTEC'],
     emailPrivacidad: 'privacidad@ejemplo.uy',
@@ -51,6 +52,8 @@ describe('Configuración como el seed', () => {
       expect.objectContaining({
         efectivoHabilitado: true,
         propinasSugeridas: [],
+        // HU-022 (BL-496): la propina preseleccionada vuelve a apagada.
+        propinaPreseleccionada: false,
         limitePedidosEnPreparacion: null,
       }),
     );
@@ -68,6 +71,7 @@ describe('Configuración como el seed', () => {
       razonSocial: 'Otra SRL',
       efectivoHabilitado: false,
       propinasSugeridas: [10, 15],
+      propinaPreseleccionada: true,
       limitePedidosEnPreparacion: 3,
       emailPrivacidad: 'otro@ejemplo.uy',
     };
@@ -75,6 +79,7 @@ describe('Configuración como el seed', () => {
       razonSocial: 'Restaurante Testing A SRL',
       efectivoHabilitado: true,
       propinasSugeridas: [],
+      propinaPreseleccionada: false,
       limitePedidosEnPreparacion: null,
     });
   });
@@ -121,6 +126,22 @@ describe('LimpiezaConfiguracionService', () => {
       camposRestablecidos: [],
     });
     expect(configuracion.actualizar).not.toHaveBeenCalled();
+  });
+
+  it('HU-022 (BL-496): una propina preseleccionada que dejó un E2E se restablece a apagada', async () => {
+    const { configuracion, service } = armar({
+      ...configuracionSeedA(),
+      propinaPreseleccionada: true,
+    });
+
+    expect(await service.limpiar(TENANT_A, ACTOR, false)).toEqual({
+      camposRestablecidos: ['propinaPreseleccionada'],
+    });
+    expect(configuracion.actualizar).toHaveBeenCalledWith(
+      TENANT_A,
+      { propinaPreseleccionada: false },
+      { id: ACTOR },
+    );
   });
 });
 
