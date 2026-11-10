@@ -1,66 +1,39 @@
 import {
-  mensajeMesaCerrada,
-  opcionSesion,
-  puedeGestionarSesion,
-  rutaAccionSesion,
-} from "@/components/admin/mesas/sesion-mesa.utils";
-import { ESTADOS_MESA_VALIDOS } from "@/types/mesa";
+  DETALLE_MESA_CERRADA,
+  esCierreDeEstaSesion,
+  EVENTO_SEGUIR_MESA,
+  EVENTO_SESION_CERRADA,
+  TITULO_MESA_CERRADA,
+} from "@/components/mesa-cerrada/sesion-mesa.utils";
 
-// HU-017 (BL-60): sesión de la mesa desde el mapa de mesas.
+// BL-518: la carta se entera de que el mozo cerró la mesa.
 
-describe("opcionSesion", () => {
-  it.each([
-    ["LIBRE", "abrir", "Abrir mesa"],
-    ["OCUPADA", "cerrar", "Cerrar mesa"],
-    ["EN_PROCESO_DE_PAGO", null, "Pago en curso"],
-    ["REQUIERE_LIMPIEZA", "limpia", "Marcar como limpia"],
-  ] as const)("%s => %s (%s)", (estado, accion, etiqueta) => {
-    expect(opcionSesion(estado)).toMatchObject({ accion, etiqueta });
+describe("esCierreDeEstaSesion", () => {
+  it("el aviso de esta sesión cierra la pantalla", () => {
+    expect(esCierreDeEstaSesion({ sesionMesa: "s2" }, "s2")).toBe(true);
   });
 
-  it("todos los estados de mesa tienen una opción con ayuda", () => {
-    for (const estado of ESTADOS_MESA_VALIDOS) {
-      expect(opcionSesion(estado).ayuda.length).toBeGreaterThan(0);
-    }
-  });
-});
-
-describe("rutaAccionSesion", () => {
-  it("coincide con MesasController", () => {
-    const id = "33333333-3333-3333-3333-333333333333";
-    expect(rutaAccionSesion(id, "abrir")).toBe(`/mesas/${id}/abrir`);
-    expect(rutaAccionSesion(id, "cerrar")).toBe(`/mesas/${id}/cerrar`);
-    expect(rutaAccionSesion(id, "limpia")).toBe(`/mesas/${id}/limpia`);
+  it("el aviso de otra sesión de la mesa no la cierra", () => {
+    expect(esCierreDeEstaSesion({ sesionMesa: "s1" }, "s2")).toBe(false);
   });
 
-  it("un id raro no puede cambiar la ruta", () => {
-    expect(rutaAccionSesion("../usuarios", "abrir")).toBe(
-      "/mesas/..%2Fusuarios/abrir",
-    );
+  it("un aviso sin sesión (el QR ya no sirve) también la cierra", () => {
+    expect(esCierreDeEstaSesion({}, "s2")).toBe(true);
+    expect(esCierreDeEstaSesion({ sesionMesa: 4 }, "s2")).toBe(true);
+    expect(esCierreDeEstaSesion(null, "s2")).toBe(true);
+    expect(esCierreDeEstaSesion(undefined, "s2")).toBe(true);
   });
 });
 
-describe("mensajeMesaCerrada", () => {
-  it("sin pedidos cancelados, uno o varios", () => {
-    expect(mensajeMesaCerrada(4, 0)).toBe("Mesa 4 cerrada.");
-    expect(mensajeMesaCerrada(4, 1)).toBe(
-      "Mesa 4 cerrada. Se canceló 1 pedido que no se había pagado.",
-    );
-    expect(mensajeMesaCerrada(4, 3)).toBe(
-      "Mesa 4 cerrada. Se cancelaron 3 pedidos que no se habían pagado.",
-    );
+describe("eventos y textos", () => {
+  it("los mismos eventos que el backend (KdsGateway)", () => {
+    expect(EVENTO_SEGUIR_MESA).toBe("mesa:seguir");
+    expect(EVENTO_SESION_CERRADA).toBe("mesa:sesion_cerrada");
   });
-});
 
-describe("puedeGestionarSesion", () => {
-  it.each([
-    [["MOZO"], true],
-    [["ADMIN"], true],
-    [["COCINA"], false],
-    [["COMENSAL"], false],
-    [[], false],
-  ])("roles %j => %s", (roles, esperado) => {
-    const hasRole = (rol: string) => (roles as string[]).includes(rol);
-    expect(puedeGestionarSesion(hasRole)).toBe(esperado);
+  it("dice qué pasó y cómo volver a pedir", () => {
+    expect(TITULO_MESA_CERRADA).toBe("Tu mesa se cerró");
+    expect(DETALLE_MESA_CERRADA).toMatch(/Gracias por tu visita/);
+    expect(DETALLE_MESA_CERRADA).toMatch(/escaneá el QR de nuevo/);
   });
 });

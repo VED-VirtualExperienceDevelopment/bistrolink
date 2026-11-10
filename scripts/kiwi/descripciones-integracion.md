@@ -37,6 +37,7 @@
 | 1.30    | 10/11/2026 | TC-I-194: propinas del reporte de ventas, aparte del consumo y por canal (HU-022 / BL-496). Renumerado desde TC-I-153, que ya era de stock (BL-512).                                                                                      |
 | 1.31    | 10/11/2026 | TC-I-195 a 198: estado de la mesa con varios cobros, cierre con cobros pendientes y cobro con la mesa cerrada (HU-017 / bug BL-509), para cargar con el script antes de mergear el PR.                                                    |
 | 1.32    | 10/11/2026 | Se borran los bloques de TC-I-190 a 198, ya cargados en Kiwi. TC-I-203 a 205: «Mis pedidos» en la mesa y acceso a un pedido solo en la sesión abierta (bug BL-502), para cargar con el script antes de mergear el PR.                     |
+| 1.33    | 10/11/2026 | Se borran los bloques de TC-I-203 a 205, ya cargados en Kiwi. TC-I-206 y 207: aviso al comensal cuando el mozo cierra la mesa (bug BL-518), para cargar con el script antes de mergear el PR.                                             |
 
 Texto del campo de descripción de cada caso TC-I en Kiwi. Lo carga
 `cargar-casos-integracion.mjs --descripciones`: cada bloque `## TC-I-NNN`
@@ -48,56 +49,40 @@ esperado`, igual que los casos cargados a mano desde TC-I-029.
 
 ## Casos para cargar
 
-## TC-I-203
+## TC-I-206
 
 ### Precondición
 
-Tenant A del seed. Una mesa del test abierta con una sesión nueva, otra mesa abierta y pedidos creados en la base: dos de esta sesión, uno de un grupo anterior en la misma mesa y uno de la otra mesa.
+Tenant A del seed. La mesa 78 del test abierta con una sesión nueva y un comensal con el token de esa mesa conectado por WebSocket.
 
 ### Pasos
 
-1. Como comensal de la mesa (QR y sesión), consultar «Mis pedidos» (POST /pedidos/mesa/estado) con los ids de los cuatro pedidos y uno inexistente.
-2. Consultar con la lista vacía.
+1. Como comensal, seguir la sesión de la mesa (`mesa:seguir` con el QR y la sesión).
+2. Cerrar la mesa (cierre de sesión del mozo).
+3. Volver a seguir la misma sesión, ya cerrada.
+4. Seguir la sesión con un QR que no sirve.
 
 ### Resultado esperado
 
-1. Devuelve solo los dos pedidos de esta mesa y esta sesión, con estado, horas, ítems, consumo y propina. No trae datos de pago ni del CFE.
-2. Devuelve una lista vacía.
+1. Responde que la está siguiendo.
+2. El comensal recibe `mesa:sesion_cerrada` con su sesión.
+3. Responde que no la sigue y el aviso llega enseguida.
+4. Responde que no la sigue y el aviso llega enseguida.
 
-## TC-I-204
+## TC-I-207
 
 ### Precondición
 
-Igual que TC-I-203, con un pedido de esta sesión.
+La mesa 78 del test con una sesión anterior ya cerrada y una sesión nueva abierta. Un comensal del grupo nuevo conectado por WebSocket y siguiendo su sesión.
 
 ### Pasos
 
-1. Consultar «Mis pedidos» sin el QR de la mesa.
-2. Consultar con el QR y una sesión que no es la abierta.
-3. Consultar ese pedido desde la otra mesa, con su QR y su sesión.
-4. Consultar con un id que no es UUID, con ids repetidos, con algo que no es una lista y con 31 ids.
+1. Avisar el cierre de la sesión anterior.
+2. Como el comensal nuevo, intentar seguir la sesión anterior.
+3. Cerrar la mesa.
 
 ### Resultado esperado
 
-1. 400.
-2. 410 con el código SESION_VENCIDA.
-3. 200 con una lista vacía: no ve pedidos de otra mesa.
-4. 400 en todos los casos.
-
-## TC-I-205
-
-### Precondición
-
-Igual que TC-I-203: un pedido de esta sesión y uno de un grupo anterior en la misma mesa.
-
-### Pasos
-
-1. Como comensal de la mesa, consultar el pago del pedido de esta sesión.
-2. Consultar el pago del pedido de la sesión anterior.
-3. Pedir el PDF del comprobante del pedido de la sesión anterior.
-
-### Resultado esperado
-
-1. 200.
-2. 403: «Este pedido es de una sesión anterior de la mesa».
-3. 403.
+1. El comensal nuevo no recibe ningún aviso.
+2. Responde que no la sigue y le avisa que esa sesión terminó.
+3. El comensal nuevo recibe `mesa:sesion_cerrada` con su sesión.
