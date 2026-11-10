@@ -6,6 +6,7 @@ import { apiFetch } from '@/lib/api-client';
 import { descargarArchivo, type ArchivoBase64 } from '@/lib/descarga';
 import { etiquetaMesa, type OrigenMenu } from '@/components/menu-digital.utils';
 import type { LineaResumen } from './PagoPedido';
+import { GraciasPorTuCompra } from './GraciasPorTuCompra';
 import {
   codigoPedido,
   estadoComprobante,
@@ -51,6 +52,11 @@ interface PagoAprobadoProps {
   readonly total: number;
   readonly numeroMesa?: number;
   readonly onOtroPedido: () => void;
+  /** BL-502: nombre del local, para la pantalla de gracias. */
+  readonly nombreLocal?: string;
+  /** BL-502: otros pedidos de la mesa que todavía no llegaron. */
+  readonly pedidosEnCamino?: number;
+  readonly onVerMisPedidos?: () => void;
 }
 
 const CLASE_TARJETA =
@@ -80,6 +86,9 @@ export function PagoAprobado({
   total,
   numeroMesa,
   onOtroPedido,
+  nombreLocal,
+  pedidosEnCamino,
+  onVerMisPedidos,
 }: PagoAprobadoProps) {
   const [comprobante, setComprobante] = useState<EstadoComprobante>({ tipo: 'emitiendo' });
   const [agotado, setAgotado] = useState(false);
@@ -92,6 +101,8 @@ export function PagoAprobado({
   // HU-009 (BL-454): descarga del PDF del comprobante.
   const [descarga, setDescarga] = useState<EstadoDescarga>('lista');
   const tituloRef = useRef<HTMLHeadingElement>(null);
+  // BL-502: cuando el mozo lo entrega, «Gracias por tu compra» (con la hora).
+  const [entregado, setEntregado] = useState<{ en: string | null } | null>(null);
 
   useEffect(() => {
     tituloRef.current?.focus();
@@ -158,6 +169,28 @@ export function PagoAprobado({
     }
   }
 
+  if (entregado) {
+    return (
+      <GraciasPorTuCompra
+        pedidoId={pedidoId}
+        nombreLocal={nombreLocal}
+        esMesa={esMesa}
+        numeroMesa={numeroMesa}
+        entregadoEn={entregado.en}
+        lineas={lineas}
+        totales={totales}
+        abonado={abonado}
+        comprobanteDisponible={comprobante.tipo === 'emitido'}
+        descargando={descarga === 'descargando'}
+        errorDescarga={descarga === 'error'}
+        onDescargarPdf={() => void descargarPdf()}
+        onOtroPedido={onOtroPedido}
+        pedidosEnCamino={pedidosEnCamino}
+        onVerMisPedidos={onVerMisPedidos}
+      />
+    );
+  }
+
   return (
     <div className="pt-20 pb-12 px-4 md:px-8 max-w-[640px] mx-auto flex flex-col gap-6">
       <section className={`${CLASE_TARJETA} text-center flex flex-col items-center gap-2`}>
@@ -196,7 +229,14 @@ export function PagoAprobado({
         <h2 id="estado-pedido" className="text-lg font-bold text-foreground">
           Estado de tu pedido
         </h2>
-        <SeguimientoPedido pedidoId={pedidoId} token={accessToken} estadoInicial="RECIBIDO" />
+        <SeguimientoPedido
+          pedidoId={pedidoId}
+          token={accessToken}
+          estadoInicial="RECIBIDO"
+          onCambioDeEstado={(estado, en) => {
+            if (estado === 'ENTREGADO') setEntregado({ en });
+          }}
+        />
       </section>
 
       <Comprobante
