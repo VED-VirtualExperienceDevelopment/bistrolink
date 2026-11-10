@@ -5,6 +5,7 @@ import {
   filtrosIniciales,
   formatearHora,
   formatearMonto,
+  formatearPorcentaje,
   formatearRotacion,
   haceCuanto,
   horaPico,
@@ -14,6 +15,7 @@ import {
   platosSegun,
   rangoInvalido,
   rutaReportes,
+  textoPropinas,
   variacion,
   type FiltrosReportes,
   type ReporteVentas,
@@ -94,25 +96,27 @@ describe("reportes.utils", () => {
     expect(horasDelGrafico([])).toEqual([]);
     expect(
       horasDelGrafico([
-        { hora: 21, monto: 900, pedidos: 3 },
-        { hora: 19, monto: 400, pedidos: 1 },
+        { hora: 21, monto: 900, pedidos: 3, propina: 90 },
+        { hora: 19, monto: 400, pedidos: 1, propina: 0 },
       ]),
     ).toEqual([
-      { hora: 19, monto: 400, pedidos: 1 },
-      { hora: 20, monto: 0, pedidos: 0 },
-      { hora: 21, monto: 900, pedidos: 3 },
+      { hora: 19, monto: 400, pedidos: 1, propina: 0 },
+      { hora: 20, monto: 0, pedidos: 0, propina: 0 },
+      { hora: 21, monto: 900, pedidos: 3, propina: 90 },
     ]);
     expect(formatearHora(21)).toBe("21 h");
   });
 
   it("[TC-U-317] la hora pico según la métrica elegida; sin ventas, ninguna", () => {
     const horas = [
-      { hora: 12, monto: 3000, pedidos: 2 },
-      { hora: 21, monto: 2000, pedidos: 5 },
+      { hora: 12, monto: 3000, pedidos: 2, propina: 300 },
+      { hora: 21, monto: 2000, pedidos: 5, propina: 0 },
     ];
     expect(horaPico(horas, "monto")?.hora).toBe(12);
     expect(horaPico(horas, "pedidos")?.hora).toBe(21);
-    expect(horaPico([{ hora: 9, monto: 0, pedidos: 0 }], "monto")).toBeNull();
+    expect(
+      horaPico([{ hora: 9, monto: 0, pedidos: 0, propina: 0 }], "monto"),
+    ).toBeNull();
   });
 
   it("[TC-U-318] largo de las barras: proporcional, con un mínimo visible", () => {
@@ -207,5 +211,58 @@ describe("reportes.utils", () => {
     expect(CANALES.filter((c) => c.proximamente).map((c) => c.valor)).toEqual([
       "WHATSAPP",
     ]);
+  });
+
+  describe("HU-022 (BL-496): propinas", () => {
+    it("el porcentaje va con coma y un decimal solo si hace falta", () => {
+      expect(formatearPorcentaje(8.1)).toBe("8,1");
+      expect(formatearPorcentaje(10)).toBe("10");
+      expect(formatearPorcentaje(0)).toBe("0");
+    });
+
+    it("cuántos pedidos dejaron propina y a cuánto equivale sobre las ventas", () => {
+      expect(
+        textoPropinas(
+          { total: 3890, pedidosConPropina: 41, porcentajeDeVentas: 8.1 },
+          74,
+        ),
+      ).toEqual({
+        detalle: "41 de 74 pedidos dejaron propina",
+        equivalencia: "equivale al 8,1 % de las ventas",
+      });
+    });
+
+    it("con un solo pedido, el texto va en singular", () => {
+      expect(
+        textoPropinas(
+          { total: 100, pedidosConPropina: 1, porcentajeDeVentas: 10 },
+          1,
+        ),
+      ).toEqual({
+        detalle: "1 de 1 pedido dejó propina",
+        equivalencia: "equivale al 10 % de las ventas",
+      });
+    });
+
+    it("sin propinas: lo dice y no muestra equivalencia", () => {
+      expect(
+        textoPropinas(
+          { total: 0, pedidosConPropina: 0, porcentajeDeVentas: 0 },
+          12,
+        ),
+      ).toEqual({
+        detalle: "Nadie dejó propina en este período",
+        equivalencia: null,
+      });
+    });
+
+    it("los pedidos con propina se acotan a los pedidos del período (se cuentan por medio de pago)", () => {
+      expect(
+        textoPropinas(
+          { total: 500, pedidosConPropina: 5, porcentajeDeVentas: 12.5 },
+          4,
+        ).detalle,
+      ).toBe("4 de 4 pedidos dejaron propina");
+    });
   });
 });

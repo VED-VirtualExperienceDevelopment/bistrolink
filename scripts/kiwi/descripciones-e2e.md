@@ -27,6 +27,9 @@
 | 1.20    | 08/11/2026 | Se borran los bloques de TC-E-073 a 079 y 082, ya cargados en Kiwi. TC-E-083: ventas al POS del local desde «POS del local» (HU-011, BL-488).                                        |
 | 1.21    | 09/11/2026 | Se borra el bloque de TC-E-083, ya cargado en Kiwi. TC-E-084: al hacer scroll en Reportes solo se desplaza el contenido (bug BL-500).                                                |
 | 1.22    | 09/11/2026 | Se borra el bloque de TC-E-084, ya cargado en Kiwi. TC-E-085 y 086: el mozo cancela un pedido antes de cobrarlo, en la pantalla del pedido y desde «Cobros pendientes» (bug BL-501). |
+| 1.23    | 10/11/2026 | TC-E-087 a 090: tiempo de espera de las comandas, indicador de conexión y accesibilidad del KDS (HU-038, BL-505). |
+| 1.24    | 10/11/2026 | TC-E-091 y 092: monitor de Cocina de solo lectura, sin scroll, con resumen grande y accesible (HU-038, BL-510). |
+| 1.25    | 10/11/2026 | TC-E-093 a 097: propina en el pago del comensal, en los cobros del mozo y en Reportes (HU-022, BL-496). Renumerados desde TC-E-087 a 091, que ya eran de KDS (BL-512). |
 
 Plantilla para cargar en Kiwi la descripción de casos TC-E (Playwright)
 nuevos o que cambiaron (BL-435). La usa
@@ -108,3 +111,211 @@ Igual que TC-E-085.
 1. —
 2. Se abre el diálogo de cancelación.
 3. Aparece «Pedido #… cancelado. No se cobró y no pasa a cocina.» y el pedido desaparece de la lista.
+
+## TC-E-087
+
+### Precondición
+
+Usuario Mozo del tenant de testing (Keycloak de pruebas) con el KDS abierto. Umbrales de espera por defecto (30/60/120). El reloj del navegador se adelanta con el reloj de prueba de Playwright.
+
+### Pasos
+
+1. Como comensal, hacer y pagar un pedido.
+2. Ver su comanda en el KDS.
+3. Adelantar el reloj 31 minutos, sin tocar nada.
+4. Adelantar el reloj 30 minutos más.
+5. Adelantar el reloj 1 hora más.
+
+### Resultado esperado
+
+1. —
+2. La comanda dice «A tiempo», «Recién llegado» o «hace N min», y «Llegó HH:MM».
+3. Sin recargar ni recibir otro evento, pasa a «Atención» y «hace 31 min» (aprox.).
+4. Pasa a «Demorado» y «hace 1 h …».
+5. Pasa a «⚠ Demora alta» y «hace 2 h …».
+
+## TC-E-088
+
+### Precondición
+
+Igual que TC-E-087, con un pedido ya en el KDS.
+
+### Pasos
+
+1. Abrir el KDS.
+2. Cortar la conexión con el servidor (el navegador sigue con red).
+3. Mientras está cortada, hacer y pagar otro pedido.
+4. Restablecer la conexión.
+
+### Resultado esperado
+
+1. El indicador dice «Conectado» y se ve la comanda.
+2. El indicador pasa a «Reconectando…» y la comanda sigue a la vista.
+3. —
+4. Sin recargar la página, el indicador vuelve a «Conectado» y aparecen las dos comandas.
+
+## TC-E-089
+
+### Precondición
+
+Igual que TC-E-087, con un pedido ya en el KDS.
+
+### Pasos
+
+1. Abrir el KDS.
+2. Dejar el navegador sin red.
+3. Devolverle la red.
+
+### Resultado esperado
+
+1. El indicador dice «Conectado».
+2. Enseguida (sin esperar 30 s), el indicador pasa a «Desconectado». La comanda sigue a la vista.
+3. El indicador vuelve a «Conectado».
+
+## TC-E-090
+
+### Precondición
+
+Igual que TC-E-087.
+
+### Pasos
+
+1. Abrir el KDS con una comanda recién llegada.
+2. Adelantar el reloj hasta «Atención», «Demorado» y «Demora alta».
+3. Dejar el navegador sin red.
+
+### Resultado esperado
+
+1. Sin errores graves de accesibilidad (axe, WCAG 2.1 AA).
+2. Sin errores graves de accesibilidad en cada nivel (incluido el contraste de los colores).
+3. Con el indicador en «Desconectado», sin errores graves de accesibilidad.
+
+## TC-E-091
+
+### Precondición
+
+Usuarios Mozo y Cocina del tenant de testing (Keycloak de pruebas), en sesiones separadas. Cola automática apagada. Monitor de Cocina en una pantalla de 1920×1080.
+
+### Pasos
+
+1. Como comensal, hacer y pagar dos pedidos.
+2. Como Mozo, pasar el primero a preparación. El segundo queda recibido.
+3. Como Cocina, abrir el KDS.
+4. Como Mozo, marcar el primero «Listo para entregar».
+5. Como Mozo, marcarlo «Entregado».
+
+### Resultado esperado
+
+1. —
+2. —
+3. Se ve el monitor con el resumen «En preparación», «Listos» y «En espera» (al menos 1). El primer pedido tiene tarjeta «En preparación»; el segundo no tiene tarjeta. No hay botones ni scroll.
+4. Sin recargar, la tarjeta pasa a «Listo para entregar».
+5. La tarjeta sale del monitor. Sigue sin haber scroll.
+
+## TC-E-092
+
+### Precondición
+
+Igual que TC-E-091.
+
+### Pasos
+
+1. Como comensal, hacer y pagar un pedido; como Mozo, pasarlo a preparación.
+2. Como Cocina, abrir el KDS.
+
+### Resultado esperado
+
+1. —
+2. Se ve la tarjeta del pedido en el monitor. Sin errores graves de accesibilidad (axe, WCAG 2.1 AA).
+
+## TC-E-093
+
+### Precondición
+
+Usuario Mozo del tenant de testing (Keycloak de pruebas). El establecimiento no trae propinas sugeridas: se usa «Otro monto». Consumo de $ 590 (Milanesa a la napolitana, seed).
+
+### Pasos
+
+1. Como comensal, en la mesa, pedir una Milanesa a la napolitana y llegar a «Pagá tu pedido».
+2. Elegir «Otro monto», escribir 50 y tocar «Aplicar».
+3. Avisar al mozo para pagar en efectivo.
+4. Como Mozo, en «Cobros pendientes», ver el pedido y tocar «Cobrar en efectivo».
+5. Ver el desglose y tocar «Confirmar cobro».
+
+### Resultado esperado
+
+1. —
+2. El resumen muestra Consumo $ 590, Propina $ 50 y Total $ 640.
+3. La pantalla guarda la propina de $ 50 y avisa al mozo.
+4. La fila dice «Incluye propina de $ 50» y se abre el diálogo de cobro.
+5. El diálogo muestra Consumo, Propina y Total $ 640, y el Mozo no puede cambiar la propina. El cobro responde 201 con el total esperado de $ 640 y el comensal ve «¡Tu pedido ya está en cocina!».
+
+## TC-E-094
+
+### Precondición
+
+Igual que TC-E-093.
+
+### Pasos
+
+1. Como comensal, hacer los pasos 1 a 3 de TC-E-093.
+2. Como Mozo, en «Cobros pendientes», tocar «Cobrar con el POS» en ese pedido.
+3. Ver el desglose, elegir «Débito», escribir el número de autorización y tocar «Registrar cobro».
+
+### Resultado esperado
+
+1. —
+2. Se abre el diálogo con Consumo, Propina y «Total a cobrar en el POS» de $ 640.
+3. El cobro responde 201 con el total esperado de $ 640, aparece «Cobro registrado: pedido #…» y el pedido sale de la lista de pendientes.
+
+## TC-E-095
+
+### Precondición
+
+Usuario Administrador del tenant de testing (Keycloak de pruebas).
+
+### Pasos
+
+1. Abrir Reportes desde el menú.
+
+### Resultado esperado
+
+1. La API responde 200 con las propinas del período (total, pedidos con propina y porcentaje de las ventas) y la propina de cada hora, todos numéricos. La pantalla muestra «Total vendido» y «Propinas» como tarjetas separadas, con el texto «Nadie dejó propina…» o «N de M pedidos dejaron propina».
+
+## TC-E-096
+
+### Precondición
+
+Sin sesión. Igual que TC-E-093 en el pedido; se paga con una tarjeta de prueba del sandbox de Mercado Pago (APRO).
+
+### Pasos
+
+1. Como comensal, en la mesa, pedir una Milanesa a la napolitana y llegar a «Pagá tu pedido».
+2. Ver el botón de pago sin elegir propina.
+3. Elegir «Otro monto», escribir 50 y tocar «Aplicar».
+4. Pagar con la tarjeta de prueba.
+
+### Resultado esperado
+
+1. —
+2. El botón dice «Pagar $ 590».
+3. El resumen muestra Total $ 640 y el botón pasa a «Pagar $ 640».
+4. La pantalla guarda la propina antes de cobrar (PUT de la propina, 200, con $ 50), el pago responde 201 y el comensal ve «¡Tu pedido ya está en cocina!».
+
+## TC-E-097
+
+### Precondición
+
+Igual que TC-E-096, sin llegar a pagar.
+
+### Pasos
+
+1. Como comensal, en la mesa, pedir una Milanesa a la napolitana y llegar a «Pagá tu pedido».
+2. Elegir «Otro monto», escribir 50 y tocar «Aplicar».
+3. Tocar «Sin propina».
+
+### Resultado esperado
+
+1. —
+2. El resumen muestra la línea Propina y el Total $ 640.
+3. Desaparece la línea Propina, el Total vuelve a $ 590 y el botón dice «Pagar $ 590».

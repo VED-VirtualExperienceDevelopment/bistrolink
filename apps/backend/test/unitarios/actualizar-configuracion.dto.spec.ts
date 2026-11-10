@@ -24,6 +24,7 @@ describe('ActualizarConfiguracionDto (HU-020, BL-72)', () => {
         plexoHabilitado: false,
         handyHabilitado: false,
         propinasSugeridas: [10, 15, 20],
+        propinaPreseleccionada: true,
         cfeProveedor: 'SURTEC',
       }),
     ).toEqual([]);
@@ -88,6 +89,31 @@ describe('ActualizarConfiguracionDto (HU-020, BL-72)', () => {
       expect(await errores({ propinasSugeridas })).toEqual([
         'propinasSugeridas',
       ]);
+    });
+  });
+
+  describe('HU-022 (BL-495): preselección de la propina', () => {
+    it('se puede activar y desactivar', async () => {
+      expect(await errores({ propinaPreseleccionada: true })).toEqual([]);
+      expect(await errores({ propinaPreseleccionada: false })).toEqual([]);
+    });
+
+    it.each([['si'], [1], ['true']])(
+      'rechaza %p: tiene que ser verdadero o falso',
+      async (valor) => {
+        expect(await errores({ propinaPreseleccionada: valor })).toEqual([
+          'propinaPreseleccionada',
+        ]);
+      },
+    );
+
+    it('se puede mandar junto con los porcentajes sugeridos', async () => {
+      expect(
+        await errores({
+          propinasSugeridas: [5, 10, 15],
+          propinaPreseleccionada: true,
+        }),
+      ).toEqual([]);
     });
   });
 
@@ -157,6 +183,35 @@ describe('ActualizarConfiguracionDto (HU-020, BL-72)', () => {
       ['minutosPreparacionEstimados', 12.5],
     ])(
       '[TC-U-400] rechaza %s = %p (fuera de rango o no entero)',
+      async (campo, valor) => {
+        expect(await errores({ [campo]: valor })).toEqual([campo]);
+      },
+    );
+  });
+
+  describe('HU-038 (BL-506): umbrales de espera del KDS', () => {
+    it('[TC-U-469] acepta los tres umbrales enteros dentro del rango', async () => {
+      expect(
+        await errores({
+          minutosEsperaAtencion: 30,
+          minutosEsperaDemorado: 60,
+          minutosEsperaDemoraAlta: 120,
+        }),
+      ).toEqual([]);
+      expect(await errores({ minutosEsperaAtencion: 1 })).toEqual([]);
+      expect(await errores({ minutosEsperaDemoraAlta: 600 })).toEqual([]);
+    });
+
+    it.each([
+      ['minutosEsperaAtencion', 0],
+      ['minutosEsperaAtencion', 601],
+      ['minutosEsperaAtencion', null],
+      ['minutosEsperaDemorado', 12.5],
+      ['minutosEsperaDemorado', '60'],
+      ['minutosEsperaDemoraAlta', -5],
+      ['minutosEsperaDemoraAlta', null],
+    ])(
+      '[TC-U-470] rechaza %s = %p (fuera de rango, no entero o null)',
       async (campo, valor) => {
         expect(await errores({ [campo]: valor })).toEqual([campo]);
       },

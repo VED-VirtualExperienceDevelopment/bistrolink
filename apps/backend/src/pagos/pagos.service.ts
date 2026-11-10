@@ -22,6 +22,8 @@ import { receptorParaGuardar } from '../cfe/receptor-fiscal';
 import { PedidosService } from '../pedidos/pedidos.service';
 import { PedidoParaKds } from '../pedidos/pedido-kds.mapper';
 import { registrarCambioPago, textoCorto } from './historial-pago';
+import { calcularTotales, totalCobrado } from './totales-pedido';
+import { liberarMesaDelCobro } from './mesa-en-cobro';
 
 /** BL-311: respuesta de GET /pedidos/:pedidoId/pagos. */
 export interface EstadoPagoDelPedido {
@@ -36,6 +38,20 @@ export interface EstadoPagoDelPedido {
     // un mensaje distinto. Null si no fue rechazado.
     motivoRechazo: string | null;
   } | null;
+  /**
+   * HU-022 (BL-494): lo que se cobra por el pedido, calculado en el backend
+   * con las líneas y la propina que eligió el comensal. `consumo` es lo que
+   * se factura; `total` = consumo + propina. Ambos `propina*` en null = sin
+   * propina elegida. Está también antes del primer pago, para que la pantalla
+   * muestre la elección al recargar.
+   */
+  totales: {
+    consumo: string;
+    propina: string;
+    total: string;
+    propinaPorcentaje: number | null;
+    propinaMonto: number | null;
+  };
   // Null mientras el CFE no fue emitido (el frontend consulta de nuevo).
   comprobante: ResumenComprobante | null;
   /**
@@ -55,6 +71,14 @@ export interface EstadoPagoDelPedido {
    * no ofrece la tarjeta y la API rechazaría el pago con 409.
    */
   tarjeta: { disponible: boolean };
+  /**
+   * HU-022 (BL-495): cómo ofrece propina el local. `sugeridas` son los
+   * porcentajes de HU-020 (de menor a mayor, puede ser vacía) y
+   * `preseleccionada` indica si la pantalla abre con el 10 % marcado como
+   * «Sugerida». El frontend decide si marcarlo: solo si el 10 % está en
+   * `sugeridas` y el comensal todavía no eligió nada.
+   */
+  propina: { sugeridas: number[]; preseleccionada: boolean };
   /**
    * HU-037 (BL-207): rebaja de IVA de la Ley 17.934, informativa (la aplica
    * la administradora, no BistroLink). Solo en un pago electrónico cobrado
@@ -129,15 +153,19 @@ export class PagosService {
     if ('existente' in reserva) {
       return reserva.existente; // idempotencia: misma clave, mismo pago
     }
-    const { pago, mesaId } = reserva;
-    // HU-017 (BL-60): el mapa de mesas muestra el cobro en curso.
-    this.pedidos.notificarEstadoMesa(tenantId, mesaId, 'EN_PROCESO_DE_PAGO');
+    const { pago, mesaId, mesaEnCobro } = reserva;
+    // HU-017 (BL-60): el mapa de mesas muestra el cobro en curso (la mesa
+    // virtual no está en el mapa: BL-509).
+    if (mesaEnCobro) {
+      this.pedidos.notificarEstadoMesa(tenantId, mesaId, 'EN_PROCESO_DE_PAGO');
+    }
 
     // Fase 2: cobrar FUERA de la transacción (la pasarela puede tardar).
     let resultado: ResultadoCobro;
     try {
       resultado = await gateway.cobrar({
-        monto: pago.monto,
+        // HU-022 (BL-494): a la pasarela viaja consumo + propina.
+        monto: totalCobrado(pago),
         idempotencyKey: dto.idempotencyKey,
         pedidoId: dto.pedidoId,
         tenantId,
@@ -199,12 +227,9 @@ export class PagosService {
         if (count > 0 && !resultado.pendiente) {
           // BL-311: aprobado o rechazado, la mesa vuelve a OCUPADA. Con
           // prepago, el comensal paga ANTES de comer: la mesa la libera el
-          // cierre de sesión (HU-017), no el pago.
-          const mesa = await tx.mesa.updateMany({
-            where: { id: mesaId, estado: 'EN_PROCESO_DE_PAGO' },
-            data: { estado: 'OCUPADA' },
-          });
-          volvioAOcupada = mesa.count > 0;
+          // cierre de sesión (HU-017), no el pago. Si otro comensal de la
+          // mesa sigue pagando, la mesa sigue EN_PROCESO_DE_PAGO.
+          volvioAOcupada = await liberarMesaDelCobro(tx, mesaId);
           // BL-311 (RD.03): pago aprobado => el pedido pasa a RECIBIDO.
           if (resultado.aprobado) {
             confirmado = await this.pedidos.confirmarPagoEnTx(
@@ -277,6 +302,10 @@ export class PagosService {
             canal: true,
             efectivoSolicitadoEn: true,
             efectivoPagaCon: true,
+            // HU-022 (BL-494): para calcular el desglose en el backend.
+            propinaPorcentaje: true,
+            propinaMonto: true,
+            lineas: { select: { subtotal: true } },
             pagos: {
               orderBy: { createdAt: 'desc' },
               select: {
@@ -302,7 +331,13 @@ export class PagosService {
         }),
         restaurante: await tx.restaurante.findUnique({
           where: { tenantId },
-          select: { efectivoHabilitado: true, mercadoPagoHabilitado: true },
+          select: {
+            efectivoHabilitado: true,
+            mercadoPagoHabilitado: true,
+            // HU-022 (BL-495): cómo ofrece propina el local.
+            propinasSugeridas: true,
+            propinaPreseleccionada: true,
+          },
         }),
       }),
     );
@@ -316,6 +351,7 @@ export class PagosService {
       pedido.pagos[0] ??
       null;
     const comprobante = pago?.comprobantes[0] ?? null;
+    const totales = calcularTotales(pedido.lineas, pedido);
 
     return {
       pedidoId: pedido.id,
@@ -326,6 +362,13 @@ export class PagosService {
         medioPago: pago.medioPago,
         monto: pago.monto.toFixed(2),
         motivoRechazo: pago.motivoRechazo,
+      },
+      totales: {
+        consumo: totales.consumo.toFixed(2),
+        propina: totales.propina.toFixed(2),
+        total: totales.total.toFixed(2),
+        propinaPorcentaje: pedido.propinaPorcentaje,
+        propinaMonto: pedido.propinaMonto,
       },
       comprobante: comprobante && {
         tipoCfe: comprobante.tipoCfe,
@@ -342,6 +385,10 @@ export class PagosService {
       },
       tarjeta: {
         disponible: Boolean(datos.restaurante?.mercadoPagoHabilitado),
+      },
+      propina: {
+        sugeridas: datos.restaurante?.propinasSugeridas ?? [],
+        preseleccionada: Boolean(datos.restaurante?.propinaPreseleccionada),
       },
       rebajaIva:
         pago && aplicaRebaja17934({ ...pago, canal: pedido.canal })
@@ -390,11 +437,12 @@ export class PagosService {
             );
           }
 
-          const monto = pedido.lineas.reduce(
-            (acumulado, linea) => acumulado.plus(linea.subtotal),
-            new Prisma.Decimal(0),
-          );
-          if (monto.lessThanOrEqualTo(0)) {
+          // HU-022 (BL-494): el consumo (las líneas) es lo que se factura; la
+          // propina es la elección guardada en el pedido, que no puede
+          // cambiar mientras haya un pago en curso. Se cobra consumo +
+          // propina, y el pago guarda cada uno por separado.
+          const totales = calcularTotales(pedido.lineas, pedido);
+          if (totales.consumo.lessThanOrEqualTo(0)) {
             throw new BadRequestException('El pedido no tiene monto a cobrar');
           }
           // HU-015 (BL-120): antes de cobrar, 409 si el stock ya no alcanza
@@ -411,21 +459,45 @@ export class PagosService {
             });
           }
 
-          await tx.mesa.update({
-            where: { id: pedido.mesaId },
+          // HU-017 (BL-509): la mesa pasa a EN_PROCESO_DE_PAGO solo si su
+          // sesión sigue abierta. Condicional y en la misma transacción que
+          // crea el pago: si el mozo la cerró después del control del guard,
+          // 409 en lugar de chocar con el CHECK de sesión (500). La mesa
+          // virtual (pedidos para retirar) no tiene sesión ni aparece en el
+          // mapa: no se toca.
+          const enCobro = await tx.mesa.updateMany({
+            where: {
+              id: pedido.mesaId,
+              esVirtual: false,
+              sesionId: { not: null },
+              estado: { in: ['OCUPADA', 'EN_PROCESO_DE_PAGO'] },
+            },
             data: { estado: 'EN_PROCESO_DE_PAGO' },
           });
+          const mesaEnCobro = enCobro.count > 0;
+          if (!mesaEnCobro) {
+            const mesa = await tx.mesa.findUnique({
+              where: { id: pedido.mesaId },
+              select: { esVirtual: true },
+            });
+            if (!mesa?.esVirtual) {
+              throw new ConflictException(
+                'La mesa está cerrada: no se puede iniciar el cobro',
+              );
+            }
+          }
           const pago = await tx.pago.create({
             data: {
               tenantId,
               pedidoId: pedido.id,
               idempotencyKey: dto.idempotencyKey,
-              monto,
+              monto: totales.consumo,
+              propina: totales.propina,
               medioPago: dto.medioPago,
               estado: 'PENDIENTE',
             },
           });
-          return { pago, mesaId: pedido.mesaId };
+          return { pago, mesaId: pedido.mesaId, mesaEnCobro };
         },
       );
     } catch (error) {
@@ -471,11 +543,7 @@ export class PagosService {
           origen: 'COBRO',
           detalle: MOTIVO_ERROR_PASARELA,
         });
-        const mesa = await tx.mesa.updateMany({
-          where: { id: mesaId, estado: 'EN_PROCESO_DE_PAGO' },
-          data: { estado: 'OCUPADA' },
-        });
-        return mesa.count > 0;
+        return liberarMesaDelCobro(tx, mesaId);
       },
     );
     if (mesaOcupada) {

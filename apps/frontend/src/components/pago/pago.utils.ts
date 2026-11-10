@@ -9,6 +9,7 @@
 import type { OrigenMenu } from "@/components/menu-digital.utils";
 import { headersMesaQr } from "@/components/menu-digital.utils";
 import { nombreDelComprobante } from "./factura.utils";
+import type { PropinaDelLocal, TotalesDelPedido } from "./propina.utils";
 
 /** Header con el token de acceso de un pedido para retirar (backend: HEADER_PEDIDO_TOKEN). */
 export const HEADER_PEDIDO_TOKEN = "X-Pedido-Token";
@@ -21,6 +22,11 @@ export function rutaPagos(pedidoId: string): string {
 /** HU-009 (BL-454): PDF del comprobante del pedido (mismo acceso que el pago). */
 export function rutaPdfComprobante(pedidoId: string): string {
   return `${rutaPagos(pedidoId)}/comprobante/pdf`;
+}
+
+/** HU-022 (BL-495): PUT con la propina que elige el comensal antes de pagar. */
+export function rutaPropina(pedidoId: string): string {
+  return `${rutaPagos(pedidoId)}/propina`;
 }
 
 /**
@@ -198,6 +204,17 @@ export interface EstadoPagoDelPedido {
     // HU-032 (BL-202): «VENCIDO» si el pago no se confirmó a tiempo.
     motivoRechazo?: string | null;
   } | null;
+  /**
+   * HU-022 (BL-495): consumo, propina y total del pedido, con la elección
+   * guardada (porcentaje o monto). `monto` del pago es el consumo; lo que se
+   * cobra es `total`. Opcional: un backend anterior no lo trae.
+   */
+  totales?: TotalesDelPedido;
+  /**
+   * HU-022 (BL-495): lo que el local ofrece (porcentajes sugeridos de HU-020
+   * y si preselecciona el 10 %). Opcional: un backend anterior no lo trae.
+   */
+  propina?: PropinaDelLocal;
   comprobante: {
     /** HU-009 (BL-453): '101' e-Ticket o '111' e-Factura. Opcional: un backend anterior no lo trae. */
     tipoCfe?: string;

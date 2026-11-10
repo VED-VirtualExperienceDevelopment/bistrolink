@@ -66,6 +66,8 @@ export interface TotalesVentas {
 export interface VentaPorHora {
   /** Hora del día en la zona del local (0 a 23). */
   hora: number;
+  /** HU-022 (BL-496): propinas de la hora, aparte del monto. */
+  propina: number;
   monto: number;
   pedidos: number;
 }
@@ -90,7 +92,21 @@ export type RotacionMesas =
 export interface ReporteVentas {
   rango: { desde: string; hasta: string; timezone: string };
   canal: Canal;
-  resumen: TotalesVentas & { ticketPromedio: number; anterior: TotalesVentas };
+  resumen: TotalesVentas & {
+    ticketPromedio: number;
+    anterior: TotalesVentas;
+    /**
+     * HU-022 (BL-496): propinas del período. No suman en `totalVendido`: las
+     * ventas son el consumo y la propina va aparte. `pedidosConPropina` se
+     * cuenta por medio de pago, así que puede pasar los pedidos del período;
+     * `porcentajeDeVentas` es propinas ÷ ventas, con un decimal.
+     */
+    propinas: {
+      total: number;
+      pedidosConPropina: number;
+      porcentajeDeVentas: number;
+    };
+  };
   /** `pos` (BL-489) es opcional: un backend anterior no lo trae. */
   porLugar: { local: number; web: number; whatsapp: number; pos?: number };
   ventasPorHora: VentaPorHora[];
@@ -100,6 +116,9 @@ export interface ReporteVentas {
   };
   rotacionMesas: RotacionMesas;
 }
+
+/** Las propinas del período, como las devuelve la API. */
+export type TotalesPropinas = ReporteVentas["resumen"]["propinas"];
 
 export interface FiltrosReportes {
   periodo: Periodo;
@@ -178,6 +197,41 @@ export function formatearHora(hora: number): string {
   return `${hora} h`;
 }
 
+/** «8,1» (un decimal, solo si hace falta). */
+export function formatearPorcentaje(valor: number): string {
+  return valor.toLocaleString("es-UY", { maximumFractionDigits: 1 });
+}
+
+export interface TextoPropinas {
+  /** «41 de 74 pedidos dejaron propina». */
+  detalle: string;
+  /** «equivale al 8,1 % de las ventas»; null si no hay propinas. */
+  equivalencia: string | null;
+}
+
+/**
+ * HU-022 (BL-496): el texto de la tarjeta de propinas. Los pedidos con
+ * propina se cuentan por medio de pago, así que se acotan a los pedidos del
+ * período para no mostrar «5 de 4».
+ */
+export function textoPropinas(
+  propinas: TotalesPropinas,
+  pedidos: number,
+): TextoPropinas {
+  if (propinas.total <= 0 && propinas.pedidosConPropina <= 0) {
+    return { detalle: "Nadie dejó propina en este período", equivalencia: null };
+  }
+  const conPropina = Math.min(propinas.pedidosConPropina, pedidos);
+  const verbo = pedidos === 1 ? "pedido dejó" : "pedidos dejaron";
+  return {
+    detalle: `${conPropina} de ${pedidos} ${verbo} propina`,
+    equivalencia:
+      propinas.porcentajeDeVentas > 0
+        ? `equivale al ${formatearPorcentaje(propinas.porcentajeDeVentas)} % de las ventas`
+        : null,
+  };
+}
+
 /**
  * Las horas del gráfico: de la primera a la última hora con ventas, sin
  * huecos (una hora sin ventas va en cero, para que el eje sea continuo).
@@ -189,7 +243,7 @@ export function horasDelGrafico(ventas: VentaPorHora[]): VentaPorHora[] {
   const ultima = Math.max(...ventas.map((v) => v.hora));
   const horas: VentaPorHora[] = [];
   for (let hora = primera; hora <= ultima; hora++) {
-    horas.push(porHora.get(hora) ?? { hora, monto: 0, pedidos: 0 });
+    horas.push(porHora.get(hora) ?? { hora, monto: 0, pedidos: 0, propina: 0 });
   }
   return horas;
 }
@@ -295,7 +349,7 @@ export const DEMORA_REFRESCO_MS = 2000;
 
 /**
  * Llama a `accion` una sola vez, `demoraMs` después del último `programar`:
- * una ráfaga de cobros pide los datos una vez, no una por cobro.
+ * una ráfaga de cobros pide los datos una sola vez, no una por cobro.
  */
 export function crearRefrescoDiferido(
   accion: () => void,

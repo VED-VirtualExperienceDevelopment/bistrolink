@@ -1,4 +1,5 @@
 import {
+  avisoPreseleccion,
   cambiosParaGuardar,
   errorEmailPrivacidad,
   errorRazonSocial,
@@ -84,6 +85,8 @@ describe("cambios para guardar", () => {
       plexoHabilitado: false,
       handyHabilitado: false,
       propinas: "10, 15",
+      // HU-022 (BL-495): un backend anterior no lo trae: apagada.
+      propinaPreseleccionada: false,
       cfeProveedor: "SURTEC",
       emailPrivacidad: "",
       // HU-042 (BL-465): un backend anterior no trae la cola: desactivada,
@@ -92,6 +95,11 @@ describe("cambios para guardar", () => {
       limitePreparacion: "5",
       umbralAlertaCola: "10",
       minutosPreparacion: "15",
+      // HU-038 (BL-506): un backend anterior no trae los umbrales de espera:
+      // los de por defecto.
+      esperaAtencion: "30",
+      esperaDemorado: "60",
+      esperaDemoraAlta: "120",
     });
   });
 });
@@ -115,6 +123,72 @@ describe("HU-007b (BL-80): POS del local", () => {
         posHabilitado: false,
       }),
     ).toEqual({ posHabilitado: false });
+  });
+});
+
+describe("HU-022 (BL-495): preselección de la propina", () => {
+  it("el formulario la lee de lo guardado; un backend anterior (sin el campo) la deja apagada", () => {
+    expect(formularioDesde(GUARDADA).propinaPreseleccionada).toBe(false);
+    expect(
+      formularioDesde({ ...GUARDADA, propinaPreseleccionada: true })
+        .propinaPreseleccionada,
+    ).toBe(true);
+  });
+
+  it("activarla manda solo ese campo; apagarla de nuevo también", () => {
+    expect(
+      cambiosParaGuardar(GUARDADA, {
+        ...formularioDesde(GUARDADA),
+        propinaPreseleccionada: true,
+      }),
+    ).toEqual({ propinaPreseleccionada: true });
+
+    const activa = { ...GUARDADA, propinaPreseleccionada: true };
+    expect(
+      cambiosParaGuardar(activa, {
+        ...formularioDesde(activa),
+        propinaPreseleccionada: false,
+      }),
+    ).toEqual({ propinaPreseleccionada: false });
+  });
+
+  it("igual a lo guardado no se manda (con o sin el campo en el backend)", () => {
+    const activa = { ...GUARDADA, propinaPreseleccionada: true };
+    expect(cambiosParaGuardar(activa, formularioDesde(activa))).toEqual({});
+    expect(cambiosParaGuardar(GUARDADA, formularioDesde(GUARDADA))).toEqual({});
+  });
+
+  it("avisa solo si está activa y el 10 % no está en los porcentajes sugeridos", () => {
+    const activa = {
+      ...formularioDesde(GUARDADA),
+      propinaPreseleccionada: true,
+    };
+
+    // Con el 10 % en la lista: sin aviso.
+    expect(avisoPreseleccion({ ...activa, propinas: "5, 10, 15" })).toBeNull();
+    // Sin el 10 %, o con la lista vacía: aviso.
+    expect(avisoPreseleccion({ ...activa, propinas: "5, 15" })).toMatch(
+      /El 10 % no está en tus porcentajes sugeridos/,
+    );
+    expect(avisoPreseleccion({ ...activa, propinas: "" })).not.toBeNull();
+    // Apagada: nunca avisa.
+    expect(
+      avisoPreseleccion({
+        ...activa,
+        propinaPreseleccionada: false,
+        propinas: "5, 15",
+      }),
+    ).toBeNull();
+  });
+
+  it("si el campo de porcentajes tiene un error, no avisa (ya se ve el error del campo)", () => {
+    expect(
+      avisoPreseleccion({
+        ...formularioDesde(GUARDADA),
+        propinaPreseleccionada: true,
+        propinas: "diez",
+      }),
+    ).toBeNull();
   });
 });
 
@@ -338,5 +412,81 @@ describe("erroresDelFormulario", () => {
       email: null,
       cola: {},
     });
+  });
+});
+
+describe("HU-038 (BL-506): umbrales de espera del KDS", () => {
+  const CON_UMBRALES: ConfiguracionEstablecimiento = {
+    ...GUARDADA,
+    minutosEsperaAtencion: 20,
+    minutosEsperaDemorado: 40,
+    minutosEsperaDemoraAlta: 90,
+  };
+
+  it("[TC-U-479] el formulario arranca con los umbrales guardados, o con 30/60/120 si el backend no los trae", () => {
+    expect(formularioDesde(CON_UMBRALES)).toEqual(
+      expect.objectContaining({
+        esperaAtencion: "20",
+        esperaDemorado: "40",
+        esperaDemoraAlta: "90",
+      }),
+    );
+    expect(formularioDesde(GUARDADA)).toEqual(
+      expect.objectContaining({
+        esperaAtencion: "30",
+        esperaDemorado: "60",
+        esperaDemoraAlta: "120",
+      }),
+    );
+  });
+
+  it("[TC-U-480] manda solo los umbrales que cambiaron, con la cola activa o apagada", () => {
+    expect(
+      cambiosParaGuardar(CON_UMBRALES, {
+        ...formularioDesde(CON_UMBRALES),
+        esperaDemorado: " 45 ",
+      }),
+    ).toEqual({ minutosEsperaDemorado: 45 });
+    expect(cambiosParaGuardar(GUARDADA, formularioDesde(GUARDADA))).toEqual({});
+  });
+
+  it("[TC-U-481] valida enteros dentro de rango y de menor a mayor, aunque la cola esté apagada", () => {
+    const formulario = { ...formularioDesde(GUARDADA), colaActiva: false };
+    expect(erroresCola(formulario)).toEqual({});
+    expect(
+      erroresCola({
+        ...formulario,
+        esperaAtencion: "0",
+        esperaDemoraAlta: "x",
+      }),
+    ).toEqual({
+      esperaAtencion: "Tiene que estar entre 1 y 600.",
+      esperaDemoraAlta: "Escribí un número entero.",
+    });
+    expect(erroresCola({ ...formulario, esperaDemorado: "30" })).toEqual({
+      esperaDemorado: "Tiene que ser mayor que «Atención desde».",
+    });
+    expect(erroresCola({ ...formulario, esperaDemoraAlta: "60" })).toEqual({
+      esperaDemoraAlta: "Tiene que ser mayor que «Demorado desde».",
+    });
+  });
+
+  it("[TC-U-482] el foco va al primer umbral con error, después de los campos de la cola", () => {
+    expect(
+      primerCampoConError({
+        razonSocial: null,
+        propinas: null,
+        email: "mal",
+        cola: { esperaDemorado: "mal" },
+      }),
+    ).toBe("espera-demorado");
+    expect(
+      primerCampoConError({
+        razonSocial: null,
+        propinas: null,
+        email: null,
+        cola: { minutosPreparacion: "mal", esperaAtencion: "mal" },
+      }),
+    ).toBe("cola-minutos");
   });
 });

@@ -77,6 +77,10 @@ export const STOCK_DEL_SEED = {
  * Configuración del establecimiento como la deja el seed (los valores por
  * defecto de las columnas de restaurante). El correo de privacidad no se
  * toca: el seed no lo define.
+ *
+ * HU-022 (BL-496): `propinaPreseleccionada` vuelve a apagada. Los E2E de
+ * propina la prenden para probar el 10 % marcado y la limpieza la deja como
+ * el seed, para que los otros E2E de pago no arranquen con propina.
  */
 export const CONFIGURACION_DEL_SEED = {
   efectivoHabilitado: true,
@@ -85,10 +89,15 @@ export const CONFIGURACION_DEL_SEED = {
   plexoHabilitado: false,
   handyHabilitado: false,
   propinasSugeridas: [] as number[],
+  propinaPreseleccionada: false,
   cfeProveedor: 'SURTEC',
   limitePedidosEnPreparacion: null,
   umbralAlertaCola: 10,
   minutosPreparacionEstimados: 15,
+  // HU-038 (BL-506): umbrales de espera del KDS, los de por defecto.
+  minutosEsperaAtencion: 30,
+  minutosEsperaDemorado: 60,
+  minutosEsperaDemoraAlta: 120,
 } as const;
 
 /** Razón social de los tenants de testing, como en el seed. */

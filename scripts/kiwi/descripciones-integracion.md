@@ -33,6 +33,9 @@
 | 1.26    | 08/11/2026 | Se borra el bloque de TC-I-142, ya cargado en Kiwi. TC-I-183 a 186: ventas de BistroLink al POS del local (HU-011 / BL-488), para cargar con el script antes de mergear el PR.                                                            |
 | 1.27    | 09/11/2026 | Se borran los bloques de TC-I-183 a 186, ya cargados en Kiwi. TC-I-187 a 189: ventas hechas en el POS del local, traídas al dashboard (HU-011 / BL-489), para cargar con el script antes de mergear el PR.                                |
 | 1.28    | 09/11/2026 | Se borran los bloques de TC-I-187 a 189, ya cargados en Kiwi. TC-I-190 y 191: cancelar un pedido que todavía no se cobró (bug BL-501), para cargar con el script antes de mergear el PR.                                                  |
+| 1.29    | 10/11/2026 | TC-I-192 y 193: umbrales de espera del KDS configurables por local (HU-038 / BL-506), para cargar con el script antes de mergear el PR. |
+| 1.30    | 10/11/2026 | TC-I-194: propinas del reporte de ventas, aparte del consumo y por canal (HU-022 / BL-496). Renumerado desde TC-I-153, que ya era de stock (BL-512). |
+| 1.31    | 10/11/2026 | TC-I-195 a 198: estado de la mesa con varios cobros, cierre con cobros pendientes y cobro con la mesa cerrada (HU-017 / bug BL-509), para cargar con el script antes de mergear el PR. |
 
 Texto del campo de descripción de cada caso TC-I en Kiwi. Lo carga
 `cargar-casos-integracion.mjs --descripciones`: cada bloque `## TC-I-NNN`
@@ -85,3 +88,133 @@ Usuarios Mozo y Cocina del tenant A (Keycloak de pruebas). Un pedido cargado por
 2. 200 con el pedido CANCELADO y su total.
 3. 409.
 4. 400 y 404.
+
+## TC-I-192
+
+### Precondición
+
+Base de pruebas con el restaurante del tenant A y sus umbrales de espera por defecto (30/60/120).
+
+### Pasos
+
+1. Como administrador, cambiar los umbrales a 15 / 45 / 90 minutos (PATCH /admin/configuracion).
+2. Leer la configuración guardada.
+3. Revisar la auditoría de configuración.
+4. Revisar el aviso a los KDS abiertos.
+
+### Resultado esperado
+
+1. 200 con los umbrales nuevos.
+2. Quedan guardados 15 / 45 / 90.
+3. Un registro «Configuración modificada» con los umbrales anteriores y los nuevos.
+4. Se avisa al tenant con los umbrales nuevos (kds:umbrales-espera).
+
+## TC-I-193
+
+### Precondición
+
+Igual que TC-I-192.
+
+### Pasos
+
+1. Como administrador, poner «Demora alta desde» igual a «Demorado desde».
+2. Sin pasar por la API, escribir en la base «Atención» mayor que «Demorado».
+3. Sin pasar por la API, escribir en la base «Demora alta» en 601 minutos.
+
+### Resultado esperado
+
+1. 400: «Demora alta desde» tiene que ser mayor que «Demorado desde». No se guarda ni se audita nada.
+2. La base lo rechaza (CHECK restaurante_minutos_espera_orden).
+3. La base lo rechaza (CHECK restaurante_minutos_espera_rango). La configuración queda como estaba.
+
+## TC-I-194
+
+### Precondición
+
+Base de pruebas con el tenant A y ventas aprobadas del día: QR $ 1000 de consumo con $ 100 de propina (Mercado Pago), Mozo $ 500 con $ 50 de propina (efectivo) y Web $ 500 sin propina. También hay un pago rechazado y uno devuelto con propina, que no cuentan.
+
+### Pasos
+
+1. Como administrador, pedir el reporte del día sin filtro de canal.
+2. Pedir el reporte con el canal LOCAL.
+3. Pedir el reporte con el canal WEB.
+
+### Resultado esperado
+
+1. 200. El total vendido es $ 2000: la propina no suma. Las propinas son $ 150, de 2 pedidos, un 7,5 % de las ventas.
+2. 200. Propinas $ 150, de 2 pedidos, un 10 % de las ventas.
+3. 200. Propinas $ 0, de 0 pedidos, 0 %.
+
+## TC-I-195
+
+### Precondición
+
+Tenant A del seed. Usuario Mozo (Keycloak de pruebas). Mesa 79 libre.
+
+### Pasos
+
+1. Como Mozo, abrir la mesa.
+2. Cargar un pedido esperando el pago, con un pago con tarjeta PENDIENTE. La mesa queda OCUPADA, como quedaba con los datos anteriores a BL-509.
+3. Como Mozo, cerrar la mesa.
+4. Ver la mesa y el pedido.
+5. Rechazar el pago, cerrar la mesa y marcarla limpia.
+
+### Resultado esperado
+
+1. 200, la mesa queda OCUPADA.
+2. El pago queda PENDIENTE y la mesa sigue OCUPADA.
+3. 409: «Hay un pago en curso en esta mesa: esperá a que termine».
+4. La mesa sigue OCUPADA y el pedido sigue esperando el pago (no se canceló).
+5. Se cierra (200) y queda libre.
+
+## TC-I-196
+
+### Precondición
+
+Tenant A del seed, Mercado Pago habilitado y pasarela falsa. Mesa 79 libre (sin sesión) con un pedido de $ 590 esperando el pago.
+
+### Pasos
+
+1. Iniciar el cobro con Mercado Pago del pedido (PagosService.crear), como si la mesa se hubiera cerrado después del control del QR.
+2. Ver los pagos del pedido y la mesa.
+
+### Resultado esperado
+
+1. Conflicto: «La mesa está cerrada: no se puede iniciar el cobro» (y no un error 500 por el CHECK de sesión).
+2. No se creó ningún pago y la mesa sigue LIBRE.
+
+## TC-I-197
+
+### Precondición
+
+Tenant A del seed. Mesa 79 abierta y EN_PROCESO_DE_PAGO, con dos pedidos de dos comensales, cada uno con un pago con tarjeta PENDIENTE.
+
+### Pasos
+
+1. Terminar el cobro del primer pedido (pago rechazado), como lo hacen el webhook o la conciliación.
+2. Ver la mesa.
+3. Terminar el cobro del segundo pedido.
+4. Ver la mesa.
+
+### Resultado esperado
+
+1. No libera la mesa: el otro comensal sigue pagando.
+2. La mesa sigue EN_PROCESO_DE_PAGO (amarilla en el mapa).
+3. Libera la mesa.
+4. La mesa vuelve a OCUPADA (roja en el mapa).
+
+## TC-I-198
+
+### Precondición
+
+Igual que TC-I-197.
+
+### Pasos
+
+1. Terminar los dos cobros a la vez, en dos transacciones en paralelo.
+2. Ver la mesa.
+
+### Resultado esperado
+
+1. Exactamente una de las dos libera la mesa: la segunda espera a la primera por el bloqueo de la fila de la mesa.
+2. La mesa queda OCUPADA (no queda EN_PROCESO_DE_PAGO sin cobros en curso).

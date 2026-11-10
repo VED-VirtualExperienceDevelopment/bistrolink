@@ -44,15 +44,34 @@ describe('ReportesService', () => {
   }
 
   beforeEach(() => {
+    // HU-022 (BL-496): la propina va aparte de las ventas (monto = consumo).
     porCanal = [
-      { canal: 'QR', monto: decimal(1000), pedidos: 2 },
-      { canal: 'MOZO', monto: decimal(500.5), pedidos: 1 },
-      { canal: 'WEB', monto: decimal(800), pedidos: 1 },
+      {
+        canal: 'QR',
+        monto: decimal(1000),
+        pedidos: 2,
+        propina: decimal(100),
+        pedidos_con_propina: 2,
+      },
+      {
+        canal: 'MOZO',
+        monto: decimal(500.5),
+        pedidos: 1,
+        propina: decimal(50.5),
+        pedidos_con_propina: 1,
+      },
+      {
+        canal: 'WEB',
+        monto: decimal(800),
+        pedidos: 1,
+        propina: decimal(0),
+        pedidos_con_propina: 0,
+      },
     ];
     porCanalAnterior = [{ canal: 'QR', monto: decimal(900), pedidos: 3 }];
     porHora = [
-      { hora: 12, monto: decimal(1300), pedidos: 3 },
-      { hora: 21, monto: decimal(1000.5), pedidos: 1 },
+      { hora: 12, monto: decimal(1300), pedidos: 3, propina: decimal(100) },
+      { hora: 21, monto: decimal(1000.5), pedidos: 1, propina: decimal(50.5) },
     ];
     platos = [
       {
@@ -120,6 +139,7 @@ describe('ReportesService', () => {
       pedidos: 4,
       ticketPromedio: 575.13,
       anterior: { totalVendido: 900, pedidos: 3 },
+      propinas: { total: 150.5, pedidosConPropina: 3, porcentajeDeVentas: 6.5 },
     });
     expect(reporte.porLugar).toEqual({
       local: 1500.5,
@@ -128,8 +148,8 @@ describe('ReportesService', () => {
       pos: 0,
     });
     expect(reporte.ventasPorHora).toEqual([
-      { hora: 12, monto: 1300, pedidos: 3 },
-      { hora: 21, monto: 1000.5, pedidos: 1 },
+      { hora: 12, monto: 1300, pedidos: 3, propina: 100 },
+      { hora: 21, monto: 1000.5, pedidos: 1, propina: 50.5 },
     ]);
   });
 
@@ -279,6 +299,7 @@ describe('ReportesService', () => {
       pedidos: 0,
       ticketPromedio: 0,
       anterior: { totalVendido: 0, pedidos: 0 },
+      propinas: { total: 0, pedidosConPropina: 0, porcentajeDeVentas: 0 },
     });
     expect(reporte.rotacionMesas).toEqual({
       aplica: true,
@@ -307,5 +328,63 @@ describe('ReportesService', () => {
     await expect(service.obtener(TENANT_ID, filtros(), AHORA)).rejects.toThrow(
       NotFoundException,
     );
+  });
+
+  describe('HU-022 (BL-496): propinas', () => {
+    it('las propinas salen de la columna propina del resumen y no se suman a las ventas', async () => {
+      await service.obtener(TENANT_ID, filtros(), AHORA);
+
+      const delResumen = consultas().filter((c) =>
+        c.sql.includes('FROM resumen_ventas_hora'),
+      );
+      // Por canal (período y anterior) y por hora.
+      expect(delResumen).toHaveLength(3);
+      for (const c of delResumen) {
+        expect(c.sql).toContain('SUM(propina) AS propina');
+        expect(c.sql).not.toContain('monto + propina');
+      }
+      const porCanalSql = delResumen.filter((c) =>
+        c.sql.includes('GROUP BY canal'),
+      );
+      for (const c of porCanalSql) {
+        expect(c.sql).toContain(
+          'SUM(pedidos_con_propina)::int AS pedidos_con_propina',
+        );
+      }
+    });
+
+    it('con el filtro En el local, las propinas y el porcentaje son solo de QR y mozo', async () => {
+      const reporte = await service.obtener(
+        TENANT_ID,
+        filtros({ canal: 'LOCAL' }),
+        AHORA,
+      );
+
+      expect(reporte.resumen.propinas).toEqual({
+        total: 150.5,
+        pedidosConPropina: 3,
+        porcentajeDeVentas: 10,
+      });
+    });
+
+    it('si no hay ventas pero sí propina, el porcentaje queda en cero (sin dividir por cero)', async () => {
+      porCanal = [
+        {
+          canal: 'QR',
+          monto: decimal(0),
+          pedidos: 0,
+          propina: decimal(10),
+          pedidos_con_propina: 1,
+        },
+      ];
+
+      const reporte = await service.obtener(TENANT_ID, filtros(), AHORA);
+
+      expect(reporte.resumen.propinas).toEqual({
+        total: 10,
+        pedidosConPropina: 1,
+        porcentajeDeVentas: 0,
+      });
+    });
   });
 });

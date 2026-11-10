@@ -48,7 +48,8 @@ jobs:
   limpiar:
     name: 🧹 Limpieza de staging
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 15 min: hasta ~5 para despertar staging, más la limpieza.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
 
@@ -59,6 +60,16 @@ jobs:
       # El script no tiene dependencias: no hace falta npm ci.
       - name: Tests del script
         run: node --test scripts/limpieza/limpiar-entorno.test.mjs
+
+      # A las 03:13 staging está dormido (serverless de Railway). El script
+      # hace un solo intento con 30 s de timeout: sin esto falla al pedir el
+      # token a Keycloak, que tarda más en arrancar, y no limpia nada.
+      - name: Despertar staging
+        uses: ./.github/actions/despertar-staging
+        with:
+          urls: |
+            https://bistrolink-auth-staging.up.railway.app/realms/bistrolink/.well-known/openid-configuration
+            https://bistrolink-api-staging.up.railway.app/health/ready
 
       - name: Limpiar (o simular)
         env:
@@ -78,4 +89,3 @@ jobs:
           args=(--entorno staging --antiguedad-horas "$ANTIGUEDAD_HORAS")
           if [ "$APLICAR" = "true" ]; then args+=(--aplicar); fi
           node scripts/limpieza/limpiar-entorno.mjs "${args[@]}"
-          

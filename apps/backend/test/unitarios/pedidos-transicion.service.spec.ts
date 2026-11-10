@@ -594,4 +594,35 @@ describe('PedidosTransicionService', () => {
       ).resolves.toEqual([]);
     });
   });
+
+  describe('HU-038 (BL-506): umbrales de espera', () => {
+    it('[TC-U-478] devuelve los umbrales del restaurante del tenant, o los de por defecto si no hay restaurante', async () => {
+      tx().restaurante.findUnique.mockResolvedValueOnce({
+        minutosEsperaAtencion: 20,
+        minutosEsperaDemorado: 40,
+        minutosEsperaDemoraAlta: 90,
+      });
+
+      await expect(service.umbralesEspera(TENANT_ID)).resolves.toEqual({
+        atencion: 20,
+        demorado: 40,
+        demoraAlta: 90,
+      });
+      expect(tx().restaurante.findUnique).toHaveBeenCalledWith({
+        where: { tenantId: TENANT_ID },
+        select: {
+          minutosEsperaAtencion: true,
+          minutosEsperaDemorado: true,
+          minutosEsperaDemoraAlta: true,
+        },
+      });
+
+      // Sin restaurante (mock por defecto: null).
+      await expect(service.umbralesEspera(TENANT_ID)).resolves.toEqual({
+        atencion: 30,
+        demorado: 60,
+        demoraAlta: 120,
+      });
+    });
+  });
 });

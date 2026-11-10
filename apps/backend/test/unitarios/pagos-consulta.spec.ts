@@ -5,6 +5,23 @@ import { PagosService } from '../../src/pagos/pagos.service';
 const TENANT_ID = '11111111-1111-1111-1111-111111111111';
 const PEDIDO_ID = '3cdf1dad-31d6-43c9-9739-11485e0e23f8';
 
+// 400 + 190 = 590 (el consumo de los pedidos de estos tests).
+const LINEAS = [
+  { subtotal: new Prisma.Decimal('400') },
+  { subtotal: new Prisma.Decimal('190') },
+];
+
+// HU-022 (BL-494): el pedido que devuelve la base. Sin propina elegida salvo
+// que el test diga lo contrario.
+function pedidoDe(datos: Record<string, unknown>) {
+  return {
+    lineas: LINEAS,
+    propinaPorcentaje: null,
+    propinaMonto: null,
+    ...datos,
+  };
+}
+
 function pago(overrides: Record<string, unknown> = {}) {
   return {
     id: 'pago-1',
@@ -26,9 +43,12 @@ describe('PagosService.consultar (BL-311: estado del pago y comprobante para el 
 
   beforeEach(() => {
     findUnique = jest.fn();
+    // HU-022 (BL-495): el local sugiere 5, 10 y 15 %, sin preselección.
     restauranteFindUnique = jest.fn().mockResolvedValue({
       efectivoHabilitado: true,
       mercadoPagoHabilitado: true,
+      propinasSugeridas: [5, 10, 15],
+      propinaPreseleccionada: false,
     });
     runInTenantContext = jest.fn((_tenantId, fn) =>
       fn({
@@ -45,22 +65,24 @@ describe('PagosService.consultar (BL-311: estado del pago y comprobante para el 
   });
 
   it('pago aprobado con CFE emitido: devuelve serie, número y enlace de DGI', async () => {
-    findUnique.mockResolvedValue({
-      id: PEDIDO_ID,
-      estado: 'RECIBIDO',
-      pagos: [
-        pago({
-          comprobantes: [
-            {
-              tipoCfe: '111',
-              serie: 'A',
-              numero: 1234,
-              urlConsulta: 'https://www.efactura.dgi.gub.uy/consultaQR/x',
-            },
-          ],
-        }),
-      ],
-    });
+    findUnique.mockResolvedValue(
+      pedidoDe({
+        id: PEDIDO_ID,
+        estado: 'RECIBIDO',
+        pagos: [
+          pago({
+            comprobantes: [
+              {
+                tipoCfe: '111',
+                serie: 'A',
+                numero: 1234,
+                urlConsulta: 'https://www.efactura.dgi.gub.uy/consultaQR/x',
+              },
+            ],
+          }),
+        ],
+      }),
+    );
 
     await expect(service.consultar(TENANT_ID, PEDIDO_ID)).resolves.toEqual({
       pedidoId: PEDIDO_ID,
@@ -72,6 +94,13 @@ describe('PagosService.consultar (BL-311: estado del pago y comprobante para el 
         monto: '590.00',
         motivoRechazo: null,
       },
+      totales: {
+        consumo: '590.00',
+        propina: '0.00',
+        total: '590.00',
+        propinaPorcentaje: null,
+        propinaMonto: null,
+      },
       comprobante: {
         tipoCfe: '111',
         serie: 'A',
@@ -80,16 +109,19 @@ describe('PagosService.consultar (BL-311: estado del pago y comprobante para el 
       },
       efectivo: { disponible: false, solicitadoEn: null, pagaCon: null },
       tarjeta: { disponible: true },
+      propina: { sugeridas: [5, 10, 15], preseleccionada: false },
       rebajaIva: null,
     });
   });
 
   it('HU-032 (BL-202): pago vencido => devuelve el motivo, para que el comensal sepa por qué', async () => {
-    findUnique.mockResolvedValue({
-      id: PEDIDO_ID,
-      estado: 'PENDIENTE_PAGO',
-      pagos: [pago({ estado: 'RECHAZADO', motivoRechazo: 'VENCIDO' })],
-    });
+    findUnique.mockResolvedValue(
+      pedidoDe({
+        id: PEDIDO_ID,
+        estado: 'PENDIENTE_PAGO',
+        pagos: [pago({ estado: 'RECHAZADO', motivoRechazo: 'VENCIDO' })],
+      }),
+    );
 
     const r = await service.consultar(TENANT_ID, PEDIDO_ID);
 
@@ -100,11 +132,13 @@ describe('PagosService.consultar (BL-311: estado del pago y comprobante para el 
   });
 
   it('pago aprobado pero el CFE todavía no se emitió: comprobante null (el frontend vuelve a consultar)', async () => {
-    findUnique.mockResolvedValue({
-      id: PEDIDO_ID,
-      estado: 'RECIBIDO',
-      pagos: [pago()],
-    });
+    findUnique.mockResolvedValue(
+      pedidoDe({
+        id: PEDIDO_ID,
+        estado: 'RECIBIDO',
+        pagos: [pago()],
+      }),
+    );
 
     const r = await service.consultar(TENANT_ID, PEDIDO_ID);
 
@@ -113,34 +147,46 @@ describe('PagosService.consultar (BL-311: estado del pago y comprobante para el 
   });
 
   it('pedido sin pagos todavía: pago y comprobante null, con el estado del pedido', async () => {
-    findUnique.mockResolvedValue({
-      id: PEDIDO_ID,
-      estado: 'PENDIENTE_PAGO',
-      pagos: [],
-    });
+    findUnique.mockResolvedValue(
+      pedidoDe({
+        id: PEDIDO_ID,
+        estado: 'PENDIENTE_PAGO',
+        pagos: [],
+      }),
+    );
 
     await expect(service.consultar(TENANT_ID, PEDIDO_ID)).resolves.toEqual({
       pedidoId: PEDIDO_ID,
       estadoPedido: 'PENDIENTE_PAGO',
       pago: null,
+      totales: {
+        consumo: '590.00',
+        propina: '0.00',
+        total: '590.00',
+        propinaPorcentaje: null,
+        propinaMonto: null,
+      },
       comprobante: null,
       efectivo: { disponible: false, solicitadoEn: null, pagaCon: null },
       tarjeta: { disponible: true },
+      propina: { sugeridas: [5, 10, 15], preseleccionada: false },
       rebajaIva: null,
     });
   });
 
   it('rechazado y después aprobado: muestra el aprobado aunque no sea el último intento', async () => {
     // Orden de la consulta: createdAt desc (el primero es el más nuevo).
-    findUnique.mockResolvedValue({
-      id: PEDIDO_ID,
-      estado: 'RECIBIDO',
-      pagos: [
-        pago({ id: 'pago-rechazado-2', estado: 'RECHAZADO' }),
-        pago({ id: 'pago-ok', estado: 'APROBADO' }),
-        pago({ id: 'pago-rechazado-1', estado: 'RECHAZADO' }),
-      ],
-    });
+    findUnique.mockResolvedValue(
+      pedidoDe({
+        id: PEDIDO_ID,
+        estado: 'RECIBIDO',
+        pagos: [
+          pago({ id: 'pago-rechazado-2', estado: 'RECHAZADO' }),
+          pago({ id: 'pago-ok', estado: 'APROBADO' }),
+          pago({ id: 'pago-rechazado-1', estado: 'RECHAZADO' }),
+        ],
+      }),
+    );
 
     const r = await service.consultar(TENANT_ID, PEDIDO_ID);
 
@@ -148,14 +194,16 @@ describe('PagosService.consultar (BL-311: estado del pago y comprobante para el 
   });
 
   it('solo intentos sin cobro: muestra el último (pendiente o rechazado)', async () => {
-    findUnique.mockResolvedValue({
-      id: PEDIDO_ID,
-      estado: 'PENDIENTE_PAGO',
-      pagos: [
-        pago({ id: 'ultimo', estado: 'PENDIENTE' }),
-        pago({ id: 'anterior', estado: 'RECHAZADO' }),
-      ],
-    });
+    findUnique.mockResolvedValue(
+      pedidoDe({
+        id: PEDIDO_ID,
+        estado: 'PENDIENTE_PAGO',
+        pagos: [
+          pago({ id: 'ultimo', estado: 'PENDIENTE' }),
+          pago({ id: 'anterior', estado: 'RECHAZADO' }),
+        ],
+      }),
+    );
 
     const r = await service.consultar(TENANT_ID, PEDIDO_ID);
 
@@ -164,17 +212,19 @@ describe('PagosService.consultar (BL-311: estado del pago y comprobante para el 
   });
 
   it('no expone datos internos del pago ni del comprobante (referencia de la pasarela, CAE, hash)', async () => {
-    findUnique.mockResolvedValue({
-      id: PEDIDO_ID,
-      estado: 'RECIBIDO',
-      pagos: [
-        pago({
-          comprobantes: [
-            { tipoCfe: '101', serie: 'A', numero: 1, urlConsulta: null },
-          ],
-        }),
-      ],
-    });
+    findUnique.mockResolvedValue(
+      pedidoDe({
+        id: PEDIDO_ID,
+        estado: 'RECIBIDO',
+        pagos: [
+          pago({
+            comprobantes: [
+              { tipoCfe: '101', serie: 'A', numero: 1, urlConsulta: null },
+            ],
+          }),
+        ],
+      }),
+    );
 
     const r = await service.consultar(TENANT_ID, PEDIDO_ID);
 
@@ -204,11 +254,13 @@ describe('PagosService.consultar (BL-311: estado del pago y comprobante para el 
   });
 
   it('consulta dentro del tenant del JWT (RLS)', async () => {
-    findUnique.mockResolvedValue({
-      id: PEDIDO_ID,
-      estado: 'RECIBIDO',
-      pagos: [],
-    });
+    findUnique.mockResolvedValue(
+      pedidoDe({
+        id: PEDIDO_ID,
+        estado: 'RECIBIDO',
+        pagos: [],
+      }),
+    );
 
     await service.consultar(TENANT_ID, PEDIDO_ID);
 
@@ -226,16 +278,170 @@ describe('PagosService.consultar (BL-311: estado del pago y comprobante para el 
     );
   });
 
-  describe('pago en efectivo (HU-031b, BL-442)', () => {
-    const pendiente = (overrides: Record<string, unknown> = {}) => ({
-      id: PEDIDO_ID,
-      estado: 'PENDIENTE_PAGO',
-      canal: 'QR',
-      efectivoSolicitadoEn: null,
-      efectivoPagaCon: null,
-      pagos: [],
-      ...overrides,
+  describe('HU-022 (BL-494): desglose con propina', () => {
+    const pendiente = (overrides: Record<string, unknown> = {}) =>
+      pedidoDe({
+        id: PEDIDO_ID,
+        estado: 'PENDIENTE_PAGO',
+        canal: 'QR',
+        pagos: [],
+        ...overrides,
+      });
+
+    it('sin propina elegida: la propina es 0 y el total es el consumo', async () => {
+      findUnique.mockResolvedValue(pendiente());
+
+      const r = await service.consultar(TENANT_ID, PEDIDO_ID);
+
+      expect(r.totales).toEqual({
+        consumo: '590.00',
+        propina: '0.00',
+        total: '590.00',
+        propinaPorcentaje: null,
+        propinaMonto: null,
+      });
     });
+
+    it('con 15 %: 88,5 se redondea al peso (89) y el total suma la propina', async () => {
+      findUnique.mockResolvedValue(pendiente({ propinaPorcentaje: 15 }));
+
+      const r = await service.consultar(TENANT_ID, PEDIDO_ID);
+
+      expect(r.totales).toEqual({
+        consumo: '590.00',
+        propina: '89.00',
+        total: '679.00',
+        propinaPorcentaje: 15,
+        propinaMonto: null,
+      });
+    });
+
+    it('con monto libre: se informa la elección y el total', async () => {
+      findUnique.mockResolvedValue(pendiente({ propinaMonto: 100 }));
+
+      const r = await service.consultar(TENANT_ID, PEDIDO_ID);
+
+      expect(r.totales).toEqual({
+        consumo: '590.00',
+        propina: '100.00',
+        total: '690.00',
+        propinaPorcentaje: null,
+        propinaMonto: 100,
+      });
+    });
+
+    it('el monto del pago sigue siendo el consumo: la propina va aparte', async () => {
+      findUnique.mockResolvedValue(
+        pendiente({
+          estado: 'RECIBIDO',
+          propinaPorcentaje: 10,
+          pagos: [pago()],
+        }),
+      );
+
+      const r = await service.consultar(TENANT_ID, PEDIDO_ID);
+
+      expect(r.pago?.monto).toBe('590.00');
+      expect(r.totales.propina).toBe('59.00');
+      expect(r.totales.total).toBe('649.00');
+    });
+
+    it('le pide a la base las líneas y la elección, no un monto de propina', async () => {
+      findUnique.mockResolvedValue(pendiente());
+
+      await service.consultar(TENANT_ID, PEDIDO_ID);
+
+      const { select } = findUnique.mock.calls[0][0];
+      expect(select.lineas).toEqual({ select: { subtotal: true } });
+      expect(select.propinaPorcentaje).toBe(true);
+      expect(select.propinaMonto).toBe(true);
+    });
+  });
+
+  describe('HU-022 (BL-495): propina que ofrece el local', () => {
+    const pendiente = (overrides: Record<string, unknown> = {}) =>
+      pedidoDe({
+        id: PEDIDO_ID,
+        estado: 'PENDIENTE_PAGO',
+        canal: 'QR',
+        pagos: [],
+        ...overrides,
+      });
+
+    it('devuelve los porcentajes sugeridos del local y que no hay preselección', async () => {
+      findUnique.mockResolvedValue(pendiente());
+
+      const r = await service.consultar(TENANT_ID, PEDIDO_ID);
+
+      expect(r.propina).toEqual({
+        sugeridas: [5, 10, 15],
+        preseleccionada: false,
+      });
+    });
+
+    it('local con la preselección activa: lo informa para que la pantalla marque el 10 %', async () => {
+      restauranteFindUnique.mockResolvedValue({
+        efectivoHabilitado: true,
+        mercadoPagoHabilitado: true,
+        propinasSugeridas: [5, 10, 15],
+        propinaPreseleccionada: true,
+      });
+      findUnique.mockResolvedValue(pendiente());
+
+      const r = await service.consultar(TENANT_ID, PEDIDO_ID);
+
+      expect(r.propina).toEqual({
+        sugeridas: [5, 10, 15],
+        preseleccionada: true,
+      });
+    });
+
+    it('local sin porcentajes sugeridos: lista vacía (la pantalla ofrece solo «Otro monto» y «Sin propina»)', async () => {
+      restauranteFindUnique.mockResolvedValue({
+        efectivoHabilitado: true,
+        mercadoPagoHabilitado: true,
+        propinasSugeridas: [],
+        propinaPreseleccionada: false,
+      });
+      findUnique.mockResolvedValue(pendiente());
+
+      const r = await service.consultar(TENANT_ID, PEDIDO_ID);
+
+      expect(r.propina).toEqual({ sugeridas: [], preseleccionada: false });
+    });
+
+    it('sin restaurante (alta incompleta): lista vacía y sin preselección, sin romper la consulta', async () => {
+      restauranteFindUnique.mockResolvedValue(null);
+      findUnique.mockResolvedValue(pendiente());
+
+      const r = await service.consultar(TENANT_ID, PEDIDO_ID);
+
+      expect(r.propina).toEqual({ sugeridas: [], preseleccionada: false });
+    });
+
+    it('pedido para retirar: recibe la misma configuración (el canal no la cambia)', async () => {
+      findUnique.mockResolvedValue(pendiente({ canal: 'WEB' }));
+
+      const r = await service.consultar(TENANT_ID, PEDIDO_ID);
+
+      expect(r.propina).toEqual({
+        sugeridas: [5, 10, 15],
+        preseleccionada: false,
+      });
+    });
+  });
+
+  describe('pago en efectivo (HU-031b, BL-442)', () => {
+    const pendiente = (overrides: Record<string, unknown> = {}) =>
+      pedidoDe({
+        id: PEDIDO_ID,
+        estado: 'PENDIENTE_PAGO',
+        canal: 'QR',
+        efectivoSolicitadoEn: null,
+        efectivoPagaCon: null,
+        pagos: [],
+        ...overrides,
+      });
 
     it('pedido de mesa en un local que acepta efectivo: disponible', async () => {
       findUnique.mockResolvedValue(pendiente());
@@ -290,12 +496,14 @@ describe('PagosService.consultar (BL-311: estado del pago y comprobante para el 
 
   describe('BL-452: pago con tarjeta (Mercado Pago)', () => {
     beforeEach(() => {
-      findUnique.mockResolvedValue({
-        id: PEDIDO_ID,
-        estado: 'PENDIENTE_PAGO',
-        canal: 'QR',
-        pagos: [],
-      });
+      findUnique.mockResolvedValue(
+        pedidoDe({
+          id: PEDIDO_ID,
+          estado: 'PENDIENTE_PAGO',
+          canal: 'QR',
+          pagos: [],
+        }),
+      );
     });
 
     it('local con Mercado Pago habilitado: la tarjeta está disponible', async () => {
@@ -304,7 +512,12 @@ describe('PagosService.consultar (BL-311: estado del pago y comprobante para el 
       expect(r.tarjeta).toEqual({ disponible: true });
       expect(restauranteFindUnique).toHaveBeenCalledWith({
         where: { tenantId: TENANT_ID },
-        select: { efectivoHabilitado: true, mercadoPagoHabilitado: true },
+        select: {
+          efectivoHabilitado: true,
+          mercadoPagoHabilitado: true,
+          propinasSugeridas: true,
+          propinaPreseleccionada: true,
+        },
       });
     });
 
@@ -321,12 +534,14 @@ describe('PagosService.consultar (BL-311: estado del pago y comprobante para el 
     });
 
     it('pedido para retirar: la tarjeta depende solo de Mercado Pago (no del canal)', async () => {
-      findUnique.mockResolvedValue({
-        id: PEDIDO_ID,
-        estado: 'PENDIENTE_PAGO',
-        canal: 'WEB',
-        pagos: [],
-      });
+      findUnique.mockResolvedValue(
+        pedidoDe({
+          id: PEDIDO_ID,
+          estado: 'PENDIENTE_PAGO',
+          canal: 'WEB',
+          pagos: [],
+        }),
+      );
 
       const r = await service.consultar(TENANT_ID, PEDIDO_ID);
 
@@ -336,15 +551,13 @@ describe('PagosService.consultar (BL-311: estado del pago y comprobante para el 
   });
 
   describe('HU-037 (BL-207): rebaja de IVA de la Ley 17.934', () => {
-    const pedidoCon = (
-      canal: string,
-      pagoDelPedido: Record<string, unknown>,
-    ) => ({
-      id: PEDIDO_ID,
-      estado: 'RECIBIDO',
-      canal,
-      pagos: [pago({ monto: new Prisma.Decimal('1220'), ...pagoDelPedido })],
-    });
+    const pedidoCon = (canal: string, pagoDelPedido: Record<string, unknown>) =>
+      pedidoDe({
+        id: PEDIDO_ID,
+        estado: 'RECIBIDO',
+        canal,
+        pagos: [pago({ monto: new Prisma.Decimal('1220'), ...pagoDelPedido })],
+      });
 
     it.each(['QR', 'MOZO'])(
       'pago con tarjeta aprobado de un consumo en el local (%s): informa total, reducción de 9 puntos, neto y leyenda',

@@ -1,17 +1,36 @@
 import type { Pedido } from '@/types/pedido';
 import { etiquetaEstadoConCola } from './cola-kds.utils';
 import { sePuedeCancelar } from './cancelacion.utils';
+import {
+  ETIQUETA_NIVEL_ESPERA,
+  UMBRALES_ESPERA_POR_DEFECTO,
+  minutosDeEspera,
+  nivelDeEspera,
+  textoEspera,
+  type NivelEspera,
+  type UmbralesEspera,
+} from './espera-kds.utils';
 
 interface OrderTicketProps {
   pedido: Pedido;
   puedeOperarTransiciones: boolean;
   onTransicion: (pedidoId: string, nuevoEstado: Pedido['estado']) => void;
+  /** HU-038 (BL-208): hora actual del reloj del tablero (ms epoch). */
+  ahora: number;
+  /** HU-038 (BL-208): umbrales de espera del local (por defecto 30/60/120 min). */
+  umbrales?: UmbralesEspera;
   /** HU-042 (BL-466): cola automática activa en el local. */
   colaActiva?: boolean;
   /** HU-042 (BL-466): lugar en la cola (1 = el próximo), si está en espera. */
   posicionEnCola?: number | null;
   /** HU-024 (BL-104): abre la cancelación del pedido (mozo y admin). */
   onCancelar?: (pedido: Pedido) => void;
+  /**
+   * HU-038 (BL-510): «tablero» (mozo y admin: columna de ancho fijo, alto
+   * completo y scroll propio) o «monitor» (Cocina: ocupa su celda de la
+   * grilla y toma el alto de sus ítems, sin scroll).
+   */
+  variante?: 'tablero' | 'monitor';
 }
 
 // Etiqueta legible para mostrar en el badge — separada del valor real del
@@ -26,15 +45,37 @@ export const ESTADO_LABEL: Record<Pedido['estado'], string> = {
   CANCELADO: 'Cancelado',
 };
 
-// Umbral simple para el color de urgencia según minutos desde la recepción.
-// Ajustar estos valores junto con el equipo si el tiempo de preparación
-// promedio del establecimiento difiere.
-function getUrgencyColor(createdAt: string): { bg: string; label: string } {
-  const minutos = (Date.now() - new Date(createdAt).getTime()) / 60000;
-  if (minutos >= 15) return { bg: 'bg-error', label: 'Demorado' };
-  if (minutos >= 8) return { bg: 'bg-tertiary-container', label: 'Atención' };
-  return { bg: 'bg-primary', label: 'A tiempo' };
-}
+// HU-038 (BL-208): colores del encabezado por nivel de espera. Cada par
+// fondo/texto cumple WCAG 2.1 AA (4,5:1 o más). «Atención» antes usaba texto
+// blanco sobre dorado (2,3:1); ahora usa on-tertiary-container (4,5:1).
+const ESTILO_NIVEL: Record<NivelEspera, { encabezado: string; borde: string }> = {
+  'a-tiempo': { encabezado: 'bg-primary text-on-primary', borde: '' },
+  atencion: {
+    encabezado: 'bg-tertiary-container text-on-tertiary-container',
+    borde: '',
+  },
+  demorado: { encabezado: 'bg-error text-on-error', borde: '' },
+  // Demora alta: más oscuro que «Demorado» y con un borde grueso, para que se
+  // distinga de lejos. El texto «Demora alta» es lo que lo identifica.
+  'demora-alta': {
+    encabezado: 'bg-on-error-container text-on-error',
+    borde: 'ring-4 ring-error',
+  },
+};
+
+// HU-038 (BL-510): clases que cambian según la variante.
+const CLASE_VARIANTE = {
+  tablero: {
+    tarjeta: 'h-full w-[300px] shrink-0',
+    items: 'flex-1 overflow-y-auto',
+    estado: 'text-label-md',
+  },
+  monitor: {
+    tarjeta: 'w-full',
+    items: '',
+    estado: 'text-label-lg',
+  },
+} as const;
 
 function formatHora(iso: string) {
   return new Date(iso).toLocaleTimeString('es-UY', { hour: '2-digit', minute: '2-digit' });
@@ -44,11 +85,17 @@ export function OrderTicket({
   pedido,
   puedeOperarTransiciones,
   onTransicion,
+  ahora,
+  umbrales = UMBRALES_ESPERA_POR_DEFECTO,
   colaActiva = false,
   posicionEnCola = null,
   onCancelar,
+  variante = 'tablero',
 }: Readonly<OrderTicketProps>) {
-  const urgencia = getUrgencyColor(pedido.createdAt);
+  const claseVariante = CLASE_VARIANTE[variante];
+  const minutos = minutosDeEspera(pedido.createdAt, ahora);
+  const nivel = nivelDeEspera(minutos, umbrales);
+  const estilo = ESTILO_NIVEL[nivel];
   const lineas = pedido.lineas ?? [];
   const etiquetaEstado = etiquetaEstadoConCola(
     pedido.estado,
@@ -64,17 +111,27 @@ export function OrderTicket({
     <article
       data-testid="pedido-kds"
       data-pedido-id={pedido.id}
-      className="flex h-full w-[300px] shrink-0 flex-col overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest shadow-sm"
+      data-nivel-espera={nivel}
+      data-variante={variante}
+      className={`flex ${claseVariante.tarjeta} flex-col overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest shadow-sm ${estilo.borde}`}
     >
-      {/* Header del ticket */}
-      <div className={`${urgencia.bg} flex shrink-0 items-start justify-between p-3 text-on-primary`}>
-        <div>
+      {/* Header del ticket. HU-038 (BL-208): el tiempo de espera va grande
+          para leerlo a 2 metros; la hora de llegada queda como dato
+          secundario. */}
+      <div className={`${estilo.encabezado} flex shrink-0 items-start justify-between gap-2 p-3`}>
+        <div className="min-w-0">
           <div className="text-headline-sm font-bold">Mesa {pedido.mesaNumero}</div>
-          <div className="text-body-sm opacity-90">{urgencia.label}</div>
+          <div data-testid="nivel-espera" className="text-label-lg font-bold">
+            {nivel === 'demora-alta' && <span aria-hidden="true">⚠ </span>}
+            {ETIQUETA_NIVEL_ESPERA[nivel]}
+          </div>
         </div>
         <div className="text-right">
-          <div className="text-headline-md font-bold">{formatHora(pedido.createdAt)}</div>
-          <div className="mt-1 rounded bg-white/20 px-2 py-0.5 text-label-md text-white">
+          <div data-testid="tiempo-espera" className="text-headline-md font-bold">
+            {textoEspera(minutos)}
+          </div>
+          <div className="text-label-md">Llegó {formatHora(pedido.createdAt)}</div>
+          <div className={`mt-1 inline-block rounded border border-current px-2 py-0.5 font-semibold ${claseVariante.estado}`}>
             {etiquetaEstado}
           </div>
           {posicionEnCola !== null && (
@@ -96,7 +153,7 @@ export function OrderTicket({
       )}
 
       {/* Ítems */}
-      <div className="flex-1 space-y-3 overflow-y-auto p-4">
+      <div className={`space-y-3 p-4 ${claseVariante.items}`}>
         {lineas.map((linea) => (
           <div key={linea.id} className="border-b border-surface-variant pb-3 last:border-0">
             <div className="flex items-center gap-2 text-body-lg font-semibold">

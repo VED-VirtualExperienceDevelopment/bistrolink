@@ -16,6 +16,11 @@ import {
   type EstadoCola,
   type PedidoPromovido,
 } from './cola-kds';
+import {
+  SELECT_UMBRALES_ESPERA,
+  umbralesDelRestaurante,
+  type UmbralesEspera,
+} from './umbrales-espera';
 
 /**
  * BL-448: un aviso de «Mesa N quiere pagar en efectivo» pendiente, con la
@@ -182,6 +187,21 @@ export class PedidosTransicionService {
     return this.tenantPrisma.runInTenantContext(tenantId, (tx) =>
       estadoDeLaCola(tx, tenantId),
     );
+  }
+
+  /**
+   * HU-038 (BL-506): umbrales de espera del tenant, para que el KDS pinte
+   * las comandas. Sin restaurante (alta incompleta), los de por defecto. RLS
+   * limita la consulta al tenant.
+   */
+  async umbralesEspera(tenantId: string): Promise<UmbralesEspera> {
+    return this.tenantPrisma.runInTenantContext(tenantId, async (tx) => {
+      const restaurante = await tx.restaurante.findUnique({
+        where: { tenantId },
+        select: SELECT_UMBRALES_ESPERA,
+      });
+      return umbralesDelRestaurante(restaurante);
+    });
   }
 
   /** Para HU-006: estado actual de un pedido puntual, al suscribirse (por

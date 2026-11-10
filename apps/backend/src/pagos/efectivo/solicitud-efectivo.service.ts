@@ -8,6 +8,7 @@ import { Prisma } from '@prisma/client';
 import { TenantPrismaService } from '../../prisma/tenant-prisma.service';
 import { PedidosService } from '../../pedidos/pedidos.service';
 import { receptorParaGuardar } from '../../cfe/receptor-fiscal';
+import { calcularTotales } from '../totales-pedido';
 import { SolicitarEfectivoDto } from './solicitar-efectivo.dto';
 
 /**
@@ -19,7 +20,7 @@ export const ESPERA_ENTRE_AVISOS_MS = 60_000;
 
 export interface SolicitudEfectivoRegistrada {
   pedidoId: string;
-  /** Total del pedido, con 2 decimales. */
+  /** Total a cobrar (consumo + propina elegida), con 2 decimales. */
   total: string;
   pagaCon: string | null;
   solicitadoEn: Date;
@@ -38,6 +39,9 @@ export interface SolicitudEfectivoRegistrada {
  *   registra el cobro (BL-201, RD.03).
  * - Se avisa al staff con el mismo evento que «Llamar al mozo», con el total
  *   y con cuánto paga.
+ * - HU-022 (BL-494): el total incluye la propina que el comensal ya eligió
+ *   (se guarda en el pedido antes de elegir el medio de pago). «Con cuánto
+ *   paga» se compara contra ese total.
  *
  * El acceso al pedido (QR y sesión de la mesa) ya lo validaron MesaQrGuard y
  * PedidoAccesoGuard (RD.05).
@@ -64,6 +68,8 @@ export class SolicitudEfectivoService {
             canal: true,
             estado: true,
             efectivoSolicitadoEn: true,
+            propinaPorcentaje: true,
+            propinaMonto: true,
             mesa: { select: { id: true, numero: true } },
             lineas: { select: { subtotal: true } },
             pagos: { where: { estado: 'PENDIENTE' }, select: { id: true } },
@@ -98,10 +104,7 @@ export class SolicitudEfectivoService {
           );
         }
 
-        const total = pedido.lineas.reduce(
-          (acumulado, linea) => acumulado.plus(linea.subtotal),
-          new Prisma.Decimal(0),
-        );
+        const { total } = calcularTotales(pedido.lineas, pedido);
         const pagaCon = dto.pagaCon ? new Prisma.Decimal(dto.pagaCon) : null;
         if (pagaCon?.lessThan(total)) {
           throw new BadRequestException(

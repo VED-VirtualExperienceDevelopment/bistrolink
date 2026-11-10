@@ -7,6 +7,8 @@ import { CfeService } from '../../cfe/cfe.service';
 import { PedidosService } from '../../pedidos/pedidos.service';
 import { PedidoParaKds } from '../../pedidos/pedido-kds.mapper';
 import { registrarCambioPago } from '../historial-pago';
+import { totalCobrado } from '../totales-pedido';
+import { liberarMesaDelCobro } from '../mesa-en-cobro';
 
 type EstadoPago = 'PENDIENTE' | 'APROBADO' | 'RECHAZADO' | 'REEMBOLSADO';
 
@@ -133,12 +135,15 @@ export class PlexoWebhookService {
       return { resultado: 'pago_no_encontrado' };
     }
 
+    // HU-022 (BL-494): el checkout se creó por el total cobrado (consumo +
+    // propina), no solo por el consumo.
+    const cobrado = totalCobrado(pagoBd);
     if (
       pago.totalAmount === undefined ||
-      !new Prisma.Decimal(pago.totalAmount).equals(pagoBd.monto)
+      !new Prisma.Decimal(pago.totalAmount).equals(cobrado)
     ) {
       Logger.error(
-        `Webhook Plexo: el monto de ${pago.id} (${pago.totalAmount}) no coincide con el del pago ${pagoBd.id} (${pagoBd.monto})`,
+        `Webhook Plexo: el monto de ${pago.id} (${pago.totalAmount}) no coincide con el del pago ${pagoBd.id} (${cobrado})`,
         undefined,
         PlexoWebhookService.name,
       );
@@ -166,8 +171,9 @@ export class PlexoWebhookService {
 
     // BL-311 (prepago, RD.03): mismo criterio que con Mercado Pago.
     // Aprobado o rechazado, la mesa vuelve a OCUPADA (el comensal paga antes
-    // de comer; la libera el cierre de sesión, HU-017), y con el pago
-    // aprobado el pedido pasa de PENDIENTE_PAGO a RECIBIDO.
+    // de comer; la libera el cierre de sesión, HU-017), salvo que otro
+    // comensal de la mesa siga pagando. Con el pago aprobado el pedido pasa
+    // de PENDIENTE_PAGO a RECIBIDO.
     let pedidoConfirmado: PedidoParaKds | null = null;
     let mesaOcupada: string | undefined;
     if (estado === 'APROBADO' || estado === 'RECHAZADO') {
@@ -175,12 +181,8 @@ export class PlexoWebhookService {
         where: { id: pedidoId },
         select: { mesaId: true },
       });
-      if (pedido) {
-        const mesa = await tx.mesa.updateMany({
-          where: { id: pedido.mesaId, estado: 'EN_PROCESO_DE_PAGO' },
-          data: { estado: 'OCUPADA' },
-        });
-        if (mesa.count > 0) mesaOcupada = pedido.mesaId;
+      if (pedido && (await liberarMesaDelCobro(tx, pedido.mesaId))) {
+        mesaOcupada = pedido.mesaId;
       }
       if (estado === 'APROBADO') {
         pedidoConfirmado = await this.pedidos.confirmarPagoEnTx(

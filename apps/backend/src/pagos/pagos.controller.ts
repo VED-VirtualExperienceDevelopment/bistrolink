@@ -8,6 +8,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Put,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -20,6 +21,8 @@ import { PagosService } from './pagos.service';
 import { CrearPagoDto } from './dto/crear-pago.dto';
 import { SolicitudEfectivoService } from './efectivo/solicitud-efectivo.service';
 import { SolicitarEfectivoDto } from './efectivo/solicitar-efectivo.dto';
+import { PropinaPedidoService } from './propina/propina-pedido.service';
+import { ElegirPropinaDto } from './propina/elegir-propina.dto';
 import { CfeService } from '../cfe/cfe.service';
 import { ApiTags, ApiSecurity } from '@nestjs/swagger';
 import {
@@ -40,6 +43,7 @@ export class PagosController {
     private readonly pagosService: PagosService,
     private readonly solicitudEfectivo: SolicitudEfectivoService,
     private readonly cfe: CfeService,
+    private readonly propina: PropinaPedidoService,
   ) {}
 
   // BL-311 (RD.05): solo quien hizo el pedido lo puede pagar (mesa del QR o
@@ -98,5 +102,18 @@ export class PagosController {
     @Body() dto: SolicitarEfectivoDto,
   ) {
     return this.solicitudEfectivo.solicitar(req.user.tenantId, pedidoId, dto);
+  }
+
+  // HU-022 (BL-494): el comensal elige la propina antes de pagar. Reemplaza
+  // la elección anterior; sin porcentaje ni monto, la borra. Mismo control de
+  // acceso que el pago (RD.05). El monto en pesos lo calcula el backend.
+  @Put('propina')
+  @UseGuards(MesaQrGuard, PedidoAccesoGuard)
+  elegirPropina(
+    @Req() req: { user: AuthenticatedUser },
+    @Param('pedidoId', ParseUUIDPipe) pedidoId: string,
+    @Body() dto: ElegirPropinaDto,
+  ) {
+    return this.propina.elegir(req.user.tenantId, pedidoId, dto);
   }
 }
