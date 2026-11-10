@@ -260,40 +260,30 @@ export class PagosWebhookService {
         undefined,
         PagosWebhookService.name,
       );
-      // HU-017 (BL-60): si este pago estaba PENDIENTE, era un cobro en curso
+      // HU-017 (BL-509): si este pago estaba PENDIENTE, era un cobro en curso
       // de la mesa; aunque no confirme el pedido, ya terminó. Sin esto la
       // mesa quedaba EN_PROCESO_DE_PAGO para siempre (no se podía cerrar).
       // Si ya estaba resuelto (vencido o rechazado), la mesa ya salió del
       // cobro y no se toca.
-      let mesaOcupada: string | undefined;
-      if (pedido && pago.estado === 'PENDIENTE') {
-        if (await liberarMesaDelCobro(tx, pedido.mesaId)) {
-          mesaOcupada = pedido.mesaId;
-        }
-      }
+      const mesaOcupada =
+        pago.estado === 'PENDIENTE'
+          ? await this.liberarMesa(tx, pedido?.mesaId)
+          : undefined;
       return { resultado: 'requiere_reembolso', pagoId: pago.id, mesaOcupada };
     }
 
     // BL-311: aprobado o rechazado, la mesa vuelve a OCUPADA (con prepago,
     // el comensal paga antes de comer; la mesa la libera el cierre de
-    // sesión, HU-017). Solo si sigue EN_PROCESO_DE_PAGO (una notificación
-    // tardía no mueve una mesa que ya siguió su curso) y si no queda otro
-    // cobro en curso en la mesa.
-    let pedidoConfirmado: PedidoParaKds | null = null;
-    let mesaOcupada: string | undefined;
-    if (estado === 'APROBADO' || estado === 'RECHAZADO') {
-      if (pedido && (await liberarMesaDelCobro(tx, pedido.mesaId))) {
-        mesaOcupada = pedido.mesaId;
-      }
-      // BL-311 (RD.03): pago aprobado => el pedido pasa a RECIBIDO.
-      if (estado === 'APROBADO') {
-        pedidoConfirmado = await this.pedidos.confirmarPagoEnTx(
-          tx,
-          tenantId,
-          pedidoId,
-        );
-      }
-    }
+    // sesión, HU-017).
+    const cobroTerminado = estado === 'APROBADO' || estado === 'RECHAZADO';
+    const mesaOcupada = cobroTerminado
+      ? await this.liberarMesa(tx, pedido?.mesaId)
+      : undefined;
+    // BL-311 (RD.03): pago aprobado => el pedido pasa a RECIBIDO.
+    const pedidoConfirmado: PedidoParaKds | null =
+      estado === 'APROBADO'
+        ? await this.pedidos.confirmarPagoEnTx(tx, tenantId, pedidoId)
+        : null;
 
     return {
       resultado: 'actualizado',
@@ -301,6 +291,19 @@ export class PagosWebhookService {
       pedidoConfirmado,
       mesaOcupada,
     };
+  }
+
+  /**
+   * HU-017 (BL-509): la mesa sale de EN_PROCESO_DE_PAGO si sigue cobrando y
+   * no le queda otro cobro en curso (ver liberarMesaDelCobro). Devuelve la
+   * mesa si volvió a OCUPADA, para avisar al mapa.
+   */
+  private async liberarMesa(
+    tx: PrismaClient,
+    mesaId: string | undefined,
+  ): Promise<string | undefined> {
+    if (!mesaId) return undefined;
+    return (await liberarMesaDelCobro(tx, mesaId)) ? mesaId : undefined;
   }
 
   /**
