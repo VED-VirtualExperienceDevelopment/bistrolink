@@ -63,25 +63,13 @@ export interface TotalesVentas {
   pedidos: number;
 }
 
-/**
- * HU-022 (BL-496): propinas del período. No suman en `totalVendido`: las
- * ventas son el consumo y la propina va aparte.
- */
-export interface TotalesPropinas {
-  total: number;
-  /** Se cuenta por medio de pago: puede pasar los pedidos del período. */
-  pedidosConPropina: number;
-  /** Propinas ÷ ventas, en %, con un decimal. 0 si no hubo ventas. */
-  porcentajeDeVentas: number;
-}
-
 export interface VentaPorHora {
   /** Hora del día en la zona del local (0 a 23). */
   hora: number;
-  monto: number;
-  pedidos: number;
   /** HU-022 (BL-496): propinas de la hora, aparte del monto. */
   propina: number;
+  monto: number;
+  pedidos: number;
 }
 
 export interface PlatoVendido {
@@ -107,7 +95,17 @@ export interface ReporteVentas {
   resumen: TotalesVentas & {
     ticketPromedio: number;
     anterior: TotalesVentas;
-    propinas: TotalesPropinas;
+    /**
+     * HU-022 (BL-496): propinas del período. No suman en `totalVendido`: las
+     * ventas son el consumo y la propina va aparte. `pedidosConPropina` se
+     * cuenta por medio de pago, así que puede pasar los pedidos del período;
+     * `porcentajeDeVentas` es propinas ÷ ventas, con un decimal.
+     */
+    propinas: {
+      total: number;
+      pedidosConPropina: number;
+      porcentajeDeVentas: number;
+    };
   };
   /** `pos` (BL-489) es opcional: un backend anterior no lo trae. */
   porLugar: { local: number; web: number; whatsapp: number; pos?: number };
@@ -118,6 +116,9 @@ export interface ReporteVentas {
   };
   rotacionMesas: RotacionMesas;
 }
+
+/** Las propinas del período, como las devuelve la API. */
+export type TotalesPropinas = ReporteVentas["resumen"]["propinas"];
 
 export interface FiltrosReportes {
   periodo: Periodo;
@@ -348,7 +349,7 @@ export const DEMORA_REFRESCO_MS = 2000;
 
 /**
  * Llama a `accion` una sola vez, `demoraMs` después del último `programar`:
- * una ráfaga de cobros pide los datos una vez, no una por cobro.
+ * una ráfaga de cobros pide los datos una sola vez, no una por cobro.
  */
 export function crearRefrescoDiferido(
   accion: () => void,
