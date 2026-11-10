@@ -1519,6 +1519,11 @@ jobs:
           TEST_MOZO_PASSWORD: ${{ secrets.TEST_MOZO_PASSWORD }}
           TEST_ADMIN_USERNAME: ${{ secrets.TEST_ADMIN_USERNAME }}
           TEST_ADMIN_PASSWORD: ${{ secrets.TEST_ADMIN_PASSWORD }}
+          # HU-038 (BL-510): usuario COCINA del tenant de testing, para el
+          # monitor de Cocina (e2e/kds/monitor-cocina.spec.ts). Sin estos dos
+          # secrets, ese spec se saltea.
+          TEST_COCINA_USERNAME: ${{ secrets.TEST_COCINA_USERNAME }}
+          TEST_COCINA_PASSWORD: ${{ secrets.TEST_COCINA_PASSWORD }}
           # BL-416: usuario de plataforma de E2E, con OTP (la clave de su app
           # de autenticación, para generar el código). Sin estos tres
           # secrets, e2e/plataforma/gestion-establecimientos.spec.ts se

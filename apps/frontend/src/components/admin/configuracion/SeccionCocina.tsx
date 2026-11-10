@@ -11,6 +11,7 @@ import {
 } from "./configuracion.estilos";
 import {
   LIMITE_PREPARACION,
+  MINUTOS_ESPERA,
   MINUTOS_PREPARACION,
   UMBRAL_ALERTA_COLA,
   type ErroresCola,
@@ -90,6 +91,10 @@ interface SeccionCocinaProps {
  * pedidos en preparación, el umbral de alta demanda y los minutos de
  * referencia del tiempo estimado. Se guarda con «Guardar cambios», como el
  * resto de la pantalla.
+ *
+ * HU-038 (BL-506): también los umbrales de espera de las comandas del KDS
+ * (Atención, Demorado y Demora alta). No dependen de la cola: se muestran
+ * siempre.
  */
 export default function SeccionCocina({
   formulario,
@@ -159,6 +164,47 @@ export default function SeccionCocina({
           límite.
         </p>
       )}
+
+      {/* HU-038 (BL-506): umbrales de espera de las comandas del KDS. */}
+      <fieldset className="mt-2 border-t border-outline-variant pt-4">
+        <legend className="text-body-md text-on-surface">
+          Tiempo de espera en el KDS
+        </legend>
+        <p id="espera-descripcion" className={`mb-3 ${CLASE_AYUDA}`}>
+          Cada comanda cambia de color y de texto según cuánto hace que llegó.
+          Por defecto: Atención desde los 30 minutos, Demorado desde los 60 y
+          Demora alta desde los 120.
+        </p>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <CampoCola
+            id="espera-atencion"
+            etiqueta="«Atención» desde (minutos)"
+            ayuda={`Entre ${MINUTOS_ESPERA.minimo} y ${MINUTOS_ESPERA.maximo}.`}
+            valor={formulario.esperaAtencion}
+            error={errores.esperaAtencion}
+            rango={MINUTOS_ESPERA}
+            onChange={(valor) => onCambiar("esperaAtencion", valor)}
+          />
+          <CampoCola
+            id="espera-demorado"
+            etiqueta="«Demorado» desde (minutos)"
+            ayuda="Mayor que «Atención»."
+            valor={formulario.esperaDemorado}
+            error={errores.esperaDemorado}
+            rango={MINUTOS_ESPERA}
+            onChange={(valor) => onCambiar("esperaDemorado", valor)}
+          />
+          <CampoCola
+            id="espera-demora-alta"
+            etiqueta="«Demora alta» desde (minutos)"
+            ayuda="Mayor que «Demorado»."
+            valor={formulario.esperaDemoraAlta}
+            error={errores.esperaDemoraAlta}
+            rango={MINUTOS_ESPERA}
+            onChange={(valor) => onCambiar("esperaDemoraAlta", valor)}
+          />
+        </div>
+      </fieldset>
     </section>
   );
 }

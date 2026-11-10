@@ -16,6 +16,7 @@ import { PedidosTransicionService } from './pedidos-transicion.service';
 import { origenesPermitidos } from '../seguridad-http';
 import { AlertasPendientes } from './alertas-pendientes';
 import type { EstadoCola } from './cola-kds';
+import type { UmbralesEspera } from './umbrales-espera';
 
 /** Qué hizo el mozo con la alerta: la atendió o la descartó. */
 export type AccionLlamado = 'aceptado' | 'desestimado';
@@ -223,6 +224,8 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const pedidosTransicion = await this.resolverPedidosTransicion();
     const pendientes = await pedidosTransicion.listarPendientes(tenantId);
     client.emit('pedidos:snapshot', pendientes);
+    // HU-038 (BL-506): umbrales de espera del local, también para Cocina.
+    await this.enviarUmbralesEspera(client, tenantId, pedidosTransicion);
     // HU-042 (BL-464): estado de la cola, también para Cocina (secciones del
     // tablero). Sin cola activa no se manda: el KDS sigue como antes.
     await this.enviarEstadoCola(client, tenantId, pedidosTransicion);
@@ -421,6 +424,35 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     } catch (err) {
       Logger.warn(
         `No se pudo avisar el estado de la cola: ${(err as Error).message}`,
+        KdsGateway.name,
+      );
+    }
+  }
+
+  /**
+   * HU-038 (BL-506): el administrador cambió los umbrales de espera. A todo
+   * el staff del tenant (también Cocina), para que el KDS abierto repinte las
+   * comandas sin recargar.
+   */
+  emitirUmbralesEspera(tenantId: string, umbrales: UmbralesEspera) {
+    this.server
+      .to(this.salaTenant(tenantId))
+      .emit('kds:umbrales-espera', umbrales);
+  }
+
+  private async enviarUmbralesEspera(
+    client: Socket,
+    tenantId: string,
+    pedidosTransicion: PedidosTransicionService,
+  ) {
+    try {
+      const umbrales = await pedidosTransicion.umbralesEspera(tenantId);
+      client.emit('kds:umbrales-espera', umbrales);
+    } catch (err) {
+      // El snapshot de pedidos ya salió: el KDS sigue con los umbrales de
+      // por defecto (o los últimos que recibió) y no se corta la conexión.
+      Logger.warn(
+        `No se pudieron enviar los umbrales de espera: ${(err as Error).message}`,
         KdsGateway.name,
       );
     }

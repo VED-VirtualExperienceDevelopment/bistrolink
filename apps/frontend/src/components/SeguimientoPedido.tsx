@@ -9,6 +9,8 @@ import {
   type PosicionEnCola,
 } from './kds/cola-kds.utils';
 import type { EstadoPedido } from '@/types/pedido';
+import { IndicadorConexion } from './conexion/IndicadorConexion';
+import { useEstadoConexion } from './conexion/useEstadoConexion';
 
 
 const WS_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
@@ -39,7 +41,9 @@ export function SeguimientoPedido({
 }: SeguimientoPedidoProps) {
   const [estado, setEstado] = useState<EstadoPedido>(estadoInicial);
   const [actualizadoEn, setActualizadoEn] = useState<string | null>(null);
-  const [conectado, setConectado] = useState(false);
+  // HU-038 (BL-504): el socket en estado, para el indicador de conexión.
+  const [socketActual, setSocketActual] = useState<Socket | null>(null);
+  const estadoConexion = useEstadoConexion(socketActual);
   // HU-042 (BL-466): lugar en la cola y tiempo estimado, mientras espera.
   const [lugar, setLugar] = useState<PosicionEnCola | null>(null);
   const socketRef = useRef<Socket | null>(null);
@@ -52,13 +56,13 @@ export function SeguimientoPedido({
       reconnectionDelayMax: 5000,
     });
     socketRef.current = socket;
+    setSocketActual(socket);
 
+    // Al conectar y al reconectar: el servidor devuelve el estado actual y,
+    // si espera, su lugar en la cola.
     socket.on('connect', () => {
-      setConectado(true);
       socket.emit('pedido:seguir', { pedidoId });
     });
-
-    socket.on('disconnect', () => setConectado(false));
 
     socket.on('pedido:actualizado', (payload: PedidoActualizadoPayload) => {
       if (payload.id !== pedidoId) return;
@@ -76,6 +80,7 @@ export function SeguimientoPedido({
     return () => {
       socket.disconnect();
       socketRef.current = null;
+      setSocketActual(null);
     };
   }, [pedidoId, token]);
 
@@ -85,9 +90,7 @@ export function SeguimientoPedido({
   return (
     <div className="mt-4">
       <div className="flex items-center justify-between mb-3">
-        <span className="text-xs text-culinary-neutral">
-          {conectado ? '🟢 En vivo' : '⏳ Reconectando...'}
-        </span>
+        <IndicadorConexion estado={estadoConexion} textoConectado="En vivo" compacto />
         {actualizadoEn && (
           <span className="text-xs text-culinary-neutral">
             Actualizado {new Date(actualizadoEn).toLocaleTimeString('es-UY')}
