@@ -128,7 +128,10 @@ test.describe("HU-038: monitor de Cocina", () => {
       timeout: 15000,
     });
 
+    // Solo la pantalla del KDS (<main>), como el resto de los specs con axe:
+    // el botón de versión del layout (VersionInfo) queda fuera.
     const resultados = await new AxeBuilder({ page: kdsPageCocina })
+      .include("main")
       .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
       .analyze();
     expect(

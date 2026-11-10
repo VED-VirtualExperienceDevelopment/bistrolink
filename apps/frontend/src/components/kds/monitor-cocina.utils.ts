@@ -78,3 +78,42 @@ export function textoEnPreparacion(
 export function textoOcultas(cantidad: number): string {
   return cantidad === 1 ? "+1 pedido más" : `+${cantidad} pedidos más`;
 }
+
+/** Las comandas de una mesa, en el monitor. */
+export interface GrupoMesaMonitor {
+  mesaNumero: number;
+  pedidos: Pedido[];
+}
+
+/**
+ * Agrupa por mesa las comandas, que ya vienen ordenadas por
+ * comandasDelMonitor. Las mesas quedan en el orden de su comanda más
+ * urgente (la primera que aparece) y, dentro de cada mesa, se respeta ese
+ * mismo orden: primero en preparación y después listas, de la más vieja a
+ * la más nueva.
+ */
+export function agruparPorMesa(
+  comandas: readonly Pedido[],
+): GrupoMesaMonitor[] {
+  const grupos = new Map<number, Pedido[]>();
+  for (const pedido of comandas) {
+    const grupo = grupos.get(pedido.mesaNumero) ?? [];
+    grupo.push(pedido);
+    grupos.set(pedido.mesaNumero, grupo);
+  }
+  return [...grupos.entries()].map(([mesaNumero, pedidos]) => ({
+    mesaNumero,
+    pedidos,
+  }));
+}
+
+/** Cuántas comandas tiene cada mesa (para el título del grupo). */
+export function comandasPorMesa(
+  comandas: readonly Pedido[],
+): ReadonlyMap<number, number> {
+  const cuenta = new Map<number, number>();
+  for (const pedido of comandas) {
+    cuenta.set(pedido.mesaNumero, (cuenta.get(pedido.mesaNumero) ?? 0) + 1);
+  }
+  return cuenta;
+}

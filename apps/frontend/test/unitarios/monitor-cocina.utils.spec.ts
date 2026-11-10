@@ -1,6 +1,8 @@
 import {
   ANCHO_MINIMO_TARJETA,
+  agruparPorMesa,
   comandasDelMonitor,
+  comandasPorMesa,
   densidadMonitor,
   resumenMonitor,
   textoEnPreparacion,
@@ -91,5 +93,44 @@ describe("textos del resumen", () => {
     expect(textoEnPreparacion(3, null)).toBe("3");
     expect(textoOcultas(1)).toBe("+1 pedido más");
     expect(textoOcultas(4)).toBe("+4 pedidos más");
+  });
+});
+
+describe("agruparPorMesa (las comandas de una mesa, juntas)", () => {
+  const conMesa = (
+    id: string,
+    estado: Pedido["estado"],
+    hora: string,
+    mesa: number,
+  ) => ({ ...pedido(id, estado, hora), mesaNumero: mesa }) as Pedido;
+
+  const comandas = comandasDelMonitor([
+    conMesa("m3-listo", "LISTO_PARA_ENTREGAR", "12:00", 3),
+    conMesa("m5-prep", "EN_PREPARACION", "12:05", 5),
+    conMesa("m3-prep", "EN_PREPARACION", "12:10", 3),
+    conMesa("m7-listo", "LISTO_PARA_ENTREGAR", "12:01", 7),
+    conMesa("m5-prep-2", "EN_PREPARACION", "12:20", 5),
+  ]);
+
+  it("[TC-U-498] mesas en el orden de su comanda más urgente; en cada una, primero en preparación y después listas", () => {
+    expect(
+      agruparPorMesa(comandas).map(({ mesaNumero, pedidos }) => ({
+        mesaNumero,
+        ids: pedidos.map((p) => p.id),
+      })),
+    ).toEqual([
+      { mesaNumero: 5, ids: ["m5-prep", "m5-prep-2"] },
+      { mesaNumero: 3, ids: ["m3-prep", "m3-listo"] },
+      { mesaNumero: 7, ids: ["m7-listo"] },
+    ]);
+    expect(agruparPorMesa([])).toEqual([]);
+  });
+
+  it("[TC-U-499] cuenta las comandas de cada mesa", () => {
+    const cuenta = comandasPorMesa(comandas);
+    expect(cuenta.get(5)).toBe(2);
+    expect(cuenta.get(3)).toBe(2);
+    expect(cuenta.get(7)).toBe(1);
+    expect(cuenta.get(9)).toBeUndefined();
   });
 });

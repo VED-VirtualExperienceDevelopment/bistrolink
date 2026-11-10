@@ -46,7 +46,10 @@ const indicador = (kdsPage: Page) => kdsPage.getByTestId("indicador-conexion");
 
 /** Errores graves de accesibilidad (axe) en la página, sin los menores. */
 async function erroresGravesAxe(page: Page) {
+  // Solo la pantalla del KDS (<main>), como el resto de los specs con axe:
+  // el botón de versión del layout (VersionInfo) queda fuera.
   const resultados = await new AxeBuilder({ page })
+    .include("main")
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
     .analyze();
   return resultados.violations
@@ -109,7 +112,8 @@ test.describe("HU-038: tiempo de espera e indicador de conexión en el KDS", () 
     await expect(ticket.getByTestId("tiempo-espera")).toHaveText(
       /^(Recién llegado|hace \d+ min)$/,
     );
-    await expect(ticket.getByText(/^Llegó \d{2}:\d{2}$/)).toBeVisible();
+    // La hora sale con el formato de es-UY: «Llegó 08:31 a. m.».
+    await expect(ticket.getByText(/^Llegó \d{1,2}:\d{2}/)).toBeVisible();
 
     // Sin ningún evento del socket: solo pasa el tiempo.
     await kdsPageMozo.clock.fastForward("31:00");
