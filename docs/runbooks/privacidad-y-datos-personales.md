@@ -11,6 +11,7 @@
 | 1.1     | 02/11/2026 | HU-009 (BL-453): RUT y razón social de la e-Factura, consentimiento y anonimización.              |
 | 1.2     | 02/11/2026 | BL-453: sin aceptar el aviso, la pantalla no deja pagar con datos de la e-Factura cargados.       |
 | 1.3     | 07/11/2026 | BL-454: copia del PDF del comprobante en S3 y descarga desde la API.                              |
+| 1.4     | 10/11/2026 | HU-040 (BL-210): nombre y contacto del pedido para retirar, consentimiento y anonimización.       |
 
 ## 1. Roles
 
@@ -24,15 +25,16 @@
 
 ## 2. Qué datos personales trata el sistema hoy
 
-| Dato                                              | Dónde                                                       | Para qué                                             | Conservación                                |
-| ------------------------------------------------- | ----------------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------- |
-| Pedido: ítems, notas, mesa y hora                 | `pedido`, `linea_pedido`                                    | Preparar y cobrar el pedido                          | Registro de la operación                    |
-| Correo y documento del pagador                    | Solo en tránsito hacia Mercado Pago                         | Procesar el pago con tarjeta y enviar el comprobante | **No se guardan**                           |
-| Datos de la tarjeta                               | Campos seguros de Mercado Pago                              | Pago                                                 | **Nunca pasan por BistroLink**              |
-| Pedido en curso                                   | `sessionStorage` de la pestaña del comensal                 | Retomar el pago al recargar (BL-448)                 | Hasta cerrar la pestaña o hacer otro pedido |
-| Colaboradores: usuario, nombre, apellido y correo | `usuario` y Keycloak                                        | Acceso al panel                                      | Mientras la cuenta exista                   |
-| Correo de privacidad del local                    | `restaurante.email_privacidad`                              | Canal para los derechos                              | Mientras el local lo tenga cargado          |
-| RUT y razón social de la e-Factura (HU-009)       | `pedido.receptor_rut`, `receptor_razon_social` y Surtec/DGI | Emitir la e-Factura a nombre del comensal            | Hasta que se anonimizan; el CFE, 5 años     |
+| Dato                                               | Dónde                                                       | Para qué                                             | Conservación                                |
+| -------------------------------------------------- | ----------------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------- |
+| Pedido: ítems, notas, mesa y hora                  | `pedido`, `linea_pedido`                                    | Preparar y cobrar el pedido                          | Registro de la operación                    |
+| Correo y documento del pagador                     | Solo en tránsito hacia Mercado Pago                         | Procesar el pago con tarjeta y enviar el comprobante | **No se guardan**                           |
+| Datos de la tarjeta                                | Campos seguros de Mercado Pago                              | Pago                                                 | **Nunca pasan por BistroLink**              |
+| Pedido en curso                                    | `sessionStorage` de la pestaña del comensal                 | Retomar el pago al recargar (BL-448)                 | Hasta cerrar la pestaña o hacer otro pedido |
+| Colaboradores: usuario, nombre, apellido y correo  | `usuario` y Keycloak                                        | Acceso al panel                                      | Mientras la cuenta exista                   |
+| Correo de privacidad del local                     | `restaurante.email_privacidad`                              | Canal para los derechos                              | Mientras el local lo tenga cargado          |
+| RUT y razón social de la e-Factura (HU-009)        | `pedido.receptor_rut`, `receptor_razon_social` y Surtec/DGI | Emitir la e-Factura a nombre del comensal            | Hasta que se anonimizan; el CFE, 5 años     |
+| Nombre y contacto del pedido para retirar (HU-040) | `pedido.retiro_nombre`, `retiro_contacto`                   | Reconocer al comensal en el mostrador                | Hasta que se anonimizan                     |
 
 El e-Ticket se emite a consumidor final, sin datos personales.
 
@@ -56,9 +58,16 @@ través de la API, con los mismos controles de acceso que el comprobante. La
 anonimización de los datos de facturación del pedido (BL-453) no alcanza a
 esta copia: es un comprobante fiscal que hay que conservar.
 
-**Pendiente:** el pedido para retirar (HU-040) va a guardar el nombre y el
-contacto del comensal; esa historia agrega su aviso, la anonimización y la
-actualización de la política.
+**Pedido para retirar (HU-040, BL-210):** en el enlace web del local, el
+comensal puede dejar su nombre y un teléfono o correo. Es opcional y solo se
+guarda si acepta el aviso (con enlace a `/privacidad`); queda la fecha en
+`pedido.retiro_consentido_en`. Sin consentimiento el backend no guarda nada y
+el pedido sigue igual: se entrega con el código de retiro (`R-042`), que no es
+un dato personal. El contacto se guarda normalizado (correo en minúsculas;
+teléfono solo con los dígitos) para poder encontrarlo al anonimizar. No se
+envía a terceros (ni a Surtec ni a Mercado Pago). El aviso de «pedido listo»
+es una notificación del navegador con el permiso del comensal: no usa su
+contacto.
 
 ## 3. Registro de la base de datos ante la URCDP
 
@@ -79,10 +88,10 @@ HU-027).
 
 1. El comensal escribe al correo de privacidad del local (o lo pide en el
    local).
-2. El local identifica los pedidos por fecha, mesa y monto. BistroLink no
-   tiene nombre ni correo del comensal: no hay más datos personales que
-   devolver que lo que haya escrito en las notas y, si pidió e-Factura, su
-   RUT y su razón social.
+2. El local identifica los pedidos por fecha, mesa y monto. No hay más
+   datos personales que devolver que lo que el comensal haya escrito en las
+   notas; si pidió e-Factura, su RUT y su razón social, y si dejó sus datos en
+   un pedido para retirar, su nombre y su contacto.
    - **Supresión de los datos de la e-Factura:** el Administrador entra a
      **Configuración → Anonimizar datos de facturación**, ingresa el RUT del
      comensal y confirma. En todos los pedidos del local con ese RUT se
@@ -91,6 +100,15 @@ HU-027).
      auditoría como `PEDIDO_RECEPTOR_ANONIMIZADO`, con la cantidad de
      pedidos y sin el RUT. La e-Factura ya emitida no cambia (está
      informada a DGI y se conserva 5 años).
+   - **Supresión del nombre y el contacto de un pedido para retirar:** el
+     Administrador entra a **Configuración → Anonimizar datos de pedidos
+     para retirar**, ingresa el teléfono o el correo que dejó el comensal y
+     confirma (se normaliza igual que al guardarlo). En todos los pedidos del
+     local con ese contacto se borran el nombre y el contacto, y queda la
+     fecha en `pedido.retiro_anonimizado_en`. No se puede deshacer. Queda en
+     la auditoría como `PEDIDO_RETIRO_ANONIMIZADO`, con la cantidad de
+     pedidos y sin el contacto. El pedido, los montos y el comprobante no
+     cambian.
 3. Si pide suprimir notas con datos personales, el local lo pide al equipo de
    BistroLink, que las reemplaza en la base por un texto neutro. Los CFE
    emitidos y los montos no se tocan: se conservan 5 años por la obligación
@@ -103,12 +121,14 @@ HU-027).
 - **Logs:** Pino reemplaza por `[REDACTED]` los campos con datos personales
   (`email`, `payerEmail`, `password`, `rut`, `razonSocial`, `telefono`,
   `identificationNumber`, `documento`, `emailPrivacidad` y, desde HU-009,
-  `receptorRut`, `receptorRazonSocial`, `nro_doc` y `denominacion`) en la raíz del
+  `receptorRut`, `receptorRazonSocial`, `nro_doc` y `denominacion`; desde HU-040,
+  `retiroNombre`, `retiroContacto` y `contactoRetiro`) en la raíz del
   objeto y un nivel abajo (`apps/backend/src/logs-datos-personales.ts`), además de
   las credenciales de los headers. Lo prueba
   `test/unitarios/logs-datos-personales.spec.ts`.
 - **Auditoría:** los cambios de la razón social y del correo de privacidad
-  se auditan sin el valor. La anonimización de la e-Factura, sin el RUT.
+  se auditan sin el valor. La anonimización de la e-Factura, sin el RUT, y la
+  del pedido para retirar, sin el contacto.
 - **Errores de Surtec:** si Surtec rechaza una e-Factura y repite el
   `cliente` en su respuesta, el mensaje del error lo oculta antes de llegar
   al log (`cuerpoParaLog` en `surtec.client.ts`).
