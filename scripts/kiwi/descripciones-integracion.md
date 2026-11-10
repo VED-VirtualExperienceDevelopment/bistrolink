@@ -35,6 +35,7 @@
 | 1.28    | 09/11/2026 | Se borran los bloques de TC-I-187 a 189, ya cargados en Kiwi. TC-I-190 y 191: cancelar un pedido que todavía no se cobró (bug BL-501), para cargar con el script antes de mergear el PR.                                                  |
 | 1.29    | 10/11/2026 | TC-I-192 y 193: umbrales de espera del KDS configurables por local (HU-038 / BL-506), para cargar con el script antes de mergear el PR. |
 | 1.30    | 10/11/2026 | TC-I-194: propinas del reporte de ventas, aparte del consumo y por canal (HU-022 / BL-496). Renumerado desde TC-I-153, que ya era de stock (BL-512). |
+| 1.31    | 10/11/2026 | TC-I-195 a 198: estado de la mesa con varios cobros, cierre con cobros pendientes y cobro con la mesa cerrada (HU-017 / bug BL-509), para cargar con el script antes de mergear el PR. |
 
 Texto del campo de descripción de cada caso TC-I en Kiwi. Lo carga
 `cargar-casos-integracion.mjs --descripciones`: cada bloque `## TC-I-NNN`
@@ -143,3 +144,77 @@ Base de pruebas con el tenant A y ventas aprobadas del día: QR $ 1000 de consum
 1. 200. El total vendido es $ 2000: la propina no suma. Las propinas son $ 150, de 2 pedidos, un 7,5 % de las ventas.
 2. 200. Propinas $ 150, de 2 pedidos, un 10 % de las ventas.
 3. 200. Propinas $ 0, de 0 pedidos, 0 %.
+
+## TC-I-195
+
+### Precondición
+
+Tenant A del seed. Usuario Mozo (Keycloak de pruebas). Mesa 79 libre.
+
+### Pasos
+
+1. Como Mozo, abrir la mesa.
+2. Cargar un pedido esperando el pago, con un pago con tarjeta PENDIENTE. La mesa queda OCUPADA, como quedaba con los datos anteriores a BL-509.
+3. Como Mozo, cerrar la mesa.
+4. Ver la mesa y el pedido.
+5. Rechazar el pago, cerrar la mesa y marcarla limpia.
+
+### Resultado esperado
+
+1. 200, la mesa queda OCUPADA.
+2. El pago queda PENDIENTE y la mesa sigue OCUPADA.
+3. 409: «Hay un pago en curso en esta mesa: esperá a que termine».
+4. La mesa sigue OCUPADA y el pedido sigue esperando el pago (no se canceló).
+5. Se cierra (200) y queda libre.
+
+## TC-I-196
+
+### Precondición
+
+Tenant A del seed, Mercado Pago habilitado y pasarela falsa. Mesa 79 libre (sin sesión) con un pedido de $ 590 esperando el pago.
+
+### Pasos
+
+1. Iniciar el cobro con Mercado Pago del pedido (PagosService.crear), como si la mesa se hubiera cerrado después del control del QR.
+2. Ver los pagos del pedido y la mesa.
+
+### Resultado esperado
+
+1. Conflicto: «La mesa está cerrada: no se puede iniciar el cobro» (y no un error 500 por el CHECK de sesión).
+2. No se creó ningún pago y la mesa sigue LIBRE.
+
+## TC-I-197
+
+### Precondición
+
+Tenant A del seed. Mesa 79 abierta y EN_PROCESO_DE_PAGO, con dos pedidos de dos comensales, cada uno con un pago con tarjeta PENDIENTE.
+
+### Pasos
+
+1. Terminar el cobro del primer pedido (pago rechazado), como lo hacen el webhook o la conciliación.
+2. Ver la mesa.
+3. Terminar el cobro del segundo pedido.
+4. Ver la mesa.
+
+### Resultado esperado
+
+1. No libera la mesa: el otro comensal sigue pagando.
+2. La mesa sigue EN_PROCESO_DE_PAGO (amarilla en el mapa).
+3. Libera la mesa.
+4. La mesa vuelve a OCUPADA (roja en el mapa).
+
+## TC-I-198
+
+### Precondición
+
+Igual que TC-I-197.
+
+### Pasos
+
+1. Terminar los dos cobros a la vez, en dos transacciones en paralelo.
+2. Ver la mesa.
+
+### Resultado esperado
+
+1. Exactamente una de las dos libera la mesa: la segunda espera a la primera por el bloqueo de la fila de la mesa.
+2. La mesa queda OCUPADA (no queda EN_PROCESO_DE_PAGO sin cobros en curso).

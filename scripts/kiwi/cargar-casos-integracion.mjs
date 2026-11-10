@@ -852,6 +852,28 @@ const DATOS_INTEGRACION = {
     priority: "P1",
     tags: ["HU-022", "BL-496", "reportes", "propina"],
   },
+  // HU-017 (bug BL-509): estado de la mesa con varios cobros, en
+  // sesion-mesa.e2e-spec.ts.
+  195: sesionMesa({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-509", "bug", "pagos", "integridad-datos"],
+  }),
+  196: sesionMesa({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-509", "bug", "pagos", "integridad-datos"],
+  }),
+  197: sesionMesa({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-509", "bug", "pagos"],
+  }),
+  198: sesionMesa({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-509", "bug", "pagos", "concurrencia"],
+  }),
 };
 /**
  * BL-435: datos de los E2E TC-E-017 en adelante, con los criterios de
