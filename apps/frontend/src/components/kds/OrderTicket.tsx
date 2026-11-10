@@ -25,6 +25,12 @@ interface OrderTicketProps {
   posicionEnCola?: number | null;
   /** HU-024 (BL-104): abre la cancelación del pedido (mozo y admin). */
   onCancelar?: (pedido: Pedido) => void;
+  /**
+   * HU-038 (BL-510): «tablero» (mozo y admin: columna de ancho fijo, alto
+   * completo y scroll propio) o «monitor» (Cocina: ocupa su celda de la
+   * grilla y toma el alto de sus ítems, sin scroll).
+   */
+  variante?: 'tablero' | 'monitor';
 }
 
 // Etiqueta legible para mostrar en el badge — separada del valor real del
@@ -57,6 +63,20 @@ const ESTILO_NIVEL: Record<NivelEspera, { encabezado: string; borde: string }> =
   },
 };
 
+// HU-038 (BL-510): clases que cambian según la variante.
+const CLASE_VARIANTE = {
+  tablero: {
+    tarjeta: 'h-full w-[300px] shrink-0',
+    items: 'flex-1 overflow-y-auto',
+    estado: 'text-label-md',
+  },
+  monitor: {
+    tarjeta: 'w-full',
+    items: '',
+    estado: 'text-label-lg',
+  },
+} as const;
+
 function formatHora(iso: string) {
   return new Date(iso).toLocaleTimeString('es-UY', { hour: '2-digit', minute: '2-digit' });
 }
@@ -70,7 +90,9 @@ export function OrderTicket({
   colaActiva = false,
   posicionEnCola = null,
   onCancelar,
+  variante = 'tablero',
 }: Readonly<OrderTicketProps>) {
+  const claseVariante = CLASE_VARIANTE[variante];
   const minutos = minutosDeEspera(pedido.createdAt, ahora);
   const nivel = nivelDeEspera(minutos, umbrales);
   const estilo = ESTILO_NIVEL[nivel];
@@ -90,7 +112,8 @@ export function OrderTicket({
       data-testid="pedido-kds"
       data-pedido-id={pedido.id}
       data-nivel-espera={nivel}
-      className={`flex h-full w-[300px] shrink-0 flex-col overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest shadow-sm ${estilo.borde}`}
+      data-variante={variante}
+      className={`flex ${claseVariante.tarjeta} flex-col overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest shadow-sm ${estilo.borde}`}
     >
       {/* Header del ticket. HU-038 (BL-208): el tiempo de espera va grande
           para leerlo a 2 metros; la hora de llegada queda como dato
@@ -108,7 +131,7 @@ export function OrderTicket({
             {textoEspera(minutos)}
           </div>
           <div className="text-label-md">Llegó {formatHora(pedido.createdAt)}</div>
-          <div className="mt-1 inline-block rounded border border-current px-2 py-0.5 text-label-md font-semibold">
+          <div className={`mt-1 inline-block rounded border border-current px-2 py-0.5 font-semibold ${claseVariante.estado}`}>
             {etiquetaEstado}
           </div>
           {posicionEnCola !== null && (
@@ -130,7 +153,7 @@ export function OrderTicket({
       )}
 
       {/* Ítems */}
-      <div className="flex-1 space-y-3 overflow-y-auto p-4">
+      <div className={`space-y-3 p-4 ${claseVariante.items}`}>
         {lineas.map((linea) => (
           <div key={linea.id} className="border-b border-surface-variant pb-3 last:border-0">
             <div className="flex items-center gap-2 text-body-lg font-semibold">

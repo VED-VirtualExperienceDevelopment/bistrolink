@@ -294,7 +294,13 @@ export default function AdminShell({
               <UsuarioSesion />
             </div>
           </header>
-          <div className="relative flex-1 overflow-y-auto">{children}</div>
+          {/* BL-507 (#472): sin overflow-x-hidden, el overflow-y-auto deja el
+              horizontal en auto y este contenedor scrolleaba toda la página
+              cuando algo adentro se pasaba de ancho (el KDS con muchos
+              tickets). Cada pantalla scrollea en horizontal adentro suyo. */}
+          <div className="relative flex-1 overflow-y-auto overflow-x-hidden">
+            {children}
+          </div>
         </main>
       </div>
     </AlertasProvider>

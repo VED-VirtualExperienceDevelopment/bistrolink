@@ -1235,6 +1235,17 @@ const DATOS_E2E = {
     priority: "P2",
     tags: ["BL-208", "BL-503", "BL-504", "kds", ...axe],
   }),
+  // HU-038 (BL-510): monitor de Cocina, en kds/monitor-cocina.spec.ts.
+  91: e2e("kds", "HU-038", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-208", "BL-510", "kds", "monitor", "tiempo-real"],
+  }),
+  92: e2e("kds", "HU-038", {
+    category: "Accesibilidad",
+    priority: "P2",
+    tags: ["BL-208", "BL-510", "kds", "monitor", ...axe],
+  }),
 };
 /**
  * Datos de los contratos PactJS (TC-C). Requirement con la HU que usa el

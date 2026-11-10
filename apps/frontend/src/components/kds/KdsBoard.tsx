@@ -22,6 +22,7 @@ import {
   type UmbralesEspera,
 } from './espera-kds.utils';
 import { useReloj } from './useReloj';
+import { MonitorCocina } from './MonitorCocina';
 import type { Pedido } from '@/types/pedido';
 
 const WS_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
@@ -104,7 +105,13 @@ function TableroPorMesa({
   );
 }
 
-/** HU-042 (BL-466): cola de espera, en orden de llegada. */
+/**
+ * HU-042 (BL-466): cola de espera, en orden de llegada.
+ *
+ * BL-507 (#472): como mucho la mitad del ancho. Antes tenía `shrink-0` y
+ * crecía con todos los tickets: el `overflow-x-auto` de la lista nunca se
+ * activaba y en /admin/kds scrolleaba la página entera.
+ */
 function SeccionEnEspera({
   enEspera,
   comanda,
@@ -115,7 +122,7 @@ function SeccionEnEspera({
   return (
     <section
       aria-labelledby="titulo-en-espera"
-      className="flex h-full shrink-0 flex-col gap-1.5"
+      className="flex h-full min-w-0 max-w-[50%] flex-col gap-1.5"
     >
       <h2 id="titulo-en-espera" className={CLASE_TITULO_SECCION}>
         En espera · {enEspera.length}
@@ -139,6 +146,41 @@ function SeccionEnEspera({
         </ol>
       )}
     </section>
+  );
+}
+
+/**
+ * Tablero de Mozo y Admin: con la cola activa (HU-042), «En espera» y «En
+ * cocina»; si no, solo el tablero por mesa.
+ */
+function TableroStaff({
+  colaActiva,
+  enEspera,
+  grupos,
+  comanda,
+}: Readonly<{
+  colaActiva: boolean;
+  enEspera: ReturnType<typeof separarPorCola>['enEspera'];
+  grupos: GrupoMesa[];
+  comanda: PropsComanda;
+}>) {
+  const tablero = (
+    <TableroPorMesa grupos={grupos} colaActiva={colaActiva} comanda={comanda} />
+  );
+  if (!colaActiva) return tablero;
+  return (
+    <div className="flex min-h-0 flex-1 gap-gutter">
+      <SeccionEnEspera enEspera={enEspera} comanda={comanda} />
+      <section
+        aria-labelledby="titulo-en-preparacion"
+        className="flex min-w-0 flex-1 flex-col gap-1.5"
+      >
+        <h2 id="titulo-en-preparacion" className={CLASE_TITULO_SECCION}>
+          En cocina
+        </h2>
+        {tablero}
+      </section>
+    </div>
   );
 }
 
@@ -394,13 +436,6 @@ export function KdsBoard() {
     umbrales,
     onCancelar: abrirCancelacion,
   };
-  const tablero = (
-    <TableroPorMesa
-      grupos={agruparPorMesa(activos)}
-      colaActiva={colaActiva}
-      comanda={comanda}
-    />
-  );
 
   return (
     <div className="flex h-full flex-col gap-2">
@@ -421,28 +456,31 @@ export function KdsBoard() {
       <div className="flex shrink-0 justify-end">
         <IndicadorConexion estado={estadoConexion} />
       </div>
-      {cola && !loading && <AvisoCola cola={cola} />}
+      {/* HU-038 (BL-510): en el monitor de Cocina, la cola va en su barra de
+          resumen. */}
+      {puedeOperarTransiciones && cola && !loading && <AvisoCola cola={cola} />}
       <ContenidoKds
         loading={loading}
         sinConexion={estadoConexion === 'desconectado'}
         loadError={loadError}
         hayPedidos={pedidos.length > 0}
       >
-        {colaActiva ? (
-          <div className="flex min-h-0 flex-1 gap-gutter">
-            <SeccionEnEspera enEspera={enEspera} comanda={comanda} />
-            <section
-              aria-labelledby="titulo-en-preparacion"
-              className="flex min-w-0 flex-1 flex-col gap-1.5"
-            >
-              <h2 id="titulo-en-preparacion" className={CLASE_TITULO_SECCION}>
-                En cocina
-              </h2>
-              {tablero}
-            </section>
-          </div>
+        {/* HU-038 (BL-510): Cocina ve el monitor (solo lectura, sin scroll);
+            Mozo y Admin, el tablero con sus botones. */}
+        {puedeOperarTransiciones ? (
+          <TableroStaff
+            colaActiva={colaActiva}
+            enEspera={enEspera}
+            grupos={agruparPorMesa(activos)}
+            comanda={comanda}
+          />
         ) : (
-          tablero
+          <MonitorCocina
+            pedidos={pedidos}
+            cola={cola}
+            ahora={ahora}
+            umbrales={umbrales}
+          />
         )}
       </ContenidoKds>
     </div>

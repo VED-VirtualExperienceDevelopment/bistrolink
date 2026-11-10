@@ -28,6 +28,7 @@
 | 1.21    | 09/11/2026 | Se borra el bloque de TC-E-083, ya cargado en Kiwi. TC-E-084: al hacer scroll en Reportes solo se desplaza el contenido (bug BL-500).                                                |
 | 1.22    | 09/11/2026 | Se borra el bloque de TC-E-084, ya cargado en Kiwi. TC-E-085 y 086: el mozo cancela un pedido antes de cobrarlo, en la pantalla del pedido y desde «Cobros pendientes» (bug BL-501). |
 | 1.23    | 10/11/2026 | TC-E-087 a 090: tiempo de espera de las comandas, indicador de conexión y accesibilidad del KDS (HU-038, BL-505). |
+| 1.24    | 10/11/2026 | TC-E-091 y 092: monitor de Cocina de solo lectura, sin scroll, con resumen grande y accesible (HU-038, BL-510). |
 
 Plantilla para cargar en Kiwi la descripción de casos TC-E (Playwright)
 nuevos o que cambiaron (BL-435). La usa
@@ -187,3 +188,41 @@ Igual que TC-E-087.
 1. Sin errores graves de accesibilidad (axe, WCAG 2.1 AA).
 2. Sin errores graves de accesibilidad en cada nivel (incluido el contraste de los colores).
 3. Con el indicador en «Desconectado», sin errores graves de accesibilidad.
+
+## TC-E-091
+
+### Precondición
+
+Usuarios Mozo y Cocina del tenant de testing (Keycloak de pruebas), en sesiones separadas. Cola automática apagada. Monitor de Cocina en una pantalla de 1920×1080.
+
+### Pasos
+
+1. Como comensal, hacer y pagar dos pedidos.
+2. Como Mozo, pasar el primero a preparación. El segundo queda recibido.
+3. Como Cocina, abrir el KDS.
+4. Como Mozo, marcar el primero «Listo para entregar».
+5. Como Mozo, marcarlo «Entregado».
+
+### Resultado esperado
+
+1. —
+2. —
+3. Se ve el monitor con el resumen «En preparación», «Listos» y «En espera» (al menos 1). El primer pedido tiene tarjeta «En preparación»; el segundo no tiene tarjeta. No hay botones ni scroll.
+4. Sin recargar, la tarjeta pasa a «Listo para entregar».
+5. La tarjeta sale del monitor. Sigue sin haber scroll.
+
+## TC-E-092
+
+### Precondición
+
+Igual que TC-E-091.
+
+### Pasos
+
+1. Como comensal, hacer y pagar un pedido; como Mozo, pasarlo a preparación.
+2. Como Cocina, abrir el KDS.
+
+### Resultado esperado
+
+1. —
+2. Se ve la tarjeta del pedido en el monitor. Sin errores graves de accesibilidad (axe, WCAG 2.1 AA).
