@@ -893,6 +893,17 @@ const DATOS_INTEGRACION = {
     priority: "P1",
     tags: ["BL-502", "bug", "RD.05"],
   }),
+  // BL-518: aviso al comensal cuando el mozo cierra la mesa.
+  206: sesionMesa({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-518", "bug", "websocket"],
+  }),
+  207: sesionMesa({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["BL-518", "bug", "websocket", "RD.05"],
+  }),
 };
 /**
  * BL-435: datos de los E2E TC-E-017 en adelante, con los criterios de
@@ -1345,6 +1356,12 @@ const DATOS_E2E = {
     category: "Funcional",
     priority: "P1",
     tags: ["BL-502", "bug", "gracias", ...axe],
+  }),
+  // BL-518: la carta se entera de que el mozo cerró la mesa.
+  104: e2e("comensal", "HU-017", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-518", "bug", "websocket", ...axe],
   }),
 };
 /**

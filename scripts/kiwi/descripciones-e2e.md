@@ -33,6 +33,7 @@
 
 | 1.26 | 10/11/2026 | TC-E-069 a 071 cambian: las alertas de stock están en la campana de Alertas. TC-E-100 y 101: «Ir a cobrar» desde el aviso de efectivo (BL-470). TC-E-098 y 099 ya son de HU-040. |
 | 1.27 | 10/11/2026 | Se borran los bloques de TC-E-071 y de TC-E-085 a 101, ya cargados en Kiwi. TC-E-102 y 103: «Mis pedidos» en la mesa y «Gracias por tu compra» (bug BL-502). |
+| 1.28 | 10/11/2026 | Se borran los bloques de TC-E-102 y 103, ya cargados en Kiwi. TC-E-104: la carta pasa a «Tu mesa se cerró» cuando el mozo cierra la mesa (bug BL-518). |
 
 Plantilla para cargar en Kiwi la descripción de casos TC-E (Playwright)
 nuevos o que cambiaron (BL-435). La usa
@@ -77,44 +78,22 @@ Reglas:
 
 ## Casos para cargar
 
-## TC-E-102
+## TC-E-104
 
 ### Precondición
 
-Mesa del seed abierta y con su QR. Mozo logueado en otra pestaña. Efectivo habilitado (valor por defecto).
+Una mesa temporal creada por el test con el ADMIN, abierta y con su QR.
 
 ### Pasos
 
-1. Desde el QR de la mesa, agregar un ítem, elegir efectivo y avisar al mozo. Como Mozo, cobrarlo en «Cobros pendientes».
-2. Tocar «Hacer otro pedido» y abrir «Mis pedidos».
-3. Como Mozo, marcar el pedido en preparación en el KDS.
-4. Cerrar «Mis pedidos» y volver a abrir el QR de la mesa en otra pestaña.
-5. Abrir «Mis pedidos» en la pestaña nueva.
-
-### Resultado esperado
-
-1. «¡Tu pedido ya está en cocina!».
-2. El pedido aparece con su código y el estado «Recibido».
-3. El estado pasa a «En preparación» sin recargar.
-4. El acceso a «Mis pedidos» dice «1 en preparación».
-5. Aparece el pedido. Sin errores graves de accesibilidad (axe).
-
-## TC-E-103
-
-### Precondición
-
-Igual que TC-E-102.
-
-### Pasos
-
-1. Hacer y pagar un pedido como en TC-E-102 y quedarse en «¡Tu pedido ya está en cocina!».
-2. Como Mozo, llevarlo hasta Entregado desde el KDS.
+1. Abrir la carta desde el QR de la mesa.
+2. Como Mozo o Administrador, cerrar la mesa.
 3. Mirar la pantalla del comensal, sin recargar.
-4. Tocar «Pedir algo más».
+4. Recargar la página.
 
 ### Resultado esperado
 
-1. —
+1. Se ve la carta.
 2. —
-3. «Gracias por tu compra» con el código del pedido, el ítem y el total abonado. Sin errores graves de accesibilidad (axe).
-4. Vuelve a la carta y «Mis pedidos» dice «Todo entregado».
+3. «Tu mesa se cerró», con cómo volver a pedir; la carta ya no se ve. Sin errores graves de accesibilidad (axe).
+4. «Esta mesa está cerrada.»
