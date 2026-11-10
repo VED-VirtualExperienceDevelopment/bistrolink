@@ -19,6 +19,7 @@ import {
   resultadoDeError,
   resultadoDeEstado,
   rutaPagos,
+  rutaPropina,
   seguirConsultando,
   tipoTarjeta,
   TOPE_CONSULTA_MS,
@@ -53,6 +54,13 @@ describe("rutas y headers del pago", () => {
 
   it("un id raro no puede cambiar la ruta", () => {
     expect(rutaPagos("../admin")).toBe("/pedidos/..%2Fadmin/pagos");
+  });
+
+  it("HU-022 (BL-495): la propina se guarda con PUT en /pedidos/:id/pagos/propina", () => {
+    expect(rutaPropina("3cdf1dad-31d6-43c9-9739-11485e0e23f8")).toBe(
+      "/pedidos/3cdf1dad-31d6-43c9-9739-11485e0e23f8/pagos/propina",
+    );
+    expect(rutaPropina("../admin")).toBe("/pedidos/..%2Fadmin/pagos/propina");
   });
 
   it("mesa: se autoriza con el QR y la sesión de la mesa", () => {
