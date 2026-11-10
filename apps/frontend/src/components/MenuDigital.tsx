@@ -16,6 +16,8 @@ import { MisPedidosBoton } from "@/components/mis-pedidos/MisPedidosBoton";
 import { MisPedidosPanel } from "@/components/mis-pedidos/MisPedidosPanel";
 import { pedidosEnCamino } from "@/components/mis-pedidos/mis-pedidos.utils";
 import { useMisPedidos } from "@/components/mis-pedidos/useMisPedidos";
+import { MesaCerradaAviso } from "@/components/mesa-cerrada/MesaCerradaAviso";
+import { useSesionMesaCerrada } from "@/components/mesa-cerrada/useSesionMesaCerrada";
 import { apiFetch, ApiError } from "@/lib/api-client";
 import {
   alcanzoCantidadMaxima,
@@ -261,6 +263,8 @@ export default function MenuDigital({
   // BL-502: «Mis pedidos» en la mesa (los que pagó desde este teléfono en
   // la sesión abierta), con su estado en vivo.
   const misPedidos = useMisPedidos(origen, identificarComensal);
+  // BL-518: si el mozo cierra la mesa, la carta se entera sin recargar.
+  const mesaCerrada = useSesionMesaCerrada(origen, identificarComensal);
   const { recordar: recordarEnMisPedidos } = misPedidos;
   const [misPedidosAbierto, setMisPedidosAbierto] = useState(false);
 
@@ -575,6 +579,15 @@ export default function MenuDigital({
         numeroMesa={numeroMesa}
         onVolver={() => setVista("carta")}
         onAprobado={alAprobarPago}
+      />
+    );
+  }
+
+  if (mesaCerrada) {
+    return (
+      <MesaCerradaAviso
+        nombreLocal={restaurante.nombre}
+        numeroMesa={numeroMesa}
       />
     );
   }
