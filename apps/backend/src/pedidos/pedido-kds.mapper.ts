@@ -20,6 +20,11 @@ export interface PedidoKds {
   estado: PedidoEstado;
   createdAt: string;
   observacionGeneral: string | null;
+  /**
+   * HU-040 (BL-210): pedido para retirar, con su código y, si el comensal
+   * lo dejó, su nombre. Null en los pedidos de mesa.
+   */
+  retiro: { codigo: string; nombre: string | null } | null;
   lineas: {
     id: string;
     nombreSnapshot: string;
@@ -34,6 +39,9 @@ export interface PedidoParaKds {
   estado: PedidoEstado;
   createdAt: Date;
   observacionGeneral: string | null;
+  /** HU-040 (BL-210): opcionales para los que todavía no los leen. */
+  codigoRetiro?: string | null;
+  retiroNombre?: string | null;
   mesa: { numero: number };
   lineas: {
     id: string;
@@ -50,6 +58,9 @@ export function aPedidoKds(p: PedidoParaKds): PedidoKds {
     estado: p.estado,
     createdAt: p.createdAt.toISOString(),
     observacionGeneral: p.observacionGeneral,
+    retiro: p.codigoRetiro
+      ? { codigo: p.codigoRetiro, nombre: p.retiroNombre ?? null }
+      : null,
     lineas: p.lineas.map((l) => ({
       id: l.id,
       nombreSnapshot: l.nombreSnapshot,

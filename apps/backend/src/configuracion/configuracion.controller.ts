@@ -18,6 +18,8 @@ import { ConfiguracionEstablecimientoService } from './configuracion-establecimi
 import { ActualizarConfiguracionDto } from './dto/actualizar-configuracion.dto';
 import { AnonimizarReceptorService } from './anonimizar-receptor.service';
 import { AnonimizarReceptorDto } from './dto/anonimizar-receptor.dto';
+import { AnonimizarRetiroService } from './anonimizar-retiro.service';
+import { AnonimizarRetiroDto } from './dto/anonimizar-retiro.dto';
 
 /**
  * HU-020 (BL-72): el Administrador consulta y cambia la configuración de su
@@ -36,6 +38,7 @@ export class ConfiguracionController {
   constructor(
     private readonly configuracion: ConfiguracionEstablecimientoService,
     private readonly anonimizarReceptor: AnonimizarReceptorService,
+    private readonly anonimizarRetiro: AnonimizarRetiroService,
   ) {}
 
   @Get()
@@ -65,6 +68,21 @@ export class ConfiguracionController {
     @Body() dto: AnonimizarReceptorDto,
   ) {
     return this.anonimizarReceptor.anonimizar(req.user.tenantId, dto.rut, {
+      id: req.user.sub,
+    });
+  }
+
+  /**
+   * HU-040 (BL-210): anonimiza el nombre y el contacto de los pedidos para
+   * retirar del local con ese contacto. El pedido y los montos no cambian.
+   */
+  @Post('privacidad/anonimizar-retiro')
+  @HttpCode(HttpStatus.OK)
+  anonimizarContactoRetiro(
+    @Req() req: { user: AuthenticatedUser },
+    @Body() dto: AnonimizarRetiroDto,
+  ) {
+    return this.anonimizarRetiro.anonimizar(req.user.tenantId, dto.contacto, {
       id: req.user.sub,
     });
   }

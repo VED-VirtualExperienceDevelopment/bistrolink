@@ -14,6 +14,14 @@ import { CrearPedidoMozoDto } from './dto/crear-pedido-mozo.dto';
 import { MesaDelQr } from '../qr-mesa/qr-mesa-acceso.service';
 import { KdsGateway, LlamadoPagoEfectivo } from './kds.gateway';
 import { aPedidoKds, PedidoParaKds } from './pedido-kds.mapper';
+import {
+  CODIGO_RETIRO_NO_DISPONIBLE,
+  CODIGOS_DE_RETIRO,
+  contactoRetiroParaGuardar,
+  formatearCodigoRetiro,
+  mensajeRetiroNoDisponible,
+  retiroAbierto,
+} from './retiro';
 import { generarTokenAcceso } from './token-acceso-pedido';
 import { ResumenVentasService } from '../reportes/resumen-ventas.service';
 import {
@@ -139,8 +147,22 @@ export class PedidosService {
           return { pedido: existente, esNuevo: false, mesaNumero: null };
         }
 
-        const { mesa, restauranteId, esPedidoDeMesa } =
+        const { mesa, restauranteId, esPedidoDeMesa, retiro } =
           await this.resolverMesaYRestaurante(tx, tenantId, dto, mesaQr);
+        if (esPedidoDeMesa && dto.contactoRetiro) {
+          throw new BadRequestException(
+            'contactoRetiro solo va en un pedido para retirar',
+          );
+        }
+        // HU-040 (BL-210): el local tiene que estar tomando pedidos para
+        // retirar (habilitado y dentro de la franja). Si no, 409.
+        if (retiro && !retiroAbierto(retiro, new Date(), retiro.timezone)) {
+          throw new ConflictException({
+            statusCode: 409,
+            codigo: CODIGO_RETIRO_NO_DISPONIBLE,
+            message: mensajeRetiroNoDisponible(retiro),
+          });
+        }
 
         const lineas = await this.lineasDelPedido(tx, tenantId, dto.items);
 
@@ -156,6 +178,10 @@ export class PedidosService {
             canal: esPedidoDeMesa ? 'QR' : 'WEB',
             accesoTokenHash: esPedidoDeMesa ? null : acceso.hash,
             observacionGeneral: dto.observacionGeneral,
+            // HU-040 (BL-210): solo con el consentimiento del comensal.
+            ...(esPedidoDeMesa
+              ? {}
+              : contactoRetiroParaGuardar(dto.contactoRetiro, new Date())),
             lineas: { create: lineas },
           },
           include: { lineas: true },
@@ -221,6 +247,9 @@ export class PedidosService {
       },
     });
 
+    // HU-040 (BL-210): el código de retiro sale con el pago aprobado.
+    await this.asignarCodigoRetiroEnTx(tx, tenantId, pedidoId);
+
     // HU-015 (BL-120): el stock se descuenta al confirmarse el pago (RF.04,
     // RD.09, ADR 0009), en esta misma transacción.
     const avisosStock = await this.descuentoStock.descontarEnTx(
@@ -248,6 +277,8 @@ export class PedidosService {
         createdAt: true,
         updatedAt: true,
         observacionGeneral: true,
+        codigoRetiro: true,
+        retiroNombre: true,
         mesa: { select: { numero: true } },
         lineas: {
           select: {
@@ -573,6 +604,7 @@ export class PedidosService {
         mesa,
         restauranteId: mesa.restauranteId,
         esPedidoDeMesa: true,
+        retiro: null,
       };
     }
 
@@ -582,9 +614,16 @@ export class PedidosService {
       );
     }
 
+    // HU-040 (BL-210): con la configuración del retiro, para el 409.
     const restaurante = await tx.restaurante.findUnique({
       where: { id: dto.restauranteId },
-      select: { tenantId: true },
+      select: {
+        tenantId: true,
+        timezone: true,
+        retiroHabilitado: true,
+        retiroHoraDesde: true,
+        retiroHoraHasta: true,
+      },
     });
     if (restaurante?.tenantId !== tenantId) {
       throw new ForbiddenException(
@@ -597,7 +636,39 @@ export class PedidosService {
       tenantId,
       dto.restauranteId,
     );
-    return { mesa, restauranteId: dto.restauranteId, esPedidoDeMesa: false };
+    return {
+      mesa,
+      restauranteId: dto.restauranteId,
+      esPedidoDeMesa: false,
+      retiro: restaurante,
+    };
+  }
+
+  /**
+   * HU-040 (BL-210): al aprobarse el pago de un pedido para retirar, le da
+   * el próximo código (R-001 a R-999, después vuelve a empezar). El UPDATE
+   * atómico del contador evita que dos pagos simultáneos reciban el mismo.
+   * Los pedidos de mesa no tienen código.
+   */
+  private async asignarCodigoRetiroEnTx(
+    tx: PrismaClient,
+    tenantId: string,
+    pedidoId: string,
+  ): Promise<void> {
+    const pedido = await tx.pedido.findUniqueOrThrow({
+      where: { id: pedidoId },
+      select: { codigoRetiro: true, mesa: { select: { esVirtual: true } } },
+    });
+    if (!pedido.mesa.esVirtual || pedido.codigoRetiro) return;
+    const [{ numero }] = await tx.$queryRaw<{ numero: number }[]>`
+      UPDATE restaurante
+         SET ultimo_codigo_retiro = (ultimo_codigo_retiro % ${CODIGOS_DE_RETIRO}) + 1
+       WHERE tenant_id = ${tenantId}::uuid
+      RETURNING ultimo_codigo_retiro AS numero`;
+    await tx.pedido.update({
+      where: { id: pedidoId },
+      data: { codigoRetiro: formatearCodigoRetiro(Number(numero)) },
+    });
   }
 
   private async obtenerOCrearMesaVirtual(

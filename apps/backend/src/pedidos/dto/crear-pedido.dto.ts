@@ -12,6 +12,7 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
+import { ContactoRetiroDto } from '../retiro';
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -98,4 +99,14 @@ export class CrearPedidoDto {
     typeof value === 'string' ? stripHtmlTagsSafely(value) : value,
   )
   observacionGeneral?: string;
+
+  /**
+   * HU-040 (BL-210): nombre y contacto del pedido para retirar, opcionales.
+   * Solo se guardan si `consentimiento` es true (HU-036). En un pedido de
+   * mesa no van: PedidosService.crear responde 400.
+   */
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ContactoRetiroDto)
+  contactoRetiro?: ContactoRetiroDto;
 }

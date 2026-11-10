@@ -434,6 +434,8 @@ describe('PedidosTransicionService', () => {
           estado: true,
           createdAt: true,
           observacionGeneral: true,
+          codigoRetiro: true,
+          retiroNombre: true,
           mesa: { select: { numero: true } },
           lineas: {
             select: {
@@ -453,6 +455,7 @@ describe('PedidosTransicionService', () => {
           mesaNumero: 4,
           estado: PedidoEstado.RECIBIDO,
           createdAt: '2026-08-30T12:00:00.000Z',
+          retiro: null,
           lineas: [
             {
               id: 'linea-1',

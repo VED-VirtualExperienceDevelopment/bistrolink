@@ -58,6 +58,11 @@ export interface ConfiguracionEstablecimiento {
   minutosEsperaDemorado: number;
   /** HU-038 (BL-506): desde cuántos minutos pasa a «Demora alta». */
   minutosEsperaDemoraAlta: number;
+  /** HU-040 (BL-210): pedidos para retirar por el enlace web. */
+  retiroHabilitado: boolean;
+  /** HU-040 (BL-210): franja diaria HH:MM; las dos null = todo el día. */
+  retiroHoraDesde: string | null;
+  retiroHoraHasta: string | null;
 }
 
 /** Campos de la configuración que viven en restaurante. */
@@ -80,6 +85,10 @@ const SELECT_RESTAURANTE = {
   minutosEsperaAtencion: true,
   minutosEsperaDemorado: true,
   minutosEsperaDemoraAlta: true,
+  // HU-040 (BL-210): pedidos para retirar.
+  retiroHabilitado: true,
+  retiroHoraDesde: true,
+  retiroHoraHasta: true,
 } satisfies Prisma.RestauranteSelect;
 
 /** HU-042 (BL-465): campos que cambian el estado de la cola del KDS. */
@@ -208,6 +217,8 @@ export class ConfiguracionEstablecimientoService {
           umbralesCombinados(actual.restaurante, dto),
         );
         if (errorOrden) throw new BadRequestException(errorOrden);
+
+        validarHorarioRetiro(actual.restaurante, dto);
         const cambios = calcularCambios(actual, dto);
         if (cambios.campos.length === 0) {
           return {
@@ -332,6 +343,34 @@ function umbralesCombinados(
     minutosEsperaDemoraAlta:
       dto.minutosEsperaDemoraAlta ?? actual.minutosEsperaDemoraAlta,
   };
+}
+
+/**
+ * HU-040 (BL-210): con lo que viene y lo guardado, la franja del retiro
+ * queda completa (las dos horas, distintas) o vacía (todo el día).
+ */
+function validarHorarioRetiro(
+  actual: ConfiguracionDelRestaurante,
+  dto: ActualizarConfiguracionDto,
+): void {
+  const desde =
+    (dto.retiroHoraDesde === undefined
+      ? actual.retiroHoraDesde
+      : dto.retiroHoraDesde) ?? null;
+  const hasta =
+    (dto.retiroHoraHasta === undefined
+      ? actual.retiroHoraHasta
+      : dto.retiroHoraHasta) ?? null;
+  if ((desde === null) !== (hasta === null)) {
+    throw new BadRequestException(
+      'Completá las dos horas del retiro, o dejá las dos vacías para tomar pedidos todo el día',
+    );
+  }
+  if (desde !== null && desde === hasta) {
+    throw new BadRequestException(
+      'La hora de inicio y la de cierre del retiro tienen que ser distintas',
+    );
+  }
 }
 
 /** Compara lo pedido con lo actual y arma la escritura y el diff. */

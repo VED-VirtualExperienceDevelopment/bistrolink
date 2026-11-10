@@ -10,12 +10,14 @@ import {
   IsOptional,
   IsString,
   Length,
+  Matches,
   Max,
   MaxLength,
   Min,
   ValidateIf,
 } from 'class-validator';
 import { CfeProveedor } from '@prisma/client';
+import { HORA_HH_MM } from '../../pedidos/retiro';
 import { limpiarEspacios } from '../../usuarios/dto/create-usuario.dto';
 import {
   MINUTOS_ESPERA_MAXIMO,
@@ -86,6 +88,13 @@ const normalizarEmail = ({ value }: { value: unknown }) => {
 };
 
 /** Ordena de menor a mayor (si es una lista de números), para guardar siempre igual. */
+/** HU-040 (BL-210): «» o null quita la franja (todo el día). */
+const normalizarHora = ({ value }: { value: unknown }) => {
+  if (typeof value !== 'string') return value;
+  const limpio = value.trim();
+  return limpio === '' ? null : limpio;
+};
+
 const ordenarPropinas = ({ value }: { value: unknown }) =>
   Array.isArray(value) && value.every((v) => typeof v === 'number')
     ? [...value].sort((a: number, b: number) => a - b)
@@ -263,4 +272,27 @@ export class ActualizarConfiguracionDto {
     message: `«Demora alta desde» puede ser como máximo ${MINUTOS_ESPERA_MAXIMO} minutos`,
   })
   minutosEsperaDemoraAlta?: number;
+
+  // HU-040 (BL-210): pedidos para retirar por el enlace web.
+  @IsOptional()
+  @IsBoolean({ message: 'retiroHabilitado debe ser verdadero o falso' })
+  retiroHabilitado?: boolean;
+
+  // Franja diaria HH:MM en la zona horaria del local. Las dos o ninguna
+  // (lo controla el servicio, que ve también lo guardado).
+  @IsOptional()
+  @Transform(normalizarHora)
+  @ValidateIf((_dto, valor) => valor !== null)
+  @Matches(HORA_HH_MM, {
+    message: 'La hora de inicio del retiro tiene que tener la forma HH:MM',
+  })
+  retiroHoraDesde?: string | null;
+
+  @IsOptional()
+  @Transform(normalizarHora)
+  @ValidateIf((_dto, valor) => valor !== null)
+  @Matches(HORA_HH_MM, {
+    message: 'La hora de cierre del retiro tiene que tener la forma HH:MM',
+  })
+  retiroHoraHasta?: string | null;
 }
