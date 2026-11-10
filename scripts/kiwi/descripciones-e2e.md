@@ -27,6 +27,7 @@
 | 1.20    | 08/11/2026 | Se borran los bloques de TC-E-073 a 079 y 082, ya cargados en Kiwi. TC-E-083: ventas al POS del local desde «POS del local» (HU-011, BL-488).                                        |
 | 1.21    | 09/11/2026 | Se borra el bloque de TC-E-083, ya cargado en Kiwi. TC-E-084: al hacer scroll en Reportes solo se desplaza el contenido (bug BL-500).                                                |
 | 1.22    | 09/11/2026 | Se borra el bloque de TC-E-084, ya cargado en Kiwi. TC-E-085 y 086: el mozo cancela un pedido antes de cobrarlo, en la pantalla del pedido y desde «Cobros pendientes» (bug BL-501). |
+| 1.23    | 10/11/2026 | TC-E-087 a 090: tiempo de espera de las comandas, indicador de conexión y accesibilidad del KDS (HU-038, BL-505). |
 
 Plantilla para cargar en Kiwi la descripción de casos TC-E (Playwright)
 nuevos o que cambiaron (BL-435). La usa
@@ -108,3 +109,81 @@ Igual que TC-E-085.
 1. —
 2. Se abre el diálogo de cancelación.
 3. Aparece «Pedido #… cancelado. No se cobró y no pasa a cocina.» y el pedido desaparece de la lista.
+
+## TC-E-087
+
+### Precondición
+
+Usuario Mozo del tenant de testing (Keycloak de pruebas) con el KDS abierto. Umbrales de espera por defecto (30/60/120). El reloj del navegador se adelanta con el reloj de prueba de Playwright.
+
+### Pasos
+
+1. Como comensal, hacer y pagar un pedido.
+2. Ver su comanda en el KDS.
+3. Adelantar el reloj 31 minutos, sin tocar nada.
+4. Adelantar el reloj 30 minutos más.
+5. Adelantar el reloj 1 hora más.
+
+### Resultado esperado
+
+1. —
+2. La comanda dice «A tiempo», «Recién llegado» o «hace N min», y «Llegó HH:MM».
+3. Sin recargar ni recibir otro evento, pasa a «Atención» y «hace 31 min» (aprox.).
+4. Pasa a «Demorado» y «hace 1 h …».
+5. Pasa a «⚠ Demora alta» y «hace 2 h …».
+
+## TC-E-088
+
+### Precondición
+
+Igual que TC-E-087, con un pedido ya en el KDS.
+
+### Pasos
+
+1. Abrir el KDS.
+2. Cortar la conexión con el servidor (el navegador sigue con red).
+3. Mientras está cortada, hacer y pagar otro pedido.
+4. Restablecer la conexión.
+
+### Resultado esperado
+
+1. El indicador dice «Conectado» y se ve la comanda.
+2. El indicador pasa a «Reconectando…» y la comanda sigue a la vista.
+3. —
+4. Sin recargar la página, el indicador vuelve a «Conectado» y aparecen las dos comandas.
+
+## TC-E-089
+
+### Precondición
+
+Igual que TC-E-087, con un pedido ya en el KDS.
+
+### Pasos
+
+1. Abrir el KDS.
+2. Dejar el navegador sin red.
+3. Devolverle la red.
+
+### Resultado esperado
+
+1. El indicador dice «Conectado».
+2. Enseguida (sin esperar 30 s), el indicador pasa a «Desconectado». La comanda sigue a la vista.
+3. El indicador vuelve a «Conectado».
+
+## TC-E-090
+
+### Precondición
+
+Igual que TC-E-087.
+
+### Pasos
+
+1. Abrir el KDS con una comanda recién llegada.
+2. Adelantar el reloj hasta «Atención», «Demorado» y «Demora alta».
+3. Dejar el navegador sin red.
+
+### Resultado esperado
+
+1. Sin errores graves de accesibilidad (axe, WCAG 2.1 AA).
+2. Sin errores graves de accesibilidad en cada nivel (incluido el contraste de los colores).
+3. Con el indicador en «Desconectado», sin errores graves de accesibilidad.

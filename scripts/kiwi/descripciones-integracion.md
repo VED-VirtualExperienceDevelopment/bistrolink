@@ -33,6 +33,7 @@
 | 1.26    | 08/11/2026 | Se borra el bloque de TC-I-142, ya cargado en Kiwi. TC-I-183 a 186: ventas de BistroLink al POS del local (HU-011 / BL-488), para cargar con el script antes de mergear el PR.                                                            |
 | 1.27    | 09/11/2026 | Se borran los bloques de TC-I-183 a 186, ya cargados en Kiwi. TC-I-187 a 189: ventas hechas en el POS del local, traídas al dashboard (HU-011 / BL-489), para cargar con el script antes de mergear el PR.                                |
 | 1.28    | 09/11/2026 | Se borran los bloques de TC-I-187 a 189, ya cargados en Kiwi. TC-I-190 y 191: cancelar un pedido que todavía no se cobró (bug BL-501), para cargar con el script antes de mergear el PR.                                                  |
+| 1.29    | 10/11/2026 | TC-I-192 y 193: umbrales de espera del KDS configurables por local (HU-038 / BL-506), para cargar con el script antes de mergear el PR. |
 
 Texto del campo de descripción de cada caso TC-I en Kiwi. Lo carga
 `cargar-casos-integracion.mjs --descripciones`: cada bloque `## TC-I-NNN`
@@ -85,3 +86,41 @@ Usuarios Mozo y Cocina del tenant A (Keycloak de pruebas). Un pedido cargado por
 2. 200 con el pedido CANCELADO y su total.
 3. 409.
 4. 400 y 404.
+
+## TC-I-192
+
+### Precondición
+
+Base de pruebas con el restaurante del tenant A y sus umbrales de espera por defecto (30/60/120).
+
+### Pasos
+
+1. Como administrador, cambiar los umbrales a 15 / 45 / 90 minutos (PATCH /admin/configuracion).
+2. Leer la configuración guardada.
+3. Revisar la auditoría de configuración.
+4. Revisar el aviso a los KDS abiertos.
+
+### Resultado esperado
+
+1. 200 con los umbrales nuevos.
+2. Quedan guardados 15 / 45 / 90.
+3. Un registro «Configuración modificada» con los umbrales anteriores y los nuevos.
+4. Se avisa al tenant con los umbrales nuevos (kds:umbrales-espera).
+
+## TC-I-193
+
+### Precondición
+
+Igual que TC-I-192.
+
+### Pasos
+
+1. Como administrador, poner «Demora alta desde» igual a «Demorado desde».
+2. Sin pasar por la API, escribir en la base «Atención» mayor que «Demorado».
+3. Sin pasar por la API, escribir en la base «Demora alta» en 601 minutos.
+
+### Resultado esperado
+
+1. 400: «Demora alta desde» tiene que ser mayor que «Demorado desde». No se guarda ni se audita nada.
+2. La base lo rechaza (CHECK restaurante_minutos_espera_orden).
+3. La base lo rechaza (CHECK restaurante_minutos_espera_rango). La configuración queda como estaba.
