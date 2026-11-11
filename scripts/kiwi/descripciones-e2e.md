@@ -35,6 +35,7 @@
 | 1.27 | 10/11/2026 | Se borran los bloques de TC-E-071 y de TC-E-085 a 101, ya cargados en Kiwi. TC-E-102 y 103: «Mis pedidos» en la mesa y «Gracias por tu compra» (bug BL-502). |
 | 1.28 | 10/11/2026 | Se borran los bloques de TC-E-102 y 103, ya cargados en Kiwi. TC-E-104: la carta pasa a «Tu mesa se cerró» cuando el mozo cierra la mesa (bug BL-518). |
 | 1.29 | 10/11/2026 | Se borra el bloque de TC-E-104, ya cargado en Kiwi. TC-E-008 cambia: en el celular el detalle del carrito se abre desde la barra. TC-E-105 a 107: en el celular el carrito es una barra y el detalle se abre en una hoja; en escritorio sigue la columna (bug BL-519). |
+| 1.30 | 11/11/2026 | Se borran los bloques de TC-E-008 y TC-E-105 a 107, ya cargados en Kiwi. TC-E-108 a 111: pantalla de Inicio del administrador y del mozo (mejora BL-520). |
 
 Plantilla para cargar en Kiwi la descripción de casos TC-E (Playwright)
 nuevos o que cambiaron (BL-435). La usa
@@ -79,72 +80,76 @@ Reglas:
 
 ## Casos para cargar
 
-## TC-E-008
+## TC-E-108
 
 ### Precondición
 
-Carta por URL (pedido web) del restaurante del seed, con al menos un plato disponible. Corre en escritorio (Chrome y Safari) y en celular (Chrome y Safari).
+Sesión iniciada como Administrador en staging. Pantalla de escritorio (1280 × 900). No hace falta que haya ventas en el día.
 
 ### Pasos
 
-1. Abrir la carta por URL.
-2. Tocar «Agregar» en el primer plato disponible.
-3. En el celular, tocar la barra «Ver pedido» de abajo.
+1. Entrar a la raíz del sitio («/»).
+2. Mirar el menú lateral y la pantalla.
+3. Tocar «Ver reportes» en «Lo más pedido hoy» y volver.
+4. Analizar la pantalla con axe-core.
 
 ### Resultado esperado
 
-1. Se ve la carta.
-2. El plato queda en el pedido.
-3. En el celular se abre la hoja del pedido; en escritorio el pedido ya se ve en la columna de la derecha. En los dos casos se ve «1x» con el nombre del plato y el botón «Continuar al pago».
+1. Se llega a /admin/inicio, con el saludo según la hora («Buen día», «Buenas tardes» o «Buenas noches»).
+2. «Inicio» está marcado en el menú. Se ven «Ventas de hoy», «Mesas con gente», «Necesita tu atención», «Lo más pedido hoy» y los accesos rápidos a Mapa de mesas, KDS, POS del local y Gestión de carta.
+3. Se abre Reportes y, al volver, se ve otra vez Inicio.
+4. Sin errores graves ni críticos de accesibilidad.
 
-## TC-E-105
+## TC-E-109
 
 ### Precondición
 
-Carta por URL (pedido web) del restaurante del seed, con «Milanesa a la napolitana» disponible. Pantalla de celular (390 × 844).
+Sesión iniciada como Mozo en staging. Pantalla de escritorio (1280 × 900).
 
 ### Pasos
 
-1. Abrir la carta y tocar «Agregar» en «Milanesa a la napolitana».
-2. Mirar la parte de abajo de la pantalla y el botón del plato.
-3. Tocar la barra «Ver pedido».
-4. Tocar «Seguir viendo la carta».
+1. Entrar a la raíz del sitio («/»).
+2. Mirar las tarjetas y el menú.
+3. Analizar la pantalla con axe-core.
+4. Tocar «Ir al mapa de mesas».
 
 ### Resultado esperado
 
-1. —
-2. Abajo hay una sola barra con la cantidad, «Ver pedido» y el total, que ocupa menos del 12 % del alto de la pantalla; «Continuar al pago» no se ve y la carta sigue a la vista. El botón del plato dice «1 en el pedido».
-3. Se abre la hoja «Tu pedido» con «1x Milanesa a la napolitana», «Instrucciones generales» y «Continuar al pago».
-4. La hoja se cierra y el foco vuelve a la barra.
+1. Se llega a /admin/inicio, con el saludo según la hora.
+2. Se ven «Te llaman», «Listos para llevar», «Salón», «Cobros pendientes» y «Agotados hoy». No aparecen «Ventas de hoy» ni el link a Reportes.
+3. Sin errores graves ni críticos de accesibilidad.
+4. Se abre el mapa de mesas.
 
-## TC-E-106
+## TC-E-110
 
 ### Precondición
 
-Carta por URL (pedido web) del restaurante del seed. Pantalla de celular (390 × 844).
+Sesión iniciada como Mozo. La consulta de cobros pendientes responde con error (simulado en el test).
 
 ### Pasos
 
-1. Agregar un plato y tocar la barra «Ver pedido».
-2. Analizar la hoja con axe-core.
-3. Apretar Escape.
+1. Entrar a la raíz del sitio («/»).
+2. Mirar las tarjetas.
+3. Dejar que la API responda bien y tocar «Reintentar» en «Cobros pendientes».
 
 ### Resultado esperado
 
-1. Se abre la hoja y el foco queda en «Cerrar el pedido».
-2. Sin errores graves ni críticos de accesibilidad.
-3. La hoja se cierra y el foco vuelve a la barra.
+1. Se llega a Inicio.
+2. Solo «Cobros pendientes» muestra el aviso con «Reintentar»; «Salón» y «Agotados hoy» se ven normalmente.
+3. La tarjeta de cobros se recupera y el aviso desaparece.
 
-## TC-E-107
+## TC-E-111
 
 ### Precondición
 
-Carta por URL (pedido web) del restaurante del seed. Pantalla de escritorio (1280 × 800).
+Sesión iniciada como Mozo. Pantalla de celular (390 × 844).
 
 ### Pasos
 
-1. Abrir la carta y agregar «Milanesa a la napolitana».
+1. Entrar a la raíz del sitio («/»).
+2. Revisar el ancho del contenido.
 
 ### Resultado esperado
 
-1. El pedido se ve en la columna de la derecha: «Tu pedido (1 item)», «1x Milanesa a la napolitana» y «Continuar al pago», sin abrir nada. No aparece la barra del celular.
+1. Se llega a Inicio y se ve «Te llaman».
+2. El contenido entra en el ancho de la pantalla, sin desplazamiento horizontal, y se ve el botón «Ir al mapa de mesas».
