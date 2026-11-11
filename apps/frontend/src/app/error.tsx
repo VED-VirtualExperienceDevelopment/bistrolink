@@ -8,6 +8,25 @@ import {
   puedeRecargar,
 } from "./error.utils";
 
+interface ErrorDeLaAppProps {
+  readonly error: Error & { digest?: string };
+  readonly reset: () => void;
+}
+
+/**
+ * Texto del párrafo según el tipo de error y si ya se está recargando.
+ * Fuera del JSX para no anidar ternarios (regla de SonarCloud).
+ */
+function mensajeDeError(deVersion: boolean, recargando: boolean): string {
+  if (!deVersion) {
+    return "Probá de nuevo. Si el problema sigue, avisale al personal del local.";
+  }
+  if (recargando) {
+    return "Recargando la página…";
+  }
+  return "Recargá la página para seguir. Tu pedido confirmado y tu pago en curso no se pierden.";
+}
+
 /**
  * BL-517: página de error de la app (antes se veía la genérica de Next,
  * «Application error: a client-side exception has occurred»).
@@ -20,13 +39,7 @@ import {
  * manejador global del navegador. El SDK se importa de forma diferida, igual
  * que en FrontendObservability; si Faro no está iniciado, no se manda nada.
  */
-export default function ErrorDeLaApp({
-  error,
-  reset,
-}: {
-  error: Error & { digest?: string };
-  reset: () => void;
-}) {
+export default function ErrorDeLaApp({ error, reset }: ErrorDeLaAppProps) {
   const deVersion = esErrorDeChunk(error);
   const [recargando, setRecargando] = useState(false);
 
@@ -62,11 +75,7 @@ export default function ErrorDeLaApp({
         {deVersion ? "Hay una versión nueva de BistroLink" : "Algo salió mal"}
       </h1>
       <p className="text-body-md text-on-surface-variant" aria-live="polite">
-        {deVersion
-          ? recargando
-            ? "Recargando la página…"
-            : "Recargá la página para seguir. Tu pedido confirmado y tu pago en curso no se pierden."
-          : "Probá de nuevo. Si el problema sigue, avisale al personal del local."}
+        {mensajeDeError(deVersion, recargando)}
       </p>
       {!recargando && (
         <button
