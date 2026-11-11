@@ -13,6 +13,8 @@ const HREF_ALERTAS = '/admin/alertas';
 
 const NAV_ITEMS = [
   // `roles: undefined` = visible para cualquier staff (ADMIN o MOZO).
+  // BL-520: Inicio, adonde llegan el administrador y el mozo al entrar.
+  { href: '/admin/inicio', label: 'Inicio', icon: 'home' },
   { href: '/admin/usuarios', label: 'Usuarios', icon: 'group', roles: ['ADMIN'] },
   { href: '/admin/mesas', label: 'Mapa de mesas', icon: 'table_restaurant' },
   // Apunta a /admin/kds (embebido, con sidebar), no a /kds standalone.

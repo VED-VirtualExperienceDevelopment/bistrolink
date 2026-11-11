@@ -15,14 +15,15 @@ import { conPagoFalso } from './support/pago-falso';
 // y acceso a un pedido de mesa solo en la sesión abierta (RD.05).
 //
 // Con Keycloak, base, RLS y guards reales; falsos solo la pasarela y el CFE. Las
-// mesas 82 y 83 son de este test: se abren con una sesión propia y quedan
-// libres al terminar.
+// mesas 72 y 73 son de este test: se abren con una sesión propia y quedan
+// libres al terminar. BL-518: antes eran la 82 y la 83, pero del 80 al 99
+// son de mesas-layout.e2e-spec.ts, que borra esas mesas en cada corrida.
 
 const TENANT_ID = '11111111-1111-1111-1111-111111111111';
 const RESTAURANTE_ID = '22222222-2222-2222-2222-222222222222';
 const ITEM_ID = '55555555-5555-5555-5555-555555555555';
-const MESA_NUMERO = 82;
-const OTRA_MESA_NUMERO = 83;
+const MESA_NUMERO = 72;
+const OTRA_MESA_NUMERO = 73;
 const NOMBRE_ITEM = 'Item de prueba BL-502';
 
 describe('BL-502: Mis pedidos en la mesa', () => {

@@ -893,6 +893,17 @@ const DATOS_INTEGRACION = {
     priority: "P1",
     tags: ["BL-502", "bug", "RD.05"],
   }),
+  // BL-518: aviso al comensal cuando el mozo cierra la mesa.
+  206: sesionMesa({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-518", "bug", "websocket"],
+  }),
+  207: sesionMesa({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["BL-518", "bug", "websocket", "RD.05"],
+  }),
 };
 /**
  * BL-435: datos de los E2E TC-E-017 en adelante, con los criterios de
@@ -1345,6 +1356,49 @@ const DATOS_E2E = {
     category: "Funcional",
     priority: "P1",
     tags: ["BL-502", "bug", "gracias", ...axe],
+  }),
+  // BL-518: la carta se entera de que el mozo cerró la mesa.
+  104: e2e("comensal", "HU-017", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-518", "bug", "websocket", ...axe],
+  }),
+  // BL-519: en el celular el carrito es una barra y el detalle, una hoja.
+  105: e2e("comensal", "HU-003", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-519", "bug", "carrito", "responsive"],
+  }),
+  106: e2e("comensal", "HU-003", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-519", "bug", "carrito", "responsive", ...axe],
+  }),
+  107: e2e("comensal", "HU-003", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-519", "bug", "carrito", "responsive"],
+  }),
+  // BL-520: pantalla de Inicio del administrador y del mozo.
+  108: e2e("admin", "HU-012", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-520", "inicio", ...axe],
+  }),
+  109: e2e("mozo", "HU-028", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-520", "inicio", "roles", ...axe],
+  }),
+  110: e2e("mozo", "HU-028", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-520", "inicio", "resiliencia"],
+  }),
+  111: e2e("mozo", "HU-028", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-520", "inicio", "responsive"],
   }),
 };
 /**

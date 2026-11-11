@@ -33,6 +33,9 @@
 
 | 1.26 | 10/11/2026 | TC-E-069 a 071 cambian: las alertas de stock están en la campana de Alertas. TC-E-100 y 101: «Ir a cobrar» desde el aviso de efectivo (BL-470). TC-E-098 y 099 ya son de HU-040. |
 | 1.27 | 10/11/2026 | Se borran los bloques de TC-E-071 y de TC-E-085 a 101, ya cargados en Kiwi. TC-E-102 y 103: «Mis pedidos» en la mesa y «Gracias por tu compra» (bug BL-502). |
+| 1.28 | 10/11/2026 | Se borran los bloques de TC-E-102 y 103, ya cargados en Kiwi. TC-E-104: la carta pasa a «Tu mesa se cerró» cuando el mozo cierra la mesa (bug BL-518). |
+| 1.29 | 10/11/2026 | Se borra el bloque de TC-E-104, ya cargado en Kiwi. TC-E-008 cambia: en el celular el detalle del carrito se abre desde la barra. TC-E-105 a 107: en el celular el carrito es una barra y el detalle se abre en una hoja; en escritorio sigue la columna (bug BL-519). |
+| 1.30 | 11/11/2026 | Se borran los bloques de TC-E-008 y TC-E-105 a 107, ya cargados en Kiwi. TC-E-108 a 111: pantalla de Inicio del administrador y del mozo (mejora BL-520). |
 
 Plantilla para cargar en Kiwi la descripción de casos TC-E (Playwright)
 nuevos o que cambiaron (BL-435). La usa
@@ -77,44 +80,76 @@ Reglas:
 
 ## Casos para cargar
 
-## TC-E-102
+## TC-E-108
 
 ### Precondición
 
-Mesa del seed abierta y con su QR. Mozo logueado en otra pestaña. Efectivo habilitado (valor por defecto).
+Sesión iniciada como Administrador en staging. Pantalla de escritorio (1280 × 900). No hace falta que haya ventas en el día.
 
 ### Pasos
 
-1. Desde el QR de la mesa, agregar un ítem, elegir efectivo y avisar al mozo. Como Mozo, cobrarlo en «Cobros pendientes».
-2. Tocar «Hacer otro pedido» y abrir «Mis pedidos».
-3. Como Mozo, marcar el pedido en preparación en el KDS.
-4. Cerrar «Mis pedidos» y volver a abrir el QR de la mesa en otra pestaña.
-5. Abrir «Mis pedidos» en la pestaña nueva.
+1. Entrar a la raíz del sitio («/»).
+2. Mirar el menú lateral y la pantalla.
+3. Tocar «Ver reportes» en «Lo más pedido hoy» y volver.
+4. Analizar la pantalla con axe-core.
 
 ### Resultado esperado
 
-1. «¡Tu pedido ya está en cocina!».
-2. El pedido aparece con su código y el estado «Recibido».
-3. El estado pasa a «En preparación» sin recargar.
-4. El acceso a «Mis pedidos» dice «1 en preparación».
-5. Aparece el pedido. Sin errores graves de accesibilidad (axe).
+1. Se llega a /admin/inicio, con el saludo según la hora («Buen día», «Buenas tardes» o «Buenas noches»).
+2. «Inicio» está marcado en el menú. Se ven «Ventas de hoy», «Mesas con gente», «Necesita tu atención», «Lo más pedido hoy» y los accesos rápidos a Mapa de mesas, KDS, POS del local y Gestión de carta.
+3. Se abre Reportes y, al volver, se ve otra vez Inicio.
+4. Sin errores graves ni críticos de accesibilidad.
 
-## TC-E-103
+## TC-E-109
 
 ### Precondición
 
-Igual que TC-E-102.
+Sesión iniciada como Mozo en staging. Pantalla de escritorio (1280 × 900).
 
 ### Pasos
 
-1. Hacer y pagar un pedido como en TC-E-102 y quedarse en «¡Tu pedido ya está en cocina!».
-2. Como Mozo, llevarlo hasta Entregado desde el KDS.
-3. Mirar la pantalla del comensal, sin recargar.
-4. Tocar «Pedir algo más».
+1. Entrar a la raíz del sitio («/»).
+2. Mirar las tarjetas y el menú.
+3. Analizar la pantalla con axe-core.
+4. Tocar «Ir al mapa de mesas».
 
 ### Resultado esperado
 
-1. —
-2. —
-3. «Gracias por tu compra» con el código del pedido, el ítem y el total abonado. Sin errores graves de accesibilidad (axe).
-4. Vuelve a la carta y «Mis pedidos» dice «Todo entregado».
+1. Se llega a /admin/inicio, con el saludo según la hora.
+2. Se ven «Te llaman», «Listos para llevar», «Salón», «Cobros pendientes» y «Agotados hoy». No aparecen «Ventas de hoy» ni el link a Reportes.
+3. Sin errores graves ni críticos de accesibilidad.
+4. Se abre el mapa de mesas.
+
+## TC-E-110
+
+### Precondición
+
+Sesión iniciada como Mozo. La consulta de cobros pendientes responde con error (simulado en el test).
+
+### Pasos
+
+1. Entrar a la raíz del sitio («/»).
+2. Mirar las tarjetas.
+3. Dejar que la API responda bien y tocar «Reintentar» en «Cobros pendientes».
+
+### Resultado esperado
+
+1. Se llega a Inicio.
+2. Solo «Cobros pendientes» muestra el aviso con «Reintentar»; «Salón» y «Agotados hoy» se ven normalmente.
+3. La tarjeta de cobros se recupera y el aviso desaparece.
+
+## TC-E-111
+
+### Precondición
+
+Sesión iniciada como Mozo. Pantalla de celular (390 × 844).
+
+### Pasos
+
+1. Entrar a la raíz del sitio («/»).
+2. Revisar el ancho del contenido.
+
+### Resultado esperado
+
+1. Se llega a Inicio y se ve «Te llaman».
+2. El contenido entra en el ancho de la pantalla, sin desplazamiento horizontal, y se ve el botón «Ir al mapa de mesas».
