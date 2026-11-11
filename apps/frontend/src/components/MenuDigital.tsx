@@ -17,6 +17,15 @@ import { MisPedidosPanel } from "@/components/mis-pedidos/MisPedidosPanel";
 import { pedidosEnCamino } from "@/components/mis-pedidos/mis-pedidos.utils";
 import { useMisPedidos } from "@/components/mis-pedidos/useMisPedidos";
 import { MesaCerradaAviso } from "@/components/mesa-cerrada/MesaCerradaAviso";
+import { CarritoBarra } from "@/components/carrito/CarritoBarra";
+import { CarritoDetalle } from "@/components/carrito/CarritoDetalle";
+import { CarritoHoja } from "@/components/carrito/CarritoHoja";
+import {
+  anuncioAgregado,
+  cantidadEnCarrito,
+  ID_TITULO_CARRITO,
+} from "@/components/carrito/carrito.utils";
+import { useEsPantallaAncha } from "@/components/carrito/useEsPantallaAncha";
 import { useSesionMesaCerrada } from "@/components/mesa-cerrada/useSesionMesaCerrada";
 import { apiFetch, ApiError } from "@/lib/api-client";
 import {
@@ -108,7 +117,6 @@ interface MenuDigitalProps {
 
 const MAX_CHARS_GENERAL = 500;
 const MAX_CHARS_ITEM = 300;
-const WARNING_THRESHOLD = 0.9;
 
 /**
  * Error de las notas del carrito antes de crear el pedido, o null si están
@@ -319,40 +327,28 @@ export default function MenuDigital({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clave]);
 
-  // BL-320: el panel "Tu pedido" es fijo y tapaba los botones "Agregar" de
-  // los platos que quedaban debajo. Se mide su alto para reservar ese espacio
-  // al final de la página y en el scroll (ver el efecto de abajo).
-  const panelPedidoRef = useRef<HTMLDivElement>(null);
-  const [altoPanelPedido, setAltoPanelPedido] = useState(0);
+  // BL-320: lo fijo de abajo tapaba los botones "Agregar" de los platos que
+  // quedaban debajo. Se mide su alto para reservar ese espacio al final de la
+  // página y en el scroll (ver el efecto de abajo). BL-519: en el celular lo
+  // fijo es solo la barra del carrito; desde lg el carrito va a la derecha.
+  const barraCarritoRef = useRef<HTMLDivElement>(null);
+  const [altoBarraCarrito, setAltoBarraCarrito] = useState(0);
   const hayCarrito = carrito.length > 0 && vista === "carta";
 
-  const generalCharCount = observacionGeneral.length;
-  const isGeneralOverLimit = generalCharCount > MAX_CHARS_GENERAL;
-  const isGeneralNearLimit =
-    generalCharCount >= MAX_CHARS_GENERAL * WARNING_THRESHOLD &&
-    !isGeneralOverLimit;
-
-  const getGeneralBorderClasses = () => {
-    if (isGeneralOverLimit)
-      return "border-2 border-[#BA1A1A] bg-[#FFDAD6] focus:border-[#BA1A1A] focus:ring-2 focus:ring-[#BA1A1A]/20";
-    if (isGeneralNearLimit)
-      return "border-2 border-[#755b00] bg-culinary-background focus:border-[#755b00] focus:ring-2 focus:ring-[#755b00]/20";
-    return "border-2 border-culinary-neutral/30 bg-culinary-background focus:border-[#6e54ad] focus:ring-2 focus:ring-[#6e54ad]/20";
-  };
-
-  const getGeneralCounterColor = () => {
-    if (isGeneralOverLimit) return "text-[#BA1A1A]";
-    if (isGeneralNearLimit) return "text-[#755b00]";
-    return "text-[#5a575e]";
-  };
+  // BL-519: en el celular el carrito es una barra de una línea y el detalle
+  // se abre en una hoja; desde lg sigue siendo la columna de la derecha.
+  const esPantallaAncha = useEsPantallaAncha();
+  const [hojaCarritoAbierta, setHojaCarritoAbierta] = useState(false);
+  const barraCarritoVisible = hayCarrito && !esPantallaAncha;
+  // BL-519: el último plato agregado, para anunciarlo al lector de pantalla.
+  const [ultimoAgregado, setUltimoAgregado] = useState<string | null>(null);
 
   // BL-425: true si el ítem ya tiene en el carrito el máximo de unidades.
   const llegoAlTope = (itemId: string) =>
-    alcanzoCantidadMaxima(
-      carrito.find((i) => i.itemCartaId === itemId)?.cantidad ?? 0,
-    );
+    alcanzoCantidadMaxima(cantidadEnCarrito(carrito, itemId));
 
   const agregarAlCarrito = (item: ItemMenu) => {
+    setUltimoAgregado(item.nombre);
     setCarrito((prevCarrito) => {
       const itemExistente = prevCarrito.some((i) => i.itemCartaId === item.id);
       if (itemExistente) {
@@ -406,6 +402,11 @@ export default function MenuDigital({
     }
   };
 
+  const vaciarCarrito = () => {
+    setCarrito([]);
+    setHojaCarritoAbierta(false);
+  };
+
   const totalCarrito = useMemo(
     () =>
       carrito.reduce((total, item) => total + item.precio * item.cantidad, 0),
@@ -426,6 +427,7 @@ export default function MenuDigital({
 
     const firma = firmaCarrito(carrito, observacionGeneral);
     if (pedidoPorPagar?.firma === firma) {
+      setHojaCarritoAbierta(false);
       setVista("pago");
       window.scrollTo({ top: 0 });
       return;
@@ -453,6 +455,9 @@ export default function MenuDigital({
       });
       setAvisoRetoma(null);
       setEstadoPedido("idle");
+      // BL-519: al volver del pago, la carta se ve con la barra, no con la
+      // hoja abierta.
+      setHojaCarritoAbierta(false);
       setVista("pago");
       window.scrollTo({ top: 0 });
     } catch (err) {
@@ -516,35 +521,35 @@ export default function MenuDigital({
   }, [vista, hacerOtroPedido]);
   const hayMisPedidos = misPedidos.pedidos.length > 0;
 
-  // BL-320: mide el panel "Tu pedido" mientras está visible.
+  // BL-320 / BL-519: mide la barra del carrito mientras está visible.
   useEffect(() => {
-    const panel = panelPedidoRef.current;
-    if (!hayCarrito || !panel) {
-      setAltoPanelPedido(0);
+    const barra = barraCarritoRef.current;
+    if (!barraCarritoVisible || !barra) {
+      setAltoBarraCarrito(0);
       return;
     }
     const observer = new ResizeObserver(() =>
-      setAltoPanelPedido(Math.ceil(panel.getBoundingClientRect().height)),
+      setAltoBarraCarrito(Math.ceil(barra.getBoundingClientRect().height)),
     );
-    observer.observe(panel);
+    observer.observe(barra);
     return () => observer.disconnect();
-  }, [hayCarrito]);
+  }, [barraCarritoVisible]);
 
   // BL-320: scroll-padding hace que el navegador, al llevar un elemento a la
   // vista (scroll, foco con teclado, scrollIntoView), lo deje entre la barra
-  // superior fija y el panel del pedido, en vez de debajo de alguno de los
+  // superior fija y la barra del carrito, en vez de debajo de alguna de las
   // dos. También cubre WCAG 2.4.11 (el foco no queda tapado).
   useEffect(() => {
     const html = document.documentElement;
     html.style.scrollPaddingTop = "5rem";
-    html.style.scrollPaddingBottom = altoPanelPedido
-      ? `${altoPanelPedido + 32}px`
+    html.style.scrollPaddingBottom = altoBarraCarrito
+      ? `${altoBarraCarrito + 32}px`
       : "";
     return () => {
       html.style.scrollPaddingTop = "";
       html.style.scrollPaddingBottom = "";
     };
-  }, [altoPanelPedido]);
+  }, [altoBarraCarrito]);
 
   // BL-311: pantallas del pago (pagar / pago aprobado); si no corresponde
   // ninguna, se muestra la carta.
@@ -583,6 +588,21 @@ export default function MenuDigital({
     );
   }
 
+  // BL-519: lo mismo para la columna (lg) y para la hoja (celular).
+  const propsDetalleCarrito = {
+    lineas: carrito,
+    cantidadTotal: cantidadTotalItems,
+    total: totalCarrito,
+    observacionGeneral,
+    maxCaracteresGeneral: MAX_CHARS_GENERAL,
+    onCambiarObservacion: setObservacionGeneral,
+    onEditarNota: handleAbrirNotaItem,
+    onVaciar: vaciarCarrito,
+    onContinuar: continuarAlPago,
+    enviando: estadoPedido === "enviando",
+    error: errorPedido,
+  };
+
   if (mesaCerrada) {
     return (
       <MesaCerradaAviso
@@ -596,9 +616,9 @@ export default function MenuDigital({
     <div
       className="min-h-screen bg-culinary-background pb-28"
       // BL-320: espacio al final para que el último plato pueda quedar por
-      // encima del panel del pedido (pb-28 solo alcanzaba sin el panel).
+      // encima de la barra del carrito.
       style={
-        altoPanelPedido ? { paddingBottom: altoPanelPedido + 32 } : undefined
+        altoBarraCarrito ? { paddingBottom: altoBarraCarrito + 32 } : undefined
       }
     >
       <nav className="fixed top-0 w-full z-50 flex justify-between items-center px-4 md:px-8 h-16 bg-white border-b border-culinary-neutral/15">
@@ -805,6 +825,20 @@ export default function MenuDigital({
                                       ></line>
                                     </svg>
                                     Agregar
+                                    {/* BL-519: en el celular el detalle del
+                                    carrito no se ve; el botón muestra cuántos
+                                    hay (el lector de pantalla lo oye en el
+                                    anuncio de abajo). */}
+                                    {cantidadEnCarrito(carrito, item.id) >
+                                      0 && (
+                                      <span
+                                        aria-hidden="true"
+                                        className="ml-1 rounded-full bg-white px-2 py-0.5 text-xs font-bold text-[#6e54ad]"
+                                      >
+                                        {cantidadEnCarrito(carrito, item.id)} en
+                                        el pedido
+                                      </span>
+                                    )}
                                   </button>
                                   {llegoAlTope(item.id) && (
                                     <p
@@ -847,136 +881,58 @@ export default function MenuDigital({
             </footer>
           </main>
 
-          {hayCarrito && (
-            <div
-              ref={panelPedidoRef}
-              // BL-320: hasta lg ocupa todo el ancho abajo, con un alto máximo
-              // para que siempre quede menú visible arriba; desde lg va a la
-              // derecha, en el espacio que se le reserva al <main>.
-              className="fixed bottom-4 left-4 right-4 max-h-[60vh] overflow-y-auto lg:left-auto lg:right-4 lg:w-[400px] lg:max-h-[calc(100vh-6rem)] bg-white rounded-[1rem] shadow-[0px_4px_20px_rgba(121,118,125,0.15)] border border-culinary-neutral/15 p-5 z-20"
+          {/* BL-519: el carrito se muestra en un solo lugar a la vez: la
+          columna de la derecha desde lg, o la barra con la hoja en el
+          celular. */}
+          {hayCarrito && esPantallaAncha && (
+            <aside
+              aria-labelledby={ID_TITULO_CARRITO}
+              // BL-320: desde lg va a la derecha, en el espacio que se le
+              // reserva al <main>.
+              className="fixed bottom-4 right-4 w-[400px] max-h-[calc(100vh-6rem)] overflow-y-auto bg-white rounded-[1rem] shadow-[0px_4px_20px_rgba(121,118,125,0.15)] border border-culinary-neutral/15 p-5 z-20"
             >
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-bold text-lg text-foreground flex items-center gap-2">
-                  <span role="img" aria-label="Carrito">
-                    🛒
-                  </span>{" "}
-                  Tu pedido ({cantidadTotalItems}{" "}
-                  {cantidadTotalItems === 1 ? "item" : "items"})
-                </h3>
-                <button
-                  type="button"
-                  onClick={() => setCarrito([])}
-                  className="text-sm text-red-600 hover:text-red-700 font-medium px-2 py-1 bg-red-50 rounded-md transition-colors"
-                  disabled={estadoPedido === "enviando"}
-                >
-                  Vaciar
-                </button>
-              </div>
-
-              <div className="max-h-60 overflow-y-auto mb-4 space-y-3 pr-1">
-                {carrito.map((item) => (
-                  <div
-                    key={item.itemCartaId}
-                    className="flex flex-col bg-culinary-background p-3 rounded-lg"
-                  >
-                    <div className="flex items-start justify-between text-sm">
-                      <div className="flex-1 pr-2">
-                        <span className="font-semibold text-foreground">
-                          {item.cantidad}x {item.nombre}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => handleAbrirNotaItem(item)}
-                          className="text-xs text-[#6e54ad] mt-1.5 flex items-center gap-1 hover:underline font-medium"
-                        >
-                          <svg
-                            aria-hidden="true"
-                            xmlns="http://www.w3.org/2000/svg"
-                            width="12"
-                            height="12"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          >
-                            <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
-                            <path d="m15 5 4 4" />
-                          </svg>
-                          Editar nota
-                        </button>
-                        {item.observacion && (
-                          <p className="text-xs text-[#5a575e] mt-1 italic line-clamp-2">
-                            &quot;{item.observacion}&quot;
-                          </p>
-                        )}
-                      </div>
-                      <span className="font-semibold text-foreground">
-                        {formatearPrecio(item.precio * item.cantidad)}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="border-t border-culinary-neutral/15 pt-4 mb-4">
-                <label
-                  htmlFor="observacion-general"
-                  className="text-sm font-semibold text-foreground mb-2 block"
-                >
-                  Instrucciones generales
-                </label>
-                <textarea
-                  id="observacion-general"
-                  value={observacionGeneral}
-                  onChange={(e) => setObservacionGeneral(e.target.value)}
-                  placeholder="Ej: Ningún plato debe llevar maní."
-                  className={`w-full p-3 rounded-lg text-sm resize-none outline-none transition-all duration-200 placeholder:text-[#5a575e]/70 ${getGeneralBorderClasses()}`}
-                  maxLength={MAX_CHARS_GENERAL + 20}
-                  rows={2}
-                />
-                <div className="flex justify-end mt-1">
-                  <span
-                    className={`text-xs font-semibold ${getGeneralCounterColor()}`}
-                  >
-                    {generalCharCount}/{MAX_CHARS_GENERAL}
-                  </span>
-                </div>
-              </div>
-
-              {errorPedido && (
-                <div className="p-3 bg-red-50 text-red-700 rounded-lg text-sm font-medium mb-4 flex items-start gap-2">
-                  <span>⚠️</span> {errorPedido}
-                </div>
-              )}
-
-              <div className="pt-2">
-                <div className="flex items-center justify-between mb-4">
-                  <span className="font-bold text-foreground text-lg">
-                    Total:
-                  </span>
-                  <span className="text-2xl font-bold text-[#6e54ad]">
-                    {formatearPrecio(totalCarrito)}
-                  </span>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={continuarAlPago}
-                  disabled={estadoPedido === "enviando" || isGeneralOverLimit}
-                  className="w-full px-4 py-3.5 bg-[#6e54ad] text-white font-bold rounded-[0.5rem] hover:bg-[#5b468f] focus:outline-none focus:ring-4 focus:ring-[#6e54ad]/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed text-lg shadow-[0px_4px_20px_rgba(121,118,125,0.15)]"
-                >
-                  {estadoPedido === "enviando"
-                    ? "Preparando tu pedido…"
-                    : "Continuar al pago"}
-                </button>
-              </div>
-            </div>
+              <CarritoDetalle {...propsDetalleCarrito} variante="columna" />
+            </aside>
           )}
 
+          {barraCarritoVisible && (
+            <>
+              <div
+                ref={barraCarritoRef}
+                className="fixed bottom-4 left-4 right-4 z-20 lg:hidden"
+              >
+                <CarritoBarra
+                  cantidad={cantidadTotalItems}
+                  total={totalCarrito}
+                  onAbrir={() => setHojaCarritoAbierta(true)}
+                />
+              </div>
+              <CarritoHoja
+                abierto={hojaCarritoAbierta}
+                onCerrar={() => setHojaCarritoAbierta(false)}
+              >
+                <CarritoDetalle
+                  {...propsDetalleCarrito}
+                  variante="hoja"
+                  onCerrar={() => setHojaCarritoAbierta(false)}
+                />
+              </CarritoHoja>
+            </>
+          )}
+
+          {/* BL-519: aviso para el lector de pantalla al agregar un plato. */}
+          <output aria-live="polite" className="sr-only">
+            {hayCarrito && ultimoAgregado
+              ? anuncioAgregado(
+                  ultimoAgregado,
+                  cantidadTotalItems,
+                  totalCarrito,
+                )
+              : ""}
+          </output>
+
           {/* BL-502: en el celular, «Mis pedidos» abajo mientras no hay
-          carrito (con carrito, el panel del pedido ocupa ese lugar y queda
+          carrito (con carrito, la barra del carrito ocupa ese lugar y queda
           el botón de la barra superior). Desde lg, solo el de la barra. */}
           {hayMisPedidos && !hayCarrito && (
             <div className="fixed bottom-4 left-4 right-4 z-20 lg:hidden">
