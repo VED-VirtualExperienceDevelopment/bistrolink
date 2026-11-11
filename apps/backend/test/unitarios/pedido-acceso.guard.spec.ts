@@ -4,7 +4,12 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
-import { PedidoAccesoGuard } from '../../src/pedidos/pedido-acceso.guard';
+import {
+  esDeLaSesion,
+  MARGEN_RELOJ_SESION_MS,
+  MENSAJE_PEDIDO_DE_OTRA_SESION,
+  PedidoAccesoGuard,
+} from '../../src/pedidos/pedido-acceso.guard';
 import {
   generarTokenAcceso,
   HEADER_PEDIDO_TOKEN,
@@ -69,6 +74,47 @@ describe('PedidoAccesoGuard (BL-311, RD.05: solo quien hizo el pedido lo paga y 
       await expect(
         guard.canActivate(contexto(request({ mesaQr: mesaQr(OTRA_MESA_ID) }))),
       ).rejects.toThrow(ForbiddenException);
+    });
+
+    // BL-502 (RD.05): solo los pedidos de la sesión abierta de la mesa.
+    describe('BL-502: sesión de la mesa', () => {
+      const ABIERTA = new Date('2026-11-10T22:00:00.000Z');
+      const conSesion = { ...mesaQr(MESA_ID), sesionAbiertaEn: ABIERTA };
+
+      it('un pedido de esta sesión: deja pasar', async () => {
+        findUnique.mockResolvedValue({
+          mesaId: MESA_ID,
+          canal: 'QR',
+          accesoTokenHash: null,
+          createdAt: new Date('2026-11-10T22:15:00.000Z'),
+        });
+        await expect(
+          guard.canActivate(contexto(request({ mesaQr: conSesion }))),
+        ).resolves.toBe(true);
+      });
+
+      it('un pedido de una sesión anterior de la misma mesa: 403', async () => {
+        findUnique.mockResolvedValue({
+          mesaId: MESA_ID,
+          canal: 'QR',
+          accesoTokenHash: null,
+          createdAt: new Date('2026-11-10T21:57:59.999Z'),
+        });
+        await expect(
+          guard.canActivate(contexto(request({ mesaQr: conSesion }))),
+        ).rejects.toThrow(
+          new ForbiddenException(MENSAJE_PEDIDO_DE_OTRA_SESION),
+        );
+      });
+
+      it('esDeLaSesion: desde la apertura, con 2 minutos de margen por los relojes; sin fecha de apertura, sí', () => {
+        expect(esDeLaSesion(ABIERTA, ABIERTA)).toBe(true);
+        const margen = ABIERTA.getTime() - MARGEN_RELOJ_SESION_MS;
+        expect(esDeLaSesion(new Date(margen), ABIERTA)).toBe(true);
+        expect(esDeLaSesion(new Date(margen - 1), ABIERTA)).toBe(false);
+        expect(esDeLaSesion(new Date(0), null)).toBe(true);
+        expect(esDeLaSesion(new Date(0), undefined)).toBe(true);
+      });
     });
 
     it('sin X-Mesa-Token: 400 (no es una sesión vencida)', async () => {
@@ -175,7 +221,12 @@ describe('PedidoAccesoGuard (BL-311, RD.05: solo quien hizo el pedido lo paga y 
     );
     expect(findUnique).toHaveBeenCalledWith({
       where: { id: PEDIDO_ID },
-      select: { mesaId: true, canal: true, accesoTokenHash: true },
+      select: {
+        mesaId: true,
+        canal: true,
+        accesoTokenHash: true,
+        createdAt: true,
+      },
     });
   });
 

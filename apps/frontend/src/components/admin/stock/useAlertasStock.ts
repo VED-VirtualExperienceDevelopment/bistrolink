@@ -19,17 +19,23 @@ export interface EstadoAlertasStock {
   sinStock: Record<string, number>;
   /** Texto para la región aria-live. */
   anuncio: string;
+  /**
+   * BL-470: sube con cada alerta en vivo que es nueva o empeoró (no con la
+   * carga inicial ni con una reposición). La campana la usa para agitarse.
+   */
+  llegadas: number;
   error: string | null;
   /** Repone el stock de un ítem (PATCH /admin/stock). */
   reponer: (itemId: string, stockActual: number) => Promise<void>;
 }
 
 /**
- * HU-015 (BL-120): alertas de stock de la campana. Solo para el
- * Administrador (`habilitado`): pide GET /admin/stock/alertas y escucha la
- * sala de administradores del socket del staff (`stock:alerta` al
- * confirmarse un pago, `stock:actualizado` al ajustar el stock). Con cada
- * evento vuelve a pedir la lista; al reconectar, también.
+ * HU-015 (BL-120): alertas de stock. Desde BL-470 se muestran en la campana
+ * de Alertas, a través de AlertasProvider. Solo para el Administrador
+ * (`habilitado`): pide GET /admin/stock/alertas y escucha la sala de
+ * administradores del socket del staff (`stock:alerta` al confirmarse un
+ * pago, `stock:actualizado` al ajustar el stock). Con cada evento vuelve a
+ * pedir la lista; al reconectar, también.
  */
 export function useAlertasStock(habilitado: boolean): EstadoAlertasStock {
   const { token } = useKeycloakAuth();
@@ -37,6 +43,7 @@ export function useAlertasStock(habilitado: boolean): EstadoAlertasStock {
   const [sinStock, setSinStock] = useState<Record<string, number>>({});
   const [anuncio, setAnuncio] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [llegadas, setLlegadas] = useState(0);
   const alertasRef = useRef<AlertaStock[]>([]);
 
   const cargar = useCallback(async () => {
@@ -70,7 +77,10 @@ export function useAlertasStock(habilitado: boolean): EstadoAlertasStock {
     return abrirSocketStock(token, {
       alAlerta: (alerta) => {
         const texto = anuncioAlerta(alertasRef.current, alerta);
-        if (texto) setAnuncio(texto);
+        if (texto) {
+          setAnuncio(texto);
+          setLlegadas((n) => n + 1);
+        }
         setSinStock((actual) => acumularSinStock(actual, alerta));
       },
       alCambiar: () => {
@@ -93,5 +103,5 @@ export function useAlertasStock(habilitado: boolean): EstadoAlertasStock {
     [token, cargar],
   );
 
-  return { alertas, sinStock, anuncio, error, reponer };
+  return { alertas, sinStock, anuncio, llegadas, error, reponer };
 }

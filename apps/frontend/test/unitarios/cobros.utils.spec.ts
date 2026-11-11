@@ -1,4 +1,6 @@
 import {
+  AVISO_PEDIDO_NO_PENDIENTE,
+  anuncioPedidoDestacado,
   codigoDelPedido,
   desglosePropina,
   esTotalCambiado,
@@ -18,8 +20,10 @@ import {
   pendientesDeLaMesa,
   pendientesEnMesas,
   pendientesParaRetirar,
+  resolverPedidoDestacado,
   resumenDeLineas,
   rutaCancelarPendiente,
+  rutaCobrarPedido,
   textoPropinaEnLista,
   type PedidoPendienteDeCobro,
 } from "@/components/admin/cobros/cobros.utils";
@@ -402,6 +406,50 @@ describe("la propina en el cobro (HU-022, BL-495)", () => {
       ).toBe(
         `Cobro registrado: pedido #3F2A9C, ${formatearMonto("649.00")} (incluye propina de ${formatearMonto("59.00")}) con débito (autorización A1B2C3). Ya está en cocina.`,
       );
+    });
+  });
+});
+
+// BL-470: «Ir a cobrar» en el aviso de efectivo de las alertas.
+describe("«Ir a cobrar» desde las alertas (BL-470)", () => {
+  const enMesa = pedido();
+  const retiro = pedido({
+    id: "aa11bb22-0000-4000-8000-000000000002",
+    mesa: { id: "virtual", numero: 0, esVirtual: true },
+  });
+
+  it("rutaCobrarPedido: con el pedido en el parámetro, o sin parámetro", () => {
+    expect(rutaCobrarPedido("p-1")).toBe("/admin/cobros?pedido=p-1");
+    expect(rutaCobrarPedido(undefined)).toBe("/admin/cobros");
+  });
+
+  it("anuncia el pedido destacado con su mesa, o para retirar", () => {
+    expect(anuncioPedidoDestacado(enMesa)).toBe(
+      "Pedido #3F2A9C de la mesa 3, esperando cobro.",
+    );
+    expect(anuncioPedidoDestacado(retiro)).toBe(
+      "Pedido #AA11BB para retirar, esperando cobro.",
+    );
+  });
+
+  it("sin parámetro no destaca nada", () => {
+    expect(resolverPedidoDestacado([enMesa], null)).toEqual({
+      tipo: "ninguno",
+    });
+  });
+
+  it("destaca el pedido si sigue pendiente", () => {
+    expect(resolverPedidoDestacado([retiro, enMesa], enMesa.id)).toEqual({
+      tipo: "pendiente",
+      pedidoId: enMesa.id,
+      anuncio: "Pedido #3F2A9C de la mesa 3, esperando cobro.",
+    });
+  });
+
+  it("avisa si el pedido ya no está pendiente", () => {
+    expect(resolverPedidoDestacado([retiro], enMesa.id)).toEqual({
+      tipo: "no-pendiente",
+      anuncio: AVISO_PEDIDO_NO_PENDIENTE,
     });
   });
 });

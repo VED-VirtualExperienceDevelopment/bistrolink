@@ -237,7 +237,7 @@ describe('PedidosService.crearPorMozo (HU-039, BL-209)', () => {
 describe('PedidosController.crearPorMozo (HU-039, BL-209)', () => {
   it('pasa el tenant y el actor del token', async () => {
     const pedidos = { crearPorMozo: jest.fn() };
-    const controller = new PedidosController(pedidos as any);
+    const controller = new PedidosController(pedidos as any, {} as any);
 
     await controller.crearPorMozo(
       { user: { tenantId: TENANT_ID, sub: ACTOR, roles: ['MOZO'] } } as any,

@@ -10,6 +10,12 @@ export interface MesaDelQr {
   numero: number;
   /** HU-017 (BL-60): sesión abierta de la mesa, o null si está cerrada. */
   sesionId: string | null;
+  /**
+   * BL-502: cuándo se abrió esa sesión. Los pedidos de la sesión son los de
+   * la mesa creados desde entonces. Opcional: null si está cerrada o si la
+   * sesión es anterior a la columna.
+   */
+  sesionAbiertaEn?: Date | null;
 }
 
 //Mismo mensaje para cualquier cosa que no sea un QR válido (formato, firma, mesa
@@ -87,6 +93,7 @@ export class QrMesaAccesoService {
             esVirtual: true,
             qrVersion: true,
             sesionId: true,
+            sesionAbiertaEn: true,
           },
         }),
     );
@@ -112,6 +119,7 @@ export class QrMesaAccesoService {
       restauranteId: mesa.restauranteId,
       numero: mesa.numero,
       sesionId: mesa.sesionId,
+      sesionAbiertaEn: mesa.sesionAbiertaEn,
     };
   }
 }

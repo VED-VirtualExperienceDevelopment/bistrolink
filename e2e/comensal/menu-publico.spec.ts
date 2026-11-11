@@ -6,6 +6,7 @@ import {
   RESTAURANTE_ID,
   TENANT_ID,
 } from "../support/ids";
+import { abrirCarritoSiEsCelular } from "../support/pago";
 // La ruta del menú de la mesa ya no es fija (HU-034, BL-204): sale del
 // fixture qrMesas (support/auth.ts). La regresión visual comentada más abajo
 // la usa cuando se reactive.
@@ -147,6 +148,9 @@ test.describe("HU-002: menú vía URL directa (verificado en mobile)", () => {
       })
       .click();
 
+    // BL-519: en el celular el detalle del carrito está en la hoja que abre
+    // la barra de abajo (este spec corre también en mobile-chrome/safari).
+    await abrirCarritoSiEsCelular(page);
     await expect(page.getByText(`1x ${primerItem.nombre}`)).toBeVisible();
     // BL-311 (prepago, RD.03): el botón del carrito pasó de «Realizar pedido»
     // a «Continuar al pago».

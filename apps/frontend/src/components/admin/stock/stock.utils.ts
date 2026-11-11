@@ -1,6 +1,8 @@
 /**
- * HU-015 (BL-120): lógica pura de la campana de stock y del stock de la
- * jornada (probada en test/unitarios/stock.utils.spec.ts).
+ * HU-015 (BL-120): lógica pura de las alertas de stock y del stock de la
+ * jornada (probada en test/unitarios/stock.utils.spec.ts). BL-470: las
+ * alertas de stock se muestran en la campana de Alertas (ver
+ * components/alertas).
  */
 
 export type TipoAlertaStock = "STOCK_CRITICO" | "AGOTADO";
@@ -31,25 +33,6 @@ export const CLASE_ESTADO_STOCK: Record<TipoAlertaStock, string> = {
   STOCK_CRITICO: "bg-tertiary-fixed text-on-tertiary-fixed",
   AGOTADO: "bg-error-container text-on-error-container",
 };
-
-/** Nombre accesible del botón de la campana. */
-export function etiquetaCampana(alertas: readonly AlertaStock[]): string {
-  const n = alertas.length;
-  if (n === 0) return "Notificaciones de stock: sin ítems críticos";
-  return `Notificaciones de stock: ${n} ${n === 1 ? "ítem crítico" : "ítems críticos"}`;
-}
-
-/** Rojo si hay algún agotado, ámbar si solo hay por agotarse. */
-export function colorBadge(
-  alertas: readonly AlertaStock[],
-): "rojo" | "ambar" | null {
-  if (alertas.length === 0) return null;
-  return alertas.some((a) => a.tipo === "AGOTADO") ? "rojo" : "ambar";
-}
-
-export function textoBadge(cantidad: number): string {
-  return cantidad > 9 ? "9+" : String(cantidad);
-}
 
 /** «Quedan 3 · aviso en 5» o «Sin unidades · aviso en 5». */
 export function textoUnidades(alerta: AlertaStock): string {
@@ -104,27 +87,6 @@ export function sinStockVigentes(
   return Object.fromEntries(
     Object.entries(sinStock).filter(([itemId]) => ids.has(itemId)),
   );
-}
-
-/** Movimiento con el teclado dentro del menú de la campana. */
-export function siguienteIndice(
-  actual: number,
-  total: number,
-  tecla: string,
-): number | null {
-  if (total === 0) return null;
-  switch (tecla) {
-    case "ArrowDown":
-      return (actual + 1) % total;
-    case "ArrowUp":
-      return (actual - 1 + total) % total;
-    case "Home":
-      return 0;
-    case "End":
-      return total - 1;
-    default:
-      return null;
-  }
 }
 
 /** Tope de unidades (el mismo que valida la API). */

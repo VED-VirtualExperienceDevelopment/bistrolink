@@ -32,12 +32,15 @@ interface SeguimientoPedidoProps {
   readonly pedidoId: string;
   readonly token: string;
   readonly estadoInicial: EstadoPedido;
+  /** BL-502: avisa cada cambio de estado (por ejemplo, para la pantalla de gracias). */
+  readonly onCambioDeEstado?: (estado: EstadoPedido, actualizadoEn: string | null) => void;
 }
 
 export function SeguimientoPedido({
   pedidoId,
   token,
   estadoInicial,
+  onCambioDeEstado,
 }: SeguimientoPedidoProps) {
   const [estado, setEstado] = useState<EstadoPedido>(estadoInicial);
   const [actualizadoEn, setActualizadoEn] = useState<string | null>(null);
@@ -47,6 +50,9 @@ export function SeguimientoPedido({
   // HU-042 (BL-466): lugar en la cola y tiempo estimado, mientras espera.
   const [lugar, setLugar] = useState<PosicionEnCola | null>(null);
   const socketRef = useRef<Socket | null>(null);
+  // BL-502: la última función recibida, sin reconectar el socket si cambia.
+  const avisarCambio = useRef(onCambioDeEstado);
+  avisarCambio.current = onCambioDeEstado;
 
   useEffect(() => {
     const socket = io(WS_URL, {
@@ -68,6 +74,7 @@ export function SeguimientoPedido({
       if (payload.id !== pedidoId) return;
       setEstado(payload.estado);
       setActualizadoEn(payload.actualizadoEn);
+      avisarCambio.current?.(payload.estado, payload.actualizadoEn ?? null);
     });
 
     // HU-042 (BL-466): el servidor manda solo el lugar de este pedido (sala

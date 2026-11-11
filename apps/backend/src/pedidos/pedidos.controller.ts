@@ -1,12 +1,25 @@
-import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  HttpCode,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { RolesGuard, Roles } from '../auth/roles.guard';
 import { AuthenticatedUser } from '../auth/keycloak-jwt.strategy';
 import { MesaDelQr } from '../qr-mesa/qr-mesa-acceso.service';
-import { MesaDelQrActual, MesaQrGuard } from '../qr-mesa/mesa-qr.guard';
+import {
+  MesaDelQrActual,
+  MesaQrGuard,
+  MesaQrObligatoriaGuard,
+} from '../qr-mesa/mesa-qr.guard';
 import { PedidosService } from './pedidos.service';
 import { CrearPedidoDto } from './dto/crear-pedido.dto';
 import { CrearPedidoMozoDto } from './dto/crear-pedido-mozo.dto';
+import { EstadoPedidosMesaDto } from './dto/estado-pedidos-mesa.dto';
+import { PedidosDeLaMesaService } from './pedidos-de-la-mesa.service';
 import { ApiTags, ApiBearerAuth, ApiSecurity } from '@nestjs/swagger';
 import { SEGURIDAD_KEYCLOAK, SEGURIDAD_MESA_QR } from '../openapi';
 
@@ -19,7 +32,10 @@ import { SEGURIDAD_KEYCLOAK, SEGURIDAD_MESA_QR } from '../openapi';
 @UseGuards(AuthGuard('jwt'), RolesGuard)
 @Roles('COMENSAL')
 export class PedidosController {
-  constructor(private readonly pedidosService: PedidosService) {}
+  constructor(
+    private readonly pedidosService: PedidosService,
+    private readonly pedidosDeLaMesa: PedidosDeLaMesaService,
+  ) {}
 
   // HU-034 (BL-204): con X-Mesa-Token, el pedido queda atado a la mesa del
   // QR (MesaQrGuard); sin él, es un pedido para retirar (canal WEB).
@@ -31,6 +47,20 @@ export class PedidosController {
     @MesaDelQrActual() mesaQr?: MesaDelQr,
   ) {
     return this.pedidosService.crear(req.user.tenantId, dto, mesaQr);
+  }
+
+  // BL-502: «Mis pedidos» del comensal en la mesa. Solo desde la mesa (QR y
+  // sesión abierta, 410 si se cerró) y solo los pedidos de esa mesa y de esa
+  // sesión, de los ids que recuerda el navegador. POST para no poner la
+  // lista de ids en la URL (ni en los logs de acceso).
+  @Post('mesa/estado')
+  @HttpCode(200)
+  @UseGuards(MesaQrGuard, MesaQrObligatoriaGuard)
+  estadoEnLaMesa(
+    @Body() dto: EstadoPedidosMesaDto,
+    @MesaDelQrActual() mesaQr: MesaDelQr,
+  ) {
+    return this.pedidosDeLaMesa.estado(mesaQr, dto.ids);
   }
 
   // HU-039 (BL-209): el mozo carga el pedido de un comensal sin celular, en
