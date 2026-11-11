@@ -18,13 +18,12 @@ const plusJakarta = localFont({
   display: "swap",
 });
 
-export default function ErrorGlobal({
-  error,
-  reset,
-}: {
-  error: Error & { digest?: string };
-  reset: () => void;
-}) {
+interface ErrorGlobalProps {
+  readonly error: Error & { digest?: string };
+  readonly reset: () => void;
+}
+
+export default function ErrorGlobal({ error, reset }: ErrorGlobalProps) {
   return (
     <html lang="es">
       <body className={`${plusJakarta.className} antialiased`}>

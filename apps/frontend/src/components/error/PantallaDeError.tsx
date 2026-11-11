@@ -5,8 +5,14 @@ import {
   CLAVE_RECARGA_POR_VERSION,
   DEMORA_ANTES_DE_RECARGAR_MS,
   esErrorDeChunk,
+  mensajeDeError,
   puedeRecargar,
 } from "@/app/error.utils";
+
+interface PantallaDeErrorProps {
+  readonly error: Error & { digest?: string };
+  readonly onReintentar: () => void;
+}
 
 /**
  * BL-517: contenido de las dos páginas de error de la app, `app/error.tsx`
@@ -24,13 +30,7 @@ import {
  * (por ejemplo, porque falló el layout raíz, que es quien lo inicia), no se
  * manda nada.
  */
-export function PantallaDeError({
-  error,
-  onReintentar,
-}: {
-  error: Error & { digest?: string };
-  onReintentar: () => void;
-}) {
+export function PantallaDeError({ error, onReintentar }: PantallaDeErrorProps) {
   const deVersion = esErrorDeChunk(error);
   const [recargando, setRecargando] = useState(false);
 
@@ -66,11 +66,7 @@ export function PantallaDeError({
         {deVersion ? "Hay una versión nueva de BistroLink" : "Algo salió mal"}
       </h1>
       <p className="text-body-md text-on-surface-variant" aria-live="polite">
-        {deVersion
-          ? recargando
-            ? "Recargando la página…"
-            : "Recargá la página para seguir. Tu pedido confirmado y tu pago en curso no se pierden."
-          : "Probá de nuevo. Si el problema sigue, avisale al personal del local."}
+        {mensajeDeError(deVersion, recargando)}
       </p>
       {!recargando && (
         <button

@@ -42,3 +42,20 @@ export function puedeRecargar(
   if (!ultimaRecarga || !Number.isFinite(ultima)) return true;
   return ahora - ultima >= ESPERA_ENTRE_RECARGAS_MS;
 }
+
+/**
+ * Texto que explica el error según su tipo y si ya se está recargando.
+ * Separado del JSX para no anidar ternarios (regla de SonarCloud).
+ */
+export function mensajeDeError(
+  deVersion: boolean,
+  recargando: boolean,
+): string {
+  if (!deVersion) {
+    return "Probá de nuevo. Si el problema sigue, avisale al personal del local.";
+  }
+  if (recargando) {
+    return "Recargando la página…";
+  }
+  return "Recargá la página para seguir. Tu pedido confirmado y tu pago en curso no se pierden.";
+}

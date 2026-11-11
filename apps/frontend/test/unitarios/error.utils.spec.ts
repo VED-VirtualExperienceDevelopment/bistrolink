@@ -1,6 +1,7 @@
 import {
   ESPERA_ENTRE_RECARGAS_MS,
   esErrorDeChunk,
+  mensajeDeError,
   puedeRecargar,
 } from "@/app/error.utils";
 
@@ -70,5 +71,20 @@ describe("puedeRecargar", () => {
   it("recarga si la marca guardada no es un número", () => {
     expect(puedeRecargar(ahora, "")).toBe(true);
     expect(puedeRecargar(ahora, "basura")).toBe(true);
+  });
+});
+
+describe("mensajeDeError", () => {
+  it("pide reintentar si el error no es de una versión vieja", () => {
+    expect(mensajeDeError(false, false)).toMatch(/^Probá de nuevo/);
+    expect(mensajeDeError(false, true)).toMatch(/^Probá de nuevo/);
+  });
+
+  it("avisa que recarga cuando la recarga automática está en curso", () => {
+    expect(mensajeDeError(true, true)).toBe("Recargando la página…");
+  });
+
+  it("pide recargar a mano si ya recargó sola y siguió fallando", () => {
+    expect(mensajeDeError(true, false)).toMatch(/^Recargá la página/);
   });
 });
