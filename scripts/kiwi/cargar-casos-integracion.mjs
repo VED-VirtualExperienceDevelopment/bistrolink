@@ -1363,6 +1363,22 @@ const DATOS_E2E = {
     priority: "P1",
     tags: ["BL-518", "bug", "websocket", ...axe],
   }),
+  // BL-519: en el celular el carrito es una barra y el detalle, una hoja.
+  105: e2e("comensal", "HU-003", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-519", "bug", "carrito", "responsive"],
+  }),
+  106: e2e("comensal", "HU-003", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-519", "bug", "carrito", "responsive", ...axe],
+  }),
+  107: e2e("comensal", "HU-003", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-519", "bug", "carrito", "responsive"],
+  }),
 };
 /**
  * Datos de los contratos PactJS (TC-C). Requirement con la HU que usa el

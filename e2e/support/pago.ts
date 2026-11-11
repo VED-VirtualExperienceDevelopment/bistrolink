@@ -27,11 +27,27 @@ export const TARJETA_PRUEBA = {
 
 export type TitularPrueba = "APRO" | "FUND";
 
+/** BL-519: desde este ancho el carrito es la columna de la derecha (lg). */
+const ANCHO_COLUMNA_CARRITO = 1024;
+
+/**
+ * BL-519: en el celular el carrito es una barra de una línea; el detalle y
+ * «Continuar al pago» están en la hoja que abre. En escritorio no hace nada
+ * (el carrito ya se ve en la columna de la derecha).
+ */
+export async function abrirCarritoSiEsCelular(page: Page): Promise<void> {
+  const ancho = page.viewportSize()?.width ?? ANCHO_COLUMNA_CARRITO;
+  if (ancho >= ANCHO_COLUMNA_CARRITO) return;
+  await page.getByTestId("carrito-barra").click();
+  await expect(page.getByTestId("carrito-hoja")).toBeVisible();
+}
+
 /**
  * Confirma el carrito («Continuar al pago») y devuelve el id del pedido
  * creado (todavía en PENDIENTE_PAGO, no está en el KDS).
  */
 export async function continuarAlPago(page: Page): Promise<string> {
+  await abrirCarritoSiEsCelular(page);
   const [pedidoRes] = await Promise.all([
     page.waitForResponse(
       (res) =>

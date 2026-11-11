@@ -34,6 +34,7 @@
 | 1.26 | 10/11/2026 | TC-E-069 a 071 cambian: las alertas de stock están en la campana de Alertas. TC-E-100 y 101: «Ir a cobrar» desde el aviso de efectivo (BL-470). TC-E-098 y 099 ya son de HU-040. |
 | 1.27 | 10/11/2026 | Se borran los bloques de TC-E-071 y de TC-E-085 a 101, ya cargados en Kiwi. TC-E-102 y 103: «Mis pedidos» en la mesa y «Gracias por tu compra» (bug BL-502). |
 | 1.28 | 10/11/2026 | Se borran los bloques de TC-E-102 y 103, ya cargados en Kiwi. TC-E-104: la carta pasa a «Tu mesa se cerró» cuando el mozo cierra la mesa (bug BL-518). |
+| 1.29 | 10/11/2026 | Se borra el bloque de TC-E-104, ya cargado en Kiwi. TC-E-008 cambia: en el celular el detalle del carrito se abre desde la barra. TC-E-105 a 107: en el celular el carrito es una barra y el detalle se abre en una hoja; en escritorio sigue la columna (bug BL-519). |
 
 Plantilla para cargar en Kiwi la descripción de casos TC-E (Playwright)
 nuevos o que cambiaron (BL-435). La usa
@@ -78,22 +79,72 @@ Reglas:
 
 ## Casos para cargar
 
-## TC-E-104
+## TC-E-008
 
 ### Precondición
 
-Una mesa temporal creada por el test con el ADMIN, abierta y con su QR.
+Carta por URL (pedido web) del restaurante del seed, con al menos un plato disponible. Corre en escritorio (Chrome y Safari) y en celular (Chrome y Safari).
 
 ### Pasos
 
-1. Abrir la carta desde el QR de la mesa.
-2. Como Mozo o Administrador, cerrar la mesa.
-3. Mirar la pantalla del comensal, sin recargar.
-4. Recargar la página.
+1. Abrir la carta por URL.
+2. Tocar «Agregar» en el primer plato disponible.
+3. En el celular, tocar la barra «Ver pedido» de abajo.
 
 ### Resultado esperado
 
 1. Se ve la carta.
-2. —
-3. «Tu mesa se cerró», con cómo volver a pedir; la carta ya no se ve. Sin errores graves de accesibilidad (axe).
-4. «Esta mesa está cerrada.»
+2. El plato queda en el pedido.
+3. En el celular se abre la hoja del pedido; en escritorio el pedido ya se ve en la columna de la derecha. En los dos casos se ve «1x» con el nombre del plato y el botón «Continuar al pago».
+
+## TC-E-105
+
+### Precondición
+
+Carta por URL (pedido web) del restaurante del seed, con «Milanesa a la napolitana» disponible. Pantalla de celular (390 × 844).
+
+### Pasos
+
+1. Abrir la carta y tocar «Agregar» en «Milanesa a la napolitana».
+2. Mirar la parte de abajo de la pantalla y el botón del plato.
+3. Tocar la barra «Ver pedido».
+4. Tocar «Seguir viendo la carta».
+
+### Resultado esperado
+
+1. —
+2. Abajo hay una sola barra con la cantidad, «Ver pedido» y el total, que ocupa menos del 12 % del alto de la pantalla; «Continuar al pago» no se ve y la carta sigue a la vista. El botón del plato dice «1 en el pedido».
+3. Se abre la hoja «Tu pedido» con «1x Milanesa a la napolitana», «Instrucciones generales» y «Continuar al pago».
+4. La hoja se cierra y el foco vuelve a la barra.
+
+## TC-E-106
+
+### Precondición
+
+Carta por URL (pedido web) del restaurante del seed. Pantalla de celular (390 × 844).
+
+### Pasos
+
+1. Agregar un plato y tocar la barra «Ver pedido».
+2. Analizar la hoja con axe-core.
+3. Apretar Escape.
+
+### Resultado esperado
+
+1. Se abre la hoja y el foco queda en «Cerrar el pedido».
+2. Sin errores graves ni críticos de accesibilidad.
+3. La hoja se cierra y el foco vuelve a la barra.
+
+## TC-E-107
+
+### Precondición
+
+Carta por URL (pedido web) del restaurante del seed. Pantalla de escritorio (1280 × 800).
+
+### Pasos
+
+1. Abrir la carta y agregar «Milanesa a la napolitana».
+
+### Resultado esperado
+
+1. El pedido se ve en la columna de la derecha: «Tu pedido (1 item)», «1x Milanesa a la napolitana» y «Continuar al pago», sin abrir nada. No aparece la barra del celular.
