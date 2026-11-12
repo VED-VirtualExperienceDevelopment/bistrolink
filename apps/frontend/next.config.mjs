@@ -35,12 +35,52 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
  * en loop infinito de redirects. Lo mismo para el WebSocket del KDS:
  * "connect-src wss:" no cubre el esquema "ws:" sin cifrar que usa el
  * navegador contra un host HTTP plano en local.
+ *
+ * DAST (BL-218, baseline de ZAP sobre la web de staging):
+ * - 'unsafe-eval' solo en desarrollo: lo necesita el refresco en caliente de
+ *   `next dev`; el build de producción no usa eval (alerta 10055).
+ * - frame-ancestors en la CSP: es la única directiva que no hereda de
+ *   default-src (alerta 10055 «No Fallback»). Repite lo que ya dice
+ *   X-Frame-Options: 'none' en todo el sitio y 'self' en silent-check-sso.
+ * - Cross-Origin-Resource-Policy y Cross-Origin-Opener-Policy (alerta
+ *   90004): nadie de afuera puede incrustar las respuestas de la web ni
+ *   quedarse con una referencia a la ventana. Keycloak y Mercado Pago no se
+ *   ven afectados: el login es por redirección y los campos de la tarjeta son
+ *   iframes, no ventanas emergentes.
+ * - Cross-Origin-Embedder-Policy NO se agrega: con require-corp el navegador
+ *   bloquea las imágenes de S3 y los iframes de Mercado Pago, que no mandan
+ *   CORP. Riesgo aceptado (informe en docs/security/).
+ * - 'unsafe-inline' en script-src y style-src se mantiene: Next.js inyecta
+ *   scripts en línea para la hidratación y quitarlo exige una CSP con nonce
+ *   por request, que vuelve dinámicas todas las páginas. Riesgo aceptado con
+ *   mitigaciones (informe en docs/security/).
  */
 const isProdBuild = process.env.NODE_ENV === "production";
+const devScriptSrc = isProdBuild ? "" : " 'unsafe-eval'";
 const devFrameSrc = isProdBuild ? "" : " http://localhost:8080";
 const devConnectSrc = isProdBuild
   ? ""
   : " http://localhost:8080 http://localhost:3001 ws://localhost:3001";
+
+/**
+ * CSP del sitio. `frameAncestors` cambia según la ruta: 'none' en general y
+ * 'self' en silent-check-sso.html (la propia app la carga en un iframe).
+ */
+function contentSecurityPolicy(frameAncestors) {
+  return [
+    "default-src 'self'",
+    `script-src 'self' 'unsafe-inline'${devScriptSrc} https://sdk.mercadopago.com`,
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "img-src 'self' data: blob: https:",
+    "font-src 'self' data: https://fonts.gstatic.com",
+    `connect-src 'self' https: wss:${devConnectSrc}`,
+    `frame-src 'self' https:${devFrameSrc}`,
+    `frame-ancestors ${frameAncestors}`,
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+  ].join("; ");
+}
 
 const baseSecurityHeaders = [
   // SEGURIDAD (subtask BL-30): HSTS solo en producción. En dev, el navegador
@@ -69,9 +109,12 @@ const baseSecurityHeaders = [
     value: "camera=(), microphone=(), geolocation=()",
   },
   {
-    key: "Content-Security-Policy",
-    value:
-      `default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://sdk.mercadopago.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https: wss:${devConnectSrc}; frame-src 'self' https:${devFrameSrc}; object-src 'none'; base-uri 'self'; form-action 'self'`,
+    key: "Cross-Origin-Resource-Policy",
+    value: "same-origin",
+  },
+  {
+    key: "Cross-Origin-Opener-Policy",
+    value: "same-origin",
   },
 ];
 
@@ -79,6 +122,9 @@ const baseSecurityHeaders = [
 const nextConfig = {
   output: "standalone",
   outputFileTracingRoot: path.join(__dirname, "../../"),
+  // DAST (alerta 10037): sin el header «X-Powered-By: Next.js», que le dice
+  // a un atacante qué framework y qué vulnerabilidades buscar.
+  poweredByHeader: false,
   images: {
     remotePatterns: [
       {
@@ -100,7 +146,10 @@ const nextConfig = {
   // rompe con "Module not found: Can't resolve 'canvas'". Marcarlo como
   // external le dice a Webpack que no intente empaquetarlo/resolverlo.
   webpack: (config) => {
-    config.externals = [...(config.externals ?? []), { canvas: "commonjs canvas" }];
+    config.externals = [
+      ...(config.externals ?? []),
+      { canvas: "commonjs canvas" },
+    ];
     return config;
   },
   async headers() {
@@ -116,6 +165,10 @@ const nextConfig = {
         source: "/silent-check-sso.html",
         headers: [
           ...baseSecurityHeaders,
+          {
+            key: "Content-Security-Policy",
+            value: contentSecurityPolicy("'self'"),
+          },
           { key: "X-Frame-Options", value: "SAMEORIGIN" },
         ],
       },
@@ -123,6 +176,10 @@ const nextConfig = {
         source: "/((?!silent-check-sso\\.html).*)",
         headers: [
           ...baseSecurityHeaders,
+          {
+            key: "Content-Security-Policy",
+            value: contentSecurityPolicy("'none'"),
+          },
           { key: "X-Frame-Options", value: "DENY" },
         ],
       },
