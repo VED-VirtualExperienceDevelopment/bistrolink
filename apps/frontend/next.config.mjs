@@ -26,7 +26,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
  *   campos de tarjeta (iframes), la tokenización y la prevención de fraude
  *   usan subdominios de mercadopago.com, mercadolibre.com, mercadolivre.com
  *   y mlstatic.com.
- * - Google Fonts (Material Symbols): hasta que se autoaloje (BL-524).
+ * - Sin Google Fonts: Plus Jakarta Sans (BL-222) y Material Symbols (BL-524)
+ *   están autoalojadas, así que style-src y font-src son solo 'self'.
  *
  * img-src incluye blob: para la vista previa de la imagen del ítem antes de
  * subirla (ImageUploader usa URL.createObjectURL). blob: solo admite URLs que
@@ -91,8 +92,6 @@ const MERCADO_PAGO = [
   "https://*.mercadolivre.com",
   "https://*.mlstatic.com",
 ];
-const GOOGLE_FONTS_CSS = ["https://fonts.googleapis.com"];
-const GOOGLE_FONTS_ARCHIVOS = ["https://fonts.gstatic.com"];
 
 /** Une las fuentes de una directiva, sin vacíos ni repetidos. */
 function directiva(nombre, fuentes) {
@@ -114,7 +113,7 @@ function contentSecurityPolicy(frameAncestors) {
       "https://sdk.mercadopago.com",
       ...MERCADO_PAGO,
     ]),
-    directiva("style-src", ["'self'", "'unsafe-inline'", ...GOOGLE_FONTS_CSS]),
+    directiva("style-src", ["'self'", "'unsafe-inline'"]),
     directiva("img-src", [
       "'self'",
       "data:",
@@ -122,7 +121,7 @@ function contentSecurityPolicy(frameAncestors) {
       ...IMAGENES,
       ...MERCADO_PAGO,
     ]),
-    directiva("font-src", ["'self'", "data:", ...GOOGLE_FONTS_ARCHIVOS]),
+    directiva("font-src", ["'self'", "data:"]),
     directiva("connect-src", [
       "'self'",
       API,
