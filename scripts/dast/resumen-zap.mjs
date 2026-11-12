@@ -13,9 +13,15 @@
 // archivo con -c, y este script lo vuelve a leer para no contarlas aunque
 // aparezcan en el informe.
 //
+// BL-525: el repositorio es público, así que el resumen del job y el log los
+// puede ver cualquiera. Con --detalle no (modo completo) solo se publican las
+// cantidades por riesgo y si la corrida pasa: sin alertas, URLs ni motivos.
+// El detalle queda en el informe cifrado (ver docs/security/dast.md).
+//
 // Sin dependencias. Uso:
 //   node scripts/dast/resumen-zap.mjs --informe zap/web.json --objetivo web \
-//     [--reglas scripts/dast/reglas-zap.tsv] [--falla-con alto|medio]
+//     [--reglas scripts/dast/reglas-zap.tsv] [--falla-con alto|medio] \
+//     [--detalle si|no]
 // Sale con 1 si hay alertas del nivel de --falla-con o más (por defecto, alto).
 
 import fs from "node:fs";
@@ -35,7 +41,10 @@ export function leerReglas(texto) {
     if (!linea.trim() || linea.trimStart().startsWith("#")) continue;
     const [id, accion, ...resto] = linea.split("\t");
     if (!/^\d+$/.test(id?.trim() ?? "")) continue;
-    reglas.set(id.trim(), { accion: (accion ?? "").trim().toUpperCase(), motivo: resto.join(" ").trim() });
+    reglas.set(id.trim(), {
+      accion: (accion ?? "").trim().toUpperCase(),
+      motivo: resto.join(" ").trim(),
+    });
   }
   return reglas;
 }
@@ -55,7 +64,9 @@ export function resumirInforme(informe, reglas = new Map()) {
         riesgo: Number(a.riskcode ?? 0),
         confianza: Number(a.confidence ?? 0),
         cantidad: Number(a.count ?? instancias.length),
-        ejemplo: instancias[0] ? `${instancias[0].method ?? "GET"} ${instancias[0].uri}` : sitio["@name"],
+        ejemplo: instancias[0]
+          ? `${instancias[0].method ?? "GET"} ${instancias[0].uri}`
+          : sitio["@name"],
         cwe: a.cweid && a.cweid !== "-1" ? a.cweid : null,
         ignorada: regla?.accion === "IGNORE",
         motivo: regla?.accion === "IGNORE" ? regla.motivo : null,
@@ -63,11 +74,23 @@ export function resumirInforme(informe, reglas = new Map()) {
     }
   }
   // Mayor riesgo primero; a igual riesgo, más instancias primero.
-  alertas.sort((a, b) => b.riesgo - a.riesgo || b.cantidad - a.cantidad || a.id.localeCompare(b.id));
+  alertas.sort(
+    (a, b) =>
+      b.riesgo - a.riesgo ||
+      b.cantidad - a.cantidad ||
+      a.id.localeCompare(b.id),
+  );
 
   const vigentes = alertas.filter((a) => !a.ignorada);
-  const porRiesgo = RIESGOS.map((_, r) => vigentes.filter((a) => a.riesgo === r).length);
-  return { alertas, vigentes, porRiesgo, ignoradas: alertas.filter((a) => a.ignorada) };
+  const porRiesgo = RIESGOS.map(
+    (_, r) => vigentes.filter((a) => a.riesgo === r).length,
+  );
+  return {
+    alertas,
+    vigentes,
+    porRiesgo,
+    ignoradas: alertas.filter((a) => a.ignorada),
+  };
 }
 
 export function falla(resumen, fallaCon = "alto") {
@@ -78,10 +101,20 @@ export function falla(resumen, fallaCon = "alto") {
 // --- Markdown ----------------------------------------------------------------
 
 function celda(texto) {
-  return String(texto ?? "—").replaceAll("|", "\\|").replaceAll("\n", " ");
+  return String(texto ?? "—")
+    .replaceAll("|", "\\|")
+    .replaceAll("\n", " ");
 }
 
-export function renderMarkdown(resumen, objetivo, fallaCon = "alto") {
+export const AVISO_SIN_DETALLE =
+  "> El detalle de las alertas no se publica: el repositorio es público. Está en el informe cifrado (artifact `dast-completo-api`); ver `docs/security/dast.md`.";
+
+export function renderMarkdown(
+  resumen,
+  objetivo,
+  fallaCon = "alto",
+  detalle = true,
+) {
   const [info, bajo, medio, alto] = resumen.porRiesgo;
   const estado = falla(resumen, fallaCon)
     ? `❌ Hay hallazgos de riesgo ${fallaCon} o mayor`
@@ -90,9 +123,22 @@ export function renderMarkdown(resumen, objetivo, fallaCon = "alto") {
     `### DAST — ${objetivo}`,
     "",
     `${estado}. Alto: **${alto}** · Medio: **${medio}** · Bajo: ${bajo} · Informativo: ${info}` +
-      (resumen.ignoradas.length ? ` · Revisadas e ignoradas: ${resumen.ignoradas.length}` : ""),
+      (resumen.ignoradas.length
+        ? ` · Revisadas e ignoradas: ${resumen.ignoradas.length}`
+        : ""),
     "",
   ];
+
+  if (!detalle) {
+    lineas.push(AVISO_SIN_DETALLE, "");
+    if (alto || medio) {
+      lineas.push(
+        "> Las alertas altas o medias se gestionan con un aviso de seguridad privado (Security → Advisories), no con un issue público.",
+        "",
+      );
+    }
+    return lineas.join("\n");
+  }
 
   const aMostrar = resumen.vigentes.filter((a) => a.riesgo >= 1);
   if (aMostrar.length) {
@@ -101,9 +147,9 @@ export function renderMarkdown(resumen, objetivo, fallaCon = "alto") {
       "|---|---|---|---|---|---|",
       ...aMostrar.map(
         (a) =>
-          `| ${RIESGOS[a.riesgo]} | ${celda(a.nombre)} | ${a.id} | ${a.cwe ?? "—"} | ${a.cantidad} | ${celda(a.ejemplo)} |`
+          `| ${RIESGOS[a.riesgo]} | ${celda(a.nombre)} | ${a.id} | ${a.cwe ?? "—"} | ${a.cantidad} | ${celda(a.ejemplo)} |`,
       ),
-      ""
+      "",
     );
   }
   if (resumen.ignoradas.length) {
@@ -112,14 +158,20 @@ export function renderMarkdown(resumen, objetivo, fallaCon = "alto") {
       "",
       "| Riesgo | Alerta | ID | Motivo |",
       "|---|---|---|---|",
-      ...resumen.ignoradas.map((a) => `| ${RIESGOS[a.riesgo]} | ${celda(a.nombre)} | ${a.id} | ${celda(a.motivo)} |`),
+      ...resumen.ignoradas.map(
+        (a) =>
+          `| ${RIESGOS[a.riesgo]} | ${celda(a.nombre)} | ${a.id} | ${celda(a.motivo)} |`,
+      ),
       "",
       "</details>",
-      ""
+      "",
     );
   }
   if (medio) {
-    lineas.push("> Registrar cada alerta media como defecto en GitHub Issues, con su severidad y plazo (Anexo 11 §9.5).", "");
+    lineas.push(
+      "> Registrar cada alerta media como defecto en GitHub Issues, con su severidad y plazo (Anexo 11 §9.5).",
+      "",
+    );
   }
   return lineas.join("\n");
 }
@@ -128,31 +180,64 @@ export function renderMarkdown(resumen, objetivo, fallaCon = "alto") {
 
 function argumentos(argv) {
   const args = {};
-  for (let i = 0; i < argv.length; i += 2) args[argv[i].replace(/^--/, "")] = argv[i + 1];
+  for (let i = 0; i < argv.length; i += 2)
+    args[argv[i].replace(/^--/, "")] = argv[i + 1];
   return args;
+}
+
+// Anotaciones del job (aparecen en la página de la corrida). Sin detalle,
+// una sola anotación con las cantidades, sin nombres de alertas ni URLs.
+export function anotaciones(resumen, objetivo, detalle = true) {
+  const relevantes = resumen.vigentes.filter((a) => a.riesgo >= 2);
+  if (!detalle) {
+    if (!relevantes.length) return [];
+    const [, , medio, alto] = resumen.porRiesgo;
+    const tipo = alto ? "error" : "warning";
+    return [
+      `::${tipo} title=ZAP ${objetivo}::Alto: ${alto} · Medio: ${medio}. Detalle en el informe cifrado.`,
+    ];
+  }
+  return relevantes.map((a) => {
+    const tipo = a.riesgo >= 3 ? "error" : "warning";
+    return `::${tipo} title=ZAP ${objetivo}: ${RIESGOS[a.riesgo]}::${a.nombre} (${a.id}) — ${a.ejemplo}`;
+  });
 }
 
 function main() {
   const args = argumentos(process.argv.slice(2));
   if (!args.informe || !args.objetivo) {
-    console.error("Uso: node scripts/dast/resumen-zap.mjs --informe <zap.json> --objetivo <nombre> [--reglas <tsv>] [--falla-con alto|medio]");
+    console.error(
+      "Uso: node scripts/dast/resumen-zap.mjs --informe <zap.json> --objetivo <nombre> [--reglas <tsv>] [--falla-con alto|medio] [--detalle si|no]",
+    );
     process.exit(2);
   }
   if (!fs.existsSync(args.informe)) {
-    console.error(`❌ No está el informe ${args.informe}: ZAP no terminó el scan (revisá el paso anterior).`);
+    console.error(
+      `❌ No está el informe ${args.informe}: ZAP no terminó el scan (revisá el paso anterior).`,
+    );
     process.exit(2);
   }
-  const reglas = args.reglas && fs.existsSync(args.reglas) ? leerReglas(fs.readFileSync(args.reglas, "utf-8")) : new Map();
-  const resumen = resumirInforme(JSON.parse(fs.readFileSync(args.informe, "utf-8")), reglas);
-  const md = renderMarkdown(resumen, args.objetivo, args["falla-con"]);
+  const detalle = args.detalle !== "no";
+  const reglas =
+    args.reglas && fs.existsSync(args.reglas)
+      ? leerReglas(fs.readFileSync(args.reglas, "utf-8"))
+      : new Map();
+  const resumen = resumirInforme(
+    JSON.parse(fs.readFileSync(args.informe, "utf-8")),
+    reglas,
+  );
+  const md = renderMarkdown(resumen, args.objetivo, args["falla-con"], detalle);
 
   console.log(md);
-  if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${md}\n`);
-  for (const a of resumen.vigentes.filter((x) => x.riesgo >= 2)) {
-    const tipo = a.riesgo >= 3 ? "error" : "warning";
-    console.log(`::${tipo} title=ZAP ${args.objetivo}: ${RIESGOS[a.riesgo]}::${a.nombre} (${a.id}) — ${a.ejemplo}`);
-  }
+  if (process.env.GITHUB_STEP_SUMMARY)
+    fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${md}\n`);
+  for (const linea of anotaciones(resumen, args.objetivo, detalle))
+    console.log(linea);
   process.exit(falla(resumen, args["falla-con"]) ? 1 : 0);
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();
+if (
+  process.argv[1] &&
+  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+)
+  main();
