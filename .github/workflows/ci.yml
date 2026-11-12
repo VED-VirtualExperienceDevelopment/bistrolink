@@ -401,9 +401,10 @@ jobs:
       KEYCLOAK_URL: "http://localhost:8080"
       KEYCLOAK_REALM: "bistrolink"
       KEYCLOAK_CLIENT_ID: "bistrolink-backend"
-      # Admin del Keycloak descartable (el de docker-compose.yml).
-      KEYCLOAK_ADMIN: "admin"
-      KEYCLOAK_ADMIN_PASSWORD: "admin"
+      # Admin del Keycloak descartable (el de docker-compose.yml). BL-230:
+      # nombres de Keycloak 26; los tests leen estos primero.
+      KC_BOOTSTRAP_ADMIN_USERNAME: "admin"
+      KC_BOOTSTRAP_ADMIN_PASSWORD: "admin"
       # Usuarios de prueba: los nombres son fijos; las contraseñas se generan
       # en el paso "Credenciales de esta corrida".
       TEST_ADMIN_USERNAME: "ci-admin-test"

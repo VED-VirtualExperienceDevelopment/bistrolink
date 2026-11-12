@@ -15,8 +15,11 @@ describe('AppController', () => {
   });
 
   describe('root', () => {
-    it('[TC-U-001] should return "Hello World!"', () => {
-      expect(appController.getHello()).toBe('Hello World!');
+    it('[TC-U-001] devuelve el nombre del servicio y su estado (BL-526)', () => {
+      expect(appController.estado()).toEqual({
+        servicio: 'bistrolink-api',
+        estado: 'ok',
+      });
     });
   });
 });

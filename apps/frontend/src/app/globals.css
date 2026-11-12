@@ -33,14 +33,31 @@ body {
 }
 
 /* Material Symbols (íconos) — usados en el panel de admin (sidebar, header,
-   diálogos). Sin esto, los <span className="material-symbols-outlined">
-   muestran el nombre del ícono como texto plano en vez del glifo. */
-.material-symbols-outlined {
-  font-variation-settings:
-    'FILL' 0,
-    'wght' 400,
-    'GRAD' 0,
-    'opsz' 24;
+   diálogos). Cada <span className="material-symbols-outlined"> escribe el
+   nombre del ícono y la ligadura de la fuente lo reemplaza por el glifo.
+   BL-524: la fuente está autoalojada (layout.tsx, --font-material-symbols)
+   y es una instancia estática con FILL 0, wght 400, GRAD 0 y opsz 24, así
+   que ya no hace falta font-variation-settings. Va en @layer components para
+   que las clases de Tailwind (text-[18px], text-4xl) puedan cambiar el
+   tamaño. */
+@layer components {
+  .material-symbols-outlined {
+    font-family: var(--font-material-symbols);
+    font-weight: normal;
+    font-style: normal;
+    font-size: 24px;
+    line-height: 1;
+    letter-spacing: normal;
+    text-transform: none;
+    display: inline-block;
+    white-space: nowrap;
+    word-wrap: normal;
+    direction: ltr;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: "liga";
+  }
 }
 
 /* BL-311: campos de tarjeta de Mercado Pago (Secure Fields). El SDK monta un

@@ -11,4 +11,5 @@
 # El id es el «ID» de la tabla del resumen del job (pluginid de ZAP). La
 # lista de reglas está en https://www.zaproxy.org/docs/alerts/
 #
-# Todavía no hay alertas revisadas: la primera corrida define la línea base.
+# Triage de la primera corrida (baseline y completo): sin falsos positivos.
+# Los riesgos aceptados no se ignoran acá: están en docs/security/dast-informe.md.
