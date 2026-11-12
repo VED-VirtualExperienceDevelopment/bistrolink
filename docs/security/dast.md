@@ -100,6 +100,8 @@ Las alertas revisadas y descartadas van en [`scripts/dast/reglas-zap.tsv`](../..
 - El motivo es obligatorio. Lo controla el test `npm run test:dast`.
 - Ignorar una alerta de riesgo alto necesita la aprobación del Security Engineer y la evidencia en el issue.
 
+Los resultados de cada corrida, las decisiones y los riesgos aceptados están en [`dast-informe.md`](dast-informe.md).
+
 ## Archivos
 
 | Archivo                             | Qué hace                                                                                                                                                |
@@ -108,3 +110,4 @@ Las alertas revisadas y descartadas van en [`scripts/dast/reglas-zap.tsv`](../..
 | `scripts/dast/resumen-zap.mjs`      | Lee el informe JSON de ZAP, arma el resumen del job y decide si pasa (sin riesgo alto). Con `--detalle no` (modo completo) publica solo las cantidades. |
 | `scripts/dast/resumen-zap.test.mjs` | Tests del resumen: `npm run test:dast`.                                                                                                                 |
 | `scripts/dast/reglas-zap.tsv`       | Alertas revisadas e ignoradas, con su motivo.                                                                                                           |
+| `docs/security/dast-informe.md`     | Resultados de las corridas, decisiones y riesgos aceptados.                                                                                             |
