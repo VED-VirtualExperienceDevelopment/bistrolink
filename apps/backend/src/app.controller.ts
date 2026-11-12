@@ -1,5 +1,5 @@
 import { Controller, Get } from '@nestjs/common';
-import { AppService } from './app.service';
+import { AppService, type EstadoServicio } from './app.service';
 import { ApiTags } from '@nestjs/swagger';
 
 @ApiTags('Sistema')
@@ -7,8 +7,9 @@ import { ApiTags } from '@nestjs/swagger';
 export class AppController {
   constructor(private readonly appService: AppService) {}
 
+  /** BL-526: nombre del servicio y estado, en JSON. */
   @Get()
-  getHello(): string {
-    return this.appService.getHello();
+  estado(): EstadoServicio {
+    return this.appService.estado();
   }
 }

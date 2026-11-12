@@ -16,10 +16,15 @@ describe('AppController (e2e)', () => {
     await app.init();
   });
 
-  it('[TC-I-009] Health: GET / responde 200 «Hello World!»', () => {
+  afterEach(async () => {
+    await app.close();
+  });
+
+  it('[TC-I-009] Health: GET / responde 200 en JSON con el nombre del servicio', () => {
     return request(app.getHttpServer())
       .get('/')
       .expect(200)
-      .expect('Hello World!');
+      .expect('Content-Type', /application\/json/)
+      .expect({ servicio: 'bistrolink-api', estado: 'ok' });
   });
 });

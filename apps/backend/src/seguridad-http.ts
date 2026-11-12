@@ -1,4 +1,6 @@
 import type { NextFunction, Request, Response } from 'express';
+import helmet from 'helmet';
+import { RUTA_DOCS } from './openapi';
 
 /**
  * BL-426 (parte de BL-424): CORS y redirección HTTP → HTTPS de la API.
@@ -93,5 +95,80 @@ export function redireccionHttps(env: NodeJS.ProcessEnv = process.env) {
         .json({ statusCode: 400, message: 'Host no permitido' });
     }
     next();
+  };
+}
+
+/**
+ * BL-526 (DAST, baseline de OWASP ZAP sobre la API): headers de seguridad.
+ *
+ * Antes se usaba `helmet()` con su configuración por defecto, pensada para
+ * páginas web: su CSP permite estilos de cualquier origen `https:` y en
+ * línea (alertas 10055 «Wildcard Directive» y «style-src unsafe-inline»).
+ * La API responde JSON, que no carga nada: le alcanza con `default-src
+ * 'none'`.
+ *
+ * La única página HTML es la documentación interactiva (Swagger UI, solo en
+ * staging), que carga sus scripts y estilos del mismo origen y usa estilos
+ * en línea. Tiene su propia CSP, sin el comodín `https:`.
+ *
+ * Además de lo que ya mandaba helmet (HSTS, X-Frame-Options,
+ * X-Content-Type-Options, Referrer-Policy, Cross-Origin-Resource-Policy y
+ * Cross-Origin-Opener-Policy):
+ * - Cross-Origin-Embedder-Policy: require-corp (alerta 90004). En la API no
+ *   rompe nada: Swagger UI carga todo del mismo origen.
+ * - Permissions-Policy (alerta 10063): sin cámara, micrófono ni ubicación,
+ *   igual que la web.
+ */
+
+/** Mismo valor que la web (next.config.mjs). */
+export const PERMISSIONS_POLICY = 'camera=(), microphone=(), geolocation=()';
+
+/** CSP de las respuestas JSON: no se carga ni se embebe nada. */
+export const CSP_API = {
+  defaultSrc: ["'none'"],
+  frameAncestors: ["'none'"],
+  baseUri: ["'none'"],
+  formAction: ["'none'"],
+};
+
+/** CSP de Swagger UI: todo del mismo origen; estilos en línea de la UI. */
+export const CSP_DOCS = {
+  defaultSrc: ["'self'"],
+  scriptSrc: ["'self'"],
+  styleSrc: ["'self'", "'unsafe-inline'"],
+  imgSrc: ["'self'", 'data:'],
+  fontSrc: ["'self'"],
+  connectSrc: ["'self'"],
+  objectSrc: ["'none'"],
+  frameAncestors: ["'none'"],
+  baseUri: ["'self'"],
+  formAction: ["'self'"],
+};
+
+/**
+ * Si la ruta es la documentación interactiva: `/api/docs` y lo que cuelga
+ * de ahí (sus scripts y estilos). `/api/docs-json` es JSON y lleva la CSP
+ * de la API.
+ */
+export function esRutaDocs(ruta: string): boolean {
+  const docs = `/${RUTA_DOCS}`;
+  return ruta === docs || ruta.startsWith(`${docs}/`);
+}
+
+/** Middleware de Express para `main.ts`: headers de seguridad por ruta. */
+export function headersDeSeguridad() {
+  const comun = { crossOriginEmbedderPolicy: true } as const;
+  const api = helmet({
+    ...comun,
+    contentSecurityPolicy: { useDefaults: false, directives: CSP_API },
+  });
+  const docs = helmet({
+    ...comun,
+    contentSecurityPolicy: { useDefaults: false, directives: CSP_DOCS },
+  });
+  return (req: Request, res: Response, next: NextFunction) => {
+    res.setHeader('Permissions-Policy', PERMISSIONS_POLICY);
+    const conHelmet = esRutaDocs(req.path) ? docs : api;
+    conHelmet(req, res, next);
   };
 }
