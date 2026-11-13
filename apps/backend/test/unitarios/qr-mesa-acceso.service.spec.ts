@@ -22,6 +22,7 @@ const MESA_VIGENTE = {
   esVirtual: false,
   qrVersion: 2,
   sesionId: '99999999-9999-4999-8999-999999999999',
+  sesionAbiertaEn: new Date('2026-11-10T22:00:00.000Z'),
 };
 
 describe('QrMesaAccesoService (BL-204)', () => {
@@ -60,6 +61,8 @@ describe('QrMesaAccesoService (BL-204)', () => {
       restauranteId: RESTAURANTE_ID,
       numero: 4,
       sesionId: '99999999-9999-4999-8999-999999999999',
+      // BL-502: para saber qué pedidos son de esta sesión.
+      sesionAbiertaEn: new Date('2026-11-10T22:00:00.000Z'),
     });
   });
 

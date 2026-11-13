@@ -1,0 +1,284 @@
+# ============================================================================
+# .github/workflows/dast.yml
+#
+# BL-218: análisis dinámico de seguridad (DAST) con OWASP ZAP sobre staging
+# (Línea de Base §3.4.4, Anexo 4 §1.8.7, Anexo 11 «Seguridad dinámica»).
+#
+# Dos modos:
+#   - baseline: escaneo pasivo (encabezados, cookies, exposición de
+#     información) de la web, de la API y de Keycloak. Corre una vez por
+#     noche, a las 02:23 de Uruguay (05:23 UTC), sobre lo que haya en staging
+#     a esa hora. También se puede correr a mano. Antes corría después de cada
+#     deploy: con muchos merges por día, se pisaban las corridas y cada una
+#     despertaba staging (BL-497).
+#   - completo: escaneo activo de la API con su contrato OpenAPI, autenticado
+#     con el Admin del tenant de testing B. Solo a mano: Actions → «DAST
+#     (OWASP ZAP)» → Run workflow → modo «completo». Manda requests de ataque
+#     (inyección, XSS, path traversal) y puede crear o modificar datos del
+#     tenant B: no correrlo mientras corren los E2E, y después correr
+#     «Limpieza de staging».
+#
+# Criterio de salida: sin hallazgos de riesgo alto. El job falla si hay
+# alguno; los medios quedan en el resumen para registrarlos como defectos en
+# GitHub Issues (Anexo 11 §9.5). Los descartes revisados van en
+# scripts/dast/reglas-zap.tsv con su motivo.
+#
+# No bloquea el deploy: es un workflow aparte que corre después.
+#
+# Fuera de alcance (Respuestas a la revisión de ciberseguridad): producción,
+# pasarelas de pago y proveedores de CFE, la plataforma Railway y pruebas de
+# denegación de servicio.
+#
+# Repositorio público (BL-525): el resumen del job, el log y los artifacts los
+# puede ver cualquiera. El baseline es pasivo (lo mismo que ve cualquiera con
+# un navegador) y publica el detalle. El completo es activo y autenticado:
+# publica solo las cantidades por riesgo, guarda la salida de ZAP en un
+# archivo y sube los informes cifrados con DAST_INFORME_CLAVE.
+#
+# Secrets (los tres primeros, los mismos que usa «Limpieza de staging»):
+#   STAGING_KEYCLOAK_CLIENT_SECRET, TEST_TENANT_B_USERNAME, TEST_TENANT_B_PASSWORD
+#   DAST_INFORME_CLAVE: clave para cifrar el informe del modo completo
+#   (fuente: Infisical; copia para descifrar: KeePass del equipo).
+# ============================================================================
+
+name: DAST (OWASP ZAP)
+
+on:
+  # 05:23 UTC = 02:23 en Uruguay. Termina antes del respaldo de las bases
+  # (06:00 UTC) y de «Limpieza de staging» (06:13 UTC). Minuto impar a
+  # propósito: GitHub demora más los cron programados en la hora en punto.
+  # El cron usa el dast.yml de la rama por defecto (develop).
+  schedule:
+    - cron: "23 5 * * *"
+  workflow_dispatch:
+    inputs:
+      modo:
+        description: "baseline (pasivo, web + API + Keycloak) o completo (activo y autenticado sobre la API)"
+        type: choice
+        options: [baseline, completo]
+        default: baseline
+
+permissions:
+  contents: read
+
+# Un solo escaneo de staging a la vez. Si se dispara otro, espera a que
+# termine el que está corriendo (ninguno se cancela).
+concurrency:
+  group: dast-staging
+  cancel-in-progress: false
+
+env:
+  # Versión fija de ZAP: una versión nueva puede sumar reglas y cambiar el
+  # resultado sin que cambie el código. Se actualiza a mano.
+  ZAP_IMAGEN: ghcr.io/zaproxy/zaproxy:2.17.0
+  API_HOST: bistrolink-api-staging.up.railway.app
+  OPENAPI_URL: https://bistrolink-api-staging.up.railway.app/api/docs-json
+  KEYCLOAK_TOKEN_URL: https://bistrolink-auth-staging.up.railway.app/realms/bistrolink/protocol/openid-connect/token
+
+jobs:
+  # ── BASELINE (pasivo) ─────────────────────────────────────────────────────
+  baseline:
+    name: 🛡️ ZAP baseline — ${{ matrix.objetivo }}
+    # Todas las noches (schedule) o a mano con el modo «baseline».
+    if: >-
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' && inputs.modo == 'baseline')
+    runs-on: ubuntu-latest
+    # Hasta ~5 min para despertar staging, más el escaneo.
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - objetivo: web
+            # Spider de 3 minutos sobre las páginas públicas y el login.
+            comando: zap-baseline.py -t https://bistrolink-web-staging.up.railway.app -m 3
+          - objetivo: api
+            # -S (modo seguro): importa el contrato OpenAPI y analiza las
+            # respuestas sin escaneo activo. Sin token, casi todo responde 401.
+            comando: zap-api-scan.py -t https://bistrolink-api-staging.up.railway.app/api/docs-json -f openapi -S
+          - objetivo: auth
+            # La consola de cuenta redirige a la pantalla de login del realm.
+            comando: zap-baseline.py -t https://bistrolink-auth-staging.up.railway.app/realms/bistrolink/account/ -m 2
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      - name: Tests del resumen
+        if: matrix.objetivo == 'web'
+        run: node --test scripts/dast/resumen-zap.test.mjs
+
+      # Staging es serverless (Railway): de madrugada está dormido y Keycloak
+      # tarda bastante más de 40 s en arrancar. Se espera a los tres servicios
+      # (hasta ~5 min, igual que los E2E y la limpieza): el login de la web
+      # redirige a Keycloak y la API necesita su base. Sin esto, ZAP escanea
+      # un 502 o una pantalla de error.
+      - name: Despertar staging
+        uses: ./.github/actions/despertar-staging
+
+      - name: Escaneo de ZAP
+        run: |
+          mkdir -p zap && chmod 777 zap
+          cp scripts/dast/reglas-zap.tsv zap/
+          set +e
+          docker run --rm -v "$PWD/zap:/zap/wrk:rw" "$ZAP_IMAGEN" \
+            ${{ matrix.comando }} -c reglas-zap.tsv -I \
+            -r "${{ matrix.objetivo }}.html" -J "${{ matrix.objetivo }}.json" -w "${{ matrix.objetivo }}.md"
+          codigo=$?
+          set -e
+          # 0 = sin alertas, 1 = alguna FAIL, 2 = alguna WARN, 3 = error de ZAP.
+          # Qué cuenta como falla lo decide el paso siguiente.
+          echo "ZAP terminó con código $codigo"
+          if [ "$codigo" -ge 3 ]; then
+            echo "::error::ZAP no pudo completar el escaneo de ${{ matrix.objetivo }} (código $codigo)."
+            exit 1
+          fi
+
+      - name: Resumen y criterio de salida
+        run: >-
+          node scripts/dast/resumen-zap.mjs
+          --informe "zap/${{ matrix.objetivo }}.json"
+          --objetivo "${{ matrix.objetivo }} (baseline)"
+          --reglas scripts/dast/reglas-zap.tsv
+
+      - name: Subir informes
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: dast-baseline-${{ matrix.objetivo }}
+          path: zap/
+          retention-days: 30
+          if-no-files-found: ignore
+
+  # ── COMPLETO (activo y autenticado sobre la API) ─────────────────────────
+  completo:
+    name: 🛡️ ZAP completo — API autenticada
+    if: github.event_name == 'workflow_dispatch' && inputs.modo == 'completo'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      # BL-525: sin clave no se puede cifrar el informe. Se corta antes de
+      # atacar staging, para no hacer un escaneo cuyo resultado no se guarda.
+      - name: Verificar la clave del informe
+        env:
+          CLAVE: ${{ secrets.DAST_INFORME_CLAVE }}
+        run: |
+          if [ -z "$CLAVE" ]; then
+            echo "::error::Falta el secret DAST_INFORME_CLAVE: sin él no se puede cifrar el informe (ver docs/security/dast.md)."
+            exit 1
+          fi
+
+      # Keycloak primero (el token sale de ahí) y la API lista con su base.
+      - name: Despertar staging
+        uses: ./.github/actions/despertar-staging
+        with:
+          urls: |
+            https://bistrolink-auth-staging.up.railway.app/realms/bistrolink/.well-known/openid-configuration
+            https://bistrolink-api-staging.up.railway.app/health/ready
+
+      # Admin del tenant B (no el A, que usan los E2E). El token dura 15
+      # minutos (accessTokenLifespan del realm): por eso el escaneo activo se
+      # corta a los 13.
+      - name: Token del Admin del tenant de testing B
+        env:
+          KEYCLOAK_CLIENT_SECRET: ${{ secrets.STAGING_KEYCLOAK_CLIENT_SECRET }}
+          USUARIO: ${{ secrets.TEST_TENANT_B_USERNAME }}
+          CLAVE: ${{ secrets.TEST_TENANT_B_PASSWORD }}
+        run: |
+          respuesta=$(curl -sS --retry 5 --retry-delay 5 --max-time 20 -X POST "$KEYCLOAK_TOKEN_URL" \
+            --data-urlencode grant_type=password \
+            --data-urlencode client_id=bistrolink-backend \
+            --data-urlencode "client_secret=$KEYCLOAK_CLIENT_SECRET" \
+            --data-urlencode "username=$USUARIO" \
+            --data-urlencode "password=$CLAVE")
+          token=$(echo "$respuesta" | jq -r '.access_token // empty')
+          if [ -z "$token" ]; then
+            echo "::error::Keycloak no devolvió el token: $(echo "$respuesta" | jq -r '.error_description // .error // "sin detalle"')"
+            exit 1
+          fi
+          echo "::add-mask::$token"
+          echo "ZAP_AUTH_HEADER_VALUE=Bearer $token" >> "$GITHUB_ENV"
+
+      # ZAP_AUTH_HEADER_*: ZAP agrega el header a cada request, pero solo hacia
+      # la API (ZAP_AUTH_HEADER_SITE). threadPerHost bajo para no chocar tanto
+      # con el rate limiting de la API.
+      # BL-525: ZAP escribe cada alerta con su URL en la salida estándar. Va a
+      # zap/zap-salida.log, que se cifra con los informes, y no al log público.
+      - name: Escaneo activo de ZAP
+        run: |
+          mkdir -p zap && chmod 777 zap
+          cp scripts/dast/reglas-zap.tsv zap/
+          set +e
+          docker run --rm -v "$PWD/zap:/zap/wrk:rw" \
+            -e ZAP_AUTH_HEADER=Authorization \
+            -e ZAP_AUTH_HEADER_VALUE \
+            -e ZAP_AUTH_HEADER_SITE="$API_HOST" \
+            "$ZAP_IMAGEN" \
+            zap-api-scan.py -t "$OPENAPI_URL" -f openapi -c reglas-zap.tsv -I \
+            -z "-config scanner.maxScanDurationInMins=13 -config scanner.threadPerHost=4" \
+            -r api-completo.html -J api-completo.json -w api-completo.md \
+            > zap/zap-salida.log 2>&1
+          codigo=$?
+          set -e
+          echo "ZAP terminó con código $codigo (salida completa en el informe cifrado)"
+          if [ "$codigo" -ge 3 ]; then
+            echo "::error::ZAP no pudo completar el escaneo activo (código $codigo). El motivo está en zap-salida.log, dentro del informe cifrado."
+            exit 1
+          fi
+
+      - name: Resumen y criterio de salida
+        run: >-
+          node scripts/dast/resumen-zap.mjs
+          --informe zap/api-completo.json
+          --objetivo "API (completo, autenticado)"
+          --reglas scripts/dast/reglas-zap.tsv
+          --detalle no
+
+      - name: Recordatorio
+        if: always()
+        run: |
+          {
+            echo ""
+            echo "> El escaneo activo pudo crear o cambiar datos del tenant de testing B."
+            echo "> Correr **Limpieza de staging** (dry_run sin tildar, antiguedad_horas 0) antes de la próxima demo."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # BL-525: los informes y la salida de ZAP se suben cifrados con AES-256
+      # (gpg simétrico). La clave pasa por un archivo temporal y no por la
+      # línea de comandos. Los archivos sin cifrar se borran del runner.
+      - name: Cifrar informes
+        if: always()
+        env:
+          CLAVE: ${{ secrets.DAST_INFORME_CLAVE }}
+        run: |
+          if [ ! -d zap ] || [ -z "$CLAVE" ]; then
+            echo "No hay informes para cifrar."
+            exit 0
+          fi
+          archivo_clave="$RUNNER_TEMP/clave-informe"
+          ( umask 077; printf '%s' "$CLAVE" > "$archivo_clave" )
+          tar -czf - zap | gpg --batch --yes --pinentry-mode loopback \
+            --symmetric --cipher-algo AES256 \
+            --passphrase-file "$archivo_clave" \
+            -o dast-completo-api.tar.gz.gpg
+          rm -f "$archivo_clave"
+          rm -rf zap
+          echo "Informe cifrado: dast-completo-api.tar.gz.gpg"
+
+      - name: Subir informe cifrado
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: dast-completo-api
+          path: dast-completo-api.tar.gz.gpg
+          retention-days: 90
+          if-no-files-found: ignore

@@ -241,6 +241,7 @@ describe('PedidosController.crearPorMozo (HU-039, BL-209)', () => {
       pedidos as any,
       {} as any,
       {} as any,
+      {} as any,
     );
 
     await controller.crearPorMozo(

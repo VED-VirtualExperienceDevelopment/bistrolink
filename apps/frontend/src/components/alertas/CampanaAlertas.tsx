@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useAlertas } from './AlertasProvider';
+import { ID_BOTON_CAMPANA, useAlertas } from './AlertasProvider';
 import { ListaAlertas } from './ListaAlertas';
 import { etiquetaCampana, textoContador } from './alertas.utils';
 
@@ -31,6 +31,13 @@ const CLASES_VISTA_RAPIDA =
  *
  * El color y el contador llevan la información; la animación solo llama la
  * atención, y se desactiva con `prefers-reduced-motion`.
+ *
+ * BL-470: es la única campana. Para el Administrador suma las alertas de
+ * stock (antes tenía otra campana al lado); el contador es el total, y
+ * cualquier alerta pendiente pinta la campana como urgente. La región
+ * aria-live vive acá, fuera de la vista rápida: así una alerta nueva se
+ * anuncia también con la vista rápida cerrada, sin mover el foco. Al
+ * resolver la última alerta, la vista rápida se cierra sola.
  */
 export function CampanaAlertas() {
   const alertas = useAlertas();
@@ -38,12 +45,14 @@ export function CampanaAlertas() {
   const contenedorRef = useRef<HTMLDivElement>(null);
   const botonRef = useRef<HTMLButtonElement>(null);
   const llegadas = alertas?.llegadas ?? 0;
+  const cantidad = alertas?.cantidad ?? 0;
   const abierta = Boolean(alertas?.panelAbierto);
   const cerrar = alertas?.cerrarPanel;
   const [agitando, setAgitando] = useState(false);
+  const cantidadAnteriorRef = useRef(cantidad);
 
-  // Se agita solo cuando llega un llamado nuevo; al cerrar la vista rápida
-  // después no vuelve a agitarse.
+  // Se agita solo cuando llega una alerta nueva (del salón o de stock); al
+  // cerrar la vista rápida después no vuelve a agitarse.
   useEffect(() => {
     if (llegadas === 0) return;
     setAgitando(true);
@@ -55,6 +64,21 @@ export function CampanaAlertas() {
   useEffect(() => {
     cerrar?.();
   }, [pathname, cerrar]);
+
+  // BL-470: con la vista rápida abierta, resolver la última alerta la cierra.
+  // Solo cuando la cantidad baja a 0: si se abre sin alertas, se queda
+  // abierta con el estado vacío. Si el foco estaba adentro, vuelve a la
+  // campana para no quedar en un elemento que ya no existe.
+  useEffect(() => {
+    const anterior = cantidadAnteriorRef.current;
+    cantidadAnteriorRef.current = cantidad;
+    if (!abierta || !cerrar || anterior === 0 || cantidad > 0) return;
+    const estabaAdentro =
+      contenedorRef.current?.contains(document.activeElement) ||
+      document.activeElement === document.body;
+    cerrar();
+    if (estabaAdentro) botonRef.current?.focus();
+  }, [cantidad, abierta, cerrar]);
 
   // Clic o toque afuera, y Esc: cierran. Con Esc, el foco vuelve a la campana
   // si estaba dentro de la vista rápida.
@@ -81,7 +105,7 @@ export function CampanaAlertas() {
 
   if (!alertas) return null;
 
-  const { cantidad, alternarPanel } = alertas;
+  const { alternarPanel, anuncio } = alertas;
   const hayAlertas = cantidad > 0;
   const agitar = agitando && !abierta;
   const enPantallaAlertas = pathname.startsWith(RUTA_ALERTAS);
@@ -90,6 +114,7 @@ export function CampanaAlertas() {
     <div ref={contenedorRef} className="relative">
       <button
         ref={botonRef}
+        id={ID_BOTON_CAMPANA}
         type="button"
         onClick={alternarPanel}
         aria-expanded={abierta}
@@ -119,6 +144,10 @@ export function CampanaAlertas() {
           </span>
         )}
       </button>
+
+      <p className="sr-only" aria-live="polite">
+        {anuncio}
+      </p>
 
       {abierta && (
         <section

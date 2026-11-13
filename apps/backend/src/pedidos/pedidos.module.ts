@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { PedidosController } from './pedidos.controller';
 import { PedidosService } from './pedidos.service';
+import { PedidosDeLaMesaService } from './pedidos-de-la-mesa.service';
 import { KdsGateway } from './kds.gateway';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AuthModule } from '../auth/auth.module';
@@ -36,6 +37,8 @@ import { PosModule } from '../pos/pos.module';
     KdsGateway,
     WsAuthService,
     PedidosTransicionService,
+    // BL-502: «Mis pedidos» del comensal en la mesa.
+    PedidosDeLaMesaService,
     // HU-015 (BL-120): descuento de stock al confirmarse el pago.
     DescuentoStockService,
     AuditLogService,

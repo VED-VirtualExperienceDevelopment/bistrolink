@@ -25,7 +25,8 @@
     "limpiar:local": "node scripts/limpieza/limpiar-entorno.mjs --entorno local",
     "limpiar:staging": "node scripts/limpieza/limpiar-entorno.mjs --entorno staging",
     "test:limpieza": "node --test scripts/limpieza/limpiar-entorno.test.mjs",
-    "test:dashboards": "node --test \"scripts/dashboards/*.test.mjs\""
+    "test:dashboards": "node --test \"scripts/dashboards/*.test.mjs\"",
+    "test:dast": "node --test \"scripts/dast/*.test.mjs\""
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.14.0",

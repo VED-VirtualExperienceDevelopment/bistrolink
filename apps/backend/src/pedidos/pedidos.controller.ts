@@ -13,10 +13,16 @@ import { AuthGuard } from '@nestjs/passport';
 import { RolesGuard, Roles } from '../auth/roles.guard';
 import { AuthenticatedUser } from '../auth/keycloak-jwt.strategy';
 import { MesaDelQr } from '../qr-mesa/qr-mesa-acceso.service';
-import { MesaDelQrActual, MesaQrGuard } from '../qr-mesa/mesa-qr.guard';
+import {
+  MesaDelQrActual,
+  MesaQrGuard,
+  MesaQrObligatoriaGuard,
+} from '../qr-mesa/mesa-qr.guard';
 import { PedidosService } from './pedidos.service';
 import { CrearPedidoDto } from './dto/crear-pedido.dto';
 import { CrearPedidoMozoDto } from './dto/crear-pedido-mozo.dto';
+import { EstadoPedidosMesaDto } from './dto/estado-pedidos-mesa.dto';
+import { PedidosDeLaMesaService } from './pedidos-de-la-mesa.service';
 import { EntregarRetiroDto } from './dto/entregar-retiro.dto';
 import { PedidosTransicionService } from './pedidos-transicion.service';
 import { KdsGateway } from './kds.gateway';
@@ -34,6 +40,7 @@ import { SEGURIDAD_KEYCLOAK, SEGURIDAD_MESA_QR } from '../openapi';
 export class PedidosController {
   constructor(
     private readonly pedidosService: PedidosService,
+    private readonly pedidosDeLaMesa: PedidosDeLaMesaService,
     private readonly transicion: PedidosTransicionService,
     private readonly kdsGateway: KdsGateway,
   ) {}
@@ -48,6 +55,20 @@ export class PedidosController {
     @MesaDelQrActual() mesaQr?: MesaDelQr,
   ) {
     return this.pedidosService.crear(req.user.tenantId, dto, mesaQr);
+  }
+
+  // BL-502: «Mis pedidos» del comensal en la mesa. Solo desde la mesa (QR y
+  // sesión abierta, 410 si se cerró) y solo los pedidos de esa mesa y de esa
+  // sesión, de los ids que recuerda el navegador. POST para no poner la
+  // lista de ids en la URL (ni en los logs de acceso).
+  @Post('mesa/estado')
+  @HttpCode(200)
+  @UseGuards(MesaQrGuard, MesaQrObligatoriaGuard)
+  estadoEnLaMesa(
+    @Body() dto: EstadoPedidosMesaDto,
+    @MesaDelQrActual() mesaQr: MesaDelQr,
+  ) {
+    return this.pedidosDeLaMesa.estado(mesaQr, dto.ids);
   }
 
   // HU-039 (BL-209): el mozo carga el pedido de un comensal sin celular, en

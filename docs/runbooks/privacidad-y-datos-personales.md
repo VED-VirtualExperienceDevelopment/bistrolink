@@ -5,13 +5,14 @@
 
 ## Control de versiones
 
-| Versión | Fecha      | Modificación                                                                                      |
-| ------- | ---------- | ------------------------------------------------------------------------------------------------- |
-| 1.0     | 01/11/2026 | Primera versión: roles, datos que trata el sistema, registro ante la URCDP y pedidos de derechos. |
-| 1.1     | 02/11/2026 | HU-009 (BL-453): RUT y razón social de la e-Factura, consentimiento y anonimización.              |
-| 1.2     | 02/11/2026 | BL-453: sin aceptar el aviso, la pantalla no deja pagar con datos de la e-Factura cargados.       |
-| 1.3     | 07/11/2026 | BL-454: copia del PDF del comprobante en S3 y descarga desde la API.                              |
-| 1.4     | 10/11/2026 | HU-040 (BL-210): nombre y contacto del pedido para retirar, consentimiento y anonimización.       |
+| Versión | Fecha      | Modificación                                                                                               |
+| ------- | ---------- | ---------------------------------------------------------------------------------------------------------- |
+| 1.0     | 01/11/2026 | Primera versión: roles, datos que trata el sistema, registro ante la URCDP y pedidos de derechos.          |
+| 1.1     | 02/11/2026 | HU-009 (BL-453): RUT y razón social de la e-Factura, consentimiento y anonimización.                       |
+| 1.2     | 02/11/2026 | BL-453: sin aceptar el aviso, la pantalla no deja pagar con datos de la e-Factura cargados.                |
+| 1.3     | 07/11/2026 | BL-454: copia del PDF del comprobante en S3 y descarga desde la API.                                       |
+| 1.4     | 10/11/2026 | BL-502: «Mis pedidos» en la mesa guarda en el teléfono los ids de los pedidos hasta que se cierra la mesa. |
+| 1.5     | 12/11/2026 | HU-040 (BL-210): nombre y contacto del pedido para retirar, consentimiento y anonimización.                |
 
 ## 1. Roles
 
@@ -25,16 +26,17 @@
 
 ## 2. Qué datos personales trata el sistema hoy
 
-| Dato                                               | Dónde                                                       | Para qué                                             | Conservación                                |
-| -------------------------------------------------- | ----------------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------- |
-| Pedido: ítems, notas, mesa y hora                  | `pedido`, `linea_pedido`                                    | Preparar y cobrar el pedido                          | Registro de la operación                    |
-| Correo y documento del pagador                     | Solo en tránsito hacia Mercado Pago                         | Procesar el pago con tarjeta y enviar el comprobante | **No se guardan**                           |
-| Datos de la tarjeta                                | Campos seguros de Mercado Pago                              | Pago                                                 | **Nunca pasan por BistroLink**              |
-| Pedido en curso                                    | `sessionStorage` de la pestaña del comensal                 | Retomar el pago al recargar (BL-448)                 | Hasta cerrar la pestaña o hacer otro pedido |
-| Colaboradores: usuario, nombre, apellido y correo  | `usuario` y Keycloak                                        | Acceso al panel                                      | Mientras la cuenta exista                   |
-| Correo de privacidad del local                     | `restaurante.email_privacidad`                              | Canal para los derechos                              | Mientras el local lo tenga cargado          |
-| RUT y razón social de la e-Factura (HU-009)        | `pedido.receptor_rut`, `receptor_razon_social` y Surtec/DGI | Emitir la e-Factura a nombre del comensal            | Hasta que se anonimizan; el CFE, 5 años     |
-| Nombre y contacto del pedido para retirar (HU-040) | `pedido.retiro_nombre`, `retiro_contacto`                   | Reconocer al comensal en el mostrador                | Hasta que se anonimizan                     |
+| Dato                                               | Dónde                                                                           | Para qué                                                     | Conservación                                           |
+| -------------------------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------ |
+| Pedido: ítems, notas, mesa y hora                  | `pedido`, `linea_pedido`                                                        | Preparar y cobrar el pedido                                  | Registro de la operación                               |
+| Correo y documento del pagador                     | Solo en tránsito hacia Mercado Pago                                             | Procesar el pago con tarjeta y enviar el comprobante         | **No se guardan**                                      |
+| Datos de la tarjeta                                | Campos seguros de Mercado Pago                                                  | Pago                                                         | **Nunca pasan por BistroLink**                         |
+| Pedido en curso                                    | `sessionStorage` de la pestaña (pedido para retirar)                            | Retomar el pago al recargar (BL-448)                         | Hasta cerrar la pestaña o hacer otro pedido            |
+| Mis pedidos en la mesa (BL-502)                    | `localStorage` del teléfono del comensal: ids de sus pedidos y el pago en curso | Ver sus pedidos y retomar el pago al volver a escanear el QR | Hasta que se cierra la mesa (la clave lleva la sesión) |
+| Colaboradores: usuario, nombre, apellido y correo  | `usuario` y Keycloak                                                            | Acceso al panel                                              | Mientras la cuenta exista                              |
+| Correo de privacidad del local                     | `restaurante.email_privacidad`                                                  | Canal para los derechos                                      | Mientras el local lo tenga cargado                     |
+| RUT y razón social de la e-Factura (HU-009)        | `pedido.receptor_rut`, `receptor_razon_social` y Surtec/DGI                     | Emitir la e-Factura a nombre del comensal                    | Hasta que se anonimizan; el CFE, 5 años                |
+| Nombre y contacto del pedido para retirar (HU-040) | `pedido.retiro_nombre`, `retiro_contacto`                                       | Reconocer al comensal en el mostrador                        | Hasta que se anonimizan                                |
 
 El e-Ticket se emite a consumidor final, sin datos personales.
 

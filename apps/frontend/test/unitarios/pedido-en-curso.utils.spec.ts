@@ -54,9 +54,13 @@ const PEDIDO: PedidoEnCurso = {
 
 describe("pedido en curso (BL-448)", () => {
   describe("clavePedidoEnCurso", () => {
-    it("una por mesa (QR) y una por local para retirar", () => {
+    it("una por mesa y sesión de la mesa (BL-502) y una por local para retirar", () => {
       expect(clavePedidoEnCurso(MESA)).toBe(
-        "bistrolink:pedido-en-curso:mesa:qr-mesa-3",
+        "bistrolink:pedido-en-curso:mesa:qr-mesa-3:s1",
+      );
+      // BL-502: el grupo siguiente de la mesa no ve el pago del anterior.
+      expect(clavePedidoEnCurso({ ...MESA, sesionMesa: "s2" })).not.toBe(
+        clavePedidoEnCurso(MESA),
       );
       expect(clavePedidoEnCurso(WEB)).toBe("bistrolink:pedido-en-curso:web:r1");
     });

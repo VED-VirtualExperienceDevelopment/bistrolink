@@ -521,6 +521,7 @@ describe('PedidosController.entregarRetiro (BL-210)', () => {
     const kds = { emitirPedidoActualizado: jest.fn() };
     const controller = new PedidosController(
       {} as any,
+      {} as any,
       transicion as any,
       kds as any,
     );

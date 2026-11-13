@@ -10,14 +10,12 @@ function hasRoleDe(roles: RolStaff[]) {
 }
 
 describe("resolverDestinoLanding", () => {
-  it("ADMIN va a /admin/usuarios", () => {
-    expect(resolverDestinoLanding(hasRoleDe(["ADMIN"]))).toBe(
-      "/admin/usuarios",
-    );
+  it("ADMIN va a Inicio (/admin/inicio, BL-520)", () => {
+    expect(resolverDestinoLanding(hasRoleDe(["ADMIN"]))).toBe("/admin/inicio");
   });
 
-  it("MOZO va a /admin/mesas", () => {
-    expect(resolverDestinoLanding(hasRoleDe(["MOZO"]))).toBe("/admin/mesas");
+  it("MOZO va a Inicio (/admin/inicio, BL-520)", () => {
+    expect(resolverDestinoLanding(hasRoleDe(["MOZO"]))).toBe("/admin/inicio");
   });
 
   it("COCINA va a /kds", () => {
@@ -35,25 +33,25 @@ describe("resolverDestinoLanding", () => {
 
   it("ADMIN gana sobre MOZO cuando el usuario tiene ambos roles", () => {
     expect(resolverDestinoLanding(hasRoleDe(["MOZO", "ADMIN"]))).toBe(
-      "/admin/usuarios",
+      "/admin/inicio",
     );
   });
 
   it("ADMIN gana sobre COCINA cuando el usuario tiene ambos roles", () => {
     expect(resolverDestinoLanding(hasRoleDe(["COCINA", "ADMIN"]))).toBe(
-      "/admin/usuarios",
+      "/admin/inicio",
     );
   });
 
   it("MOZO gana sobre COCINA cuando el usuario tiene ambos roles (y no ADMIN)", () => {
     expect(resolverDestinoLanding(hasRoleDe(["COCINA", "MOZO"]))).toBe(
-      "/admin/mesas",
+      "/admin/inicio",
     );
   });
 
   it("con los 3 roles a la vez, sigue ganando ADMIN (prioridad completa)", () => {
     expect(resolverDestinoLanding(hasRoleDe(["COCINA", "MOZO", "ADMIN"]))).toBe(
-      "/admin/usuarios",
+      "/admin/inicio",
     );
   });
 
