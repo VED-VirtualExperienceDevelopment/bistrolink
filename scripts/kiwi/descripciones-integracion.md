@@ -39,6 +39,7 @@
 | 1.32    | 10/11/2026 | Se borran los bloques de TC-I-190 a 198, ya cargados en Kiwi. TC-I-203 a 205: «Mis pedidos» en la mesa y acceso a un pedido solo en la sesión abierta (bug BL-502), para cargar con el script antes de mergear el PR.                     |
 | 1.33    | 10/11/2026 | Se borran los bloques de TC-I-203 a 205, ya cargados en Kiwi. TC-I-206 y 207: aviso al comensal cuando el mozo cierra la mesa (bug BL-518), para cargar con el script antes de mergear el PR.                                             |
 | 1.34    | 11/11/2026 | TC-I-009: `GET /` responde JSON en lugar del texto «Hello World!» (DAST, BL-526); cambia el título y la descripción, para cargar con el script antes de mergear el PR.                                                                      |
+| 1.35    | 13/11/2026 | TC-I-208 y 209: cola del KDS sugerida en el alta de un establecimiento (HU-042 / BL-472), para cargar con el script antes de mergear el PR.                                                                                               |
 
 Texto del campo de descripción de cada caso TC-I en Kiwi. Lo carga
 `cargar-casos-integracion.mjs --descripciones`: cada bloque `## TC-I-NNN`
@@ -49,6 +50,40 @@ Formato de cada bloque: `### Precondición`, `### Pasos` y `### Resultado
 esperado`, igual que los casos cargados a mano desde TC-I-029.
 
 ## Casos para cargar
+
+## TC-I-208
+
+### Precondición
+
+TC-I-050 ejecutado: existe el establecimiento dado de alta sin la cola del KDS.
+
+### Pasos
+
+1. Leer el restaurante del establecimiento nuevo en la base, con el contexto de su tenant.
+
+### Resultado esperado
+
+1. La cola del KDS queda desactivada (`limite_pedidos_en_preparacion` en NULL), con el umbral de alerta en 10 y los minutos de referencia en 15.
+
+## TC-I-209
+
+### Precondición
+
+Usuario de plataforma del test. Un RUT y usuarios de Administrador y Cocina que no existen.
+
+### Pasos
+
+1. `POST /plataforma/establecimientos` con la cola en 51 pedidos en preparación.
+2. Buscar en la base un establecimiento con ese RUT.
+3. `POST /plataforma/establecimientos` con los mismos datos y la cola en 5.
+4. Leer el restaurante del establecimiento nuevo, con el contexto de su tenant.
+
+### Resultado esperado
+
+1. 400 Bad Request.
+2. No existe: el alta rechazada no creó nada.
+3. 201 Created.
+4. `limite_pedidos_en_preparacion` en 5, umbral de alerta en 10 y minutos de referencia en 15.
 
 ## TC-I-206
 
