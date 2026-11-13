@@ -167,4 +167,38 @@ describe('AprovisionarEstablecimientoDto (BL-163)', () => {
       expect(rutas(await validar(incompleto))).toContain(campo);
     },
   );
+
+  describe('cola del KDS en el alta (BL-472)', () => {
+    it.each([1, 5, 50, null])(
+      '[TC-U-500] acepta el límite de pedidos en preparación %p (1 a 50, o null para dejar la cola desactivada)',
+      async (limite) => {
+        expect(
+          await validar({
+            ...VALIDO,
+            restaurante: {
+              ...VALIDO.restaurante,
+              limitePedidosEnPreparacion: limite,
+            },
+          }),
+        ).toHaveLength(0);
+      },
+    );
+
+    it.each([0, 51, 2.5, '5'])(
+      '[TC-U-501] rechaza el límite de pedidos en preparación %p (fuera de rango o no entero)',
+      async (limite) => {
+        expect(
+          rutas(
+            await validar({
+              ...VALIDO,
+              restaurante: {
+                ...VALIDO.restaurante,
+                limitePedidosEnPreparacion: limite,
+              },
+            }),
+          ),
+        ).toEqual(['restaurante.limitePedidosEnPreparacion']);
+      },
+    );
+  });
 });

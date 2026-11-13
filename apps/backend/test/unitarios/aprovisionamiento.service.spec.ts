@@ -387,6 +387,68 @@ describe('AprovisionamientoService (BL-163)', () => {
     });
   });
 
+  describe('cola del KDS en el alta (BL-472)', () => {
+    it('[TC-U-502] guarda en el restaurante nuevo el límite elegido', async () => {
+      await aprovisionar(
+        dtoBase({
+          restaurante: {
+            nombre: 'Restaurante de Prueba',
+            direccion: 'Calle de Prueba 123',
+            limitePedidosEnPreparacion: 5,
+          },
+        }),
+      );
+
+      expect(tx.restaurante.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ limitePedidosEnPreparacion: 5 }),
+        }),
+      );
+    });
+
+    it.each([
+      ['sin el campo', undefined],
+      ['con null (se descartó)', null],
+    ])(
+      '[TC-U-503] %s, el restaurante queda con la cola desactivada (null)',
+      async (_caso, limite) => {
+        await aprovisionar(
+          dtoBase({
+            restaurante: {
+              nombre: 'Restaurante de Prueba',
+              direccion: 'Calle de Prueba 123',
+              ...(limite === undefined
+                ? {}
+                : { limitePedidosEnPreparacion: limite }),
+            },
+          }),
+        );
+
+        expect(tx.restaurante.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({ limitePedidosEnPreparacion: null }),
+          }),
+        );
+      },
+    );
+
+    it('[TC-U-504] un alta repetida no cambia la cola del restaurante que ya existe', async () => {
+      restauranteExistente = { id: RESTAURANTE_ID };
+
+      await aprovisionar(
+        dtoBase({
+          restaurante: {
+            nombre: 'Restaurante de Prueba',
+            direccion: 'Calle de Prueba 123',
+            limitePedidosEnPreparacion: 5,
+          },
+        }),
+      );
+
+      expect(tx.restaurante.create).not.toHaveBeenCalled();
+    });
+  });
+
   describe('idempotencia', () => {
     beforeEach(() => {
       tenantPorRut = { id: TENANT_ID };

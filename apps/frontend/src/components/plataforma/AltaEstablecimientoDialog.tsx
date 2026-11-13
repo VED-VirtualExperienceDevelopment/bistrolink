@@ -1,8 +1,10 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { Dialog } from "@/components/ui/Dialog";
+import Switch from "@/components/ui/Switch";
 import { apiFetch, ApiError } from "@/lib/api-client";
 import type {
+  CampoTextoAlta,
   EstablecimientoListado,
   FormularioAlta,
   ResultadoAlta,
@@ -16,6 +18,8 @@ import {
   ETIQUETA_ROL,
   FORMULARIO_VACIO,
   formularioParaCompletar,
+  LIMITE_PREPARACION,
+  LIMITE_PREPARACION_SUGERIDO,
   mensajeDeError,
   resumirAlta,
   validarFormulario,
@@ -47,7 +51,7 @@ const CLASE_BOTON_SECUNDARIO =
   "flex min-h-12 items-center justify-center rounded-lg px-4 text-body-md text-on-surface-variant hover:bg-surface-container";
 
 interface CampoProps {
-  id: keyof FormularioAlta;
+  id: CampoTextoAlta;
   label: string;
   valor: string;
   error?: string;
@@ -58,7 +62,7 @@ interface CampoProps {
   soloLectura?: boolean;
   /** BL-407: el diálogo pone el foco acá al abrir (data-autofocus de Dialog). */
   enfocar?: boolean;
-  onChange: (id: keyof FormularioAlta, valor: string) => void;
+  onChange: (id: CampoTextoAlta, valor: string) => void;
 }
 
 function Campo({
@@ -182,6 +186,11 @@ function Seccion({
  * dos barras de desplazamiento). Las cuatro partes van en tarjetas: en PC,
  * de a dos por fila; en el celular, una debajo de la otra. Los rótulos dicen
  * de qué es cada dato («Nombre del restaurante», «Usuario para ingresar»).
+ *
+ * BL-472 (HU-042): quinta tarjeta, «Cola de pedidos», con la cola automática
+ * del KDS apagada. Al encenderla propone el límite recomendado (5), que se
+ * puede cambiar o descartar apagándola; el umbral de alerta y los minutos de
+ * referencia quedan con sus valores por defecto.
  */
 export function AltaEstablecimientoDialog({
   open,
@@ -256,9 +265,18 @@ export function AltaEstablecimientoDialog({
     }
   };
 
-  const cambiar = (id: keyof FormularioAlta, valor: string) => {
+  const cambiar = (id: CampoTextoAlta, valor: string) => {
     setForm((prev) => ({ ...prev, [id]: valor }));
     if (errores[id]) setErrores((prev) => ({ ...prev, [id]: undefined }));
+  };
+
+  // BL-472: al apagar la cola se descarta el límite (el local queda sin
+  // cola, como antes) y su error deja de importar.
+  const cambiarCola = (activa: boolean) => {
+    setForm((prev) => ({ ...prev, colaActiva: activa }));
+    if (!activa && errores.colaLimite) {
+      setErrores((prev) => ({ ...prev, colaLimite: undefined }));
+    }
   };
 
   const enviar = async (e: React.FormEvent) => {
@@ -439,9 +457,9 @@ export function AltaEstablecimientoDialog({
       <form onSubmit={enviar} noValidate className="space-y-5">
         {completando && (
           <p className="rounded-lg bg-surface-container px-3 py-2 text-body-md text-on-surface">
-            A este establecimiento le falta el restaurante. Cargá lo que
-            falta: no se duplica nada. Si el Administrador o la Cocina ya
-            existen, usá los mismos usuarios; no se les cambia la contraseña.
+            A este establecimiento le falta el restaurante. Cargá lo que falta:
+            no se duplica nada. Si el Administrador o la Cocina ya existen, usá
+            los mismos usuarios; no se les cambia la contraseña.
           </p>
         )}
 
@@ -561,6 +579,47 @@ export function AltaEstablecimientoDialog({
               onChange={cambiar}
             />
           </Seccion>
+
+          {/* BL-472 (HU-042): la cola del KDS se sugiere en el alta, pero
+              es opcional: arranca apagada. Ocupa el ancho de las dos
+              columnas en PC. */}
+          <div className="md:col-span-2">
+            <Seccion
+              id="seccion-cola"
+              icono="format_list_numbered"
+              titulo="Cola de pedidos (opcional)"
+              descripcion="Limita cuántos pedidos prepara la cocina a la vez. Los demás esperan en orden de llegada y pasan a preparación solos cuando uno queda listo. Sirve para que la cocina no se sature en las horas pico."
+            >
+              <div className="flex min-h-12 items-center justify-between gap-4">
+                <p className="text-body-md text-on-surface">
+                  Cola automática de pedidos
+                </p>
+                <Switch
+                  checked={form.colaActiva}
+                  onChange={cambiarCola}
+                  label="Cola automática de pedidos"
+                  describedBy="seccion-cola-descripcion"
+                />
+              </div>
+              {form.colaActiva ? (
+                <Campo
+                  id="colaLimite"
+                  label="Pedidos en preparación a la vez"
+                  valor={form.colaLimite}
+                  error={errores.colaLimite}
+                  ayuda={`Recomendado: ${LIMITE_PREPARACION_SUGERIDO}. Entre ${LIMITE_PREPARACION.minimo} y ${LIMITE_PREPARACION.maximo}. El Administrador lo puede cambiar después en Configuración → Cocina.`}
+                  inputMode="numeric"
+                  onChange={cambiar}
+                />
+              ) : (
+                <p className="text-body-md text-on-surface-variant">
+                  Apagada: el mozo pasa los pedidos a preparación a mano. El
+                  Administrador la puede activar después en Configuración →
+                  Cocina.
+                </p>
+              )}
+            </Seccion>
+          </div>
         </div>
 
         <p className="text-body-md text-on-surface-variant">

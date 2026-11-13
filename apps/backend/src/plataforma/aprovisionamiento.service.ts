@@ -101,6 +101,10 @@ const APELLIDO_CUENTA_TECNICA = 'BistroLink';
  *
  * Lo usa el script `scripts/aprovisionar-establecimiento.ts` y, en la
  * entrega 2, el endpoint de plataforma.
+ *
+ * BL-472: el restaurante nuevo puede nacer con la cola automática del KDS
+ * (`restaurante.limitePedidosEnPreparacion`). Si no viene, queda null
+ * (desactivada). En un alta repetida el restaurante ya existe y no se toca.
  */
 @Injectable()
 export class AprovisionamientoService {
@@ -337,6 +341,11 @@ export class AprovisionamientoService {
           nombre: dto.restaurante.nombre,
           direccion: dto.restaurante.direccion,
           timezone: dto.restaurante.timezone ?? TIMEZONE_POR_DEFECTO,
+          // BL-472: cola del KDS elegida en el alta; null = desactivada. El
+          // umbral de alerta y los minutos de referencia quedan con los
+          // valores por defecto de la base (10 y 15).
+          limitePedidosEnPreparacion:
+            dto.restaurante.limitePedidosEnPreparacion ?? null,
         },
         select: { id: true },
       });

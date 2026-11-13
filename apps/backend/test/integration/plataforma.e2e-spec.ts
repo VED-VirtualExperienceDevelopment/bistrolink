@@ -24,6 +24,8 @@ import {
  * - El alta crea el kit mínimo y el comensal técnico puede emitir su token.
  * - Reintentar el alta no duplica nada.
  * - El listado muestra el establecimiento nuevo y quién lo dio de alta.
+ * - BL-472: el alta sin cola deja la cola del KDS desactivada (null); con
+ *   cola, guarda el límite elegido (TC-I-208 y TC-I-209).
  *
  * Setup: el realm tiene que tener el rol PLATAFORMA (keycloak/realm-export.json;
  * en un Keycloak ya levantado, crearlo a mano o reimportar el realm) y el
@@ -70,11 +72,34 @@ const ALTA = {
   cocina: { username: COCINA_NUEVO },
 };
 
+// BL-472: segundo establecimiento, dado de alta con la cola del KDS. Otro RUT
+// y otros usuarios, también únicos por corrida.
+const RUT_COLA = rutDePrueba(String(Number(SUFIJO) + 500));
+const ADMIN_COLA = `e2e-admin-${SUFIJO}-cola`;
+const COCINA_COLA = `e2e-cocina-${SUFIJO}-cola`;
+const ALTA_CON_COLA = {
+  razonSocial: `Restaurante e2e ${SUFIJO} con cola SRL`,
+  rut: RUT_COLA,
+  restaurante: {
+    nombre: `Restaurante e2e ${SUFIJO} con cola`,
+    direccion: 'Calle de Prueba 456',
+    limitePedidosEnPreparacion: 5,
+  },
+  admin: {
+    username: ADMIN_COLA,
+    email: `${ADMIN_COLA}@prueba.bistrolink.local`,
+    nombre: 'Admin',
+    apellido: 'Prueba',
+  },
+  cocina: { username: COCINA_COLA },
+};
+
 describe('Alta de establecimientos por la plataforma (HU-027) - e2e', () => {
   let app: INestApplication;
   let prisma: PrismaClient;
   let tokenPlataforma: string;
   let tenantIdCreado: string | undefined;
+  let tenantIdConCola: string | undefined;
 
   const itConPlataforma = COMENSAL_PASS ? it : it.skip;
   const itConAdmin = ADMIN_PASS ? it : it.skip;
@@ -114,13 +139,22 @@ describe('Alta de establecimientos por la plataforma (HU-027) - e2e', () => {
   afterAll(async () => {
     // Best-effort: cada paso por separado, para que uno que falle no corte
     // el resto de la limpieza.
-    const usernames = [USUARIO_PLATAFORMA, ADMIN_NUEVO, COCINA_NUEVO];
-    if (tenantIdCreado) usernames.push(`comensal-${tenantIdCreado}`);
+    // BL-472: también el establecimiento dado de alta con la cola del KDS.
+    const tenantIds = [tenantIdCreado, tenantIdConCola].filter(
+      (id): id is string => Boolean(id),
+    );
+    const usernames = [
+      USUARIO_PLATAFORMA,
+      ADMIN_NUEVO,
+      COCINA_NUEVO,
+      ADMIN_COLA,
+      COCINA_COLA,
+      ...tenantIds.map((id) => `comensal-${id}`),
+    ];
     for (const username of usernames) {
       await borrarUsuarioKeycloak(username).catch(() => undefined);
     }
-    if (tenantIdCreado) {
-      const tenantId = tenantIdCreado;
+    for (const tenantId of tenantIds) {
       await enTenant(tenantId, async (tx) => {
         await tx.usuario.deleteMany({ where: { tenantId } });
         await tx.mesa.deleteMany({ where: { tenantId } });
@@ -328,6 +362,67 @@ describe('Alta de establecimientos por la plataforma (HU-027) - e2e', () => {
         .set('Authorization', `Bearer ${tokenComensal}`)
         .send(ALTA)
         .expect(403);
+    },
+  );
+
+  // BL-472: van al final porque TC-I-209 da de alta otro establecimiento, y
+  // TC-I-053 espera que el más reciente sea el de TC-I-050.
+  itConPlataforma(
+    '[TC-I-208] Plataforma: el alta sin cola deja el restaurante con la cola del KDS desactivada y los valores por defecto',
+    async () => {
+      const tenantId = tenantIdCreado as string;
+      const restaurante = await enTenant(tenantId, (tx) =>
+        tx.restaurante.findUnique({ where: { tenantId } }),
+      );
+
+      expect(restaurante).toEqual(
+        expect.objectContaining({
+          limitePedidosEnPreparacion: null,
+          umbralAlertaCola: 10,
+          minutosPreparacionEstimados: 15,
+        }),
+      );
+    },
+  );
+
+  itConPlataforma(
+    '[TC-I-209] Plataforma: el alta con cola guarda el límite elegido; fuera de rango responde 400 sin crear nada',
+    async () => {
+      // Fuera de rango (1 a 50): 400 y el establecimiento no se crea.
+      await request(app.getHttpServer())
+        .post('/plataforma/establecimientos')
+        .set('Authorization', `Bearer ${tokenPlataforma}`)
+        .send({
+          ...ALTA_CON_COLA,
+          restaurante: {
+            ...ALTA_CON_COLA.restaurante,
+            limitePedidosEnPreparacion: 51,
+          },
+        })
+        .expect(400);
+      expect(
+        await prisma.tenant.findUnique({ where: { rut: RUT_COLA } }),
+      ).toBeNull();
+
+      // Con el límite recomendado: el restaurante nace con la cola activa.
+      const res = await request(app.getHttpServer())
+        .post('/plataforma/establecimientos')
+        .set('Authorization', `Bearer ${tokenPlataforma}`)
+        .send(ALTA_CON_COLA)
+        .expect(201);
+      tenantIdConCola = res.body.tenantId;
+      const tenantId = res.body.tenantId as string;
+
+      const restaurante = await enTenant(tenantId, (tx) =>
+        tx.restaurante.findUnique({ where: { tenantId } }),
+      );
+      expect(restaurante).toEqual(
+        expect.objectContaining({
+          limitePedidosEnPreparacion: 5,
+          umbralAlertaCola: 10,
+          minutosPreparacionEstimados: 15,
+        }),
+      );
     },
   );
 });

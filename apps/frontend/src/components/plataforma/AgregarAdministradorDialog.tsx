@@ -278,7 +278,10 @@ export function AgregarAdministradorDialog({
             className={`${CLASE_INPUT} ${errores.email ? "border-error" : "border-outline-variant"}`}
           />
           {errores.email && (
-            <p id={`${ID.email}-error`} className="mt-1 text-body-sm text-error">
+            <p
+              id={`${ID.email}-error`}
+              className="mt-1 text-body-sm text-error"
+            >
               {errores.email}
             </p>
           )}

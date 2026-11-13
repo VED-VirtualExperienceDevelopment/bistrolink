@@ -82,7 +82,10 @@ export function EstablecimientosTable({
         <span />
       </div>
 
-      <ul aria-label="Establecimientos" className="divide-y divide-outline-variant">
+      <ul
+        aria-label="Establecimientos"
+        className="divide-y divide-outline-variant"
+      >
         {establecimientos.map((e) => (
           <li
             key={e.tenantId}

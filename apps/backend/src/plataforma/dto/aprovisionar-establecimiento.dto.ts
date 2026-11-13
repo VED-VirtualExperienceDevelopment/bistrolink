@@ -2,15 +2,22 @@ import { Type } from 'class-transformer';
 import {
   IsDefined,
   IsEmail,
+  IsInt,
   IsObject,
   IsOptional,
   IsString,
   IsUUID,
   Length,
   Matches,
+  Max,
   MaxLength,
+  Min,
   ValidateNested,
 } from 'class-validator';
+import {
+  LIMITE_PREPARACION_MAXIMO,
+  LIMITE_PREPARACION_MINIMO,
+} from '../../configuracion/dto/actualizar-configuracion.dto';
 import {
   LARGO_MAXIMO_EMAIL,
   MENSAJE_EMAIL_LARGO,
@@ -55,6 +62,26 @@ export class RestauranteAltaDto {
   @IsString()
   @Length(1, 64)
   timezone?: string;
+
+  /**
+   * BL-472 (HU-042, ADR 0010): cola automática del KDS sugerida en el alta.
+   * Cuántos pedidos prepara la cocina a la vez, con el mismo rango que
+   * Configuración → Cocina (1 a 50). Si no viene o viene null, el local queda
+   * con la cola desactivada, igual que antes. Solo se usa al crear el
+   * restaurante: un alta repetida no cambia el valor de uno que ya existe.
+   * IsOptional deja pasar null y undefined sin validar el resto.
+   */
+  @IsOptional()
+  @IsInt({
+    message: 'El límite de pedidos en preparación debe ser un número entero',
+  })
+  @Min(LIMITE_PREPARACION_MINIMO, {
+    message: `El límite de pedidos en preparación debe ser al menos ${LIMITE_PREPARACION_MINIMO}`,
+  })
+  @Max(LIMITE_PREPARACION_MAXIMO, {
+    message: `El límite de pedidos en preparación puede ser como máximo ${LIMITE_PREPARACION_MAXIMO}`,
+  })
+  limitePedidosEnPreparacion?: number | null;
 }
 
 /**
