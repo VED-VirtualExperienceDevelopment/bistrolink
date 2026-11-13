@@ -50,5 +50,11 @@ test("[TC-E-016] HU-018: cocina mozo comensal, pedido llega a Entregado", async 
   await entregar.click();
 
   await expect(ticket).not.toBeVisible();
-  await expect(estadoActual("Entregado")).toBeVisible({ timeout: 5000 });
+  // BL-502: con el pedido entregado, el seguimiento se reemplaza por la
+  // pantalla «Gracias por tu compra» (ya no queda un estado «Entregado»).
+  await expect(
+    comensalPage
+      .getByTestId("gracias-por-tu-compra")
+      .getByRole("heading", { name: "Gracias por tu compra" }),
+  ).toBeVisible({ timeout: 10000 });
 });
