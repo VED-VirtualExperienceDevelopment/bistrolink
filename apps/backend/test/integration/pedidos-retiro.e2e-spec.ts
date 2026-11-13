@@ -1,7 +1,11 @@
 import 'dotenv/config';
 import { randomInt, randomUUID } from 'node:crypto';
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException, INestApplication } from '@nestjs/common';
+import {
+  BadRequestException,
+  INestApplication,
+  ValidationPipe,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 import request = require('supertest');
@@ -166,6 +170,15 @@ describe('HU-040 (BL-210): pedidos para retirar', () => {
       Test.createTestingModule({ imports: [AppModule] }),
     ).compile();
     app = moduleRef.createNestApplication();
+    // El mismo ValidationPipe que main.ts: TC-I-199 depende de que el DTO
+    // limpie el nombre y el contacto, y los tests no levantan main.ts.
+    app.useGlobalPipes(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true,
+        transform: true,
+      }),
+    );
     await app.init();
     tenantPrisma = await app.resolve(TenantPrismaService);
     transicion = await app.resolve(PedidosTransicionService);

@@ -180,6 +180,7 @@ export function PagoAprobado({
         nombreLocal={nombreLocal}
         esMesa={esMesa}
         numeroMesa={numeroMesa}
+        codigoRetiro={codigoRetiro}
         entregadoEn={entregado.en}
         lineas={lineas}
         totales={totales}
