@@ -341,3 +341,27 @@ CVE-2026-119586
 
 CVE-2026-119379 exp:2026-12-31
 CVE-2026-119374 exp:2026-12-31
+
+# CVE-2026-76844 (HIGH) — zlib 1.2.11-40.el9 del SO base de la imagen oficial de
+
+# Keycloak (quay.io/keycloak/keycloak:26.7.2, Red Hat UBI 9.8). Estado "affected", sin
+
+# fixed version de Red Hat; upstream se corrige en zlib 1.4. El desbordamiento está en
+
+# la escritura de archivos .gz con la API gzFile (gz_write/gzwrite) cuando falla un
+
+# write() de abajo. No aplica: Keycloak es Java y comprime con java.util.zip
+
+# (deflate en memoria, sin la API gzFile), y en el contenedor nadie escribe archivos
+
+# .gz con zlib. La imagen de Keycloak (UBI micro) no trae gestor de paquetes, así que
+
+# no se puede actualizar el paquete desde nuestro Dockerfile.
+
+# Agregada el 13/11/2026 (apareció en la base de Trivy del día). Vence a fin de año
+
+# para que se revise sí o sí. Pendiente (BL-137): quitar cuando Keycloak publique una
+
+# imagen con zlib corregido.
+
+CVE-2026-76844 exp:2026-12-31
