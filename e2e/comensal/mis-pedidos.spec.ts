@@ -161,7 +161,11 @@ test.describe("BL-502: Mis pedidos en la mesa", () => {
     ).toEqual([]);
 
     await gracias.getByRole("button", { name: "Pedir algo más" }).click();
-    await expect(page.getByText(ITEM_DISPONIBLE)).toBeVisible();
+    // Vuelve a la carta: el ítem aparece como encabezado de su tarjeta. Con
+    // getByText también coincidía con la línea de «Mis pedidos».
+    await expect(
+      page.getByRole("heading", { name: ITEM_DISPONIBLE }),
+    ).toBeVisible();
     await expect(accesoMisPedidos(page)).toHaveAttribute(
       "aria-label",
       /Todo entregado/,
