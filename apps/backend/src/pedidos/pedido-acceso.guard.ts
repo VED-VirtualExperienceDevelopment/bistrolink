@@ -13,9 +13,18 @@ import {
   HEADER_PEDIDO_TOKEN,
   tokenAccesoCoincide,
 } from './token-acceso-pedido';
+import { leerLinkPago } from '../link-pago/link-pago-token';
+import {
+  estadoDelLink,
+  HEADER_LINK_PAGO,
+  linkPermite,
+  MENSAJE_LINK_INVALIDO,
+  mensajeDelLink,
+} from '../link-pago/link-pago';
 
 interface RequestConPedido extends RequestConMesaQr {
   params?: Record<string, string | undefined>;
+  method?: string;
 }
 
 /**
@@ -31,6 +40,10 @@ interface RequestConPedido extends RequestConMesaQr {
  *   un grupo anterior en esa mesa responde 403.
  * - Pedido para retirar (canal WEB): tiene que venir X-Pedido-Token, el token
  *   que se devolvió al crear el pedido.
+ * - HU-033 (BL-203): cualquier pedido, con X-Link-Pago, el link de pago que
+ *   generó el mozo. Tiene que ser el link vigente de este pedido: para pagar,
+ *   sin vencer; para consultar (GET), aunque haya vencido, así se puede
+ *   seguir un pago que se estaba verificando.
  *
  * Va después de AuthGuard('jwt'), RolesGuard y MesaQrGuard: necesita
  * `request.user` y, si vino el QR, `request.mesaQr` ya validado.
@@ -89,11 +102,25 @@ export class PedidoAccesoGuard implements CanActivate {
           canal: true,
           accesoTokenHash: true,
           createdAt: true,
+          estado: true,
+          linkPagoHash: true,
+          linkPagoVenceEn: true,
         },
       }),
     );
     if (!pedido) {
       throw new NotFoundException('Pedido no encontrado');
+    }
+
+    const linkPago = request.headers[HEADER_LINK_PAGO];
+    if (typeof linkPago === 'string' && linkPago.length > 0) {
+      return this.validarLinkPago(
+        linkPago,
+        tenantId,
+        pedidoId,
+        pedido,
+        request,
+      );
     }
 
     if (pedido.canal === 'QR') {
@@ -117,6 +144,30 @@ export class PedidoAccesoGuard implements CanActivate {
     }
     if (!tokenAccesoCoincide(token, pedido.accesoTokenHash)) {
       throw new ForbiddenException('No tenés acceso a este pedido');
+    }
+    return true;
+  }
+
+  /** HU-033 (BL-203): el link tiene que ser el vigente de este pedido. */
+  private validarLinkPago(
+    token: string,
+    tenantId: string,
+    pedidoId: string,
+    pedido: {
+      estado: string;
+      linkPagoHash: string | null;
+      linkPagoVenceEn: Date | null;
+    },
+    request: RequestConPedido,
+  ): true {
+    const datos = leerLinkPago(token);
+    if (datos?.tenantId !== tenantId || datos.pedidoId !== pedidoId) {
+      throw new ForbiddenException(MENSAJE_LINK_INVALIDO);
+    }
+    const estado = estadoDelLink(pedido, datos.nonce, new Date());
+    const soloLectura = (request.method ?? 'GET').toUpperCase() === 'GET';
+    if (!linkPermite(estado, soloLectura)) {
+      throw new ForbiddenException(mensajeDelLink(estado));
     }
     return true;
   }

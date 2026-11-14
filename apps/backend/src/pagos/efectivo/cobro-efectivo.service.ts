@@ -77,6 +77,11 @@ export interface PedidoPendienteDeCobro {
   /** El comensal tiene un pago con tarjeta en curso: no se puede cobrar en efectivo. */
   pagoEnCurso: boolean;
   /**
+   * HU-033 (BL-203): hasta cuándo sirve el link de pago vigente del pedido;
+   * null si no tiene o ya venció. Nunca el link: solo se ve al generarlo.
+   */
+  linkPagoVenceEn: Date | null;
+  /**
    * HU-031b (BL-442): el comensal avisó que paga en efectivo (cuándo y, si lo
    * dijo, con cuánto). Null si no avisó.
    */
@@ -262,6 +267,7 @@ export class CobroEfectivoService {
           efectivoPagaCon: true,
           propinaPorcentaje: true,
           propinaMonto: true,
+          linkPagoVenceEn: true,
           mesa: { select: { id: true, numero: true, esVirtual: true } },
           lineas: {
             orderBy: { createdAt: 'asc' },
@@ -297,6 +303,10 @@ export class CobroEfectivoService {
                 subtotal: linea.subtotal.toFixed(2),
               })),
               pagoEnCurso: pedido.pagos.length > 0,
+              linkPagoVenceEn:
+                pedido.linkPagoVenceEn && pedido.linkPagoVenceEn > ahora
+                  ? pedido.linkPagoVenceEn
+                  : null,
               efectivoSolicitado: pedido.efectivoSolicitadoEn
                 ? {
                     en: pedido.efectivoSolicitadoEn,
