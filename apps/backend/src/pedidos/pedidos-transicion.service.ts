@@ -46,6 +46,10 @@ const TRANSICIONES_KDS: Partial<Record<PedidoEstado, PedidoEstado[]>> = {
   LISTO_PARA_ENTREGAR: [PedidoEstado.ENTREGADO], // HU-018/BL-64
 };
 
+/** HU-040 (BL-210): el código que dio el comensal no es el de este pedido. */
+export const MENSAJE_CODIGO_NO_COINCIDE =
+  'El código no coincide con este pedido. Revisá el pedido antes de entregarlo.';
+
 /** HU-040 (BL-210): el retiro no se entrega con el botón común. */
 export const MENSAJE_ENTREGA_CON_CODIGO =
   'Los pedidos para retirar se entregan verificando el código de retiro';
@@ -225,10 +229,10 @@ export class PedidosTransicionService {
             : 'El pedido todavía no está listo para retirar',
         );
       }
+      // No se dice cuál es el código correcto: si no, escribir cualquier
+      // cosa alcanzaría para verlo y la verificación no serviría.
       if (pedido.codigoRetiro !== codigo) {
-        throw new ConflictException(
-          `El código no coincide: este pedido es el ${pedido.codigoRetiro}. Revisá el pedido antes de entregarlo.`,
-        );
+        throw new ConflictException(MENSAJE_CODIGO_NO_COINCIDE);
       }
       const usuario = await tx.usuario.findUnique({ where: { keycloakId } });
       if (!usuario) {

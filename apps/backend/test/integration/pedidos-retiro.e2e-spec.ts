@@ -459,9 +459,11 @@ describe('HU-040 (BL-210): pedidos para retirar', () => {
       await entregar(mozo, codigoRetiro!, 'no-es-uuid').expect(400);
       await entregar(mozo, codigoRetiro!, randomUUID()).expect(404);
       const distinto = await entregar(mozo, otroCodigo).expect(409);
+      // No revela cuál es el código correcto.
       expect(distinto.body.message).toBe(
-        `El código no coincide: este pedido es el ${codigoRetiro}. Revisá el pedido antes de entregarlo.`,
+        'El código no coincide con este pedido. Revisá el pedido antes de entregarlo.',
       );
+      expect(distinto.body.message).not.toContain(codigoRetiro!);
       expect((await leer(id)).estado).toBe('LISTO_PARA_ENTREGAR');
 
       // Como lo escribe el colaborador: «r42» vale por «R-042».

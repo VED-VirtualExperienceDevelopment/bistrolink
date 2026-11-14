@@ -130,6 +130,6 @@ Usuarios Mozo y Cocina del tenant A (Keycloak de pruebas). Un pedido para retira
 1. 409: «El pedido todavía no está listo para retirar».
 2. Se rechaza: los pedidos para retirar se entregan verificando el código.
 3. 403.
-4. 400, 400, 404 y 409 «El código no coincide: este pedido es el R-NNN. Revisá el pedido antes de entregarlo.». El pedido sigue listo.
+4. 400, 400, 404 y 409 «El código no coincide con este pedido. Revisá el pedido antes de entregarlo.», sin mostrar el código correcto. El pedido sigue listo.
 5. 200: el pedido queda ENTREGADO, con una sola entrada en el historial.
 6. 409: «Este pedido ya se entregó».

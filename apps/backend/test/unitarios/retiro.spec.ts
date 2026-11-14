@@ -21,6 +21,7 @@ import {
 } from '../../src/pedidos/retiro';
 import { PedidosService } from '../../src/pedidos/pedidos.service';
 import {
+  MENSAJE_CODIGO_NO_COINCIDE,
   MENSAJE_ENTREGA_CON_CODIGO,
   PedidosTransicionService,
 } from '../../src/pedidos/pedidos-transicion.service';
@@ -475,7 +476,7 @@ describe('PedidosTransicionService: entrega del retiro (BL-210)', () => {
       'el código no coincide',
       { estado: 'LISTO_PARA_ENTREGAR', codigoRetiro: 'R-043' },
       ConflictException,
-      'El código no coincide: este pedido es el R-043',
+      MENSAJE_CODIGO_NO_COINCIDE,
     ],
   ])('%s: no entrega', async (_caso, leido, tipo, mensaje) => {
     tx.pedido.findUnique.mockResolvedValue(leido);
@@ -483,6 +484,17 @@ describe('PedidosTransicionService: entrega del retiro (BL-210)', () => {
     await expect(intento).rejects.toBeInstanceOf(tipo);
     await expect(intento).rejects.toThrow(mensaje);
     expect(tx.pedido.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('si el código no coincide, no dice cuál es el correcto', async () => {
+    tx.pedido.findUnique.mockResolvedValue({
+      estado: 'LISTO_PARA_ENTREGAR',
+      codigoRetiro: 'R-043',
+    });
+    const error = await entregar().catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ConflictException);
+    expect((error as Error).message).toBe(MENSAJE_CODIGO_NO_COINCIDE);
+    expect((error as Error).message).not.toContain('R-043');
   });
 
   it('sin fila de usuario: 404; si otro lo entregó entre medio: 409', async () => {
