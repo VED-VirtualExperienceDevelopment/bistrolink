@@ -44,6 +44,8 @@
 | 1.37    | 14/11/2026 | TC-I-211: el logo del local solo acepta un logo publicado del mismo tenant (HU-043 / BL-532), para cargar con el script antes de mergear el PR.                                                                                           |
 | 1.38    | 14/11/2026 | TC-I-212: el Administrador cambia el nombre y la dirección del local, con auditoría, y la carta los muestra (HU-043 / BL-561), para cargar con el script antes de mergear el PR.                                                          |
 | 1.39    | 14/11/2026 | TC-I-199 a 202: pedidos para retirar (HU-040 / BL-210). Se borran los bloques ya cargados (TC-I-206 a 209 y 009).                                                                                                                         |
+| 1.40    | 14/11/2026 | TC-I-213: la portada del banner solo acepta una portada publicada del mismo tenant (HU-043 / BL-562), para cargar con el script antes de mergear el PR.                                                                                   |
+| 1.41    | 14/11/2026 | Los casos de HU-043 pasan de TC-I-210 a 213 a TC-I-217 a 220: esos números ya los usa HU-033 (BL-203, pago por link) en Kiwi.                                                                                                             |
 
 Texto del campo de descripción de cada caso TC-I en Kiwi. Lo carga
 `cargar-casos-integracion.mjs --descripciones`: cada bloque `## TC-I-NNN`
@@ -55,7 +57,29 @@ esperado`, igual que los casos cargados a mano desde TC-I-029.
 
 ## Casos para cargar
 
-## TC-I-212
+## TC-I-220
+
+### Precondición
+
+Tenant A del seed con su restaurante. Se anota la portada guardada (o que no tiene).
+
+### Pasos
+
+1. Cambiar la configuración con el servicio, con `portadaKey` de una portada del tenant B.
+2. Lo mismo con la key del logo del tenant A (`{tenant}/menu/marca/{uuid}.webp`).
+3. Lo mismo con la key de la foto de un ítem del tenant A (`{tenant}/menu/{uuid}.webp`).
+4. Lo mismo con una key de la cuarentena del tenant A (`incoming/…`).
+5. Buscar en la auditoría los registros `ESTABLECIMIENTO_CONFIGURACION_MODIFICADA` del actor del test y leer la portada guardada.
+
+### Resultado esperado
+
+1. 400 «La portada no es válida para este establecimiento».
+2. 400, con el mismo mensaje.
+3. 400, con el mismo mensaje.
+4. 400, con el mismo mensaje.
+5. Ningún registro nuevo y la portada guardada no cambió.
+
+## TC-I-219
 
 ### Precondición
 
@@ -75,7 +99,7 @@ Tenant A del seed con su restaurante. El nombre y la dirección guardados se ano
 3. Un solo registro, con los campos `nombre` y `direccion` y sus valores antes y después.
 4. La carta muestra el nombre y la dirección nuevos.
 
-## TC-I-211
+## TC-I-218
 
 ### Precondición
 
@@ -95,7 +119,7 @@ Tenant A del seed con su restaurante. Se anota el logo guardado (o que no tiene)
 3. 400, con el mismo mensaje.
 4. Ningún registro nuevo y el logo guardado no cambió.
 
-## TC-I-210
+## TC-I-217
 
 ### Precondición
 

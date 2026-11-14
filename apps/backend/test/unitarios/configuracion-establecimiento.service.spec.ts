@@ -46,6 +46,8 @@ const RESTAURANTE_ACTUAL = {
   plantilla: 'clasica',
   // HU-043 (BL-532): sin logo.
   logoKey: null as string | null,
+  // HU-043 (BL-562): sin portada.
+  portadaKey: null as string | null,
 };
 
 // HU-043 (BL-532): un logo publicado del tenant y otro de un ítem.
@@ -64,6 +66,7 @@ describe('ConfiguracionEstablecimientoService (HU-020, BL-72)', () => {
   };
   let storage: {
     esKeyDeMarcaDelTenant: jest.Mock;
+    esKeyDePortadaDelTenant: jest.Mock;
     existeImagen: jest.Mock;
     urlFirmadaDeLectura: jest.Mock;
   };
@@ -112,6 +115,10 @@ describe('ConfiguracionEstablecimientoService (HU-020, BL-72)', () => {
         (key: string, tenantId: string) =>
           key === `${tenantId}/menu/marca/${UUID_LOGO}.webp`,
       ),
+      esKeyDePortadaDelTenant: jest.fn(
+        (key: string, tenantId: string) =>
+          key === `${tenantId}/menu/portada/${UUID_LOGO}.webp`,
+      ),
       existeImagen: jest.fn().mockResolvedValue(true),
       urlFirmadaDeLectura: jest.fn().mockResolvedValue(URL_LOGO),
     };
@@ -131,11 +138,13 @@ describe('ConfiguracionEstablecimientoService (HU-020, BL-72)', () => {
       // HU-043 (BL-532): el logo va como URL; la key no se devuelve.
       const restaurante: Record<string, unknown> = { ...RESTAURANTE_ACTUAL };
       delete restaurante.logoKey;
+      delete restaurante.portadaKey;
       expect(configuracion).toEqual({
         razonSocial: RAZON_SOCIAL,
         rut: RUT,
         ...restaurante,
         logoUrl: null,
+        portadaUrl: null,
         mediosPagoDisponibles: ['EFECTIVO', 'MERCADOPAGO', 'POS'],
         proveedoresCfeDisponibles: ['SURTEC'],
         // HU-043 (BL-531): la plantilla y las que se pueden elegir.
@@ -688,6 +697,59 @@ describe('ConfiguracionEstablecimientoService (HU-020, BL-72)', () => {
         }),
       );
       expect(configuracion.logoUrl).toBeNull();
+    });
+
+    it('[TC-U-547] HU-043 (BL-562): una portada publicada del tenant se guarda, se audita y se responde como URL firmada', async () => {
+      const keyPortada = `${TENANT_ID}/menu/portada/${UUID_LOGO}.webp`;
+      storage.urlFirmadaDeLectura.mockResolvedValue(
+        'https://firmada.example/portada.webp',
+      );
+
+      const configuracion = await service.actualizar(
+        TENANT_ID,
+        { portadaKey: keyPortada },
+        ACTOR,
+      );
+
+      expect(storage.existeImagen).toHaveBeenCalledWith(keyPortada);
+      expect(tx.restaurante.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { portadaKey: keyPortada } }),
+      );
+      expect(auditLog.registrarEnTx).toHaveBeenCalledWith(
+        tx,
+        expect.objectContaining({
+          detalle: { campos: ['portadaKey'] },
+          antes: { portadaKey: null },
+          despues: { portadaKey: keyPortada },
+        }),
+      );
+      expect(configuracion.portadaUrl).toBe(
+        'https://firmada.example/portada.webp',
+      );
+      expect(configuracion).not.toHaveProperty('portadaKey');
+    });
+
+    it('[TC-U-548] HU-043 (BL-562): el logo no sirve de portada ni la portada de logo (400 sin abrir la transacción)', async () => {
+      await expect(
+        service.actualizar(TENANT_ID, { portadaKey: KEY_LOGO }, ACTOR),
+      ).rejects.toThrow(
+        new BadRequestException(
+          'La portada no es válida para este establecimiento',
+        ),
+      );
+      await expect(
+        service.actualizar(
+          TENANT_ID,
+          { logoKey: `${TENANT_ID}/menu/portada/${UUID_LOGO}.webp` },
+          ACTOR,
+        ),
+      ).rejects.toThrow(
+        new BadRequestException(
+          'El logo no es válido para este establecimiento',
+        ),
+      );
+      expect(contextos).toEqual([]);
+      expect(storage.existeImagen).not.toHaveBeenCalled();
     });
   });
 });

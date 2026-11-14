@@ -435,7 +435,7 @@ describe('HU-020 (BL-72): configuración del establecimiento', () => {
     expect(await leerConfiguracion()).toEqual(original);
   });
 
-  it('[TC-I-210] HU-043 (BL-531): la plantilla de marca se guarda y se audita; la base rechaza una que no está en la lista (CHECK)', async () => {
+  it('[TC-I-217] HU-043 (BL-531): la plantilla de marca se guarda y se audita; la base rechaza una que no está en la lista (CHECK)', async () => {
     const otra = original.plantilla === 'gourmet' ? 'familiar' : 'gourmet';
 
     const respuesta = await configuracion.actualizar(
@@ -469,7 +469,7 @@ describe('HU-020 (BL-72): configuración del establecimiento', () => {
     expect((await leerConfiguracion()).plantilla).toBe(otra);
   });
 
-  it('[TC-I-212] HU-043 (BL-561): el Administrador cambia el nombre y la dirección del local; se auditan y la carta los muestra', async () => {
+  it('[TC-I-219] HU-043 (BL-561): el Administrador cambia el nombre y la dirección del local; se auditan y la carta los muestra', async () => {
     const nombre = `${original.nombre} (cambiado)`;
     const direccion = `${original.direccion} bis`;
 
@@ -505,7 +505,7 @@ describe('HU-020 (BL-72): configuración del establecimiento', () => {
     expect(menu.restaurante).toMatchObject({ nombre, direccion });
   });
 
-  it('[TC-I-211] HU-043 (BL-532): una key de otro tenant, de la cuarentena o de un ítem no se guarda como logo (400, sin auditoría)', async () => {
+  it('[TC-I-218] HU-043 (BL-532): una key de otro tenant, de la cuarentena o de un ítem no se guarda como logo (400, sin auditoría)', async () => {
     const uuid = randomUUID();
     const logoAntes = await enTenant<string | null>(async (tx) => {
       const restaurante = await tx.restaurante.findUniqueOrThrow({
@@ -534,5 +534,36 @@ describe('HU-020 (BL-72): configuración del establecimiento', () => {
       return restaurante.logoKey;
     });
     expect(logoDespues).toBe(logoAntes);
+  });
+
+  it('[TC-I-220] HU-043 (BL-562): el logo, la foto de un ítem o una portada de otro tenant no se guardan como portada (400, sin auditoría)', async () => {
+    const uuid = randomUUID();
+    const leerPortada = () =>
+      enTenant<string | null>(async (tx) => {
+        const restaurante = await tx.restaurante.findUniqueOrThrow({
+          where: { tenantId: TENANT_ID },
+          select: { portadaKey: true },
+        });
+        return restaurante.portadaKey;
+      });
+    const portadaAntes = await leerPortada();
+
+    for (const portadaKey of [
+      `b02579f2-2bb0-496b-abf2-33c494c93122/menu/portada/${uuid}.webp`,
+      `${TENANT_ID}/menu/marca/${uuid}.webp`,
+      `${TENANT_ID}/menu/${uuid}.webp`,
+      `incoming/${TENANT_ID}/${uuid}`,
+    ]) {
+      await expect(
+        configuracion.actualizar(
+          TENANT_ID,
+          { portadaKey },
+          { id: ACTOR_PRUEBA },
+        ),
+      ).rejects.toThrow('La portada no es válida para este establecimiento');
+    }
+
+    expect(await auditoria()).toHaveLength(0);
+    expect(await leerPortada()).toBe(portadaAntes);
   });
 });

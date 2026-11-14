@@ -950,25 +950,32 @@ const DATOS_INTEGRACION = {
   },
   // HU-043 (BL-531): plantilla de marca del local, en
   // configuracion-establecimiento.e2e-spec.ts.
-  210: configuracionEstablecimiento({
+  217: configuracionEstablecimiento({
     category: "Funcional",
     priority: "P3",
     requirement: "HU-043",
     tags: ["HU-043", "BL-531", "marca", "auditoria", "validacion"],
   }),
   // HU-043 (BL-532): el logo tiene que ser un logo publicado del tenant.
-  211: configuracionEstablecimiento({
+  218: configuracionEstablecimiento({
     category: "Seguridad",
     priority: "P2",
     requirement: "HU-043",
     tags: ["HU-043", "BL-532", "marca", "imagenes", "validacion"],
   }),
   // HU-043 (BL-561): nombre y dirección del local desde Configuración.
-  212: configuracionEstablecimiento({
+  219: configuracionEstablecimiento({
     category: "Funcional",
     priority: "P2",
     requirement: "HU-043",
     tags: ["HU-043", "BL-561", "marca", "auditoria", "menu"],
+  }),
+  // HU-043 (BL-562): la portada tiene que ser una portada publicada del tenant.
+  220: configuracionEstablecimiento({
+    category: "Seguridad",
+    priority: "P2",
+    requirement: "HU-043",
+    tags: ["HU-043", "BL-562", "marca", "imagenes", "validacion"],
   }),
 };
 /**

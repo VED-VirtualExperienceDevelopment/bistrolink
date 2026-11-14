@@ -344,4 +344,16 @@ export class ActualizarConfiguracionDto {
     message: 'La hora de cierre del retiro tiene que tener la forma HH:MM',
   })
   retiroHoraHasta?: string | null;
+
+  // HU-043 (BL-562): foto de portada del banner de la carta. Es la key que
+  // devuelve la confirmación con destino `portada`; la controla el servicio
+  // (400 si no es una portada publicada de este establecimiento). null la
+  // quita (vuelve la portada por defecto).
+  @IsOptional()
+  @ValidateIf((_dto, valor) => valor !== null)
+  @IsString({ message: 'La portada debe ser la key de una imagen confirmada' })
+  @MaxLength(LARGO_MAXIMO_KEY_LOGO, {
+    message: `La key de la portada puede tener hasta ${LARGO_MAXIMO_KEY_LOGO} caracteres`,
+  })
+  portadaKey?: string | null;
 }

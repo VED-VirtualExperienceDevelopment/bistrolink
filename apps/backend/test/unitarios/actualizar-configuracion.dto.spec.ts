@@ -263,6 +263,25 @@ describe('ActualizarConfiguracionDto (HU-020, BL-72)', () => {
     );
   });
 
+  describe('HU-043 (BL-562): portada del banner', () => {
+    it('[TC-U-546] acepta una key (la controla el servicio) y null para quitarla', async () => {
+      expect(
+        await errores({
+          portadaKey:
+            '11111111-1111-1111-1111-111111111111/menu/portada/0b4f6a3e-1111-4c2d-9e8f-123456789abc.webp',
+        }),
+      ).toEqual([]);
+      expect(await errores({ portadaKey: null })).toEqual([]);
+    });
+
+    it.each([1, false, 'x'.repeat(201)])(
+      '[TC-U-546] rechaza portadaKey = %p (no es texto o es demasiado larga)',
+      async (portadaKey) => {
+        expect(await errores({ portadaKey })).toEqual(['portadaKey']);
+      },
+    );
+  });
+
   describe('HU-043 (BL-532): logo del local', () => {
     it('[TC-U-519] acepta una key (la controla el servicio) y null para quitarlo', async () => {
       expect(

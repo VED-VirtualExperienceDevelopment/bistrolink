@@ -78,6 +78,11 @@ export interface ConfiguracionEstablecimiento {
   /** HU-040 (BL-210): franja diaria HH:MM; las dos null = todo el día. */
   retiroHoraDesde: string | null;
   retiroHoraHasta: string | null;
+  /**
+   * HU-043 (BL-562): URL firmada de la portada del banner, para la vista
+   * previa. null = la portada por defecto. La key no se devuelve.
+   */
+  portadaUrl: string | null;
 }
 
 /** Campos de la configuración que viven en restaurante. */
@@ -112,6 +117,8 @@ const SELECT_RESTAURANTE = {
   retiroHabilitado: true,
   retiroHoraDesde: true,
   retiroHoraHasta: true,
+  // HU-043 (BL-562): portada del banner, igual que el logo.
+  portadaKey: true,
 } satisfies Prisma.RestauranteSelect;
 
 /** HU-042 (BL-465): campos que cambian el estado de la cola del KDS. */
@@ -238,9 +245,13 @@ export class ConfiguracionEstablecimientoService {
     if (pedidos.length === 0) {
       throw new BadRequestException('No hay cambios');
     }
-    // HU-043 (BL-532): antes de abrir la transacción (consulta el bucket).
+    // HU-043 (BL-532 y BL-562): antes de abrir la transacción (consultan el
+    // bucket).
     if (typeof dto.logoKey === 'string') {
-      await this.validarLogo(dto.logoKey, tenantId);
+      await this.validarImagenDeMarca('logo', dto.logoKey, tenantId);
+    }
+    if (typeof dto.portadaKey === 'string') {
+      await this.validarImagenDeMarca('portada', dto.portadaKey, tenantId);
     }
 
     const resultado = await this.tenantPrisma.runInTenantContext(
@@ -287,30 +298,47 @@ export class ConfiguracionEstablecimientoService {
   }
 
   /**
-   * HU-043 (BL-532): el logo tiene que ser un logo publicado de este
-   * establecimiento ({tenant}/menu/marca/{uuid}.webp) y existir en el
-   * bucket. Mismo criterio que las imágenes de los ítems (BL-387).
+   * HU-043 (BL-532 y BL-562): el logo tiene que ser un logo publicado de
+   * este establecimiento ({tenant}/menu/marca/{uuid}.webp), y la portada una
+   * portada publicada ({tenant}/menu/portada/{uuid}.webp). Las dos tienen
+   * que existir en el bucket. Mismo criterio que las imágenes de los ítems
+   * (BL-387).
    */
-  private async validarLogo(key: string, tenantId: string): Promise<void> {
-    if (!this.storage.esKeyDeMarcaDelTenant(key, tenantId)) {
-      // Mismo mensaje para una key de otro tenant, de la cuarentena o de un
-      // ítem: no se revela si existe en otro establecimiento.
+  private async validarImagenDeMarca(
+    tipo: 'logo' | 'portada',
+    key: string,
+    tenantId: string,
+  ): Promise<void> {
+    const esLogo = tipo === 'logo';
+    const valida = esLogo
+      ? this.storage.esKeyDeMarcaDelTenant(key, tenantId)
+      : this.storage.esKeyDePortadaDelTenant(key, tenantId);
+    if (!valida) {
+      // Mismo mensaje para una key de otro tenant, de la cuarentena, de un
+      // ítem o del otro tipo: no se revela si existe en otro establecimiento.
       throw new BadRequestException(
-        'El logo no es válido para este establecimiento',
+        esLogo
+          ? 'El logo no es válido para este establecimiento'
+          : 'La portada no es válida para este establecimiento',
       );
     }
     if (!(await this.storage.existeImagen(key))) {
       throw new BadRequestException(
-        'El logo indicado no existe. Volvé a subirlo.',
+        esLogo
+          ? 'El logo indicado no existe. Volvé a subirlo.'
+          : 'La portada indicada no existe. Volvé a subirla.',
       );
     }
   }
 
-  /** La respuesta de GET y PATCH: el logo va como URL firmada, sin la key. */
+  /**
+   * La respuesta de GET y PATCH: el logo y la portada van como URL firmada,
+   * sin la key.
+   */
   private async armarRespuesta(
     actual: Actual,
   ): Promise<ConfiguracionEstablecimiento> {
-    const { logoKey, ...restaurante } = actual.restaurante;
+    const { logoKey, portadaKey, ...restaurante } = actual.restaurante;
     return {
       razonSocial: actual.razonSocial,
       rut: actual.rut,
@@ -318,6 +346,9 @@ export class ConfiguracionEstablecimientoService {
       // La columna es texto (con CHECK): acá se acota al tipo.
       plantilla: restaurante.plantilla as PlantillaMarca,
       logoUrl: logoKey ? await this.storage.urlFirmadaDeLectura(logoKey) : null,
+      portadaUrl: portadaKey
+        ? await this.storage.urlFirmadaDeLectura(portadaKey)
+        : null,
       mediosPagoDisponibles: [...MEDIOS_PAGO_DISPONIBLES],
       proveedoresCfeDisponibles: [...PROVEEDORES_CFE_DISPONIBLES],
       plantillasDisponibles: [...PLANTILLAS_MARCA],

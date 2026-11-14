@@ -226,6 +226,9 @@ model Restaurante {
   // Último código de retiro entregado (R-001 a R-999, después vuelve a
   // empezar). Se incrementa con un UPDATE atómico al aprobarse el pago.
   ultimoCodigoRetiro          Int          @default(0) @map("ultimo_codigo_retiro")
+  // HU-043 (BL-562): foto de portada del banner de la carta. Clave en el
+  // almacenamiento de imágenes. Null = la portada por defecto.
+  portadaKey                  String?      @map("portada_key")
   createdAt                   DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt                   DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
 
