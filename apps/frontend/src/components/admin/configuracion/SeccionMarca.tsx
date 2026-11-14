@@ -314,7 +314,7 @@ function TarjetaPlantilla({
             >
               check_circle
             </span>
-            Elegida
+            <span>Elegida</span>
           </span>
         )}
       </div>

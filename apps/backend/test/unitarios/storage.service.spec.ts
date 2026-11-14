@@ -169,6 +169,17 @@ describe('StorageService', () => {
       );
       expect(getSignedUrl).not.toHaveBeenCalled();
     });
+
+    it('[TC-U-543] HU-043 (BL-562): la portada ({tenant}/menu/portada/{uuid}.webp) también sale por la CDN', async () => {
+      process.env.IMAGES_CDN_URL = 'https://cdn.example';
+      const portada =
+        'tenant-a/menu/portada/0b6f2c1e-3c4d-4e5f-8a9b-0c1d2e3f4a5b.webp';
+
+      await expect(service.urlImagenPublica(portada)).resolves.toBe(
+        `https://cdn.example/${portada}`,
+      );
+      expect(getSignedUrl).not.toHaveBeenCalled();
+    });
   });
 
   describe('urlFirmadaDeSubida', () => {
@@ -345,6 +356,39 @@ describe('StorageService', () => {
       ['vacía', ''],
     ])('[TC-U-517] rechaza una key %s', (_caso, key) => {
       expect(service.esKeyDeMarcaDelTenant(key, 'tenant-123')).toBe(false);
+    });
+  });
+
+  describe('esKeyDePortadaDelTenant (HU-043, BL-562)', () => {
+    const UUID = '0b4f6a3e-1111-4c2d-9e8f-123456789abc';
+
+    it('[TC-U-544] acepta una portada publicada del tenant', () => {
+      expect(
+        service.esKeyDePortadaDelTenant(
+          `tenant-123/menu/portada/${UUID}.webp`,
+          'tenant-123',
+        ),
+      ).toBe(true);
+    });
+
+    it.each([
+      ['de otro tenant', `otro-tenant/menu/portada/${UUID}.webp`],
+      [
+        'con un prefijo que empieza igual',
+        `tenant-1234/menu/portada/${UUID}.webp`,
+      ],
+      ['del logo del local', `tenant-123/menu/marca/${UUID}.webp`],
+      ['de un ítem de la carta', `tenant-123/menu/${UUID}.webp`],
+      ['de la cuarentena', `incoming/tenant-123/${UUID}`],
+      ['sin procesar (png)', `tenant-123/menu/portada/${UUID}.png`],
+      ['con barras extra', `tenant-123/menu/portada/x/${UUID}.webp`],
+      [
+        'con path traversal',
+        `tenant-123/menu/portada/../../otro-tenant/menu/portada/${UUID}.webp`,
+      ],
+      ['vacía', ''],
+    ])('[TC-U-544] rechaza una key %s', (_caso, key) => {
+      expect(service.esKeyDePortadaDelTenant(key, 'tenant-123')).toBe(false);
     });
   });
 
