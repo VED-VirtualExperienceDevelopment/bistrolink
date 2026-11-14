@@ -21,6 +21,7 @@ import {
   MINUTOS_ESPERA_MAXIMO,
   MINUTOS_ESPERA_MINIMO,
 } from '../../pedidos/umbrales-espera';
+import { PLANTILLAS_MARCA, type PlantillaMarca } from '../plantillas-marca';
 
 /** HU-020 (BL-72): hasta cuántos porcentajes de propina se sugieren. */
 export const MAXIMO_PROPINAS_SUGERIDAS = 5;
@@ -263,4 +264,12 @@ export class ActualizarConfiguracionDto {
     message: `«Demora alta desde» puede ser como máximo ${MINUTOS_ESPERA_MAXIMO} minutos`,
   })
   minutosEsperaDemoraAlta?: number;
+
+  // HU-043 (BL-531): plantilla de colores de la carta. Opcional, pero nunca
+  // null (columna NOT NULL). La base tiene el mismo control (CHECK).
+  @ValidateIf((_dto, valor) => valor !== undefined)
+  @IsIn(PLANTILLAS_MARCA, {
+    message: `Plantilla no disponible. Se puede elegir: ${PLANTILLAS_MARCA.join(', ')}`,
+  })
+  plantilla?: PlantillaMarca;
 }

@@ -38,6 +38,8 @@ function configuracionSeedA() {
     minutosEsperaAtencion: 30,
     minutosEsperaDemorado: 60,
     minutosEsperaDemoraAlta: 120,
+    plantilla: 'clasica',
+    plantillasDisponibles: ['clasica', 'gourmet', 'rapida', 'familiar'],
   } as any;
 }
 
@@ -143,6 +145,22 @@ describe('LimpiezaConfiguracionService', () => {
     expect(configuracion.actualizar).toHaveBeenCalledWith(
       TENANT_A,
       { propinaPreseleccionada: false },
+      { id: ACTOR },
+    );
+  });
+
+  it('[TC-U-513] HU-043 (BL-531): una plantilla de marca que dejó un E2E vuelve a la clásica', async () => {
+    const { configuracion, service } = armar({
+      ...configuracionSeedA(),
+      plantilla: 'gourmet',
+    });
+
+    expect(await service.limpiar(TENANT_A, ACTOR, false)).toEqual({
+      camposRestablecidos: ['plantilla'],
+    });
+    expect(configuracion.actualizar).toHaveBeenCalledWith(
+      TENANT_A,
+      { plantilla: 'clasica' },
       { id: ACTOR },
     );
   });

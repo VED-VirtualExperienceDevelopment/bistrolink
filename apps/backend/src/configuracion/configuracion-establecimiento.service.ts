@@ -22,6 +22,7 @@ import {
   MedioPagoConfigurable,
   PROVEEDORES_CFE_DISPONIBLES,
 } from './dto/actualizar-configuracion.dto';
+import { PLANTILLAS_MARCA, type PlantillaMarca } from './plantillas-marca';
 
 /** HU-020 (BL-72): respuesta de GET y PATCH /admin/configuracion. */
 export interface ConfiguracionEstablecimiento {
@@ -58,6 +59,10 @@ export interface ConfiguracionEstablecimiento {
   minutosEsperaDemorado: number;
   /** HU-038 (BL-506): desde cuántos minutos pasa a «Demora alta». */
   minutosEsperaDemoraAlta: number;
+  /** HU-043 (BL-531): plantilla de colores de la carta del comensal. */
+  plantilla: PlantillaMarca;
+  /** HU-043 (BL-531): las que se pueden elegir. */
+  plantillasDisponibles: PlantillaMarca[];
 }
 
 /** Campos de la configuración que viven en restaurante. */
@@ -80,6 +85,9 @@ const SELECT_RESTAURANTE = {
   minutosEsperaAtencion: true,
   minutosEsperaDemorado: true,
   minutosEsperaDemoraAlta: true,
+  // HU-043 (BL-531): plantilla de marca, con antes y después en la
+  // auditoría. El logo (logoKey) lo expone BL-532, como URL firmada.
+  plantilla: true,
 } satisfies Prisma.RestauranteSelect;
 
 /** HU-042 (BL-465): campos que cambian el estado de la cola del KDS. */
@@ -164,10 +172,12 @@ function igual(a: unknown, b: unknown): boolean {
  *   si una falla, no queda ninguna de las dos.
  * - HU-038 (BL-506): los umbrales de espera del KDS tienen que quedar de
  *   menor a mayor (400 si no); al cambiarlos se avisa a los KDS abiertos.
+ * - HU-043 (BL-531): la plantilla de marca se elige de una lista cerrada
+ *   (400 si no); los colores viven en el frontend.
  * - Auditoría ESTABLECIMIENTO_CONFIGURACION_MODIFICADA con los campos que
- *   cambiaron y, para medios de pago, propinas y CFE, los valores antes y
- *   después. La razón social va sin el valor, mismo criterio que BL-412: en
- *   un unipersonal es el nombre de una persona.
+ *   cambiaron y, para medios de pago, propinas, CFE y plantilla, los
+ *   valores antes y después. La razón social va sin el valor, mismo
+ *   criterio que BL-412: en un unipersonal es el nombre de una persona.
  */
 @Injectable()
 export class ConfiguracionEstablecimientoService {
@@ -369,7 +379,10 @@ function armarRespuesta(actual: Actual): ConfiguracionEstablecimiento {
     razonSocial: actual.razonSocial,
     rut: actual.rut,
     ...actual.restaurante,
+    // La columna es texto (con CHECK): acá se acota al tipo.
+    plantilla: actual.restaurante.plantilla as PlantillaMarca,
     mediosPagoDisponibles: [...MEDIOS_PAGO_DISPONIBLES],
     proveedoresCfeDisponibles: [...PROVEEDORES_CFE_DISPONIBLES],
+    plantillasDisponibles: [...PLANTILLAS_MARCA],
   };
 }

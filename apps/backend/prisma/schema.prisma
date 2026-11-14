@@ -209,6 +209,12 @@ model Restaurante {
   minutosEsperaAtencion       Int          @default(30) @map("minutos_espera_atencion")
   minutosEsperaDemorado       Int          @default(60) @map("minutos_espera_demorado")
   minutosEsperaDemoraAlta     Int          @default(120) @map("minutos_espera_demora_alta")
+  // HU-043 (BL-531): marca propia, fase 1. Clave del logo en el
+  // almacenamiento de imágenes (la sube y la valida BL-532). Null = sin logo.
+  logoKey                     String?      @map("logo_key")
+  // Plantilla de colores de la carta: clasica, gourmet, rapida o familiar
+  // (CHECK en la migración). Los colores viven en el frontend.
+  plantilla                   String       @default("clasica") @db.VarChar(20)
   createdAt                   DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt                   DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
 

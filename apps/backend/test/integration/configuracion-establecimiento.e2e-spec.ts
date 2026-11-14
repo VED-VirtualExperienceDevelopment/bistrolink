@@ -68,6 +68,8 @@ interface Configuracion {
   minutosEsperaAtencion: number;
   minutosEsperaDemorado: number;
   minutosEsperaDemoraAlta: number;
+  // HU-043 (BL-531): también se restaura al terminar cada test.
+  plantilla: string;
 }
 
 describe('HU-020 (BL-72): configuración del establecimiento', () => {
@@ -103,6 +105,7 @@ describe('HU-020 (BL-72): configuración del establecimiento', () => {
           minutosEsperaAtencion: true,
           minutosEsperaDemorado: true,
           minutosEsperaDemoraAlta: true,
+          plantilla: true,
         },
       });
       return { ...tenant, ...restaurante };
@@ -424,5 +427,39 @@ describe('HU-020 (BL-72): configuración del establecimiento', () => {
     ).rejects.toThrow(/restaurante_minutos_espera_rango|23514/);
 
     expect(await leerConfiguracion()).toEqual(original);
+  });
+
+  it('[TC-I-210] HU-043 (BL-531): la plantilla de marca se guarda y se audita; la base rechaza una que no está en la lista (CHECK)', async () => {
+    const otra = original.plantilla === 'gourmet' ? 'familiar' : 'gourmet';
+
+    const respuesta = await configuracion.actualizar(
+      TENANT_ID,
+      { plantilla: otra },
+      { id: ACTOR_PRUEBA },
+    );
+
+    expect(respuesta).toMatchObject({
+      plantilla: otra,
+      plantillasDisponibles: ['clasica', 'gourmet', 'rapida', 'familiar'],
+    });
+    expect((await leerConfiguracion()).plantilla).toBe(otra);
+    const registros = await auditoria();
+    expect(registros).toHaveLength(1);
+    expect(registros[0]).toMatchObject({
+      detalle: { campos: ['plantilla'] },
+      valoresAntes: { plantilla: original.plantilla },
+      valoresDespues: { plantilla: otra },
+    });
+
+    // Directo a la base: el CHECK de la migración (23514 de Postgres).
+    await expect(
+      enTenant((tx) =>
+        tx.restaurante.update({
+          where: { tenantId: TENANT_ID },
+          data: { plantilla: 'azul' },
+        }),
+      ),
+    ).rejects.toThrow(/restaurante_plantilla_valida|23514/);
+    expect((await leerConfiguracion()).plantilla).toBe(otra);
   });
 });

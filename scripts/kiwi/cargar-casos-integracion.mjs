@@ -920,6 +920,14 @@ const DATOS_INTEGRACION = {
     priority: "P3",
     tags: ["HU-042", "BL-472", "plataforma", "kds", "cola", "validacion"],
   },
+  // HU-043 (BL-531): plantilla de marca del local, en
+  // configuracion-establecimiento.e2e-spec.ts.
+  210: configuracionEstablecimiento({
+    category: "Funcional",
+    priority: "P3",
+    requirement: "HU-043",
+    tags: ["HU-043", "BL-531", "marca", "auditoria", "validacion"],
+  }),
 };
 /**
  * BL-435: datos de los E2E TC-E-017 en adelante, con los criterios de

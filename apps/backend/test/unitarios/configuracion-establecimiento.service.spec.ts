@@ -38,6 +38,8 @@ const RESTAURANTE_ACTUAL = {
   minutosEsperaAtencion: 30,
   minutosEsperaDemorado: 60,
   minutosEsperaDemoraAlta: 120,
+  // HU-043 (BL-531): plantilla de marca por defecto.
+  plantilla: 'clasica',
 };
 
 describe('ConfiguracionEstablecimientoService (HU-020, BL-72)', () => {
@@ -106,6 +108,8 @@ describe('ConfiguracionEstablecimientoService (HU-020, BL-72)', () => {
         ...RESTAURANTE_ACTUAL,
         mediosPagoDisponibles: ['EFECTIVO', 'MERCADOPAGO', 'POS'],
         proveedoresCfeDisponibles: ['SURTEC'],
+        // HU-043 (BL-531): la plantilla y las que se pueden elegir.
+        plantillasDisponibles: ['clasica', 'gourmet', 'rapida', 'familiar'],
       });
     });
 
@@ -488,6 +492,49 @@ describe('ConfiguracionEstablecimientoService (HU-020, BL-72)', () => {
       );
 
       expect(kdsGateway.emitirUmbralesEspera).not.toHaveBeenCalled();
+    });
+
+    it('[TC-U-511] HU-043 (BL-531): cambiar la plantilla la guarda y la audita con antes y después, sin avisar al KDS', async () => {
+      const configuracion = await service.actualizar(
+        TENANT_ID,
+        { plantilla: 'gourmet' },
+        ACTOR,
+      );
+
+      expect(tx.restaurante.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { tenantId: TENANT_ID },
+          data: { plantilla: 'gourmet' },
+        }),
+      );
+      expect(auditLog.registrarEnTx).toHaveBeenCalledWith(
+        tx,
+        expect.objectContaining({
+          action: AuditAction.ESTABLECIMIENTO_CONFIGURACION_MODIFICADA,
+          detalle: { campos: ['plantilla'] },
+          antes: { plantilla: 'clasica' },
+          despues: { plantilla: 'gourmet' },
+        }),
+      );
+      expect(configuracion).toMatchObject({
+        plantilla: 'gourmet',
+        plantillasDisponibles: ['clasica', 'gourmet', 'rapida', 'familiar'],
+      });
+      // La plantilla es de la carta del comensal: el KDS no se entera.
+      expect(kdsGateway.avisarEstadoCola).not.toHaveBeenCalled();
+      expect(kdsGateway.emitirUmbralesEspera).not.toHaveBeenCalled();
+    });
+
+    it('[TC-U-512] HU-043 (BL-531): mandar la misma plantilla no escribe ni audita', async () => {
+      const configuracion = await service.actualizar(
+        TENANT_ID,
+        { plantilla: 'clasica' },
+        ACTOR,
+      );
+
+      expect(tx.restaurante.update).not.toHaveBeenCalled();
+      expect(auditLog.registrarEnTx).not.toHaveBeenCalled();
+      expect(configuracion.plantilla).toBe('clasica');
     });
   });
 });

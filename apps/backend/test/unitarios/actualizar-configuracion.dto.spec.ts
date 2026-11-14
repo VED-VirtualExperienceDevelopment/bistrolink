@@ -217,4 +217,26 @@ describe('ActualizarConfiguracionDto (HU-020, BL-72)', () => {
       },
     );
   });
+
+  describe('HU-043 (BL-531): plantilla de marca', () => {
+    it.each(['clasica', 'gourmet', 'rapida', 'familiar'])(
+      '[TC-U-509] acepta la plantilla %p',
+      async (plantilla) => {
+        expect(await errores({ plantilla })).toEqual([]);
+      },
+    );
+
+    it.each(['azul', 'Gourmet', '', null, 1])(
+      '[TC-U-510] rechaza la plantilla %p (fuera de la lista o null)',
+      async (plantilla) => {
+        expect(await errores({ plantilla })).toEqual(['plantilla']);
+      },
+    );
+
+    it('[TC-U-510] no acepta el logo por este campo: lo sube BL-532', async () => {
+      expect(await errores({ logoKey: 'otro-tenant/logo.webp' })).toEqual([
+        'logoKey',
+      ]);
+    });
+  });
 });

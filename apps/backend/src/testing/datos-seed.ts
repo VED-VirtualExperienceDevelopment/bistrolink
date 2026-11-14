@@ -98,6 +98,9 @@ export const CONFIGURACION_DEL_SEED = {
   minutosEsperaAtencion: 30,
   minutosEsperaDemorado: 60,
   minutosEsperaDemoraAlta: 120,
+  // HU-043 (BL-531): plantilla de marca por defecto. Los E2E de la marca la
+  // cambian; la limpieza la deja como el seed.
+  plantilla: 'clasica',
 } as const;
 
 /** Razón social de los tenants de testing, como en el seed. */
