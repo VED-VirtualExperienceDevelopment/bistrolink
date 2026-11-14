@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { LlamarMozoButton } from '@/components/LlamarMozoButton';
-import { etiquetaMesa, type OrigenMenu } from '@/components/menu-digital.utils';
+import { etiquetaDelPedidoAPagar, type OrigenMenu } from '@/components/menu-digital.utils';
 import { rutaPrivacidad } from '@/components/privacidad/privacidad.utils';
 import { FormularioTarjeta, IconoCandado, type DatosTarjeta } from './FormularioTarjeta';
 import { EsperandoMozo, FormularioEfectivo, SelectorMetodoPago } from './PagoEfectivo';
@@ -27,6 +27,7 @@ import {
   INTERVALO_CONSULTA_MS,
   MEDIOS_SIN_CONSULTA,
   mediosDisponibles,
+  mediosSegunOrigen,
   mensajeSinMedios,
   metodoSegunMedios,
   opcionesDePago,
@@ -86,7 +87,8 @@ interface PagoPedidoProps {
    */
   readonly total: number;
   readonly numeroMesa?: number;
-  readonly onVolver: () => void;
+  /** HU-033 (BL-203): sin carta (link de pago), no hay «Volver a la carta». */
+  readonly onVolver?: () => void;
   readonly onAprobado: () => void;
 }
 
@@ -361,7 +363,11 @@ export function PagoPedido({
     apiFetch<EstadoPagoDelPedido>(rutaPagos(pedidoId), accessToken, { headers })
       .then((estado) => {
         if (cancelado) return;
-        const disponibles = mediosDisponibles(estado);
+        // HU-033 (BL-203): por el link, solo tarjeta.
+        const disponibles = mediosSegunOrigen(
+          mediosDisponibles(estado),
+          origen.tipo,
+        );
         setMedios(disponibles);
         setMetodo((actual) => metodoSegunMedios(disponibles, actual));
         const pantallaInicial = pantallaAlAbrir(estado, esMesa);
@@ -513,25 +519,27 @@ export function PagoPedido({
 
   return (
     <div className="pt-20 pb-12 px-4 md:px-8 max-w-[1100px] mx-auto">
-      <button
-        type="button"
-        onClick={onVolver}
-        disabled={bloqueado}
-        className="inline-flex items-center gap-2 text-sm font-medium text-[#5a575e] hover:text-[#6e54ad] disabled:opacity-40 disabled:cursor-not-allowed mb-6"
-      >
-        <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M19 12H5" />
-          <path d="m12 19-7-7 7-7" />
-        </svg>
-        Volver a la carta
-      </button>
+      {onVolver && (
+        <button
+          type="button"
+          onClick={onVolver}
+          disabled={bloqueado}
+          className="inline-flex items-center gap-2 text-sm font-medium text-[#5a575e] hover:text-[#6e54ad] disabled:opacity-40 disabled:cursor-not-allowed mb-6"
+        >
+          <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M19 12H5" />
+            <path d="m12 19-7-7 7-7" />
+          </svg>
+          Volver a la carta
+        </button>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start">
         <div className="flex flex-col gap-6">
           <section className="bg-white rounded-[1rem] border border-culinary-neutral/15 p-5 md:p-6 shadow-[0px_4px_20px_rgba(121,118,125,0.08)]">
             <div className="flex items-center justify-between gap-3 mb-1">
               <span className="text-xs font-semibold uppercase tracking-wider text-[#5a575e]">
-                {origen.tipo === 'mesa' ? etiquetaMesa(numeroMesa) : 'Pedido para retirar'}
+                {etiquetaDelPedidoAPagar(origen.tipo, numeroMesa)}
               </span>
               <span className="text-xs font-semibold text-[#6e54ad] bg-[#6e54ad]/10 px-2.5 py-1 rounded-full">
                 Pedido {codigoPedido(pedidoId)}

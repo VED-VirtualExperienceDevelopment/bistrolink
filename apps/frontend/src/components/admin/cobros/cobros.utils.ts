@@ -30,6 +30,11 @@ export interface PedidoPendienteDeCobro {
   /** El comensal tiene un pago con tarjeta en curso. */
   pagoEnCurso: boolean;
   /**
+   * HU-033 (BL-203): hasta cuándo sirve el link de pago vigente; null si no
+   * tiene o ya venció. Opcional: un backend anterior no lo trae.
+   */
+  linkPagoVenceEn?: string | null;
+  /**
    * HU-031b (BL-442): el comensal avisó que paga en efectivo. Opcional: un
    * backend anterior no lo trae.
    */
@@ -414,4 +419,56 @@ export function resolverPedidoDestacado(
     pedidoId: pedido.id,
     anuncio: anuncioPedidoDestacado(pedido),
   };
+}
+
+/** HU-033 (BL-203): el link de pago que devuelve el backend al generarlo. */
+export interface LinkPagoGenerado {
+  url: string;
+  venceEn: string;
+}
+
+/** HU-033 (BL-203): POST que genera (o reemplaza) el link de pago. */
+export function rutaLinkPago(pedidoId: string): string {
+  return `${RUTA_PENDIENTES}/${encodeURIComponent(pedidoId)}/link-pago`;
+}
+
+/**
+ * HU-033 (BL-203): cuerpo del POST. `reemplazar` solo cuando el colaborador
+ * vio el aviso de que hay un link activo y confirmó.
+ */
+export function cuerpoLinkPago(reemplazar: boolean): string {
+  return JSON.stringify({ reemplazar });
+}
+
+/** 409 del backend: el pedido ya tiene un link activo que esta pantalla no conocía. */
+export const CODIGO_LINK_ACTIVO = "LINK_PAGO_ACTIVO";
+
+/** Aviso cuando otro colaborador generó el link (la lista estaba desactualizada). */
+export const AVISO_OTRO_LINK =
+  "Otro colaborador ya generó un link de pago para este pedido";
+
+/**
+ * HU-033 (BL-203): por qué no se puede generar el link. Con un pago con
+ * tarjeta en curso, el comensal ya está pagando por otro lado.
+ */
+export function motivoSinLink(pedido: PedidoPendienteDeCobro): string | null {
+  return pedido.pagoEnCurso ? MOTIVO_PAGO_EN_CURSO : null;
+}
+
+/** HU-033 (BL-203): «Link de pago activo hasta las 21:15», o null. */
+export function textoLinkActivo(
+  pedido: PedidoPendienteDeCobro,
+  ahora: number = Date.now(),
+): string | null {
+  const vence = pedido.linkPagoVenceEn;
+  if (!vence || Date.parse(vence) <= ahora) return null;
+  return `Link de pago activo hasta las ${horaDelPedido(vence)}`;
+}
+
+/** HU-033 (BL-203): «Vence a las 21:15 (en 14 min)» o «Venció». */
+export function textoVencimientoLink(venceEn: string, ahora: number): string {
+  const restanMs = Date.parse(venceEn) - ahora;
+  if (!(restanMs > 0)) return "Este link venció. Generá otro.";
+  const minutos = Math.ceil(restanMs / 60_000);
+  return `Vence a las ${horaDelPedido(venceEn)} (en ${minutos} min)`;
 }

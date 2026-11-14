@@ -313,3 +313,11 @@ describe("alertas y avisos de efectivo en el KDS (BL-441, BL-448)", () => {
     ).toEqual([atencion, efectivo3]);
   });
 });
+
+describe("clavePedidoEnCurso con el link de pago (HU-033, BL-203)", () => {
+  it("una por link", () => {
+    expect(clavePedidoEnCurso({ tipo: "link", linkToken: "abc" })).toMatch(
+      /:link:abc$/,
+    );
+  });
+});
