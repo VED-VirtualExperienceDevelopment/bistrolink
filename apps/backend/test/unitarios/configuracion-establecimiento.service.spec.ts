@@ -729,6 +729,24 @@ describe('ConfiguracionEstablecimientoService (HU-020, BL-72)', () => {
       expect(configuracion).not.toHaveProperty('portadaKey');
     });
 
+    it('[TC-U-548] HU-043 (BL-562): una portada que no está en el bucket da 400 sin abrir la transacción', async () => {
+      storage.existeImagen.mockResolvedValue(false);
+
+      await expect(
+        service.actualizar(
+          TENANT_ID,
+          { portadaKey: `${TENANT_ID}/menu/portada/${UUID_LOGO}.webp` },
+          ACTOR,
+        ),
+      ).rejects.toThrow(
+        new BadRequestException(
+          'La portada indicada no existe. Volvé a subirla.',
+        ),
+      );
+      expect(contextos).toEqual([]);
+      expect(auditLog.registrarEnTx).not.toHaveBeenCalled();
+    });
+
     it('[TC-U-548] HU-043 (BL-562): el logo no sirve de portada ni la portada de logo (400 sin abrir la transacción)', async () => {
       await expect(
         service.actualizar(TENANT_ID, { portadaKey: KEY_LOGO }, ACTOR),
