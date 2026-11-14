@@ -234,6 +234,35 @@ describe('ActualizarConfiguracionDto (HU-020, BL-72)', () => {
     );
   });
 
+  describe('HU-043 (BL-561): nombre y dirección del local', () => {
+    it('[TC-U-535] acepta el nombre y la dirección, sin los espacios de los extremos', async () => {
+      const dto = plainToInstance(ActualizarConfiguracionDto, {
+        nombre: '  La Parrilla de Juan ',
+        direccion: ' 18 de Julio 1234, Montevideo ',
+      });
+
+      expect(await validate(dto)).toEqual([]);
+      expect(dto.nombre).toBe('La Parrilla de Juan');
+      expect(dto.direccion).toBe('18 de Julio 1234, Montevideo');
+    });
+
+    it.each([
+      ['nombre', ''],
+      ['nombre', '   '],
+      ['nombre', null],
+      ['nombre', 'x'.repeat(121)],
+      ['direccion', ''],
+      ['direccion', null],
+      ['direccion', 'x'.repeat(201)],
+      ['direccion', 1234],
+    ])(
+      '[TC-U-536] rechaza %s = %p (vacío, null, demasiado largo o no es texto)',
+      async (campo, valor) => {
+        expect(await errores({ [campo]: valor })).toEqual([campo]);
+      },
+    );
+  });
+
   describe('HU-043 (BL-532): logo del local', () => {
     it('[TC-U-519] acepta una key (la controla el servicio) y null para quitarlo', async () => {
       expect(

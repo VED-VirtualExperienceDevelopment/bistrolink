@@ -42,6 +42,7 @@
 | 1.35    | 13/11/2026 | TC-I-208 y 209: cola del KDS sugerida en el alta de un establecimiento (HU-042 / BL-472), para cargar con el script antes de mergear el PR.                                                                                               |
 | 1.36    | 14/11/2026 | TC-I-210: plantilla de marca del local, guardada y auditada, y CHECK de la base (HU-043 / BL-531), para cargar con el script antes de mergear el PR.                                                                                      |
 | 1.37    | 14/11/2026 | TC-I-211: el logo del local solo acepta un logo publicado del mismo tenant (HU-043 / BL-532), para cargar con el script antes de mergear el PR.                                                                                           |
+| 1.38    | 14/11/2026 | TC-I-212: el Administrador cambia el nombre y la dirección del local, con auditoría, y la carta los muestra (HU-043 / BL-561), para cargar con el script antes de mergear el PR.                                                          |
 
 Texto del campo de descripción de cada caso TC-I en Kiwi. Lo carga
 `cargar-casos-integracion.mjs --descripciones`: cada bloque `## TC-I-NNN`
@@ -52,6 +53,26 @@ Formato de cada bloque: `### Precondición`, `### Pasos` y `### Resultado
 esperado`, igual que los casos cargados a mano desde TC-I-029.
 
 ## Casos para cargar
+
+## TC-I-212
+
+### Precondición
+
+Tenant A del seed con su restaurante. El nombre y la dirección guardados se anotan para restaurarlos al terminar.
+
+### Pasos
+
+1. Cambiar la configuración con el servicio: nombre y dirección nuevos.
+2. Leer el restaurante en la base, con el contexto del tenant.
+3. Buscar en la auditoría los registros `ESTABLECIMIENTO_CONFIGURACION_MODIFICADA` del actor del test.
+4. Pedir la carta pública del restaurante (HU-002).
+
+### Resultado esperado
+
+1. La respuesta trae el nombre y la dirección nuevos.
+2. Quedaron guardados.
+3. Un solo registro, con los campos `nombre` y `direccion` y sus valores antes y después.
+4. La carta muestra el nombre y la dirección nuevos.
 
 ## TC-I-211
 

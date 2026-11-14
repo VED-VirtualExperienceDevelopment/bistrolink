@@ -31,6 +31,9 @@ export interface ConfiguracionEstablecimiento {
   razonSocial: string;
   /** Solo lectura para el Administrador: lo cambia la plataforma (BL-412). */
   rut: string;
+  /** HU-043 (BL-561): nombre y dirección del local que ve el comensal. */
+  nombre: string;
+  direccion: string;
   efectivoHabilitado: boolean;
   mercadoPagoHabilitado: boolean;
   /** HU-007b (BL-80): cobros con el POS del local. */
@@ -74,6 +77,10 @@ export interface ConfiguracionEstablecimiento {
 
 /** Campos de la configuración que viven en restaurante. */
 const SELECT_RESTAURANTE = {
+  // HU-043 (BL-561): nombre y dirección del local, con antes y después en
+  // la auditoría (son públicos: salen en la carta).
+  nombre: true,
+  direccion: true,
   efectivoHabilitado: true,
   mercadoPagoHabilitado: true,
   posHabilitado: true,
@@ -185,6 +192,9 @@ function igual(a: unknown, b: unknown): boolean {
  *   (400 si no); los colores viven en el frontend.
  * - HU-043 (BL-532): el logo tiene que ser un logo publicado de este
  *   establecimiento (400 si no). Se responde como URL firmada.
+ * - HU-043 (BL-561): el nombre y la dirección del local también los cambia
+ *   el Administrador (antes, solo Plataforma). El RUT sigue siendo de
+ *   Plataforma.
  * - Auditoría ESTABLECIMIENTO_CONFIGURACION_MODIFICADA con los campos que
  *   cambiaron y, para medios de pago, propinas, CFE y plantilla, los
  *   valores antes y después. La razón social va sin el valor, mismo

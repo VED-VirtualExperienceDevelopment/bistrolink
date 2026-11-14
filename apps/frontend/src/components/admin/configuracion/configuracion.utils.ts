@@ -15,6 +15,12 @@ export interface ConfiguracionEstablecimiento {
   razonSocial: string;
   /** Solo lectura: lo cambia el equipo de BistroLink (BL-412). */
   rut: string;
+  /**
+   * HU-043 (BL-561): nombre y dirección del local que ve el comensal.
+   * Opcionales en el tipo: un backend anterior no los trae.
+   */
+  nombre?: string;
+  direccion?: string;
   efectivoHabilitado: boolean;
   mercadoPagoHabilitado: boolean;
   /**
@@ -86,6 +92,12 @@ export type CampoMedioPago =
 /** Lo que el administrador edita en la pantalla. */
 export interface FormularioConfiguracion {
   razonSocial: string;
+  /**
+   * HU-043 (BL-561): nombre y dirección del local. null = el backend no los
+   * trae (los campos no se muestran ni se validan).
+   */
+  nombreLocal: string | null;
+  direccionLocal: string | null;
   efectivoHabilitado: boolean;
   mercadoPagoHabilitado: boolean;
   posHabilitado: boolean;
@@ -128,6 +140,8 @@ export type CambiosConfiguracion = Partial<
     | "esperaDemorado"
     | "esperaDemoraAlta"
     | "logo"
+    | "nombreLocal"
+    | "direccionLocal"
   >
 > & {
   propinasSugeridas?: number[];
@@ -140,6 +154,9 @@ export type CambiosConfiguracion = Partial<
   minutosEsperaDemoraAlta?: number;
   /** HU-043 (BL-533): key del logo nuevo, o null para quitarlo. */
   logoKey?: string | null;
+  /** HU-043 (BL-561): nombre y dirección del local. */
+  nombre?: string;
+  direccion?: string;
 };
 
 /** Mismos límites que el backend (ActualizarConfiguracionDto). */
@@ -148,6 +165,9 @@ export const PROPINA_MINIMA = 1;
 export const PROPINA_MAXIMA = 100;
 export const LARGO_MAXIMO_RAZON_SOCIAL = 200;
 export const LARGO_MAXIMO_EMAIL = 254;
+/** HU-043 (BL-561): los mismos que Plataforma (BL-412). */
+export const LARGO_MAXIMO_NOMBRE_LOCAL = 120;
+export const LARGO_MAXIMO_DIRECCION_LOCAL = 200;
 
 /** HU-022 (BL-495): el porcentaje que se marca si el local activa la opción. */
 export const PORCENTAJE_PRESELECCIONADO = 10;
@@ -220,6 +240,8 @@ export function formularioDesde(
 ): FormularioConfiguracion {
   return {
     razonSocial: configuracion.razonSocial,
+    nombreLocal: configuracion.nombre ?? null,
+    direccionLocal: configuracion.direccion ?? null,
     efectivoHabilitado: configuracion.efectivoHabilitado,
     mercadoPagoHabilitado: configuracion.mercadoPagoHabilitado,
     // Un backend anterior no lo trae: queda como el default de la columna.
@@ -279,6 +301,15 @@ function cambiosDeLaMarca(
   formulario: FormularioConfiguracion,
 ): Partial<CambiosConfiguracion> {
   const cambios: Partial<CambiosConfiguracion> = {};
+  // HU-043 (BL-561): solo si el backend los trae (si no, quedan en null).
+  if (formulario.nombreLocal !== null) {
+    const nombre = textoLimpio(formulario.nombreLocal);
+    if (nombre !== guardada.nombre) cambios.nombre = nombre;
+  }
+  if (formulario.direccionLocal !== null) {
+    const direccion = textoLimpio(formulario.direccionLocal);
+    if (direccion !== guardada.direccion) cambios.direccion = direccion;
+  }
   if (formulario.plantilla !== (guardada.plantilla ?? PLANTILLA_POR_DEFECTO)) {
     cambios.plantilla = formulario.plantilla;
   }
@@ -367,6 +398,9 @@ export function hayErroresCola(errores: ErroresCola): boolean {
 /** Errores de cada campo del formulario (null = sin error). */
 export interface ErroresFormulario {
   razonSocial: string | null;
+  /** HU-043 (BL-561). */
+  nombreLocal: string | null;
+  direccionLocal: string | null;
   propinas: string | null;
   email: string | null;
   cola: ErroresCola;
@@ -380,11 +414,20 @@ export function erroresDelFormulario(
   formulario: FormularioConfiguracion | null,
 ): ErroresFormulario {
   if (!formulario) {
-    return { razonSocial: null, propinas: null, email: null, cola: {} };
+    return {
+      razonSocial: null,
+      nombreLocal: null,
+      direccionLocal: null,
+      propinas: null,
+      email: null,
+      cola: {},
+    };
   }
   const propinas = leerPropinas(formulario.propinas);
   return {
     razonSocial: errorRazonSocial(formulario.razonSocial),
+    nombreLocal: errorNombreLocal(formulario.nombreLocal),
+    direccionLocal: errorDireccionLocal(formulario.direccionLocal),
     propinas: "error" in propinas ? propinas.error : null,
     email: errorEmailPrivacidad(formulario.emailPrivacidad),
     cola: erroresCola(formulario),
@@ -399,6 +442,9 @@ export function primerCampoConError(errores: ErroresFormulario): string | null {
   const enOrden: [string, unknown][] = [
     ["razon-social", errores.razonSocial],
     ["propinas", errores.propinas],
+    // HU-043 (BL-561): «Marca del local» va después de «Propinas».
+    ["nombre-local", errores.nombreLocal],
+    ["direccion-local", errores.direccionLocal],
     ["cola-limite", errores.cola.limitePreparacion],
     ["cola-umbral", errores.cola.umbralAlertaCola],
     ["cola-minutos", errores.cola.minutosPreparacion],
@@ -531,6 +577,33 @@ export function errorRazonSocial(razonSocial: string): string | null {
   if (limpia === "") return "La razón social es obligatoria.";
   if (limpia.length > LARGO_MAXIMO_RAZON_SOCIAL) {
     return `La razón social puede tener hasta ${LARGO_MAXIMO_RAZON_SOCIAL} caracteres.`;
+  }
+  return null;
+}
+
+/** Sin espacios en los extremos y con uno solo entre palabras. */
+function textoLimpio(texto: string): string {
+  return texto.trim().replace(/\s+/g, " ");
+}
+
+/** HU-043 (BL-561): error del nombre del local, o null si está bien. */
+export function errorNombreLocal(nombre: string | null): string | null {
+  if (nombre === null) return null;
+  const limpio = textoLimpio(nombre);
+  if (limpio === "") return "El nombre del local es obligatorio.";
+  if (limpio.length > LARGO_MAXIMO_NOMBRE_LOCAL) {
+    return `El nombre puede tener hasta ${LARGO_MAXIMO_NOMBRE_LOCAL} caracteres.`;
+  }
+  return null;
+}
+
+/** HU-043 (BL-561): error de la dirección del local, o null si está bien. */
+export function errorDireccionLocal(direccion: string | null): string | null {
+  if (direccion === null) return null;
+  const limpia = textoLimpio(direccion);
+  if (limpia === "") return "La dirección del local es obligatoria.";
+  if (limpia.length > LARGO_MAXIMO_DIRECCION_LOCAL) {
+    return `La dirección puede tener hasta ${LARGO_MAXIMO_DIRECCION_LOCAL} caracteres.`;
   }
   return null;
 }

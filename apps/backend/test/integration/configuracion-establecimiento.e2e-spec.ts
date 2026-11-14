@@ -9,6 +9,7 @@ import { TenantPrismaService } from '../../src/prisma/tenant-prisma.service';
 import { ConfiguracionEstablecimientoService } from '../../src/configuracion/configuracion-establecimiento.service';
 import { CobroEfectivoService } from '../../src/pagos/efectivo/cobro-efectivo.service';
 import { PagosService } from '../../src/pagos/pagos.service';
+import { MenuService } from '../../src/menu/menu.service';
 import { conPagoFalso } from './support/pago-falso';
 
 // HU-020 (BL-72): configuración del establecimiento.
@@ -58,6 +59,9 @@ async function getToken(username: string, password: string): Promise<string> {
 /** Valores de la configuración que se guardan antes y se restauran después. */
 interface Configuracion {
   razonSocial: string;
+  // HU-043 (BL-561): también se restauran al terminar cada test.
+  nombre: string;
+  direccion: string;
   efectivoHabilitado: boolean;
   mercadoPagoHabilitado: boolean;
   plexoHabilitado: boolean;
@@ -96,6 +100,8 @@ describe('HU-020 (BL-72): configuración del establecimiento', () => {
       const restaurante = await tx.restaurante.findUniqueOrThrow({
         where: { tenantId: TENANT_ID },
         select: {
+          nombre: true,
+          direccion: true,
           efectivoHabilitado: true,
           mercadoPagoHabilitado: true,
           plexoHabilitado: true,
@@ -461,6 +467,42 @@ describe('HU-020 (BL-72): configuración del establecimiento', () => {
       ),
     ).rejects.toThrow(/restaurante_plantilla_valida|23514/);
     expect((await leerConfiguracion()).plantilla).toBe(otra);
+  });
+
+  it('[TC-I-212] HU-043 (BL-561): el Administrador cambia el nombre y la dirección del local; se auditan y la carta los muestra', async () => {
+    const nombre = `${original.nombre} (cambiado)`;
+    const direccion = `${original.direccion} bis`;
+
+    const respuesta = await configuracion.actualizar(
+      TENANT_ID,
+      { nombre, direccion },
+      { id: ACTOR_PRUEBA },
+    );
+
+    expect(respuesta).toMatchObject({ nombre, direccion });
+    expect(await leerConfiguracion()).toMatchObject({ nombre, direccion });
+    const registros = await auditoria();
+    expect(registros).toHaveLength(1);
+    expect(registros[0]).toMatchObject({
+      detalle: { campos: ['nombre', 'direccion'] },
+      valoresAntes: { nombre: original.nombre, direccion: original.direccion },
+      valoresDespues: { nombre, direccion },
+    });
+
+    // La carta pública (HU-002) toma el nombre y la dirección nuevos.
+    const restauranteId = await enTenant<string>(async (tx) => {
+      const restaurante = await tx.restaurante.findUniqueOrThrow({
+        where: { tenantId: TENANT_ID },
+        select: { id: true },
+      });
+      return restaurante.id;
+    });
+    const menuService = await app.resolve(MenuService);
+    const menu = await menuService.getMenuByRestaurante(
+      TENANT_ID,
+      restauranteId,
+    );
+    expect(menu.restaurante).toMatchObject({ nombre, direccion });
   });
 
   it('[TC-I-211] HU-043 (BL-532): una key de otro tenant, de la cuarentena o de un ítem no se guarda como logo (400, sin auditoría)', async () => {

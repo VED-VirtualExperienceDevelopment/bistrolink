@@ -214,6 +214,8 @@ export default function ConfiguracionPage() {
                 guardada={guardada}
                 onCambiar={cambiar}
                 reinicio={reinicioMarca}
+                errorNombre={errorVisible(errores.nombreLocal)}
+                errorDireccion={errorVisible(errores.direccionLocal)}
                 className="xl:col-span-2"
               />
             )}

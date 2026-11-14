@@ -935,6 +935,13 @@ const DATOS_INTEGRACION = {
     requirement: "HU-043",
     tags: ["HU-043", "BL-532", "marca", "imagenes", "validacion"],
   }),
+  // HU-043 (BL-561): nombre y dirección del local desde Configuración.
+  212: configuracionEstablecimiento({
+    category: "Funcional",
+    priority: "P2",
+    requirement: "HU-043",
+    tags: ["HU-043", "BL-561", "marca", "auditoria", "menu"],
+  }),
 };
 /**
  * BL-435: datos de los E2E TC-E-017 en adelante, con los criterios de

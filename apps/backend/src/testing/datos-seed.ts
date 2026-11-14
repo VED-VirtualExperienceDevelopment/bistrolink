@@ -115,6 +115,24 @@ export const RAZON_SOCIAL_DEL_SEED: Readonly<Record<string, string>> = {
  */
 export const PREFIJO_USUARIO_E2E = 'e2e-';
 
+/**
+ * HU-043 (BL-561): nombre y dirección del local de los tenants de testing,
+ * como en el seed. Los E2E de Configuración los cambian y la limpieza los
+ * restaura.
+ */
+export const LOCAL_DEL_SEED: Readonly<
+  Record<string, { nombre: string; direccion: string }>
+> = {
+  '11111111-1111-1111-1111-111111111111': {
+    nombre: 'Restaurante Testing A',
+    direccion: 'Av. Italia 1234, Montevideo',
+  },
+  'b02579f2-2bb0-496b-abf2-33c494c93122': {
+    nombre: 'Restaurante Testing B',
+    direccion: 'Otra dirección 456',
+  },
+};
+
 /** Tenants de testing del seed (A y B): la limpieza de plataforma no los toca. */
 export const TENANTS_DE_TESTING: readonly string[] = Object.keys(
   RAZON_SOCIAL_DEL_SEED,

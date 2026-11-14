@@ -10,11 +10,15 @@ import {
 import {
   CLASE_AYUDA,
   CLASE_BOTON_SECUNDARIO,
+  CLASE_CONTROL,
+  CLASE_ERROR_CAMPO,
   CLASE_ETIQUETA,
   CLASE_TARJETA,
   CLASE_TITULO_TARJETA,
 } from "./configuracion.estilos";
 import {
+  LARGO_MAXIMO_DIRECCION_LOCAL,
+  LARGO_MAXIMO_NOMBRE_LOCAL,
   urlDelLogo,
   type ConfiguracionEstablecimiento,
   type FormularioConfiguracion,
@@ -30,6 +34,9 @@ interface SeccionMarcaProps {
    * guardar): el cargador del logo se reinicia con la imagen guardada.
    */
   reinicio: number;
+  /** HU-043 (BL-561): errores del nombre y la dirección (al guardar). */
+  errorNombre: string | null;
+  errorDireccion: string | null;
   className?: string;
 }
 
@@ -45,12 +52,16 @@ interface SeccionMarcaProps {
  *   eligen con las flechas, tienen nombre accesible y foco visible.
  * - La elegida no se marca solo con el color: lleva un ícono y «Elegida».
  * - Se guarda con «Guardar cambios», junto con el resto.
+ * - HU-043 (BL-561): el nombre y la dirección del local, los que aparecen
+ *   en el banner de la carta. Solo con un backend que los trae.
  */
 export default function SeccionMarca({
   formulario,
   guardada,
   onCambiar,
   reinicio,
+  errorNombre,
+  errorDireccion,
   className = "",
 }: Readonly<SeccionMarcaProps>) {
   // Al quitar el logo, el cargador se reinicia vacío.
@@ -79,6 +90,32 @@ export default function SeccionMarca({
           El logo y los colores con los que tus comensales ven la carta.
         </p>
       </div>
+
+      {formulario.nombreLocal !== null &&
+        formulario.direccionLocal !== null && (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <CampoTexto
+              id="nombre-local"
+              etiqueta="Nombre del local"
+              ayuda="Es el título de la carta y de la pestaña del navegador."
+              valor={formulario.nombreLocal}
+              largoMaximo={LARGO_MAXIMO_NOMBRE_LOCAL}
+              autoComplete="organization"
+              error={errorNombre}
+              onCambiar={(valor) => onCambiar("nombreLocal", valor)}
+            />
+            <CampoTexto
+              id="direccion-local"
+              etiqueta="Dirección"
+              ayuda="Aparece en la carta y en la política de privacidad del local."
+              valor={formulario.direccionLocal}
+              largoMaximo={LARGO_MAXIMO_DIRECCION_LOCAL}
+              autoComplete="street-address"
+              error={errorDireccion}
+              onCambiar={(valor) => onCambiar("direccionLocal", valor)}
+            />
+          </div>
+        )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
         <div className="min-w-0 space-y-2">
@@ -130,6 +167,7 @@ export default function SeccionMarca({
                 plantilla={plantilla}
                 elegida={formulario.plantilla === plantilla.codigo}
                 logoUrl={logoUrl}
+                nombreLocal={formulario.nombreLocal?.trim() || "Tu local"}
                 onElegir={() => onCambiar("plantilla", plantilla.codigo)}
               />
             ))}
@@ -137,6 +175,54 @@ export default function SeccionMarca({
         </fieldset>
       </div>
     </section>
+  );
+}
+
+/** HU-043 (BL-561): campo de texto con ayuda y error asociados. */
+function CampoTexto({
+  id,
+  etiqueta,
+  ayuda,
+  valor,
+  largoMaximo,
+  autoComplete,
+  error,
+  onCambiar,
+}: Readonly<{
+  id: string;
+  etiqueta: string;
+  ayuda: string;
+  valor: string;
+  largoMaximo: number;
+  autoComplete: string;
+  error: string | null;
+  onCambiar: (valor: string) => void;
+}>) {
+  return (
+    <div className="min-w-0">
+      <label htmlFor={id} className={CLASE_ETIQUETA}>
+        {etiqueta}
+      </label>
+      <input
+        id={id}
+        type="text"
+        autoComplete={autoComplete}
+        maxLength={largoMaximo}
+        value={valor}
+        onChange={(e) => onCambiar(e.target.value)}
+        aria-invalid={error !== null}
+        aria-describedby={error ? `${id}-ayuda ${id}-error` : `${id}-ayuda`}
+        className={CLASE_CONTROL}
+      />
+      <p id={`${id}-ayuda`} className={`mt-1 ${CLASE_AYUDA}`}>
+        {ayuda}
+      </p>
+      {error && (
+        <p id={`${id}-error`} className={CLASE_ERROR_CAMPO}>
+          {error}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -148,11 +234,13 @@ function TarjetaPlantilla({
   plantilla,
   elegida,
   logoUrl,
+  nombreLocal,
   onElegir,
 }: Readonly<{
   plantilla: DefinicionPlantilla;
   elegida: boolean;
   logoUrl: string | null;
+  nombreLocal: string;
   onElegir: () => void;
 }>) {
   const id = `plantilla-${plantilla.codigo}`;
@@ -201,7 +289,7 @@ function TarjetaPlantilla({
           )}
         </span>
         <span className="min-w-0 truncate text-body-md font-semibold text-white">
-          Tu local
+          {nombreLocal}
         </span>
         <span
           className="ml-auto shrink-0 rounded-full bg-white px-2 py-0.5 text-label-sm font-medium"

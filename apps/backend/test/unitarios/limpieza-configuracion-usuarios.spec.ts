@@ -21,6 +21,9 @@ function configuracionSeedA() {
   return {
     razonSocial: 'Restaurante Testing A SRL',
     rut: '214198620015',
+    // HU-043 (BL-561): nombre y dirección del local, como en el seed.
+    nombre: 'Restaurante Testing A',
+    direccion: 'Av. Italia 1234, Montevideo',
     efectivoHabilitado: true,
     mercadoPagoHabilitado: true,
     posHabilitado: true,
@@ -53,6 +56,9 @@ describe('Configuración como el seed', () => {
     );
     const otro = configuracionDelSeed('99999999-9999-4999-8999-999999999999');
     expect(otro).not.toHaveProperty('razonSocial');
+    // HU-043 (BL-561): tampoco el nombre ni la dirección del local.
+    expect(otro).not.toHaveProperty('nombre');
+    expect(otro).not.toHaveProperty('direccion');
     expect(otro).toEqual(
       expect.objectContaining({
         efectivoHabilitado: true,
@@ -145,6 +151,26 @@ describe('LimpiezaConfiguracionService', () => {
     expect(configuracion.actualizar).toHaveBeenCalledWith(
       TENANT_A,
       { propinaPreseleccionada: false },
+      { id: ACTOR },
+    );
+  });
+
+  it('[TC-U-538] HU-043 (BL-561): el nombre y la dirección que dejó un E2E vuelven a los del seed', async () => {
+    const { configuracion, service } = armar({
+      ...configuracionSeedA(),
+      nombre: 'E2E Marca 123',
+      direccion: 'Calle E2E 1',
+    });
+
+    expect(await service.limpiar(TENANT_A, ACTOR, false)).toEqual({
+      camposRestablecidos: ['nombre', 'direccion'],
+    });
+    expect(configuracion.actualizar).toHaveBeenCalledWith(
+      TENANT_A,
+      {
+        nombre: 'Restaurante Testing A',
+        direccion: 'Av. Italia 1234, Montevideo',
+      },
       { id: ACTOR },
     );
   });

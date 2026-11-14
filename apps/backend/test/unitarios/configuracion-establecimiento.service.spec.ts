@@ -22,6 +22,9 @@ const RAZON_SOCIAL = 'Uno SRL';
 const RUT = '219999990016';
 
 const RESTAURANTE_ACTUAL = {
+  // HU-043 (BL-561): nombre y dirección del local.
+  nombre: 'La Parrilla',
+  direccion: 'Av. Italia 1234, Montevideo',
   efectivoHabilitado: true,
   mercadoPagoHabilitado: true,
   posHabilitado: true,
@@ -562,6 +565,44 @@ describe('ConfiguracionEstablecimientoService (HU-020, BL-72)', () => {
       expect(tx.restaurante.update).not.toHaveBeenCalled();
       expect(auditLog.registrarEnTx).not.toHaveBeenCalled();
       expect(configuracion.plantilla).toBe('clasica');
+    });
+
+    it('[TC-U-537] HU-043 (BL-561): cambiar el nombre y la dirección del local los escribe en restaurante y los audita con antes y después', async () => {
+      const configuracion = await service.actualizar(
+        TENANT_ID,
+        { nombre: 'La Parrilla de Juan', direccion: '18 de Julio 1234' },
+        ACTOR,
+      );
+
+      expect(tx.restaurante.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { tenantId: TENANT_ID },
+          data: {
+            nombre: 'La Parrilla de Juan',
+            direccion: '18 de Julio 1234',
+          },
+        }),
+      );
+      expect(tx.tenant.update).not.toHaveBeenCalled();
+      expect(auditLog.registrarEnTx).toHaveBeenCalledWith(
+        tx,
+        expect.objectContaining({
+          detalle: { campos: ['nombre', 'direccion'] },
+          antes: {
+            nombre: 'La Parrilla',
+            direccion: 'Av. Italia 1234, Montevideo',
+          },
+          despues: {
+            nombre: 'La Parrilla de Juan',
+            direccion: '18 de Julio 1234',
+          },
+        }),
+      );
+      expect(configuracion).toMatchObject({
+        nombre: 'La Parrilla de Juan',
+        direccion: '18 de Julio 1234',
+      });
+      expect(kdsGateway.avisarEstadoCola).not.toHaveBeenCalled();
     });
 
     it('[TC-U-520] HU-043 (BL-532): un logo publicado del tenant se guarda, se audita con antes y después y se responde como URL firmada', async () => {

@@ -4,7 +4,11 @@ import {
   type ConfiguracionEstablecimiento,
 } from '../configuracion/configuracion-establecimiento.service';
 import type { ActualizarConfiguracionDto } from '../configuracion/dto/actualizar-configuracion.dto';
-import { CONFIGURACION_DEL_SEED, RAZON_SOCIAL_DEL_SEED } from './datos-seed';
+import {
+  CONFIGURACION_DEL_SEED,
+  LOCAL_DEL_SEED,
+  RAZON_SOCIAL_DEL_SEED,
+} from './datos-seed';
 
 /** Resumen del área `configuracion` (lo que responde la API). */
 export interface ResumenConfiguracion {
@@ -17,11 +21,14 @@ export function configuracionDelSeed(
   tenantId: string,
 ): ActualizarConfiguracionDto {
   const razonSocial = RAZON_SOCIAL_DEL_SEED[tenantId];
+  const local = LOCAL_DEL_SEED[tenantId];
   return {
     ...CONFIGURACION_DEL_SEED,
     propinasSugeridas: [...CONFIGURACION_DEL_SEED.propinasSugeridas],
-    // Solo los tenants de testing tienen razón social en el seed.
+    // Solo los tenants de testing tienen razón social, nombre y dirección
+    // en el seed (HU-043, BL-561).
     ...(razonSocial ? { razonSocial } : {}),
+    ...(local ? { nombre: local.nombre, direccion: local.direccion } : {}),
   };
 }
 

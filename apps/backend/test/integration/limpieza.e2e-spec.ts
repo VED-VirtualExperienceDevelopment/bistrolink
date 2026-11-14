@@ -361,7 +361,7 @@ describe('BL-285: limpieza de los datos de prueba (base real)', () => {
   );
 
   itConAdmin(
-    '[TC-I-171] BL-481: la configuración vuelve al seed sin tocar el correo de privacidad, y el usuario «e2e-…» se borra de la base y de Keycloak',
+    '[TC-I-171] BL-481: la configuración vuelve al seed sin tocar el correo de privacidad, y el usuario «e2e-...» se borra de la base y de Keycloak',
     async () => {
       const correoAntes = await enTenant(TENANT_A, async (tx) => {
         const { emailPrivacidad } = await tx.restaurante.findUniqueOrThrow({

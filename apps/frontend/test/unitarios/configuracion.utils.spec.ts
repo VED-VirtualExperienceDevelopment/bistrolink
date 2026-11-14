@@ -10,6 +10,8 @@ import {
   primerCampoConError,
   hayCambios,
   urlDelLogo,
+  errorDireccionLocal,
+  errorNombreLocal,
   leerPropinas,
   sinMediosDePago,
   type ConfiguracionEstablecimiento,
@@ -79,6 +81,9 @@ describe("cambios para guardar", () => {
   it("el formulario arranca con lo guardado", () => {
     expect(formularioDesde(GUARDADA)).toEqual({
       razonSocial: "Uno SRL",
+      // HU-043 (BL-561): un backend anterior no los trae: sin los campos.
+      nombreLocal: null,
+      direccionLocal: null,
       efectivoHabilitado: true,
       mercadoPagoHabilitado: true,
       // HU-007b (BL-80): un backend anterior no lo trae: el default (true).
@@ -359,6 +364,8 @@ describe("HU-042 (BL-465): cola del KDS", () => {
 describe("primerCampoConError", () => {
   const SIN_ERRORES = {
     razonSocial: null,
+    nombreLocal: null,
+    direccionLocal: null,
     propinas: null,
     cola: {},
     email: null,
@@ -390,6 +397,8 @@ describe("erroresDelFormulario", () => {
   it("[TC-U-423] junta los errores de todos los campos; sin formulario no hay errores", () => {
     expect(erroresDelFormulario(null)).toEqual({
       razonSocial: null,
+      nombreLocal: null,
+      direccionLocal: null,
       propinas: null,
       email: null,
       cola: {},
@@ -406,6 +415,8 @@ describe("erroresDelFormulario", () => {
       }),
     ).toEqual({
       razonSocial: "La razón social es obligatoria.",
+      nombreLocal: null,
+      direccionLocal: null,
       propinas: expect.any(String),
       email: expect.any(String),
       cola: { limitePreparacion: "Tiene que estar entre 1 y 50." },
@@ -413,6 +424,8 @@ describe("erroresDelFormulario", () => {
 
     expect(erroresDelFormulario(formularioDesde(GUARDADA))).toEqual({
       razonSocial: null,
+      nombreLocal: null,
+      direccionLocal: null,
       propinas: null,
       email: null,
       cola: {},
@@ -564,5 +577,62 @@ describe("HU-043 (BL-533): marca del local", () => {
     ).toBe("https://firmada.example/nuevo.webp");
     expect(urlDelLogo(CON_MARCA, { tipo: "quitado" })).toBeNull();
     expect(urlDelLogo(GUARDADA, { tipo: "guardado" })).toBeNull();
+  });
+});
+
+describe("HU-043 (BL-561): nombre y dirección del local", () => {
+  const CON_LOCAL: ConfiguracionEstablecimiento = {
+    ...GUARDADA,
+    nombre: "La Parrilla",
+    direccion: "Av. Italia 1234, Montevideo",
+  };
+
+  it("[TC-U-539] el formulario arranca con lo guardado y, sin cambios, no manda nada", () => {
+    const formulario = formularioDesde(CON_LOCAL);
+
+    expect(formulario.nombreLocal).toBe("La Parrilla");
+    expect(formulario.direccionLocal).toBe("Av. Italia 1234, Montevideo");
+    expect(
+      cambiosParaGuardar(CON_LOCAL, {
+        ...formulario,
+        nombreLocal: "  La   Parrilla ",
+      }),
+    ).toEqual({});
+  });
+
+  it("[TC-U-540] manda el nombre y la dirección limpios, solo si cambiaron", () => {
+    const formulario = {
+      ...formularioDesde(CON_LOCAL),
+      nombreLocal: " La Parrilla  de Juan ",
+      direccionLocal: "18 de Julio 1234",
+    };
+
+    expect(cambiosParaGuardar(CON_LOCAL, formulario)).toEqual({
+      nombre: "La Parrilla de Juan",
+      direccion: "18 de Julio 1234",
+    });
+  });
+
+  it("[TC-U-541] los dos son obligatorios y tienen largo máximo; sin backend que los traiga, no se validan", () => {
+    expect(errorNombreLocal("   ")).toBe("El nombre del local es obligatorio.");
+    expect(errorNombreLocal("x".repeat(121))).toMatch(/hasta 120/);
+    expect(errorNombreLocal("La Parrilla")).toBeNull();
+    expect(errorDireccionLocal("")).toBe(
+      "La dirección del local es obligatoria.",
+    );
+    expect(errorDireccionLocal("x".repeat(201))).toMatch(/hasta 200/);
+    expect(errorNombreLocal(null)).toBeNull();
+    expect(errorDireccionLocal(null)).toBeNull();
+  });
+
+  it("[TC-U-542] el foco va al nombre o a la dirección después de las propinas y antes de la cola", () => {
+    const errores = erroresDelFormulario({
+      ...formularioDesde(CON_LOCAL),
+      direccionLocal: "",
+      colaActiva: true,
+      limitePreparacion: "0",
+    });
+
+    expect(primerCampoConError(errores)).toBe("direccion-local");
   });
 });

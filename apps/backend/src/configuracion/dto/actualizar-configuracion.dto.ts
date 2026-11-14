@@ -79,6 +79,13 @@ export const MINUTOS_PREPARACION_MAXIMO = 180;
 /** HU-036 (BL-206): largo máximo de un correo (RFC 5321) y de la columna. */
 export const LARGO_MAXIMO_EMAIL = 254;
 
+/**
+ * HU-043 (BL-561): largos del nombre y la dirección del local, los mismos
+ * que usa Plataforma (EditarEstablecimientoDto, BL-412).
+ */
+export const LARGO_MAXIMO_NOMBRE_LOCAL = 120;
+export const LARGO_MAXIMO_DIRECCION_LOCAL = 200;
+
 /** HU-043 (BL-532): el mismo largo máximo que la key de una imagen confirmada. */
 export const LARGO_MAXIMO_KEY_LOGO = 200;
 
@@ -112,6 +119,25 @@ export class ActualizarConfiguracionDto {
     message: 'La razón social debe tener entre 1 y 200 caracteres',
   })
   razonSocial?: string;
+
+  // HU-043 (BL-561): nombre y dirección del local, los que ven los
+  // comensales en la carta y en la política de privacidad. Mismas reglas
+  // que Plataforma (BL-412). Opcionales, pero nunca null (NOT NULL).
+  @ValidateIf((_dto, valor) => valor !== undefined)
+  @Transform(limpiarEspacios)
+  @IsString({ message: 'El nombre del local debe ser texto' })
+  @Length(1, LARGO_MAXIMO_NOMBRE_LOCAL, {
+    message: `El nombre del local debe tener entre 1 y ${LARGO_MAXIMO_NOMBRE_LOCAL} caracteres`,
+  })
+  nombre?: string;
+
+  @ValidateIf((_dto, valor) => valor !== undefined)
+  @Transform(limpiarEspacios)
+  @IsString({ message: 'La dirección del local debe ser texto' })
+  @Length(1, LARGO_MAXIMO_DIRECCION_LOCAL, {
+    message: `La dirección del local debe tener entre 1 y ${LARGO_MAXIMO_DIRECCION_LOCAL} caracteres`,
+  })
+  direccion?: string;
 
   // Medios de pago. efectivoHabilitado es la columna de HU-031 (BL-201).
   @IsOptional()
