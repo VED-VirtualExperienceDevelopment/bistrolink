@@ -77,12 +77,14 @@ export interface ConfiguracionEstablecimiento {
   retiroHabilitado?: boolean;
   retiroHoraDesde?: string | null;
   retiroHoraHasta?: string | null;
+  /** HU-043 (BL-562): URL firmada de la portada del banner (vista previa). */
+  portadaUrl?: string | null;
 }
 
 /**
- * HU-043 (BL-533): el logo en el formulario.
- * - `guardado`: el que está guardado (o ninguno), sin tocar.
- * - `nuevo`: uno recién subido y confirmado por la API, sin guardar todavía.
+ * HU-043 (BL-533 y BL-562): el logo o la portada en el formulario.
+ * - `guardado`: la que está guardada (o ninguna), sin tocar.
+ * - `nuevo`: una recién subida y confirmada por la API, sin guardar todavía.
  * - `quitado`: se quita al guardar.
  */
 export type EstadoLogo =
@@ -137,6 +139,8 @@ export interface FormularioConfiguracion {
   /** HU-040 (BL-210): «HH:MM» o vacío; las dos vacías = todo el día. */
   retiroHoraDesde: string;
   retiroHoraHasta: string;
+  /** HU-043 (BL-562): foto de portada del banner. */
+  portada: EstadoLogo;
 }
 
 /** Body de PATCH /admin/configuracion: solo lo que cambió. */
@@ -153,6 +157,7 @@ export type CambiosConfiguracion = Partial<
     | "esperaDemorado"
     | "esperaDemoraAlta"
     | "logo"
+    | "portada"
     | "nombreLocal"
     | "direccionLocal"
     | "retiroHoraDesde"
@@ -169,6 +174,8 @@ export type CambiosConfiguracion = Partial<
   minutosEsperaDemoraAlta?: number;
   /** HU-043 (BL-533): key del logo nuevo, o null para quitarlo. */
   logoKey?: string | null;
+  /** HU-043 (BL-562): key de la portada nueva, o null para quitarla. */
+  portadaKey?: string | null;
   /** HU-043 (BL-561): nombre y dirección del local. */
   nombre?: string;
   direccion?: string;
@@ -297,6 +304,7 @@ export function formularioDesde(
     retiroHabilitado: configuracion.retiroHabilitado ?? true,
     retiroHoraDesde: configuracion.retiroHoraDesde ?? "",
     retiroHoraHasta: configuracion.retiroHoraHasta ?? "",
+    portada: { tipo: "guardado" },
   };
 }
 
@@ -308,9 +316,27 @@ export function urlDelLogo(
   guardada: ConfiguracionEstablecimiento,
   logo: EstadoLogo,
 ): string | null {
-  if (logo.tipo === "nuevo") return logo.url;
-  if (logo.tipo === "quitado") return null;
-  return guardada.logoUrl ?? null;
+  return urlDeImagen(guardada.logoUrl, logo);
+}
+
+/**
+ * HU-043 (BL-562): URL de la portada a mostrar: la recién subida, ninguna
+ * si se quitó (null = la portada por defecto), o la guardada.
+ */
+export function urlDeLaPortada(
+  guardada: ConfiguracionEstablecimiento,
+  portada: EstadoLogo,
+): string | null {
+  return urlDeImagen(guardada.portadaUrl, portada);
+}
+
+function urlDeImagen(
+  guardada: string | null | undefined,
+  estado: EstadoLogo,
+): string | null {
+  if (estado.tipo === "nuevo") return estado.url;
+  if (estado.tipo === "quitado") return null;
+  return guardada ?? null;
 }
 
 /**
@@ -338,6 +364,12 @@ function cambiosDeLaMarca(
     cambios.logoKey = formulario.logo.key;
   } else if (formulario.logo.tipo === "quitado" && guardada.logoUrl) {
     cambios.logoKey = null;
+  }
+  // HU-043 (BL-562): la portada, con la misma regla que el logo.
+  if (formulario.portada.tipo === "nuevo") {
+    cambios.portadaKey = formulario.portada.key;
+  } else if (formulario.portada.tipo === "quitado" && guardada.portadaUrl) {
+    cambios.portadaKey = null;
   }
   return cambios;
 }
@@ -467,7 +499,7 @@ export function erroresDelFormulario(
 ): ErroresFormulario {
   if (!formulario) {
     return {
-       razonSocial: null,
+      razonSocial: null,
       nombreLocal: null,
       direccionLocal: null,
       propinas: null,

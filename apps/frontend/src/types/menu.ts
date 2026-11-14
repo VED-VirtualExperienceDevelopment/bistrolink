@@ -1,6 +1,6 @@
 // HU-002 / HU-003 / BL-155: Tipos compartidos del menú público y carrito
 import type { EstadoPedido } from "./pedido";
-import type { RetiroPublico } from '@/components/retiro/retiro.utils';
+import type { RetiroPublico } from "@/components/retiro/retiro.utils";
 
 export interface ItemCarta {
   id: string;
@@ -30,6 +30,9 @@ export type PlantillaMarca = "clasica" | "gourmet" | "rapida" | "familiar";
 // (se muestra el nombre del local).
 export interface MarcaPublica {
   logoUrl: string | null;
+  // HU-043 (BL-562): foto de portada del banner. null = la de por defecto.
+  // Opcional: una API anterior no la manda.
+  portadaUrl?: string | null;
   plantilla: PlantillaMarca;
 }
 

@@ -44,6 +44,7 @@ import {
 } from "@/components/menu-digital.utils";
 import type { MarcaPublica, PedidoConfirmado } from "@/types/menu";
 import { variablesDeMarca } from "@/lib/plantillas-marca";
+import { PORTADA_POR_DEFECTO } from "@/lib/portada-por-defecto";
 import {
   firmaCarrito,
   formatearPrecio,
@@ -746,21 +747,36 @@ export default function MenuDigital({
                 tamaño acorde a la pantalla (Unsplash redimensiona por URL).
                 Antes bajaba siempre 1974 px (~580 KB) y el LCP en mobile
                 quedaba en ~6,5 s. Decorativa: el nombre ya está en el <h1>. */}
+                {/* HU-043 (BL-562): la portada del local (un WebP de hasta
+                1600 px, por la CDN) o la de por defecto en varios tamaños.
+                La del local se ve COMPLETA (object-contain): puede tener el
+                logo o un texto que no se puede cortar, y el banner cambia de
+                proporción entre el celular y la PC. Lo que sobra se llena con
+                la misma foto difuminada (misma URL: se baja una sola vez). */}
+                {marca?.portadaUrl && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={marca.portadaUrl}
+                    alt=""
+                    loading="eager"
+                    decoding="async"
+                    className="absolute inset-0 w-full h-full object-cover scale-110 blur-2xl opacity-80"
+                  />
+                )}
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src="https://images.unsplash.com/photo-1514933651103-005eec06c04b?q=60&w=828&auto=format&fit=crop"
-                  srcSet={[640, 828, 1200, 1600]
-                    .map(
-                      (ancho) =>
-                        `https://images.unsplash.com/photo-1514933651103-005eec06c04b?q=60&w=${ancho}&auto=format&fit=crop ${ancho}w`,
-                    )
-                    .join(", ")}
+                  src={marca?.portadaUrl ?? PORTADA_POR_DEFECTO.src}
+                  srcSet={
+                    marca?.portadaUrl ? undefined : PORTADA_POR_DEFECTO.srcSet
+                  }
                   sizes="(min-width: 1440px) 1376px, calc(100vw - 2rem)"
                   alt=""
                   fetchPriority="high"
                   loading="eager"
                   decoding="async"
-                  className="absolute inset-0 w-full h-full object-cover object-center transition-transform duration-700 group-hover:scale-105"
+                  className={`absolute inset-0 w-full h-full object-center transition-transform duration-700 group-hover:scale-105 ${
+                    marca?.portadaUrl ? "object-contain" : "object-cover"
+                  }`}
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-black/10"></div>
 

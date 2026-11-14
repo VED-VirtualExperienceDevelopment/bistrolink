@@ -10,6 +10,7 @@ import {
   primerCampoConError,
   hayCambios,
   urlDelLogo,
+  urlDeLaPortada,
   errorDireccionLocal,
   errorNombreLocal,
   leerPropinas,
@@ -117,6 +118,8 @@ describe("cambios para guardar", () => {
       retiroHabilitado: true,
       retiroHoraDesde: "",
       retiroHoraHasta: "",
+      // HU-043 (BL-562): la portada, sin tocar.
+      portada: { tipo: "guardado" },
     });
   });
 });
@@ -721,5 +724,50 @@ describe("HU-043 (BL-561): nombre y dirección del local", () => {
     });
 
     expect(primerCampoConError(errores)).toBe("direccion-local");
+  });
+});
+
+describe("HU-043 (BL-562): portada del banner", () => {
+  const CON_PORTADA: ConfiguracionEstablecimiento = {
+    ...GUARDADA,
+    portadaUrl: "https://firmada.example/portada.webp",
+  };
+
+  it("[TC-U-550] una portada nueva manda su key; quitarla manda null solo si había una guardada", () => {
+    const key =
+      "11111111-1111-1111-1111-111111111111/menu/portada/0b4f6a3e-1111-4c2d-9e8f-123456789abc.webp";
+    expect(
+      cambiosParaGuardar(CON_PORTADA, {
+        ...formularioDesde(CON_PORTADA),
+        portada: { tipo: "nuevo", key, url: "https://firmada.example/n.webp" },
+      }),
+    ).toEqual({ portadaKey: key });
+    expect(
+      cambiosParaGuardar(CON_PORTADA, {
+        ...formularioDesde(CON_PORTADA),
+        portada: { tipo: "quitado" },
+      }),
+    ).toEqual({ portadaKey: null });
+    expect(
+      cambiosParaGuardar(GUARDADA, {
+        ...formularioDesde(GUARDADA),
+        portada: { tipo: "quitado" },
+      }),
+    ).toEqual({});
+  });
+
+  it("[TC-U-551] la vista previa muestra la portada nueva, la guardada, o ninguna (la de por defecto)", () => {
+    expect(urlDeLaPortada(CON_PORTADA, { tipo: "guardado" })).toBe(
+      "https://firmada.example/portada.webp",
+    );
+    expect(
+      urlDeLaPortada(CON_PORTADA, {
+        tipo: "nuevo",
+        key: "k",
+        url: "https://firmada.example/n.webp",
+      }),
+    ).toBe("https://firmada.example/n.webp");
+    expect(urlDeLaPortada(CON_PORTADA, { tipo: "quitado" })).toBeNull();
+    expect(urlDeLaPortada(GUARDADA, { tipo: "guardado" })).toBeNull();
   });
 });

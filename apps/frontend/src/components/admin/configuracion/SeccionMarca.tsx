@@ -7,6 +7,7 @@ import {
   PLANTILLAS_MARCA,
   type DefinicionPlantilla,
 } from "@/lib/plantillas-marca";
+import { PORTADA_POR_DEFECTO } from "@/lib/portada-por-defecto";
 import {
   CLASE_AYUDA,
   CLASE_BOTON_SECUNDARIO,
@@ -19,6 +20,7 @@ import {
 import {
   LARGO_MAXIMO_DIRECCION_LOCAL,
   LARGO_MAXIMO_NOMBRE_LOCAL,
+  urlDeLaPortada,
   urlDelLogo,
   type ConfiguracionEstablecimiento,
   type FormularioConfiguracion,
@@ -54,6 +56,8 @@ interface SeccionMarcaProps {
  * - Se guarda con «Guardar cambios», junto con el resto.
  * - HU-043 (BL-561): el nombre y la dirección del local, los que aparecen
  *   en el banner de la carta. Solo con un backend que los trae.
+ * - HU-043 (BL-562): la foto de portada del banner, con la vista previa del
+ *   recorte en el celular y en la PC (el banner es más ancho en la PC).
  */
 export default function SeccionMarca({
   formulario,
@@ -64,9 +68,13 @@ export default function SeccionMarca({
   errorDireccion,
   className = "",
 }: Readonly<SeccionMarcaProps>) {
-  // Al quitar el logo, el cargador se reinicia vacío.
+  // Al quitar el logo o la portada, su cargador se reinicia vacío.
   const [quitados, setQuitados] = useState(0);
+  const [portadasQuitadas, setPortadasQuitadas] = useState(0);
   const logoUrl = urlDelLogo(guardada, formulario.logo);
+  const portadaUrl = urlDeLaPortada(guardada, formulario.portada);
+  // Un backend anterior a BL-562 no trae la portada: no se muestra.
+  const conPortada = guardada.portadaUrl !== undefined;
   const disponibles = guardada.plantillasDisponibles ?? [];
   const plantillas = PLANTILLAS_MARCA.filter(({ codigo }) =>
     disponibles.includes(codigo),
@@ -75,6 +83,11 @@ export default function SeccionMarca({
   function quitarLogo() {
     onCambiar("logo", { tipo: "quitado" });
     setQuitados((n) => n + 1);
+  }
+
+  function quitarPortada() {
+    onCambiar("portada", { tipo: "quitado" });
+    setPortadasQuitadas((n) => n + 1);
   }
 
   return (
@@ -87,7 +100,8 @@ export default function SeccionMarca({
           Marca del local
         </h2>
         <p className={CLASE_AYUDA}>
-          El logo y los colores con los que tus comensales ven la carta.
+          El nombre, el logo, la foto de portada y los colores con los que tus
+          comensales ven la carta.
         </p>
       </div>
 
@@ -174,7 +188,119 @@ export default function SeccionMarca({
           </div>
         </fieldset>
       </div>
+
+      {conPortada && (
+        <div className="grid grid-cols-1 gap-6 border-t border-outline-variant pt-4 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
+          <div className="min-w-0 space-y-2">
+            <p className={CLASE_ETIQUETA}>Foto de portada</p>
+            <ImageUploader
+              key={`portada-${reinicio}-${portadasQuitadas}`}
+              destino="portada"
+              inputId="portada-local"
+              altVistaPrevia="Foto de portada del local"
+              describidoPor="portada-local-ayuda"
+              initialPreviewUrl={portadaUrl ?? undefined}
+              onUploadSuccess={(key, url) =>
+                onCambiar("portada", { tipo: "nuevo", key, url })
+              }
+            />
+            <p id="portada-local-ayuda" className={CLASE_AYUDA}>
+              Una foto horizontal del local o de un plato. Se ve completa en el
+              celular y en la computadora; el espacio que sobra se llena con la
+              misma foto difuminada. Abajo va el nombre del local: mejor sin
+              textos en esa parte. Sin foto, se usa la de BistroLink.
+            </p>
+            {portadaUrl && (
+              <button
+                type="button"
+                onClick={quitarPortada}
+                className={CLASE_BOTON_SECUNDARIO}
+              >
+                Quitar portada
+              </button>
+            )}
+            {formulario.portada.tipo !== "guardado" && (
+              <output className={`block ${CLASE_AYUDA}`}>
+                {formulario.portada.tipo === "nuevo"
+                  ? "La portada nueva se aplica al guardar los cambios."
+                  : "Al guardar los cambios vuelve la portada de BistroLink."}
+              </output>
+            )}
+          </div>
+
+          <div className="min-w-0 space-y-3">
+            <p className={CLASE_ETIQUETA}>Cómo se ve en la carta</p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+              <VistaPreviaPortada
+                titulo="Celular"
+                proporcion="aspect-[36/25]"
+                portadaUrl={portadaUrl}
+                nombreLocal={formulario.nombreLocal?.trim() || "Tu local"}
+              />
+              <VistaPreviaPortada
+                titulo="Computadora"
+                proporcion="aspect-[4/1]"
+                portadaUrl={portadaUrl}
+                nombreLocal={formulario.nombreLocal?.trim() || "Tu local"}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </section>
+  );
+}
+
+/**
+ * HU-043 (BL-562): el banner de la carta en chico, con el mismo recorte
+ * (object-cover) y el mismo degradado que en MenuDigital. Decorativa: el
+ * título dice qué pantalla es.
+ */
+function VistaPreviaPortada({
+  titulo,
+  proporcion,
+  portadaUrl,
+  nombreLocal,
+}: Readonly<{
+  titulo: string;
+  proporcion: string;
+  portadaUrl: string | null;
+  nombreLocal: string;
+}>) {
+  return (
+    <figure className="min-w-0">
+      <div
+        aria-hidden="true"
+        className={`relative w-full overflow-hidden rounded-lg bg-on-surface ${proporcion}`}
+      >
+        {/* Igual que en la carta: la portada del local se ve completa y lo
+            que sobra se llena con la misma foto difuminada; la de por
+            defecto se recorta. */}
+        {portadaUrl && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={portadaUrl}
+            alt=""
+            decoding="async"
+            className="absolute inset-0 h-full w-full scale-110 object-cover opacity-80 blur-xl"
+          />
+        )}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={portadaUrl ?? PORTADA_POR_DEFECTO.src}
+          alt=""
+          decoding="async"
+          className={`absolute inset-0 h-full w-full object-center ${
+            portadaUrl ? "object-contain" : "object-cover"
+          }`}
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-black/10" />
+        <span className="absolute bottom-2 left-3 right-3 truncate text-body-md font-bold text-white">
+          {nombreLocal}
+        </span>
+      </div>
+      <figcaption className={`mt-1 ${CLASE_AYUDA}`}>{titulo}</figcaption>
+    </figure>
   );
 }
 

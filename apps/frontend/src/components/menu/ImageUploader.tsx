@@ -22,9 +22,10 @@ interface ImageUploaderProps {
   readonly initialPreviewUrl?: string;
   /**
    * HU-043 (BL-533): `marca` para el logo del local. La API lo publica en
-   * {tenant}/menu/marca/ y de hasta 512 px. Por defecto, la foto de un ítem.
+   * {tenant}/menu/marca/ y de hasta 512 px. BL-562: `portada` para la foto
+   * del banner de la carta. Por defecto, la foto de un ítem.
    */
-  readonly destino?: 'item' | 'marca';
+  readonly destino?: 'item' | 'marca' | 'portada';
   /** Id del campo de archivo, si hay más de un cargador en la pantalla. */
   readonly inputId?: string;
   /** Texto alternativo de la vista previa. */
@@ -127,12 +128,12 @@ export default function ImageUploader({
             keycloak.token,
             {
               method: 'POST',
-              // HU-043: el destino solo viaja para el logo; la foto de un
-              // ítem manda el mismo body que antes.
+              // HU-043: el destino solo viaja para el logo y la portada; la
+              // foto de un ítem manda el mismo body que antes.
               body: JSON.stringify(
-                destino === 'marca'
-                  ? { key: keyCuarentena, destino }
-                  : { key: keyCuarentena },
+                destino === 'item'
+                  ? { key: keyCuarentena }
+                  : { key: keyCuarentena, destino },
               ),
             },
           );
