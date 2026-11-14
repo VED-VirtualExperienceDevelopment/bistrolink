@@ -5,6 +5,13 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  /* HU-043 (BL-534): colores de marca de las pantallas del comensal, en
+     canales RGB para que funcione la opacidad de Tailwind (bg-marca/10). Por
+     defecto, los de BistroLink (la plantilla Clásica). El menú los cambia
+     según la plantilla del local (plantillas-marca.ts). */
+  --brand-primary: 110 84 173; /* #6e54ad */
+  --brand-primary-hover: 91 70 143; /* #5b468f */
+  --brand-accent: 117 91 0; /* #755b00 */
 }
 
 /*

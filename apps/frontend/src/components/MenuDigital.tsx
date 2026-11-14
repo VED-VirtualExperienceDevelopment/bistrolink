@@ -42,7 +42,8 @@ import {
   sumarUnidad,
   type OrigenMenu,
 } from "@/components/menu-digital.utils";
-import type { PedidoConfirmado } from "@/types/menu";
+import type { MarcaPublica, PedidoConfirmado } from "@/types/menu";
+import { variablesDeMarca } from "@/lib/plantillas-marca";
 import {
   firmaCarrito,
   formatearPrecio,
@@ -113,6 +114,11 @@ interface MenuDigitalProps {
   readonly categorias: readonly CategoriaMenu[];
   /** Solo en la mesa: el número que se muestra en el encabezado. */
   readonly numeroMesa?: number;
+  /**
+   * HU-043 (BL-534): logo y plantilla del local. Sin marca (o con una API
+   * anterior), el menú se ve como siempre: «BistroLink» y la Clásica.
+   */
+  readonly marca?: MarcaPublica;
 }
 
 const MAX_CHARS_GENERAL = 500;
@@ -231,6 +237,7 @@ export default function MenuDigital({
   restaurante,
   categorias,
   numeroMesa,
+  marca,
 }: MenuDigitalProps) {
   const tipo = origen.tipo;
   const [carrito, setCarrito] = useState<ItemCarrito[]>([]);
@@ -617,17 +624,37 @@ export default function MenuDigital({
       className="min-h-screen bg-culinary-background pb-28"
       // BL-320: espacio al final para que el último plato pueda quedar por
       // encima de la barra del carrito.
-      style={
-        altoBarraCarrito ? { paddingBottom: altoBarraCarrito + 32 } : undefined
-      }
+      // HU-043 (BL-534): las variables de la marca valen para todo lo que
+      // está adentro (carta, carrito, mis pedidos, llamar al mozo y pago).
+      style={{
+        ...variablesDeMarca(marca?.plantilla),
+        ...(altoBarraCarrito
+          ? { paddingBottom: altoBarraCarrito + 32 }
+          : undefined),
+      }}
     >
       <nav className="fixed top-0 w-full z-50 flex justify-between items-center px-4 md:px-8 h-16 bg-white border-b border-culinary-neutral/15">
-        <div className="flex items-center gap-4">
-          <span className="text-xl md:text-2xl font-bold text-[#6e54ad]">
-            BistroLink
-          </span>
+        <div className="flex min-w-0 items-center gap-4">
+          {marca?.logoUrl ? (
+            // HU-043 (BL-534): logo del local, en una caja de tamaño fijo
+            // para que la barra no salte al cargarlo. No compite con la
+            // imagen principal (LCP): sin prioridad alta.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={marca.logoUrl}
+              alt={restaurante.nombre}
+              width={160}
+              height={40}
+              decoding="async"
+              className="h-10 w-32 md:w-40 object-contain object-left"
+            />
+          ) : (
+            <span className="text-xl md:text-2xl font-bold text-marca">
+              BistroLink
+            </span>
+          )}
         </div>
-        <div className="flex items-center gap-2 md:gap-4 text-[#6e54ad]">
+        <div className="flex items-center gap-2 md:gap-4 text-marca">
           {/* BL-502: en el celular, solo el ícono y la cantidad. */}
           {hayMisPedidos && (
             <MisPedidosBoton
@@ -636,7 +663,7 @@ export default function MenuDigital({
               onAbrir={() => setMisPedidosAbierto(true)}
             />
           )}
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-[#6e54ad]/10 rounded-full">
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-marca/10 rounded-full">
             <span className="text-sm font-medium">
               {tipo === "mesa"
                 ? "📍 En el local"
@@ -764,7 +791,7 @@ export default function MenuDigital({
                                 <h3 className="font-semibold text-lg text-foreground leading-tight">
                                   {item.nombre}
                                 </h3>
-                                <span className="font-bold text-lg text-[#6e54ad] shrink-0">
+                                <span className="font-bold text-lg text-marca shrink-0">
                                   {formatearPrecio(item.precio)}
                                 </span>
                               </div>
@@ -797,7 +824,7 @@ export default function MenuDigital({
                                         : undefined
                                     }
                                     aria-label={`Agregar ${item.nombre} al carrito`}
-                                    className="w-full bg-[#6e54ad]/10 text-[#6e54ad] font-semibold py-2.5 rounded-[0.5rem] hover:bg-[#6e54ad] hover:text-white transition-colors flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-[#6e54ad]/10 disabled:hover:text-[#6e54ad]"
+                                    className="w-full bg-marca/10 text-marca font-semibold py-2.5 rounded-[0.5rem] hover:bg-marca hover:text-white transition-colors flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-marca/10 disabled:hover:text-marca"
                                   >
                                     <svg
                                       aria-hidden="true"
@@ -833,7 +860,7 @@ export default function MenuDigital({
                                       0 && (
                                       <span
                                         aria-hidden="true"
-                                        className="ml-1 rounded-full bg-white px-2 py-0.5 text-xs font-bold text-[#6e54ad]"
+                                        className="ml-1 rounded-full bg-white px-2 py-0.5 text-xs font-bold text-marca"
                                       >
                                         {cantidadEnCarrito(carrito, item.id)} en
                                         el pedido
@@ -874,7 +901,7 @@ export default function MenuDigital({
             <footer className="pb-4 text-center text-sm text-[#5a575e]">
               <a
                 href={rutaPrivacidad(origen)}
-                className="underline hover:text-[#6e54ad]"
+                className="underline hover:text-marca"
               >
                 Política de privacidad
               </a>

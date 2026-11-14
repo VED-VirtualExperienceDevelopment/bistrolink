@@ -49,7 +49,7 @@ export const MisPedidosBoton = forwardRef<HTMLButtonElement, Props>(
           onClick={onAbrir}
           aria-label={etiqueta}
           aria-haspopup="dialog"
-          className="inline-flex items-center gap-2 whitespace-nowrap rounded-full border border-[#6e54ad]/30 bg-[#6e54ad]/10 px-3 py-1.5 text-sm font-semibold text-[#6e54ad] hover:bg-[#6e54ad]/15 focus:outline-none focus:ring-4 focus:ring-[#6e54ad]/30"
+          className="inline-flex items-center gap-2 whitespace-nowrap rounded-full border border-marca/30 bg-marca/10 px-3 py-1.5 text-sm font-semibold text-marca hover:bg-marca/15 focus:outline-none focus:ring-4 focus:ring-marca/30"
         >
           <IconoTicket />
           <span className="hidden sm:inline">Mis pedidos</span>
@@ -68,7 +68,7 @@ export const MisPedidosBoton = forwardRef<HTMLButtonElement, Props>(
         aria-label={etiqueta}
         aria-haspopup="dialog"
         data-testid="mis-pedidos-barra"
-        className="flex w-full items-center gap-3 rounded-[0.75rem] border border-[#6e54ad]/30 bg-culinary-primary-container px-4 py-3 text-left text-[#6e54ad] shadow-[0px_4px_20px_rgba(121,118,125,0.15)] focus:outline-none focus:ring-4 focus:ring-[#6e54ad]/30"
+        className="flex w-full items-center gap-3 rounded-[0.75rem] border border-marca/30 bg-culinary-primary-container px-4 py-3 text-left text-marca shadow-[0px_4px_20px_rgba(121,118,125,0.15)] focus:outline-none focus:ring-4 focus:ring-marca/30"
       >
         <IconoTicket />
         <span className="min-w-0 flex-1">

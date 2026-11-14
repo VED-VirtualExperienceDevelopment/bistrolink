@@ -54,7 +54,7 @@ function clasesInstrucciones(
   }
   return {
     borde:
-      "border-2 border-culinary-neutral/30 bg-culinary-background focus:border-[#6e54ad] focus:ring-2 focus:ring-[#6e54ad]/20",
+      "border-2 border-culinary-neutral/30 bg-culinary-background focus:border-marca focus:ring-2 focus:ring-marca/20",
     contador: "text-[#5a575e]",
   };
 }
@@ -150,7 +150,7 @@ export function CarritoDetalle<T extends LineaCarrito>({
             onClick={onCerrar}
             aria-label="Cerrar el pedido"
             data-foco-inicial
-            className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-foreground hover:bg-culinary-neutral/10 focus:outline-none focus:ring-4 focus:ring-[#6e54ad]/30"
+            className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-foreground hover:bg-culinary-neutral/10 focus:outline-none focus:ring-4 focus:ring-marca/30"
           >
             <IconoCerrar />
           </button>
@@ -176,7 +176,7 @@ export function CarritoDetalle<T extends LineaCarrito>({
               <button
                 type="button"
                 onClick={() => onEditarNota(linea)}
-                className="text-xs text-[#6e54ad] mt-1.5 flex items-center gap-1 hover:underline font-medium"
+                className="text-xs text-marca mt-1.5 flex items-center gap-1 hover:underline font-medium"
               >
                 <IconoLapiz />
                 Editar nota
@@ -230,7 +230,7 @@ export function CarritoDetalle<T extends LineaCarrito>({
       )}
       <div className="flex items-center justify-between mb-4">
         <span className="font-bold text-foreground text-lg">Total:</span>
-        <span className="text-2xl font-bold text-[#6e54ad]">
+        <span className="text-2xl font-bold text-marca">
           {formatearPrecio(total)}
         </span>
       </div>
@@ -238,7 +238,7 @@ export function CarritoDetalle<T extends LineaCarrito>({
         type="button"
         onClick={onContinuar}
         disabled={enviando || pasado}
-        className="w-full px-4 py-3.5 bg-[#6e54ad] text-white font-bold rounded-[0.5rem] hover:bg-[#5b468f] focus:outline-none focus:ring-4 focus:ring-[#6e54ad]/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed text-lg shadow-[0px_4px_20px_rgba(121,118,125,0.15)]"
+        className="w-full px-4 py-3.5 bg-marca text-white font-bold rounded-[0.5rem] hover:bg-marca-hover focus:outline-none focus:ring-4 focus:ring-marca/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed text-lg shadow-[0px_4px_20px_rgba(121,118,125,0.15)]"
       >
         {enviando ? "Preparando tu pedido…" : "Continuar al pago"}
       </button>
@@ -276,7 +276,7 @@ export function CarritoDetalle<T extends LineaCarrito>({
         <button
           type="button"
           onClick={onCerrar}
-          className="mt-2 w-full rounded-[0.5rem] py-2.5 text-sm font-semibold text-[#6e54ad] hover:bg-[#6e54ad]/10 focus:outline-none focus:ring-4 focus:ring-[#6e54ad]/30"
+          className="mt-2 w-full rounded-[0.5rem] py-2.5 text-sm font-semibold text-marca hover:bg-marca/10 focus:outline-none focus:ring-4 focus:ring-marca/30"
         >
           Seguir viendo la carta
         </button>

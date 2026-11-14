@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import type { PlantillaMarca } from "@/types/menu";
 
 /**
@@ -26,6 +27,8 @@ export interface DefinicionPlantilla {
   paraQuien: string;
   /** Color principal: encabezado, botones y precios. */
   colorMarca: string;
+  /** El principal al pasar el mouse por un botón (un poco más oscuro). */
+  colorHover: string;
   /** Color de acento: etiquetas y destacados. */
   colorAcento: string;
 }
@@ -36,6 +39,7 @@ export const PLANTILLAS_MARCA: readonly DefinicionPlantilla[] = [
     nombre: "Clásica",
     paraQuien: "Para cualquier local, con los colores de BistroLink.",
     colorMarca: "#6e54ad",
+    colorHover: "#5b468f",
     colorAcento: "#755b00",
   },
   {
@@ -43,6 +47,7 @@ export const PLANTILLAS_MARCA: readonly DefinicionPlantilla[] = [
     nombre: "Gourmet",
     paraQuien: "Para restaurantes con servicio a la mesa y cocina de autor.",
     colorMarca: "#5c1a2b",
+    colorHover: "#46131f",
     colorAcento: "#7a5a00",
   },
   {
@@ -50,6 +55,7 @@ export const PLANTILLAS_MARCA: readonly DefinicionPlantilla[] = [
     nombre: "Comida rápida",
     paraQuien: "Para hamburgueserías, pizzerías y locales al paso.",
     colorMarca: "#b3261e",
+    colorHover: "#8f1e18",
     colorAcento: "#8a4b00",
   },
   {
@@ -57,6 +63,7 @@ export const PLANTILLAS_MARCA: readonly DefinicionPlantilla[] = [
     nombre: "Familiar",
     paraQuien: "Para parrillas, bodegones y locales para ir en familia.",
     colorMarca: "#2e6b3f",
+    colorHover: "#23532f",
     colorAcento: "#a0461b",
   },
 ];
@@ -74,4 +81,26 @@ export function plantillaPorCodigo(
     PLANTILLAS_MARCA.find((plantilla) => plantilla.codigo === codigo) ??
     PLANTILLAS_MARCA[0]
   );
+}
+
+/** "#6e54ad" → "110 84 173": el formato de las variables de globals.css. */
+export function canalesRgb(hex: string): string {
+  return [1, 3, 5]
+    .map((inicio) => Number.parseInt(hex.slice(inicio, inicio + 2), 16))
+    .join(" ");
+}
+
+/**
+ * HU-043 (BL-534): variables CSS de la marca para el contenedor del menú
+ * (style). Con la Clásica, o sin plantilla, no define nada: quedan las de
+ * globals.css y el menú se ve exactamente igual que antes.
+ */
+export function variablesDeMarca(codigo?: string | null): CSSProperties {
+  const plantilla = plantillaPorCodigo(codigo);
+  if (plantilla.codigo === PLANTILLA_POR_DEFECTO) return {};
+  return {
+    "--brand-primary": canalesRgb(plantilla.colorMarca),
+    "--brand-primary-hover": canalesRgb(plantilla.colorHover),
+    "--brand-accent": canalesRgb(plantilla.colorAcento),
+  } as CSSProperties;
 }

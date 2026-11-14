@@ -16,9 +16,9 @@ const CLASE_TARJETA =
 const CLASE_INPUT =
   'w-full h-12 px-4 rounded-[0.75rem] text-base outline-none transition-all duration-200 placeholder:text-culinary-neutral bg-culinary-background border-2';
 const CLASE_BOTON_PRINCIPAL =
-  'w-full flex items-center justify-center gap-2 px-4 py-3.5 bg-[#6e54ad] text-white font-bold rounded-[0.75rem] hover:bg-[#5b468f] focus:outline-none focus:ring-4 focus:ring-[#6e54ad]/30 transition-all disabled:opacity-60 disabled:cursor-not-allowed text-lg';
+  'w-full flex items-center justify-center gap-2 px-4 py-3.5 bg-marca text-white font-bold rounded-[0.75rem] hover:bg-marca-hover focus:outline-none focus:ring-4 focus:ring-marca/30 transition-all disabled:opacity-60 disabled:cursor-not-allowed text-lg';
 const CLASE_BOTON_SECUNDARIO =
-  'px-5 py-2.5 bg-[#6e54ad]/10 text-[#6e54ad] font-semibold rounded-[0.5rem] hover:bg-[#6e54ad] hover:text-white transition-colors disabled:opacity-50';
+  'px-5 py-2.5 bg-marca/10 text-marca font-semibold rounded-[0.5rem] hover:bg-marca hover:text-white transition-colors disabled:opacity-50';
 
 const OPCIONES: ReadonlyArray<{
   valor: MetodoPago;
@@ -64,8 +64,8 @@ export function SelectorMetodoPago({
               htmlFor={idOpcion}
               className={`grid cursor-pointer grid-cols-[auto_1fr] items-start gap-x-3 rounded-[0.75rem] border-2 p-4 transition-colors ${
                 elegida
-                  ? 'border-[#6e54ad] bg-[#6e54ad]/5'
-                  : 'border-culinary-neutral/30 hover:border-[#6e54ad]/50'
+                  ? 'border-marca bg-marca/5'
+                  : 'border-culinary-neutral/30 hover:border-marca/50'
               }`}
             >
               <input
@@ -75,7 +75,7 @@ export function SelectorMetodoPago({
                 value={opcion.valor}
                 checked={elegida}
                 onChange={() => onCambiar(opcion.valor)}
-                className="row-span-2 mt-1 h-5 w-5 shrink-0 accent-[#6e54ad]"
+                className="row-span-2 mt-1 h-5 w-5 shrink-0 accent-marca"
               />
               {/* Texto directo en el label (sin anidar): Sonar S6853 lo
                   busca a poca profundidad. */}
@@ -155,7 +155,7 @@ export function FormularioEfectivo({
             className={`${CLASE_INPUT} ${
               invalido
                 ? 'border-[#BA1A1A] bg-[#FFDAD6]/40'
-                : 'border-culinary-neutral/30 focus:border-[#6e54ad] focus:ring-2 focus:ring-[#6e54ad]/20'
+                : 'border-culinary-neutral/30 focus:border-marca focus:ring-2 focus:ring-marca/20'
             }`}
           />
           <p
@@ -206,7 +206,7 @@ export function EsperandoMozo({
       aria-live="polite"
       className={`${CLASE_TARJETA} flex flex-col items-center text-center gap-4`}
     >
-      <span className="grid place-items-center w-16 h-16 rounded-full bg-culinary-primary-container text-[#6e54ad]">
+      <span className="grid place-items-center w-16 h-16 rounded-full bg-culinary-primary-container text-marca">
         <svg aria-hidden="true" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={agotado ? '' : 'animate-pulse'}>
           <rect x="2" y="6" width="20" height="12" rx="2" />
           <circle cx="12" cy="12" r="2.5" />
@@ -241,7 +241,7 @@ export function EsperandoMozo({
           <button
             type="button"
             onClick={onPagarConTarjeta}
-            className="px-5 py-2.5 text-[#6e54ad] font-semibold underline-offset-4 hover:underline"
+            className="px-5 py-2.5 text-marca font-semibold underline-offset-4 hover:underline"
           >
             Prefiero pagar con tarjeta
           </button>

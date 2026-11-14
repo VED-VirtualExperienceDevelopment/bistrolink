@@ -15,7 +15,7 @@ export const ID_CONSENTIMIENTO_FACTURA = "factura-consentimiento";
 const CLASE_INPUT =
   "w-full h-12 px-3 rounded-lg border bg-white text-foreground placeholder:text-[#79767d] focus:outline-none transition-colors";
 const CLASE_INPUT_OK =
-  "border-culinary-neutral/30 focus:border-[#6e54ad] focus:ring-2 focus:ring-[#6e54ad]/20";
+  "border-culinary-neutral/30 focus:border-marca focus:ring-2 focus:ring-marca/20";
 const CLASE_INPUT_ERROR = "border-[#BA1A1A] bg-[#FFDAD6]/40";
 
 /**
@@ -71,7 +71,7 @@ export function FacturaConRut({
           disabled={deshabilitado}
           onChange={(e) => cambiar("quiere", e.target.checked)}
           aria-describedby={idAyudaQuiere}
-          className="mt-0.5 h-5 w-5 shrink-0 accent-[#6e54ad]"
+          className="mt-0.5 h-5 w-5 shrink-0 accent-marca"
         />
         <div className="flex flex-col">
           <label
@@ -169,7 +169,7 @@ export function FacturaConRut({
                   ? `${idAviso} ${idErrorConsentimiento}`
                   : idAviso
               }
-              className="mt-0.5 h-5 w-5 shrink-0 accent-[#6e54ad]"
+              className="mt-0.5 h-5 w-5 shrink-0 accent-marca"
             />
             <p className="text-sm text-foreground">
               <label
@@ -181,7 +181,7 @@ export function FacturaConRut({
               </label>{" "}
               <a
                 href={rutaPrivacidad}
-                className="underline hover:text-[#6e54ad]"
+                className="underline hover:text-marca"
               >
                 Política de privacidad
               </a>

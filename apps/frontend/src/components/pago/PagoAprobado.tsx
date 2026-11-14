@@ -194,13 +194,13 @@ export function PagoAprobado({
   return (
     <div className="pt-20 pb-12 px-4 md:px-8 max-w-[640px] mx-auto flex flex-col gap-6">
       <section className={`${CLASE_TARJETA} text-center flex flex-col items-center gap-2`}>
-        <span className="grid place-items-center w-20 h-20 rounded-full bg-culinary-primary-container text-[#6e54ad] mb-2">
+        <span className="grid place-items-center w-20 h-20 rounded-full bg-culinary-primary-container text-marca mb-2">
           <svg aria-hidden="true" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="12" cy="12" r="9" />
             <path d="m8 12 3 3 5-6" />
           </svg>
         </span>
-        <p className="text-xs font-semibold uppercase tracking-wider text-[#6e54ad]">Pago aprobado</p>
+        <p className="text-xs font-semibold uppercase tracking-wider text-marca">Pago aprobado</p>
         <h1
           ref={tituloRef}
           tabIndex={-1}
@@ -216,7 +216,7 @@ export function PagoAprobado({
           <p className="text-xs font-semibold uppercase tracking-wider text-[#5a575e]">
             {esMesa ? etiquetaMesa(numeroMesa) : 'Código de tu pedido'}
           </p>
-          <p className="mt-1 text-4xl md:text-5xl font-bold tracking-tight text-[#6e54ad]">
+          <p className="mt-1 text-4xl md:text-5xl font-bold tracking-tight text-marca">
             {codigoPedido(pedidoId)}
           </p>
           <p className="mt-1 text-sm text-[#5a575e]">
@@ -295,7 +295,7 @@ export function PagoAprobado({
       <button
         type="button"
         onClick={onOtroPedido}
-        className="self-center inline-flex items-center gap-2 px-5 py-2.5 text-[#6e54ad] font-semibold rounded-[0.5rem] hover:bg-[#6e54ad]/10 transition-colors"
+        className="self-center inline-flex items-center gap-2 px-5 py-2.5 text-marca font-semibold rounded-[0.5rem] hover:bg-marca/10 transition-colors"
       >
         Hacer otro pedido
         <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -323,7 +323,7 @@ function Comprobante({
   return (
     <section aria-labelledby="comprobante" aria-live="polite" className={CLASE_TARJETA}>
       <div className="flex items-start gap-4">
-        <span className="shrink-0 grid place-items-center w-12 h-12 rounded-full bg-culinary-primary-container text-[#6e54ad]">
+        <span className="shrink-0 grid place-items-center w-12 h-12 rounded-full bg-culinary-primary-container text-marca">
           <svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M6 2h12v20l-3-2-3 2-3-2-3 2z" />
             <path d="M9 7h6" />
@@ -370,7 +370,7 @@ function DetalleRebaja({ rebaja }: { readonly rebaja: RebajaIva }) {
           </div>
         ))}
       </dl>
-      <p className="mt-2 text-xs font-semibold text-[#6e54ad]">{rebaja.leyenda}</p>
+      <p className="mt-2 text-xs font-semibold text-marca">{rebaja.leyenda}</p>
       <p className="mt-1 text-xs text-[#5a575e]">
         La reducción la descuenta la administradora de tu medio de pago.
       </p>
@@ -441,7 +441,7 @@ function AccionesDelComprobante({
             onClick={onDescargarPdf}
             disabled={descarga === 'descargando'}
             aria-busy={descarga === 'descargando'}
-            className="inline-flex items-center gap-2 px-4 py-2.5 border border-[#6e54ad] text-[#6e54ad] font-semibold rounded-[0.5rem] hover:bg-[#6e54ad]/10 focus:outline-none focus:ring-4 focus:ring-[#6e54ad]/30 transition-colors disabled:opacity-60"
+            className="inline-flex items-center gap-2 px-4 py-2.5 border border-marca text-marca font-semibold rounded-[0.5rem] hover:bg-marca/10 focus:outline-none focus:ring-4 focus:ring-marca/30 transition-colors disabled:opacity-60"
           >
             <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 3v12" />
@@ -455,7 +455,7 @@ function AccionesDelComprobante({
             href={comprobante.urlConsulta}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#6e54ad] text-white font-semibold rounded-[0.5rem] hover:bg-[#5b468f] focus:outline-none focus:ring-4 focus:ring-[#6e54ad]/30 transition-colors"
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-marca text-white font-semibold rounded-[0.5rem] hover:bg-marca-hover focus:outline-none focus:ring-4 focus:ring-marca/30 transition-colors"
           >
             Ver comprobante en DGI
             <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -481,7 +481,7 @@ function AccionesDelComprobante({
       <button
         type="button"
         onClick={onReintentar}
-        className="px-4 py-2 bg-[#6e54ad]/10 text-[#6e54ad] font-semibold rounded-[0.5rem] hover:bg-[#6e54ad] hover:text-white transition-colors"
+        className="px-4 py-2 bg-marca/10 text-marca font-semibold rounded-[0.5rem] hover:bg-marca hover:text-white transition-colors"
       >
         Volver a consultar
       </button>

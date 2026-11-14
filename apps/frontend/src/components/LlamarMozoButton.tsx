@@ -119,9 +119,9 @@ export function LlamarMozoButton({
   const getEstadoClasses = (currentState: Estado) => {
     switch (currentState) {
       case 'idle':
-        return 'bg-white border border-[#6e54ad]/30 text-[#6e54ad] hover:border-[#6e54ad] hover:bg-[#6e54ad]/5 active:scale-[0.95]';
+        return 'bg-white border border-marca/30 text-marca hover:border-marca hover:bg-marca/5 active:scale-[0.95]';
       case 'enviando':
-        return 'bg-[#6e54ad]/10 border border-transparent text-[#6e54ad] cursor-not-allowed';
+        return 'bg-marca/10 border border-transparent text-marca cursor-not-allowed';
       case 'enviado':
         return 'bg-[#1e8e3e]/10 border border-[#1e8e3e]/30 text-[#1e8e3e] cursor-not-allowed scale-105';
       case 'error':

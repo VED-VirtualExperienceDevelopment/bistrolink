@@ -517,7 +517,7 @@ export function PagoPedido({
         type="button"
         onClick={onVolver}
         disabled={bloqueado}
-        className="inline-flex items-center gap-2 text-sm font-medium text-[#5a575e] hover:text-[#6e54ad] disabled:opacity-40 disabled:cursor-not-allowed mb-6"
+        className="inline-flex items-center gap-2 text-sm font-medium text-[#5a575e] hover:text-marca disabled:opacity-40 disabled:cursor-not-allowed mb-6"
       >
         <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M19 12H5" />
@@ -533,7 +533,7 @@ export function PagoPedido({
               <span className="text-xs font-semibold uppercase tracking-wider text-[#5a575e]">
                 {origen.tipo === 'mesa' ? etiquetaMesa(numeroMesa) : 'Pedido para retirar'}
               </span>
-              <span className="text-xs font-semibold text-[#6e54ad] bg-[#6e54ad]/10 px-2.5 py-1 rounded-full">
+              <span className="text-xs font-semibold text-marca bg-marca/10 px-2.5 py-1 rounded-full">
                 Pedido {codigoPedido(pedidoId)}
               </span>
             </div>
@@ -649,7 +649,7 @@ export function PagoPedido({
                 <p className="mt-4 text-xs text-[#5a575e]">
                   Tu correo y tu documento se envían a Mercado Pago para procesar el pago
                   y enviarte el comprobante; BistroLink no los guarda.{' '}
-                  <a href={rutaPrivacidad(origen)} className="underline hover:text-[#6e54ad]">
+                  <a href={rutaPrivacidad(origen)} className="underline hover:text-marca">
                     Política de privacidad
                   </a>
                 </p>
@@ -893,7 +893,7 @@ function Verificando({
       aria-live="polite"
       className="bg-white rounded-[1rem] border border-culinary-neutral/15 p-6 md:p-8 shadow-[0px_4px_20px_rgba(121,118,125,0.08)] flex flex-col items-center text-center gap-4"
     >
-      <span className="grid place-items-center w-16 h-16 rounded-full bg-culinary-primary-container text-[#6e54ad]">
+      <span className="grid place-items-center w-16 h-16 rounded-full bg-culinary-primary-container text-marca">
         <svg aria-hidden="true" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={agotado ? '' : 'animate-pulse'}>
           <path d="M6 2h12" />
           <path d="M6 22h12" />
@@ -911,7 +911,7 @@ function Verificando({
           <button
             type="button"
             onClick={onReintentarConsulta}
-            className="px-5 py-2.5 bg-[#6e54ad]/10 text-[#6e54ad] font-semibold rounded-[0.5rem] hover:bg-[#6e54ad] hover:text-white transition-colors"
+            className="px-5 py-2.5 bg-marca/10 text-marca font-semibold rounded-[0.5rem] hover:bg-marca hover:text-white transition-colors"
           >
             Volver a consultar
           </button>
@@ -956,12 +956,12 @@ function ResumenPedido({
           <h2 id="resumen-pedido" className="text-lg font-bold text-foreground">
             Tu pedido
           </h2>
-          <span className="text-xs font-semibold text-[#6e54ad] bg-[#6e54ad]/10 px-2 py-0.5 rounded-full">
+          <span className="text-xs font-semibold text-marca bg-marca/10 px-2 py-0.5 rounded-full">
             {cantidadItems} {cantidadItems === 1 ? 'ítem' : 'ítems'}
           </span>
         </span>
         <span className="flex items-center gap-2 lg:hidden">
-          <span className="font-bold text-[#6e54ad]">{formatearPrecio(total)}</span>
+          <span className="font-bold text-marca">{formatearPrecio(total)}</span>
           <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`text-[#5a575e] transition-transform ${abierto ? 'rotate-180' : ''}`}>
             <path d="m6 9 6 6 6-6" />
           </svg>
@@ -1007,7 +1007,7 @@ function ResumenPedido({
               </p>
               {!propina && <p className="text-xs text-[#5a575e]">IVA incluido</p>}
             </div>
-            <p className="text-3xl font-bold text-[#6e54ad]">{formatearPrecio(total)}</p>
+            <p className="text-3xl font-bold text-marca">{formatearPrecio(total)}</p>
           </div>
         </div>
       </div>
