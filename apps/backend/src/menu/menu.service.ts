@@ -1,7 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { StorageService } from './storage.service';
 import { mapItemToDto } from './menu.mapper';
+import { platosMasPedidos, type ConsultaCruda } from './mas-pedidos';
 import type { PlantillaMarca } from '../configuracion/plantillas-marca';
 
 /**
@@ -36,6 +37,8 @@ export const ITEMS_DEL_COMENSAL = {
 
 @Injectable()
 export class MenuService {
+  private readonly logger = new Logger(MenuService.name);
+
   constructor(
     private readonly tenantPrisma: TenantPrismaService,
     private readonly storage: StorageService,
@@ -63,8 +66,10 @@ export class MenuService {
         include: { items: ITEMS_DEL_COMENSAL },
       });
 
-      const categoriasConUrls =
-        await this.categoriasConUrlsFirmadas(categorias);
+      const categoriasConUrls = await this.categoriasConUrlsFirmadas(
+        categorias,
+        await this.masPedidosDe(tx, tenantId, categorias),
+      );
 
       return {
         restaurante: { nombre: mesa.restaurante.nombre },
@@ -133,8 +138,10 @@ export class MenuService {
         include: { items: ITEMS_DEL_COMENSAL },
       });
 
-      const categoriasConUrls =
-        await this.categoriasConUrlsFirmadas(categorias);
+      const categoriasConUrls = await this.categoriasConUrlsFirmadas(
+        categorias,
+        await this.masPedidosDe(tx, tenantId, categorias),
+      );
 
       return {
         restaurante: {
@@ -170,7 +177,32 @@ export class MenuService {
     };
   }
 
-  private async categoriasConUrlsFirmadas(categorias: any[]) {
+  /**
+   * HU-045 (BL-547): los «más pedidos» entre los platos de esta carta, en la
+   * misma transacción (RLS). Si la consulta falla, la carta se muestra igual,
+   * sin la insignia: es un dato de ayuda, no algo para pedir.
+   */
+  private async masPedidosDe(
+    tx: ConsultaCruda,
+    tenantId: string,
+    categorias: { items: { id: string }[] }[],
+  ): Promise<ReadonlySet<string>> {
+    const ids = categorias.flatMap((c) => c.items.map((i) => i.id));
+    try {
+      return new Set(await platosMasPedidos(tx, tenantId, ids));
+    } catch (error) {
+      // Solo lectura: la carta sigue (y la transacción no escribió nada).
+      this.logger.warn(
+        `No se pudieron calcular los platos más pedidos: ${(error as Error).message}`,
+      );
+      return new Set();
+    }
+  }
+
+  private async categoriasConUrlsFirmadas(
+    categorias: any[],
+    masPedidos: ReadonlySet<string> = new Set(),
+  ) {
     return Promise.all(
       categorias.map(async (categoria) => ({
         id: categoria.id,
@@ -181,7 +213,7 @@ export class MenuService {
             const imagenUrl = item.imagenKey
               ? await this.storage.urlImagenPublica(item.imagenKey)
               : null;
-            return mapItemToDto(item, imagenUrl);
+            return mapItemToDto(item, imagenUrl, masPedidos.has(item.id));
           }),
         ),
       })),
