@@ -47,6 +47,8 @@ export default function ItemFormModal({
   const [descripcion, setDescripcion] = useState(itemToEdit?.descripcion ?? "");
   const [precio, setPrecio] = useState(itemToEdit?.precio ?? "");
   const [disponible, setDisponible] = useState(itemToEdit?.disponible ?? true);
+  // HU-044 (BL-537): «Sugerencia del local».
+  const [destacado, setDestacado] = useState(itemToEdit?.destacado ?? false);
   const [imagenKey, setImagenKey] = useState<string | null>(
     itemToEdit?.imagenKey ?? null,
   );
@@ -87,6 +89,7 @@ export default function ItemFormModal({
         descripcion: descripcion.trim(),
         precio: normalizarPrecio(precio),
         disponible,
+        destacado,
         imagenKey: imagenKey || undefined,
       };
 
@@ -220,6 +223,22 @@ export default function ItemFormModal({
               />
               <span className="text-body-md text-on-surface">
                 {disponible ? "Sí" : "No, agotado"}
+              </span>
+            </div>
+          </div>
+
+          <div>
+            <span className="mb-1 block text-label-md text-on-surface-variant">
+              Sugerencia del local
+            </span>
+            <div className="flex min-h-12 items-center gap-3">
+              <Switch
+                checked={destacado}
+                onChange={setDestacado}
+                label="Sugerencia del local"
+              />
+              <span className="text-body-md text-on-surface">
+                {destacado ? "Sí, se destaca en la carta" : "No"}
               </span>
             </div>
           </div>

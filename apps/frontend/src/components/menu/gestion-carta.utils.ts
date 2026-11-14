@@ -12,6 +12,8 @@ export interface ItemGestion {
   readonly descripcion?: string;
   readonly precio: string;
   readonly disponible: boolean;
+  /** HU-044 (BL-537): «Sugerencia del local». */
+  readonly destacado?: boolean;
   readonly imagenKey?: string;
   readonly imagenUrl?: string | null;
   readonly categoriaId: string;
@@ -51,6 +53,20 @@ export function conDisponibilidad(
   }));
 }
 
+/** HU-044 (BL-537): marca o desmarca un ítem como «Sugerencia del local». */
+export function conDestacado(
+  categorias: Categorias,
+  itemId: string,
+  destacado: boolean,
+): CategoriaGestion[] {
+  return categorias.map((cat) => ({
+    ...cat,
+    items: cat.items.map((item) =>
+      item.id === itemId ? { ...item, destacado } : item,
+    ),
+  }));
+}
+
 /** Cambia la visibilidad (`activo`) de una categoría. */
 export function conVisibilidad(
   categorias: Categorias,
@@ -86,16 +102,27 @@ function cantidad(n: number, singular: string, plural: string): string {
 }
 
 /**
- * Contador del encabezado: «12 ítems · 2 agotados». Los agotados solo se
- * nombran si hay alguno.
+ * Contador del encabezado: «12 ítems · 2 agotados · 3 sugerencias». Los
+ * agotados y las sugerencias del local (HU-044) solo se nombran si hay.
  */
 export function textoContadorCarta(categorias: Categorias): string {
   const items = categorias.flatMap((cat) => cat.items);
   const agotados = items.filter((item) => !item.disponible).length;
-  const total = cantidad(items.length, "ítem", "ítems");
-  return agotados > 0
-    ? `${total} · ${cantidad(agotados, "agotado", "agotados")}`
-    : total;
+  const sugerencias = items.filter((item) => item.destacado).length;
+  const partes = [cantidad(items.length, "ítem", "ítems")];
+  if (agotados > 0) partes.push(cantidad(agotados, "agotado", "agotados"));
+  if (sugerencias > 0) {
+    partes.push(cantidad(sugerencias, "sugerencia", "sugerencias"));
+  }
+  return partes.join(" · ");
+}
+
+/**
+ * HU-044 (BL-537): nombre accesible de la estrella. Es fijo (el estado lo
+ * dice `aria-pressed`), con el plato para distinguir los botones.
+ */
+export function etiquetaEstrella(item: Pick<ItemGestion, "nombre">): string {
+  return `Sugerencia del local: ${item.nombre}`;
 }
 
 /** Contador de una categoría: «3 ítems». */
@@ -109,6 +136,8 @@ export type FiltroEstadoCarta =
   | "TODOS"
   | "DISPONIBLES"
   | "AGOTADOS"
+  // HU-044 (BL-537): los platos marcados como «Sugerencia del local».
+  | "SUGERENCIAS"
   | "OCULTOS"
   // BL-398 (parte 3): lo archivado se carga aparte (incluirArchivados).
   | "ARCHIVADOS";
@@ -140,6 +169,7 @@ function itemPasaElEstado(
 ): boolean {
   if (estado === "DISPONIBLES") return item.disponible;
   if (estado === "AGOTADOS") return !item.disponible;
+  if (estado === "SUGERENCIAS") return item.destacado === true;
   return true;
 }
 

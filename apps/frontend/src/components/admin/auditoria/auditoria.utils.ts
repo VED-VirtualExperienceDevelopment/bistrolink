@@ -199,6 +199,8 @@ const NOMBRE_CAMPO: Record<string, string> = {
   controlaStock: "Controla stock",
   stockActual: "Unidades",
   umbralAlerta: "Aviso con",
+  // HU-044 (BL-537): «Sugerencia del local».
+  destacado: "Sugerencia del local",
 };
 
 /** HU-020 (BL-72): valores de un campo que se muestran con otro texto. */

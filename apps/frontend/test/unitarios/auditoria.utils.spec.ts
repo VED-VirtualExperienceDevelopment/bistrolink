@@ -80,6 +80,15 @@ describe("cómo se muestra cada registro", () => {
     ).toEqual(["Visible: sí → no", "Nombre: Picadas → Tablas"]);
   });
 
+  it("HU-044 (BL-537): marcar la «Sugerencia del local» se lee con su nombre", () => {
+    expect(
+      cambiosDelRegistro({
+        valoresAntes: { destacado: false },
+        valoresDespues: { destacado: true },
+      }),
+    ).toEqual(["Sugerencia del local: no → sí"]);
+  });
+
   it("[TC-U-224] BL-396: muestra sobre qué ítem o categoría fue la acción", () => {
     expect(objetoDelRegistro({ detalle: { nombre: "Picada Completa" } })).toBe(
       "«Picada Completa»",
