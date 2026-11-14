@@ -38,6 +38,7 @@
 | 1.30 | 11/11/2026 | Se borran los bloques de TC-E-008 y TC-E-105 a 107, ya cargados en Kiwi. TC-E-108 a 111: pantalla de Inicio del administrador y del mozo (mejora BL-520). |
 | 1.31 | 12/11/2026 | Se borran los bloques de TC-E-108 a 111, ya cargados en Kiwi. TC-E-098 y 099: pedido para retirar con código, aviso de listo y entrega con código (HU-040, BL-210). |
 | 1.32 | 14/11/2026 | Se borran los bloques de TC-E-098 y 099, ya cargados en Kiwi. TC-E-112 y 113: pago por link (HU-033 / BL-203). |
+| 1.33 | 14/11/2026 | TC-E-114 a 116: marca propia del local, de Configuración a la carta, y la sección «Marca del local» en un celular de 360 px (HU-043 / BL-535). |
 
 Plantilla para cargar en Kiwi la descripción de casos TC-E (Playwright)
 nuevos o que cambiaron (BL-435). La usa
@@ -121,3 +122,63 @@ Igual que TC-E-112.
 2. Antes de generar avisa que el anterior deja de servir; después muestra otra URL.
 3. «Este link de pago fue reemplazado.»
 4. «Pagá tu pedido».
+
+## TC-E-114
+
+### Precondición
+
+Sesión de Administrador en staging. El local del seed con la plantilla Clásica, sin logo ni portada.
+
+### Pasos
+
+1. Abrir Configuración → «Marca del local».
+2. En «Estilo del menú», poner el foco en «Clásica» y apretar la flecha derecha.
+3. Subir un logo PNG (64 × 64 px, fondo transparente) y tocar «Guardar cambios».
+4. Abrir la carta por el enlace web.
+5. Al terminar, el test deja la plantilla en Clásica y quita el logo.
+
+### Resultado esperado
+
+1. Hay 4 plantillas en un grupo de botones de opción.
+2. Queda elegida «Gourmet», con el foco en ella y el texto «Elegida».
+3. Aparece «El logo nuevo se aplica al guardar los cambios.» y después «Cambios guardados.».
+4. En la barra de arriba está el logo del local (en lugar de «BistroLink») y la carta usa los colores de la Gourmet.
+
+## TC-E-115
+
+### Precondición
+
+Igual que TC-E-114.
+
+### Pasos
+
+1. En «Marca del local», cambiar el nombre del local.
+2. Subir una foto de portada horizontal (PNG de 160 × 90 px) y tocar «Guardar cambios».
+3. Abrir la carta por el enlace web.
+4. Al terminar, el test deja el nombre original y quita la portada.
+
+### Resultado esperado
+
+1. La vista previa del banner («Celular» y «Computadora») muestra el nombre nuevo.
+2. Aparece «La portada nueva se aplica al guardar los cambios.» y después «Cambios guardados.».
+3. El título de la carta y la pestaña del navegador tienen el nombre nuevo, y el banner muestra la portada completa.
+
+## TC-E-116
+
+### Precondición
+
+Sesión de Administrador en staging. Solo lee: no cambia la configuración.
+
+### Pasos
+
+1. Abrir Configuración en una pantalla de 360 × 800 px.
+2. Ir a «Marca del local».
+3. Medir las tarjetas de «Estilo del menú».
+4. Analizar la sección con axe-core (WCAG 2.1 AA).
+
+### Resultado esperado
+
+1. La página no tiene scroll horizontal.
+2. «Estilo del menú» es un grupo con 4 botones de opción y uno elegido.
+3. Cada tarjeta mide al menos 44 × 44 px.
+4. Sin errores graves ni críticos de accesibilidad.

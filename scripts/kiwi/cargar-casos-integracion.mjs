@@ -1538,6 +1538,23 @@ const DATOS_E2E = {
     priority: "P2",
     tags: ["BL-203", "link-de-pago"],
   }),
+  // HU-043 (BL-535): marca propia del local, en admin/marca.spec.ts
+  // (114 y 115) y admin/configuracion-pantalla.spec.ts (116).
+  114: e2e("admin", "HU-043", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-533", "BL-534", "marca", "teclado", "imagenes"],
+  }),
+  115: e2e("admin", "HU-043", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-561", "BL-562", "marca", "imagenes"],
+  }),
+  116: e2e("admin", "HU-043", {
+    category: "Accesibilidad",
+    priority: "P2",
+    tags: ["BL-533", "marca", "responsive", ...axe],
+  }),
 };
 /**
  * Datos de los contratos PactJS (TC-C). Requirement con la HU que usa el
