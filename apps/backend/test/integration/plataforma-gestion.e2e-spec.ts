@@ -18,6 +18,7 @@ import {
   rutDePrueba,
   tenantIdEnKeycloak,
 } from './support/plataforma';
+import { esRutValido } from '../../src/plataforma/rut';
 
 /**
  * BL-416 (BL-404): gestión de establecimientos por la plataforma, contra la
@@ -211,12 +212,16 @@ describe('Gestión de establecimientos por la plataforma (BL-404) - e2e', () => 
         .send({ rut: rutConVerificadorIncorrecto(RUT) })
         .expect(400);
 
-      // El RUT de cualquier otro establecimiento (el del seed, por ejemplo).
-      const otro = await prisma.tenant.findFirst({
+      // El RUT de otro establecimiento, con RUT válido: si no, la API responde
+      // 400 por el formato y no llega a comprobar que está repetido. Sin
+      // filtrar, depende del orden de las filas (el tenant B del seed tiene
+      // un RUT de prueba inválido).
+      const otros = await prisma.tenant.findMany({
         where: { id: { not: tenantId } },
         select: { rut: true },
       });
-      expect(otro).not.toBeNull();
+      const otro = otros.find((t) => esRutValido(t.rut));
+      expect(otro).toBeDefined();
       await comoPlataforma(api().patch(`${RUTA}/${tenantId}`))
         .send({ rut: otro?.rut })
         .expect(409);
