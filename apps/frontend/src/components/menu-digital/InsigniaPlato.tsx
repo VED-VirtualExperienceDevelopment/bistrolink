@@ -5,7 +5,10 @@
  * - Ícono SVG en línea: el menú no descarga la fuente de Material Symbols
  *   (BL-524, LCP de BL-438).
  * - Ícono y texto: el estado no depende solo del color.
- * - «Sugerencia del local»: fondo sólido #755b00 y texto blanco (6.46:1).
+ * - «Sugerencia del local»: fondo sólido con el color de acento de la
+ *   plantilla del local (HU-043, `marca-acento`) y texto blanco. Todas las
+ *   plantillas dan al menos 6,20:1 (plantillas-marca.ts); la Clásica,
+ *   #755b00, 6,46:1.
  */
 import type { VarianteInsignia } from "./insignias.utils";
 
@@ -46,7 +49,7 @@ export function InsigniaPlato({
   readonly variante: VarianteInsignia;
 }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-[#755b00] px-2.5 py-1 text-xs font-semibold text-white">
+    <span className="inline-flex items-center gap-1 rounded-full bg-marca-acento px-2.5 py-1 text-xs font-semibold text-white">
       <IconoEstrella rellena tamano={14} />
       {TEXTO[variante]}
     </span>

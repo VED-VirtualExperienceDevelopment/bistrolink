@@ -42,7 +42,8 @@
 | 1.35    | 13/11/2026 | TC-I-208 y 209: cola del KDS sugerida en el alta de un establecimiento (HU-042 / BL-472), para cargar con el script antes de mergear el PR.                                                                                               |
 | 1.36    | 14/11/2026 | TC-I-199 a 202: pedidos para retirar (HU-040 / BL-210). Se borran los bloques ya cargados (TC-I-206 a 209 y 009).                                                                                                                         |
 | 1.37    | 14/11/2026 | TC-I-210 a 216: pago por link (HU-033 / BL-203). Se borran los bloques de TC-I-199 a 202, ya cargados.                                                                                                                                    |
-| 1.38    | 14/11/2026 | TC-I-217 y 218: «Sugerencia del local» (HU-044 / BL-537). Se borran los bloques de TC-I-210 a 216, ya cargados.                                                                                                                           |
+| 1.38    | 14/11/2026 | TC-I-217 a 220: marca propia del local (HU-043 / BL-531, 532, 561 y 562): plantilla, logo, nombre y dirección, y portada. Se numeran después de los de HU-033.                                                                            |
+| 1.39    | 14/11/2026 | TC-I-221 y 222: «Sugerencia del local» (HU-044 / BL-537). Se borran los bloques de TC-I-217 a 220, ya cargados.                                                                                                                           |
 
 Texto del campo de descripción de cada caso TC-I en Kiwi. Lo carga
 `cargar-casos-integracion.mjs --descripciones`: cada bloque `## TC-I-NNN`
@@ -54,7 +55,7 @@ esperado`, igual que los casos cargados a mano desde TC-I-029.
 
 ## Casos para cargar
 
-## TC-I-217
+## TC-I-221
 
 ### Precondición
 
@@ -76,11 +77,11 @@ Administrador del tenant A del seed (variables TEST_ADMIN_*). Categoría de prue
 4. Una entrada con `destacado` de `false` a `true`.
 5. El plato tiene `destacado: false`.
 
-## TC-I-218
+## TC-I-222
 
 ### Precondición
 
-Usuario MOZO del test (variables TEST_MOZO_*). La categoría de prueba de TC-I-217.
+Usuario MOZO del test (variables TEST_MOZO_*). La categoría de prueba de TC-I-221.
 
 ### Pasos
 

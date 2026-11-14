@@ -177,6 +177,41 @@ describe('ProcesadorImagenService (BL-386)', () => {
       expect([width, height]).toEqual([800, 600]);
     });
 
+    it('[TC-U-514] HU-043 (BL-532): el logo sale de 512 px de lado como máximo, sin deformar', async () => {
+      const salida = await procesador.procesar(await imagen(2000, 1000), {
+        ladoMaximo: 512,
+      });
+
+      const { width, height, format } = await sharp(salida).metadata();
+      expect(format).toBe('webp');
+      expect([width, height]).toEqual([512, 256]);
+    });
+
+    it('[TC-U-515] HU-043 (BL-532): conserva la transparencia de un PNG', async () => {
+      const conTransparencia = await sharp({
+        create: {
+          width: 64,
+          height: 64,
+          channels: 4,
+          background: { r: 0, g: 0, b: 0, alpha: 0 },
+        },
+      })
+        .png()
+        .toBuffer();
+
+      const salida = await procesador.procesar(conTransparencia, {
+        ladoMaximo: 512,
+      });
+
+      const metadatos = await sharp(salida).metadata();
+      expect(metadatos.hasAlpha).toBe(true);
+      const { data } = await sharp(salida)
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+      // Canal alfa del primer píxel: sigue siendo transparente.
+      expect(data[3]).toBe(0);
+    });
+
     it('orienta la imagen según el EXIF antes de descartarlo', async () => {
       // 200 × 100 con orientación 6 (rotada 90°): se ve vertical.
       const rotada = await sharp({

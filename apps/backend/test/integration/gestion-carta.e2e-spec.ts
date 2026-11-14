@@ -320,7 +320,7 @@ describeConAdmin('BL-402: Gestión de Carta (integración)', () => {
   });
 
   // ── «Sugerencia del local» (HU-044, BL-537) ──────────────────────────────
-  it('[TC-I-217] Carta: el ADMIN marca un plato como «Sugerencia del local»; queda auditado y el comensal lo ve, sin cambiar el orden', async () => {
+  it('[TC-I-221] Carta: el ADMIN marca un plato como «Sugerencia del local»; queda auditado y el comensal lo ve, sin cambiar el orden', async () => {
     const menuPublico = async () => {
       const res = await servidor()
         .get(`/menu/tenant/${TENANT_ID}/restaurante/${RESTAURANTE_ID}`)
@@ -385,7 +385,7 @@ describeConAdmin('BL-402: Gestión de Carta (integración)', () => {
   });
 
   itConMozo(
-    '[TC-I-218] Carta: el MOZO no puede marcar ni desmarcar la «Sugerencia del local» (403)',
+    '[TC-I-222] Carta: el MOZO no puede marcar ni desmarcar la «Sugerencia del local» (403)',
     async () => {
       const token = await getToken(MOZO_USER as string, MOZO_PASS as string);
       await conToken(

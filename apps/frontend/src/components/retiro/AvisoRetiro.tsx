@@ -65,9 +65,9 @@ export function AvisoRetiro({ listo, codigo }: Props) {
       <div
         role="alert"
         data-testid="aviso-listo-para-retirar"
-        className="mt-4 rounded-[0.75rem] bg-culinary-primary-container px-4 py-4 text-center"
+        className="mt-4 rounded-[0.75rem] bg-marca/10 px-4 py-4 text-center"
       >
-        <p className="text-lg font-bold text-[#6e54ad]">
+        <p className="text-lg font-bold text-marca">
           Tu pedido está listo para retirar
         </p>
         <p className="mt-1 text-sm text-foreground">
@@ -90,7 +90,7 @@ export function AvisoRetiro({ listo, codigo }: Props) {
         <button
           type="button"
           onClick={() => void activarAviso()}
-          className="inline-flex items-center gap-2 px-4 py-2.5 border border-[#6e54ad] text-[#6e54ad] font-semibold rounded-[0.5rem] hover:bg-[#6e54ad]/10 focus:outline-none focus:ring-4 focus:ring-[#6e54ad]/30 transition-colors"
+          className="inline-flex items-center gap-2 px-4 py-2.5 border border-marca text-marca font-semibold rounded-[0.5rem] hover:bg-marca/10 focus:outline-none focus:ring-4 focus:ring-marca/30 transition-colors"
         >
           Avisarme cuando esté listo
         </button>

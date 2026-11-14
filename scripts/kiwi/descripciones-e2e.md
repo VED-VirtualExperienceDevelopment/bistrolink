@@ -38,7 +38,8 @@
 | 1.30 | 11/11/2026 | Se borran los bloques de TC-E-008 y TC-E-105 a 107, ya cargados en Kiwi. TC-E-108 a 111: pantalla de Inicio del administrador y del mozo (mejora BL-520). |
 | 1.31 | 12/11/2026 | Se borran los bloques de TC-E-108 a 111, ya cargados en Kiwi. TC-E-098 y 099: pedido para retirar con código, aviso de listo y entrega con código (HU-040, BL-210). |
 | 1.32 | 14/11/2026 | Se borran los bloques de TC-E-098 y 099, ya cargados en Kiwi. TC-E-112 y 113: pago por link (HU-033 / BL-203). |
-| 1.33 | 14/11/2026 | Se borran los bloques de TC-E-112 y 113, ya cargados en Kiwi. TC-E-114: «Sugerencia del local» (HU-044 / BL-537). |
+| 1.33 | 14/11/2026 | TC-E-114 a 116: marca propia del local, de Configuración a la carta, y la sección «Marca del local» en un celular de 360 px (HU-043 / BL-535). |
+| 1.34 | 14/11/2026 | Se borran los bloques de TC-E-114 a 116, ya cargados en Kiwi. TC-E-117: «Sugerencia del local» (HU-044 / BL-537). |
 
 Plantilla para cargar en Kiwi la descripción de casos TC-E (Playwright)
 nuevos o que cambiaron (BL-435). La usa
@@ -83,7 +84,7 @@ Reglas:
 
 ## Casos para cargar
 
-## TC-E-114
+## TC-E-117
 
 ### Precondición
 
@@ -101,4 +102,4 @@ Sesiones de Administrador y de Mozo en staging. El test crea por la API una cate
 1. La estrella queda presionada (`aria-pressed="true"`) y la tarjeta muestra «Sugerencia del local».
 2. Sigue marcada y el filtro muestra el plato. Sin errores graves ni críticos de accesibilidad.
 3. No ve la estrella del plato.
-4. La tarjeta del plato muestra la insignia «Sugerencia del local». Sin errores graves ni críticos de accesibilidad.
+4. La tarjeta del plato muestra la insignia «Sugerencia del local», con el color de acento de la plantilla del local. Sin errores graves ni críticos de accesibilidad.

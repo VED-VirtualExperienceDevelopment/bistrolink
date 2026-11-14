@@ -17,6 +17,10 @@ function buildRestaurante(overrides: Partial<any> = {}) {
     nombre: 'Restaurante Test',
     direccion: 'Av. Test 1234',
     timezone: 'America/Montevideo',
+    // HU-043 (BL-532): marca por defecto (sin logo, plantilla Clásica).
+    logoKey: null,
+    portadaKey: null,
+    plantilla: 'clasica',
     // HU-040 (BL-210): toma pedidos para retirar todo el día.
     retiroHabilitado: true,
     retiroHoraDesde: null,
@@ -137,6 +141,7 @@ describe('MenuService - getMenuByRestaurante (HU-002)', () => {
           nombre: restaurante.nombre,
           direccion: restaurante.direccion,
         }),
+        marca: { logoUrl: null, portadaUrl: null, plantilla: 'clasica' },
         // HU-040 (BL-210): el enlace web es el de los pedidos para retirar.
         retiro: {
           habilitado: true,
@@ -259,6 +264,35 @@ describe('MenuService - getMenuByRestaurante (HU-002)', () => {
       expect(resultado.restaurante.id).toBe(restaurante.id);
       expect(resultado.categorias).toEqual([]);
     });
+  });
+
+  it('[TC-U-523] HU-043 (BL-532): devuelve la marca con la URL pública del logo y la plantilla', async () => {
+    const tenantId = randomUUID();
+    const logoKey = `${tenantId}/menu/marca/0b4f6a3e-1111-4c2d-9e8f-123456789abc.webp`;
+    const restaurante = buildRestaurante({
+      tenantId,
+      logoKey,
+      plantilla: 'gourmet',
+    });
+    mockTx.restaurante.findUnique.mockResolvedValue(restaurante);
+    mockCategoriaCartaFindMany([]);
+    mockStorage.urlImagenPublica.mockResolvedValue(
+      `https://cdn.example/${logoKey}`,
+    );
+
+    const resultado = await service.getMenuByRestaurante(
+      tenantId,
+      restaurante.id,
+    );
+
+    expect(mockStorage.urlImagenPublica).toHaveBeenCalledWith(logoKey);
+    expect(resultado.marca).toEqual({
+      logoUrl: `https://cdn.example/${logoKey}`,
+      portadaUrl: null,
+      plantilla: 'gourmet',
+    });
+    // La key no viaja al comensal.
+    expect(JSON.stringify(resultado.restaurante)).not.toContain('menu/marca');
   });
 
   describe('Casos de error', () => {
@@ -404,6 +438,7 @@ describe('MenuService - getMenuByMesa (HU-001)', () => {
 
       expect(resultado).toEqual({
         restaurante: { nombre: restaurante.nombre },
+        marca: { logoUrl: null, portadaUrl: null, plantilla: 'clasica' },
         categorias: expect.arrayContaining([
           expect.objectContaining({
             id: categoria.id,
@@ -413,6 +448,61 @@ describe('MenuService - getMenuByMesa (HU-001)', () => {
             ]),
           }),
         ]),
+      });
+    });
+
+    it('[TC-U-523] HU-043 (BL-532): el menú por QR también devuelve la marca', async () => {
+      const tenantId = randomUUID();
+      const mesaId = randomUUID();
+      const logoKey = `${tenantId}/menu/marca/0b4f6a3e-1111-4c2d-9e8f-123456789abc.webp`;
+      const restaurante = buildRestaurante({
+        tenantId,
+        logoKey,
+        plantilla: 'familiar',
+      });
+      mockTx.mesa.findUnique.mockResolvedValue({
+        id: mesaId,
+        numero: 1,
+        restauranteId: restaurante.id,
+        restaurante,
+      });
+      mockTx.categoriaCarta.findMany.mockResolvedValue([]);
+      mockStorage.urlImagenPublica.mockResolvedValue(
+        `https://cdn.example/${logoKey}`,
+      );
+
+      const resultado = await service.getMenuByMesa(tenantId, mesaId);
+
+      expect(resultado.marca).toEqual({
+        logoUrl: `https://cdn.example/${logoKey}`,
+        portadaUrl: null,
+        plantilla: 'familiar',
+      });
+    });
+
+    it('[TC-U-549] HU-043 (BL-562): la marca trae la URL pública de la portada del banner', async () => {
+      const tenantId = randomUUID();
+      const mesaId = randomUUID();
+      const portadaKey = `${tenantId}/menu/portada/0b4f6a3e-1111-4c2d-9e8f-123456789abc.webp`;
+      const restaurante = buildRestaurante({ tenantId, portadaKey });
+      mockTx.mesa.findUnique.mockResolvedValue({
+        id: mesaId,
+        numero: 1,
+        restauranteId: restaurante.id,
+        restaurante,
+      });
+      mockTx.categoriaCarta.findMany.mockResolvedValue([]);
+      mockStorage.urlImagenPublica.mockResolvedValue(
+        `https://cdn.example/${portadaKey}`,
+      );
+
+      const resultado = await service.getMenuByMesa(tenantId, mesaId);
+
+      expect(mockStorage.urlImagenPublica).toHaveBeenCalledWith(portadaKey);
+      expect(resultado.marca).toEqual({
+        logoUrl: null,
+        portadaUrl: `https://cdn.example/${portadaKey}`,
+        plantilla: 'clasica',
       });
     });
 

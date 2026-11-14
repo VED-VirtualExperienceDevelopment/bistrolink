@@ -962,6 +962,35 @@ const DATOS_INTEGRACION = {
     priority: "P3",
     tags: ["HU-042", "BL-472", "plataforma", "kds", "cola", "validacion"],
   },
+  // HU-043 (BL-531): plantilla de marca del local, en
+  // configuracion-establecimiento.e2e-spec.ts.
+  217: configuracionEstablecimiento({
+    category: "Funcional",
+    priority: "P3",
+    requirement: "HU-043",
+    tags: ["HU-043", "BL-531", "marca", "auditoria", "validacion"],
+  }),
+  // HU-043 (BL-532): el logo tiene que ser un logo publicado del tenant.
+  218: configuracionEstablecimiento({
+    category: "Seguridad",
+    priority: "P2",
+    requirement: "HU-043",
+    tags: ["HU-043", "BL-532", "marca", "imagenes", "validacion"],
+  }),
+  // HU-043 (BL-561): nombre y dirección del local desde Configuración.
+  219: configuracionEstablecimiento({
+    category: "Funcional",
+    priority: "P2",
+    requirement: "HU-043",
+    tags: ["HU-043", "BL-561", "marca", "auditoria", "menu"],
+  }),
+  // HU-043 (BL-562): la portada tiene que ser una portada publicada del tenant.
+  220: configuracionEstablecimiento({
+    category: "Seguridad",
+    priority: "P2",
+    requirement: "HU-043",
+    tags: ["HU-043", "BL-562", "marca", "imagenes", "validacion"],
+  }),
   // HU-033 (BL-203): pago por link.
   210: linkPago({
     category: "Funcional",
@@ -999,12 +1028,12 @@ const DATOS_INTEGRACION = {
     tags: ["seguridad", "privacidad", "rate-limiting", "Ley-18331"],
   }),
   // HU-044 (BL-537): «Sugerencia del local».
-  217: sugerenciaLocal({
+  221: sugerenciaLocal({
     category: "Funcional",
     priority: "P2",
     tags: ["auditoria", "menu-publico"],
   }),
-  218: sugerenciaLocal({
+  222: sugerenciaLocal({
     category: "Seguridad",
     priority: "P2",
     tags: ["seguridad", "roles"],
@@ -1527,8 +1556,25 @@ const DATOS_E2E = {
     priority: "P2",
     tags: ["BL-203", "link-de-pago"],
   }),
+  // HU-043 (BL-535): marca propia del local, en admin/marca.spec.ts
+  // (114 y 115) y admin/configuracion-pantalla.spec.ts (116).
+  114: e2e("admin", "HU-043", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-533", "BL-534", "marca", "teclado", "imagenes"],
+  }),
+  115: e2e("admin", "HU-043", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-561", "BL-562", "marca", "imagenes"],
+  }),
+  116: e2e("admin", "HU-043", {
+    category: "Accesibilidad",
+    priority: "P2",
+    tags: ["BL-533", "marca", "responsive", ...axe],
+  }),
   // HU-044 (BL-537): «Sugerencia del local», en admin/gestion-carta.spec.ts.
-  114: e2e("carta", "HU-044", {
+  117: e2e("carta", "HU-044", {
     category: "Funcional",
     priority: "P2",
     tags: ["BL-537", "roles", "responsive", ...axe],

@@ -16,7 +16,7 @@ interface Props {
 }
 
 const CLASE_CAMPO =
-  "w-full p-3 rounded-lg text-sm outline-none border-2 border-culinary-neutral/30 bg-culinary-background focus:border-[#6e54ad] focus:ring-2 focus:ring-[#6e54ad]/20 placeholder:text-[#5a575e]/70";
+  "w-full p-3 rounded-lg text-sm outline-none border-2 border-culinary-neutral/30 bg-culinary-background focus:border-marca focus:ring-2 focus:ring-marca/20 placeholder:text-[#5a575e]/70";
 
 /**
  * HU-040 (BL-210): nombre y contacto del comensal en un pedido para retirar.
@@ -92,14 +92,14 @@ export function FormularioContactoRetiro({
             onChange={(e) =>
               onChange({ ...valor, consentimiento: e.target.checked })
             }
-            className="mt-0.5 h-4 w-4 accent-[#6e54ad]"
+            className="mt-0.5 h-4 w-4 accent-marca"
           />
           <span>
             Acepto que el local guarde mi nombre y contacto para este pedido,
             según su{" "}
             <a
               href={rutaPrivacidad}
-              className="underline text-[#6e54ad]"
+              className="underline text-marca"
               target="_blank"
               rel="noopener noreferrer"
             >

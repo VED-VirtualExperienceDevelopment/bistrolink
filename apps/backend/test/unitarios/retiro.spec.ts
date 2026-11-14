@@ -628,6 +628,8 @@ describe('configuración del retiro (BL-210)', () => {
         } as any,
         { registrarEnTx: jest.fn() } as any,
         { avisarEstadoCola: jest.fn() } as any,
+        // HU-043 (BL-532): estos tests no tocan el logo; sin logoKey no se firma nada.
+        { urlFirmadaDeLectura: jest.fn() } as any,
       );
     });
 

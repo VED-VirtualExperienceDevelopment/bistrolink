@@ -267,7 +267,7 @@ test.describe("BL-392 · Gestión de Carta", () => {
     }
   });
 
-  test("[TC-E-114] HU-044: el admin marca un plato como «Sugerencia del local» con la estrella, queda guardado y el comensal ve la insignia (sin errores graves de accesibilidad)", async ({
+  test("[TC-E-117] HU-044: el admin marca un plato como «Sugerencia del local» con la estrella, queda guardado y el comensal ve la insignia (sin errores graves de accesibilidad)", async ({
     kdsPageAdmin: page,
     kdsPageMozo,
     browser,

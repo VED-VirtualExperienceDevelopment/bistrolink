@@ -138,7 +138,7 @@ test.describe("HU-038: tiempo de espera e indicador de conexión en el KDS", () 
     );
   });
 
-  test("[TC-E-088] HU-038: si se corta la conexión aparece «Reconectando…» y al volver se normaliza sin perder pedidos", async ({
+  test("[TC-E-088] HU-038: si se corta la conexión aparece «Reconectando...» y al volver se normaliza sin perder pedidos", async ({
     context,
     kdsPageMozo,
   }, testInfo) => {

@@ -140,8 +140,9 @@ function BadgeAgotado() {
 /**
  * HU-044 (BL-537): rótulo de un plato marcado como «Sugerencia del local».
  * Ícono y texto, como «Agotado»: el estado no depende del relleno de la
- * estrella. Es igual a la insignia que ve el comensal (fondo #755b00 y texto
- * blanco, 6.46:1), y así no se confunde con el ámbar claro de «Agotado».
+ * estrella. Es igual a la insignia que ve el comensal con la plantilla
+ * Clásica (fondo #755b00 y texto blanco, 6.46:1), y así no se confunde con
+ * el ámbar claro de «Agotado».
  */
 function BadgeSugerencia() {
   return (

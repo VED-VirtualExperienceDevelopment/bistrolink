@@ -9,6 +9,10 @@ import {
   hayErroresCola,
   primerCampoConError,
   hayCambios,
+  urlDelLogo,
+  urlDeLaPortada,
+  errorDireccionLocal,
+  errorNombreLocal,
   leerPropinas,
   sinMediosDePago,
   type ConfiguracionEstablecimiento,
@@ -80,6 +84,9 @@ describe("cambios para guardar", () => {
   it("el formulario arranca con lo guardado", () => {
     expect(formularioDesde(GUARDADA)).toEqual({
       razonSocial: "Uno SRL",
+      // HU-043 (BL-561): un backend anterior no los trae: sin los campos.
+      nombreLocal: null,
+      direccionLocal: null,
       efectivoHabilitado: true,
       mercadoPagoHabilitado: true,
       // HU-007b (BL-80): un backend anterior no lo trae: el default (true).
@@ -102,11 +109,17 @@ describe("cambios para guardar", () => {
       esperaAtencion: "30",
       esperaDemorado: "60",
       esperaDemoraAlta: "120",
+      // HU-043 (BL-533): un backend anterior no trae la marca: la Clásica,
+      // con el logo sin tocar.
+      plantilla: "clasica",
+      logo: { tipo: "guardado" },
       // HU-040 (BL-210): un backend anterior no trae el retiro: habilitado,
       // todo el día (el default de la columna).
       retiroHabilitado: true,
       retiroHoraDesde: "",
       retiroHoraHasta: "",
+      // HU-043 (BL-562): la portada, sin tocar.
+      portada: { tipo: "guardado" },
     });
   });
 });
@@ -361,6 +374,8 @@ describe("HU-042 (BL-465): cola del KDS", () => {
 describe("primerCampoConError", () => {
   const SIN_ERRORES = {
     razonSocial: null,
+    nombreLocal: null,
+    direccionLocal: null,
     propinas: null,
     cola: {},
     email: null,
@@ -396,6 +411,8 @@ describe("erroresDelFormulario", () => {
   it("[TC-U-423] junta los errores de todos los campos; sin formulario no hay errores", () => {
     expect(erroresDelFormulario(null)).toEqual({
       razonSocial: null,
+      nombreLocal: null,
+      direccionLocal: null,
       propinas: null,
       email: null,
       cola: {},
@@ -414,6 +431,8 @@ describe("erroresDelFormulario", () => {
       }),
     ).toEqual({
       razonSocial: "La razón social es obligatoria.",
+      nombreLocal: null,
+      direccionLocal: null,
       propinas: expect.any(String),
       email: expect.any(String),
       cola: { limitePreparacion: "Tiene que estar entre 1 y 50." },
@@ -422,6 +441,8 @@ describe("erroresDelFormulario", () => {
 
     expect(erroresDelFormulario(formularioDesde(GUARDADA))).toEqual({
       razonSocial: null,
+      nombreLocal: null,
+      direccionLocal: null,
       propinas: null,
       email: null,
       cola: {},
@@ -557,6 +578,8 @@ describe("HU-038 (BL-506): umbrales de espera del KDS", () => {
     expect(
       primerCampoConError({
         razonSocial: null,
+        nombreLocal: null,
+        direccionLocal: null,
         propinas: null,
         email: "mal",
         cola: { esperaDemorado: "mal" },
@@ -566,11 +589,185 @@ describe("HU-038 (BL-506): umbrales de espera del KDS", () => {
     expect(
       primerCampoConError({
         razonSocial: null,
+        nombreLocal: null,
+        direccionLocal: null,
         propinas: null,
         email: null,
         cola: { minutosPreparacion: "mal", esperaAtencion: "mal" },
         retiro: null,
       }),
     ).toBe("cola-minutos");
+  });
+});
+describe("HU-043 (BL-533): marca del local", () => {
+  const CON_MARCA: ConfiguracionEstablecimiento = {
+    ...GUARDADA,
+    plantilla: "gourmet",
+    plantillasDisponibles: ["clasica", "gourmet", "rapida", "familiar"],
+    logoUrl: "https://firmada.example/logo.webp",
+  };
+
+  it("[TC-U-524] el formulario arranca con la plantilla guardada y el logo sin tocar", () => {
+    const formulario = formularioDesde(CON_MARCA);
+
+    expect(formulario.plantilla).toBe("gourmet");
+    expect(formulario.logo).toEqual({ tipo: "guardado" });
+    expect(cambiosParaGuardar(CON_MARCA, formulario)).toEqual({});
+  });
+
+  it("[TC-U-525] cambiar la plantilla manda solo la plantilla", () => {
+    const formulario = {
+      ...formularioDesde(CON_MARCA),
+      plantilla: "rapida" as const,
+    };
+
+    expect(cambiosParaGuardar(CON_MARCA, formulario)).toEqual({
+      plantilla: "rapida",
+    });
+  });
+
+  it("[TC-U-526] un logo nuevo manda su key; quitarlo manda null solo si había uno guardado", () => {
+    const key =
+      "11111111-1111-1111-1111-111111111111/menu/marca/0b4f6a3e-1111-4c2d-9e8f-123456789abc.webp";
+    const nuevo = {
+      ...formularioDesde(CON_MARCA),
+      logo: {
+        tipo: "nuevo" as const,
+        key,
+        url: "https://firmada.example/nuevo.webp",
+      },
+    };
+    expect(cambiosParaGuardar(CON_MARCA, nuevo)).toEqual({ logoKey: key });
+
+    const quitado = {
+      ...formularioDesde(CON_MARCA),
+      logo: { tipo: "quitado" as const },
+    };
+    expect(cambiosParaGuardar(CON_MARCA, quitado)).toEqual({ logoKey: null });
+
+    const sinLogo = { ...CON_MARCA, logoUrl: null };
+    expect(
+      cambiosParaGuardar(sinLogo, {
+        ...formularioDesde(sinLogo),
+        logo: { tipo: "quitado" },
+      }),
+    ).toEqual({});
+  });
+
+  it("[TC-U-527] la vista previa muestra el logo nuevo, ninguno si se quitó, o el guardado", () => {
+    expect(urlDelLogo(CON_MARCA, { tipo: "guardado" })).toBe(
+      "https://firmada.example/logo.webp",
+    );
+    expect(
+      urlDelLogo(CON_MARCA, {
+        tipo: "nuevo",
+        key: "k",
+        url: "https://firmada.example/nuevo.webp",
+      }),
+    ).toBe("https://firmada.example/nuevo.webp");
+    expect(urlDelLogo(CON_MARCA, { tipo: "quitado" })).toBeNull();
+    expect(urlDelLogo(GUARDADA, { tipo: "guardado" })).toBeNull();
+  });
+});
+
+describe("HU-043 (BL-561): nombre y dirección del local", () => {
+  const CON_LOCAL: ConfiguracionEstablecimiento = {
+    ...GUARDADA,
+    nombre: "La Parrilla",
+    direccion: "Av. Italia 1234, Montevideo",
+  };
+
+  it("[TC-U-539] el formulario arranca con lo guardado y, sin cambios, no manda nada", () => {
+    const formulario = formularioDesde(CON_LOCAL);
+
+    expect(formulario.nombreLocal).toBe("La Parrilla");
+    expect(formulario.direccionLocal).toBe("Av. Italia 1234, Montevideo");
+    expect(
+      cambiosParaGuardar(CON_LOCAL, {
+        ...formulario,
+        nombreLocal: "  La   Parrilla ",
+      }),
+    ).toEqual({});
+  });
+
+  it("[TC-U-540] manda el nombre y la dirección limpios, solo si cambiaron", () => {
+    const formulario = {
+      ...formularioDesde(CON_LOCAL),
+      nombreLocal: " La Parrilla  de Juan ",
+      direccionLocal: "18 de Julio 1234",
+    };
+
+    expect(cambiosParaGuardar(CON_LOCAL, formulario)).toEqual({
+      nombre: "La Parrilla de Juan",
+      direccion: "18 de Julio 1234",
+    });
+  });
+
+  it("[TC-U-541] los dos son obligatorios y tienen largo máximo; sin backend que los traiga, no se validan", () => {
+    expect(errorNombreLocal("   ")).toBe("El nombre del local es obligatorio.");
+    expect(errorNombreLocal("x".repeat(121))).toMatch(/hasta 120/);
+    expect(errorNombreLocal("La Parrilla")).toBeNull();
+    expect(errorDireccionLocal("")).toBe(
+      "La dirección del local es obligatoria.",
+    );
+    expect(errorDireccionLocal("x".repeat(201))).toMatch(/hasta 200/);
+    expect(errorNombreLocal(null)).toBeNull();
+    expect(errorDireccionLocal(null)).toBeNull();
+  });
+
+  it("[TC-U-542] el foco va al nombre o a la dirección después de las propinas y antes de la cola", () => {
+    const errores = erroresDelFormulario({
+      ...formularioDesde(CON_LOCAL),
+      direccionLocal: "",
+      colaActiva: true,
+      limitePreparacion: "0",
+    });
+
+    expect(primerCampoConError(errores)).toBe("direccion-local");
+  });
+});
+
+describe("HU-043 (BL-562): portada del banner", () => {
+  const CON_PORTADA: ConfiguracionEstablecimiento = {
+    ...GUARDADA,
+    portadaUrl: "https://firmada.example/portada.webp",
+  };
+
+  it("[TC-U-550] una portada nueva manda su key; quitarla manda null solo si había una guardada", () => {
+    const key =
+      "11111111-1111-1111-1111-111111111111/menu/portada/0b4f6a3e-1111-4c2d-9e8f-123456789abc.webp";
+    expect(
+      cambiosParaGuardar(CON_PORTADA, {
+        ...formularioDesde(CON_PORTADA),
+        portada: { tipo: "nuevo", key, url: "https://firmada.example/n.webp" },
+      }),
+    ).toEqual({ portadaKey: key });
+    expect(
+      cambiosParaGuardar(CON_PORTADA, {
+        ...formularioDesde(CON_PORTADA),
+        portada: { tipo: "quitado" },
+      }),
+    ).toEqual({ portadaKey: null });
+    expect(
+      cambiosParaGuardar(GUARDADA, {
+        ...formularioDesde(GUARDADA),
+        portada: { tipo: "quitado" },
+      }),
+    ).toEqual({});
+  });
+
+  it("[TC-U-551] la vista previa muestra la portada nueva, la guardada, o ninguna (la de por defecto)", () => {
+    expect(urlDeLaPortada(CON_PORTADA, { tipo: "guardado" })).toBe(
+      "https://firmada.example/portada.webp",
+    );
+    expect(
+      urlDeLaPortada(CON_PORTADA, {
+        tipo: "nuevo",
+        key: "k",
+        url: "https://firmada.example/n.webp",
+      }),
+    ).toBe("https://firmada.example/n.webp");
+    expect(urlDeLaPortada(CON_PORTADA, { tipo: "quitado" })).toBeNull();
+    expect(urlDeLaPortada(GUARDADA, { tipo: "guardado" })).toBeNull();
   });
 });

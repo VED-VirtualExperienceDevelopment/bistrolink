@@ -21,9 +21,9 @@ export function CarritoBarra({ cantidad, total, onAbrir }: Props) {
       onClick={onAbrir}
       aria-haspopup="dialog"
       data-testid="carrito-barra"
-      className="flex w-full items-center gap-3 rounded-[0.75rem] bg-[#6e54ad] px-4 py-3.5 text-white shadow-[0px_4px_20px_rgba(121,118,125,0.3)] transition-colors hover:bg-[#5b468f] focus:outline-none focus:ring-4 focus:ring-[#6e54ad]/30"
+      className="flex w-full items-center gap-3 rounded-[0.75rem] bg-marca px-4 py-3.5 text-white shadow-[0px_4px_20px_rgba(121,118,125,0.3)] transition-colors hover:bg-marca-hover focus:outline-none focus:ring-4 focus:ring-marca/30"
     >
-      <span className="grid h-7 min-w-7 shrink-0 place-items-center rounded-full bg-white px-2 text-sm font-bold text-[#6e54ad]">
+      <span className="grid h-7 min-w-7 shrink-0 place-items-center rounded-full bg-white px-2 text-sm font-bold text-marca">
         <span aria-hidden="true">{cantidad}</span>
         <span className="sr-only">{textoItems(cantidad)} en el pedido.</span>
       </span>

@@ -160,7 +160,7 @@ export function GraciasPorTuCompra({
               type="button"
               onClick={onDescargarPdf}
               disabled={descargando}
-              className="mt-3 text-sm font-semibold text-[#6e54ad] underline disabled:opacity-60"
+              className="mt-3 text-sm font-semibold text-marca underline disabled:opacity-60"
             >
               {descargando ? "Descargando…" : "Descargar e-Ticket"}
             </button>
@@ -177,7 +177,7 @@ export function GraciasPorTuCompra({
             <button
               type="button"
               onClick={onOtroPedido}
-              className="w-full rounded-[0.5rem] bg-[#6e54ad] px-4 py-3 font-semibold text-white hover:bg-[#5d4699] focus:outline-none focus:ring-4 focus:ring-[#6e54ad]/30"
+              className="w-full rounded-[0.5rem] bg-marca px-4 py-3 font-semibold text-white hover:bg-marca-hover focus:outline-none focus:ring-4 focus:ring-marca/30"
             >
               Pedir algo más
             </button>
@@ -186,7 +186,7 @@ export function GraciasPorTuCompra({
             <button
               type="button"
               onClick={onVerMisPedidos}
-              className="w-full rounded-[0.5rem] border border-[#6e54ad] px-4 py-3 font-semibold text-[#6e54ad] hover:bg-[#6e54ad]/10 focus:outline-none focus:ring-4 focus:ring-[#6e54ad]/30"
+              className="w-full rounded-[0.5rem] border border-marca px-4 py-3 font-semibold text-marca hover:bg-marca/10 focus:outline-none focus:ring-4 focus:ring-marca/30"
             >
               {textoEnCamino(pedidosEnCamino)}
             </button>

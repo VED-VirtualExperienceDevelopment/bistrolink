@@ -92,11 +92,14 @@ export class StorageService {
    * - Sin IMAGES_CDN_URL (local, MinIO): URL firmada, como antes.
    * - Solo las keys {tenant}/menu/{uuid}.webp van por la CDN; la política del
    *   bucket tampoco deja leer otra cosa (la cuarentena incoming/ sigue privada).
+   * - HU-043 (BL-532 y BL-562): el logo ({tenant}/menu/marca/{uuid}.webp) y
+   *   la portada ({tenant}/menu/portada/{uuid}.webp) también. La política del
+   *   bucket ya cubre todo lo que está bajo {tenant}/menu/.
    */
   async urlImagenPublica(key: string): Promise<string | null> {
     const cdn = sinBarraFinal(process.env.IMAGES_CDN_URL?.trim() ?? '');
     const esPublicada = new RegExp(
-      String.raw`^[A-Za-z0-9-]+/menu/${PATRON_UUID}\.webp$`,
+      String.raw`^[A-Za-z0-9-]+/menu/(?:marca/|portada/)?${PATRON_UUID}\.webp$`,
     ).test(key);
     if (cdn && esPublicada) {
       return `${cdn}/${key}`;
@@ -233,6 +236,26 @@ export class StorageService {
   }
 
   /**
+   * HU-043 (BL-532): una key solo sirve de logo si es un logo PUBLICADO del
+   * tenant que la usa: formato exacto {tenant}/menu/marca/{uuid}.webp, el
+   * que genera la confirmación con destino `marca`. Rechaza las de otro
+   * tenant, las de la cuarentena, las fotos de los ítems y las que tienen
+   * barras extra o "..".
+   */
+  esKeyDeMarcaDelTenant(key: string, tenantId: string): boolean {
+    return esKeyDeCarpetaDelTenant(key, tenantId, 'marca');
+  }
+
+  /**
+   * HU-043 (BL-562): lo mismo para la portada del banner:
+   * {tenant}/menu/portada/{uuid}.webp, generada por la confirmación con
+   * destino `portada`. Un logo o la foto de un ítem no sirven de portada.
+   */
+  esKeyDePortadaDelTenant(key: string, tenantId: string): boolean {
+    return esKeyDeCarpetaDelTenant(key, tenantId, 'portada');
+  }
+
+  /**
    * BL-387: el objeto existe en el bucket (HeadObject, sin descargarlo).
    * Evita asociar a un ítem una key bien formada pero que nunca se publicó.
    */
@@ -250,6 +273,18 @@ export class StorageService {
       throw error;
     }
   }
+}
+
+/** HU-043: {tenant}/menu/{carpeta}/{uuid}.webp, con el formato exacto. */
+function esKeyDeCarpetaDelTenant(
+  key: string,
+  tenantId: string,
+  carpeta: 'marca' | 'portada',
+): boolean {
+  const patron = new RegExp(
+    String.raw`^${escaparRegex(tenantId)}/menu/${carpeta}/${PATRON_UUID}\.webp$`,
+  );
+  return patron.test(key);
 }
 
 function escaparRegex(texto: string): string {

@@ -23,6 +23,7 @@ import {
   MINUTOS_ESPERA_MAXIMO,
   MINUTOS_ESPERA_MINIMO,
 } from '../../pedidos/umbrales-espera';
+import { PLANTILLAS_MARCA, type PlantillaMarca } from '../plantillas-marca';
 
 /** HU-020 (BL-72): hasta cuántos porcentajes de propina se sugieren. */
 export const MAXIMO_PROPINAS_SUGERIDAS = 5;
@@ -80,6 +81,16 @@ export const MINUTOS_PREPARACION_MAXIMO = 180;
 /** HU-036 (BL-206): largo máximo de un correo (RFC 5321) y de la columna. */
 export const LARGO_MAXIMO_EMAIL = 254;
 
+/**
+ * HU-043 (BL-561): largos del nombre y la dirección del local, los mismos
+ * que usa Plataforma (EditarEstablecimientoDto, BL-412).
+ */
+export const LARGO_MAXIMO_NOMBRE_LOCAL = 120;
+export const LARGO_MAXIMO_DIRECCION_LOCAL = 200;
+
+/** HU-043 (BL-532): el mismo largo máximo que la key de una imagen confirmada. */
+export const LARGO_MAXIMO_KEY_LOGO = 200;
+
 /** Sin espacios y en minúsculas; vacío = quitarlo (null). */
 const normalizarEmail = ({ value }: { value: unknown }) => {
   if (typeof value !== 'string') return value;
@@ -117,6 +128,25 @@ export class ActualizarConfiguracionDto {
     message: 'La razón social debe tener entre 1 y 200 caracteres',
   })
   razonSocial?: string;
+
+  // HU-043 (BL-561): nombre y dirección del local, los que ven los
+  // comensales en la carta y en la política de privacidad. Mismas reglas
+  // que Plataforma (BL-412). Opcionales, pero nunca null (NOT NULL).
+  @ValidateIf((_dto, valor) => valor !== undefined)
+  @Transform(limpiarEspacios)
+  @IsString({ message: 'El nombre del local debe ser texto' })
+  @Length(1, LARGO_MAXIMO_NOMBRE_LOCAL, {
+    message: `El nombre del local debe tener entre 1 y ${LARGO_MAXIMO_NOMBRE_LOCAL} caracteres`,
+  })
+  nombre?: string;
+
+  @ValidateIf((_dto, valor) => valor !== undefined)
+  @Transform(limpiarEspacios)
+  @IsString({ message: 'La dirección del local debe ser texto' })
+  @Length(1, LARGO_MAXIMO_DIRECCION_LOCAL, {
+    message: `La dirección del local debe tener entre 1 y ${LARGO_MAXIMO_DIRECCION_LOCAL} caracteres`,
+  })
+  direccion?: string;
 
   // Medios de pago. efectivoHabilitado es la columna de HU-031 (BL-201).
   @IsOptional()
@@ -273,6 +303,25 @@ export class ActualizarConfiguracionDto {
   })
   minutosEsperaDemoraAlta?: number;
 
+  // HU-043 (BL-531): plantilla de colores de la carta. Opcional, pero nunca
+  // null (columna NOT NULL). La base tiene el mismo control (CHECK).
+  @ValidateIf((_dto, valor) => valor !== undefined)
+  @IsIn(PLANTILLAS_MARCA, {
+    message: `Plantilla no disponible. Se puede elegir: ${PLANTILLAS_MARCA.join(', ')}`,
+  })
+  plantilla?: PlantillaMarca;
+
+  // HU-043 (BL-532): logo del local. Es la key que devuelve
+  // POST /admin/menu/imagenes/confirmar con destino `marca`. Que sea un logo
+  // publicado de este establecimiento lo controla el servicio (400 si no).
+  // null quita el logo.
+  @IsOptional()
+  @ValidateIf((_dto, valor) => valor !== null)
+  @IsString({ message: 'El logo debe ser la key de una imagen confirmada' })
+  @MaxLength(LARGO_MAXIMO_KEY_LOGO, {
+    message: `La key del logo puede tener hasta ${LARGO_MAXIMO_KEY_LOGO} caracteres`,
+  })
+  logoKey?: string | null;
   // HU-040 (BL-210): pedidos para retirar por el enlace web.
   @IsOptional()
   @IsBoolean({ message: 'retiroHabilitado debe ser verdadero o falso' })
@@ -295,4 +344,16 @@ export class ActualizarConfiguracionDto {
     message: 'La hora de cierre del retiro tiene que tener la forma HH:MM',
   })
   retiroHoraHasta?: string | null;
+
+  // HU-043 (BL-562): foto de portada del banner de la carta. Es la key que
+  // devuelve la confirmación con destino `portada`; la controla el servicio
+  // (400 si no es una portada publicada de este establecimiento). null la
+  // quita (vuelve la portada por defecto).
+  @IsOptional()
+  @ValidateIf((_dto, valor) => valor !== null)
+  @IsString({ message: 'La portada debe ser la key de una imagen confirmada' })
+  @MaxLength(LARGO_MAXIMO_KEY_LOGO, {
+    message: `La key de la portada puede tener hasta ${LARGO_MAXIMO_KEY_LOGO} caracteres`,
+  })
+  portadaKey?: string | null;
 }

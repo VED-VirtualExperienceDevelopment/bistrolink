@@ -9,6 +9,7 @@ import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { AuditAction } from '../audit-log/audit-action.enum';
 import { KdsGateway } from '../pedidos/kds.gateway';
+import { StorageService } from '../menu/storage.service';
 import { completarCapacidad, type PedidoPromovido } from '../pedidos/cola-kds';
 import {
   errorOrdenUmbrales,
@@ -22,6 +23,7 @@ import {
   MedioPagoConfigurable,
   PROVEEDORES_CFE_DISPONIBLES,
 } from './dto/actualizar-configuracion.dto';
+import { PLANTILLAS_MARCA, type PlantillaMarca } from './plantillas-marca';
 
 /** HU-020 (BL-72): respuesta de GET y PATCH /admin/configuracion. */
 export interface ConfiguracionEstablecimiento {
@@ -29,6 +31,9 @@ export interface ConfiguracionEstablecimiento {
   razonSocial: string;
   /** Solo lectura para el Administrador: lo cambia la plataforma (BL-412). */
   rut: string;
+  /** HU-043 (BL-561): nombre y dirección del local que ve el comensal. */
+  nombre: string;
+  direccion: string;
   efectivoHabilitado: boolean;
   mercadoPagoHabilitado: boolean;
   /** HU-007b (BL-80): cobros con el POS del local. */
@@ -58,15 +63,34 @@ export interface ConfiguracionEstablecimiento {
   minutosEsperaDemorado: number;
   /** HU-038 (BL-506): desde cuántos minutos pasa a «Demora alta». */
   minutosEsperaDemoraAlta: number;
+  /** HU-043 (BL-531): plantilla de colores de la carta del comensal. */
+  plantilla: PlantillaMarca;
+  /** HU-043 (BL-531): las que se pueden elegir. */
+  plantillasDisponibles: PlantillaMarca[];
+  /**
+   * HU-043 (BL-532): URL firmada del logo, para mostrarlo en la pantalla.
+   * null si no tiene logo. La key no se devuelve: para cambiarlo se manda la
+   * key nueva que devolvió la confirmación de la imagen.
+   */
+  logoUrl: string | null;
   /** HU-040 (BL-210): pedidos para retirar por el enlace web. */
   retiroHabilitado: boolean;
   /** HU-040 (BL-210): franja diaria HH:MM; las dos null = todo el día. */
   retiroHoraDesde: string | null;
   retiroHoraHasta: string | null;
+  /**
+   * HU-043 (BL-562): URL firmada de la portada del banner, para la vista
+   * previa. null = la portada por defecto. La key no se devuelve.
+   */
+  portadaUrl: string | null;
 }
 
 /** Campos de la configuración que viven en restaurante. */
 const SELECT_RESTAURANTE = {
+  // HU-043 (BL-561): nombre y dirección del local, con antes y después en
+  // la auditoría (son públicos: salen en la carta).
+  nombre: true,
+  direccion: true,
   efectivoHabilitado: true,
   mercadoPagoHabilitado: true,
   posHabilitado: true,
@@ -85,10 +109,16 @@ const SELECT_RESTAURANTE = {
   minutosEsperaAtencion: true,
   minutosEsperaDemorado: true,
   minutosEsperaDemoraAlta: true,
+  // HU-043 (BL-531 y BL-532): plantilla y logo de marca, con antes y
+  // después en la auditoría. El logo se responde como URL (logoUrl).
+  plantilla: true,
+  logoKey: true,
   // HU-040 (BL-210): pedidos para retirar.
   retiroHabilitado: true,
   retiroHoraDesde: true,
   retiroHoraHasta: true,
+  // HU-043 (BL-562): portada del banner, igual que el logo.
+  portadaKey: true,
 } satisfies Prisma.RestauranteSelect;
 
 /** HU-042 (BL-465): campos que cambian el estado de la cola del KDS. */
@@ -132,7 +162,8 @@ interface Actual {
 
 /** HU-042 (BL-465): lo que devuelve la transacción de actualizar. */
 interface ResultadoActualizacion {
-  configuracion: ConfiguracionEstablecimiento;
+  /** Lo que quedó guardado. La respuesta se arma después del commit. */
+  guardado: Actual;
   /** Cambió algún campo de la cola: hay que avisar al KDS. */
   cambioLaCola: boolean;
   /** Pedidos que pasaron a preparación al subir el límite. */
@@ -173,10 +204,17 @@ function igual(a: unknown, b: unknown): boolean {
  *   si una falla, no queda ninguna de las dos.
  * - HU-038 (BL-506): los umbrales de espera del KDS tienen que quedar de
  *   menor a mayor (400 si no); al cambiarlos se avisa a los KDS abiertos.
+ * - HU-043 (BL-531): la plantilla de marca se elige de una lista cerrada
+ *   (400 si no); los colores viven en el frontend.
+ * - HU-043 (BL-532): el logo tiene que ser un logo publicado de este
+ *   establecimiento (400 si no). Se responde como URL firmada.
+ * - HU-043 (BL-561): el nombre y la dirección del local también los cambia
+ *   el Administrador (antes, solo Plataforma). El RUT sigue siendo de
+ *   Plataforma.
  * - Auditoría ESTABLECIMIENTO_CONFIGURACION_MODIFICADA con los campos que
- *   cambiaron y, para medios de pago, propinas y CFE, los valores antes y
- *   después. La razón social va sin el valor, mismo criterio que BL-412: en
- *   un unipersonal es el nombre de una persona.
+ *   cambiaron y, para medios de pago, propinas, CFE y plantilla, los
+ *   valores antes y después. La razón social va sin el valor, mismo
+ *   criterio que BL-412: en un unipersonal es el nombre de una persona.
  */
 @Injectable()
 export class ConfiguracionEstablecimientoService {
@@ -185,13 +223,15 @@ export class ConfiguracionEstablecimientoService {
     private readonly auditLog: AuditLogService,
     // HU-042 (BL-465): avisar al KDS cuando cambia la configuración de la cola.
     private readonly kdsGateway: KdsGateway,
+    // HU-043 (BL-532): validar el logo y firmar su URL.
+    private readonly storage: StorageService,
   ) {}
 
   async obtener(tenantId: string): Promise<ConfiguracionEstablecimiento> {
     const actual = await this.tenantPrisma.runInTenantContext(tenantId, (tx) =>
       this.leer(tx, tenantId),
     );
-    return armarRespuesta(actual);
+    return this.armarRespuesta(actual);
   }
 
   async actualizar(
@@ -204,6 +244,14 @@ export class ConfiguracionEstablecimientoService {
     );
     if (pedidos.length === 0) {
       throw new BadRequestException('No hay cambios');
+    }
+    // HU-043 (BL-532 y BL-562): antes de abrir la transacción (consultan el
+    // bucket).
+    if (typeof dto.logoKey === 'string') {
+      await this.validarImagenDeMarca('logo', dto.logoKey, tenantId);
+    }
+    if (typeof dto.portadaKey === 'string') {
+      await this.validarImagenDeMarca('portada', dto.portadaKey, tenantId);
     }
 
     const resultado = await this.tenantPrisma.runInTenantContext(
@@ -222,7 +270,7 @@ export class ConfiguracionEstablecimientoService {
         const cambios = calcularCambios(actual, dto);
         if (cambios.campos.length === 0) {
           return {
-            configuracion: armarRespuesta(actual),
+            guardado: actual,
             cambioLaCola: false,
             promovidos: [],
             umbralesEspera: null,
@@ -246,7 +294,65 @@ export class ConfiguracionEstablecimientoService {
     if (resultado.umbralesEspera) {
       this.kdsGateway.emitirUmbralesEspera(tenantId, resultado.umbralesEspera);
     }
-    return resultado.configuracion;
+    return this.armarRespuesta(resultado.guardado);
+  }
+
+  /**
+   * HU-043 (BL-532 y BL-562): el logo tiene que ser un logo publicado de
+   * este establecimiento ({tenant}/menu/marca/{uuid}.webp), y la portada una
+   * portada publicada ({tenant}/menu/portada/{uuid}.webp). Las dos tienen
+   * que existir en el bucket. Mismo criterio que las imágenes de los ítems
+   * (BL-387).
+   */
+  private async validarImagenDeMarca(
+    tipo: 'logo' | 'portada',
+    key: string,
+    tenantId: string,
+  ): Promise<void> {
+    const esLogo = tipo === 'logo';
+    const valida = esLogo
+      ? this.storage.esKeyDeMarcaDelTenant(key, tenantId)
+      : this.storage.esKeyDePortadaDelTenant(key, tenantId);
+    if (!valida) {
+      // Mismo mensaje para una key de otro tenant, de la cuarentena, de un
+      // ítem o del otro tipo: no se revela si existe en otro establecimiento.
+      throw new BadRequestException(
+        esLogo
+          ? 'El logo no es válido para este establecimiento'
+          : 'La portada no es válida para este establecimiento',
+      );
+    }
+    if (!(await this.storage.existeImagen(key))) {
+      throw new BadRequestException(
+        esLogo
+          ? 'El logo indicado no existe. Volvé a subirlo.'
+          : 'La portada indicada no existe. Volvé a subirla.',
+      );
+    }
+  }
+
+  /**
+   * La respuesta de GET y PATCH: el logo y la portada van como URL firmada,
+   * sin la key.
+   */
+  private async armarRespuesta(
+    actual: Actual,
+  ): Promise<ConfiguracionEstablecimiento> {
+    const { logoKey, portadaKey, ...restaurante } = actual.restaurante;
+    return {
+      razonSocial: actual.razonSocial,
+      rut: actual.rut,
+      ...restaurante,
+      // La columna es texto (con CHECK): acá se acota al tipo.
+      plantilla: restaurante.plantilla as PlantillaMarca,
+      logoUrl: logoKey ? await this.storage.urlFirmadaDeLectura(logoKey) : null,
+      portadaUrl: portadaKey
+        ? await this.storage.urlFirmadaDeLectura(portadaKey)
+        : null,
+      mediosPagoDisponibles: [...MEDIOS_PAGO_DISPONIBLES],
+      proveedoresCfeDisponibles: [...PROVEEDORES_CFE_DISPONIBLES],
+      plantillasDisponibles: [...PLANTILLAS_MARCA],
+    };
   }
 
   /** Escribe los cambios, los audita y, si hace falta, llena la cocina. */
@@ -291,11 +397,11 @@ export class ConfiguracionEstablecimientoService {
       : [];
 
     return {
-      configuracion: armarRespuesta({
+      guardado: {
         razonSocial: cambios.razonSocial ?? actual.razonSocial,
         rut: actual.rut,
         restaurante,
-      }),
+      },
       cambioLaCola: cambios.campos.some((campo) =>
         CAMPOS_DE_LA_COLA.has(campo),
       ),
@@ -408,14 +514,4 @@ function calcularCambios(
     cambios.despues[campo] = nuevo;
   }
   return cambios;
-}
-
-function armarRespuesta(actual: Actual): ConfiguracionEstablecimiento {
-  return {
-    razonSocial: actual.razonSocial,
-    rut: actual.rut,
-    ...actual.restaurante,
-    mediosPagoDisponibles: [...MEDIOS_PAGO_DISPONIBLES],
-    proveedoresCfeDisponibles: [...PROVEEDORES_CFE_DISPONIBLES],
-  };
 }
