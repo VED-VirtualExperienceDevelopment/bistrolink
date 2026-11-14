@@ -16,6 +16,11 @@
  * (sesionMesa). Va en el body del token y en el header X-Mesa-Sesion: con la
  * mesa cerrada, o si el mozo la cerró y la volvió a abrir, el backend la
  * rechaza (410).
+ *
+ * HU-033 (BL-203): «link» es el link de pago que genera el mozo
+ * (/pagar/<token>). No se arma un pedido: se paga uno que ya existe, y el
+ * token del link es la credencial (body de POST /auth/comensal/link-pago y
+ * header X-Link-Pago).
  */
 
 export type OrigenMenu =
@@ -28,6 +33,10 @@ export type OrigenMenu =
       readonly tipo: "publico";
       readonly tenantId: string;
       readonly restauranteId: string;
+    }
+  | {
+      readonly tipo: "link";
+      readonly linkToken: string;
     };
 
 export type TipoMenu = OrigenMenu["tipo"];
@@ -35,6 +44,8 @@ export type TipoMenu = OrigenMenu["tipo"];
 /** Rutas del backend (AuthComensalController / MesasController). */
 export const RUTA_AUTH_COMENSAL = "/auth/comensal";
 export const RUTA_AUTH_COMENSAL_MESA = "/auth/comensal/mesa";
+/** HU-033 (BL-203): token del comensal a partir del link de pago. */
+export const RUTA_AUTH_COMENSAL_LINK = "/auth/comensal/link-pago";
 export const RUTA_LLAMAR_MOZO = "/mesas/llamar";
 
 /** Header con el token del QR (HEADER_MESA_TOKEN en el backend). */
@@ -69,10 +80,14 @@ export function esTokenQrConFormatoValido(token: string): boolean {
 
 export type CuerpoAuthComensal =
   | { qrToken: string; sesionMesa: string }
-  | { tenantId: string; restauranteId: string };
+  | { tenantId: string; restauranteId: string }
+  | { linkToken: string };
 
 export interface SolicitudAuthComensal {
-  ruta: typeof RUTA_AUTH_COMENSAL | typeof RUTA_AUTH_COMENSAL_MESA;
+  ruta:
+    | typeof RUTA_AUTH_COMENSAL
+    | typeof RUTA_AUTH_COMENSAL_MESA
+    | typeof RUTA_AUTH_COMENSAL_LINK;
   body: CuerpoAuthComensal;
 }
 
@@ -84,6 +99,12 @@ export function solicitudAuthComensal(
     return {
       ruta: RUTA_AUTH_COMENSAL_MESA,
       body: { qrToken: origen.qrToken, sesionMesa: origen.sesionMesa },
+    };
+  }
+  if (origen.tipo === "link") {
+    return {
+      ruta: RUTA_AUTH_COMENSAL_LINK,
+      body: { linkToken: origen.linkToken },
     };
   }
   return {
@@ -99,7 +120,9 @@ export function solicitudAuthComensal(
 export function origenPedido(
   origen: OrigenMenu,
 ): { restauranteId: string } | Record<string, never> {
-  return origen.tipo === "mesa" ? {} : { restauranteId: origen.restauranteId };
+  return origen.tipo === "publico"
+    ? { restauranteId: origen.restauranteId }
+    : {};
 }
 
 /** X-Mesa-Token y X-Mesa-Sesion para pedidos, pagos y llamados desde la mesa. */
@@ -167,6 +190,21 @@ export function esEstablecimientoSuspendido(
 /** Etiqueta del encabezado del menú de mesa. */
 export function etiquetaMesa(numeroMesa?: number): string {
   return numeroMesa ? `Mesa ${numeroMesa}` : "Mesa asignada";
+}
+
+/**
+ * Encabezado del pedido que se paga: la mesa en un pedido de mesa, «Pedido
+ * para retirar» en el link web. HU-033 (BL-203): por el link de pago, la
+ * mesa si el pedido es de una (lo cargó el mozo) y si no, «Pedido para
+ * retirar».
+ */
+export function etiquetaDelPedidoAPagar(
+  tipoOrigen: OrigenMenu["tipo"],
+  numeroMesa?: number,
+): string {
+  if (tipoOrigen === "mesa") return etiquetaMesa(numeroMesa);
+  if (tipoOrigen === "link" && numeroMesa) return etiquetaMesa(numeroMesa);
+  return "Pedido para retirar";
 }
 
 /**

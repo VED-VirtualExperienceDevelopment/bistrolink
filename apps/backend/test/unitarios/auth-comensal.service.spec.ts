@@ -18,6 +18,7 @@ describe('AuthComensalService.emitirToken', () => {
   let mockTenantPrisma: any;
   let mockQrMesaAcceso: any;
   let mockTenantEstado: { asegurarActivo: jest.Mock };
+  let mockLinkPago: { resolver: jest.Mock };
   let service: AuthComensalService;
   const envOriginal = process.env;
   let fetchMock: jest.Mock;
@@ -38,10 +39,12 @@ describe('AuthComensalService.emitirToken', () => {
     mockTenantEstado = {
       asegurarActivo: jest.fn().mockResolvedValue(undefined),
     };
+    mockLinkPago = { resolver: jest.fn() };
     service = new AuthComensalService(
       mockTenantPrisma,
       mockQrMesaAcceso,
       mockTenantEstado as any,
+      mockLinkPago as any,
     );
 
     fetchMock = jest.fn();
@@ -168,6 +171,55 @@ describe('AuthComensalService.emitirToken', () => {
   });
 
   // HU-034 (BL-204): token del comensal a partir del QR de la mesa.
+  describe('emitirTokenPorLink (HU-033, BL-203)', () => {
+    const LINK = {
+      tenantId: TENANT_ID,
+      restauranteId: RESTAURANTE_ID,
+      pedidoId: '55555555-5555-4555-8555-555555555555',
+    };
+
+    it('emite el token del comensal técnico del tenant que sale del link', async () => {
+      mockLinkPago.resolver.mockResolvedValue(LINK);
+      fetchMock.mockResolvedValue({
+        ok: true,
+        json: async () => ({ access_token: 'jwt-de-prueba', expires_in: 3600 }),
+      });
+
+      const resultado = await service.emitirTokenPorLink('token-del-link');
+
+      expect(mockLinkPago.resolver).toHaveBeenCalledWith('token-del-link');
+      expect(resultado).toEqual({
+        accessToken: 'jwt-de-prueba',
+        expiresIn: 3600,
+      });
+      const body = fetchMock.mock.calls[0][1].body as URLSearchParams;
+      expect(body.get('username')).toBe(`comensal-${TENANT_ID}`);
+    });
+
+    it('si el link no sirve (404 / 410), no pide el token', async () => {
+      mockLinkPago.resolver.mockRejectedValue(
+        new Error('Link de pago no válido'),
+      );
+
+      await expect(service.emitirTokenPorLink('otro')).rejects.toThrow(
+        'Link de pago no válido',
+      );
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('con el establecimiento suspendido responde 403 sin pedir el token', async () => {
+      mockLinkPago.resolver.mockResolvedValue(LINK);
+      mockTenantEstado.asegurarActivo.mockRejectedValue(
+        errorEstablecimientoSuspendido(MENSAJE_SUSPENDIDO_COMENSAL),
+      );
+
+      await expect(service.emitirTokenPorLink('token')).rejects.toThrow(
+        MENSAJE_SUSPENDIDO_COMENSAL,
+      );
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+  });
+
   describe('emitirTokenPorQr', () => {
     it('[TC-U-124] con un QR válido de un establecimiento suspendido responde 403 sin pedir el token', async () => {
       mockQrMesaAcceso.resolver.mockResolvedValue({

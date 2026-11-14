@@ -226,6 +226,9 @@ describe('PedidoAccesoGuard (BL-311, RD.05: solo quien hizo el pedido lo paga y 
         canal: true,
         accesoTokenHash: true,
         createdAt: true,
+        estado: true,
+        linkPagoHash: true,
+        linkPagoVenceEn: true,
       },
     });
   });

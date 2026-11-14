@@ -79,6 +79,8 @@ export const ETIQUETAS_ACCION: Record<string, string> = {
   PAGO_EFECTIVO_REGISTRADO: "Cobro en efectivo",
   // HU-007b (BL-80): cobro con el POS del local.
   PAGO_POS_REGISTRADO: "Cobro con el POS del local",
+  // HU-033 (BL-203): link de pago que genera el mozo (sin el token).
+  PEDIDO_LINK_PAGO_GENERADO: "Link de pago generado",
   // HU-015 (BL-120): stock de la jornada.
   CARTA_ITEM_STOCK_AJUSTADO: "Stock de un ítem ajustado",
   CARTA_ITEM_VENDIDO_SIN_STOCK: "Venta sin stock",

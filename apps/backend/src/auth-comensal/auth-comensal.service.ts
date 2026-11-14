@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
+import { LinkPagoService } from '../link-pago/link-pago.service';
 import {
   exigirSesionAbierta,
   QrMesaAccesoService,
@@ -24,6 +25,7 @@ export class AuthComensalService {
     private readonly tenantPrisma: TenantPrismaService,
     private readonly qrMesaAcceso: QrMesaAccesoService,
     private readonly tenantEstado: TenantEstadoService,
+    private readonly linkPago: LinkPagoService,
   ) {}
 
   private get keycloakUrl(): string {
@@ -100,6 +102,21 @@ export class AuthComensalService {
     // página (410 MESA_CERRADA / SESION_VENCIDA).
     exigirSesionAbierta(mesa, sesionMesa);
     return this.pedirTokenKeycloak(mesa.tenantId);
+  }
+
+  /**
+   * HU-033 (BL-203): token del comensal que abre un link de pago. El tenant
+   * sale del link (vigente o con el pedido ya pagado), nunca del cliente:
+   * 404 si no es un link válido y 410 si venció, lo reemplazó otro o el
+   * pedido se canceló. BL-413: 403 si el establecimiento está suspendido.
+   */
+  async emitirTokenPorLink(linkToken: string): Promise<TokenComensal> {
+    const link = await this.linkPago.resolver(linkToken);
+    await this.tenantEstado.asegurarActivo(
+      link.tenantId,
+      MENSAJE_SUSPENDIDO_COMENSAL,
+    );
+    return this.pedirTokenKeycloak(link.tenantId);
   }
 
   /**

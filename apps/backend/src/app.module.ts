@@ -17,6 +17,7 @@ import { AuthComensalModule } from './auth-comensal/auth-comensal.module';
 import { PedidosModule } from './pedidos/pedidos.module';
 import { MesasModule } from './mesas/mesas.module';
 import { PagosModule } from './pagos/pagos.module';
+import { LinkPagoModule } from './link-pago/link-pago.module';
 import { PlataformaApiModule } from './plataforma/plataforma-api.module';
 import { construirConfiguracionLog } from './logger/destinos-log';
 import { AuditoriaModule } from './audit-log/auditoria.module';
@@ -83,6 +84,7 @@ const configuracionLog = construirConfiguracionLog(process.env);
     PedidosModule,
     MesasModule,
     PagosModule,
+    LinkPagoModule,
     // BL-163 (HU-027): /plataforma/establecimientos, solo rol PLATAFORMA.
     PlataformaApiModule,
     // HU-035 (BL-205): GET /auditoria, solo ADMIN.

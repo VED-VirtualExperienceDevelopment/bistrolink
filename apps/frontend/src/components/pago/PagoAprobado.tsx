@@ -51,7 +51,8 @@ interface PagoAprobadoProps {
    */
   readonly total: number;
   readonly numeroMesa?: number;
-  readonly onOtroPedido: () => void;
+  /** HU-033 (BL-203): sin carta (link de pago), no se ofrece otro pedido. */
+  readonly onOtroPedido?: () => void;
   /** BL-502: nombre del local, para la pantalla de gracias. */
   readonly nombreLocal?: string;
   /** BL-502: otros pedidos de la mesa que todavía no llegaron. */
@@ -151,7 +152,9 @@ export function PagoAprobado({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pedidoId, accessToken, consulta]);
 
-  const esMesa = origen.tipo === 'mesa';
+  // HU-033 (BL-203): por el link de pago, un pedido de mesa se trata como tal.
+  const esMesa =
+    origen.tipo === 'mesa' || (origen.tipo === 'link' && Boolean(numeroMesa));
 
   // Lo abonado: el total del backend (con propina). Si no lo informa (backend
   // anterior), el consumo del carrito; mientras no hay respuesta, nada.
@@ -299,17 +302,19 @@ export function PagoAprobado({
         </div>
       </section>
 
-      <button
-        type="button"
-        onClick={onOtroPedido}
-        className="self-center inline-flex items-center gap-2 px-5 py-2.5 text-[#6e54ad] font-semibold rounded-[0.5rem] hover:bg-[#6e54ad]/10 transition-colors"
-      >
-        Hacer otro pedido
-        <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M5 12h14" />
-          <path d="m12 5 7 7-7 7" />
-        </svg>
-      </button>
+      {onOtroPedido && (
+        <button
+          type="button"
+          onClick={onOtroPedido}
+          className="self-center inline-flex items-center gap-2 px-5 py-2.5 text-[#6e54ad] font-semibold rounded-[0.5rem] hover:bg-[#6e54ad]/10 transition-colors"
+        >
+          Hacer otro pedido
+          <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M5 12h14" />
+            <path d="m12 5 7 7-7 7" />
+          </svg>
+        </button>
+      )}
     </div>
   );
 }

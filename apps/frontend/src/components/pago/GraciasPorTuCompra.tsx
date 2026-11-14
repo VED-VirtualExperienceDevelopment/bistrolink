@@ -29,7 +29,8 @@ interface Props {
   readonly descargando: boolean;
   readonly errorDescarga: boolean;
   readonly onDescargarPdf: () => void;
-  readonly onOtroPedido: () => void;
+  /** HU-033 (BL-203): sin carta (link de pago), no se ofrece pedir algo más. */
+  readonly onOtroPedido?: () => void;
   /** BL-502: otros pedidos de la mesa que todavía no llegaron. */
   readonly pedidosEnCamino?: number;
   readonly onVerMisPedidos?: () => void;
@@ -172,13 +173,15 @@ export function GraciasPorTuCompra({
         </section>
 
         <div className="flex flex-col gap-3">
-          <button
-            type="button"
-            onClick={onOtroPedido}
-            className="w-full rounded-[0.5rem] bg-[#6e54ad] px-4 py-3 font-semibold text-white hover:bg-[#5d4699] focus:outline-none focus:ring-4 focus:ring-[#6e54ad]/30"
-          >
-            Pedir algo más
-          </button>
+          {onOtroPedido && (
+            <button
+              type="button"
+              onClick={onOtroPedido}
+              className="w-full rounded-[0.5rem] bg-[#6e54ad] px-4 py-3 font-semibold text-white hover:bg-[#5d4699] focus:outline-none focus:ring-4 focus:ring-[#6e54ad]/30"
+            >
+              Pedir algo más
+            </button>
+          )}
           {pedidosEnCamino > 0 && onVerMisPedidos && (
             <button
               type="button"

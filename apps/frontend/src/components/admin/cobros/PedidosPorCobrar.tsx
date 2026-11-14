@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { CobrarEfectivoDialog } from "./CobrarEfectivoDialog";
 import { CobrarPosDialog } from "./CobrarPosDialog";
 import { CancelarPendienteDialog } from "./CancelarPendienteDialog";
+import { LinkPagoDialog } from "./LinkPagoDialog";
 import {
   codigoDelPedido,
   formatearMonto,
@@ -13,8 +14,10 @@ import {
   mensajePendienteCancelado,
   motivoSinCancelar,
   motivoSinEfectivo,
+  motivoSinLink,
   motivoSinPos,
   resumenDeLineas,
+  textoLinkActivo,
   textoPropinaEnLista,
   textoSolicitudEfectivo,
   type CobroEfectivoRegistrado,
@@ -50,6 +53,8 @@ const AVISO_PROPINA_CAMBIADA =
  * HU-031 (BL-201): pedidos que esperan el pago, con «Cobrar en efectivo» y
  * (HU-007b, BL-80) «Cobrar con el POS», si el local lo tiene habilitado.
  * BL-501: «Cancelar pedido», si el comensal se arrepintió o se cargó mal.
+ * HU-033 (BL-203): «Link de pago», para que el comensal pague desde su
+ * celular.
  * HU-022 (BL-495): cada pedido muestra la propina que eligió el comensal.
  * La usan el panel de la mesa del mapa y la pantalla de cobros pendientes.
  *
@@ -73,6 +78,7 @@ export function PedidosPorCobrar({
   const [aCancelar, setACancelar] = useState<PedidoPendienteDeCobro | null>(
     null,
   );
+  const [conLink, setConLink] = useState<PedidoPendienteDeCobro | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   const filaDestacadaRef = useRef<HTMLLIElement>(null);
   const botonDestacadoRef = useRef<HTMLButtonElement>(null);
@@ -150,6 +156,10 @@ export function PedidosPorCobrar({
             if (otroMotivoCancelar) descripcionCancelar = idMotivoCancelar;
             else if (motivoCancelar) descripcionCancelar = idMotivo;
             const destacado = pedido.id === destacadoId;
+            // HU-033 (BL-203): el link no se puede con un pago con tarjeta
+            // en curso (mismo motivo que cancelar, ya descrito arriba).
+            const sinLink = motivoSinLink(pedido) !== null;
+            const linkActivo = textoLinkActivo(pedido);
             return (
               <li
                 key={pedido.id}
@@ -203,6 +213,11 @@ export function PedidosPorCobrar({
                       {motivoPos}
                     </p>
                   )}
+                  {linkActivo && (
+                    <p className="text-label-sm text-on-surface-variant">
+                      {linkActivo}
+                    </p>
+                  )}
                   {otroMotivoCancelar && (
                     <p id={idMotivoCancelar} className="text-label-sm text-on-surface-variant">
                       {motivoCancelar}
@@ -251,6 +266,25 @@ export function PedidosPorCobrar({
                       <span>Cobrar con el POS</span>
                     </button>
                   )}
+                  {/* HU-033 (BL-203): el comensal paga desde su celular. */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAviso(null);
+                      setConLink(pedido);
+                    }}
+                    disabled={sinLink}
+                    aria-describedby={sinLink ? descripcionCancelar : undefined}
+                    className="flex min-h-12 flex-1 items-center justify-center gap-2 rounded-lg border border-primary px-4 text-body-md text-primary hover:bg-surface-container disabled:cursor-not-allowed disabled:opacity-50 md:flex-none"
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="material-symbols-outlined text-[20px]"
+                    >
+                      qr_code_2
+                    </span>
+                    <span>Link de pago</span>
+                  </button>
                   {/* BL-501: el comensal se arrepintió o se cargó mal. */}
                   <button
                     type="button"
@@ -290,6 +324,12 @@ export function PedidosPorCobrar({
         onClose={() => setConPos(null)}
         onCobrado={cobradoConPos}
         onActualizar={propinaCambiada}
+      />
+      <LinkPagoDialog
+        pedido={conLink}
+        token={token}
+        onClose={() => setConLink(null)}
+        onGenerado={onCobrado}
       />
       <CancelarPendienteDialog
         pedido={aCancelar}

@@ -384,6 +384,12 @@ model Pedido {
   // (canal WEB, sin QR). El token en claro se devuelve una sola vez, al
   // crear el pedido; acá nunca se guarda. Null en los pedidos de mesa.
   accesoTokenHash       String?      @map("acceso_token_hash") @db.Char(64)
+  // HU-033 (BL-203): link de pago que genera el mozo para que el comensal
+  // pague desde su celular. Solo el SHA-256 del nonce del link vigente: uno
+  // solo por pedido (generar otro lo reemplaza) y vence en
+  // `linkPagoVenceEn` (el mismo plazo que un pago pendiente, HU-032).
+  linkPagoHash          String?      @map("link_pago_hash") @db.Char(64)
+  linkPagoVenceEn       DateTime?    @map("link_pago_vence_en") @db.Timestamptz(3)
   // HU-031b (BL-442): el comensal de una mesa pidió pagar en efectivo
   // (cuándo, y con cuánto va a pagar si lo dijo). No es un pago: el pedido
   // sigue en PENDIENTE_PAGO hasta que el mozo registra el cobro (BL-201).

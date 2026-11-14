@@ -19,10 +19,15 @@ export const ACTUALIZACION_POLITICA = "10/11/2026";
 
 /** Enlace a la política desde la carta o el pago. */
 export function rutaPrivacidad(origen: OrigenMenu): string {
-  const parametros =
-    origen.tipo === "mesa"
-      ? new URLSearchParams({ qr: origen.qrToken })
-      : new URLSearchParams({ t: origen.tenantId, r: origen.restauranteId });
+  if (origen.tipo === "mesa") {
+    return `${RUTA_PRIVACIDAD}?${new URLSearchParams({ qr: origen.qrToken }).toString()}`;
+  }
+  // HU-033 (BL-203): el link de pago no lleva ids: la política general.
+  if (origen.tipo === "link") return RUTA_PRIVACIDAD;
+  const parametros = new URLSearchParams({
+    t: origen.tenantId,
+    r: origen.restauranteId,
+  });
   return `${RUTA_PRIVACIDAD}?${parametros.toString()}`;
 }
 

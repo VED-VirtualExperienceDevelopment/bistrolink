@@ -44,3 +44,11 @@ describe("política de privacidad (HU-036, BL-206)", () => {
     expect(formatearRut("123")).toBe("123");
   });
 });
+
+describe("rutaPrivacidad con el link de pago (HU-033, BL-203)", () => {
+  it("la política general, sin el token del link en la URL", () => {
+    expect(rutaPrivacidad({ tipo: "link", linkToken: "secreto" })).toBe(
+      "/privacidad",
+    );
+  });
+});
