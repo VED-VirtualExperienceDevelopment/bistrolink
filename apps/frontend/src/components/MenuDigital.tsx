@@ -61,7 +61,8 @@ import {
   type PedidoEnCurso,
   type Retoma,
 } from "@/components/pago/pedido-en-curso.utils";
-import { FormularioContactoRetiro } from "@/components/retiro/FormularioContactoRetiro";
+import { ContactoDelRetiro } from "@/components/retiro/ContactoDelRetiro";
+import { repartirErrorDelPedido } from "@/components/retiro/retiro.utils";
 import type {
   ContactoRetiro,
   RetiroPublico,
@@ -262,8 +263,7 @@ export default function MenuDigital({
   const [errorPedido, setErrorPedido] = useState<string | null>(null);
   // HU-040 (BL-210): el error del contacto va junto al formulario, y recién
   // después de intentar pagar.
-  const errorContactoVisible =
-    errorPedido !== null && errorPedido === errorContacto ? errorPedido : null;
+  const erroresDelPedido = repartirErrorDelPedido(errorPedido, errorContacto);
 
   // BL-311 (prepago, RD.03): el pedido creado espera el pago en la pantalla
   // «Pagar». Si el comensal vuelve a la carta y no cambia nada, se reusa el
@@ -626,22 +626,19 @@ export default function MenuDigital({
     onContinuar: continuarAlPago,
     enviando: estadoPedido === "enviando",
     // HU-040 (BL-210): el error del contacto se muestra junto al formulario.
-    error: errorContactoVisible ? null : errorPedido,
+    error: erroresDelPedido.delCarrito,
     // HU-040 (BL-210): fuera de horario no se puede pagar el retiro.
     pagoBloqueado: avisoCerrado !== null,
     // HU-040 (BL-210): nombre y contacto del pedido para retirar.
-    contacto: retiroEnCarta.esRetiro ? (
-      <FormularioContactoRetiro
-        valor={retiroEnCarta.formulario}
-        onChange={(valor) => {
-          retiroEnCarta.setFormulario(valor);
-          if (errorContactoVisible) setErrorPedido(null);
-        }}
-        error={errorContactoVisible}
+    contacto: (
+      <ContactoDelRetiro
+        retiro={retiroEnCarta}
+        error={erroresDelPedido.delContacto}
+        onCorregir={() => setErrorPedido(null)}
         rutaPrivacidad={rutaPrivacidad(origen)}
         deshabilitado={estadoPedido === "enviando"}
       />
-    ) : null,
+    ),
   };
 
   if (mesaCerrada) {

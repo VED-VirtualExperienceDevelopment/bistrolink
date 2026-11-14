@@ -87,6 +87,20 @@ export function errorContactoRetiro(
  * minúsculas; un teléfono, solo los dígitos (y el + del prefijo). Así el
  * administrador lo encuentra para anonimizarlo aunque lo escriba distinto.
  */
+/**
+ * Reparte el error del pedido: el del contacto va junto al formulario «Tus
+ * datos» (y recién después de intentar pagar); cualquier otro, en el carrito.
+ */
+export function repartirErrorDelPedido(
+  errorPedido: string | null,
+  errorContacto: string | null,
+): { delContacto: string | null; delCarrito: string | null } {
+  if (errorPedido !== null && errorPedido === errorContacto) {
+    return { delContacto: errorPedido, delCarrito: null };
+  }
+  return { delContacto: null, delCarrito: errorPedido };
+}
+
 export function normalizarContactoRetiro(contacto: string): string {
   const limpio = contacto.trim();
   if (limpio.includes("@")) return limpio.toLowerCase();

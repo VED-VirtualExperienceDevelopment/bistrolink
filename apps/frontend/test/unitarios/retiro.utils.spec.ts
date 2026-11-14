@@ -8,6 +8,7 @@ import {
   normalizarCodigoRetiro,
   normalizarContactoRetiro,
   permisoDeAviso,
+  repartirErrorDelPedido,
   rutaEntregarRetiro,
   textoAvisoListo,
 } from "@/components/retiro/retiro.utils";
@@ -155,5 +156,36 @@ describe("KDS y aviso al comensal", () => {
     expect(permisoDeAviso({ Notification: { permission: "raro" } })).toBe(
       "no-soportado",
     );
+  });
+});
+
+describe("repartirErrorDelPedido", () => {
+  const errorContacto = "Escribí tu nombre";
+
+  it("el error del contacto va al formulario, no al carrito", () => {
+    expect(repartirErrorDelPedido(errorContacto, errorContacto)).toEqual({
+      delContacto: errorContacto,
+      delCarrito: null,
+    });
+  });
+
+  it("otro error va al carrito", () => {
+    expect(
+      repartirErrorDelPedido("No pudimos enviar tu pedido.", errorContacto),
+    ).toEqual({
+      delContacto: null,
+      delCarrito: "No pudimos enviar tu pedido.",
+    });
+  });
+
+  it("sin error, nada en ningún lado", () => {
+    expect(repartirErrorDelPedido(null, errorContacto)).toEqual({
+      delContacto: null,
+      delCarrito: null,
+    });
+    expect(repartirErrorDelPedido(null, null)).toEqual({
+      delContacto: null,
+      delCarrito: null,
+    });
   });
 });

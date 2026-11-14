@@ -103,8 +103,8 @@ export function FormularioContactoRetiro({
               target="_blank"
               rel="noopener noreferrer"
             >
-              política de privacidad
-              <span className="sr-only"> (se abre en otra pestaña)</span>
+              política de privacidad{" "}
+              <span className="sr-only">(se abre en otra pestaña)</span>
             </a>
             .
           </span>

@@ -346,6 +346,19 @@ function umbralesCombinados(
 }
 
 /**
+ * La hora que va a quedar guardada. En el PATCH, `undefined` es «no la
+ * cambies» y `null` es «borrala» (todo el día), así que no alcanza con `??`:
+ * un null explícito tiene que ganarle a lo guardado.
+ */
+function horaQueQueda(
+  enviada: string | null | undefined,
+  guardada: string | null | undefined,
+): string | null {
+  if (enviada !== undefined) return enviada;
+  return guardada ?? null;
+}
+
+/**
  * HU-040 (BL-210): con lo que viene y lo guardado, la franja del retiro
  * queda completa (las dos horas, distintas) o vacía (todo el día).
  */
@@ -353,14 +366,8 @@ function validarHorarioRetiro(
   actual: ConfiguracionDelRestaurante,
   dto: ActualizarConfiguracionDto,
 ): void {
-  const desde =
-    (dto.retiroHoraDesde === undefined
-      ? actual.retiroHoraDesde
-      : dto.retiroHoraDesde) ?? null;
-  const hasta =
-    (dto.retiroHoraHasta === undefined
-      ? actual.retiroHoraHasta
-      : dto.retiroHoraHasta) ?? null;
+  const desde = horaQueQueda(dto.retiroHoraDesde, actual.retiroHoraDesde);
+  const hasta = horaQueQueda(dto.retiroHoraHasta, actual.retiroHoraHasta);
   if ((desde === null) !== (hasta === null)) {
     throw new BadRequestException(
       'Completá las dos horas del retiro, o dejá las dos vacías para tomar pedidos todo el día',
