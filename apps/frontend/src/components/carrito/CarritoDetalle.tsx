@@ -142,10 +142,11 @@ export function CarritoDetalle<T extends LineaCarrito>({
         Tu pedido ({cantidadTotal} {cantidadTotal === 1 ? "item" : "items"})
       </Titulo>
       <div className="flex items-center gap-1">
+        {/* WCAG 1.4.3: red-700 sobre red-50 da 5,9:1 (red-600 daba 4,41:1). */}
         <button
           type="button"
           onClick={onVaciar}
-          className="text-sm text-red-600 hover:text-red-700 font-medium px-2 py-1 bg-red-50 rounded-md transition-colors"
+          className="text-sm text-red-700 hover:text-red-800 font-medium px-2 py-1 bg-red-50 rounded-md transition-colors"
           disabled={enviando}
         >
           Vaciar

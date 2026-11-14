@@ -11,7 +11,12 @@ import {
   errorUsername,
   normalizarUsername,
 } from "@/components/admin/usuarios/Usuarios.utils";
+import {
+  LIMITE_PREPARACION,
+  LIMITE_PREPARACION_SUGERIDO,
+} from "@/components/admin/configuracion/configuracion.utils";
 import type {
+  CampoTextoAlta,
   CambiosEstablecimiento,
   CuentaFicha,
   EstablecimientoListado,
@@ -38,7 +43,31 @@ export const FORMULARIO_VACIO: FormularioAlta = {
   adminApellido: "",
   cocinaUsername: "",
   cocinaEmail: "",
+  // BL-472: la cola arranca apagada y, al encenderla, propone el límite
+  // recomendado (el mismo que Configuración → Cocina).
+  colaActiva: false,
+  colaLimite: String(LIMITE_PREPARACION_SUGERIDO),
 };
+
+/**
+ * BL-472: mismo rango que el backend y que Configuración → Cocina. Se
+ * reexporta para el diálogo de alta.
+ */
+export { LIMITE_PREPARACION, LIMITE_PREPARACION_SUGERIDO };
+
+/**
+ * BL-472: error del límite de la cola, o undefined si es válido. Mismos
+ * mensajes que Configuración → Cocina.
+ */
+export function errorDeLimiteCola(texto: string): string | undefined {
+  const limpio = texto.trim();
+  if (!/^\d+$/.test(limpio)) return "Escribí un número entero.";
+  const valor = Number(limpio);
+  if (valor < LIMITE_PREPARACION.minimo || valor > LIMITE_PREPARACION.maximo) {
+    return `Tiene que estar entre ${LIMITE_PREPARACION.minimo} y ${LIMITE_PREPARACION.maximo}.`;
+  }
+  return undefined;
+}
 
 // BL-409: el RUT se valida en @/lib/rut (también lo usa la e-Factura,
 // HU-009). Se reexporta para no cambiar los imports existentes.
@@ -73,7 +102,7 @@ export type ErroresFormulario = Partial<Record<keyof FormularioAlta, string>>;
 
 export function validarFormulario(f: FormularioAlta): ErroresFormulario {
   const errores: ErroresFormulario = {};
-  const requerido = (campo: keyof FormularioAlta, max: number) => {
+  const requerido = (campo: CampoTextoAlta, max: number) => {
     const valor = f[campo].trim();
     if (!valor) errores[campo] = "Obligatorio";
     else if (valor.length > max) errores[campo] = `Máximo ${max} caracteres`;
@@ -108,6 +137,12 @@ export function validarFormulario(f: FormularioAlta): ErroresFormulario {
     errores.cocinaEmail = "Email inválido";
   }
 
+  // BL-472: el límite solo cuenta con la cola encendida.
+  if (f.colaActiva) {
+    const errorCola = errorDeLimiteCola(f.colaLimite);
+    if (errorCola) errores.colaLimite = errorCola;
+  }
+
   return errores;
 }
 
@@ -116,6 +151,9 @@ export function validarFormulario(f: FormularioAlta): ErroresFormulario {
  * (BL-409: el RUT va sin separadores.)
  * el backend usa los valores por defecto (BASICO, America/Montevideo) y busca
  * el tenant por RUT. Sin contraseñas: el backend las genera.
+ *
+ * BL-472: el límite de la cola va solo si se encendió. Si no viene, el
+ * backend deja la cola desactivada (null), igual que antes.
  */
 export function construirPedidoAlta(f: FormularioAlta) {
   const cocinaEmail = f.cocinaEmail.trim();
@@ -125,6 +163,9 @@ export function construirPedidoAlta(f: FormularioAlta) {
     restaurante: {
       nombre: f.restauranteNombre.trim(),
       direccion: f.restauranteDireccion.trim(),
+      ...(f.colaActiva
+        ? { limitePedidosEnPreparacion: Number(f.colaLimite.trim()) }
+        : {}),
     },
     admin: {
       username: f.adminUsername.trim(),

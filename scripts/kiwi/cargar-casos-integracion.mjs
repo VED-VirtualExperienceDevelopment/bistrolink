@@ -932,6 +932,22 @@ const DATOS_INTEGRACION = {
     priority: "P1",
     tags: ["BL-518", "bug", "websocket", "RD.05"],
   }),
+  // BL-472 (HU-042): cola del KDS sugerida en el alta de un establecimiento,
+  // en plataforma.e2e-spec.ts.
+  208: {
+    component: "plataforma",
+    requirement: "HU-042",
+    category: "Funcional",
+    priority: "P3",
+    tags: ["HU-042", "BL-472", "plataforma", "kds", "cola"],
+  },
+  209: {
+    component: "plataforma",
+    requirement: "HU-042",
+    category: "Funcional",
+    priority: "P3",
+    tags: ["HU-042", "BL-472", "plataforma", "kds", "cola", "validacion"],
+  },
 };
 /**
  * BL-435: datos de los E2E TC-E-017 en adelante, con los criterios de
