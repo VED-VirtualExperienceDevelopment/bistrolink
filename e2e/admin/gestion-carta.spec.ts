@@ -1,7 +1,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import type { APIRequestContext, Locator, Page } from "@playwright/test";
 import { test, expect } from "../support/auth";
-import { ITEM_DISPONIBLE, RESTAURANTE_ID } from "../support/ids";
+import { ITEM_DISPONIBLE, MENU_URL_PATH, RESTAURANTE_ID } from "../support/ids";
 
 // E2E de BL-402 (BL-392): Gestión de Carta en /admin/menu.
 //
@@ -262,6 +262,77 @@ test.describe("BL-392 · Gestión de Carta", () => {
       // Al volver a abrir la carta sigue agotado: se guardó en la API.
       await abrirCarta(page);
       await expect(disponible).toHaveAttribute("aria-checked", "false");
+    } finally {
+      await eliminarCategoria(page.request, authorization, categoria);
+    }
+  });
+
+  test("[TC-E-114] HU-044: el admin marca un plato como «Sugerencia del local» con la estrella, queda guardado y el comensal ve la insignia (sin errores graves de accesibilidad)", async ({
+    kdsPageAdmin: page,
+    kdsPageMozo,
+    browser,
+  }) => {
+    const authorization = await abrirCarta(page);
+    let categoria: CategoriaDePrueba | undefined;
+    const plato = `Flan del chef E2E ${Date.now()}`;
+    try {
+      categoria = await crearCategoria(page.request, authorization, [plato]);
+      await abrirCarta(page);
+      const estrella = seccion(page, categoria).getByRole("button", {
+        name: `Sugerencia del local: ${plato}`,
+      });
+      await expect(estrella).toHaveAttribute("aria-pressed", "false");
+
+      // Se espera el PATCH antes de recargar (como en TC-E-052).
+      const [guardado] = await Promise.all([
+        page.waitForResponse(
+          (r) =>
+            r.url().endsWith(`/admin/menu/item/${categoria?.items[0].id}`) &&
+            r.request().method() === "PATCH",
+          { timeout: 10_000 },
+        ),
+        estrella.click(),
+      ]);
+      expect(guardado.status(), "la API no guardó la sugerencia").toBe(200);
+      await expect(estrella).toHaveAttribute("aria-pressed", "true");
+      await expect(
+        tarjeta(page, categoria, plato).getByText("Sugerencia del local", {
+          exact: true,
+        }),
+      ).toBeVisible();
+
+      // Queda guardado y el filtro «Sugerencias» lo encuentra.
+      await abrirCarta(page);
+      await expect(estrella).toHaveAttribute("aria-pressed", "true");
+      await page.getByLabel("Estado").selectOption("SUGERENCIAS");
+      await expect(tarjeta(page, categoria, plato)).toBeVisible();
+      expect(await violacionesGraves(page)).toEqual([]);
+
+      // El mozo ve la carta, pero no la estrella.
+      await abrirCarta(kdsPageMozo);
+      await expect(
+        kdsPageMozo.getByRole("button", {
+          name: `Sugerencia del local: ${plato}`,
+        }),
+      ).toHaveCount(0);
+
+      // El comensal ve la insignia en el menú, en el celular.
+      const celular = await browser.newPage({
+        viewport: { width: 390, height: 844 },
+      });
+      try {
+        // Página nueva sin el baseURL del config: la URL sale de la del admin.
+        await celular.goto(new URL(MENU_URL_PATH, page.url()).toString());
+        const tarjetaMenu = celular
+          .getByRole("article")
+          .filter({ hasText: plato });
+        await expect(
+          tarjetaMenu.getByText("Sugerencia del local", { exact: true }),
+        ).toBeVisible({ timeout: 15_000 });
+        expect(await violacionesGraves(celular)).toEqual([]);
+      } finally {
+        await celular.close();
+      }
     } finally {
       await eliminarCategoria(page.request, authorization, categoria);
     }
