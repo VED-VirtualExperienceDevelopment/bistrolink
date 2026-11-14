@@ -20,6 +20,10 @@ function buildRestaurante(overrides: Partial<any> = {}) {
     // HU-043 (BL-532): marca por defecto (sin logo, plantilla Clásica).
     logoKey: null,
     plantilla: 'clasica',
+    // HU-040 (BL-210): toma pedidos para retirar todo el día.
+    retiroHabilitado: true,
+    retiroHoraDesde: null,
+    retiroHoraHasta: null,
     ...overrides,
   };
 }
@@ -137,6 +141,13 @@ describe('MenuService - getMenuByRestaurante (HU-002)', () => {
           direccion: restaurante.direccion,
         }),
         marca: { logoUrl: null, plantilla: 'clasica' },
+        // HU-040 (BL-210): el enlace web es el de los pedidos para retirar.
+        retiro: {
+          habilitado: true,
+          abierto: true,
+          horaDesde: null,
+          horaHasta: null,
+        },
         categorias: [
           expect.objectContaining({
             id: categoria.id,

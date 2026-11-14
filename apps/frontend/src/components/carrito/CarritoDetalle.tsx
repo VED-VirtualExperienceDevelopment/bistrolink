@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { formatearPrecio } from "@/components/pago/pago.utils";
 import { ID_TITULO_CARRITO } from "./carrito.utils";
 
@@ -27,6 +28,10 @@ interface Props<T extends LineaCarrito> {
   readonly error: string | null;
   /** Solo en la hoja: la X de arriba y «Seguir viendo la carta». */
   readonly onCerrar?: () => void;
+  /** HU-040 (BL-210): «Continuar al pago» deshabilitado (retiro cerrado). */
+  readonly pagoBloqueado?: boolean;
+  /** HU-040 (BL-210): datos del comensal del retiro, después de las instrucciones. */
+  readonly contacto?: ReactNode;
 }
 
 const UMBRAL_AVISO = 0.9;
@@ -116,6 +121,8 @@ export function CarritoDetalle<T extends LineaCarrito>({
   enviando,
   error,
   onCerrar,
+  pagoBloqueado = false,
+  contacto = null,
 }: Props<T>) {
   const enHoja = variante === "hoja";
   const caracteres = observacionGeneral.length;
@@ -237,7 +244,7 @@ export function CarritoDetalle<T extends LineaCarrito>({
       <button
         type="button"
         onClick={onContinuar}
-        disabled={enviando || pasado}
+        disabled={enviando || pasado || pagoBloqueado}
         className="w-full px-4 py-3.5 bg-marca text-white font-bold rounded-[0.5rem] hover:bg-marca-hover focus:outline-none focus:ring-4 focus:ring-marca/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed text-lg shadow-[0px_4px_20px_rgba(121,118,125,0.15)]"
       >
         {enviando ? "Preparando tu pedido…" : "Continuar al pago"}
@@ -251,6 +258,7 @@ export function CarritoDetalle<T extends LineaCarrito>({
         <div className="mb-4">{encabezado}</div>
         <div className="mb-4">{platos}</div>
         <div className="mb-4">{instrucciones}</div>
+        {contacto}
         <div className="pt-2">{pie}</div>
       </>
     );
@@ -270,6 +278,7 @@ export function CarritoDetalle<T extends LineaCarrito>({
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-5 py-4">
         {platos}
         {instrucciones}
+        {contacto}
       </div>
       <div className="border-t border-culinary-neutral/15 px-5 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
         {pie}

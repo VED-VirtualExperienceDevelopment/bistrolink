@@ -22,6 +22,11 @@ const CAMPOS = [
   'receptorRazonSocial',
   'nro_doc',
   'denominacion',
+  // HU-040 (BL-210): nombre y contacto del pedido para retirar (en el
+  // pedido y en el body de POST /pedidos, que se oculta entero).
+  'retiroNombre',
+  'retiroContacto',
+  'contactoRetiro',
 ] as const;
 
 export const CAMPOS_PERSONALES_EN_LOGS: string[] = CAMPOS.flatMap((campo) => [

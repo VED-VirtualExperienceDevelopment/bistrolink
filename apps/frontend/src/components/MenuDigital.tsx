@@ -62,6 +62,13 @@ import {
   type PedidoEnCurso,
   type Retoma,
 } from "@/components/pago/pedido-en-curso.utils";
+import { ContactoDelRetiro } from "@/components/retiro/ContactoDelRetiro";
+import { repartirErrorDelPedido } from "@/components/retiro/retiro.utils";
+import type {
+  ContactoRetiro,
+  RetiroPublico,
+} from "@/components/retiro/retiro.utils";
+import { useRetiroEnCarta } from "@/components/retiro/useRetiroEnCarta";
 
 const ItemNotaModal = dynamic(() => import("@/components/ItemNotaModal"), {
   ssr: false,
@@ -119,6 +126,8 @@ interface MenuDigitalProps {
    * anterior), el menú se ve como siempre: «BistroLink» y la Clásica.
    */
   readonly marca?: MarcaPublica;
+  /** HU-040 (BL-210): solo en el enlace web, si el local toma pedidos ahora. */
+  readonly retiro?: RetiroPublico | null;
 }
 
 const MAX_CHARS_GENERAL = 500;
@@ -204,6 +213,7 @@ async function crearPedidoComensal(
   origen: OrigenMenu,
   carrito: readonly ItemCarrito[],
   observacionGeneral: string,
+  contactoRetiro?: ContactoRetiro,
 ): Promise<{ pedido: PedidoConfirmado; accessToken: string }> {
   const accessToken = await identificarComensal(origen);
   const pedidoBody = {
@@ -215,6 +225,8 @@ async function crearPedidoComensal(
       cantidad: item.cantidad,
       observacion: item.observacion?.trim() || undefined,
     })),
+    // HU-040 (BL-210): solo si lo completó y aceptó que se guarde.
+    contactoRetiro,
   };
   const pedido = await apiFetch<PedidoConfirmado>("/pedidos", accessToken, {
     method: "POST",
@@ -238,8 +250,13 @@ export default function MenuDigital({
   categorias,
   numeroMesa,
   marca,
+  retiro,
 }: MenuDigitalProps) {
   const tipo = origen.tipo;
+  // HU-040 (BL-210): datos del comensal del pedido para retirar y, si el
+  // local no toma pedidos ahora, por qué.
+  const retiroEnCarta = useRetiroEnCarta(origen, retiro);
+  const { avisoCerrado, errorContacto } = retiroEnCarta;
   const [carrito, setCarrito] = useState<ItemCarrito[]>([]);
   const [observacionGeneral, setObservacionGeneral] = useState("");
   const [itemNotaAbierto, setItemNotaAbierto] = useState<ItemCarrito | null>(
@@ -251,6 +268,9 @@ export default function MenuDigital({
     "idle" | "enviando" | "error"
   >("idle");
   const [errorPedido, setErrorPedido] = useState<string | null>(null);
+  // HU-040 (BL-210): el error del contacto va junto al formulario, y recién
+  // después de intentar pagar.
+  const erroresDelPedido = repartirErrorDelPedido(errorPedido, errorContacto);
 
   // BL-311 (prepago, RD.03): el pedido creado espera el pago en la pantalla
   // «Pagar». Si el comensal vuelve a la carta y no cambia nada, se reusa el
@@ -426,13 +446,14 @@ export default function MenuDigital({
   );
 
   const continuarAlPago = async () => {
-    const error = errorNotas(carrito, observacionGeneral);
+    const error = errorNotas(carrito, observacionGeneral) ?? errorContacto;
     if (error) {
       setErrorPedido(error);
       return;
     }
 
-    const firma = firmaCarrito(carrito, observacionGeneral);
+    const { contacto, firma: firmaContacto } = retiroEnCarta.contactoYFirma();
+    const firma = firmaCarrito(carrito, observacionGeneral) + firmaContacto;
     if (pedidoPorPagar?.firma === firma) {
       setHojaCarritoAbierta(false);
       setVista("pago");
@@ -447,6 +468,7 @@ export default function MenuDigital({
         origen,
         carrito,
         observacionGeneral,
+        contacto,
       );
       // BL-311: el pedido queda en PENDIENTE_PAGO; el carrito se conserva
       // hasta que el pago se apruebe.
@@ -468,7 +490,10 @@ export default function MenuDigital({
       setVista("pago");
       window.scrollTo({ top: 0 });
     } catch (err) {
-      setErrorPedido(mensajeErrorAlPedir(origen, err));
+      const mensaje = mensajeErrorAlPedir(origen, err);
+      // HU-040 (BL-210): el local dejó de tomar pedidos para retirar.
+      retiroEnCarta.registrarError(err, mensaje);
+      setErrorPedido(mensaje);
       setEstadoPedido("error");
     }
   };
@@ -607,7 +632,20 @@ export default function MenuDigital({
     onVaciar: vaciarCarrito,
     onContinuar: continuarAlPago,
     enviando: estadoPedido === "enviando",
-    error: errorPedido,
+    // HU-040 (BL-210): el error del contacto se muestra junto al formulario.
+    error: erroresDelPedido.delCarrito,
+    // HU-040 (BL-210): fuera de horario no se puede pagar el retiro.
+    pagoBloqueado: avisoCerrado !== null,
+    // HU-040 (BL-210): nombre y contacto del pedido para retirar.
+    contacto: (
+      <ContactoDelRetiro
+        retiro={retiroEnCarta}
+        error={erroresDelPedido.delContacto}
+        onCorregir={() => setErrorPedido(null)}
+        rutaPrivacidad={rutaPrivacidad(origen)}
+        deshabilitado={estadoPedido === "enviando"}
+      />
+    ),
   };
 
   if (mesaCerrada) {
@@ -681,6 +719,14 @@ export default function MenuDigital({
           <main
             className={`pt-20 px-4 md:px-8 max-w-[1440px] mx-auto flex flex-col gap-10 ${hayCarrito ? "lg:pr-[448px]" : ""}`}
           >
+            {avisoCerrado && (
+              <output
+                data-testid="aviso-retiro-cerrado"
+                className="p-3 bg-amber-50 text-amber-900 rounded-lg text-sm font-medium"
+              >
+                {avisoCerrado}
+              </output>
+            )}
             {avisoRetoma && (
               <output className="p-3 bg-amber-50 text-amber-900 rounded-lg text-sm font-medium flex items-start justify-between gap-3">
                 <span>{avisoRetoma}</span>
@@ -817,7 +863,10 @@ export default function MenuDigital({
                                     onClick={() => agregarAlCarrito(item)}
                                     // BL-425: al llegar al tope el botón se deshabilita
                                     // y el aviso queda asociado con aria-describedby.
-                                    disabled={llegoAlTope(item.id)}
+                                    disabled={
+                                      llegoAlTope(item.id) ||
+                                      avisoCerrado !== null
+                                    }
                                     aria-describedby={
                                       llegoAlTope(item.id)
                                         ? `tope-${item.id}`

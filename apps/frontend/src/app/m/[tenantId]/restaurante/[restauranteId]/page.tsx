@@ -121,6 +121,7 @@ export default async function MenuPublicoPage({ params }: PageProps) {
       tenantId={tenantId}
       restauranteId={restauranteId}
       marca={data.marca}
+      retiro={data.retiro}
     />
   );
 }

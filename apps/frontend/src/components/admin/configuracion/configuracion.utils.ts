@@ -69,6 +69,14 @@ export interface ConfiguracionEstablecimiento {
   plantilla?: PlantillaMarca;
   plantillasDisponibles?: PlantillaMarca[];
   logoUrl?: string | null;
+  /*
+   * HU-040 (BL-210): pedidos para retirar por el enlace web, y la franja del
+   * día en que se toman (null = todo el día). Opcionales: un backend
+   * anterior no los trae.
+   */
+  retiroHabilitado?: boolean;
+  retiroHoraDesde?: string | null;
+  retiroHoraHasta?: string | null;
 }
 
 /**
@@ -124,6 +132,11 @@ export interface FormularioConfiguracion {
   plantilla: PlantillaMarca;
   /** HU-043 (BL-533): logo del local. */
   logo: EstadoLogo;
+  /** HU-040 (BL-210): se toman pedidos para retirar. */
+  retiroHabilitado: boolean;
+  /** HU-040 (BL-210): «HH:MM» o vacío; las dos vacías = todo el día. */
+  retiroHoraDesde: string;
+  retiroHoraHasta: string;
 }
 
 /** Body de PATCH /admin/configuracion: solo lo que cambió. */
@@ -142,6 +155,8 @@ export type CambiosConfiguracion = Partial<
     | "logo"
     | "nombreLocal"
     | "direccionLocal"
+    | "retiroHoraDesde"
+    | "retiroHoraHasta"
   >
 > & {
   propinasSugeridas?: number[];
@@ -157,6 +172,8 @@ export type CambiosConfiguracion = Partial<
   /** HU-043 (BL-561): nombre y dirección del local. */
   nombre?: string;
   direccion?: string;
+  retiroHoraDesde?: string | null;
+  retiroHoraHasta?: string | null;
 };
 
 /** Mismos límites que el backend (ActualizarConfiguracionDto). */
@@ -276,6 +293,10 @@ export function formularioDesde(
     // HU-043 (BL-533): un backend anterior no la trae: la Clásica.
     plantilla: configuracion.plantilla ?? PLANTILLA_POR_DEFECTO,
     logo: { tipo: "guardado" },
+    // Un backend anterior no lo trae: queda como el default de la columna.
+    retiroHabilitado: configuracion.retiroHabilitado ?? true,
+    retiroHoraDesde: configuracion.retiroHoraDesde ?? "",
+    retiroHoraHasta: configuracion.retiroHoraHasta ?? "",
   };
 }
 
@@ -395,6 +416,35 @@ export function hayErroresCola(errores: ErroresCola): boolean {
   return Object.keys(errores).length > 0;
 }
 
+/** HU-040 (BL-210): «HH:MM» de 00:00 a 23:59. */
+const HORA_HH_MM = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/**
+ * HU-040 (BL-210): error del horario de los pedidos para retirar, o null.
+ * Las dos horas vacías = todo el día; si no, las dos, válidas y distintas
+ * (si «hasta» es menor que «desde», la franja cruza la medianoche).
+ */
+export function errorHorarioRetiro(
+  formulario: Pick<
+    FormularioConfiguracion,
+    "retiroHoraDesde" | "retiroHoraHasta"
+  >,
+): string | null {
+  const desde = formulario.retiroHoraDesde.trim();
+  const hasta = formulario.retiroHoraHasta.trim();
+  if (!desde && !hasta) return null;
+  if (!desde || !hasta) {
+    return "Completá las dos horas, o dejá las dos vacías para tomar pedidos todo el día.";
+  }
+  if (!HORA_HH_MM.test(desde) || !HORA_HH_MM.test(hasta)) {
+    return "Escribí las horas como 11:00 o 23:30.";
+  }
+  if (desde === hasta) {
+    return "La hora de inicio y la de cierre tienen que ser distintas.";
+  }
+  return null;
+}
+
 /** Errores de cada campo del formulario (null = sin error). */
 export interface ErroresFormulario {
   razonSocial: string | null;
@@ -404,6 +454,8 @@ export interface ErroresFormulario {
   propinas: string | null;
   email: string | null;
   cola: ErroresCola;
+  /** HU-040 (BL-210). */
+  retiro: string | null;
 }
 
 /**
@@ -415,12 +467,13 @@ export function erroresDelFormulario(
 ): ErroresFormulario {
   if (!formulario) {
     return {
-      razonSocial: null,
+       razonSocial: null,
       nombreLocal: null,
       direccionLocal: null,
       propinas: null,
       email: null,
       cola: {},
+      retiro: null,
     };
   }
   const propinas = leerPropinas(formulario.propinas);
@@ -431,6 +484,7 @@ export function erroresDelFormulario(
     propinas: "error" in propinas ? propinas.error : null,
     email: errorEmailPrivacidad(formulario.emailPrivacidad),
     cola: erroresCola(formulario),
+    retiro: errorHorarioRetiro(formulario),
   };
 }
 
@@ -451,6 +505,7 @@ export function primerCampoConError(errores: ErroresFormulario): string | null {
     ["espera-atencion", errores.cola.esperaAtencion],
     ["espera-demorado", errores.cola.esperaDemorado],
     ["espera-demora-alta", errores.cola.esperaDemoraAlta],
+    ["retiro-desde", errores.retiro],
     ["email-privacidad", errores.email],
   ];
   return enOrden.find(([, error]) => Boolean(error))?.[0] ?? null;
@@ -515,6 +570,30 @@ function cambiosDeLaEspera(
     (guardada.minutosEsperaDemoraAlta ?? ESPERA_POR_DEFECTO.demoraAlta)
   ) {
     cambios.minutosEsperaDemoraAlta = demoraAlta;
+  }
+  return cambios;
+}
+
+/**
+ * HU-040 (BL-210): cambios del retiro para el PATCH. Las horas van juntas
+ * (el backend pide las dos o ninguna). Supone que pasó errorHorarioRetiro.
+ */
+function cambiosDelRetiro(
+  guardada: ConfiguracionEstablecimiento,
+  formulario: FormularioConfiguracion,
+): Partial<CambiosConfiguracion> {
+  const cambios: Partial<CambiosConfiguracion> = {};
+  if (formulario.retiroHabilitado !== (guardada.retiroHabilitado ?? true)) {
+    cambios.retiroHabilitado = formulario.retiroHabilitado;
+  }
+  const desde = formulario.retiroHoraDesde.trim() || null;
+  const hasta = formulario.retiroHoraHasta.trim() || null;
+  if (
+    desde !== (guardada.retiroHoraDesde ?? null) ||
+    hasta !== (guardada.retiroHoraHasta ?? null)
+  ) {
+    cambios.retiroHoraDesde = desde;
+    cambios.retiroHoraHasta = hasta;
   }
   return cambios;
 }
@@ -688,6 +767,7 @@ export function cambiosParaGuardar(
     ...cambiosDeLaCola(guardada, formulario),
     ...cambiosDeLaEspera(guardada, formulario),
     ...cambiosDeLaMarca(guardada, formulario),
+    ...cambiosDelRetiro(guardada, formulario),
   };
 }
 
@@ -712,13 +792,34 @@ export interface ResultadoAnonimizacion {
 }
 
 /** Mensaje para el administrador después de anonimizar. */
-export function mensajeAnonimizacion({
-  pedidos,
-}: ResultadoAnonimizacion): string {
+export function mensajeAnonimizacion(
+  resultado: ResultadoAnonimizacion,
+): string {
+  return mensajeDeAnonimizados(resultado, "ese RUT");
+}
+
+/** «Listo: se anonimizaron N pedidos» o que no había pedidos con ese dato. */
+function mensajeDeAnonimizados(
+  { pedidos }: ResultadoAnonimizacion,
+  dato: string,
+): string {
   if (pedidos === 0) {
-    return "No hay pedidos con ese RUT: no había datos para anonimizar.";
+    return `No hay pedidos con ${dato}: no había datos para anonimizar.`;
   }
   return pedidos === 1
     ? "Listo: se anonimizó 1 pedido."
     : `Listo: se anonimizaron ${pedidos} pedidos.`;
+}
+
+// ── HU-040 (BL-210): anonimizar el contacto de un pedido para retirar ──
+
+/** POST: borra el nombre y el contacto en los pedidos con ese contacto. */
+export const RUTA_ANONIMIZAR_RETIRO =
+  "/admin/configuracion/privacidad/anonimizar-retiro";
+
+/** Mensaje para el administrador después de anonimizar el contacto. */
+export function mensajeAnonimizacionRetiro(
+  resultado: ResultadoAnonimizacion,
+): string {
+  return mensajeDeAnonimizados(resultado, "ese contacto");
 }

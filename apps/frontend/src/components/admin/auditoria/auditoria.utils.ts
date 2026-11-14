@@ -84,6 +84,8 @@ export const ETIQUETAS_ACCION: Record<string, string> = {
   CARTA_ITEM_VENDIDO_SIN_STOCK: "Venta sin stock",
   // HU-009 (BL-453): supresión de los datos de la e-Factura de un comensal.
   PEDIDO_RECEPTOR_ANONIMIZADO: "Datos de facturación anonimizados",
+  // HU-040 (BL-210): supresión del nombre y el contacto de un pedido para retirar.
+  PEDIDO_RETIRO_ANONIMIZADO: "Datos de un pedido para retirar anonimizados",
   // HU-024 (BL-104): cancelación de un pedido pagado, con la devolución.
   PEDIDO_CANCELADO: "Pedido cancelado y pago devuelto",
   // BL-501: pedido cancelado antes de cobrarlo (no hubo devolución).
@@ -182,6 +184,10 @@ const NOMBRE_CAMPO: Record<string, string> = {
   limitePedidosEnPreparacion: "Límite de pedidos en preparación",
   umbralAlertaCola: "Alerta de alta demanda con",
   minutosPreparacionEstimados: "Minutos de preparación estimados",
+  // HU-040 (BL-210): pedidos para retirar. Sin horario (—) = todo el día.
+  retiroHabilitado: "Pedidos para retirar",
+  retiroHoraDesde: "Retiro desde",
+  retiroHoraHasta: "Retiro hasta",
   // BL-412: datos del establecimiento que cambia la plataforma.
   rut: "RUT",
   plan: "Plan",

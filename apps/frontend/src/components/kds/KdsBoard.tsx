@@ -8,6 +8,8 @@ import { IndicadorConexion } from '@/components/conexion/IndicadorConexion';
 import { useEstadoConexion } from '@/components/conexion/useEstadoConexion';
 import { OrderTicket } from './OrderTicket';
 import { CancelarPedidoDialog } from './CancelarPedidoDialog';
+import { EntregarRetiroDialog } from './EntregarRetiroDialog';
+import { lugarDelPedido } from '@/components/retiro/retiro.utils';
 import { nombreDelMedio, type PedidoCancelado } from './cancelacion.utils';
 import {
   separarPorCola,
@@ -43,6 +45,8 @@ interface PropsComanda {
   ahora: number;
   umbrales: UmbralesEspera;
   onCancelar?: (pedido: Pedido) => void;
+  /** HU-040 (BL-210): entrega con código de un pedido para retirar. */
+  onEntregarRetiro?: (pedido: Pedido) => void;
 }
 
 interface GrupoMesa {
@@ -86,7 +90,8 @@ function TableroPorMesa({
         <div key={mesaNumero} className="flex h-full shrink-0 flex-col gap-1.5">
           {pedidos.length > 1 && (
             <div className={CLASE_TITULO_SECCION}>
-              Mesa {mesaNumero} · {pedidos.length} pedidos
+              {pedidos[0].retiro ? 'Para retirar' : `Mesa ${mesaNumero}`} ·{' '}
+              {pedidos.length} pedidos
             </div>
           )}
           <div className="flex h-full gap-gutter">
@@ -294,6 +299,8 @@ export function KdsBoard() {
   const [umbrales, setUmbrales] = useState<UmbralesEspera>(
     UMBRALES_ESPERA_POR_DEFECTO,
   );
+  // HU-040 (BL-210): pedido para retirar que se está entregando con código.
+  const [aEntregar, setAEntregar] = useState<Pedido | null>(null);
 
   // HU-038 (BL-504): conectando / conectado / reconectando / desconectado.
   const estadoConexion = useEstadoConexion(
@@ -403,7 +410,7 @@ export function KdsBoard() {
   }
 
   function cancelado(resultado: PedidoCancelado) {
-    const mesa = aCancelar?.mesaNumero;
+    const lugar = aCancelar ? lugarDelPedido(aCancelar) : '';
     setACancelar(null);
     setPedidos((prev) => prev.filter((p) => p.id !== resultado.pedidoId));
     const medios = [
@@ -411,9 +418,18 @@ export function KdsBoard() {
     ].join(' y ');
     const como = medios ? 'con ' + medios : 'el pago';
     setAvisoCancelacion(
-      `Pedido de la mesa ${mesa ?? ''} cancelado. Se devolvió ${como} y se emite la nota de crédito.`,
+      `Pedido (${lugar}) cancelado. Se devolvió ${como} y se emite la nota de crédito.`,
     );
   }
+
+  // HU-040 (BL-210): el WebSocket también avisa (pedido:actualizado), pero
+  // se saca ya para no esperar el evento.
+  function entregado(pedidoId: string) {
+    setAEntregar(null);
+    setPedidos((prev) => prev.filter((p) => p.id !== pedidoId));
+  }
+
+  const abrirEntrega = puedeOperarTransiciones ? setAEntregar : undefined;
 
   const abrirCancelacion = puedeOperarTransiciones
     ? (pedido: Pedido) => {
@@ -435,6 +451,8 @@ export function KdsBoard() {
     ahora,
     umbrales,
     onCancelar: abrirCancelacion,
+    // HU-040 (BL-210): entrega con código de los pedidos para retirar.
+    onEntregarRetiro: abrirEntrega,
   };
 
   return (
@@ -483,6 +501,12 @@ export function KdsBoard() {
           />
         )}
       </ContenidoKds>
+      <EntregarRetiroDialog
+        pedido={aEntregar}
+        token={token}
+        onClose={() => setAEntregar(null)}
+        onEntregado={entregado}
+      />
     </div>
   );
 }

@@ -90,6 +90,32 @@ describe('logs sin datos personales (HU-036, BL-206)', () => {
     expect(texto).toContain('pago-1');
   });
 
+  it('HU-040 (BL-210): reemplaza el nombre y el contacto del pedido para retirar', () => {
+    const { log, salida } = logger();
+
+    log.info(
+      {
+        pedido: { retiroNombre: 'Ana Ejemplo', retiroContacto: '099765432' },
+        body: {
+          contactoRetiro: { nombre: 'Otra Ejemplo', contacto: 'otra@ej.uy' },
+        },
+        pedidoId: 'pedido-2',
+      },
+      'pedido para retirar',
+    );
+
+    const texto = salida();
+    for (const dato of [
+      'Ana Ejemplo',
+      '099765432',
+      'Otra Ejemplo',
+      'otra@ej.uy',
+    ]) {
+      expect(texto).not.toContain(dato);
+    }
+    expect(texto).toContain('pedido-2');
+  });
+
   it('[TC-U-466] BL-214: reemplaza la IP del usuario en las cabeceras del request', () => {
     const { log, salida } = logger();
 

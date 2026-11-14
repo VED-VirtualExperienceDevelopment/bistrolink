@@ -1,10 +1,10 @@
-'use client';
+"use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { Pedido } from '@/types/pedido';
-import { OrderTicket } from './OrderTicket';
-import { textoAltaDemanda, type EstadoCola } from './cola-kds.utils';
-import type { UmbralesEspera } from './espera-kds.utils';
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { Pedido } from "@/types/pedido";
+import { OrderTicket } from "./OrderTicket";
+import { textoAltaDemanda, type EstadoCola } from "./cola-kds.utils";
+import type { UmbralesEspera } from "./espera-kds.utils";
 import {
   ANCHO_MINIMO_TARJETA,
   agruparPorMesa,
@@ -16,7 +16,7 @@ import {
   textoOcultas,
   type GrupoMesaMonitor,
   type ResumenMonitor,
-} from './monitor-cocina.utils';
+} from "./monitor-cocina.utils";
 
 interface MonitorCocinaProps {
   pedidos: Pedido[];
@@ -35,7 +35,7 @@ const SIN_TRANSICIONES = () => undefined;
 const firmaDeComanda = (pedido: Pedido) => `${pedido.id}:${pedido.estado}`;
 
 const CLASE_DATO =
-  'flex items-baseline gap-2 rounded-xl bg-surface-container px-4 py-2 text-on-surface';
+  "flex items-baseline gap-2 rounded-xl bg-surface-container px-4 py-2 text-on-surface";
 
 /** Un dato de la barra de resumen: etiqueta y número grande. */
 function DatoResumen({
@@ -60,7 +60,11 @@ function ResumenCocina({
   resumen,
   cola,
   ocultas,
-}: Readonly<{ resumen: ResumenMonitor; cola: EstadoCola | null; ocultas: number }>) {
+}: Readonly<{
+  resumen: ResumenMonitor;
+  cola: EstadoCola | null;
+  ocultas: number;
+}>) {
   return (
     <div aria-live="polite" className="shrink-0">
       <ul
@@ -71,7 +75,10 @@ function ResumenCocina({
         <DatoResumen
           testId="monitor-en-preparacion"
           etiqueta="En preparación"
-          valor={textoEnPreparacion(resumen.enPreparacion, cola?.limite ?? null)}
+          valor={textoEnPreparacion(
+            resumen.enPreparacion,
+            cola?.limite ?? null,
+          )}
         />
         <DatoResumen
           testId="monitor-listos"
@@ -121,7 +128,11 @@ function GrupoMesa({
   grupo,
   total,
   tarjetas,
-}: Readonly<{ grupo: GrupoMesaMonitor; total: number; tarjetas: PropsTarjetas }>) {
+}: Readonly<{
+  grupo: GrupoMesaMonitor;
+  total: number;
+  tarjetas: PropsTarjetas;
+}>) {
   const varias = total > 1;
   const idTitulo = `monitor-mesa-${grupo.mesaNumero}`;
   return (
@@ -131,13 +142,20 @@ function GrupoMesa({
       aria-labelledby={varias ? idTitulo : undefined}
       className={
         varias
-          ? 'flex max-w-full flex-col gap-2 rounded-2xl bg-surface-container p-3'
-          : 'flex max-w-full flex-col'
+          ? "flex max-w-full flex-col gap-2 rounded-2xl bg-surface-container p-3"
+          : "flex max-w-full flex-col"
       }
     >
       {varias && (
-        <h2 id={idTitulo} className="text-headline-sm font-bold text-on-surface">
-          Mesa {grupo.mesaNumero} · {total} pedidos
+        <h2
+          id={idTitulo}
+          className="text-headline-sm font-bold text-on-surface"
+        >
+          {/* HU-040 (BL-210): los pedidos para retirar van todos juntos. */}
+          {grupo.pedidos[0]?.retiro
+            ? "Para retirar"
+            : `Mesa ${grupo.mesaNumero}`}{" "}
+          · {total} pedidos
         </h2>
       )}
       <ol className="flex flex-wrap items-start gap-gutter">
@@ -186,18 +204,18 @@ export function MonitorCocina({
   const densidad = densidadMonitor(comandas.length);
   const grillaRef = useRef<HTMLDivElement>(null);
   const [tamano, setTamano] = useState(0);
-  const [ajuste, setAjuste] = useState({ clave: '', visibles: 0 });
+  const [ajuste, setAjuste] = useState({ clave: "", visibles: 0 });
 
   // Al cambiar el tamaño de la pantalla, se vuelve a medir.
   useEffect(() => {
     const grilla = grillaRef.current;
-    if (!grilla || typeof ResizeObserver === 'undefined') return;
+    if (!grilla || typeof ResizeObserver === "undefined") return;
     const observador = new ResizeObserver(() => setTamano((t) => t + 1));
     observador.observe(grilla);
     return () => observador.disconnect();
   }, []);
 
-  const firmaComandas = comandas.map(firmaDeComanda).join('|');
+  const firmaComandas = comandas.map(firmaDeComanda).join("|");
   const clave = `${firmaComandas}#${tamano}#${ahora}`;
   const visibles = ajuste.clave === clave ? ajuste.visibles : comandas.length;
 
@@ -219,7 +237,10 @@ export function MonitorCocina({
   };
 
   return (
-    <div data-testid="monitor-cocina" className="flex min-h-0 flex-1 flex-col gap-3">
+    <div
+      data-testid="monitor-cocina"
+      className="flex min-h-0 flex-1 flex-col gap-3"
+    >
       <ResumenCocina
         resumen={resumenMonitor(pedidos)}
         cola={cola}

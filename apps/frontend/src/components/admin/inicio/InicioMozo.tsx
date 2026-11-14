@@ -18,6 +18,7 @@ import type { LlamadoMozo } from "@/components/kds/llamado.utils";
 import { EncabezadoInicio } from "./EncabezadoInicio";
 import {
   FILAS_POR_TARJETA,
+  lugarDelPedido,
   MINUTOS_LISTO_DEMORADO,
   minutosDesde,
   pedidosEnCocina,
@@ -126,8 +127,7 @@ function FilaListo({
 }: Readonly<{ pedido: PedidoListo; ahora: number }>) {
   const minutos = minutosDesde(pedido.desde, ahora);
   const demorado = minutos >= MINUTOS_LISTO_DEMORADO;
-  const lugar =
-    pedido.mesaNumero === null ? "Retiro" : `Mesa ${pedido.mesaNumero}`;
+  const lugar = lugarDelPedido(pedido);
   return (
     <FilaEnlace href="/admin/kds">
       <Insignia tono="neutro">{lugar}</Insignia>

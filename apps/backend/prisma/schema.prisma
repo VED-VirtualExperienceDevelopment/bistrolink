@@ -215,6 +215,17 @@ model Restaurante {
   // Plantilla de colores de la carta: clasica, gourmet, rapida o familiar
   // (CHECK en la migración). Los colores viven en el frontend.
   plantilla                   String       @default("clasica") @db.VarChar(20)
+  // HU-040 (BL-210): pedidos para retirar por el enlace web. Default true:
+  // los locales existentes siguen recibiéndolos. La franja (HH:MM, en la
+  // zona horaria del local) es la misma todos los días; las dos nulas =
+  // todo el día. Si «desde» es mayor que «hasta», cruza la medianoche.
+  // Formato y «las dos o ninguna» con CHECK en la migración.
+  retiroHabilitado            Boolean      @default(true) @map("retiro_habilitado")
+  retiroHoraDesde             String?      @map("retiro_hora_desde") @db.VarChar(5)
+  retiroHoraHasta             String?      @map("retiro_hora_hasta") @db.VarChar(5)
+  // Último código de retiro entregado (R-001 a R-999, después vuelve a
+  // empezar). Se incrementa con un UPDATE atómico al aprobarse el pago.
+  ultimoCodigoRetiro          Int          @default(0) @map("ultimo_codigo_retiro")
   createdAt                   DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt                   DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -402,16 +413,25 @@ model Pedido {
   // RECIBIDO). Orden FIFO de la cola; null en pedidos anteriores (se
   // ordenan primero, por createdAt).
   encoladoEn            DateTime?    @map("encolado_en") @db.Timestamptz(3)
+  // HU-040 (BL-210): pedido para retirar. El código (R-042) se asigna al
+  // aprobarse el pago y es el que se verifica al entregar. El nombre y el
+  // contacto son opcionales y solo se guardan si el comensal aceptó el
+  // aviso de privacidad (HU-036); el administrador los puede anonimizar.
+  codigoRetiro          String?      @map("codigo_retiro") @db.VarChar(5)
+  retiroNombre          String?      @map("retiro_nombre") @db.VarChar(60)
+  retiroContacto        String?      @map("retiro_contacto") @db.VarChar(100)
+  retiroConsentidoEn    DateTime?    @map("retiro_consentido_en") @db.Timestamptz(3)
+  retiroAnonimizadoEn   DateTime?    @map("retiro_anonimizado_en") @db.Timestamptz(3)
   createdAt             DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt             DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  restaurante      Restaurante             @relation(fields: [restauranteId], references: [id])
-  mesa             Mesa                    @relation(fields: [mesaId], references: [id])
-  usuario          Usuario?                @relation("PedidoUsuario", fields: [usuarioId], references: [id])
-  lineas           LineaPedido[]
-  pagos            Pago[]
-  comprobantes     ComprobanteFiscal[]
-  historialEstados PedidoEstadoHistorial[]
+  restaurante         Restaurante             @relation(fields: [restauranteId], references: [id])
+  mesa                Mesa                    @relation(fields: [mesaId], references: [id])
+  usuario             Usuario?                @relation("PedidoUsuario", fields: [usuarioId], references: [id])
+  lineas              LineaPedido[]
+  pagos               Pago[]
+  comprobantes        ComprobanteFiscal[]
+  historialEstados    PedidoEstadoHistorial[]
   sincronizacionesPos SincronizacionPos[]
 
   @@index([tenantId])
@@ -423,6 +443,8 @@ model Pedido {
   @@index([tenantId, estado, encoladoEn])
   // BL-453: buscar los pedidos de un RUT para anonimizarlos.
   @@index([tenantId, receptorRut])
+  // HU-040 (BL-210): buscar los pedidos de un contacto para anonimizarlos.
+  @@index([tenantId, retiroContacto])
   @@map("pedido")
 }
 
@@ -640,21 +662,21 @@ model SesionMesa {
 // materializadas. Sin claves foráneas: son datos derivados. Con RLS.
 
 model ResumenVentasHora {
-  tenantId      String      @map("tenant_id") @db.Uuid
-  hora          DateTime    @db.Timestamptz(3)
-  canal         PedidoCanal
-  medioPago     String      @map("medio_pago")
-  pedidos       Int
+  tenantId          String      @map("tenant_id") @db.Uuid
+  hora              DateTime    @db.Timestamptz(3)
+  canal             PedidoCanal
+  medioPago         String      @map("medio_pago")
+  pedidos           Int
   // Consumo (lo que se factura): la propina no suma acá.
-  monto         Decimal     @db.Decimal(12, 2)
+  monto             Decimal     @db.Decimal(12, 2)
   // HU-022 (BL-496): propina cobrada en la hora, aparte de las ventas. 0 en
   // las ventas importadas del POS, que no la informan.
-  propina       Decimal     @default(0) @db.Decimal(12, 2)
+  propina           Decimal     @default(0) @db.Decimal(12, 2)
   // Pedidos de la fila con propina mayor que cero. Igual que `pedidos`, se
   // cuenta por medio de pago: un pedido con dos pagos aprobados de medios
   // distintos aparece una vez en cada fila.
-  pedidosConPropina Int     @default(0) @map("pedidos_con_propina")
-  actualizadoEn DateTime    @default(now()) @map("actualizado_en") @db.Timestamptz(3)
+  pedidosConPropina Int         @default(0) @map("pedidos_con_propina")
+  actualizadoEn     DateTime    @default(now()) @map("actualizado_en") @db.Timestamptz(3)
 
   @@id([tenantId, hora, canal, medioPago])
   @@map("resumen_ventas_hora")

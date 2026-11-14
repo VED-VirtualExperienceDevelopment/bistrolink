@@ -193,6 +193,13 @@ const solicitudEfectivo = (extra = {}) => ({
   ...extra,
   tags: ["HU-031b", "BL-442", "pagos", ...(extra.tags ?? [])],
 });
+// HU-040 (BL-210): pedidos para retirar por el enlace web del local.
+const retiro = (extra = {}) => ({
+  component: "api",
+  requirement: "HU-040",
+  ...extra,
+  tags: ["HU-040", "BL-210", "pedidos", "retiro", ...(extra.tags ?? [])],
+});
 // HU-039 (BL-209): pedido cargado por el mozo.
 const pedidoMozo = (extra = {}) => ({
   component: "api",
@@ -874,6 +881,27 @@ const DATOS_INTEGRACION = {
     priority: "P1",
     tags: ["BL-509", "bug", "pagos", "concurrencia"],
   }),
+  // HU-040 (BL-210): pedidos para retirar.
+  199: retiro({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["kds", "privacidad", "multi-tenant"],
+  }),
+  200: retiro({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["configuracion", "horario"],
+  }),
+  201: retiro({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["privacidad", "ley-18331", "auditoria"],
+  }),
+  202: retiro({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["kds", "seguridad", "RD.06"],
+  }),
   // BL-502: «Mis pedidos» en la mesa y acceso solo en la sesión abierta.
   203: sesionMesa({
     requirement: "HU-006",
@@ -1371,6 +1399,17 @@ const DATOS_E2E = {
     category: "Funcional",
     priority: "P2",
     tags: ["BL-496", "BL-495", "propina"],
+  }),
+  // HU-040 (BL-210): pedido para retirar con código.
+  98: e2e("comensal", "HU-040", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-210", "kds", "websocket"],
+  }),
+  99: e2e("kds", "HU-040", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-210", "efectivo", ...axe],
   }),
   // BL-470: «Ir a cobrar» desde el aviso de efectivo de las alertas, en
   // admin/ir-a-cobrar.spec.ts. TC-E-098 y 099 ya son de HU-040.

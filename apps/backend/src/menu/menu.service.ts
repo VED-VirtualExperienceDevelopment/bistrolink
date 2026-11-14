@@ -13,6 +13,7 @@ export interface MarcaPublica {
   logoUrl: string | null;
   plantilla: PlantillaMarca;
 }
+import { retiroPublico } from '../pedidos/retiro';
 
 /**
  * BL-397 (decisión 2 de la propuesta de la carta): el comensal ve lo mismo
@@ -140,6 +141,10 @@ export class MenuService {
           direccion: restaurante.direccion,
         },
         marca: await this.marcaDe(restaurante),
+        // HU-040 (BL-210): este enlace es el de los pedidos para retirar.
+        // Si el local no los toma ahora, la carta se muestra igual pero sin
+        // poder pedir (y POST /pedidos responde 409).
+        retiro: retiroPublico(restaurante, new Date(), restaurante.timezone),
         categorias: categoriasConUrls,
       };
     });

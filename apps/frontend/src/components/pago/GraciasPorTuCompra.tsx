@@ -16,6 +16,8 @@ interface Props {
   readonly nombreLocal?: string;
   readonly esMesa: boolean;
   readonly numeroMesa?: number;
+  /** HU-040 (BL-210): en el pedido para retirar, el código del mostrador (R-042). */
+  readonly codigoRetiro?: string | null;
   /** Hora de la entrega (ISO), si llegó con el evento. */
   readonly entregadoEn: string | null;
   readonly lineas: readonly LineaResumen[];
@@ -53,6 +55,7 @@ export function GraciasPorTuCompra({
   nombreLocal,
   esMesa,
   numeroMesa,
+  codigoRetiro = null,
   entregadoEn,
   lineas,
   totales,
@@ -110,7 +113,7 @@ export function GraciasPorTuCompra({
           </h1>
           <p className="text-sm text-[#5a575e]">{lugar}</p>
           <p className="text-sm text-[#5a575e]">
-            Pedido {codigoPedido(pedidoId)} entregado
+            Pedido {codigoRetiro ?? codigoPedido(pedidoId)} entregado
             {hora ? ` a las ${hora}` : ""}
           </p>
         </div>
