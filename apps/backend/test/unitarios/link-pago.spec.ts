@@ -143,6 +143,35 @@ describe('token del link de pago', () => {
     }
   });
 
+  it('sin QR_TOKEN_KEY o con una clave que no es de 32 bytes no genera links (error claro)', () => {
+    const clave = process.env.QR_TOKEN_KEY;
+    try {
+      delete process.env.QR_TOKEN_KEY;
+      olvidarClaveLinkPago();
+      expect(() => nuevoLinkPago(TENANT, PEDIDO)).toThrow(
+        'Falta QR_TOKEN_KEY en el entorno',
+      );
+
+      process.env.QR_TOKEN_KEY = randomBytes(16).toString('base64');
+      olvidarClaveLinkPago();
+      expect(() => nuevoLinkPago(TENANT, PEDIDO)).toThrow(
+        'QR_TOKEN_KEY debe ser una clave de 32 bytes en base64',
+      );
+    } finally {
+      process.env.QR_TOKEN_KEY = clave;
+      olvidarClaveLinkPago();
+    }
+  });
+
+  it('solo con ids UUID (el token tiene un largo fijo)', () => {
+    expect(() => nuevoLinkPago('no-es-uuid', PEDIDO)).toThrow(
+      'El link de pago requiere ids con formato UUID',
+    );
+    expect(() => nuevoLinkPago(TENANT, '1234')).toThrow(
+      'El link de pago requiere ids con formato UUID',
+    );
+  });
+
   it('sin hash guardado no coincide', () => {
     expect(nonceCoincide('nonce', null)).toBe(false);
   });
@@ -712,6 +741,14 @@ describe('LinkPagoController', () => {
       pedidoId: PEDIDO,
       reemplazar: false,
     });
+  });
+
+  it('sin body (llamado directo) no reemplaza', async () => {
+    const req = { user: { tenantId: TENANT, sub: ACTOR, roles: ['MOZO'] } };
+    await controller.generar(req as any, PEDIDO);
+    expect(linkPago.generar).toHaveBeenLastCalledWith(
+      expect.objectContaining({ reemplazar: false }),
+    );
   });
 
   it('reemplaza el link vigente solo si el body lo pide', async () => {

@@ -468,7 +468,10 @@ export function textoLinkActivo(
 /** HU-033 (BL-203): «Vence a las 21:15 (en 14 min)» o «Venció». */
 export function textoVencimientoLink(venceEn: string, ahora: number): string {
   const restanMs = Date.parse(venceEn) - ahora;
-  if (!(restanMs > 0)) return "Este link venció. Generá otro.";
+  // Una fecha inválida (NaN) también cuenta como vencido.
+  if (Number.isNaN(restanMs) || restanMs <= 0) {
+    return "Este link venció. Generá otro.";
+  }
   const minutos = Math.ceil(restanMs / 60_000);
   return `Vence a las ${horaDelPedido(venceEn)} (en ${minutos} min)`;
 }

@@ -515,6 +515,9 @@ describe("link de pago (HU-033, BL-203)", () => {
     );
     expect(textoVencimientoLink("2026-11-14T23:00:00.000Z", AHORA)).toBe(
       "Este link venció. Generá otro.",
+    );    // Una fecha que no se puede leer cuenta como vencido.
+    expect(textoVencimientoLink("no-es-fecha", AHORA)).toBe(
+      "Este link venció. Generá otro.",
     );
   });
 });
