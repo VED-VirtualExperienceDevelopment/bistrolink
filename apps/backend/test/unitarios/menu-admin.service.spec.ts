@@ -423,6 +423,37 @@ describe('MenuAdminService', () => {
         );
       });
 
+      it('HU-044 (BL-537): marcar la «Sugerencia del local» queda con antes y después', async () => {
+        mockTx.itemCarta.findFirst.mockResolvedValue({
+          ...anterior,
+          destacado: false,
+        });
+        mockTx.itemCarta.update.mockResolvedValue({
+          ...anterior,
+          destacado: true,
+        });
+
+        await service.updateItem(
+          tenantId,
+          itemId,
+          { destacado: true } as UpdateItemDto,
+          'sub-del-admin',
+        );
+
+        expect(mockTx.itemCarta.update).toHaveBeenCalledWith(
+          expect.objectContaining({ data: { destacado: true } }),
+        );
+        expect(mockAuditLog.registrarEnTx).toHaveBeenCalledWith(mockTx, {
+          action: 'CARTA_ITEM_MODIFICADO',
+          tenantId,
+          actorKeycloakId: 'sub-del-admin',
+          entidadId: itemId,
+          antes: { destacado: false },
+          despues: { destacado: true },
+          detalle: { nombre: 'Pizza' },
+        });
+      });
+
       it('sin cambio de precio ni disponibilidad (por ejemplo, solo el nombre) no audita', async () => {
         mockTx.itemCarta.findFirst.mockResolvedValue(anterior);
         mockTx.itemCarta.update.mockResolvedValue({

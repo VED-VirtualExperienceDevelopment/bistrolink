@@ -39,6 +39,11 @@ export class UpdateItemDto {
   @IsString()
   imagenKey?: string;
 
+  // HU-044 (BL-537): «Sugerencia del local». Solo ADMIN (como todo el PATCH).
+  @IsOptional()
+  @IsBoolean()
+  destacado?: boolean;
+
   // BL-394: bloqueo optimista. Versión (updatedAt) que cargó el formulario;
   // si otra persona guardó después, la API responde 409.
   @IsOptional()

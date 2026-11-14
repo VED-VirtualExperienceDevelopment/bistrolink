@@ -16,6 +16,7 @@ function itemBase(overrides: Partial<ItemCartaRaw> = {}): ItemCartaRaw {
     precio: new Decimal('590.00'),
     disponible: true,
     imagenKey: 'tenant-1/items/milanesa.jpg',
+    destacado: false,
     ...overrides,
   };
 }
@@ -33,7 +34,18 @@ describe('mapItemToDto', () => {
       precio: item.precio,
       disponible: true,
       imagenUrl: 'https://s3.example.com/firmada',
+      destacado: false,
     });
+  });
+
+  it('HU-044 (BL-537): propaga la «Sugerencia del local», también si está agotado', () => {
+    expect(mapItemToDto(itemBase({ destacado: true }), null).destacado).toBe(
+      true,
+    );
+    // El frontend decide no mostrar la insignia en un agotado: el dato viaja.
+    expect(
+      mapItemToDto(itemBase({ destacado: true, disponible: false }), null),
+    ).toMatchObject({ destacado: true, disponible: false });
   });
 
   it('NO excluye un ítem no disponible — lo devuelve con disponible=false', () => {

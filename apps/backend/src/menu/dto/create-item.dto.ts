@@ -36,4 +36,9 @@ export class CreateItemDto {
   @IsOptional()
   @IsString()
   imagenKey?: string;
+
+  // HU-044 (BL-537): «Sugerencia del local» desde el alta. Sin el campo, no.
+  @IsOptional()
+  @IsBoolean()
+  destacado?: boolean;
 }

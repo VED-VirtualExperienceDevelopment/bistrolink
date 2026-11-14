@@ -319,6 +319,84 @@ describeConAdmin('BL-402: Gestión de Carta (integración)', () => {
       .expect(HttpStatus.OK);
   });
 
+  // ── «Sugerencia del local» (HU-044, BL-537) ──────────────────────────────
+  it('[TC-I-217] Carta: el ADMIN marca un plato como «Sugerencia del local»; queda auditado y el comensal lo ve, sin cambiar el orden', async () => {
+    const menuPublico = async () => {
+      const res = await servidor()
+        .get(`/menu/tenant/${TENANT_ID}/restaurante/${RESTAURANTE_ID}`)
+        .expect(HttpStatus.OK);
+      return res.body.categorias as {
+        id: string;
+        items: { id: string; destacado: boolean }[];
+      }[];
+    };
+    const ordenDeLaCategoria = async () =>
+      (await menuPublico())
+        .find((c) => c.id === categoriaId)
+        ?.items.map((i) => i.id);
+    const ordenAntes = await ordenDeLaCategoria();
+
+    // Valor que no es booleano: 400.
+    await conToken(
+      tokenAdmin,
+      servidor().patch(`/admin/menu/item/${itemPedidoId}`),
+    )
+      .send({ destacado: 'si' })
+      .expect(HttpStatus.BAD_REQUEST);
+
+    await conToken(
+      tokenAdmin,
+      servidor().patch(`/admin/menu/item/${itemPedidoId}`),
+    )
+      .send({ destacado: true })
+      .expect(HttpStatus.OK)
+      .expect((res) => expect(res.body.destacado).toBe(true));
+
+    // El comensal lo ve marcado, en el mismo lugar de la carta.
+    const categoria = (await menuPublico()).find((c) => c.id === categoriaId);
+    expect(categoria?.items.find((i) => i.id === itemPedidoId)?.destacado).toBe(
+      true,
+    );
+    expect(await ordenDeLaCategoria()).toEqual(ordenAntes);
+
+    // La auditoría tiene el cambio con antes y después.
+    const auditoria = await tenantPrisma.runInTenantContext(TENANT_ID, (tx) =>
+      tx.registroAuditoria.findMany({
+        where: { accion: 'CARTA_ITEM_MODIFICADO', entidadId: itemPedidoId },
+        select: { valoresAntes: true, valoresDespues: true },
+      }),
+    );
+    expect(auditoria).toContainEqual({
+      valoresAntes: { destacado: false },
+      valoresDespues: { destacado: true },
+    });
+
+    // Se desmarca y el comensal deja de verlo.
+    await conToken(
+      tokenAdmin,
+      servidor().patch(`/admin/menu/item/${itemPedidoId}`),
+    )
+      .send({ destacado: false })
+      .expect(HttpStatus.OK);
+    const despues = (await menuPublico()).find((c) => c.id === categoriaId);
+    expect(despues?.items.find((i) => i.id === itemPedidoId)?.destacado).toBe(
+      false,
+    );
+  });
+
+  itConMozo(
+    '[TC-I-218] Carta: el MOZO no puede marcar ni desmarcar la «Sugerencia del local» (403)',
+    async () => {
+      const token = await getToken(MOZO_USER as string, MOZO_PASS as string);
+      await conToken(
+        token,
+        servidor().patch(`/admin/menu/item/${itemPedidoId}`),
+      )
+        .send({ destacado: true })
+        .expect(HttpStatus.FORBIDDEN);
+    },
+  );
+
   // ── Aislamiento entre tenants (RLS) ───────────────────────────────────────
   itConTenantB(
     '[TC-I-131] Carta: el admin de otro tenant no ve ni modifica la carta (404)',
