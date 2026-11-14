@@ -16,13 +16,13 @@ import {
 } from "./propina.utils";
 
 const CLASE_OPCION =
-  "relative min-h-16 rounded-xl border px-2 py-2 flex flex-col items-center justify-center gap-0.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6e54ad]/40 disabled:opacity-50 disabled:cursor-not-allowed";
-const CLASE_OPCION_ACTIVA = "border-2 border-[#6e54ad] bg-[#6e54ad]/10";
+  "relative min-h-16 rounded-xl border px-2 py-2 flex flex-col items-center justify-center gap-0.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-marca/40 disabled:opacity-50 disabled:cursor-not-allowed";
+const CLASE_OPCION_ACTIVA = "border-2 border-marca bg-marca/10";
 const CLASE_OPCION_INACTIVA =
-  "border-culinary-neutral/30 bg-white hover:border-[#6e54ad]";
+  "border-culinary-neutral/30 bg-white hover:border-marca";
 
 const CLASE_BOTON_SECUNDARIO =
-  "min-h-12 rounded-xl border px-3 text-[0.9375rem] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6e54ad]/40 disabled:opacity-50 disabled:cursor-not-allowed";
+  "min-h-12 rounded-xl border px-3 text-[0.9375rem] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-marca/40 disabled:opacity-50 disabled:cursor-not-allowed";
 
 /** Una columna por tarjeta hasta 3; con más porcentajes, 3 por fila. */
 function claseColumnas(cantidad: number): string {
@@ -179,7 +179,7 @@ export function SelectorPropina({
           className={`${CLASE_BOTON_SECUNDARIO} ${
             otroMontoActivo
               ? `${CLASE_OPCION_ACTIVA} text-[#4a3585]`
-              : "border-culinary-neutral/30 bg-white text-[#6e54ad] hover:border-[#6e54ad]"
+              : "border-culinary-neutral/30 bg-white text-marca hover:border-marca"
           }`}
         >
           {conMontoLibre && !abierto
@@ -197,7 +197,7 @@ export function SelectorPropina({
           className={`${CLASE_BOTON_SECUNDARIO} ${
             !abierto && eleccion.tipo === "ninguna"
               ? `${CLASE_OPCION_ACTIVA} text-[#4a3585]`
-              : "border-culinary-neutral/30 bg-white text-foreground hover:border-[#6e54ad]"
+              : "border-culinary-neutral/30 bg-white text-foreground hover:border-marca"
           }`}
         >
           Sin propina
@@ -239,14 +239,14 @@ export function SelectorPropina({
                 className={`w-full h-12 px-3 rounded-lg border bg-white text-foreground focus:outline-none transition-colors ${
                   error
                     ? "border-[#BA1A1A] bg-[#FFDAD6]/40"
-                    : "border-culinary-neutral/30 focus:border-[#6e54ad] focus:ring-2 focus:ring-[#6e54ad]/20"
+                    : "border-culinary-neutral/30 focus:border-marca focus:ring-2 focus:ring-marca/20"
                 }`}
               />
               <button
                 type="button"
                 onClick={aplicarMonto}
                 disabled={deshabilitado || estadoMonto.tipo !== "ok"}
-                className="min-h-12 shrink-0 rounded-xl bg-[#6e54ad] px-5 font-semibold text-white transition-colors hover:bg-[#5d4594] disabled:opacity-50 disabled:cursor-not-allowed"
+                className="min-h-12 shrink-0 rounded-xl bg-marca px-5 font-semibold text-white transition-colors hover:bg-marca-hover disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Aplicar
               </button>

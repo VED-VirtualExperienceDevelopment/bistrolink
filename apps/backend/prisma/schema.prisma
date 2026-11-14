@@ -209,6 +209,12 @@ model Restaurante {
   minutosEsperaAtencion       Int          @default(30) @map("minutos_espera_atencion")
   minutosEsperaDemorado       Int          @default(60) @map("minutos_espera_demorado")
   minutosEsperaDemoraAlta     Int          @default(120) @map("minutos_espera_demora_alta")
+  // HU-043 (BL-531): marca propia, fase 1. Clave del logo en el
+  // almacenamiento de imágenes (la sube y la valida BL-532). Null = sin logo.
+  logoKey                     String?      @map("logo_key")
+  // Plantilla de colores de la carta: clasica, gourmet, rapida o familiar
+  // (CHECK en la migración). Los colores viven en el frontend.
+  plantilla                   String       @default("clasica") @db.VarChar(20)
   // HU-040 (BL-210): pedidos para retirar por el enlace web. Default true:
   // los locales existentes siguen recibiéndolos. La franja (HH:MM, en la
   // zona horaria del local) es la misma todos los días; las dos nulas =
@@ -220,6 +226,9 @@ model Restaurante {
   // Último código de retiro entregado (R-001 a R-999, después vuelve a
   // empezar). Se incrementa con un UPDATE atómico al aprobarse el pago.
   ultimoCodigoRetiro          Int          @default(0) @map("ultimo_codigo_retiro")
+  // HU-043 (BL-562): foto de portada del banner de la carta. Clave en el
+  // almacenamiento de imágenes. Null = la portada por defecto.
+  portadaKey                  String?      @map("portada_key")
   createdAt                   DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt                   DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -425,13 +434,13 @@ model Pedido {
   createdAt             DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt             DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  restaurante      Restaurante             @relation(fields: [restauranteId], references: [id])
-  mesa             Mesa                    @relation(fields: [mesaId], references: [id])
-  usuario          Usuario?                @relation("PedidoUsuario", fields: [usuarioId], references: [id])
-  lineas           LineaPedido[]
-  pagos            Pago[]
-  comprobantes     ComprobanteFiscal[]
-  historialEstados PedidoEstadoHistorial[]
+  restaurante         Restaurante             @relation(fields: [restauranteId], references: [id])
+  mesa                Mesa                    @relation(fields: [mesaId], references: [id])
+  usuario             Usuario?                @relation("PedidoUsuario", fields: [usuarioId], references: [id])
+  lineas              LineaPedido[]
+  pagos               Pago[]
+  comprobantes        ComprobanteFiscal[]
+  historialEstados    PedidoEstadoHistorial[]
   sincronizacionesPos SincronizacionPos[]
 
   @@index([tenantId])
@@ -662,21 +671,21 @@ model SesionMesa {
 // materializadas. Sin claves foráneas: son datos derivados. Con RLS.
 
 model ResumenVentasHora {
-  tenantId      String      @map("tenant_id") @db.Uuid
-  hora          DateTime    @db.Timestamptz(3)
-  canal         PedidoCanal
-  medioPago     String      @map("medio_pago")
-  pedidos       Int
+  tenantId          String      @map("tenant_id") @db.Uuid
+  hora              DateTime    @db.Timestamptz(3)
+  canal             PedidoCanal
+  medioPago         String      @map("medio_pago")
+  pedidos           Int
   // Consumo (lo que se factura): la propina no suma acá.
-  monto         Decimal     @db.Decimal(12, 2)
+  monto             Decimal     @db.Decimal(12, 2)
   // HU-022 (BL-496): propina cobrada en la hora, aparte de las ventas. 0 en
   // las ventas importadas del POS, que no la informan.
-  propina       Decimal     @default(0) @db.Decimal(12, 2)
+  propina           Decimal     @default(0) @db.Decimal(12, 2)
   // Pedidos de la fila con propina mayor que cero. Igual que `pedidos`, se
   // cuenta por medio de pago: un pedido con dos pagos aprobados de medios
   // distintos aparece una vez en cada fila.
-  pedidosConPropina Int     @default(0) @map("pedidos_con_propina")
-  actualizadoEn DateTime    @default(now()) @map("actualizado_en") @db.Timestamptz(3)
+  pedidosConPropina Int         @default(0) @map("pedidos_con_propina")
+  actualizadoEn     DateTime    @default(now()) @map("actualizado_en") @db.Timestamptz(3)
 
   @@id([tenantId, hora, canal, medioPago])
   @@map("resumen_ventas_hora")

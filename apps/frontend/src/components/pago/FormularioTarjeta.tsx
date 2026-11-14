@@ -85,7 +85,7 @@ const CLASE_CAJA_SEGURA = 'overflow-hidden !px-0';
 const CLASE_INPUT_BASE =
   'w-full h-12 px-4 rounded-[0.75rem] text-base outline-none transition-all duration-200 placeholder:text-culinary-neutral bg-culinary-background';
 const CLASE_BORDE_OK =
-  'border-2 border-culinary-neutral/30 focus-within:border-[#6e54ad] focus-within:ring-2 focus-within:ring-[#6e54ad]/20';
+  'border-2 border-culinary-neutral/30 focus-within:border-marca focus-within:ring-2 focus-within:ring-marca/20';
 const CLASE_BORDE_ERROR = 'border-2 border-[#BA1A1A] bg-[#FFDAD6]/40';
 
 /**
@@ -273,7 +273,7 @@ export function FormularioTarjeta({
   const claseCampoSeguro = (campo: CampoSeguro) =>
     `${CLASE_INPUT_BASE} ${CLASE_CAJA_SEGURA} flex items-stretch ${
       invalidos[campo] ? CLASE_BORDE_ERROR : CLASE_BORDE_OK
-    } ${foco === campo ? 'border-[#6e54ad] ring-2 ring-[#6e54ad]/20' : ''}`;
+    } ${foco === campo ? 'border-marca ring-2 ring-marca/20' : ''}`;
 
   return (
     <form onSubmit={enviar} noValidate className="flex flex-col gap-5" aria-busy={ocupado}>
@@ -288,7 +288,7 @@ export function FormularioTarjeta({
             <button
               type="button"
               onClick={() => setIntentoSdk((n) => n + 1)}
-              className="self-start px-3 py-1.5 rounded-md bg-white text-[#6e54ad] font-semibold border border-[#6e54ad]/30 hover:bg-[#6e54ad] hover:text-white transition-colors"
+              className="self-start px-3 py-1.5 rounded-md bg-white text-marca font-semibold border border-marca/30 hover:bg-marca hover:text-white transition-colors"
             >
               Reintentar
             </button>
@@ -301,7 +301,7 @@ export function FormularioTarjeta({
             {sdk === 'listo' && camposSeguros.numero}
           </div>
           {marca && (
-            <span className="self-center shrink-0 px-2 py-0.5 rounded-md bg-[#6e54ad]/10 text-[#6e54ad] text-xs font-bold tracking-wide">
+            <span className="self-center shrink-0 px-2 py-0.5 rounded-md bg-marca/10 text-marca text-xs font-bold tracking-wide">
               {marca}
             </span>
           )}
@@ -379,7 +379,7 @@ export function FormularioTarjeta({
         />
       </Campo>
 
-      <div className="flex items-center justify-between rounded-[0.75rem] bg-culinary-primary-container px-4 py-3 text-sm">
+      <div className="flex items-center justify-between rounded-[0.75rem] bg-marca/10 px-4 py-3 text-sm">
         <span className="text-[#5a575e]">Plan de pago</span>
         <span className="font-semibold text-foreground">
           1 pago de {formatearPrecio(monto)}
@@ -395,7 +395,7 @@ export function FormularioTarjeta({
       <button
         type="submit"
         disabled={ocupado || sdk !== 'listo'}
-        className="w-full flex items-center justify-center gap-2 px-4 py-3.5 bg-[#6e54ad] text-white font-bold rounded-[0.75rem] hover:bg-[#5b468f] focus:outline-none focus:ring-4 focus:ring-[#6e54ad]/30 transition-all disabled:opacity-60 disabled:cursor-not-allowed text-lg shadow-[0px_4px_20px_rgba(121,118,125,0.15)]"
+        className="w-full flex items-center justify-center gap-2 px-4 py-3.5 bg-marca text-white font-bold rounded-[0.75rem] hover:bg-marca-hover focus:outline-none focus:ring-4 focus:ring-marca/30 transition-all disabled:opacity-60 disabled:cursor-not-allowed text-lg shadow-[0px_4px_20px_rgba(121,118,125,0.15)]"
       >
         {ocupado ? (
           <>

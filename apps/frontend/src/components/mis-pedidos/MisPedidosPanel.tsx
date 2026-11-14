@@ -120,7 +120,7 @@ export function MisPedidosPanel({
             type="button"
             onClick={onCerrar}
             aria-label="Cerrar mis pedidos"
-            className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-foreground hover:bg-culinary-neutral/10 focus:outline-none focus:ring-4 focus:ring-[#6e54ad]/30"
+            className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-foreground hover:bg-culinary-neutral/10 focus:outline-none focus:ring-4 focus:ring-marca/30"
           >
             <svg
               aria-hidden="true"
@@ -187,7 +187,7 @@ export function MisPedidosPanel({
                         type="button"
                         onClick={() => void descargar(pedido.id)}
                         disabled={descargando === pedido.id}
-                        className="mt-2 text-sm font-semibold text-[#6e54ad] underline disabled:opacity-60"
+                        className="mt-2 text-sm font-semibold text-marca underline disabled:opacity-60"
                       >
                         {descargando === pedido.id
                           ? "Descargando…"
@@ -214,7 +214,7 @@ export function MisPedidosPanel({
           <button
             type="button"
             onClick={onPedirAlgoMas}
-            className="w-full rounded-[0.5rem] border border-[#6e54ad] px-4 py-3 font-semibold text-[#6e54ad] hover:bg-[#6e54ad]/10 focus:outline-none focus:ring-4 focus:ring-[#6e54ad]/30"
+            className="w-full rounded-[0.5rem] border border-marca px-4 py-3 font-semibold text-marca hover:bg-marca/10 focus:outline-none focus:ring-4 focus:ring-marca/30"
           >
             Pedir algo más
           </button>

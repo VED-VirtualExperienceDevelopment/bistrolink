@@ -98,6 +98,13 @@ export const CONFIGURACION_DEL_SEED = {
   minutosEsperaAtencion: 30,
   minutosEsperaDemorado: 60,
   minutosEsperaDemoraAlta: 120,
+  // HU-043 (BL-531): plantilla de marca por defecto. Los E2E de la marca la
+  // cambian; la limpieza la deja como el seed.
+  plantilla: 'clasica',
+  // HU-043 (BL-535): sin logo ni portada. Los E2E de la marca los suben; la
+  // limpieza los quita.
+  logoKey: null,
+  portadaKey: null,
 } as const;
 
 /** Razón social de los tenants de testing, como en el seed. */
@@ -111,6 +118,24 @@ export const RAZON_SOCIAL_DEL_SEED: Readonly<Record<string, string>> = {
  * Ningún usuario del seed empieza así (admin-test, mozo-test, …).
  */
 export const PREFIJO_USUARIO_E2E = 'e2e-';
+
+/**
+ * HU-043 (BL-561): nombre y dirección del local de los tenants de testing,
+ * como en el seed. Los E2E de Configuración los cambian y la limpieza los
+ * restaura.
+ */
+export const LOCAL_DEL_SEED: Readonly<
+  Record<string, { nombre: string; direccion: string }>
+> = {
+  '11111111-1111-1111-1111-111111111111': {
+    nombre: 'Restaurante Testing A',
+    direccion: 'Av. Italia 1234, Montevideo',
+  },
+  'b02579f2-2bb0-496b-abf2-33c494c93122': {
+    nombre: 'Restaurante Testing B',
+    direccion: 'Otra dirección 456',
+  },
+};
 
 /** Tenants de testing del seed (A y B): la limpieza de plataforma no los toca. */
 export const TENANTS_DE_TESTING: readonly string[] = Object.keys(

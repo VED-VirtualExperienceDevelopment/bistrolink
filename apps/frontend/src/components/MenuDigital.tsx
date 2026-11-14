@@ -42,7 +42,9 @@ import {
   sumarUnidad,
   type OrigenMenu,
 } from "@/components/menu-digital.utils";
-import type { PedidoConfirmado } from "@/types/menu";
+import type { MarcaPublica, PedidoConfirmado } from "@/types/menu";
+import { variablesDeMarca } from "@/lib/plantillas-marca";
+import { ImagenDePortada, LogoDelLocal } from "@/components/MarcaDelLocal";
 import {
   firmaCarrito,
   formatearPrecio,
@@ -120,6 +122,11 @@ interface MenuDigitalProps {
   readonly categorias: readonly CategoriaMenu[];
   /** Solo en la mesa: el número que se muestra en el encabezado. */
   readonly numeroMesa?: number;
+  /**
+   * HU-043 (BL-534): logo y plantilla del local. Sin marca (o con una API
+   * anterior), el menú se ve como siempre: «BistroLink» y la Clásica.
+   */
+  readonly marca?: MarcaPublica;
   /** HU-040 (BL-210): solo en el enlace web, si el local toma pedidos ahora. */
   readonly retiro?: RetiroPublico | null;
 }
@@ -243,6 +250,7 @@ export default function MenuDigital({
   restaurante,
   categorias,
   numeroMesa,
+  marca,
   retiro,
 }: MenuDigitalProps) {
   const tipo = origen.tipo;
@@ -655,17 +663,21 @@ export default function MenuDigital({
       className="min-h-screen bg-culinary-background pb-28"
       // BL-320: espacio al final para que el último plato pueda quedar por
       // encima de la barra del carrito.
-      style={
-        altoBarraCarrito ? { paddingBottom: altoBarraCarrito + 32 } : undefined
-      }
+      // HU-043 (BL-534): las variables de la marca valen para todo lo que
+      // está adentro (carta, carrito, mis pedidos, llamar al mozo y pago).
+      style={{
+        ...variablesDeMarca(marca?.plantilla),
+        ...(altoBarraCarrito
+          ? { paddingBottom: altoBarraCarrito + 32 }
+          : undefined),
+      }}
     >
       <nav className="fixed top-0 w-full z-50 flex justify-between items-center px-4 md:px-8 h-16 bg-white border-b border-culinary-neutral/15">
-        <div className="flex items-center gap-4">
-          <span className="text-xl md:text-2xl font-bold text-[#6e54ad]">
-            BistroLink
-          </span>
+        <div className="flex min-w-0 items-center gap-4">
+          {/* HU-043 (BL-534): el logo del local, o «BistroLink». */}
+          <LogoDelLocal logoUrl={marca?.logoUrl} nombre={restaurante.nombre} />
         </div>
-        <div className="flex items-center gap-2 md:gap-4 text-[#6e54ad]">
+        <div className="flex items-center gap-2 md:gap-4 text-marca">
           {/* BL-502: en el celular, solo el ícono y la cantidad. */}
           {hayMisPedidos && (
             <MisPedidosBoton
@@ -674,7 +686,7 @@ export default function MenuDigital({
               onAbrir={() => setMisPedidosAbierto(true)}
             />
           )}
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-[#6e54ad]/10 rounded-full">
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-marca/10 rounded-full">
             <span className="text-sm font-medium">
               {tipo === "mesa"
                 ? "📍 En el local"
@@ -715,26 +727,9 @@ export default function MenuDigital({
             <section className="w-full">
               <div className="relative w-full h-[250px] md:h-[350px] rounded-[1rem] overflow-hidden group bg-foreground">
                 {/* LCP de la página: <img> en vez de background-image para que el
-                navegador la descubra temprano, le dé prioridad alta y elija un
-                tamaño acorde a la pantalla (Unsplash redimensiona por URL).
-                Antes bajaba siempre 1974 px (~580 KB) y el LCP en mobile
-                quedaba en ~6,5 s. Decorativa: el nombre ya está en el <h1>. */}
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src="https://images.unsplash.com/photo-1514933651103-005eec06c04b?q=60&w=828&auto=format&fit=crop"
-                  srcSet={[640, 828, 1200, 1600]
-                    .map(
-                      (ancho) =>
-                        `https://images.unsplash.com/photo-1514933651103-005eec06c04b?q=60&w=${ancho}&auto=format&fit=crop ${ancho}w`,
-                    )
-                    .join(", ")}
-                  sizes="(min-width: 1440px) 1376px, calc(100vw - 2rem)"
-                  alt=""
-                  fetchPriority="high"
-                  loading="eager"
-                  decoding="async"
-                  className="absolute inset-0 w-full h-full object-cover object-center transition-transform duration-700 group-hover:scale-105"
-                />
+                navegador la descubra temprano y le dé prioridad alta (BL-450).
+                HU-043 (BL-562): la portada del local o la de por defecto. */}
+                <ImagenDePortada portadaUrl={marca?.portadaUrl} />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-black/10"></div>
 
                 <div className="absolute bottom-0 left-0 p-6 md:p-8 w-full flex flex-col justify-end">
@@ -810,7 +805,7 @@ export default function MenuDigital({
                                 <h3 className="font-semibold text-lg text-foreground leading-tight">
                                   {item.nombre}
                                 </h3>
-                                <span className="font-bold text-lg text-[#6e54ad] shrink-0">
+                                <span className="font-bold text-lg text-marca shrink-0">
                                   {formatearPrecio(item.precio)}
                                 </span>
                               </div>
@@ -846,7 +841,7 @@ export default function MenuDigital({
                                         : undefined
                                     }
                                     aria-label={`Agregar ${item.nombre} al carrito`}
-                                    className="w-full bg-[#6e54ad]/10 text-[#6e54ad] font-semibold py-2.5 rounded-[0.5rem] hover:bg-[#6e54ad] hover:text-white transition-colors flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-[#6e54ad]/10 disabled:hover:text-[#6e54ad]"
+                                    className="w-full bg-marca/10 text-marca font-semibold py-2.5 rounded-[0.5rem] hover:bg-marca hover:text-white transition-colors flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-marca/10 disabled:hover:text-marca"
                                   >
                                     <svg
                                       aria-hidden="true"
@@ -882,7 +877,7 @@ export default function MenuDigital({
                                       0 && (
                                       <span
                                         aria-hidden="true"
-                                        className="ml-1 rounded-full bg-white px-2 py-0.5 text-xs font-bold text-[#6e54ad]"
+                                        className="ml-1 rounded-full bg-white px-2 py-0.5 text-xs font-bold text-marca"
                                       >
                                         {cantidadEnCarrito(carrito, item.id)} en
                                         el pedido
@@ -923,7 +918,7 @@ export default function MenuDigital({
             <footer className="pb-4 text-center text-sm text-[#5a575e]">
               <a
                 href={rutaPrivacidad(origen)}
-                className="underline hover:text-[#6e54ad]"
+                className="underline hover:text-marca"
               >
                 Política de privacidad
               </a>

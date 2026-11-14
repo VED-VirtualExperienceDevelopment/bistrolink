@@ -2,6 +2,19 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { StorageService } from './storage.service';
 import { mapItemToDto } from './menu.mapper';
+import type { PlantillaMarca } from '../configuracion/plantillas-marca';
+
+/**
+ * HU-043 (BL-532): marca del local en la carta del comensal. El logo sale
+ * por la CDN en staging y producción, y firmado en local (urlImagenPublica).
+ */
+export interface MarcaPublica {
+  /** null si el local no tiene logo: la carta muestra el nombre. */
+  logoUrl: string | null;
+  /** HU-043 (BL-562): null = la portada por defecto del banner. */
+  portadaUrl: string | null;
+  plantilla: PlantillaMarca;
+}
 import { retiroPublico } from '../pedidos/retiro';
 
 /**
@@ -55,6 +68,7 @@ export class MenuService {
 
       return {
         restaurante: { nombre: mesa.restaurante.nombre },
+        marca: await this.marcaDe(mesa.restaurante),
         categorias: categoriasConUrls,
       };
     });
@@ -128,6 +142,7 @@ export class MenuService {
           nombre: restaurante.nombre,
           direccion: restaurante.direccion,
         },
+        marca: await this.marcaDe(restaurante),
         // HU-040 (BL-210): este enlace es el de los pedidos para retirar.
         // Si el local no los toma ahora, la carta se muestra igual pero sin
         // poder pedir (y POST /pedidos responde 409).
@@ -135,6 +150,24 @@ export class MenuService {
         categorias: categoriasConUrls,
       };
     });
+  }
+
+  /** HU-043 (BL-532 y BL-562): el logo, la portada y la plantilla del local. */
+  private async marcaDe(restaurante: {
+    logoKey: string | null;
+    portadaKey: string | null;
+    plantilla: string;
+  }): Promise<MarcaPublica> {
+    return {
+      logoUrl: restaurante.logoKey
+        ? await this.storage.urlImagenPublica(restaurante.logoKey)
+        : null,
+      portadaUrl: restaurante.portadaKey
+        ? await this.storage.urlImagenPublica(restaurante.portadaKey)
+        : null,
+      // La columna es texto (con CHECK): acá se acota al tipo.
+      plantilla: restaurante.plantilla as PlantillaMarca,
+    };
   }
 
   private async categoriasConUrlsFirmadas(categorias: any[]) {

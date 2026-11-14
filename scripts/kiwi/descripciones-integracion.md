@@ -42,6 +42,7 @@
 | 1.35    | 13/11/2026 | TC-I-208 y 209: cola del KDS sugerida en el alta de un establecimiento (HU-042 / BL-472), para cargar con el script antes de mergear el PR.                                                                                               |
 | 1.36    | 14/11/2026 | TC-I-199 a 202: pedidos para retirar (HU-040 / BL-210). Se borran los bloques ya cargados (TC-I-206 a 209 y 009).                                                                                                                         |
 | 1.37    | 14/11/2026 | TC-I-210 a 216: pago por link (HU-033 / BL-203). Se borran los bloques de TC-I-199 a 202, ya cargados.                                                                                                                                    |
+| 1.38    | 14/11/2026 | TC-I-217 a 220: marca propia del local (HU-043 / BL-531, 532, 561 y 562): plantilla, logo, nombre y dirección, y portada. Se numeran después de los de HU-033.                                                                            |
 
 Texto del campo de descripción de cada caso TC-I en Kiwi. Lo carga
 `cargar-casos-integracion.mjs --descripciones`: cada bloque `## TC-I-NNN`
@@ -52,6 +53,88 @@ Formato de cada bloque: `### Precondición`, `### Pasos` y `### Resultado
 esperado`, igual que los casos cargados a mano desde TC-I-029.
 
 ## Casos para cargar
+
+## TC-I-220
+
+### Precondición
+
+Tenant A del seed con su restaurante. Se anota la portada guardada (o que no tiene).
+
+### Pasos
+
+1. Cambiar la configuración con el servicio, con `portadaKey` de una portada del tenant B.
+2. Lo mismo con la key del logo del tenant A (`{tenant}/menu/marca/{uuid}.webp`).
+3. Lo mismo con la key de la foto de un ítem del tenant A (`{tenant}/menu/{uuid}.webp`).
+4. Lo mismo con una key de la cuarentena del tenant A (`incoming/…`).
+5. Buscar en la auditoría los registros `ESTABLECIMIENTO_CONFIGURACION_MODIFICADA` del actor del test y leer la portada guardada.
+
+### Resultado esperado
+
+1. 400 «La portada no es válida para este establecimiento».
+2. 400, con el mismo mensaje.
+3. 400, con el mismo mensaje.
+4. 400, con el mismo mensaje.
+5. Ningún registro nuevo y la portada guardada no cambió.
+
+## TC-I-219
+
+### Precondición
+
+Tenant A del seed con su restaurante. El nombre y la dirección guardados se anotan para restaurarlos al terminar.
+
+### Pasos
+
+1. Cambiar la configuración con el servicio: nombre y dirección nuevos.
+2. Leer el restaurante en la base, con el contexto del tenant.
+3. Buscar en la auditoría los registros `ESTABLECIMIENTO_CONFIGURACION_MODIFICADA` del actor del test.
+4. Pedir la carta pública del restaurante (HU-002).
+
+### Resultado esperado
+
+1. La respuesta trae el nombre y la dirección nuevos.
+2. Quedaron guardados.
+3. Un solo registro, con los campos `nombre` y `direccion` y sus valores antes y después.
+4. La carta muestra el nombre y la dirección nuevos.
+
+## TC-I-218
+
+### Precondición
+
+Tenant A del seed con su restaurante. Se anota el logo guardado (o que no tiene).
+
+### Pasos
+
+1. Cambiar la configuración con el servicio, con `logoKey` de un logo del tenant B.
+2. Lo mismo con una key de la cuarentena del tenant A (`incoming/…`).
+3. Lo mismo con la key de la foto de un ítem del tenant A (`{tenant}/menu/{uuid}.webp`).
+4. Buscar en la auditoría los registros `ESTABLECIMIENTO_CONFIGURACION_MODIFICADA` del actor del test y leer el logo guardado.
+
+### Resultado esperado
+
+1. 400 «El logo no es válido para este establecimiento».
+2. 400, con el mismo mensaje.
+3. 400, con el mismo mensaje.
+4. Ningún registro nuevo y el logo guardado no cambió.
+
+## TC-I-217
+
+### Precondición
+
+Tenant A del seed con su restaurante. La plantilla de marca guardada se anota para restaurarla al terminar.
+
+### Pasos
+
+1. Cambiar la configuración con el servicio a otra plantilla de la lista (`gourmet`, o `familiar` si ya era `gourmet`).
+2. Leer el restaurante en la base, con el contexto del tenant.
+3. Buscar en la auditoría los registros `ESTABLECIMIENTO_CONFIGURACION_MODIFICADA` del actor del test.
+4. Escribir directo en la base la plantilla `azul`, sin pasar por la API.
+
+### Resultado esperado
+
+1. La respuesta trae la plantilla nueva y las cuatro que se pueden elegir (`clasica`, `gourmet`, `rapida`, `familiar`).
+2. La plantilla nueva quedó guardada.
+3. Un solo registro, con el campo `plantilla` y sus valores antes y después.
+4. La base la rechaza (CHECK `restaurante_plantilla_valida`) y la plantilla guardada no cambia.
 
 ## TC-I-210
 

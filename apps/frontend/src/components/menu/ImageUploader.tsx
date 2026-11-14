@@ -20,6 +20,18 @@ interface ImageUploaderProps {
    */
   readonly onUploadSuccess: (key: string, previewUrl: string) => void;
   readonly initialPreviewUrl?: string;
+  /**
+   * HU-043 (BL-533): `marca` para el logo del local. La API lo publica en
+   * {tenant}/menu/marca/ y de hasta 512 px. BL-562: `portada` para la foto
+   * del banner de la carta. Por defecto, la foto de un ítem.
+   */
+  readonly destino?: 'item' | 'marca' | 'portada';
+  /** Id del campo de archivo, si hay más de un cargador en la pantalla. */
+  readonly inputId?: string;
+  /** Texto alternativo de la vista previa. */
+  readonly altVistaPrevia?: string;
+  /** Ids de textos de ayuda del campo (aria-describedby). */
+  readonly describidoPor?: string;
 }
 
 /** Etapa de la carga, para mostrar qué está pasando. */
@@ -42,7 +54,14 @@ const TEXTO_ETAPA: Record<Exclude<Etapa, 'libre'>, string> = {
  * confirmar se reemplaza por la imagen procesada, que es la que va a ver
  * el comensal.
  */
-export default function ImageUploader({ onUploadSuccess, initialPreviewUrl }: ImageUploaderProps) {
+export default function ImageUploader({
+  onUploadSuccess,
+  initialPreviewUrl,
+  destino = 'item',
+  inputId = 'image-upload',
+  altVistaPrevia = 'Vista previa',
+  describidoPor,
+}: ImageUploaderProps) {
   const [etapa, setEtapa] = useState<Etapa>('libre');
   const [preview, setPreview] = useState<string | null>(initialPreviewUrl || null);
   const [error, setError] = useState<string | null>(null);
@@ -107,7 +126,16 @@ export default function ImageUploader({ onUploadSuccess, initialPreviewUrl }: Im
           confirmada = await apiFetch<{ key: string; url: string | null }>(
             '/admin/menu/imagenes/confirmar',
             keycloak.token,
-            { method: 'POST', body: JSON.stringify({ key: keyCuarentena }) },
+            {
+              method: 'POST',
+              // HU-043: el destino solo viaja para el logo y la portada; la
+              // foto de un ítem manda el mismo body que antes.
+              body: JSON.stringify(
+                destino === 'item'
+                  ? { key: keyCuarentena }
+                  : { key: keyCuarentena, destino },
+              ),
+            },
           );
         } catch (err: unknown) {
           throw new ErrorConfirmacionImagen(err);
@@ -133,7 +161,7 @@ export default function ImageUploader({ onUploadSuccess, initialPreviewUrl }: Im
         setEtapa('libre');
       }
     },
-    [onUploadSuccess, initialPreviewUrl, liberarVistaPreviaLocal],
+    [onUploadSuccess, initialPreviewUrl, liberarVistaPreviaLocal, destino],
   );
 
   const handleFileChange = useCallback(
@@ -181,7 +209,7 @@ export default function ImageUploader({ onUploadSuccess, initialPreviewUrl }: Im
           elegir la imagen con el teclado (Tab y Enter); el recuadro muestra
           el foco con focus-within. */}
       <label
-        htmlFor="image-upload"
+        htmlFor={inputId}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
@@ -190,7 +218,7 @@ export default function ImageUploader({ onUploadSuccess, initialPreviewUrl }: Im
       >
         {preview ? (
           <div className="relative h-full w-full p-2">
-            <Image src={preview} alt="Vista previa" fill className="rounded-md object-contain" unoptimized />
+            <Image src={preview} alt={altVistaPrevia} fill className="rounded-md object-contain" unoptimized />
             {ocupado && (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 rounded-md bg-on-surface/40">
                 <div className="h-8 w-8 animate-spin rounded-full border-4 border-on-primary border-t-primary" />
@@ -219,12 +247,13 @@ export default function ImageUploader({ onUploadSuccess, initialPreviewUrl }: Im
           </div>
         )}
         <input
-          id="image-upload"
+          id={inputId}
           type="file"
           className="sr-only"
           accept={TIPOS_IMAGEN_PERMITIDOS.join(',')}
           onChange={handleFileChange}
           disabled={ocupado}
+          aria-describedby={describidoPor}
         />
       </label>
 

@@ -21,6 +21,9 @@ function configuracionSeedA() {
   return {
     razonSocial: 'Restaurante Testing A SRL',
     rut: '214198620015',
+    // HU-043 (BL-561): nombre y dirección del local, como en el seed.
+    nombre: 'Restaurante Testing A',
+    direccion: 'Av. Italia 1234, Montevideo',
     efectivoHabilitado: true,
     mercadoPagoHabilitado: true,
     posHabilitado: true,
@@ -38,6 +41,8 @@ function configuracionSeedA() {
     minutosEsperaAtencion: 30,
     minutosEsperaDemorado: 60,
     minutosEsperaDemoraAlta: 120,
+    plantilla: 'clasica',
+    plantillasDisponibles: ['clasica', 'gourmet', 'rapida', 'familiar'],
   } as any;
 }
 
@@ -51,6 +56,9 @@ describe('Configuración como el seed', () => {
     );
     const otro = configuracionDelSeed('99999999-9999-4999-8999-999999999999');
     expect(otro).not.toHaveProperty('razonSocial');
+    // HU-043 (BL-561): tampoco el nombre ni la dirección del local.
+    expect(otro).not.toHaveProperty('nombre');
+    expect(otro).not.toHaveProperty('direccion');
     expect(otro).toEqual(
       expect.objectContaining({
         efectivoHabilitado: true,
@@ -143,6 +151,70 @@ describe('LimpiezaConfiguracionService', () => {
     expect(configuracion.actualizar).toHaveBeenCalledWith(
       TENANT_A,
       { propinaPreseleccionada: false },
+      { id: ACTOR },
+    );
+  });
+
+  it('[TC-U-538] HU-043 (BL-561): el nombre y la dirección que dejó un E2E vuelven a los del seed', async () => {
+    const { configuracion, service } = armar({
+      ...configuracionSeedA(),
+      nombre: 'E2E Marca 123',
+      direccion: 'Calle E2E 1',
+    });
+
+    expect(await service.limpiar(TENANT_A, ACTOR, false)).toEqual({
+      camposRestablecidos: ['nombre', 'direccion'],
+    });
+    expect(configuracion.actualizar).toHaveBeenCalledWith(
+      TENANT_A,
+      {
+        nombre: 'Restaurante Testing A',
+        direccion: 'Av. Italia 1234, Montevideo',
+      },
+      { id: ACTOR },
+    );
+  });
+
+  it('[TC-U-552] HU-043 (BL-535): un logo y una portada que dejó un E2E se quitan', async () => {
+    const { configuracion, service } = armar({
+      ...configuracionSeedA(),
+      logoUrl: 'https://firmada.example/logo.webp',
+      portadaUrl: 'https://firmada.example/portada.webp',
+    });
+
+    expect(await service.limpiar(TENANT_A, ACTOR, false)).toEqual({
+      camposRestablecidos: ['logoKey', 'portadaKey'],
+    });
+    expect(configuracion.actualizar).toHaveBeenCalledWith(
+      TENANT_A,
+      { logoKey: null, portadaKey: null },
+      { id: ACTOR },
+    );
+  });
+
+  it('[TC-U-552] HU-043 (BL-535): sin logo ni portada no hay nada que quitar', () => {
+    const seed = configuracionDelSeed(TENANT_A);
+    expect(seed).toMatchObject({ logoKey: null, portadaKey: null });
+    expect(
+      diferenciasConElSeed(
+        { ...configuracionSeedA(), logoUrl: null, portadaUrl: null },
+        seed,
+      ),
+    ).toEqual({});
+  });
+
+  it('[TC-U-513] HU-043 (BL-531): una plantilla de marca que dejó un E2E vuelve a la clásica', async () => {
+    const { configuracion, service } = armar({
+      ...configuracionSeedA(),
+      plantilla: 'gourmet',
+    });
+
+    expect(await service.limpiar(TENANT_A, ACTOR, false)).toEqual({
+      camposRestablecidos: ['plantilla'],
+    });
+    expect(configuracion.actualizar).toHaveBeenCalledWith(
+      TENANT_A,
+      { plantilla: 'clasica' },
       { id: ACTOR },
     );
   });

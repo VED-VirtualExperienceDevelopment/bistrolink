@@ -124,8 +124,8 @@ export function SeguimientoPedido({
               <div
                 className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
                   alcanzado
-                    ? 'bg-culinary-primary text-white'
-                    : 'bg-culinary-primary-container text-culinary-neutral'
+                    ? 'bg-marca text-white'
+                    : 'bg-marca/10 text-culinary-neutral'
                 }`}
               >
                 {alcanzado ? '✓' : i + 1}
@@ -142,7 +142,7 @@ export function SeguimientoPedido({
               {i < PROGRESION.length - 1 && (
                 <div
                   className={`hidden sm:block h-0.5 w-full mt-3 ${
-                    i < indiceActual ? 'bg-culinary-primary' : 'bg-culinary-primary-container'
+                    i < indiceActual ? 'bg-marca' : 'bg-marca/10'
                   }`}
                   style={{ marginLeft: '50%', marginTop: '-1.15rem' }}
                 />
@@ -152,9 +152,11 @@ export function SeguimientoPedido({
         })}
       </ol>
 
-    <p role="status" className="text-center text-sm font-semibold text-culinary-primary mt-4">
+      {/* <output>: rol «status» implícito, el lector de pantalla anuncia
+          cada cambio de estado (Sonar: mejor que role="status"). */}
+      <output className="mt-4 block text-center text-sm font-semibold text-marca">
         {lugarActual ? textoEnCola(lugarActual) : ESTADO_LABEL[estado]}
-      </p>
+      </output>
       {paraRetirar && (
         <AvisoRetiro
           listo={estado === 'LISTO_PARA_ENTREGAR'}

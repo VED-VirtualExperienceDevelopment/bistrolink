@@ -4,6 +4,9 @@
  * test/unitarios/configuracion.utils.spec.ts).
  */
 
+import type { PlantillaMarca } from "@/types/menu";
+import { PLANTILLA_POR_DEFECTO } from "@/lib/plantillas-marca";
+
 export type CfeProveedor = "SURTEC" | "BILLER";
 export type MedioPago = "EFECTIVO" | "MERCADOPAGO" | "POS" | "PLEXO" | "HANDY";
 
@@ -12,6 +15,12 @@ export interface ConfiguracionEstablecimiento {
   razonSocial: string;
   /** Solo lectura: lo cambia el equipo de BistroLink (BL-412). */
   rut: string;
+  /**
+   * HU-043 (BL-561): nombre y dirección del local que ve el comensal.
+   * Opcionales en el tipo: un backend anterior no los trae.
+   */
+  nombre?: string;
+  direccion?: string;
   efectivoHabilitado: boolean;
   mercadoPagoHabilitado: boolean;
   /**
@@ -52,6 +61,15 @@ export interface ConfiguracionEstablecimiento {
   minutosEsperaDemorado?: number;
   minutosEsperaDemoraAlta?: number;
   /**
+   * HU-043 (BL-531 y BL-532): marca del local. Opcionales en el tipo: un
+   * backend anterior no los trae (y la sección «Marca del local» no se
+   * muestra). logoUrl es una URL firmada para la vista previa; la key del
+   * logo no viaja.
+   */
+  plantilla?: PlantillaMarca;
+  plantillasDisponibles?: PlantillaMarca[];
+  logoUrl?: string | null;
+  /*
    * HU-040 (BL-210): pedidos para retirar por el enlace web, y la franja del
    * día en que se toman (null = todo el día). Opcionales: un backend
    * anterior no los trae.
@@ -59,7 +77,20 @@ export interface ConfiguracionEstablecimiento {
   retiroHabilitado?: boolean;
   retiroHoraDesde?: string | null;
   retiroHoraHasta?: string | null;
+  /** HU-043 (BL-562): URL firmada de la portada del banner (vista previa). */
+  portadaUrl?: string | null;
 }
+
+/**
+ * HU-043 (BL-533 y BL-562): el logo o la portada en el formulario.
+ * - `guardado`: la que está guardada (o ninguna), sin tocar.
+ * - `nuevo`: una recién subida y confirmada por la API, sin guardar todavía.
+ * - `quitado`: se quita al guardar.
+ */
+export type EstadoLogo =
+  | { tipo: "guardado" }
+  | { tipo: "nuevo"; key: string; url: string }
+  | { tipo: "quitado" };
 
 export type CampoMedioPago =
   | "efectivoHabilitado"
@@ -71,6 +102,12 @@ export type CampoMedioPago =
 /** Lo que el administrador edita en la pantalla. */
 export interface FormularioConfiguracion {
   razonSocial: string;
+  /**
+   * HU-043 (BL-561): nombre y dirección del local. null = el backend no los
+   * trae (los campos no se muestran ni se validan).
+   */
+  nombreLocal: string | null;
+  direccionLocal: string | null;
   efectivoHabilitado: boolean;
   mercadoPagoHabilitado: boolean;
   posHabilitado: boolean;
@@ -93,11 +130,17 @@ export interface FormularioConfiguracion {
   esperaAtencion: string;
   esperaDemorado: string;
   esperaDemoraAlta: string;
+  /** HU-043 (BL-533): plantilla de colores de la carta. */
+  plantilla: PlantillaMarca;
+  /** HU-043 (BL-533): logo del local. */
+  logo: EstadoLogo;
   /** HU-040 (BL-210): se toman pedidos para retirar. */
   retiroHabilitado: boolean;
   /** HU-040 (BL-210): «HH:MM» o vacío; las dos vacías = todo el día. */
   retiroHoraDesde: string;
   retiroHoraHasta: string;
+  /** HU-043 (BL-562): foto de portada del banner. */
+  portada: EstadoLogo;
 }
 
 /** Body de PATCH /admin/configuracion: solo lo que cambió. */
@@ -113,6 +156,10 @@ export type CambiosConfiguracion = Partial<
     | "esperaAtencion"
     | "esperaDemorado"
     | "esperaDemoraAlta"
+    | "logo"
+    | "portada"
+    | "nombreLocal"
+    | "direccionLocal"
     | "retiroHoraDesde"
     | "retiroHoraHasta"
   >
@@ -125,6 +172,13 @@ export type CambiosConfiguracion = Partial<
   minutosEsperaAtencion?: number;
   minutosEsperaDemorado?: number;
   minutosEsperaDemoraAlta?: number;
+  /** HU-043 (BL-533): key del logo nuevo, o null para quitarlo. */
+  logoKey?: string | null;
+  /** HU-043 (BL-562): key de la portada nueva, o null para quitarla. */
+  portadaKey?: string | null;
+  /** HU-043 (BL-561): nombre y dirección del local. */
+  nombre?: string;
+  direccion?: string;
   retiroHoraDesde?: string | null;
   retiroHoraHasta?: string | null;
 };
@@ -135,6 +189,9 @@ export const PROPINA_MINIMA = 1;
 export const PROPINA_MAXIMA = 100;
 export const LARGO_MAXIMO_RAZON_SOCIAL = 200;
 export const LARGO_MAXIMO_EMAIL = 254;
+/** HU-043 (BL-561): los mismos que Plataforma (BL-412). */
+export const LARGO_MAXIMO_NOMBRE_LOCAL = 120;
+export const LARGO_MAXIMO_DIRECCION_LOCAL = 200;
 
 /** HU-022 (BL-495): el porcentaje que se marca si el local activa la opción. */
 export const PORCENTAJE_PRESELECCIONADO = 10;
@@ -207,6 +264,8 @@ export function formularioDesde(
 ): FormularioConfiguracion {
   return {
     razonSocial: configuracion.razonSocial,
+    nombreLocal: configuracion.nombre ?? null,
+    direccionLocal: configuracion.direccion ?? null,
     efectivoHabilitado: configuracion.efectivoHabilitado,
     mercadoPagoHabilitado: configuracion.mercadoPagoHabilitado,
     // Un backend anterior no lo trae: queda como el default de la columna.
@@ -238,11 +297,81 @@ export function formularioDesde(
     esperaDemoraAlta: String(
       configuracion.minutosEsperaDemoraAlta ?? ESPERA_POR_DEFECTO.demoraAlta,
     ),
+    // HU-043 (BL-533): un backend anterior no la trae: la Clásica.
+    plantilla: configuracion.plantilla ?? PLANTILLA_POR_DEFECTO,
+    logo: { tipo: "guardado" },
     // Un backend anterior no lo trae: queda como el default de la columna.
     retiroHabilitado: configuracion.retiroHabilitado ?? true,
     retiroHoraDesde: configuracion.retiroHoraDesde ?? "",
     retiroHoraHasta: configuracion.retiroHoraHasta ?? "",
+    portada: { tipo: "guardado" },
   };
+}
+
+/**
+ * HU-043 (BL-533): URL del logo a mostrar en la pantalla: el recién subido,
+ * ninguno si se quitó, o el guardado. null = sin logo.
+ */
+export function urlDelLogo(
+  guardada: ConfiguracionEstablecimiento,
+  logo: EstadoLogo,
+): string | null {
+  return urlDeImagen(guardada.logoUrl, logo);
+}
+
+/**
+ * HU-043 (BL-562): URL de la portada a mostrar: la recién subida, ninguna
+ * si se quitó (null = la portada por defecto), o la guardada.
+ */
+export function urlDeLaPortada(
+  guardada: ConfiguracionEstablecimiento,
+  portada: EstadoLogo,
+): string | null {
+  return urlDeImagen(guardada.portadaUrl, portada);
+}
+
+function urlDeImagen(
+  guardada: string | null | undefined,
+  estado: EstadoLogo,
+): string | null {
+  if (estado.tipo === "nuevo") return estado.url;
+  if (estado.tipo === "quitado") return null;
+  return guardada ?? null;
+}
+
+/**
+ * HU-043 (BL-533): cambios de la marca para el PATCH. Quitar un logo que no
+ * estaba guardado no manda nada.
+ */
+function cambiosDeLaMarca(
+  guardada: ConfiguracionEstablecimiento,
+  formulario: FormularioConfiguracion,
+): Partial<CambiosConfiguracion> {
+  const cambios: Partial<CambiosConfiguracion> = {};
+  // HU-043 (BL-561): solo si el backend los trae (si no, quedan en null).
+  if (formulario.nombreLocal !== null) {
+    const nombre = textoLimpio(formulario.nombreLocal);
+    if (nombre !== guardada.nombre) cambios.nombre = nombre;
+  }
+  if (formulario.direccionLocal !== null) {
+    const direccion = textoLimpio(formulario.direccionLocal);
+    if (direccion !== guardada.direccion) cambios.direccion = direccion;
+  }
+  if (formulario.plantilla !== (guardada.plantilla ?? PLANTILLA_POR_DEFECTO)) {
+    cambios.plantilla = formulario.plantilla;
+  }
+  if (formulario.logo.tipo === "nuevo") {
+    cambios.logoKey = formulario.logo.key;
+  } else if (formulario.logo.tipo === "quitado" && guardada.logoUrl) {
+    cambios.logoKey = null;
+  }
+  // HU-043 (BL-562): la portada, con la misma regla que el logo.
+  if (formulario.portada.tipo === "nuevo") {
+    cambios.portadaKey = formulario.portada.key;
+  } else if (formulario.portada.tipo === "quitado" && guardada.portadaUrl) {
+    cambios.portadaKey = null;
+  }
+  return cambios;
 }
 
 /**
@@ -351,6 +480,9 @@ export function errorHorarioRetiro(
 /** Errores de cada campo del formulario (null = sin error). */
 export interface ErroresFormulario {
   razonSocial: string | null;
+  /** HU-043 (BL-561). */
+  nombreLocal: string | null;
+  direccionLocal: string | null;
   propinas: string | null;
   email: string | null;
   cola: ErroresCola;
@@ -368,6 +500,8 @@ export function erroresDelFormulario(
   if (!formulario) {
     return {
       razonSocial: null,
+      nombreLocal: null,
+      direccionLocal: null,
       propinas: null,
       email: null,
       cola: {},
@@ -377,6 +511,8 @@ export function erroresDelFormulario(
   const propinas = leerPropinas(formulario.propinas);
   return {
     razonSocial: errorRazonSocial(formulario.razonSocial),
+    nombreLocal: errorNombreLocal(formulario.nombreLocal),
+    direccionLocal: errorDireccionLocal(formulario.direccionLocal),
     propinas: "error" in propinas ? propinas.error : null,
     email: errorEmailPrivacidad(formulario.emailPrivacidad),
     cola: erroresCola(formulario),
@@ -392,6 +528,9 @@ export function primerCampoConError(errores: ErroresFormulario): string | null {
   const enOrden: [string, unknown][] = [
     ["razon-social", errores.razonSocial],
     ["propinas", errores.propinas],
+    // HU-043 (BL-561): «Marca del local» va después de «Propinas».
+    ["nombre-local", errores.nombreLocal],
+    ["direccion-local", errores.direccionLocal],
     ["cola-limite", errores.cola.limitePreparacion],
     ["cola-umbral", errores.cola.umbralAlertaCola],
     ["cola-minutos", errores.cola.minutosPreparacion],
@@ -553,6 +692,33 @@ export function errorRazonSocial(razonSocial: string): string | null {
   return null;
 }
 
+/** Sin espacios en los extremos y con uno solo entre palabras. */
+function textoLimpio(texto: string): string {
+  return texto.trim().replace(/\s+/g, " ");
+}
+
+/** HU-043 (BL-561): error del nombre del local, o null si está bien. */
+export function errorNombreLocal(nombre: string | null): string | null {
+  if (nombre === null) return null;
+  const limpio = textoLimpio(nombre);
+  if (limpio === "") return "El nombre del local es obligatorio.";
+  if (limpio.length > LARGO_MAXIMO_NOMBRE_LOCAL) {
+    return `El nombre puede tener hasta ${LARGO_MAXIMO_NOMBRE_LOCAL} caracteres.`;
+  }
+  return null;
+}
+
+/** HU-043 (BL-561): error de la dirección del local, o null si está bien. */
+export function errorDireccionLocal(direccion: string | null): string | null {
+  if (direccion === null) return null;
+  const limpia = textoLimpio(direccion);
+  if (limpia === "") return "La dirección del local es obligatoria.";
+  if (limpia.length > LARGO_MAXIMO_DIRECCION_LOCAL) {
+    return `La dirección puede tener hasta ${LARGO_MAXIMO_DIRECCION_LOCAL} caracteres.`;
+  }
+  return null;
+}
+
 /** HU-036 (BL-206): sin espacios y en minúsculas; vacío = null. */
 function normalizarEmail(email: string): string | null {
   const limpio = email.trim().toLowerCase();
@@ -632,6 +798,7 @@ export function cambiosParaGuardar(
     ...cambios,
     ...cambiosDeLaCola(guardada, formulario),
     ...cambiosDeLaEspera(guardada, formulario),
+    ...cambiosDeLaMarca(guardada, formulario),
     ...cambiosDelRetiro(guardada, formulario),
   };
 }
