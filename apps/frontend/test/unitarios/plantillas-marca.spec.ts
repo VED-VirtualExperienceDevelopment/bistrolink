@@ -1,4 +1,9 @@
-import { PLANTILLAS_MARCA, plantillaPorCodigo } from "@/lib/plantillas-marca";
+import {
+  PLANTILLAS_MARCA,
+  canalesRgb,
+  plantillaPorCodigo,
+  variablesDeMarca,
+} from "@/lib/plantillas-marca";
 
 // HU-043 (BL-533): plantillas de marca de la carta.
 
@@ -43,5 +48,33 @@ describe("plantillas de marca", () => {
     expect(plantillaPorCodigo(undefined).codigo).toBe("clasica");
     expect(plantillaPorCodigo(null).codigo).toBe("clasica");
     expect(plantillaPorCodigo("neon").codigo).toBe("clasica");
+  });
+});
+
+describe("HU-043 (BL-534): variables de la marca en el menú", () => {
+  it("[TC-U-531] pasa un color #rrggbb a los canales RGB de las variables CSS", () => {
+    expect(canalesRgb("#6e54ad")).toBe("110 84 173");
+    expect(canalesRgb("#b3261e")).toBe("179 38 30");
+  });
+
+  it("[TC-U-532] con la Clásica o sin plantilla no define nada: el menú queda como siempre", () => {
+    expect(variablesDeMarca("clasica")).toEqual({});
+    expect(variablesDeMarca(undefined)).toEqual({});
+    expect(variablesDeMarca("neon")).toEqual({});
+  });
+
+  it("[TC-U-533] con otra plantilla define el principal, el hover y el acento", () => {
+    expect(variablesDeMarca("gourmet")).toEqual({
+      "--brand-primary": "92 26 43",
+      "--brand-primary-hover": "70 19 31",
+      "--brand-accent": "122 90 0",
+    });
+  });
+
+  it("[TC-U-534] el valor por defecto de globals.css es el de la Clásica", () => {
+    const clasica = plantillaPorCodigo("clasica");
+    expect(canalesRgb(clasica.colorMarca)).toBe("110 84 173");
+    expect(canalesRgb(clasica.colorHover)).toBe("91 70 143");
+    expect(canalesRgb(clasica.colorAcento)).toBe("117 91 0");
   });
 });
