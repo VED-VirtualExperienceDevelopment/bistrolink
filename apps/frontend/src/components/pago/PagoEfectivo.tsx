@@ -206,7 +206,7 @@ export function EsperandoMozo({
       aria-live="polite"
       className={`${CLASE_TARJETA} flex flex-col items-center text-center gap-4`}
     >
-      <span className="grid place-items-center w-16 h-16 rounded-full bg-culinary-primary-container text-marca">
+      <span className="grid place-items-center w-16 h-16 rounded-full bg-marca/10 text-marca">
         <svg aria-hidden="true" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={agotado ? '' : 'animate-pulse'}>
           <rect x="2" y="6" width="20" height="12" rx="2" />
           <circle cx="12" cy="12" r="2.5" />

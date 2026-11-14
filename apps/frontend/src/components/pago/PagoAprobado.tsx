@@ -202,7 +202,7 @@ export function PagoAprobado({
   return (
     <div className="pt-20 pb-12 px-4 md:px-8 max-w-[640px] mx-auto flex flex-col gap-6">
       <section className={`${CLASE_TARJETA} text-center flex flex-col items-center gap-2`}>
-        <span className="grid place-items-center w-20 h-20 rounded-full bg-culinary-primary-container text-marca mb-2">
+        <span className="grid place-items-center w-20 h-20 rounded-full bg-marca/10 text-marca mb-2">
           <svg aria-hidden="true" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="12" cy="12" r="9" />
             <path d="m8 12 3 3 5-6" />
@@ -220,7 +220,7 @@ export function PagoAprobado({
           {esMesa ? 'Te lo llevamos a la mesa apenas esté listo.' : 'Te avisamos acá cuando esté listo para retirar.'}
         </p>
 
-        <div className="mt-4 w-full rounded-[0.75rem] bg-culinary-primary-container px-4 py-5">
+        <div className="mt-4 w-full rounded-[0.75rem] bg-marca/10 px-4 py-5">
           <p className="text-xs font-semibold uppercase tracking-wider text-[#5a575e]">
             {esMesa ? etiquetaMesa(numeroMesa) : 'Código de retiro'}
           </p>
@@ -335,7 +335,7 @@ function Comprobante({
   return (
     <section aria-labelledby="comprobante" aria-live="polite" className={CLASE_TARJETA}>
       <div className="flex items-start gap-4">
-        <span className="shrink-0 grid place-items-center w-12 h-12 rounded-full bg-culinary-primary-container text-marca">
+        <span className="shrink-0 grid place-items-center w-12 h-12 rounded-full bg-marca/10 text-marca">
           <svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M6 2h12v20l-3-2-3 2-3-2-3 2z" />
             <path d="M9 7h6" />

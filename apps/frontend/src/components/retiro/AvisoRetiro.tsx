@@ -65,7 +65,7 @@ export function AvisoRetiro({ listo, codigo }: Props) {
       <div
         role="alert"
         data-testid="aviso-listo-para-retirar"
-        className="mt-4 rounded-[0.75rem] bg-culinary-primary-container px-4 py-4 text-center"
+        className="mt-4 rounded-[0.75rem] bg-marca/10 px-4 py-4 text-center"
       >
         <p className="text-lg font-bold text-marca">
           Tu pedido está listo para retirar

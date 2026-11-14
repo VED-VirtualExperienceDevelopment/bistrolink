@@ -901,7 +901,7 @@ function Verificando({
       aria-live="polite"
       className="bg-white rounded-[1rem] border border-culinary-neutral/15 p-6 md:p-8 shadow-[0px_4px_20px_rgba(121,118,125,0.08)] flex flex-col items-center text-center gap-4"
     >
-      <span className="grid place-items-center w-16 h-16 rounded-full bg-culinary-primary-container text-marca">
+      <span className="grid place-items-center w-16 h-16 rounded-full bg-marca/10 text-marca">
         <svg aria-hidden="true" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={agotado ? '' : 'animate-pulse'}>
           <path d="M6 2h12" />
           <path d="M6 22h12" />

@@ -68,7 +68,7 @@ export const MisPedidosBoton = forwardRef<HTMLButtonElement, Props>(
         aria-label={etiqueta}
         aria-haspopup="dialog"
         data-testid="mis-pedidos-barra"
-        className="flex w-full items-center gap-3 rounded-[0.75rem] border border-marca/30 bg-culinary-primary-container px-4 py-3 text-left text-marca shadow-[0px_4px_20px_rgba(121,118,125,0.15)] focus:outline-none focus:ring-4 focus:ring-marca/30"
+        className="flex w-full items-center gap-3 rounded-[0.75rem] border border-marca/30 bg-marca/10 px-4 py-3 text-left text-marca shadow-[0px_4px_20px_rgba(121,118,125,0.15)] focus:outline-none focus:ring-4 focus:ring-marca/30"
       >
         <IconoTicket />
         <span className="min-w-0 flex-1">

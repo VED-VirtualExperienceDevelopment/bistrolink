@@ -379,7 +379,7 @@ export function FormularioTarjeta({
         />
       </Campo>
 
-      <div className="flex items-center justify-between rounded-[0.75rem] bg-culinary-primary-container px-4 py-3 text-sm">
+      <div className="flex items-center justify-between rounded-[0.75rem] bg-marca/10 px-4 py-3 text-sm">
         <span className="text-[#5a575e]">Plan de pago</span>
         <span className="font-semibold text-foreground">
           1 pago de {formatearPrecio(monto)}
