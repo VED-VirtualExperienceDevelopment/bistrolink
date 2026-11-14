@@ -13,6 +13,8 @@ import type { PropinaDelLocal, TotalesDelPedido } from "./propina.utils";
 
 /** Header con el token de acceso de un pedido para retirar (backend: HEADER_PEDIDO_TOKEN). */
 export const HEADER_PEDIDO_TOKEN = "X-Pedido-Token";
+/** HU-033 (BL-203): header con el token del link de pago (backend: HEADER_LINK_PAGO). */
+export const HEADER_LINK_PAGO = "X-Link-Pago";
 
 /** POST (pagar) y GET (estado y comprobante) del pago de un pedido. */
 export function rutaPagos(pedidoId: string): string {
@@ -33,6 +35,7 @@ export function rutaPropina(pedidoId: string): string {
  * BL-311 (RD.05): credencial que prueba que el pedido es de quien paga.
  * - Mesa: el token del QR (la mesa del QR tiene que ser la del pedido).
  * - Pedido para retirar: el token que devolvió POST /pedidos.
+ * - HU-033 (BL-203): link de pago: el token del link.
  */
 export function headersAccesoPedido(
   origen: OrigenMenu,
@@ -42,6 +45,7 @@ export function headersAccesoPedido(
     // HU-017 (BL-60): el QR y la sesión de la mesa.
     return headersMesaQr(origen);
   }
+  if (origen.tipo === "link") return { [HEADER_LINK_PAGO]: origen.linkToken };
   return tokenAcceso ? { [HEADER_PEDIDO_TOKEN]: tokenAcceso } : {};
 }
 
@@ -464,6 +468,17 @@ export function mediosDisponibles(
   };
 }
 
+/**
+ * HU-033 (BL-203): por el link de pago se paga solo con tarjeta: el
+ * comensal puede no estar en el local, y para el efectivo ya está el mozo.
+ */
+export function mediosSegunOrigen(
+  medios: MediosDisponibles,
+  tipoOrigen: OrigenMenu["tipo"],
+): MediosDisponibles {
+  return tipoOrigen === "link" ? { ...medios, efectivo: false } : medios;
+}
+
 /** Sin la consulta (error de red): solo la tarjeta, como antes de BL-452. */
 export const MEDIOS_SIN_CONSULTA: MediosDisponibles = {
   tarjeta: true,
@@ -500,9 +515,13 @@ export function metodoSegunMedios(
 
 /** BL-452: aviso cuando el local no ofrece ningún medio para este pedido. */
 export function mensajeSinMedios(tipoOrigen: OrigenMenu["tipo"]): string {
-  return tipoOrigen === "mesa"
-    ? "Este local no tiene pagos desde el celular habilitados. Llamá al mozo para que te cobre."
-    : "Este local no tiene pagos en línea habilitados para pedidos para retirar. Acercate al local para pagar.";
+  if (tipoOrigen === "mesa") {
+    return "Este local no tiene pagos desde el celular habilitados. Llamá al mozo para que te cobre.";
+  }
+  if (tipoOrigen === "link") {
+    return "Este local no tiene pagos en línea habilitados. Pedile al mozo que te cobre.";
+  }
+  return "Este local no tiene pagos en línea habilitados para pedidos para retirar. Acercate al local para pagar.";
 }
 
 /** Mientras se espera al mozo, se consulta cada 5 segundos... */

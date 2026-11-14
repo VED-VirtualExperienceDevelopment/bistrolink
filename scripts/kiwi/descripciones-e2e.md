@@ -37,6 +37,7 @@
 | 1.29 | 10/11/2026 | Se borra el bloque de TC-E-104, ya cargado en Kiwi. TC-E-008 cambia: en el celular el detalle del carrito se abre desde la barra. TC-E-105 a 107: en el celular el carrito es una barra y el detalle se abre en una hoja; en escritorio sigue la columna (bug BL-519). |
 | 1.30 | 11/11/2026 | Se borran los bloques de TC-E-008 y TC-E-105 a 107, ya cargados en Kiwi. TC-E-108 a 111: pantalla de Inicio del administrador y del mozo (mejora BL-520). |
 | 1.31 | 12/11/2026 | Se borran los bloques de TC-E-108 a 111, ya cargados en Kiwi. TC-E-098 y 099: pedido para retirar con código, aviso de listo y entrega con código (HU-040, BL-210). |
+| 1.32 | 14/11/2026 | Se borran los bloques de TC-E-098 y 099, ya cargados en Kiwi. TC-E-112 y 113: pago por link (HU-033 / BL-203). |
 
 Plantilla para cargar en Kiwi la descripción de casos TC-E (Playwright)
 nuevos o que cambiaron (BL-435). La usa
@@ -81,44 +82,42 @@ Reglas:
 
 ## Casos para cargar
 
-## TC-E-098
+## TC-E-112
 
 ### Precondición
 
-El local del seed toma pedidos para retirar (habilitado, todo el día). Sandbox de Mercado Pago. Mozo logueado en otra pestaña.
+Sesión de Mozo en staging. El comensal arma un pedido para retirar por el enlace web y se queda en «Pagá tu pedido» (PENDIENTE_PAGO).
 
 ### Pasos
 
-1. Abrir la carta del enlace web, agregar un ítem, completar nombre y teléfono y aceptar el aviso.
-2. Pagar con la tarjeta de prueba.
-3. Como Mozo, abrir el KDS.
-4. Marcar el pedido en preparación y listo para entregar.
-5. Mirar la pantalla del comensal, sin recargar.
+1. El mozo abre «Cobros pendientes» y toca «Link de pago» en el pedido.
+2. Analizar el diálogo con axe-core.
+3. Tocar «Listo».
+4. Abrir el link en otro navegador con pantalla de celular (390 × 844).
 
 ### Resultado esperado
 
-1. —
-2. «¡Tu pedido ya está en cocina!» con el «Código de retiro» R-NNN.
-3. La comanda dice «Para retirar · R-NNN» y el nombre del comensal.
-4. —
-5. Aparece «Tu pedido está listo para retirar» con el código.
+1. El diálogo muestra el QR del link, la URL para copiar (`/pagar/<token>`) y «Vence a las HH:MM».
+2. Sin errores graves ni críticos de accesibilidad.
+3. En la fila del pedido se ve «Link de pago activo hasta las HH:MM».
+4. Se ve «Pagá tu pedido» con el plato y el pago con tarjeta, sin «Volver a la carta» y sin la opción de efectivo.
 
-## TC-E-099
+## TC-E-113
 
 ### Precondición
 
-Igual que TC-E-098, con el efectivo habilitado (valor por defecto).
+Igual que TC-E-112.
 
 ### Pasos
 
-1. Armar un pedido para retirar y, como Mozo, cobrarlo en efectivo desde «Cobros pendientes».
-2. En el KDS, pasarlo a preparación y a listo.
-3. Tocar «Entregar con código», escribir otro código y tocar «Entregar».
-4. Escribir el código del pedido y tocar «Entregar».
+1. El mozo genera el link del pedido y toca «Listo».
+2. Vuelve a tocar «Link de pago» en el mismo pedido y confirma «Generar otro link».
+3. Abrir el primer link en otro navegador.
+4. Abrir el segundo link.
 
 ### Resultado esperado
 
-1. El pedido llega al KDS como «Para retirar · R-NNN».
-2. No aparece «Marcar como entregado»: aparece «Entregar con código».
-3. El diálogo avisa que el código no coincide y el pedido no se entrega. Sin errores graves de accesibilidad (axe).
-4. Responde 200 y la comanda sale del tablero.
+1. Se ve la URL del link.
+2. Antes de generar avisa que el anterior deja de servir; después muestra otra URL.
+3. «Este link de pago fue reemplazado.»
+4. «Pagá tu pedido».

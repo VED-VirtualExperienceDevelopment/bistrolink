@@ -23,6 +23,8 @@ import {
   solicitudAuthComensal,
   sumarUnidad,
   type OrigenMenu,
+  etiquetaDelPedidoAPagar,
+  RUTA_AUTH_COMENSAL_LINK,
 } from "@/components/menu-digital.utils";
 
 // BL-309: los pedidos desde una mesa fallaban porque el frontend pedía el
@@ -204,4 +206,28 @@ describe("codigoDeError (HU-017, BL-60)", () => {
       expect(codigoDeError(cuerpo)).toBeUndefined();
     },
   );
+});
+
+describe("link de pago (HU-033, BL-203)", () => {
+  const link = { tipo: "link" as const, linkToken: "tokenDelLinkDePagoXYZ" };
+
+  it("el JWT sale del link, sin ids", () => {
+    expect(solicitudAuthComensal(link)).toEqual({
+      ruta: RUTA_AUTH_COMENSAL_LINK,
+      body: { linkToken: "tokenDelLinkDePagoXYZ" },
+    });
+    expect(RUTA_AUTH_COMENSAL_LINK).toBe("/auth/comensal/link-pago");
+  });
+
+  it("no arma pedidos: sin restauranteId", () => {
+    expect(origenPedido(link)).toEqual({});
+  });
+
+  it("encabezado: la mesa si el pedido es de una, si no «Pedido para retirar»", () => {
+    expect(etiquetaDelPedidoAPagar("link", 4)).toBe("Mesa 4");
+    expect(etiquetaDelPedidoAPagar("link")).toBe("Pedido para retirar");
+    expect(etiquetaDelPedidoAPagar("mesa", 4)).toBe("Mesa 4");
+    expect(etiquetaDelPedidoAPagar("mesa")).toBe(etiquetaMesa());
+    expect(etiquetaDelPedidoAPagar("publico", 4)).toBe("Pedido para retirar");
+  });
 });

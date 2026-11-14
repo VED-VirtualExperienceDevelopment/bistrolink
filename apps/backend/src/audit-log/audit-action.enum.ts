@@ -46,6 +46,7 @@ export enum AuditAction {
   MESA_PEDIDOS_CANCELADOS = 'MESA_PEDIDOS_CANCELADOS', // BL-205 (al cerrar la mesa se cancelan los pedidos sin pagar, HU-017)
   MESA_LIMPIEZA_PRUEBAS = 'MESA_LIMPIEZA_PRUEBAS', // BL-479 (BL-285: limpieza de datos de prueba; mesas reabiertas, liberadas y eliminadas y zonas «Zona E2E» quitadas)
   PAGO_EFECTIVO_REGISTRADO = 'PAGO_EFECTIVO_REGISTRADO', // BL-201 (HU-031: cobro en efectivo, con monto recibido y vuelto)
+  PEDIDO_LINK_PAGO_GENERADO = 'PEDIDO_LINK_PAGO_GENERADO', // BL-203 (HU-033: link de pago de un pedido pendiente, con el vencimiento y si reemplazó a otro; nunca el link)
   PAGO_POS_REGISTRADO = 'PAGO_POS_REGISTRADO', // BL-80 (HU-007b: cobro con el POS del local, con total, tipo de tarjeta y n.° de autorización; nunca datos de la tarjeta)
   PEDIDO_PENDIENTE_CANCELADO = 'PEDIDO_PENDIENTE_CANCELADO', // BL-501 (pedido sin pagar cancelado por el mozo o el administrador antes de cobrarlo: nunca pasó a cocina ni se cobró; con el total y la mesa)
   PEDIDO_CANCELADO = 'PEDIDO_CANCELADO', // BL-104 (HU-024: pedido pagado cancelado por el personal, con motivo, monto devuelto y medio; reembolso automático o devolución manual)

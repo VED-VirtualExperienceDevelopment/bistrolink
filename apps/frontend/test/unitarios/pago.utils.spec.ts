@@ -24,6 +24,9 @@ import {
   tipoTarjeta,
   TOPE_CONSULTA_MS,
   filasRebajaIva,
+  HEADER_LINK_PAGO,
+  mediosSegunOrigen,
+  mensajeSinMedios,
 } from "@/components/pago/pago.utils";
 import {
   HEADER_MESA_SESION,
@@ -395,5 +398,31 @@ describe("comprobante en la pantalla de pago aprobado", () => {
     [""],
   ])("enlace inseguro o inválido (%s): no se muestra", (url) => {
     expect(urlConsultaSegura(url)).toBeNull();
+  });
+});
+
+describe("link de pago (HU-033, BL-203)", () => {
+  const link = { tipo: "link" as const, linkToken: "tokenDelLinkDePagoXYZ" };
+
+  it("la credencial es el link, en X-Link-Pago (ni QR ni token del retiro)", () => {
+    expect(headersAccesoPedido(link, "token-retiro")).toEqual({
+      [HEADER_LINK_PAGO]: "tokenDelLinkDePagoXYZ",
+    });
+    expect(HEADER_LINK_PAGO).toBe("X-Link-Pago");
+  });
+
+  it("por el link solo se ofrece la tarjeta", () => {
+    expect(
+      mediosSegunOrigen({ tarjeta: true, efectivo: true }, "link"),
+    ).toEqual({ tarjeta: true, efectivo: false });
+    expect(
+      mediosSegunOrigen({ tarjeta: true, efectivo: true }, "mesa"),
+    ).toEqual({ tarjeta: true, efectivo: true });
+  });
+
+  it("sin medios en línea, se le dice que le cobre el mozo", () => {
+    expect(mensajeSinMedios("link")).toBe(
+      "Este local no tiene pagos en línea habilitados. Pedile al mozo que te cobre.",
+    );
   });
 });

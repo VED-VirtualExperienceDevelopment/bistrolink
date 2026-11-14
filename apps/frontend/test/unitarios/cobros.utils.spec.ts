@@ -26,6 +26,13 @@ import {
   rutaCobrarPedido,
   textoPropinaEnLista,
   type PedidoPendienteDeCobro,
+  motivoSinLink,
+  AVISO_OTRO_LINK,
+  CODIGO_LINK_ACTIVO,
+  cuerpoLinkPago,
+  rutaLinkPago,
+  textoLinkActivo,
+  textoVencimientoLink,
 } from "@/components/admin/cobros/cobros.utils";
 
 // HU-031 (BL-201): cobro en efectivo (panel de la mesa y /admin/cobros).
@@ -451,5 +458,66 @@ describe("«Ir a cobrar» desde las alertas (BL-470)", () => {
       tipo: "no-pendiente",
       anuncio: AVISO_PEDIDO_NO_PENDIENTE,
     });
+  });
+});
+
+describe("link de pago (HU-033, BL-203)", () => {
+  const AHORA = Date.parse("2026-11-14T23:00:00.000Z");
+
+  it("ruta del POST que genera el link", () => {
+    expect(rutaLinkPago("3f2a9c1e-0000-4000-8000-000000000001")).toBe(
+      "/cobros/pendientes/3f2a9c1e-0000-4000-8000-000000000001/link-pago",
+    );
+  });
+
+  it("el POST dice si reemplaza el link activo (solo si el colaborador confirmó)", () => {
+    expect(JSON.parse(cuerpoLinkPago(false))).toEqual({ reemplazar: false });
+    expect(JSON.parse(cuerpoLinkPago(true))).toEqual({ reemplazar: true });
+  });
+
+  it("si otro colaborador ya generó el link, el aviso lo dice (código del 409)", () => {
+    expect(CODIGO_LINK_ACTIVO).toBe("LINK_PAGO_ACTIVO");
+    expect(AVISO_OTRO_LINK).toContain("Otro colaborador");
+  });
+
+  it("con un pago con tarjeta en curso no se genera", () => {
+    expect(motivoSinLink(pedido())).toBeNull();
+    expect(motivoSinLink(pedido({ pagoEnCurso: true }))).toBe(
+      motivoSinCancelar(pedido({ pagoEnCurso: true })),
+    );
+  });
+
+  it("muestra el link activo solo si no venció (hora de Uruguay)", () => {
+    expect(
+      textoLinkActivo(
+        pedido({ linkPagoVenceEn: "2026-11-14T23:15:00.000Z" }),
+        AHORA,
+      ),
+    ).toBe("Link de pago activo hasta las 20:15");
+    expect(
+      textoLinkActivo(
+        pedido({ linkPagoVenceEn: "2026-11-14T22:59:00.000Z" }),
+        AHORA,
+      ),
+    ).toBeNull();
+    expect(
+      textoLinkActivo(pedido({ linkPagoVenceEn: null }), AHORA),
+    ).toBeNull();
+    expect(textoLinkActivo(pedido(), AHORA)).toBeNull();
+  });
+
+  it("vencimiento con los minutos que faltan, o que venció", () => {
+    expect(textoVencimientoLink("2026-11-14T23:15:00.000Z", AHORA)).toBe(
+      "Vence a las 20:15 (en 15 min)",
+    );
+    expect(textoVencimientoLink("2026-11-14T23:00:30.000Z", AHORA)).toBe(
+      "Vence a las 20:00 (en 1 min)",
+    );
+    expect(textoVencimientoLink("2026-11-14T23:00:00.000Z", AHORA)).toBe(
+      "Este link venció. Generá otro.",
+    );    // Una fecha que no se puede leer cuenta como vencido.
+    expect(textoVencimientoLink("no-es-fecha", AHORA)).toBe(
+      "Este link venció. Generá otro.",
+    );
   });
 });

@@ -633,9 +633,40 @@ describe('CobroEfectivoService (HU-031, BL-201)', () => {
               { id: 'l-2', nombre: 'Agua', cantidad: 2, subtotal: '200.00' },
             ],
             pagoEnCurso: true,
+            linkPagoVenceEn: null,
             efectivoSolicitado: null,
           },
         ],
+      });
+    });
+
+    it('HU-033 (BL-203): informa hasta cuándo sirve el link de pago, solo si no venció', async () => {
+      const vigente = new Date(AHORA.getTime() + 10 * 60 * 1000);
+      const vencido = new Date(AHORA.getTime() - 60 * 1000);
+      const pedido = (id: string, linkPagoVenceEn: Date | null) => ({
+        id,
+        canal: 'MOZO',
+        createdAt: AHORA,
+        linkPagoVenceEn,
+        mesa: { id: 'mesa-3', numero: 3, esVirtual: false },
+        lineas: [],
+        pagos: [],
+      });
+      tx.pedido.findMany.mockResolvedValue([
+        pedido('p-vigente', vigente),
+        pedido('p-vencido', vencido),
+        pedido('p-sin-link', null),
+      ]);
+
+      const { pedidos } = await service.pendientes(TENANT, AHORA);
+
+      const vence = Object.fromEntries(
+        pedidos.map((p) => [p.id, p.linkPagoVenceEn]),
+      );
+      expect(vence).toEqual({
+        'p-vigente': vigente,
+        'p-vencido': null,
+        'p-sin-link': null,
       });
     });
 

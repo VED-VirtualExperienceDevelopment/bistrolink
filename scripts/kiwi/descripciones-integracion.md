@@ -40,12 +40,9 @@
 | 1.33    | 10/11/2026 | Se borran los bloques de TC-I-203 a 205, ya cargados en Kiwi. TC-I-206 y 207: aviso al comensal cuando el mozo cierra la mesa (bug BL-518), para cargar con el script antes de mergear el PR.                                             |
 | 1.34    | 11/11/2026 | TC-I-009: `GET /` responde JSON en lugar del texto «Hello World!» (DAST, BL-526); cambia el título y la descripción, para cargar con el script antes de mergear el PR.                                                                    |
 | 1.35    | 13/11/2026 | TC-I-208 y 209: cola del KDS sugerida en el alta de un establecimiento (HU-042 / BL-472), para cargar con el script antes de mergear el PR.                                                                                               |
-| 1.36    | 14/11/2026 | TC-I-210: plantilla de marca del local, guardada y auditada, y CHECK de la base (HU-043 / BL-531), para cargar con el script antes de mergear el PR.                                                                                      |
-| 1.37    | 14/11/2026 | TC-I-211: el logo del local solo acepta un logo publicado del mismo tenant (HU-043 / BL-532), para cargar con el script antes de mergear el PR.                                                                                           |
-| 1.38    | 14/11/2026 | TC-I-212: el Administrador cambia el nombre y la dirección del local, con auditoría, y la carta los muestra (HU-043 / BL-561), para cargar con el script antes de mergear el PR.                                                          |
-| 1.39    | 14/11/2026 | TC-I-199 a 202: pedidos para retirar (HU-040 / BL-210). Se borran los bloques ya cargados (TC-I-206 a 209 y 009).                                                                                                                         |
-| 1.40    | 14/11/2026 | TC-I-213: la portada del banner solo acepta una portada publicada del mismo tenant (HU-043 / BL-562), para cargar con el script antes de mergear el PR.                                                                                   |
-| 1.41    | 14/11/2026 | Los casos de HU-043 pasan de TC-I-210 a 213 a TC-I-217 a 220: esos números ya los usa HU-033 (BL-203, pago por link) en Kiwi.                                                                                                             |
+| 1.36    | 14/11/2026 | TC-I-199 a 202: pedidos para retirar (HU-040 / BL-210). Se borran los bloques ya cargados (TC-I-206 a 209 y 009).                                                                                                                         |
+| 1.37    | 14/11/2026 | TC-I-210 a 216: pago por link (HU-033 / BL-203). Se borran los bloques de TC-I-199 a 202, ya cargados.                                                                                                                                    |
+| 1.38    | 14/11/2026 | TC-I-217 a 220: marca propia del local (HU-043 / BL-531, 532, 561 y 562): plantilla, logo, nombre y dirección, y portada. Se numeran después de los de HU-033.                                                                            |
 
 Texto del campo de descripción de cada caso TC-I en Kiwi. Lo carga
 `cargar-casos-integracion.mjs --descripciones`: cada bloque `## TC-I-NNN`
@@ -139,84 +136,154 @@ Tenant A del seed con su restaurante. La plantilla de marca guardada se anota pa
 3. Un solo registro, con el campo `plantilla` y sus valores antes y después.
 4. La base la rechaza (CHECK `restaurante_plantilla_valida`) y la plantilla guardada no cambia.
 
-## TC-I-199
+## TC-I-210
 
 ### Precondición
 
-Tenant A del seed, tomando pedidos para retirar todo el día. Pasarela de pago y CFE falsos (los tests no llaman a Mercado Pago ni a Surtec).
+Tenant A del seed con su mozo y la mesa 71 abierta. Pasarela falsa que aprueba (como el sandbox) y CFE apagado. Pedido de 2 unidades cargado por el mozo (HU-039), en PENDIENTE_PAGO.
 
 ### Pasos
 
-1. Como comensal del enlace web, crear un pedido para retirar con nombre, teléfono y el aviso aceptado, y pagarlo.
-2. Crear otro pedido para retirar con nombre y teléfono pero sin aceptar el aviso, y pagarlo.
-3. Consultar el estado del pago del primero (GET /pedidos/{id}/pagos) con el token del pedido.
-4. Consultar los pedidos pendientes del KDS.
+1. Generar el link de pago del pedido con el mozo del seed.
+2. Revisar la URL del link.
+3. `POST /auth/comensal/link-pago` con el token del link.
+4. `GET /link-pago` con el JWT del comensal y el header `X-Link-Pago`.
+5. `POST /pedidos/:id/pagos` con el JWT y `X-Link-Pago`.
+6. Volver a abrir el link y consultar `GET /pedidos/:id/pagos` con `X-Link-Pago`.
 
 ### Resultado esperado
 
-1. El pedido queda RECIBIDO, en la mesa virtual, con un código de retiro R-NNN, el nombre sin espacios de más, el teléfono solo con dígitos y la fecha del consentimiento.
-2. El pedido no guarda ni el nombre ni el teléfono, y su código es el siguiente del contador del local (después del 999 vuelve a R-001).
-3. Devuelve el mismo código de retiro.
-4. Los dos aparecen con su bloque de retiro: código y nombre (null en el que no aceptó el aviso).
+1. Devuelve la URL `/pagar/<token>` y el vencimiento.
+2. El token tiene 103 caracteres y la URL no contiene el id del tenant, del restaurante, del pedido ni de la mesa.
+3. 200 con el JWT del comensal técnico del tenant.
+4. 200 con el pedido, estado PENDIENTE_PAGO, mesa 71, el consumo y el mismo vencimiento.
+5. 201. El pedido pasa a RECIBIDO con el pago APROBADO (el mismo flujo de HU-007).
+6. 200 en los dos: con el pedido pagado, el link sirve para ver el estado y el comprobante.
 
-## TC-I-200
+## TC-I-211
 
 ### Precondición
 
-Tenant A del seed. El test cambia la configuración del retiro y al terminar la deja como estaba.
+Igual que TC-I-210, con un pedido nuevo en PENDIENTE_PAGO.
 
 ### Pasos
 
-1. Deshabilitar los pedidos para retirar, abrir la carta del enlace web e intentar crear un pedido.
-2. Habilitarlos con una franja que no incluye la hora actual del local, abrir la carta e intentar crear un pedido.
-3. Cambiar la franja para que incluya la hora actual, abrir la carta y crear un pedido.
+1. Generar un link, abrirlo (`POST /auth/comensal/link-pago`) y guardar el JWT.
+2. Generar otro link del mismo pedido, confirmando el reemplazo (`reemplazar: true`).
+3. Abrir el primer link.
+4. `POST /pedidos/:id/pagos` con el primer link.
+5. Abrir el segundo link.
 
 ### Resultado esperado
 
-1. La carta indica retiro no habilitado ni abierto. POST /pedidos responde 409 con el código RETIRO_NO_DISPONIBLE y «Este local no está tomando pedidos para retirar.».
-2. La carta indica habilitado pero cerrado, con la franja. 409 RETIRO_NO_DISPONIBLE con «Este local toma pedidos para retirar de HH:MM a HH:MM.».
-3. La carta indica abierto y el pedido se crea (201).
+1. 200.
+2. Devuelve otro link.
+3. 410 con `codigo` LINK_PAGO_REEMPLAZADO y «Este link de pago fue reemplazado por otro. Pedile al mozo el nuevo.».
+4. 403 con el mismo mensaje. La pasarela no cobra: el pedido sigue en PENDIENTE_PAGO y sin pagos.
+5. 200.
 
-## TC-I-201
+## TC-I-212
 
 ### Precondición
 
-Tenant A del seed. Tres pedidos para retirar pagados con el aviso aceptado: dos con el mismo teléfono (escrito de dos formas) y uno con otro teléfono.
+Igual que TC-I-210, con un pedido nuevo en PENDIENTE_PAGO.
 
 ### Pasos
 
-1. Anonimizar el teléfono de los dos primeros como Administrador.
-2. Ver los pedidos, sus códigos, pagos y líneas, y el pedido del otro teléfono.
-3. Ver la auditoría.
-4. Anonimizar el mismo teléfono otra vez.
+1. Generar un link, abrirlo y guardar el JWT.
+2. Dejar el vencimiento del link en el pasado.
+3. Abrir el link.
+4. `POST /pedidos/:id/pagos` con el link.
 
 ### Resultado esperado
 
-1. Informa 2 pedidos.
-2. En los dos se borraron el nombre y el teléfono; se conservan la fecha del consentimiento y queda la de la anonimización. El código, los pagos y las líneas no cambiaron. El pedido del otro teléfono sigue con sus datos.
-3. Un registro PEDIDO_RETIRO_ANONIMIZADO con la cantidad de pedidos y sin el teléfono.
-4. Informa 0 pedidos.
+1. 200.
+2. —
+3. 410 con `codigo` LINK_PAGO_VENCIDO y «Este link de pago venció. Pedile al mozo uno nuevo.».
+4. 403 con el mismo mensaje. La pasarela no cobra: el pedido sigue en PENDIENTE_PAGO y sin pagos.
 
-## TC-I-202
+## TC-I-213
 
 ### Precondición
 
-Usuarios Mozo y Cocina del tenant A (Keycloak de pruebas). Un pedido para retirar pagado, con su código.
+Igual que TC-I-210, con dos pedidos en PENDIENTE_PAGO (A y B).
 
 ### Pasos
 
-1. Como Mozo, entregar con el código (POST /pedidos/{id}/entregar-retiro) mientras está en cocina.
-2. Pasarlo a listo e intentar el pase común a ENTREGADO del KDS.
-3. Como Cocina, entregar con el código.
-4. Como Mozo, entregar con un código mal escrito, con un id que no es UUID, con un pedido que no existe y con otro código válido.
-5. Como Mozo, entregar con el código escrito como «r» y el número.
-6. Repetir la entrega.
+1. Generar el link de A, abrirlo y pagar B con ese link.
+2. Abrir el link de A con un carácter cambiado, un token inventado del mismo largo y `../admin`.
+3. Dejar un pago PENDIENTE en B y generar su link.
+4. Cancelar A y generar su link.
+5. Buscar en la auditoría la acción PEDIDO_LINK_PAGO_GENERADO de A.
 
 ### Resultado esperado
 
-1. 409: «El pedido todavía no está listo para retirar».
-2. Se rechaza: los pedidos para retirar se entregan verificando el código.
-3. 403.
-4. 400, 400, 404 y 409 «El código no coincide con este pedido. Revisá el pedido antes de entregarlo.», sin mostrar el código correcto. El pedido sigue listo.
-5. 200: el pedido queda ENTREGADO, con una sola entrada en el historial.
-6. 409: «Este pedido ya se entregó».
+1. 403: el link de un pedido no sirve para otro. B sigue sin pagos.
+2. 404, 404 y 400, sin decir el motivo.
+3. 409 «Hay un pago en curso para este pedido. Esperá a que se resuelva antes de generar un link.».
+4. 409 «Este pedido ya no espera el pago».
+5. Una sola entrada, sin el token del link.
+
+## TC-I-214
+
+### Precondición
+
+Usuarios MOZO y COCINA del test (variables TEST_MOZO_* y TEST_COCINA_*). Un pedido en PENDIENTE_PAGO.
+
+### Pasos
+
+1. `POST /cobros/pendientes/:id/link-pago` con el token de COCINA.
+2. El mismo pedido con el token del MOZO.
+3. `GET /cobros/pendientes` con el token del MOZO.
+
+### Resultado esperado
+
+1. 403.
+2. 200 con la URL `/pagar/<token>`.
+3. El pedido tiene `linkPagoVenceEn` igual al vencimiento del paso 2, y la respuesta no contiene el token del link.
+
+## TC-I-215
+
+### Precondición
+
+Igual que TC-I-210, con dos pedidos nuevos en PENDIENTE_PAGO (A y B).
+
+### Pasos
+
+1. Generar el link de A (como el mozo A).
+2. Generar otro link de A sin confirmar el reemplazo (el mozo B, con la pantalla desactualizada).
+3. Abrir el link del paso 1.
+4. Generar el link de B dos veces a la vez, sin confirmar el reemplazo.
+5. Abrir el link que se generó en el paso 4 y buscar en la auditoría los links generados de B.
+
+### Resultado esperado
+
+1. Devuelve el link.
+2. 409 con `codigo` LINK_PAGO_ACTIVO y «Ya hay un link de pago activo para este pedido. Si generás otro, el anterior deja de servir.». No se reemplaza nada.
+3. 200: el link del mozo A sigue sirviendo.
+4. Uno devuelve el link y el otro, el mismo 409 LINK_PAGO_ACTIVO.
+5. 200, y una sola entrada de auditoría.
+
+## TC-I-216
+
+### Precondición
+
+Igual que TC-I-210, con un pedido nuevo en PENDIENTE_PAGO.
+
+### Pasos
+
+1. Generar el link, abrirlo, pagar y consultar `GET /pedidos/:id/pagos` con el link.
+2. Dejar el vencimiento del link 24 horas en el pasado.
+3. Abrir el link.
+4. Consultar `GET /pedidos/:id/pagos` con el link.
+5. Abrir el mismo link hasta pasar el límite de 10 por minuto.
+6. Abrir el link de otro pedido.
+
+### Resultado esperado
+
+1. 201 al pagar y 200 al consultar.
+2. —
+3. 410 con `codigo` LINK_PAGO_CADUCADO y «Este link de pago ya no está disponible. Si necesitás el comprobante, pedíselo al local.».
+4. 403 con el mismo mensaje: ya no se puede ver el pedido ni bajar el comprobante (que en una e-Factura tiene el RUT y la razón social del cliente).
+5. Al pasar el límite responde 429.
+6. 200: el límite es por link.

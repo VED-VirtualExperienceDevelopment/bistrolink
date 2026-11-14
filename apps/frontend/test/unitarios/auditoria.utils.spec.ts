@@ -95,6 +95,12 @@ describe("cómo se muestra cada registro", () => {
     );
   });
 
+  it("HU-033 (BL-203): el link de pago generado por el mozo", () => {
+    expect(etiquetaAccion("PEDIDO_LINK_PAGO_GENERADO")).toBe(
+      "Link de pago generado",
+    );
+  });
+
   it("HU-007b (BL-80): el cobro con el POS del local, con tarjeta y autorización", () => {
     expect(etiquetaAccion("PAGO_POS_REGISTRADO")).toBe(
       "Cobro con el POS del local",

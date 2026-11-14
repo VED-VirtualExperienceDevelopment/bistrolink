@@ -66,9 +66,13 @@ export interface Almacen {
  * siguiente de la misma mesa.
  */
 export function clavePedidoEnCurso(origen: OrigenMenu): string {
-  return origen.tipo === "mesa"
-    ? `${PREFIJO_CLAVE}:mesa:${origen.qrToken}:${origen.sesionMesa}`
-    : `${PREFIJO_CLAVE}:web:${origen.restauranteId}`;
+  if (origen.tipo === "mesa") {
+    return `${PREFIJO_CLAVE}:mesa:${origen.qrToken}:${origen.sesionMesa}`;
+  }
+  // HU-033 (BL-203): uno por link de pago.
+  if (origen.tipo === "link")
+    return `${PREFIJO_CLAVE}:link:${origen.linkToken}`;
+  return `${PREFIJO_CLAVE}:web:${origen.restauranteId}`;
 }
 
 /**

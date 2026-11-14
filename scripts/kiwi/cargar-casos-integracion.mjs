@@ -200,6 +200,13 @@ const retiro = (extra = {}) => ({
   ...extra,
   tags: ["HU-040", "BL-210", "pedidos", "retiro", ...(extra.tags ?? [])],
 });
+// HU-033 (BL-203): link de pago que genera el mozo.
+const linkPago = (extra = {}) => ({
+  component: "api",
+  requirement: "HU-033",
+  ...extra,
+  tags: ["HU-033", "BL-203", "pagos", "link-de-pago", ...(extra.tags ?? [])],
+});
 // HU-039 (BL-209): pedido cargado por el mozo.
 const pedidoMozo = (extra = {}) => ({
   component: "api",
@@ -977,6 +984,42 @@ const DATOS_INTEGRACION = {
     requirement: "HU-043",
     tags: ["HU-043", "BL-562", "marca", "imagenes", "validacion"],
   }),
+  // HU-033 (BL-203): pago por link.
+  210: linkPago({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["mercadopago", "webhook"],
+  }),
+  211: linkPago({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["seguridad", "vencimiento"],
+  }),
+  212: linkPago({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["seguridad", "vencimiento", "HU-032"],
+  }),
+  213: linkPago({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["seguridad", "auditoria", "RD.05"],
+  }),
+  214: linkPago({
+    category: "Seguridad",
+    priority: "P2",
+    tags: ["seguridad", "roles"],
+  }),
+  215: linkPago({
+    category: "Funcional",
+    priority: "P2",
+    tags: ["concurrencia", "varios-colaboradores"],
+  }),
+  216: linkPago({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["seguridad", "privacidad", "rate-limiting", "Ley-18331"],
+  }),
 };
 /**
  * BL-435: datos de los E2E TC-E-017 en adelante, con los criterios de
@@ -1483,6 +1526,17 @@ const DATOS_E2E = {
     category: "Funcional",
     priority: "P2",
     tags: ["BL-520", "inicio", "responsive"],
+  }),
+  // HU-033 (BL-203): pago por link, en admin/link-pago.spec.ts.
+  112: e2e("mozo", "HU-033", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-203", "link-de-pago", "responsive", ...axe],
+  }),
+  113: e2e("mozo", "HU-033", {
+    category: "Seguridad",
+    priority: "P2",
+    tags: ["BL-203", "link-de-pago"],
   }),
 };
 /**
