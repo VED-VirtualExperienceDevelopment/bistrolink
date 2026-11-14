@@ -101,6 +101,10 @@ export const CONFIGURACION_DEL_SEED = {
   // HU-043 (BL-531): plantilla de marca por defecto. Los E2E de la marca la
   // cambian; la limpieza la deja como el seed.
   plantilla: 'clasica',
+  // HU-043 (BL-535): sin logo ni portada. Los E2E de la marca los suben; la
+  // limpieza los quita.
+  logoKey: null,
+  portadaKey: null,
 } as const;
 
 /** Razón social de los tenants de testing, como en el seed. */

@@ -32,6 +32,28 @@ export function configuracionDelSeed(
   };
 }
 
+/**
+ * HU-043 (BL-535): el logo y la portada no vienen como key en la
+ * configuración, sino como URL firmada. Para compararlos con el seed (sin
+ * imagen) alcanza con saber si hay URL: null = sin imagen.
+ */
+const URL_DE_LA_IMAGEN: Readonly<
+  Record<string, keyof ConfiguracionEstablecimiento>
+> = {
+  logoKey: 'logoUrl',
+  portadaKey: 'portadaUrl',
+};
+
+/** Lo que tiene guardado el establecimiento en ese campo del seed. */
+function valorVigente(
+  actual: ConfiguracionEstablecimiento,
+  campo: string,
+): unknown {
+  const url = URL_DE_LA_IMAGEN[campo];
+  if (url) return actual[url] ? 'con imagen' : null;
+  return actual[campo as keyof ConfiguracionEstablecimiento];
+}
+
 /** Los campos que difieren del seed, con el valor del seed. */
 export function diferenciasConElSeed(
   actual: ConfiguracionEstablecimiento,
@@ -39,7 +61,7 @@ export function diferenciasConElSeed(
 ): ActualizarConfiguracionDto {
   const diferencias: Record<string, unknown> = {};
   for (const [campo, valor] of Object.entries(seed)) {
-    const vigente = actual[campo as keyof ConfiguracionEstablecimiento];
+    const vigente = valorVigente(actual, campo);
     if (JSON.stringify(vigente) !== JSON.stringify(valor)) {
       diferencias[campo] = valor;
     }
@@ -51,7 +73,8 @@ export function diferenciasConElSeed(
  * BL-481 (BL-285, ADR 0011): deja la configuración del establecimiento como
  * el seed: medios de pago, propinas, proveedor de CFE, cola del KDS apagada
  * y razón social de los tenants de testing. El correo de privacidad no se
- * toca (el seed no lo define).
+ * toca (el seed no lo define). HU-043: también la marca (plantilla, nombre
+ * y dirección, sin logo y sin portada).
  *
  * Usa el mismo servicio que la pantalla Configuración, así que el cambio
  * queda en la auditoría (con antes y después) y el KDS se entera si cambió

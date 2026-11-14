@@ -175,6 +175,34 @@ describe('LimpiezaConfiguracionService', () => {
     );
   });
 
+  it('[TC-U-552] HU-043 (BL-535): un logo y una portada que dejó un E2E se quitan', async () => {
+    const { configuracion, service } = armar({
+      ...configuracionSeedA(),
+      logoUrl: 'https://firmada.example/logo.webp',
+      portadaUrl: 'https://firmada.example/portada.webp',
+    });
+
+    expect(await service.limpiar(TENANT_A, ACTOR, false)).toEqual({
+      camposRestablecidos: ['logoKey', 'portadaKey'],
+    });
+    expect(configuracion.actualizar).toHaveBeenCalledWith(
+      TENANT_A,
+      { logoKey: null, portadaKey: null },
+      { id: ACTOR },
+    );
+  });
+
+  it('[TC-U-552] HU-043 (BL-535): sin logo ni portada no hay nada que quitar', () => {
+    const seed = configuracionDelSeed(TENANT_A);
+    expect(seed).toMatchObject({ logoKey: null, portadaKey: null });
+    expect(
+      diferenciasConElSeed(
+        { ...configuracionSeedA(), logoUrl: null, portadaUrl: null },
+        seed,
+      ),
+    ).toEqual({});
+  });
+
   it('[TC-U-513] HU-043 (BL-531): una plantilla de marca que dejó un E2E vuelve a la clásica', async () => {
     const { configuracion, service } = armar({
       ...configuracionSeedA(),
