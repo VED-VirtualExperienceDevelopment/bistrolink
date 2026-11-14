@@ -9,6 +9,7 @@ import {
   hayErroresCola,
   primerCampoConError,
   hayCambios,
+  urlDelLogo,
   leerPropinas,
   sinMediosDePago,
   type ConfiguracionEstablecimiento,
@@ -100,6 +101,10 @@ describe("cambios para guardar", () => {
       esperaAtencion: "30",
       esperaDemorado: "60",
       esperaDemoraAlta: "120",
+      // HU-043 (BL-533): un backend anterior no trae la marca: la Clásica,
+      // con el logo sin tocar.
+      plantilla: "clasica",
+      logo: { tipo: "guardado" },
     });
   });
 });
@@ -488,5 +493,76 @@ describe("HU-038 (BL-506): umbrales de espera del KDS", () => {
         cola: { minutosPreparacion: "mal", esperaAtencion: "mal" },
       }),
     ).toBe("cola-minutos");
+  });
+});
+
+describe("HU-043 (BL-533): marca del local", () => {
+  const CON_MARCA: ConfiguracionEstablecimiento = {
+    ...GUARDADA,
+    plantilla: "gourmet",
+    plantillasDisponibles: ["clasica", "gourmet", "rapida", "familiar"],
+    logoUrl: "https://firmada.example/logo.webp",
+  };
+
+  it("[TC-U-524] el formulario arranca con la plantilla guardada y el logo sin tocar", () => {
+    const formulario = formularioDesde(CON_MARCA);
+
+    expect(formulario.plantilla).toBe("gourmet");
+    expect(formulario.logo).toEqual({ tipo: "guardado" });
+    expect(cambiosParaGuardar(CON_MARCA, formulario)).toEqual({});
+  });
+
+  it("[TC-U-525] cambiar la plantilla manda solo la plantilla", () => {
+    const formulario = {
+      ...formularioDesde(CON_MARCA),
+      plantilla: "rapida" as const,
+    };
+
+    expect(cambiosParaGuardar(CON_MARCA, formulario)).toEqual({
+      plantilla: "rapida",
+    });
+  });
+
+  it("[TC-U-526] un logo nuevo manda su key; quitarlo manda null solo si había uno guardado", () => {
+    const key =
+      "11111111-1111-1111-1111-111111111111/menu/marca/0b4f6a3e-1111-4c2d-9e8f-123456789abc.webp";
+    const nuevo = {
+      ...formularioDesde(CON_MARCA),
+      logo: {
+        tipo: "nuevo" as const,
+        key,
+        url: "https://firmada.example/nuevo.webp",
+      },
+    };
+    expect(cambiosParaGuardar(CON_MARCA, nuevo)).toEqual({ logoKey: key });
+
+    const quitado = {
+      ...formularioDesde(CON_MARCA),
+      logo: { tipo: "quitado" as const },
+    };
+    expect(cambiosParaGuardar(CON_MARCA, quitado)).toEqual({ logoKey: null });
+
+    const sinLogo = { ...CON_MARCA, logoUrl: null };
+    expect(
+      cambiosParaGuardar(sinLogo, {
+        ...formularioDesde(sinLogo),
+        logo: { tipo: "quitado" },
+      }),
+    ).toEqual({});
+  });
+
+  it("[TC-U-527] la vista previa muestra el logo nuevo, ninguno si se quitó, o el guardado", () => {
+    expect(urlDelLogo(CON_MARCA, { tipo: "guardado" })).toBe(
+      "https://firmada.example/logo.webp",
+    );
+    expect(
+      urlDelLogo(CON_MARCA, {
+        tipo: "nuevo",
+        key: "k",
+        url: "https://firmada.example/nuevo.webp",
+      }),
+    ).toBe("https://firmada.example/nuevo.webp");
+    expect(urlDelLogo(CON_MARCA, { tipo: "quitado" })).toBeNull();
+    expect(urlDelLogo(GUARDADA, { tipo: "guardado" })).toBeNull();
   });
 });

@@ -7,6 +7,7 @@ import { apiFetch, ApiError } from "@/lib/api-client";
 import AnonimizarDatosFactura from "@/components/admin/configuracion/AnonimizarDatosFactura";
 import BarraGuardar from "@/components/admin/configuracion/BarraGuardar";
 import SeccionCocina from "@/components/admin/configuracion/SeccionCocina";
+import SeccionMarca from "@/components/admin/configuracion/SeccionMarca";
 import {
   SeccionDatosFiscales,
   SeccionFacturacion,
@@ -37,6 +38,7 @@ const FORM_ID = "form-configuracion";
  * los medios de pago y define los porcentajes de propina sugeridos. Cada
  * cambio queda en el registro de auditoría.
  * HU-042 (BL-465): también configura la cola de pedidos del KDS.
+ * HU-043 (BL-533): y la marca del local (logo y estilo del menú).
  *
  * BL-473: layout. La página ocupa todo el alto del panel (el scroll es el
  * del contenedor de AdminShell), hasta 2 columnas desde 1280 px y una en
@@ -64,6 +66,9 @@ export default function ConfiguracionPage() {
   const [aviso, setAviso] = useState("");
   const [guardando, setGuardando] = useState(false);
   const [intentoGuardar, setIntentoGuardar] = useState(false);
+  // HU-043 (BL-533): cambia al volver a lo guardado (descartar o guardar),
+  // para que el cargador del logo muestre el logo guardado.
+  const [reinicioMarca, setReinicioMarca] = useState(0);
 
   useEffect(() => {
     if (!token || !hasRole("ADMIN")) return;
@@ -120,6 +125,7 @@ export default function ConfiguracionPage() {
       );
       setGuardada(datos);
       setFormulario(formularioDesde(datos));
+      setReinicioMarca((n) => n + 1);
       setIntentoGuardar(false);
       setAviso("Cambios guardados.");
     } catch (err) {
@@ -136,6 +142,7 @@ export default function ConfiguracionPage() {
   function descartar() {
     if (!guardada) return;
     setFormulario(formularioDesde(guardada));
+    setReinicioMarca((n) => n + 1);
     setIntentoGuardar(false);
     setErrorGuardar(null);
     setAviso("Se descartaron los cambios.");
@@ -199,6 +206,17 @@ export default function ConfiguracionPage() {
               onCambiar={cambiar}
               error={errores.propinas}
             />
+            {/* HU-043 (BL-533): logo y estilo del menú. Solo con un backend
+                que ya tiene la marca. */}
+            {guardada.plantillasDisponibles && (
+              <SeccionMarca
+                formulario={formulario}
+                guardada={guardada}
+                onCambiar={cambiar}
+                reinicio={reinicioMarca}
+                className="xl:col-span-2"
+              />
+            )}
             {/* HU-042 (BL-465): cola de pedidos del KDS. */}
             <SeccionCocina
               formulario={formulario}

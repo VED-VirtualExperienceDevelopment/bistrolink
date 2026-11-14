@@ -4,6 +4,9 @@
  * test/unitarios/configuracion.utils.spec.ts).
  */
 
+import type { PlantillaMarca } from "@/types/menu";
+import { PLANTILLA_POR_DEFECTO } from "@/lib/plantillas-marca";
+
 export type CfeProveedor = "SURTEC" | "BILLER";
 export type MedioPago = "EFECTIVO" | "MERCADOPAGO" | "POS" | "PLEXO" | "HANDY";
 
@@ -51,7 +54,27 @@ export interface ConfiguracionEstablecimiento {
   minutosEsperaAtencion?: number;
   minutosEsperaDemorado?: number;
   minutosEsperaDemoraAlta?: number;
+  /**
+   * HU-043 (BL-531 y BL-532): marca del local. Opcionales en el tipo: un
+   * backend anterior no los trae (y la sección «Marca del local» no se
+   * muestra). logoUrl es una URL firmada para la vista previa; la key del
+   * logo no viaja.
+   */
+  plantilla?: PlantillaMarca;
+  plantillasDisponibles?: PlantillaMarca[];
+  logoUrl?: string | null;
 }
+
+/**
+ * HU-043 (BL-533): el logo en el formulario.
+ * - `guardado`: el que está guardado (o ninguno), sin tocar.
+ * - `nuevo`: uno recién subido y confirmado por la API, sin guardar todavía.
+ * - `quitado`: se quita al guardar.
+ */
+export type EstadoLogo =
+  | { tipo: "guardado" }
+  | { tipo: "nuevo"; key: string; url: string }
+  | { tipo: "quitado" };
 
 export type CampoMedioPago =
   | "efectivoHabilitado"
@@ -85,6 +108,10 @@ export interface FormularioConfiguracion {
   esperaAtencion: string;
   esperaDemorado: string;
   esperaDemoraAlta: string;
+  /** HU-043 (BL-533): plantilla de colores de la carta. */
+  plantilla: PlantillaMarca;
+  /** HU-043 (BL-533): logo del local. */
+  logo: EstadoLogo;
 }
 
 /** Body de PATCH /admin/configuracion: solo lo que cambió. */
@@ -100,6 +127,7 @@ export type CambiosConfiguracion = Partial<
     | "esperaAtencion"
     | "esperaDemorado"
     | "esperaDemoraAlta"
+    | "logo"
   >
 > & {
   propinasSugeridas?: number[];
@@ -110,6 +138,8 @@ export type CambiosConfiguracion = Partial<
   minutosEsperaAtencion?: number;
   minutosEsperaDemorado?: number;
   minutosEsperaDemoraAlta?: number;
+  /** HU-043 (BL-533): key del logo nuevo, o null para quitarlo. */
+  logoKey?: string | null;
 };
 
 /** Mismos límites que el backend (ActualizarConfiguracionDto). */
@@ -221,7 +251,43 @@ export function formularioDesde(
     esperaDemoraAlta: String(
       configuracion.minutosEsperaDemoraAlta ?? ESPERA_POR_DEFECTO.demoraAlta,
     ),
+    // HU-043 (BL-533): un backend anterior no la trae: la Clásica.
+    plantilla: configuracion.plantilla ?? PLANTILLA_POR_DEFECTO,
+    logo: { tipo: "guardado" },
   };
+}
+
+/**
+ * HU-043 (BL-533): URL del logo a mostrar en la pantalla: el recién subido,
+ * ninguno si se quitó, o el guardado. null = sin logo.
+ */
+export function urlDelLogo(
+  guardada: ConfiguracionEstablecimiento,
+  logo: EstadoLogo,
+): string | null {
+  if (logo.tipo === "nuevo") return logo.url;
+  if (logo.tipo === "quitado") return null;
+  return guardada.logoUrl ?? null;
+}
+
+/**
+ * HU-043 (BL-533): cambios de la marca para el PATCH. Quitar un logo que no
+ * estaba guardado no manda nada.
+ */
+function cambiosDeLaMarca(
+  guardada: ConfiguracionEstablecimiento,
+  formulario: FormularioConfiguracion,
+): Partial<CambiosConfiguracion> {
+  const cambios: Partial<CambiosConfiguracion> = {};
+  if (formulario.plantilla !== (guardada.plantilla ?? PLANTILLA_POR_DEFECTO)) {
+    cambios.plantilla = formulario.plantilla;
+  }
+  if (formulario.logo.tipo === "nuevo") {
+    cambios.logoKey = formulario.logo.key;
+  } else if (formulario.logo.tipo === "quitado" && guardada.logoUrl) {
+    cambios.logoKey = null;
+  }
+  return cambios;
 }
 
 /**
@@ -548,6 +614,7 @@ export function cambiosParaGuardar(
     ...cambios,
     ...cambiosDeLaCola(guardada, formulario),
     ...cambiosDeLaEspera(guardada, formulario),
+    ...cambiosDeLaMarca(guardada, formulario),
   };
 }
 
