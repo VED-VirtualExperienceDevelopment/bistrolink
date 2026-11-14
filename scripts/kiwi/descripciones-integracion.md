@@ -44,6 +44,7 @@
 | 1.37    | 14/11/2026 | TC-I-210 a 216: pago por link (HU-033 / BL-203). Se borran los bloques de TC-I-199 a 202, ya cargados.                                                                                                                                    |
 | 1.38    | 14/11/2026 | TC-I-217 a 220: marca propia del local (HU-043 / BL-531, 532, 561 y 562): plantilla, logo, nombre y dirección, y portada. Se numeran después de los de HU-033.                                                                            |
 | 1.39    | 14/11/2026 | TC-I-221 y 222: «Sugerencia del local» (HU-044 / BL-537). Se borran los bloques de TC-I-217 a 220, ya cargados.                                                                                                                           |
+| 1.40    | 14/11/2026 | TC-I-223 y 224: insignia «Más pedido» (HU-045 / BL-543). Se borran los bloques de TC-I-221 y 222, ya cargados.                                                                                                                            |
 
 Texto del campo de descripción de cada caso TC-I en Kiwi. Lo carga
 `cargar-casos-integracion.mjs --descripciones`: cada bloque `## TC-I-NNN`
@@ -55,38 +56,34 @@ esperado`, igual que los casos cargados a mano desde TC-I-029.
 
 ## Casos para cargar
 
-## TC-I-221
+## TC-I-223
 
 ### Precondición
 
-Administrador del tenant A del seed (variables TEST_ADMIN_*). Categoría de prueba con el plato «Pancho de prueba», visible en el menú por el enlace web.
+Tenant A del seed. Categoría de prueba con 6 platos y ventas cargadas en `resumen_platos_hora`: «Muy vendido» 10.000 unidades hace 1 día, «Segundo» 20 hace 2 días, «Empate viejo» 12 hace 5 días, «Empate reciente» 12 hace 1 día, «Fuera de la ventana» 50 hace 31 días y «Pocas ventas» 9 hace 1 día.
 
 ### Pasos
 
-1. `PATCH /admin/menu/item/:id` con `{ "destacado": "si" }`.
-2. El mismo `PATCH` con `{ "destacado": true }`.
-3. `GET /menu/tenant/:tenantId/restaurante/:restauranteId` (menú del comensal).
-4. Buscar en la auditoría la acción CARTA_ITEM_MODIFICADO del plato.
-5. `PATCH` con `{ "destacado": false }` y volver a pedir el menú.
+1. Calcular los más pedidos con los 6 platos como candidatos.
+2. Calcular con «Pocas ventas» y «Fuera de la ventana» como candidatos.
+3. Calcular con los 6 platos pero con el id de otro tenant.
 
 ### Resultado esperado
 
-1. 400: no es un booleano.
-2. 200 con `destacado: true`.
-3. El plato tiene `destacado: true` y la categoría conserva el mismo orden de platos.
-4. Una entrada con `destacado` de `false` a `true`.
-5. El plato tiene `destacado: false`.
+1. «Muy vendido», «Segundo» y «Empate reciente», en ese orden: 3 platos, con al menos 10 unidades en 30 días, y a igual cantidad gana la venta más reciente.
+2. Ninguno.
+3. Ninguno: las ventas de un tenant no cuentan para otro.
 
-## TC-I-222
+## TC-I-224
 
 ### Precondición
 
-Usuario MOZO del test (variables TEST_MOZO_*). La categoría de prueba de TC-I-221.
+Igual que TC-I-223.
 
 ### Pasos
 
-1. `PATCH /admin/menu/item/:id` con `{ "destacado": true }` y el token del MOZO.
+1. `GET /menu/tenant/:tenantId/restaurante/:restauranteId` (menú del comensal).
 
 ### Resultado esperado
 
-1. 403: solo el Administrador marca la «Sugerencia del local».
+1. «Muy vendido» tiene `masPedido: true`; «Pocas ventas» y «Fuera de la ventana», `false`. Todos los platos traen el campo y a lo sumo 3 lo tienen en `true`. El campo no se puede mandar al crear ni al editar un plato (400, prueba unitaria del DTO).

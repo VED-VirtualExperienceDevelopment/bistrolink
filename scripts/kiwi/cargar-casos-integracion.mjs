@@ -235,6 +235,13 @@ const sugerenciaLocal = (extra = {}) => ({
   ...extra,
   tags: ["HU-044", "BL-537", "carta", ...(extra.tags ?? [])],
 });
+// HU-045 (BL-543): insignia «Más pedido», en mas-pedido.e2e-spec.ts.
+const masPedido = (extra = {}) => ({
+  component: "api",
+  requirement: "HU-045",
+  ...extra,
+  tags: ["HU-045", "BL-543", "BL-547", "menu-publico", ...(extra.tags ?? [])],
+});
 // HU-020 (BL-72): configuración del establecimiento, en
 // configuracion-establecimiento.e2e-spec.ts.
 // BL-448: avisos de efectivo que no se pierden en el KDS (HU-031b).
@@ -1038,6 +1045,17 @@ const DATOS_INTEGRACION = {
     priority: "P2",
     tags: ["seguridad", "roles"],
   }),
+  // HU-045 (BL-543): insignia «Más pedido».
+  223: masPedido({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["ranking", "resumen-platos", "RLS"],
+  }),
+  224: masPedido({
+    category: "Funcional",
+    priority: "P2",
+    tags: ["validacion"],
+  }),
 };
 /**
  * BL-435: datos de los E2E TC-E-017 en adelante, con los criterios de
@@ -1578,6 +1596,12 @@ const DATOS_E2E = {
     category: "Funcional",
     priority: "P2",
     tags: ["BL-537", "roles", "responsive", ...axe],
+  }),
+  // HU-045 (BL-543): insignia «Más pedido», en comensal/mas-pedido.spec.ts.
+  118: e2e("comensal", "HU-045", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-549", "pago", "responsive", ...axe],
   }),
 };
 /**
