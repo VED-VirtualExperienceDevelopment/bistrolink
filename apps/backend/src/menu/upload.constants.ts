@@ -41,12 +41,14 @@ export const MAXIMO_PIXELES_ENTRADA = 25_000_000;
 export const LADO_MAXIMO_IMAGEN_PX = 1600;
 
 /**
- * HU-043 (BL-532): para qué es la imagen que se confirma.
+ * HU-043 (BL-532 y BL-562): para qué es la imagen que se confirma.
  * - `item`: foto de un ítem de la carta (por defecto, como siempre).
- * - `marca`: logo del local. Se publica aparte, en {tenant}/menu/marca/, así
- *   un ítem no puede usar el logo ni el logo una foto de un ítem.
+ * - `marca`: logo del local, en {tenant}/menu/marca/.
+ * - `portada`: foto del banner de la carta, en {tenant}/menu/portada/.
+ * Cada destino tiene su carpeta: un ítem no puede usar el logo ni la
+ * portada, y el logo no puede ser una portada (ni al revés).
  */
-export const DESTINOS_IMAGEN = ['item', 'marca'] as const;
+export const DESTINOS_IMAGEN = ['item', 'marca', 'portada'] as const;
 export type DestinoImagen = (typeof DESTINOS_IMAGEN)[number];
 
 /** HU-043 (BL-532): lado máximo del logo publicado (se muestra chico). */

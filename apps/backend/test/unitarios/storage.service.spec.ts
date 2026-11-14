@@ -322,6 +322,8 @@ describe('StorageService', () => {
       ['vacía', ''],
       // HU-043 (BL-532): un ítem no puede usar el logo.
       ['del logo del local', `tenant-123/menu/marca/${UUID}.webp`],
+      // HU-043 (BL-562): tampoco la portada.
+      ['de la portada', `tenant-123/menu/portada/${UUID}.webp`],
     ])('rechaza una key %s', (_caso, key) => {
       expect(service.esKeyDelTenant(key, 'tenant-123')).toBe(false);
     });
@@ -389,6 +391,15 @@ describe('StorageService', () => {
       ['vacía', ''],
     ])('[TC-U-544] rechaza una key %s', (_caso, key) => {
       expect(service.esKeyDePortadaDelTenant(key, 'tenant-123')).toBe(false);
+    });
+
+    it('[TC-U-544] y el logo tampoco acepta una portada', () => {
+      expect(
+        service.esKeyDeMarcaDelTenant(
+          `tenant-123/menu/portada/${UUID}.webp`,
+          'tenant-123',
+        ),
+      ).toBe(false);
     });
   });
 

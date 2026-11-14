@@ -106,6 +106,23 @@ describe('ImagenesMenuService.confirmar (BL-386)', () => {
     });
   });
 
+  it('[TC-U-545] HU-043 (BL-562): con destino portada, hasta 1600 px y en {tenant}/menu/portada/{uuid}.webp', async () => {
+    const resultado = await servicio.confirmar(
+      KEY_CUARENTENA,
+      TENANT,
+      'portada',
+    );
+
+    expect(procesador.procesar).toHaveBeenCalledWith(ORIGINAL, {
+      ladoMaximo: 1600,
+    });
+    expect(storage.guardarImagenPublicada).toHaveBeenCalledWith(
+      `${TENANT}/menu/portada/${UUID}.webp`,
+      PROCESADA,
+    );
+    expect(resultado.key).toBe(`${TENANT}/menu/portada/${UUID}.webp`);
+  });
+
   it('[TC-U-516] HU-043 (BL-532): con destino item, igual que sin destino', async () => {
     const resultado = await servicio.confirmar(KEY_CUARENTENA, TENANT, 'item');
 
