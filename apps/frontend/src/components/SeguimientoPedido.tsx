@@ -152,9 +152,11 @@ export function SeguimientoPedido({
         })}
       </ol>
 
-    <p role="status" className="text-center text-sm font-semibold text-marca mt-4">
+      {/* <output>: rol «status» implícito, el lector de pantalla anuncia
+          cada cambio de estado (Sonar: mejor que role="status"). */}
+      <output className="mt-4 block text-center text-sm font-semibold text-marca">
         {lugarActual ? textoEnCola(lugarActual) : ESTADO_LABEL[estado]}
-      </p>
+      </output>
       {paraRetirar && (
         <AvisoRetiro
           listo={estado === 'LISTO_PARA_ENTREGAR'}
