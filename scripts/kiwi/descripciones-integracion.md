@@ -43,6 +43,7 @@
 | 1.36    | 14/11/2026 | TC-I-199 a 202: pedidos para retirar (HU-040 / BL-210). Se borran los bloques ya cargados (TC-I-206 a 209 y 009).                                                                                                                         |
 | 1.37    | 14/11/2026 | TC-I-210 a 216: pago por link (HU-033 / BL-203). Se borran los bloques de TC-I-199 a 202, ya cargados.                                                                                                                                    |
 | 1.38    | 14/11/2026 | TC-I-217 a 220: marca propia del local (HU-043 / BL-531, 532, 561 y 562): plantilla, logo, nombre y dirección, y portada. Se numeran después de los de HU-033.                                                                            |
+| 1.39    | 14/11/2026 | TC-I-221 y 222: «Sugerencia del local» (HU-044 / BL-537). Se borran los bloques de TC-I-217 a 220, ya cargados.                                                                                                                           |
 
 Texto del campo de descripción de cada caso TC-I en Kiwi. Lo carga
 `cargar-casos-integracion.mjs --descripciones`: cada bloque `## TC-I-NNN`
@@ -54,236 +55,38 @@ esperado`, igual que los casos cargados a mano desde TC-I-029.
 
 ## Casos para cargar
 
-## TC-I-220
+## TC-I-221
 
 ### Precondición
 
-Tenant A del seed con su restaurante. Se anota la portada guardada (o que no tiene).
+Administrador del tenant A del seed (variables TEST_ADMIN_*). Categoría de prueba con el plato «Pancho de prueba», visible en el menú por el enlace web.
 
 ### Pasos
 
-1. Cambiar la configuración con el servicio, con `portadaKey` de una portada del tenant B.
-2. Lo mismo con la key del logo del tenant A (`{tenant}/menu/marca/{uuid}.webp`).
-3. Lo mismo con la key de la foto de un ítem del tenant A (`{tenant}/menu/{uuid}.webp`).
-4. Lo mismo con una key de la cuarentena del tenant A (`incoming/…`).
-5. Buscar en la auditoría los registros `ESTABLECIMIENTO_CONFIGURACION_MODIFICADA` del actor del test y leer la portada guardada.
+1. `PATCH /admin/menu/item/:id` con `{ "destacado": "si" }`.
+2. El mismo `PATCH` con `{ "destacado": true }`.
+3. `GET /menu/tenant/:tenantId/restaurante/:restauranteId` (menú del comensal).
+4. Buscar en la auditoría la acción CARTA_ITEM_MODIFICADO del plato.
+5. `PATCH` con `{ "destacado": false }` y volver a pedir el menú.
 
 ### Resultado esperado
 
-1. 400 «La portada no es válida para este establecimiento».
-2. 400, con el mismo mensaje.
-3. 400, con el mismo mensaje.
-4. 400, con el mismo mensaje.
-5. Ningún registro nuevo y la portada guardada no cambió.
+1. 400: no es un booleano.
+2. 200 con `destacado: true`.
+3. El plato tiene `destacado: true` y la categoría conserva el mismo orden de platos.
+4. Una entrada con `destacado` de `false` a `true`.
+5. El plato tiene `destacado: false`.
 
-## TC-I-219
+## TC-I-222
 
 ### Precondición
 
-Tenant A del seed con su restaurante. El nombre y la dirección guardados se anotan para restaurarlos al terminar.
+Usuario MOZO del test (variables TEST_MOZO_*). La categoría de prueba de TC-I-221.
 
 ### Pasos
 
-1. Cambiar la configuración con el servicio: nombre y dirección nuevos.
-2. Leer el restaurante en la base, con el contexto del tenant.
-3. Buscar en la auditoría los registros `ESTABLECIMIENTO_CONFIGURACION_MODIFICADA` del actor del test.
-4. Pedir la carta pública del restaurante (HU-002).
+1. `PATCH /admin/menu/item/:id` con `{ "destacado": true }` y el token del MOZO.
 
 ### Resultado esperado
 
-1. La respuesta trae el nombre y la dirección nuevos.
-2. Quedaron guardados.
-3. Un solo registro, con los campos `nombre` y `direccion` y sus valores antes y después.
-4. La carta muestra el nombre y la dirección nuevos.
-
-## TC-I-218
-
-### Precondición
-
-Tenant A del seed con su restaurante. Se anota el logo guardado (o que no tiene).
-
-### Pasos
-
-1. Cambiar la configuración con el servicio, con `logoKey` de un logo del tenant B.
-2. Lo mismo con una key de la cuarentena del tenant A (`incoming/…`).
-3. Lo mismo con la key de la foto de un ítem del tenant A (`{tenant}/menu/{uuid}.webp`).
-4. Buscar en la auditoría los registros `ESTABLECIMIENTO_CONFIGURACION_MODIFICADA` del actor del test y leer el logo guardado.
-
-### Resultado esperado
-
-1. 400 «El logo no es válido para este establecimiento».
-2. 400, con el mismo mensaje.
-3. 400, con el mismo mensaje.
-4. Ningún registro nuevo y el logo guardado no cambió.
-
-## TC-I-217
-
-### Precondición
-
-Tenant A del seed con su restaurante. La plantilla de marca guardada se anota para restaurarla al terminar.
-
-### Pasos
-
-1. Cambiar la configuración con el servicio a otra plantilla de la lista (`gourmet`, o `familiar` si ya era `gourmet`).
-2. Leer el restaurante en la base, con el contexto del tenant.
-3. Buscar en la auditoría los registros `ESTABLECIMIENTO_CONFIGURACION_MODIFICADA` del actor del test.
-4. Escribir directo en la base la plantilla `azul`, sin pasar por la API.
-
-### Resultado esperado
-
-1. La respuesta trae la plantilla nueva y las cuatro que se pueden elegir (`clasica`, `gourmet`, `rapida`, `familiar`).
-2. La plantilla nueva quedó guardada.
-3. Un solo registro, con el campo `plantilla` y sus valores antes y después.
-4. La base la rechaza (CHECK `restaurante_plantilla_valida`) y la plantilla guardada no cambia.
-
-## TC-I-210
-
-### Precondición
-
-Tenant A del seed con su mozo y la mesa 71 abierta. Pasarela falsa que aprueba (como el sandbox) y CFE apagado. Pedido de 2 unidades cargado por el mozo (HU-039), en PENDIENTE_PAGO.
-
-### Pasos
-
-1. Generar el link de pago del pedido con el mozo del seed.
-2. Revisar la URL del link.
-3. `POST /auth/comensal/link-pago` con el token del link.
-4. `GET /link-pago` con el JWT del comensal y el header `X-Link-Pago`.
-5. `POST /pedidos/:id/pagos` con el JWT y `X-Link-Pago`.
-6. Volver a abrir el link y consultar `GET /pedidos/:id/pagos` con `X-Link-Pago`.
-
-### Resultado esperado
-
-1. Devuelve la URL `/pagar/<token>` y el vencimiento.
-2. El token tiene 103 caracteres y la URL no contiene el id del tenant, del restaurante, del pedido ni de la mesa.
-3. 200 con el JWT del comensal técnico del tenant.
-4. 200 con el pedido, estado PENDIENTE_PAGO, mesa 71, el consumo y el mismo vencimiento.
-5. 201. El pedido pasa a RECIBIDO con el pago APROBADO (el mismo flujo de HU-007).
-6. 200 en los dos: con el pedido pagado, el link sirve para ver el estado y el comprobante.
-
-## TC-I-211
-
-### Precondición
-
-Igual que TC-I-210, con un pedido nuevo en PENDIENTE_PAGO.
-
-### Pasos
-
-1. Generar un link, abrirlo (`POST /auth/comensal/link-pago`) y guardar el JWT.
-2. Generar otro link del mismo pedido, confirmando el reemplazo (`reemplazar: true`).
-3. Abrir el primer link.
-4. `POST /pedidos/:id/pagos` con el primer link.
-5. Abrir el segundo link.
-
-### Resultado esperado
-
-1. 200.
-2. Devuelve otro link.
-3. 410 con `codigo` LINK_PAGO_REEMPLAZADO y «Este link de pago fue reemplazado por otro. Pedile al mozo el nuevo.».
-4. 403 con el mismo mensaje. La pasarela no cobra: el pedido sigue en PENDIENTE_PAGO y sin pagos.
-5. 200.
-
-## TC-I-212
-
-### Precondición
-
-Igual que TC-I-210, con un pedido nuevo en PENDIENTE_PAGO.
-
-### Pasos
-
-1. Generar un link, abrirlo y guardar el JWT.
-2. Dejar el vencimiento del link en el pasado.
-3. Abrir el link.
-4. `POST /pedidos/:id/pagos` con el link.
-
-### Resultado esperado
-
-1. 200.
-2. —
-3. 410 con `codigo` LINK_PAGO_VENCIDO y «Este link de pago venció. Pedile al mozo uno nuevo.».
-4. 403 con el mismo mensaje. La pasarela no cobra: el pedido sigue en PENDIENTE_PAGO y sin pagos.
-
-## TC-I-213
-
-### Precondición
-
-Igual que TC-I-210, con dos pedidos en PENDIENTE_PAGO (A y B).
-
-### Pasos
-
-1. Generar el link de A, abrirlo y pagar B con ese link.
-2. Abrir el link de A con un carácter cambiado, un token inventado del mismo largo y `../admin`.
-3. Dejar un pago PENDIENTE en B y generar su link.
-4. Cancelar A y generar su link.
-5. Buscar en la auditoría la acción PEDIDO_LINK_PAGO_GENERADO de A.
-
-### Resultado esperado
-
-1. 403: el link de un pedido no sirve para otro. B sigue sin pagos.
-2. 404, 404 y 400, sin decir el motivo.
-3. 409 «Hay un pago en curso para este pedido. Esperá a que se resuelva antes de generar un link.».
-4. 409 «Este pedido ya no espera el pago».
-5. Una sola entrada, sin el token del link.
-
-## TC-I-214
-
-### Precondición
-
-Usuarios MOZO y COCINA del test (variables TEST_MOZO_* y TEST_COCINA_*). Un pedido en PENDIENTE_PAGO.
-
-### Pasos
-
-1. `POST /cobros/pendientes/:id/link-pago` con el token de COCINA.
-2. El mismo pedido con el token del MOZO.
-3. `GET /cobros/pendientes` con el token del MOZO.
-
-### Resultado esperado
-
-1. 403.
-2. 200 con la URL `/pagar/<token>`.
-3. El pedido tiene `linkPagoVenceEn` igual al vencimiento del paso 2, y la respuesta no contiene el token del link.
-
-## TC-I-215
-
-### Precondición
-
-Igual que TC-I-210, con dos pedidos nuevos en PENDIENTE_PAGO (A y B).
-
-### Pasos
-
-1. Generar el link de A (como el mozo A).
-2. Generar otro link de A sin confirmar el reemplazo (el mozo B, con la pantalla desactualizada).
-3. Abrir el link del paso 1.
-4. Generar el link de B dos veces a la vez, sin confirmar el reemplazo.
-5. Abrir el link que se generó en el paso 4 y buscar en la auditoría los links generados de B.
-
-### Resultado esperado
-
-1. Devuelve el link.
-2. 409 con `codigo` LINK_PAGO_ACTIVO y «Ya hay un link de pago activo para este pedido. Si generás otro, el anterior deja de servir.». No se reemplaza nada.
-3. 200: el link del mozo A sigue sirviendo.
-4. Uno devuelve el link y el otro, el mismo 409 LINK_PAGO_ACTIVO.
-5. 200, y una sola entrada de auditoría.
-
-## TC-I-216
-
-### Precondición
-
-Igual que TC-I-210, con un pedido nuevo en PENDIENTE_PAGO.
-
-### Pasos
-
-1. Generar el link, abrirlo, pagar y consultar `GET /pedidos/:id/pagos` con el link.
-2. Dejar el vencimiento del link 24 horas en el pasado.
-3. Abrir el link.
-4. Consultar `GET /pedidos/:id/pagos` con el link.
-5. Abrir el mismo link hasta pasar el límite de 10 por minuto.
-6. Abrir el link de otro pedido.
-
-### Resultado esperado
-
-1. 201 al pagar y 200 al consultar.
-2. —
-3. 410 con `codigo` LINK_PAGO_CADUCADO y «Este link de pago ya no está disponible. Si necesitás el comprobante, pedíselo al local.».
-4. 403 con el mismo mensaje: ya no se puede ver el pedido ni bajar el comprobante (que en una e-Factura tiene el RUT y la razón social del cliente).
-5. Al pasar el límite responde 429.
-6. 200: el límite es por link.
+1. 403: solo el Administrador marca la «Sugerencia del local».

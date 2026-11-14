@@ -39,7 +39,9 @@ import {
   conVersionItem,
   textoArchivados,
   type FiltrosCarta as Filtros,
+  conDestacado,
   conDisponibilidad,
+  etiquetaEstrella,
   conVisibilidad,
   sinCategoria,
   sinItem,
@@ -59,6 +61,10 @@ import {
   DEMORA_AVISO_SIN_CONEXION_MS,
   esDesconexionInesperada,
 } from "@/components/admin/mesas/mapa-mesas.utils";
+import {
+  IconoEstrella,
+  TEXTO_SUGERENCIA_DEL_LOCAL,
+} from "@/components/menu-digital/InsigniaPlato";
 
 const horaActual = () => new Date().toLocaleTimeString("es-UY");
 
@@ -131,6 +137,50 @@ function BadgeAgotado() {
   );
 }
 
+/**
+ * HU-044 (BL-537): rótulo de un plato marcado como «Sugerencia del local».
+ * Ícono y texto, como «Agotado»: el estado no depende del relleno de la
+ * estrella. Es igual a la insignia que ve el comensal con la plantilla
+ * Clásica (fondo #755b00 y texto blanco, 6.46:1), y así no se confunde con
+ * el ámbar claro de «Agotado».
+ */
+function BadgeSugerencia() {
+  return (
+    <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-[#755b00] px-2.5 py-0.5 text-body-sm text-white">
+      <IconoEstrella rellena tamano={14} />
+      <span>{TEXTO_SUGERENCIA_DEL_LOCAL}</span>
+    </span>
+  );
+}
+
+/**
+ * HU-044 (BL-537): estrella para marcar o desmarcar la sugerencia con un
+ * toque (solo ADMIN). 44 × 44 px, nombre fijo y `aria-pressed`.
+ */
+function BotonEstrella({
+  item,
+  onCambiar,
+}: {
+  readonly item: ItemGestion;
+  readonly onCambiar: (itemId: string, actual: boolean) => void;
+}) {
+  const marcado = item.destacado === true;
+  return (
+    <button
+      type="button"
+      aria-pressed={marcado}
+      aria-label={etiquetaEstrella(item)}
+      title={marcado ? "Quitar de las sugerencias" : "Sugerir este plato"}
+      onClick={() => onCambiar(item.id, marcado)}
+      className={`inline-flex h-11 w-11 items-center justify-center rounded-full hover:bg-surface-container focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${
+        marcado ? "text-[#755b00]" : "text-on-surface-variant"
+      }`}
+    >
+      <IconoEstrella rellena={marcado} tamano={22} />
+    </button>
+  );
+}
+
 // ============================================================================
 // TARJETA DE ÍTEM
 // ============================================================================
@@ -139,6 +189,8 @@ interface ItemCardProps {
   readonly categoria: CategoriaGestion;
   readonly onEditar: (categoria: CategoriaGestion, item: ItemGestion) => void;
   readonly onCambiarDisponibilidad: (itemId: string, actual: boolean) => void;
+  // HU-044 (BL-537): «Sugerencia del local» (solo ADMIN).
+  readonly onCambiarDestacado: (itemId: string, actual: boolean) => void;
   readonly onArchivar: (item: ItemGestion) => void;
   // BL-399: mover un lugar dentro de la categoría.
   readonly onMover: (item: ItemGestion, desplazamiento: Desplazamiento) => void;
@@ -162,6 +214,7 @@ function ItemCard({
   categoria,
   onEditar,
   onCambiarDisponibilidad,
+  onCambiarDestacado,
   onArchivar,
   onMover,
   puedeSubir,
@@ -218,40 +271,51 @@ function ItemCard({
                 {item.descripcion}
               </p>
             )}
-            {!item.disponible && (
-              <div className="mt-1">
-                <BadgeAgotado />
+            {(!item.disponible || item.destacado) && (
+              <div className="mt-1 flex flex-wrap gap-2">
+                {!item.disponible && <BadgeAgotado />}
+                {item.destacado && <BadgeSugerencia />}
               </div>
             )}
           </div>
 
-          <div className="flex flex-none items-center gap-1">
-            <Switch
-              checked={item.disponible}
-              onChange={() => onCambiarDisponibilidad(item.id, item.disponible)}
-              label={`${item.nombre} disponible`}
-            />
-            {puedeEditar && (
-              <MenuAcciones
-                etiqueta={`Acciones de ${item.nombre}`}
-                acciones={[
-                  {
-                    id: "editar",
-                    texto: "Editar",
-                    icono: "edit",
-                    onSelect: () => onEditar(categoria, item),
-                  },
-                  ...accionesDeOrden(puedeSubir, puedeBajar, (d) =>
-                    onMover(item, d),
-                  ),
-                  {
-                    id: "archivar",
-                    texto: "Archivar",
-                    icono: "archive",
-                    onSelect: () => onArchivar(item),
-                  },
-                ]}
+          {/* HU-044 (BL-537): en el celular la estrella va debajo del switch,
+              para no achicar el nombre y la descripción; desde sm, en la
+              misma fila. */}
+          <div className="flex flex-none flex-col items-start gap-1 sm:flex-row sm:items-center">
+            <div className="flex items-center gap-1">
+              <Switch
+                checked={item.disponible}
+                onChange={() => onCambiarDisponibilidad(item.id, item.disponible)}
+                label={`${item.nombre} disponible`}
               />
+              {puedeEditar && (
+                <MenuAcciones
+                  etiqueta={`Acciones de ${item.nombre}`}
+                  acciones={[
+                    {
+                      id: "editar",
+                      texto: "Editar",
+                      icono: "edit",
+                      onSelect: () => onEditar(categoria, item),
+                    },
+                    ...accionesDeOrden(puedeSubir, puedeBajar, (d) =>
+                      onMover(item, d),
+                    ),
+                    {
+                      id: "archivar",
+                      texto: "Archivar",
+                      icono: "archive",
+                      onSelect: () => onArchivar(item),
+                    },
+                  ]}
+                />
+              )}
+            </div>
+            {puedeEditar && (
+              <div className="sm:order-first">
+                <BotonEstrella item={item} onCambiar={onCambiarDestacado} />
+              </div>
             )}
           </div>
         </li>
@@ -383,6 +447,17 @@ export default function AdminMenuPage() {
       );
       setUltimaNovedad(`Carta actualizada en tiempo real a las ${horaActual()}`);
     };
+    // HU-044 (BL-537): otro ADMIN marcó o desmarcó una sugerencia. El evento
+    // trae el ítem guardado; solo se toma `destacado` (el resto de la
+    // edición llega al recargar, como hasta ahora).
+    const alActualizarDatosItem = (payload: {
+      itemId: string;
+      data: { destacado?: unknown };
+    }) => {
+      const destacado = payload.data?.destacado;
+      if (typeof destacado !== "boolean") return;
+      setCategorias((prev) => conDestacado(prev, payload.itemId, destacado));
+    };
     const alActualizarCategoria = (data: {
       categoriaId: string;
       activo: boolean;
@@ -416,6 +491,7 @@ export default function AdminMenuPage() {
     const alFallarConexion = () => setSinConexion(true);
 
     socket.on("menu:item:updated", alActualizarItem);
+    socket.on("menu:item:data:updated", alActualizarDatosItem);
     socket.on("menu:categoria:updated", alActualizarCategoria);
     socket.on("menu:item:retirado", alRetirarItem);
     socket.on("menu:categoria:retirada", alRetirarCategoria);
@@ -426,6 +502,7 @@ export default function AdminMenuPage() {
 
     return () => {
       socket.off("menu:item:updated", alActualizarItem);
+      socket.off("menu:item:data:updated", alActualizarDatosItem);
       socket.off("menu:categoria:updated", alActualizarCategoria);
       socket.off("menu:item:retirado", alRetirarItem);
       socket.off("menu:categoria:retirada", alRetirarCategoria);
@@ -480,6 +557,34 @@ export default function AdminMenuPage() {
       setCategorias((prev) => conDisponibilidad(prev, itemId, actual));
       setErrorPagina(
         error instanceof Error ? error.message : "No se pudo actualizar el ítem",
+      );
+    }
+  };
+
+  // HU-044 (BL-537): marcar o desmarcar la «Sugerencia del local». Se ve al
+  // instante y, si la API falla, vuelve a como estaba.
+  const cambiarDestacado = async (itemId: string, actual: boolean) => {
+    setErrorPagina(null);
+    setCategorias((prev) => conDestacado(prev, itemId, !actual));
+    try {
+      const keycloak = getKeycloak();
+      const actualizado = await apiFetch<ItemGestion>(
+        `/admin/menu/item/${itemId}`,
+        keycloak.token,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ destacado: !actual }),
+        },
+      );
+      setCategorias((prev) =>
+        conVersionItem(prev, itemId, actualizado?.updatedAt),
+      );
+    } catch (error: unknown) {
+      setCategorias((prev) => conDestacado(prev, itemId, actual));
+      setErrorPagina(
+        error instanceof Error
+          ? error.message
+          : "No se pudo actualizar la sugerencia",
       );
     }
   };
@@ -1003,6 +1108,7 @@ export default function AdminMenuPage() {
                                 categoria={cat}
                                 onEditar={abrirEditarItem}
                                 onCambiarDisponibilidad={cambiarDisponibilidad}
+                                onCambiarDestacado={cambiarDestacado}
                                 onArchivar={(i) =>
                                   setAArchivar({ tipo: "item", id: i.id, nombre: i.nombre })
                                 }

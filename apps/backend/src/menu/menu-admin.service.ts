@@ -24,9 +24,16 @@ import { Prisma, PrismaClient } from '@prisma/client';
 /** Precio tal como llega: decimal de Prisma, texto del DTO o vacío. */
 type PrecioCarta = Prisma.Decimal | string | null;
 
+type CamposAuditados = {
+  precio?: PrecioCarta;
+  disponible?: boolean;
+  // HU-044 (BL-537): «Sugerencia del local».
+  destacado?: boolean;
+};
+
 export function camposCambiados(
-  antes: { precio?: PrecioCarta; disponible?: boolean },
-  despues: { precio?: PrecioCarta; disponible?: boolean },
+  antes: CamposAuditados,
+  despues: CamposAuditados,
 ): { antes: Record<string, unknown>; despues: Record<string, unknown> } {
   const a: Record<string, unknown> = {};
   const d: Record<string, unknown> = {};
@@ -45,6 +52,14 @@ export function camposCambiados(
   ) {
     a.disponible = antes.disponible;
     d.disponible = despues.disponible;
+  }
+  if (
+    antes.destacado !== undefined &&
+    despues.destacado !== undefined &&
+    antes.destacado !== despues.destacado
+  ) {
+    a.destacado = antes.destacado;
+    d.destacado = despues.destacado;
   }
   return { antes: a, despues: d };
 }
@@ -218,13 +233,8 @@ export class MenuAdminService {
     tx: PrismaClient,
     tenantId: string,
     actorKeycloakId: string | undefined,
-    antes: {
-      id: string;
-      nombre: string;
-      precio?: PrecioCarta;
-      disponible?: boolean;
-    },
-    despues: { precio?: PrecioCarta; disponible?: boolean },
+    antes: { id: string; nombre: string } & CamposAuditados,
+    despues: CamposAuditados,
     accion: AuditAction = AuditAction.CARTA_ITEM_MODIFICADO,
   ): Promise<void> {
     const cambios = camposCambiados(antes, despues);

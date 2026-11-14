@@ -26,8 +26,10 @@ import {
   filtrarCarta,
   hayFiltrosCarta,
   textoResultadoFiltros,
+  conDestacado,
   conDisponibilidad,
   conVisibilidad,
+  etiquetaEstrella,
   sinCategoria,
   sinItem,
   textoContadorCarta,
@@ -394,6 +396,50 @@ describe("Gestión de Carta: arrastrar para ordenar (BL-399)", () => {
     );
     expect(anuncioCancelado("Flan")).toBe(
       "Cancelaste. «Flan» volvió a su lugar.",
+    );
+  });
+});
+
+describe("Gestión de Carta: «Sugerencia del local» (HU-044, BL-537)", () => {
+  const sugerido = (id: string, disponible = true): ItemGestion => ({
+    ...item(id, disponible),
+    destacado: true,
+  });
+
+  it("marca y desmarca un ítem, esté en la categoría que esté", () => {
+    const marcada = conDestacado(CARTA, "c", true);
+    expect(marcada[1].items[0].destacado).toBe(true);
+    expect(marcada[0].items.every((i) => !i.destacado)).toBe(true);
+    expect(conDestacado(marcada, "c", false)[1].items[0].destacado).toBe(false);
+  });
+
+  it("el contador nombra las sugerencias solo si hay", () => {
+    expect(textoContadorCarta(CARTA)).toBe("3 ítems · 1 agotado");
+    expect(
+      textoContadorCarta([categoria("c1", [sugerido("a"), item("b")])]),
+    ).toBe("2 ítems · 1 sugerencia");
+    expect(
+      textoContadorCarta([
+        categoria("c1", [sugerido("a"), sugerido("b", false), item("c", false)]),
+      ]),
+    ).toBe("3 ítems · 2 agotados · 2 sugerencias");
+  });
+
+  it("el filtro «Sugerencias» deja solo los platos marcados", () => {
+    const carta = [
+      categoria("c1", [sugerido("a"), item("b")]),
+      categoria("c2", [item("c")]),
+    ];
+    const filtradas = filtrarCarta(carta, {
+      ...FILTROS_CARTA_INICIALES,
+      estado: "SUGERENCIAS",
+    });
+    expect(filtradas.map((c) => c.items.map((i) => i.id))).toEqual([["a"]]);
+  });
+
+  it("la estrella tiene un nombre fijo con el plato (el estado va en aria-pressed)", () => {
+    expect(etiquetaEstrella({ nombre: "Flan casero" })).toBe(
+      "Sugerencia del local: Flan casero",
     );
   });
 });

@@ -39,6 +39,7 @@
 | 1.31 | 12/11/2026 | Se borran los bloques de TC-E-108 a 111, ya cargados en Kiwi. TC-E-098 y 099: pedido para retirar con código, aviso de listo y entrega con código (HU-040, BL-210). |
 | 1.32 | 14/11/2026 | Se borran los bloques de TC-E-098 y 099, ya cargados en Kiwi. TC-E-112 y 113: pago por link (HU-033 / BL-203). |
 | 1.33 | 14/11/2026 | TC-E-114 a 116: marca propia del local, de Configuración a la carta, y la sección «Marca del local» en un celular de 360 px (HU-043 / BL-535). |
+| 1.34 | 14/11/2026 | Se borran los bloques de TC-E-114 a 116, ya cargados en Kiwi. TC-E-117: «Sugerencia del local» (HU-044 / BL-537). |
 
 Plantilla para cargar en Kiwi la descripción de casos TC-E (Playwright)
 nuevos o que cambiaron (BL-435). La usa
@@ -83,102 +84,22 @@ Reglas:
 
 ## Casos para cargar
 
-## TC-E-112
+## TC-E-117
 
 ### Precondición
 
-Sesión de Mozo en staging. El comensal arma un pedido para retirar por el enlace web y se queda en «Pagá tu pedido» (PENDIENTE_PAGO).
+Sesiones de Administrador y de Mozo en staging. El test crea por la API una categoría con un plato «Flan del chef E2E …» y la elimina al terminar.
 
 ### Pasos
 
-1. El mozo abre «Cobros pendientes» y toca «Link de pago» en el pedido.
-2. Analizar el diálogo con axe-core.
-3. Tocar «Listo».
-4. Abrir el link en otro navegador con pantalla de celular (390 × 844).
+1. El administrador abre «Gestión de Carta» y toca la estrella del plato.
+2. Recargar la carta y elegir el filtro «Sugerencias». Analizar la pantalla con axe-core.
+3. El mozo abre «Gestión de Carta».
+4. Abrir el menú del local por el enlace web con pantalla de celular (390 × 844) y analizarlo con axe-core.
 
 ### Resultado esperado
 
-1. El diálogo muestra el QR del link, la URL para copiar (`/pagar/<token>`) y «Vence a las HH:MM».
-2. Sin errores graves ni críticos de accesibilidad.
-3. En la fila del pedido se ve «Link de pago activo hasta las HH:MM».
-4. Se ve «Pagá tu pedido» con el plato y el pago con tarjeta, sin «Volver a la carta» y sin la opción de efectivo.
-
-## TC-E-113
-
-### Precondición
-
-Igual que TC-E-112.
-
-### Pasos
-
-1. El mozo genera el link del pedido y toca «Listo».
-2. Vuelve a tocar «Link de pago» en el mismo pedido y confirma «Generar otro link».
-3. Abrir el primer link en otro navegador.
-4. Abrir el segundo link.
-
-### Resultado esperado
-
-1. Se ve la URL del link.
-2. Antes de generar avisa que el anterior deja de servir; después muestra otra URL.
-3. «Este link de pago fue reemplazado.»
-4. «Pagá tu pedido».
-
-## TC-E-114
-
-### Precondición
-
-Sesión de Administrador en staging. El local del seed con la plantilla Clásica, sin logo ni portada.
-
-### Pasos
-
-1. Abrir Configuración → «Marca del local».
-2. En «Estilo del menú», poner el foco en «Clásica» y apretar la flecha derecha.
-3. Subir un logo PNG (64 × 64 px, fondo transparente) y tocar «Guardar cambios».
-4. Abrir la carta por el enlace web.
-5. Al terminar, el test deja la plantilla en Clásica y quita el logo.
-
-### Resultado esperado
-
-1. Hay 4 plantillas en un grupo de botones de opción.
-2. Queda elegida «Gourmet», con el foco en ella y el texto «Elegida».
-3. Aparece «El logo nuevo se aplica al guardar los cambios.» y después «Cambios guardados.».
-4. En la barra de arriba está el logo del local (en lugar de «BistroLink») y la carta usa los colores de la Gourmet.
-
-## TC-E-115
-
-### Precondición
-
-Igual que TC-E-114.
-
-### Pasos
-
-1. En «Marca del local», cambiar el nombre del local.
-2. Subir una foto de portada horizontal (PNG de 160 × 90 px) y tocar «Guardar cambios».
-3. Abrir la carta por el enlace web.
-4. Al terminar, el test deja el nombre original y quita la portada.
-
-### Resultado esperado
-
-1. La vista previa del banner («Celular» y «Computadora») muestra el nombre nuevo.
-2. Aparece «La portada nueva se aplica al guardar los cambios.» y después «Cambios guardados.».
-3. El título de la carta y la pestaña del navegador tienen el nombre nuevo, y el banner muestra la portada completa.
-
-## TC-E-116
-
-### Precondición
-
-Sesión de Administrador en staging. Solo lee: no cambia la configuración.
-
-### Pasos
-
-1. Abrir Configuración en una pantalla de 360 × 800 px.
-2. Ir a «Marca del local».
-3. Medir las tarjetas de «Estilo del menú».
-4. Analizar la sección con axe-core (WCAG 2.1 AA).
-
-### Resultado esperado
-
-1. La página no tiene scroll horizontal.
-2. «Estilo del menú» es un grupo con 4 botones de opción y uno elegido.
-3. Cada tarjeta mide al menos 44 × 44 px.
-4. Sin errores graves ni críticos de accesibilidad.
+1. La estrella queda presionada (`aria-pressed="true"`) y la tarjeta muestra «Sugerencia del local».
+2. Sigue marcada y el filtro muestra el plato. Sin errores graves ni críticos de accesibilidad.
+3. No ve la estrella del plato.
+4. La tarjeta del plato muestra la insignia «Sugerencia del local», con el color de acento de la plantilla del local. Sin errores graves ni críticos de accesibilidad.

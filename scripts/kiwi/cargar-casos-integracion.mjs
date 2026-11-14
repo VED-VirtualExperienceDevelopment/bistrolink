@@ -228,6 +228,13 @@ const gestionCarta = (ticket, extra = {}) => ({
   ...extra,
   tags: ["HU-005", "BL-392", ticket, ...(extra.tags ?? [])],
 });
+// HU-044 (BL-537): «Sugerencia del local», en gestion-carta.e2e-spec.ts.
+const sugerenciaLocal = (extra = {}) => ({
+  component: "api",
+  requirement: "HU-044",
+  ...extra,
+  tags: ["HU-044", "BL-537", "carta", ...(extra.tags ?? [])],
+});
 // HU-020 (BL-72): configuración del establecimiento, en
 // configuracion-establecimiento.e2e-spec.ts.
 // BL-448: avisos de efectivo que no se pierden en el KDS (HU-031b).
@@ -1020,6 +1027,17 @@ const DATOS_INTEGRACION = {
     priority: "P1",
     tags: ["seguridad", "privacidad", "rate-limiting", "Ley-18331"],
   }),
+  // HU-044 (BL-537): «Sugerencia del local».
+  221: sugerenciaLocal({
+    category: "Funcional",
+    priority: "P2",
+    tags: ["auditoria", "menu-publico"],
+  }),
+  222: sugerenciaLocal({
+    category: "Seguridad",
+    priority: "P2",
+    tags: ["seguridad", "roles"],
+  }),
 };
 /**
  * BL-435: datos de los E2E TC-E-017 en adelante, con los criterios de
@@ -1554,6 +1572,12 @@ const DATOS_E2E = {
     category: "Accesibilidad",
     priority: "P2",
     tags: ["BL-533", "marca", "responsive", ...axe],
+  }),
+  // HU-044 (BL-537): «Sugerencia del local», en admin/gestion-carta.spec.ts.
+  117: e2e("carta", "HU-044", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-537", "roles", "responsive", ...axe],
   }),
 };
 /**

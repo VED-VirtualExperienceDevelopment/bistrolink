@@ -9,6 +9,8 @@ export interface ItemCarta {
   precio: number;
   disponible: boolean;
   imagenUrl?: string;
+  /** HU-044 (BL-537): «Sugerencia del local». */
+  destacado?: boolean;
 }
 
 export interface CategoriaCarta {

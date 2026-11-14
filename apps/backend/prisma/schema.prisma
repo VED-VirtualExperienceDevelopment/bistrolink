@@ -366,6 +366,9 @@ model ItemCarta {
   controlaStock Boolean   @default(false) @map("controla_stock")
   stockActual   Int       @default(0) @map("stock_actual")
   umbralAlerta  Int       @default(5) @map("umbral_alerta")
+  // HU-044 (BL-537): «Sugerencia del local». Lo marca el ADMIN; el comensal
+  // ve la insignia, sin cambiar el orden de la carta.
+  destacado     Boolean   @default(false)
   createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 

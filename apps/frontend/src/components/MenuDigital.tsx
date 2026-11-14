@@ -70,6 +70,8 @@ import type {
   RetiroPublico,
 } from "@/components/retiro/retiro.utils";
 import { useRetiroEnCarta } from "@/components/retiro/useRetiroEnCarta";
+import { InsigniaPlato } from "@/components/menu-digital/InsigniaPlato";
+import { insigniasDelPlato } from "@/components/menu-digital/insignias.utils";
 
 const ItemNotaModal = dynamic(() => import("@/components/ItemNotaModal"), {
   ssr: false,
@@ -98,6 +100,8 @@ export type ItemMenu = {
   precio: string | number;
   disponible: boolean;
   imagenUrl: string | null;
+  /** HU-044 (BL-537): «Sugerencia del local». Opcional para un backend anterior. */
+  destacado?: boolean;
 };
 
 export type CategoriaMenu = {
@@ -809,6 +813,19 @@ export default function MenuDigital({
                                   {formatearPrecio(item.precio)}
                                 </span>
                               </div>
+                              {/* HU-044 (BL-537): después del nombre (el lector
+                                  oye primero el plato). Agotado: solo «No
+                                  disponible». */}
+                              {insigniasDelPlato(item).length > 0 && (
+                                <div className="mb-2 flex flex-wrap gap-2">
+                                  {insigniasDelPlato(item).map((variante) => (
+                                    <InsigniaPlato
+                                      key={variante}
+                                      variante={variante}
+                                    />
+                                  ))}
+                                </div>
+                              )}
                               {item.descripcion && (
                                 <p className="text-sm text-[#5a575e] mb-4 line-clamp-2">
                                   {item.descripcion}
