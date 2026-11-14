@@ -11,6 +11,8 @@ import type { PlantillaMarca } from '../configuracion/plantillas-marca';
 export interface MarcaPublica {
   /** null si el local no tiene logo: la carta muestra el nombre. */
   logoUrl: string | null;
+  /** HU-043 (BL-562): null = la portada por defecto del banner. */
+  portadaUrl: string | null;
   plantilla: PlantillaMarca;
 }
 import { retiroPublico } from '../pedidos/retiro';
@@ -150,14 +152,18 @@ export class MenuService {
     });
   }
 
-  /** HU-043 (BL-532): el logo y la plantilla del local. */
+  /** HU-043 (BL-532 y BL-562): el logo, la portada y la plantilla del local. */
   private async marcaDe(restaurante: {
     logoKey: string | null;
+    portadaKey: string | null;
     plantilla: string;
   }): Promise<MarcaPublica> {
     return {
       logoUrl: restaurante.logoKey
         ? await this.storage.urlImagenPublica(restaurante.logoKey)
+        : null,
+      portadaUrl: restaurante.portadaKey
+        ? await this.storage.urlImagenPublica(restaurante.portadaKey)
         : null,
       // La columna es texto (con CHECK): acá se acota al tipo.
       plantilla: restaurante.plantilla as PlantillaMarca,
