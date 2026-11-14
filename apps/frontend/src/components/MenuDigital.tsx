@@ -44,7 +44,7 @@ import {
 } from "@/components/menu-digital.utils";
 import type { MarcaPublica, PedidoConfirmado } from "@/types/menu";
 import { variablesDeMarca } from "@/lib/plantillas-marca";
-import { PORTADA_POR_DEFECTO } from "@/lib/portada-por-defecto";
+import { ImagenDePortada, LogoDelLocal } from "@/components/MarcaDelLocal";
 import {
   firmaCarrito,
   formatearPrecio,
@@ -674,24 +674,8 @@ export default function MenuDigital({
     >
       <nav className="fixed top-0 w-full z-50 flex justify-between items-center px-4 md:px-8 h-16 bg-white border-b border-culinary-neutral/15">
         <div className="flex min-w-0 items-center gap-4">
-          {marca?.logoUrl ? (
-            // HU-043 (BL-534): logo del local, en una caja de tamaño fijo
-            // para que la barra no salte al cargarlo. No compite con la
-            // imagen principal (LCP): sin prioridad alta.
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={marca.logoUrl}
-              alt={restaurante.nombre}
-              width={160}
-              height={40}
-              decoding="async"
-              className="h-10 w-32 md:w-40 object-contain object-left"
-            />
-          ) : (
-            <span className="text-xl md:text-2xl font-bold text-marca">
-              BistroLink
-            </span>
-          )}
+          {/* HU-043 (BL-534): el logo del local, o «BistroLink». */}
+          <LogoDelLocal logoUrl={marca?.logoUrl} nombre={restaurante.nombre} />
         </div>
         <div className="flex items-center gap-2 md:gap-4 text-marca">
           {/* BL-502: en el celular, solo el ícono y la cantidad. */}
@@ -743,41 +727,9 @@ export default function MenuDigital({
             <section className="w-full">
               <div className="relative w-full h-[250px] md:h-[350px] rounded-[1rem] overflow-hidden group bg-foreground">
                 {/* LCP de la página: <img> en vez de background-image para que el
-                navegador la descubra temprano, le dé prioridad alta y elija un
-                tamaño acorde a la pantalla (Unsplash redimensiona por URL).
-                Antes bajaba siempre 1974 px (~580 KB) y el LCP en mobile
-                quedaba en ~6,5 s. Decorativa: el nombre ya está en el <h1>. */}
-                {/* HU-043 (BL-562): la portada del local (un WebP de hasta
-                1600 px, por la CDN) o la de por defecto en varios tamaños.
-                La del local se ve COMPLETA (object-contain): puede tener el
-                logo o un texto que no se puede cortar, y el banner cambia de
-                proporción entre el celular y la PC. Lo que sobra se llena con
-                la misma foto difuminada (misma URL: se baja una sola vez). */}
-                {marca?.portadaUrl && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={marca.portadaUrl}
-                    alt=""
-                    loading="eager"
-                    decoding="async"
-                    className="absolute inset-0 w-full h-full object-cover scale-110 blur-2xl opacity-80"
-                  />
-                )}
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={marca?.portadaUrl ?? PORTADA_POR_DEFECTO.src}
-                  srcSet={
-                    marca?.portadaUrl ? undefined : PORTADA_POR_DEFECTO.srcSet
-                  }
-                  sizes="(min-width: 1440px) 1376px, calc(100vw - 2rem)"
-                  alt=""
-                  fetchPriority="high"
-                  loading="eager"
-                  decoding="async"
-                  className={`absolute inset-0 w-full h-full object-center transition-transform duration-700 group-hover:scale-105 ${
-                    marca?.portadaUrl ? "object-contain" : "object-cover"
-                  }`}
-                />
+                navegador la descubra temprano y le dé prioridad alta (BL-450).
+                HU-043 (BL-562): la portada del local o la de por defecto. */}
+                <ImagenDePortada portadaUrl={marca?.portadaUrl} />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-black/10"></div>
 
                 <div className="absolute bottom-0 left-0 p-6 md:p-8 w-full flex flex-col justify-end">
