@@ -35,7 +35,13 @@ describe('mapItemToDto', () => {
       disponible: true,
       imagenUrl: 'https://s3.example.com/firmada',
       destacado: false,
+      masPedido: false,
     });
+  });
+
+  it('HU-045 (BL-547): marca el plato como «Más pedido» solo si se le pasa', () => {
+    expect(mapItemToDto(itemBase(), null, true).masPedido).toBe(true);
+    expect(mapItemToDto(itemBase(), null).masPedido).toBe(false);
   });
 
   it('HU-044 (BL-537): propaga la «Sugerencia del local», también si está agotado', () => {

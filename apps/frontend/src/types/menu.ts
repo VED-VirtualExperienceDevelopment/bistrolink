@@ -11,6 +11,8 @@ export interface ItemCarta {
   imagenUrl?: string;
   /** HU-044 (BL-537): «Sugerencia del local». */
   destacado?: boolean;
+  /** HU-045 (BL-548): entre los 3 más pedidos (lo calcula la API). */
+  masPedido?: boolean;
 }
 
 export interface CategoriaCarta {

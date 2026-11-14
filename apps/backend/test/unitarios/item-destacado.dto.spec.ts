@@ -44,3 +44,25 @@ describe('CreateItemDto: destacado (HU-044)', () => {
     ]);
   });
 });
+
+describe('HU-045 (BL-547): «Más pedido» no se fija a mano', () => {
+  // Con las opciones del ValidationPipe de main.ts, un campo que no está en
+  // el DTO hace que la API responda 400.
+  const OPCIONES = { whitelist: true, forbidNonWhitelisted: true };
+  const erroresEstrictos = async <T extends object>(
+    clase: new () => T,
+    plano: object,
+  ) =>
+    (await validate(plainToInstance(clase, plano), OPCIONES)).map(
+      (e) => e.property,
+    );
+
+  it('masPedido en el alta o en la edición del plato se rechaza', async () => {
+    expect(
+      await erroresEstrictos(CreateItemDto, { ...ALTA, masPedido: true }),
+    ).toEqual(['masPedido']);
+    expect(await erroresEstrictos(UpdateItemDto, { masPedido: true })).toEqual([
+      'masPedido',
+    ]);
+  });
+});

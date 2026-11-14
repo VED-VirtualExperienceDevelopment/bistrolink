@@ -102,6 +102,8 @@ export type ItemMenu = {
   imagenUrl: string | null;
   /** HU-044 (BL-537): «Sugerencia del local». Opcional para un backend anterior. */
   destacado?: boolean;
+  /** HU-045 (BL-548): entre los 3 más pedidos (lo calcula la API). */
+  masPedido?: boolean;
 };
 
 export type CategoriaMenu = {

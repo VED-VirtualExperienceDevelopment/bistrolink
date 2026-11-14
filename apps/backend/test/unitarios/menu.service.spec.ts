@@ -63,6 +63,8 @@ describe('MenuService - getMenuByRestaurante (HU-002)', () => {
 
   beforeEach(async () => {
     mockTx = {
+      // HU-045 (BL-547): sin ventas, ningún plato es «Más pedido».
+      $queryRaw: jest.fn().mockResolvedValue([]),
       restaurante: {
         findUnique: jest.fn(),
       },
@@ -381,6 +383,7 @@ describe('MenuService - getMenuByMesa (HU-001)', () => {
 
   beforeEach(async () => {
     mockTx = {
+      $queryRaw: jest.fn().mockResolvedValue([]),
       mesa: {
         findUnique: jest.fn(),
       },
@@ -620,5 +623,98 @@ describe('MenuService - getPrivacidad (HU-036, BL-206)', () => {
     await expect(service.getPrivacidad(TENANT_ID)).rejects.toThrow(
       NotFoundException,
     );
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// HU-045 (BL-547): «Más pedido» en el menú del comensal
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('MenuService - «Más pedido» (HU-045)', () => {
+  let service: MenuService;
+  let mockTx: any;
+
+  const restaurante = buildRestaurante();
+  const flan = buildItem({ nombre: 'Flan' });
+  const milanesa = buildItem({ nombre: 'Milanesa' });
+  const archivado = buildItem({ nombre: 'Archivado' });
+
+  beforeEach(async () => {
+    mockTx = {
+      $queryRaw: jest.fn().mockResolvedValue([{ item_carta_id: milanesa.id }]),
+      restaurante: { findUnique: jest.fn().mockResolvedValue(restaurante) },
+      mesa: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: randomUUID(),
+          restauranteId: restaurante.id,
+          restaurante,
+        }),
+      },
+      categoriaCarta: {
+        findMany: jest
+          .fn()
+          .mockResolvedValue([buildCategoria({ items: [flan, milanesa] })]),
+      },
+    };
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        MenuService,
+        {
+          provide: TenantPrismaService,
+          useValue: {
+            runInTenantContext: jest.fn(async (_t: string, cb: any) =>
+              cb(mockTx),
+            ),
+          },
+        },
+        {
+          provide: StorageService,
+          useValue: { urlImagenPublica: jest.fn() },
+        },
+      ],
+    }).compile();
+    service = module.get(MenuService);
+  });
+
+  const marcados = (menu: any) =>
+    menu.categorias
+      .flatMap((c: any) => c.items)
+      .filter((i: any) => i.masPedido)
+      .map((i: any) => i.nombre);
+
+  it('por enlace web y por QR, marca solo los platos que devuelve el ranking', async () => {
+    expect(
+      marcados(
+        await service.getMenuByRestaurante(
+          restaurante.tenantId,
+          restaurante.id,
+        ),
+      ),
+    ).toEqual(['Milanesa']);
+    expect(
+      marcados(await service.getMenuByMesa(restaurante.tenantId, randomUUID())),
+    ).toEqual(['Milanesa']);
+  });
+
+  it('el ranking se pide con el tenant y solo con los platos de esta carta', async () => {
+    await service.getMenuByRestaurante(restaurante.tenantId, restaurante.id);
+
+    const sql = mockTx.$queryRaw.mock.calls[0][0];
+    expect(sql.values).toEqual(
+      expect.arrayContaining([restaurante.tenantId, flan.id, milanesa.id]),
+    );
+    expect(sql.values).not.toContain(archivado.id);
+  });
+
+  it('si el ranking falla, la carta se muestra igual, sin la insignia', async () => {
+    mockTx.$queryRaw.mockRejectedValue(new Error('timeout'));
+
+    const menu = await service.getMenuByRestaurante(
+      restaurante.tenantId,
+      restaurante.id,
+    );
+
+    expect(marcados(menu)).toEqual([]);
+    expect(menu.categorias[0].items).toHaveLength(2);
   });
 });
