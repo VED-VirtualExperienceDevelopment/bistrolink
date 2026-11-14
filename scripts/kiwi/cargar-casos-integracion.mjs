@@ -928,6 +928,13 @@ const DATOS_INTEGRACION = {
     requirement: "HU-043",
     tags: ["HU-043", "BL-531", "marca", "auditoria", "validacion"],
   }),
+  // HU-043 (BL-532): el logo tiene que ser un logo publicado del tenant.
+  211: configuracionEstablecimiento({
+    category: "Seguridad",
+    priority: "P2",
+    requirement: "HU-043",
+    tags: ["HU-043", "BL-532", "marca", "imagenes", "validacion"],
+  }),
 };
 /**
  * BL-435: datos de los E2E TC-E-017 en adelante, con los criterios de

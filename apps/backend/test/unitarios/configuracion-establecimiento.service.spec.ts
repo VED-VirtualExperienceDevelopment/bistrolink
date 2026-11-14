@@ -9,6 +9,7 @@ import { TenantPrismaService } from '../../src/prisma/tenant-prisma.service';
 import { AuditLogService } from '../../src/audit-log/audit-log.service';
 import { AuditAction } from '../../src/audit-log/audit-action.enum';
 import { KdsGateway } from '../../src/pedidos/kds.gateway';
+import { StorageService } from '../../src/menu/storage.service';
 
 /**
  * HU-020 (BL-72): configuración del establecimiento. Lo que se escribe, en
@@ -40,7 +41,14 @@ const RESTAURANTE_ACTUAL = {
   minutosEsperaDemoraAlta: 120,
   // HU-043 (BL-531): plantilla de marca por defecto.
   plantilla: 'clasica',
+  // HU-043 (BL-532): sin logo.
+  logoKey: null as string | null,
 };
+
+// HU-043 (BL-532): un logo publicado del tenant y otro de un ítem.
+const UUID_LOGO = '0b4f6a3e-1111-4c2d-9e8f-123456789abc';
+const KEY_LOGO = `${TENANT_ID}/menu/marca/${UUID_LOGO}.webp`;
+const URL_LOGO = 'https://firmada.example/logo.webp';
 
 describe('ConfiguracionEstablecimientoService (HU-020, BL-72)', () => {
   let contextos: string[];
@@ -50,6 +58,11 @@ describe('ConfiguracionEstablecimientoService (HU-020, BL-72)', () => {
     emitirPedidoActualizado: jest.Mock;
     avisarEstadoCola: jest.Mock;
     emitirUmbralesEspera: jest.Mock;
+  };
+  let storage: {
+    esKeyDeMarcaDelTenant: jest.Mock;
+    existeImagen: jest.Mock;
+    urlFirmadaDeLectura: jest.Mock;
   };
   let service: ConfiguracionEstablecimientoService;
 
@@ -90,10 +103,20 @@ describe('ConfiguracionEstablecimientoService (HU-020, BL-72)', () => {
       avisarEstadoCola: jest.fn().mockResolvedValue(undefined),
       emitirUmbralesEspera: jest.fn(),
     };
+    // HU-043 (BL-532): el formato de la key se prueba en storage.service.spec.
+    storage = {
+      esKeyDeMarcaDelTenant: jest.fn(
+        (key: string, tenantId: string) =>
+          key === `${tenantId}/menu/marca/${UUID_LOGO}.webp`,
+      ),
+      existeImagen: jest.fn().mockResolvedValue(true),
+      urlFirmadaDeLectura: jest.fn().mockResolvedValue(URL_LOGO),
+    };
     service = new ConfiguracionEstablecimientoService(
       tenantPrisma as unknown as TenantPrismaService,
       auditLog as unknown as AuditLogService,
       kdsGateway as unknown as KdsGateway,
+      storage as unknown as StorageService,
     );
   });
 
@@ -102,10 +125,14 @@ describe('ConfiguracionEstablecimientoService (HU-020, BL-72)', () => {
       const configuracion = await service.obtener(TENANT_ID);
 
       expect(contextos).toEqual([TENANT_ID]);
+      // HU-043 (BL-532): el logo va como URL; la key no se devuelve.
+      const restaurante: Record<string, unknown> = { ...RESTAURANTE_ACTUAL };
+      delete restaurante.logoKey;
       expect(configuracion).toEqual({
         razonSocial: RAZON_SOCIAL,
         rut: RUT,
-        ...RESTAURANTE_ACTUAL,
+        ...restaurante,
+        logoUrl: null,
         mediosPagoDisponibles: ['EFECTIVO', 'MERCADOPAGO', 'POS'],
         proveedoresCfeDisponibles: ['SURTEC'],
         // HU-043 (BL-531): la plantilla y las que se pueden elegir.
@@ -535,6 +562,91 @@ describe('ConfiguracionEstablecimientoService (HU-020, BL-72)', () => {
       expect(tx.restaurante.update).not.toHaveBeenCalled();
       expect(auditLog.registrarEnTx).not.toHaveBeenCalled();
       expect(configuracion.plantilla).toBe('clasica');
+    });
+
+    it('[TC-U-520] HU-043 (BL-532): un logo publicado del tenant se guarda, se audita con antes y después y se responde como URL firmada', async () => {
+      const configuracion = await service.actualizar(
+        TENANT_ID,
+        { logoKey: KEY_LOGO },
+        ACTOR,
+      );
+
+      expect(storage.existeImagen).toHaveBeenCalledWith(KEY_LOGO);
+      expect(tx.restaurante.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { logoKey: KEY_LOGO } }),
+      );
+      expect(auditLog.registrarEnTx).toHaveBeenCalledWith(
+        tx,
+        expect.objectContaining({
+          detalle: { campos: ['logoKey'] },
+          antes: { logoKey: null },
+          despues: { logoKey: KEY_LOGO },
+        }),
+      );
+      expect(storage.urlFirmadaDeLectura).toHaveBeenCalledWith(KEY_LOGO);
+      expect(configuracion.logoUrl).toBe(URL_LOGO);
+      expect(configuracion).not.toHaveProperty('logoKey');
+      expect(kdsGateway.avisarEstadoCola).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      [
+        'de otro tenant',
+        `bbbbbbbb-2222-4222-8222-222222222222/menu/marca/${UUID_LOGO}.webp`,
+      ],
+      ['de un ítem de la carta', `${TENANT_ID}/menu/${UUID_LOGO}.webp`],
+      ['de la cuarentena', `incoming/${TENANT_ID}/${UUID_LOGO}`],
+    ])(
+      '[TC-U-521] HU-043 (BL-532): una key %s da 400 sin abrir la transacción',
+      async (_caso, logoKey) => {
+        await expect(
+          service.actualizar(TENANT_ID, { logoKey }, ACTOR),
+        ).rejects.toThrow(
+          new BadRequestException(
+            'El logo no es válido para este establecimiento',
+          ),
+        );
+        expect(storage.existeImagen).not.toHaveBeenCalled();
+        expect(contextos).toEqual([]);
+        expect(auditLog.registrarEnTx).not.toHaveBeenCalled();
+      },
+    );
+
+    it('[TC-U-521] HU-043 (BL-532): un logo que no está en el bucket da 400 sin abrir la transacción', async () => {
+      storage.existeImagen.mockResolvedValue(false);
+
+      await expect(
+        service.actualizar(TENANT_ID, { logoKey: KEY_LOGO }, ACTOR),
+      ).rejects.toThrow(
+        new BadRequestException('El logo indicado no existe. Volvé a subirlo.'),
+      );
+      expect(contextos).toEqual([]);
+    });
+
+    it('[TC-U-522] HU-043 (BL-532): null quita el logo, sin consultar el bucket', async () => {
+      tx.restaurante.findUnique.mockResolvedValue({
+        ...RESTAURANTE_ACTUAL,
+        logoKey: KEY_LOGO,
+      });
+
+      const configuracion = await service.actualizar(
+        TENANT_ID,
+        { logoKey: null },
+        ACTOR,
+      );
+
+      expect(storage.existeImagen).not.toHaveBeenCalled();
+      expect(tx.restaurante.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { logoKey: null } }),
+      );
+      expect(auditLog.registrarEnTx).toHaveBeenCalledWith(
+        tx,
+        expect.objectContaining({
+          antes: { logoKey: KEY_LOGO },
+          despues: { logoKey: null },
+        }),
+      );
+      expect(configuracion.logoUrl).toBeNull();
     });
   });
 });

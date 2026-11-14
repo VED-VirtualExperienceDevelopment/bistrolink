@@ -232,11 +232,24 @@ describe('ActualizarConfiguracionDto (HU-020, BL-72)', () => {
         expect(await errores({ plantilla })).toEqual(['plantilla']);
       },
     );
+  });
 
-    it('[TC-U-510] no acepta el logo por este campo: lo sube BL-532', async () => {
-      expect(await errores({ logoKey: 'otro-tenant/logo.webp' })).toEqual([
-        'logoKey',
-      ]);
+  describe('HU-043 (BL-532): logo del local', () => {
+    it('[TC-U-519] acepta una key (la controla el servicio) y null para quitarlo', async () => {
+      expect(
+        await errores({
+          logoKey:
+            '11111111-1111-1111-1111-111111111111/menu/marca/0b4f6a3e-1111-4c2d-9e8f-123456789abc.webp',
+        }),
+      ).toEqual([]);
+      expect(await errores({ logoKey: null })).toEqual([]);
     });
+
+    it.each([1, true, { key: 'x' }, 'x'.repeat(201)])(
+      '[TC-U-519] rechaza logoKey = %p (no es texto o es demasiado larga)',
+      async (logoKey) => {
+        expect(await errores({ logoKey })).toEqual(['logoKey']);
+      },
+    );
   });
 });

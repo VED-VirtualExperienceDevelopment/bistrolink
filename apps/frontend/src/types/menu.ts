@@ -1,5 +1,5 @@
 // HU-002 / HU-003 / BL-155: Tipos compartidos del menú público y carrito
-import type { EstadoPedido } from './pedido';
+import type { EstadoPedido } from "./pedido";
 
 export interface ItemCarta {
   id: string;
@@ -22,9 +22,21 @@ export interface RestaurantePublico {
   direccion: string;
 }
 
+// HU-043 (BL-532): plantillas de marca, las mismas que valida la API.
+export type PlantillaMarca = "clasica" | "gourmet" | "rapida" | "familiar";
+
+// HU-043 (BL-532): marca del local en la carta. logoUrl null = sin logo
+// (se muestra el nombre del local).
+export interface MarcaPublica {
+  logoUrl: string | null;
+  plantilla: PlantillaMarca;
+}
+
 // Es la forma del JSON que devuelve tu backend
 export interface MenuPublicoResponse {
   restaurante: RestaurantePublico;
+  // Opcional: una API anterior a HU-043 no la manda (la carta usa la Clásica).
+  marca?: MarcaPublica;
   categorias: CategoriaCarta[];
 }
 

@@ -92,11 +92,13 @@ export class StorageService {
    * - Sin IMAGES_CDN_URL (local, MinIO): URL firmada, como antes.
    * - Solo las keys {tenant}/menu/{uuid}.webp van por la CDN; la política del
    *   bucket tampoco deja leer otra cosa (la cuarentena incoming/ sigue privada).
+   * - HU-043 (BL-532): el logo ({tenant}/menu/marca/{uuid}.webp) también; la
+   *   política del bucket ya cubre */ menu; /*.
    */
   async urlImagenPublica(key: string): Promise<string | null> {
     const cdn = sinBarraFinal(process.env.IMAGES_CDN_URL?.trim() ?? '');
     const esPublicada = new RegExp(
-      String.raw`^[A-Za-z0-9-]+/menu/${PATRON_UUID}\.webp$`,
+      String.raw`^[A-Za-z0-9-]+/menu/(?:marca/)?${PATRON_UUID}\.webp$`,
     ).test(key);
     if (cdn && esPublicada) {
       return `${cdn}/${key}`;
@@ -228,6 +230,20 @@ export class StorageService {
   esKeyDelTenant(key: string, tenantId: string): boolean {
     const patron = new RegExp(
       String.raw`^${escaparRegex(tenantId)}/menu/${PATRON_UUID}\.webp$`,
+    );
+    return patron.test(key);
+  }
+
+  /**
+   * HU-043 (BL-532): una key solo sirve de logo si es un logo PUBLICADO del
+   * tenant que la usa: formato exacto {tenant}/menu/marca/{uuid}.webp, el
+   * que genera la confirmación con destino `marca`. Rechaza las de otro
+   * tenant, las de la cuarentena, las fotos de los ítems y las que tienen
+   * barras extra o "..".
+   */
+  esKeyDeMarcaDelTenant(key: string, tenantId: string): boolean {
+    const patron = new RegExp(
+      String.raw`^${escaparRegex(tenantId)}/menu/marca/${PATRON_UUID}\.webp$`,
     );
     return patron.test(key);
   }

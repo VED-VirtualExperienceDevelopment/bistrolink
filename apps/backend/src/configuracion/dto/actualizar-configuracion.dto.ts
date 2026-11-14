@@ -79,6 +79,9 @@ export const MINUTOS_PREPARACION_MAXIMO = 180;
 /** HU-036 (BL-206): largo máximo de un correo (RFC 5321) y de la columna. */
 export const LARGO_MAXIMO_EMAIL = 254;
 
+/** HU-043 (BL-532): el mismo largo máximo que la key de una imagen confirmada. */
+export const LARGO_MAXIMO_KEY_LOGO = 200;
+
 /** Sin espacios y en minúsculas; vacío = quitarlo (null). */
 const normalizarEmail = ({ value }: { value: unknown }) => {
   if (typeof value !== 'string') return value;
@@ -272,4 +275,16 @@ export class ActualizarConfiguracionDto {
     message: `Plantilla no disponible. Se puede elegir: ${PLANTILLAS_MARCA.join(', ')}`,
   })
   plantilla?: PlantillaMarca;
+
+  // HU-043 (BL-532): logo del local. Es la key que devuelve
+  // POST /admin/menu/imagenes/confirmar con destino `marca`. Que sea un logo
+  // publicado de este establecimiento lo controla el servicio (400 si no).
+  // null quita el logo.
+  @IsOptional()
+  @ValidateIf((_dto, valor) => valor !== null)
+  @IsString({ message: 'El logo debe ser la key de una imagen confirmada' })
+  @MaxLength(LARGO_MAXIMO_KEY_LOGO, {
+    message: `La key del logo puede tener hasta ${LARGO_MAXIMO_KEY_LOGO} caracteres`,
+  })
+  logoKey?: string | null;
 }

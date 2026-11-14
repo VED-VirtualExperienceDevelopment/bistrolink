@@ -40,6 +40,18 @@ export const MAXIMO_PIXELES_ENTRADA = 25_000_000;
 /** Lado máximo de la imagen publicada; no se agranda si es más chica. */
 export const LADO_MAXIMO_IMAGEN_PX = 1600;
 
+/**
+ * HU-043 (BL-532): para qué es la imagen que se confirma.
+ * - `item`: foto de un ítem de la carta (por defecto, como siempre).
+ * - `marca`: logo del local. Se publica aparte, en {tenant}/menu/marca/, así
+ *   un ítem no puede usar el logo ni el logo una foto de un ítem.
+ */
+export const DESTINOS_IMAGEN = ['item', 'marca'] as const;
+export type DestinoImagen = (typeof DESTINOS_IMAGEN)[number];
+
+/** HU-043 (BL-532): lado máximo del logo publicado (se muestra chico). */
+export const LADO_MAXIMO_LOGO_PX = 512;
+
 /** Calidad del WebP publicado (0–100). */
 export const CALIDAD_WEBP = 82;
 

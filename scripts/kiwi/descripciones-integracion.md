@@ -41,6 +41,7 @@
 | 1.34    | 11/11/2026 | TC-I-009: `GET /` responde JSON en lugar del texto «Hello World!» (DAST, BL-526); cambia el título y la descripción, para cargar con el script antes de mergear el PR.                                                                    |
 | 1.35    | 13/11/2026 | TC-I-208 y 209: cola del KDS sugerida en el alta de un establecimiento (HU-042 / BL-472), para cargar con el script antes de mergear el PR.                                                                                               |
 | 1.36    | 14/11/2026 | TC-I-210: plantilla de marca del local, guardada y auditada, y CHECK de la base (HU-043 / BL-531), para cargar con el script antes de mergear el PR.                                                                                      |
+| 1.37    | 14/11/2026 | TC-I-211: el logo del local solo acepta un logo publicado del mismo tenant (HU-043 / BL-532), para cargar con el script antes de mergear el PR.                                                                                           |
 
 Texto del campo de descripción de cada caso TC-I en Kiwi. Lo carga
 `cargar-casos-integracion.mjs --descripciones`: cada bloque `## TC-I-NNN`
@@ -51,6 +52,26 @@ Formato de cada bloque: `### Precondición`, `### Pasos` y `### Resultado
 esperado`, igual que los casos cargados a mano desde TC-I-029.
 
 ## Casos para cargar
+
+## TC-I-211
+
+### Precondición
+
+Tenant A del seed con su restaurante. Se anota el logo guardado (o que no tiene).
+
+### Pasos
+
+1. Cambiar la configuración con el servicio, con `logoKey` de un logo del tenant B.
+2. Lo mismo con una key de la cuarentena del tenant A (`incoming/…`).
+3. Lo mismo con la key de la foto de un ítem del tenant A (`{tenant}/menu/{uuid}.webp`).
+4. Buscar en la auditoría los registros `ESTABLECIMIENTO_CONFIGURACION_MODIFICADA` del actor del test y leer el logo guardado.
+
+### Resultado esperado
+
+1. 400 «El logo no es válido para este establecimiento».
+2. 400, con el mismo mensaje.
+3. 400, con el mismo mensaje.
+4. Ningún registro nuevo y el logo guardado no cambió.
 
 ## TC-I-210
 

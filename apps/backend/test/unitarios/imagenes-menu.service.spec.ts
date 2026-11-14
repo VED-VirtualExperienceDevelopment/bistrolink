@@ -42,7 +42,10 @@ describe('ImagenesMenuService.confirmar (BL-386)', () => {
       KEY_CUARENTENA,
       TENANT,
     );
-    expect(procesador.procesar).toHaveBeenCalledWith(ORIGINAL);
+    // Sin destino es una foto de la carta: hasta 1600 px.
+    expect(procesador.procesar).toHaveBeenCalledWith(ORIGINAL, {
+      ladoMaximo: 1600,
+    });
     expect(storage.guardarImagenPublicada).toHaveBeenCalledWith(
       `${TENANT}/menu/${UUID}.webp`,
       PROCESADA,
@@ -85,6 +88,28 @@ describe('ImagenesMenuService.confirmar (BL-386)', () => {
       NotFoundException,
     );
     expect(procesador.procesar).not.toHaveBeenCalled();
+  });
+
+  it('[TC-U-516] HU-043 (BL-532): con destino marca, el logo sale de hasta 512 px y se publica en {tenant}/menu/marca/{uuid}.webp', async () => {
+    const resultado = await servicio.confirmar(KEY_CUARENTENA, TENANT, 'marca');
+
+    expect(procesador.procesar).toHaveBeenCalledWith(ORIGINAL, {
+      ladoMaximo: 512,
+    });
+    expect(storage.guardarImagenPublicada).toHaveBeenCalledWith(
+      `${TENANT}/menu/marca/${UUID}.webp`,
+      PROCESADA,
+    );
+    expect(resultado).toEqual({
+      key: `${TENANT}/menu/marca/${UUID}.webp`,
+      url: 'https://firmada.example',
+    });
+  });
+
+  it('[TC-U-516] HU-043 (BL-532): con destino item, igual que sin destino', async () => {
+    const resultado = await servicio.confirmar(KEY_CUARENTENA, TENANT, 'item');
+
+    expect(resultado.key).toBe(`${TENANT}/menu/${UUID}.webp`);
   });
 
   it('confirmar dos veces la misma subida da la misma key (idempotente)', async () => {

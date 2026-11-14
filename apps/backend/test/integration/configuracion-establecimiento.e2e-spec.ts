@@ -462,4 +462,35 @@ describe('HU-020 (BL-72): configuración del establecimiento', () => {
     ).rejects.toThrow(/restaurante_plantilla_valida|23514/);
     expect((await leerConfiguracion()).plantilla).toBe(otra);
   });
+
+  it('[TC-I-211] HU-043 (BL-532): una key de otro tenant, de la cuarentena o de un ítem no se guarda como logo (400, sin auditoría)', async () => {
+    const uuid = randomUUID();
+    const logoAntes = await enTenant<string | null>(async (tx) => {
+      const restaurante = await tx.restaurante.findUniqueOrThrow({
+        where: { tenantId: TENANT_ID },
+        select: { logoKey: true },
+      });
+      return restaurante.logoKey;
+    });
+
+    for (const logoKey of [
+      `b02579f2-2bb0-496b-abf2-33c494c93122/menu/marca/${uuid}.webp`,
+      `incoming/${TENANT_ID}/${uuid}`,
+      `${TENANT_ID}/menu/${uuid}.webp`,
+    ]) {
+      await expect(
+        configuracion.actualizar(TENANT_ID, { logoKey }, { id: ACTOR_PRUEBA }),
+      ).rejects.toThrow('El logo no es válido para este establecimiento');
+    }
+
+    expect(await auditoria()).toHaveLength(0);
+    const logoDespues = await enTenant<string | null>(async (tx) => {
+      const restaurante = await tx.restaurante.findUniqueOrThrow({
+        where: { tenantId: TENANT_ID },
+        select: { logoKey: true },
+      });
+      return restaurante.logoKey;
+    });
+    expect(logoDespues).toBe(logoAntes);
+  });
 });

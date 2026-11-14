@@ -17,6 +17,9 @@ function buildRestaurante(overrides: Partial<any> = {}) {
     nombre: 'Restaurante Test',
     direccion: 'Av. Test 1234',
     timezone: 'America/Montevideo',
+    // HU-043 (BL-532): marca por defecto (sin logo, plantilla Clásica).
+    logoKey: null,
+    plantilla: 'clasica',
     ...overrides,
   };
 }
@@ -133,6 +136,7 @@ describe('MenuService - getMenuByRestaurante (HU-002)', () => {
           nombre: restaurante.nombre,
           direccion: restaurante.direccion,
         }),
+        marca: { logoUrl: null, plantilla: 'clasica' },
         categorias: [
           expect.objectContaining({
             id: categoria.id,
@@ -248,6 +252,34 @@ describe('MenuService - getMenuByRestaurante (HU-002)', () => {
       expect(resultado.restaurante.id).toBe(restaurante.id);
       expect(resultado.categorias).toEqual([]);
     });
+  });
+
+  it('[TC-U-523] HU-043 (BL-532): devuelve la marca con la URL pública del logo y la plantilla', async () => {
+    const tenantId = randomUUID();
+    const logoKey = `${tenantId}/menu/marca/0b4f6a3e-1111-4c2d-9e8f-123456789abc.webp`;
+    const restaurante = buildRestaurante({
+      tenantId,
+      logoKey,
+      plantilla: 'gourmet',
+    });
+    mockTx.restaurante.findUnique.mockResolvedValue(restaurante);
+    mockCategoriaCartaFindMany([]);
+    mockStorage.urlImagenPublica.mockResolvedValue(
+      `https://cdn.example/${logoKey}`,
+    );
+
+    const resultado = await service.getMenuByRestaurante(
+      tenantId,
+      restaurante.id,
+    );
+
+    expect(mockStorage.urlImagenPublica).toHaveBeenCalledWith(logoKey);
+    expect(resultado.marca).toEqual({
+      logoUrl: `https://cdn.example/${logoKey}`,
+      plantilla: 'gourmet',
+    });
+    // La key no viaja al comensal.
+    expect(JSON.stringify(resultado.restaurante)).not.toContain('menu/marca');
   });
 
   describe('Casos de error', () => {
@@ -393,6 +425,7 @@ describe('MenuService - getMenuByMesa (HU-001)', () => {
 
       expect(resultado).toEqual({
         restaurante: { nombre: restaurante.nombre },
+        marca: { logoUrl: null, plantilla: 'clasica' },
         categorias: expect.arrayContaining([
           expect.objectContaining({
             id: categoria.id,
@@ -402,6 +435,34 @@ describe('MenuService - getMenuByMesa (HU-001)', () => {
             ]),
           }),
         ]),
+      });
+    });
+
+    it('[TC-U-523] HU-043 (BL-532): el menú por QR también devuelve la marca', async () => {
+      const tenantId = randomUUID();
+      const mesaId = randomUUID();
+      const logoKey = `${tenantId}/menu/marca/0b4f6a3e-1111-4c2d-9e8f-123456789abc.webp`;
+      const restaurante = buildRestaurante({
+        tenantId,
+        logoKey,
+        plantilla: 'familiar',
+      });
+      mockTx.mesa.findUnique.mockResolvedValue({
+        id: mesaId,
+        numero: 1,
+        restauranteId: restaurante.id,
+        restaurante,
+      });
+      mockTx.categoriaCarta.findMany.mockResolvedValue([]);
+      mockStorage.urlImagenPublica.mockResolvedValue(
+        `https://cdn.example/${logoKey}`,
+      );
+
+      const resultado = await service.getMenuByMesa(tenantId, mesaId);
+
+      expect(resultado.marca).toEqual({
+        logoUrl: `https://cdn.example/${logoKey}`,
+        plantilla: 'familiar',
       });
     });
 

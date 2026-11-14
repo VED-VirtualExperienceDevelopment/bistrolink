@@ -2,6 +2,17 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { StorageService } from './storage.service';
 import { mapItemToDto } from './menu.mapper';
+import type { PlantillaMarca } from '../configuracion/plantillas-marca';
+
+/**
+ * HU-043 (BL-532): marca del local en la carta del comensal. El logo sale
+ * por la CDN en staging y producción, y firmado en local (urlImagenPublica).
+ */
+export interface MarcaPublica {
+  /** null si el local no tiene logo: la carta muestra el nombre. */
+  logoUrl: string | null;
+  plantilla: PlantillaMarca;
+}
 
 /**
  * BL-397 (decisión 2 de la propuesta de la carta): el comensal ve lo mismo
@@ -54,6 +65,7 @@ export class MenuService {
 
       return {
         restaurante: { nombre: mesa.restaurante.nombre },
+        marca: await this.marcaDe(mesa.restaurante),
         categorias: categoriasConUrls,
       };
     });
@@ -127,9 +139,24 @@ export class MenuService {
           nombre: restaurante.nombre,
           direccion: restaurante.direccion,
         },
+        marca: await this.marcaDe(restaurante),
         categorias: categoriasConUrls,
       };
     });
+  }
+
+  /** HU-043 (BL-532): el logo y la plantilla del local. */
+  private async marcaDe(restaurante: {
+    logoKey: string | null;
+    plantilla: string;
+  }): Promise<MarcaPublica> {
+    return {
+      logoUrl: restaurante.logoKey
+        ? await this.storage.urlImagenPublica(restaurante.logoKey)
+        : null,
+      // La columna es texto (con CHECK): acá se acota al tipo.
+      plantilla: restaurante.plantilla as PlantillaMarca,
+    };
   }
 
   private async categoriasConUrlsFirmadas(categorias: any[]) {
