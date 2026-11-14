@@ -1,11 +1,13 @@
 import {
   Injectable,
   BadRequestException,
+  ConflictException,
   NotFoundException,
 } from '@nestjs/common';
 import { PedidoEstado, Prisma } from '@prisma/client';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { aPedidoKds } from './pedido-kds.mapper';
+import { normalizarCodigoRetiro } from './retiro';
 import type { LlamadoPagoEfectivo } from './kds.gateway';
 import {
   bloquearColaDelTenant,
@@ -43,6 +45,14 @@ const TRANSICIONES_KDS: Partial<Record<PedidoEstado, PedidoEstado[]>> = {
   EN_PREPARACION: [PedidoEstado.LISTO_PARA_ENTREGAR],
   LISTO_PARA_ENTREGAR: [PedidoEstado.ENTREGADO], // HU-018/BL-64
 };
+
+/** HU-040 (BL-210): el código que dio el comensal no es el de este pedido. */
+export const MENSAJE_CODIGO_NO_COINCIDE =
+  'El código no coincide con este pedido. Revisá el pedido antes de entregarlo.';
+
+/** HU-040 (BL-210): el retiro no se entrega con el botón común. */
+export const MENSAJE_ENTREGA_CON_CODIGO =
+  'Los pedidos para retirar se entregan verificando el código de retiro';
 
 interface LineaNotificacion {
   id: string;
@@ -101,6 +111,11 @@ export class PedidosTransicionService {
         throw new BadRequestException(
           `Transición inválida: ${pedido.estado} → ${nuevoEstado}`,
         );
+      }
+      // HU-040 (BL-210): un pedido para retirar se entrega verificando el
+      // código que muestra el comensal (POST /pedidos/:id/entregar-retiro).
+      if (nuevoEstado === PedidoEstado.ENTREGADO && pedido.codigoRetiro) {
+        throw new BadRequestException(MENSAJE_ENTREGA_CON_CODIGO);
       }
 
       // El JWT trae el keycloakId (payload.sub), pero el historial
@@ -175,6 +190,91 @@ export class PedidosTransicionService {
           lineas: actualizado.lineas,
         },
         promovidos,
+      };
+    });
+  }
+
+  /**
+   * HU-040 (BL-210): el comensal pasa a retirar y el mozo o el
+   * administrador escribe el código que muestra (R-042). Solo si el pedido
+   * es para retirar, está listo y el código coincide, pasa a ENTREGADO, con
+   * el historial. Así no se entrega el pedido equivocado.
+   */
+  async entregarRetiro(params: {
+    tenantId: string;
+    keycloakId: string;
+    pedidoId: string;
+    codigo: string;
+  }): Promise<PedidoActualizado> {
+    const { tenantId, keycloakId, pedidoId } = params;
+    const codigo = normalizarCodigoRetiro(params.codigo);
+    if (!codigo) {
+      throw new BadRequestException('El código de retiro tiene la forma R-042');
+    }
+    return this.tenantPrisma.runInTenantContext(tenantId, async (tx) => {
+      const pedido = await tx.pedido.findUnique({
+        where: { id: pedidoId },
+        select: { estado: true, codigoRetiro: true },
+      });
+      if (!pedido) {
+        throw new NotFoundException('Pedido no encontrado');
+      }
+      if (!pedido.codigoRetiro) {
+        throw new ConflictException('Este pedido no es para retirar');
+      }
+      if (pedido.estado !== PedidoEstado.LISTO_PARA_ENTREGAR) {
+        throw new ConflictException(
+          pedido.estado === PedidoEstado.ENTREGADO
+            ? 'Este pedido ya se entregó'
+            : 'El pedido todavía no está listo para retirar',
+        );
+      }
+      // No se dice cuál es el código correcto: si no, escribir cualquier
+      // cosa alcanzaría para verlo y la verificación no serviría.
+      if (pedido.codigoRetiro !== codigo) {
+        throw new ConflictException(MENSAJE_CODIGO_NO_COINCIDE);
+      }
+      const usuario = await tx.usuario.findUnique({ where: { keycloakId } });
+      if (!usuario) {
+        throw new NotFoundException(
+          'El usuario autenticado (MOZO/ADMIN) no tiene fila correspondiente en Usuario — revisar sincronización con Keycloak',
+        );
+      }
+      // Solo si sigue listo: dos personas entregando a la vez no duplican.
+      const { count } = await tx.pedido.updateMany({
+        where: { id: pedidoId, estado: PedidoEstado.LISTO_PARA_ENTREGAR },
+        data: { estado: PedidoEstado.ENTREGADO },
+      });
+      if (count === 0) {
+        throw new ConflictException('Este pedido ya se entregó');
+      }
+      await tx.pedidoEstadoHistorial.create({
+        data: {
+          tenantId,
+          pedidoId,
+          usuarioId: usuario.id,
+          estadoAnterior: PedidoEstado.LISTO_PARA_ENTREGAR,
+          estadoNuevo: PedidoEstado.ENTREGADO,
+        },
+      });
+      const entregado = await tx.pedido.findUniqueOrThrow({
+        where: { id: pedidoId },
+        select: {
+          id: true,
+          estado: true,
+          updatedAt: true,
+          mesa: { select: { numero: true } },
+          lineas: {
+            select: { id: true, nombreSnapshot: true, cantidad: true },
+          },
+        },
+      });
+      return {
+        id: entregado.id,
+        estado: entregado.estado,
+        actualizadoEn: entregado.updatedAt.toISOString(),
+        mesaNumero: entregado.mesa.numero,
+        lineas: entregado.lineas,
       };
     });
   }
@@ -263,6 +363,8 @@ export class PedidosTransicionService {
           estado: true,
           createdAt: true,
           observacionGeneral: true,
+          codigoRetiro: true,
+          retiroNombre: true,
           mesa: { select: { numero: true } },
           lineas: {
             select: {

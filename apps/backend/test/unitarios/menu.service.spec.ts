@@ -17,6 +17,10 @@ function buildRestaurante(overrides: Partial<any> = {}) {
     nombre: 'Restaurante Test',
     direccion: 'Av. Test 1234',
     timezone: 'America/Montevideo',
+    // HU-040 (BL-210): toma pedidos para retirar todo el día.
+    retiroHabilitado: true,
+    retiroHoraDesde: null,
+    retiroHoraHasta: null,
     ...overrides,
   };
 }
@@ -133,6 +137,13 @@ describe('MenuService - getMenuByRestaurante (HU-002)', () => {
           nombre: restaurante.nombre,
           direccion: restaurante.direccion,
         }),
+        // HU-040 (BL-210): el enlace web es el de los pedidos para retirar.
+        retiro: {
+          habilitado: true,
+          abierto: true,
+          horaDesde: null,
+          horaHasta: null,
+        },
         categorias: [
           expect.objectContaining({
             id: categoria.id,

@@ -13,6 +13,8 @@ import {
   sinMediosDePago,
   type ConfiguracionEstablecimiento,
   mensajeAnonimizacion,
+  errorHorarioRetiro,
+  mensajeAnonimizacionRetiro,
 } from "@/components/admin/configuracion/configuracion.utils";
 
 // HU-020 (BL-72): pantalla de configuración del establecimiento.
@@ -100,6 +102,11 @@ describe("cambios para guardar", () => {
       esperaAtencion: "30",
       esperaDemorado: "60",
       esperaDemoraAlta: "120",
+      // HU-040 (BL-210): un backend anterior no trae el retiro: habilitado,
+      // todo el día (el default de la columna).
+      retiroHabilitado: true,
+      retiroHoraDesde: "",
+      retiroHoraHasta: "",
     });
   });
 });
@@ -357,6 +364,7 @@ describe("primerCampoConError", () => {
     propinas: null,
     cola: {},
     email: null,
+    retiro: null,
   };
 
   it("[TC-U-422] devuelve el primer campo con error en el orden de la pantalla, o null", () => {
@@ -378,6 +386,9 @@ describe("primerCampoConError", () => {
     expect(primerCampoConError({ ...SIN_ERRORES, email: "mal" })).toBe(
       "email-privacidad",
     );
+    expect(
+      primerCampoConError({ ...SIN_ERRORES, email: "mal", retiro: "mal" }),
+    ).toBe("retiro-desde");
   });
 });
 
@@ -388,6 +399,7 @@ describe("erroresDelFormulario", () => {
       propinas: null,
       email: null,
       cola: {},
+      retiro: null,
     });
 
     expect(
@@ -398,12 +410,14 @@ describe("erroresDelFormulario", () => {
         emailPrivacidad: "no-es-un-correo",
         colaActiva: true,
         limitePreparacion: "0",
+        retiroHoraDesde: "11:00",
       }),
     ).toEqual({
       razonSocial: "La razón social es obligatoria.",
       propinas: expect.any(String),
       email: expect.any(String),
       cola: { limitePreparacion: "Tiene que estar entre 1 y 50." },
+      retiro: expect.any(String),
     });
 
     expect(erroresDelFormulario(formularioDesde(GUARDADA))).toEqual({
@@ -411,7 +425,75 @@ describe("erroresDelFormulario", () => {
       propinas: null,
       email: null,
       cola: {},
+      retiro: null,
     });
+  });
+});
+
+describe("HU-040 (BL-210): pedidos para retirar", () => {
+  const horario = (retiroHoraDesde: string, retiroHoraHasta: string) => ({
+    retiroHoraDesde,
+    retiroHoraHasta,
+  });
+
+  it("el horario: las dos vacías (todo el día) o las dos, válidas y distintas", () => {
+    expect(errorHorarioRetiro(horario("", ""))).toBeNull();
+    expect(errorHorarioRetiro(horario("11:00", "15:30"))).toBeNull();
+    // Cruza la medianoche.
+    expect(errorHorarioRetiro(horario("19:00", "01:00"))).toBeNull();
+    expect(errorHorarioRetiro(horario("11:00", ""))).toBe(
+      "Completá las dos horas, o dejá las dos vacías para tomar pedidos todo el día.",
+    );
+    expect(errorHorarioRetiro(horario("", "15:00"))).not.toBeNull();
+    expect(errorHorarioRetiro(horario("24:00", "15:00"))).toBe(
+      "Escribí las horas como 11:00 o 23:30.",
+    );
+    expect(errorHorarioRetiro(horario("9:00", "15:00"))).not.toBeNull();
+    expect(errorHorarioRetiro(horario("12:00", "12:00"))).toBe(
+      "La hora de inicio y la de cierre tienen que ser distintas.",
+    );
+  });
+
+  it("se lee de lo guardado y solo se manda lo que cambió; las horas van juntas", () => {
+    const guardada: ConfiguracionEstablecimiento = {
+      ...GUARDADA,
+      retiroHabilitado: true,
+      retiroHoraDesde: "11:00",
+      retiroHoraHasta: "15:00",
+    };
+    const formulario = formularioDesde(guardada);
+    expect(formulario).toMatchObject({
+      retiroHabilitado: true,
+      retiroHoraDesde: "11:00",
+      retiroHoraHasta: "15:00",
+    });
+    expect(cambiosParaGuardar(guardada, formulario)).toEqual({});
+    expect(
+      cambiosParaGuardar(guardada, { ...formulario, retiroHabilitado: false }),
+    ).toEqual({ retiroHabilitado: false });
+    expect(
+      cambiosParaGuardar(guardada, { ...formulario, retiroHoraHasta: "16:00" }),
+    ).toEqual({ retiroHoraDesde: "11:00", retiroHoraHasta: "16:00" });
+    // Vaciar las dos = todo el día.
+    expect(
+      cambiosParaGuardar(guardada, {
+        ...formulario,
+        retiroHoraDesde: "",
+        retiroHoraHasta: " ",
+      }),
+    ).toEqual({ retiroHoraDesde: null, retiroHoraHasta: null });
+  });
+
+  it("mensaje después de anonimizar el contacto", () => {
+    expect(mensajeAnonimizacionRetiro({ pedidos: 0 })).toBe(
+      "No hay pedidos con ese contacto: no había datos para anonimizar.",
+    );
+    expect(mensajeAnonimizacionRetiro({ pedidos: 1 })).toBe(
+      "Listo: se anonimizó 1 pedido.",
+    );
+    expect(mensajeAnonimizacionRetiro({ pedidos: 4 })).toBe(
+      "Listo: se anonimizaron 4 pedidos.",
+    );
   });
 });
 
@@ -478,6 +560,7 @@ describe("HU-038 (BL-506): umbrales de espera del KDS", () => {
         propinas: null,
         email: "mal",
         cola: { esperaDemorado: "mal" },
+        retiro: null,
       }),
     ).toBe("espera-demorado");
     expect(
@@ -486,6 +569,7 @@ describe("HU-038 (BL-506): umbrales de espera del KDS", () => {
         propinas: null,
         email: null,
         cola: { minutosPreparacion: "mal", esperaAtencion: "mal" },
+        retiro: null,
       }),
     ).toBe("cola-minutos");
   });

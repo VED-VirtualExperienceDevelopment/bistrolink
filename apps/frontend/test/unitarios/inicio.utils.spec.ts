@@ -2,6 +2,7 @@ import {
   cambiarEstadoMesa,
   contar,
   fechaLarga,
+  lugarDelPedido,
   mesasConGente,
   minutosDesde,
   pedidosEnCocina,
@@ -151,6 +152,45 @@ describe("pedidosListos", () => {
     expect(pedidosListos(pedidos, {})[0].platos).toBe(
       "2 × Milanesa, 1 × Fritas",
     );
+  });
+});
+
+describe("lugarDelPedido (HU-040, BL-210)", () => {
+  it("mesa con número", () => {
+    expect(lugarDelPedido({ mesaNumero: 4, retiro: null })).toBe("Mesa 4");
+  });
+
+  it("retiro con código y nombre", () => {
+    expect(
+      lugarDelPedido({
+        mesaNumero: null,
+        retiro: { codigo: "R-042", nombre: "Ana" },
+      }),
+    ).toBe("Retiro R-042 · Ana");
+  });
+
+  it("retiro con código y sin nombre", () => {
+    expect(
+      lugarDelPedido({
+        mesaNumero: null,
+        retiro: { codigo: "R-042", nombre: null },
+      }),
+    ).toBe("Retiro R-042");
+  });
+
+  it("retiro sin código conocido", () => {
+    expect(lugarDelPedido({ mesaNumero: null, retiro: null })).toBe("Retiro");
+  });
+});
+
+it("pedidosListos trae el código del retiro", () => {
+  const conRetiro: Pedido = {
+    ...pedido("r1", "LISTO_PARA_ENTREGAR", "2026-11-10T23:00:00Z", 0),
+    retiro: { codigo: "R-007", nombre: null },
+  };
+  expect(pedidosListos([conRetiro], {})[0].retiro).toEqual({
+    codigo: "R-007",
+    nombre: null,
   });
 });
 

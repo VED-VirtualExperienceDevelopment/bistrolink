@@ -2,6 +2,9 @@ import {
   Body,
   Controller,
   HttpCode,
+  HttpStatus,
+  Param,
+  ParseUUIDPipe,
   Post,
   Req,
   UseGuards,
@@ -20,6 +23,9 @@ import { CrearPedidoDto } from './dto/crear-pedido.dto';
 import { CrearPedidoMozoDto } from './dto/crear-pedido-mozo.dto';
 import { EstadoPedidosMesaDto } from './dto/estado-pedidos-mesa.dto';
 import { PedidosDeLaMesaService } from './pedidos-de-la-mesa.service';
+import { EntregarRetiroDto } from './dto/entregar-retiro.dto';
+import { PedidosTransicionService } from './pedidos-transicion.service';
+import { KdsGateway } from './kds.gateway';
 import { ApiTags, ApiBearerAuth, ApiSecurity } from '@nestjs/swagger';
 import { SEGURIDAD_KEYCLOAK, SEGURIDAD_MESA_QR } from '../openapi';
 
@@ -35,6 +41,8 @@ export class PedidosController {
   constructor(
     private readonly pedidosService: PedidosService,
     private readonly pedidosDeLaMesa: PedidosDeLaMesaService,
+    private readonly transicion: PedidosTransicionService,
+    private readonly kdsGateway: KdsGateway,
   ) {}
 
   // HU-034 (BL-204): con X-Mesa-Token, el pedido queda atado a la mesa del
@@ -77,5 +85,29 @@ export class PedidosController {
       req.user.sub,
       dto,
     );
+  }
+
+  /**
+   * HU-040 (BL-210): el comensal pasa a retirar y el mozo o el
+   * administrador escribe el código que muestra. Si coincide y el pedido
+   * está listo, queda ENTREGADO y se avisa al KDS y al comensal. 409 si no
+   * coincide, si todavía no está listo o si no es para retirar.
+   */
+  @Post(':pedidoId/entregar-retiro')
+  @Roles('ADMIN', 'MOZO')
+  @HttpCode(HttpStatus.OK)
+  async entregarRetiro(
+    @Req() req: { user: AuthenticatedUser },
+    @Param('pedidoId', new ParseUUIDPipe()) pedidoId: string,
+    @Body() dto: EntregarRetiroDto,
+  ) {
+    const entregado = await this.transicion.entregarRetiro({
+      tenantId: req.user.tenantId,
+      keycloakId: req.user.sub,
+      pedidoId,
+      codigo: dto.codigo,
+    });
+    this.kdsGateway.emitirPedidoActualizado(req.user.tenantId, entregado);
+    return entregado;
   }
 }

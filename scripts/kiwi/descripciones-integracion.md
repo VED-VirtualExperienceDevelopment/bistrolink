@@ -38,8 +38,9 @@
 | 1.31    | 10/11/2026 | TC-I-195 a 198: estado de la mesa con varios cobros, cierre con cobros pendientes y cobro con la mesa cerrada (HU-017 / bug BL-509), para cargar con el script antes de mergear el PR.                                                    |
 | 1.32    | 10/11/2026 | Se borran los bloques de TC-I-190 a 198, ya cargados en Kiwi. TC-I-203 a 205: «Mis pedidos» en la mesa y acceso a un pedido solo en la sesión abierta (bug BL-502), para cargar con el script antes de mergear el PR.                     |
 | 1.33    | 10/11/2026 | Se borran los bloques de TC-I-203 a 205, ya cargados en Kiwi. TC-I-206 y 207: aviso al comensal cuando el mozo cierra la mesa (bug BL-518), para cargar con el script antes de mergear el PR.                                             |
-| 1.34    | 11/11/2026 | TC-I-009: `GET /` responde JSON en lugar del texto «Hello World!» (DAST, BL-526); cambia el título y la descripción, para cargar con el script antes de mergear el PR.                                                                      |
+| 1.34    | 11/11/2026 | TC-I-009: `GET /` responde JSON en lugar del texto «Hello World!» (DAST, BL-526); cambia el título y la descripción, para cargar con el script antes de mergear el PR.                                                                    |
 | 1.35    | 13/11/2026 | TC-I-208 y 209: cola del KDS sugerida en el alta de un establecimiento (HU-042 / BL-472), para cargar con el script antes de mergear el PR.                                                                                               |
+| 1.36    | 14/11/2026 | TC-I-199 a 202: pedidos para retirar (HU-040 / BL-210). Se borran los bloques ya cargados (TC-I-206 a 209 y 009).                                                                                                                         |
 
 Texto del campo de descripción de cada caso TC-I en Kiwi. Lo carga
 `cargar-casos-integracion.mjs --descripciones`: cada bloque `## TC-I-NNN`
@@ -51,88 +52,84 @@ esperado`, igual que los casos cargados a mano desde TC-I-029.
 
 ## Casos para cargar
 
-## TC-I-208
+## TC-I-199
 
 ### Precondición
 
-TC-I-050 ejecutado: existe el establecimiento dado de alta sin la cola del KDS.
+Tenant A del seed, tomando pedidos para retirar todo el día. Pasarela de pago y CFE falsos (los tests no llaman a Mercado Pago ni a Surtec).
 
 ### Pasos
 
-1. Leer el restaurante del establecimiento nuevo en la base, con el contexto de su tenant.
+1. Como comensal del enlace web, crear un pedido para retirar con nombre, teléfono y el aviso aceptado, y pagarlo.
+2. Crear otro pedido para retirar con nombre y teléfono pero sin aceptar el aviso, y pagarlo.
+3. Consultar el estado del pago del primero (GET /pedidos/{id}/pagos) con el token del pedido.
+4. Consultar los pedidos pendientes del KDS.
 
 ### Resultado esperado
 
-1. La cola del KDS queda desactivada (`limite_pedidos_en_preparacion` en NULL), con el umbral de alerta en 10 y los minutos de referencia en 15.
+1. El pedido queda RECIBIDO, en la mesa virtual, con un código de retiro R-NNN, el nombre sin espacios de más, el teléfono solo con dígitos y la fecha del consentimiento.
+2. El pedido no guarda ni el nombre ni el teléfono, y su código es el siguiente del contador del local (después del 999 vuelve a R-001).
+3. Devuelve el mismo código de retiro.
+4. Los dos aparecen con su bloque de retiro: código y nombre (null en el que no aceptó el aviso).
 
-## TC-I-209
+## TC-I-200
 
 ### Precondición
 
-Usuario de plataforma del test. Un RUT y usuarios de Administrador y Cocina que no existen.
+Tenant A del seed. El test cambia la configuración del retiro y al terminar la deja como estaba.
 
 ### Pasos
 
-1. `POST /plataforma/establecimientos` con la cola en 51 pedidos en preparación.
-2. Buscar en la base un establecimiento con ese RUT.
-3. `POST /plataforma/establecimientos` con los mismos datos y la cola en 5.
-4. Leer el restaurante del establecimiento nuevo, con el contexto de su tenant.
+1. Deshabilitar los pedidos para retirar, abrir la carta del enlace web e intentar crear un pedido.
+2. Habilitarlos con una franja que no incluye la hora actual del local, abrir la carta e intentar crear un pedido.
+3. Cambiar la franja para que incluya la hora actual, abrir la carta y crear un pedido.
 
 ### Resultado esperado
 
-1. 400 Bad Request.
-2. No existe: el alta rechazada no creó nada.
-3. 201 Created.
-4. `limite_pedidos_en_preparacion` en 5, umbral de alerta en 10 y minutos de referencia en 15.
+1. La carta indica retiro no habilitado ni abierto. POST /pedidos responde 409 con el código RETIRO_NO_DISPONIBLE y «Este local no está tomando pedidos para retirar.».
+2. La carta indica habilitado pero cerrado, con la franja. 409 RETIRO_NO_DISPONIBLE con «Este local toma pedidos para retirar de HH:MM a HH:MM.».
+3. La carta indica abierto y el pedido se crea (201).
 
-## TC-I-206
+## TC-I-201
 
 ### Precondición
 
-Tenant A del seed. La mesa 78 del test abierta con una sesión nueva y un comensal con el token de esa mesa conectado por WebSocket.
+Tenant A del seed. Tres pedidos para retirar pagados con el aviso aceptado: dos con el mismo teléfono (escrito de dos formas) y uno con otro teléfono.
 
 ### Pasos
 
-1. Como comensal, seguir la sesión de la mesa (`mesa:seguir` con el QR y la sesión).
-2. Cerrar la mesa (cierre de sesión del mozo).
-3. Volver a seguir la misma sesión, ya cerrada.
-4. Seguir la sesión con un QR que no sirve.
+1. Anonimizar el teléfono de los dos primeros como Administrador.
+2. Ver los pedidos, sus códigos, pagos y líneas, y el pedido del otro teléfono.
+3. Ver la auditoría.
+4. Anonimizar el mismo teléfono otra vez.
 
 ### Resultado esperado
 
-1. Responde que la está siguiendo.
-2. El comensal recibe `mesa:sesion_cerrada` con su sesión.
-3. Responde que no la sigue y el aviso llega enseguida.
-4. Responde que no la sigue y el aviso llega enseguida.
+1. Informa 2 pedidos.
+2. En los dos se borraron el nombre y el teléfono; se conservan la fecha del consentimiento y queda la de la anonimización. El código, los pagos y las líneas no cambiaron. El pedido del otro teléfono sigue con sus datos.
+3. Un registro PEDIDO_RETIRO_ANONIMIZADO con la cantidad de pedidos y sin el teléfono.
+4. Informa 0 pedidos.
 
-## TC-I-207
+## TC-I-202
 
 ### Precondición
 
-La mesa 78 del test con una sesión anterior ya cerrada y una sesión nueva abierta. Un comensal del grupo nuevo conectado por WebSocket y siguiendo su sesión.
+Usuarios Mozo y Cocina del tenant A (Keycloak de pruebas). Un pedido para retirar pagado, con su código.
 
 ### Pasos
 
-1. Avisar el cierre de la sesión anterior.
-2. Como el comensal nuevo, intentar seguir la sesión anterior.
-3. Cerrar la mesa.
+1. Como Mozo, entregar con el código (POST /pedidos/{id}/entregar-retiro) mientras está en cocina.
+2. Pasarlo a listo e intentar el pase común a ENTREGADO del KDS.
+3. Como Cocina, entregar con el código.
+4. Como Mozo, entregar con un código mal escrito, con un id que no es UUID, con un pedido que no existe y con otro código válido.
+5. Como Mozo, entregar con el código escrito como «r» y el número.
+6. Repetir la entrega.
 
 ### Resultado esperado
 
-1. El comensal nuevo no recibe ningún aviso.
-2. Responde que no la sigue y le avisa que esa sesión terminó.
-3. El comensal nuevo recibe `mesa:sesion_cerrada` con su sesión.
-
-## TC-I-009
-
-### Precondición
-
-La API levantada con la base de pruebas.
-
-### Pasos
-
-1. Pedir `GET /` sin token.
-
-### Resultado esperado
-
-1. Responde 200 con `Content-Type: application/json` y el cuerpo `{ "servicio": "bistrolink-api", "estado": "ok" }`.
+1. 409: «El pedido todavía no está listo para retirar».
+2. Se rechaza: los pedidos para retirar se entregan verificando el código.
+3. 403.
+4. 400, 400, 404 y 409 «El código no coincide con este pedido. Revisá el pedido antes de entregarlo.», sin mostrar el código correcto. El pedido sigue listo.
+5. 200: el pedido queda ENTREGADO, con una sola entrada en el historial.
+6. 409: «Este pedido ya se entregó».

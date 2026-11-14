@@ -36,7 +36,20 @@ describe('aPedidoKds', () => {
           observacion: 'sin sal',
         },
       ],
+      retiro: null,
     });
+  });
+
+  // BL-210: el pedido para retirar lleva el código y el nombre del comensal.
+  it('con código de retiro arma el bloque retiro', () => {
+    expect(
+      aPedidoKds({ ...pedido, codigoRetiro: 'R-042', retiroNombre: 'Ana' })
+        .retiro,
+    ).toEqual({ codigo: 'R-042', nombre: 'Ana' });
+    expect(
+      aPedidoKds({ ...pedido, codigoRetiro: 'R-042', retiroNombre: null })
+        .retiro,
+    ).toEqual({ codigo: 'R-042', nombre: null });
   });
 
   it('descarta campos que no son del KDS aunque vengan en el objeto de Prisma', () => {
@@ -104,6 +117,9 @@ describe('aPedidoKds', () => {
         'lineas',
         'mesaNumero',
         'observacionGeneral',
+        // HU-040 (BL-210): código de retiro y nombre del comensal (sin
+        // montos ni datos de pago).
+        'retiro',
       ]);
       expect(Object.keys(resultado.lineas[0]).sort()).toEqual([
         'cantidad',

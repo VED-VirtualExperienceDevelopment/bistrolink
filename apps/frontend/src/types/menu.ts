@@ -1,5 +1,6 @@
 // HU-002 / HU-003 / BL-155: Tipos compartidos del menú público y carrito
 import type { EstadoPedido } from './pedido';
+import type { RetiroPublico } from '@/components/retiro/retiro.utils';
 
 export interface ItemCarta {
   id: string;
@@ -26,6 +27,9 @@ export interface RestaurantePublico {
 export interface MenuPublicoResponse {
   restaurante: RestaurantePublico;
   categorias: CategoriaCarta[];
+  // HU-040 (BL-210): si el local toma pedidos para retirar ahora. Opcional:
+  // un backend anterior no lo manda (y entonces se puede pedir, como antes).
+  retiro?: RetiroPublico;
 }
 
 export interface ItemCarrito {

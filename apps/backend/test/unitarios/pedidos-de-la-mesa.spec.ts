@@ -142,7 +142,12 @@ describe('PedidosController.estadoEnLaMesa (BL-502)', () => {
   it('consulta con la mesa validada por el guard, nunca con una del body', async () => {
     const respuesta = [{ id: PEDIDO_A }];
     const pedidosDeLaMesa = { estado: jest.fn().mockResolvedValue(respuesta) };
-    const controller = new PedidosController({} as any, pedidosDeLaMesa as any);
+    const controller = new PedidosController(
+      {} as any,
+      pedidosDeLaMesa as any,
+      {} as any,
+      {} as any,
+    );
 
     await expect(
       controller.estadoEnLaMesa({ ids: [PEDIDO_A] }, mesa() as any),

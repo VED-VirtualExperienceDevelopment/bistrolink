@@ -113,6 +113,8 @@ export interface PedidoListo {
   id: string;
   /** null para un pedido para retirar (mesa virtual). */
   mesaNumero: number | null;
+  /** HU-040 (BL-210): código y nombre del pedido para retirar. */
+  retiro: { codigo: string; nombre: string | null } | null;
   platos: string;
   /** Desde cuándo está listo; si no se sabe, desde que se pidió. */
   desde: string;
@@ -143,6 +145,7 @@ export function pedidosListos(
     .map((p) => ({
       id: p.id,
       mesaNumero: numeroDeMesa(p),
+      retiro: p.retiro ?? null,
       platos: platosDelPedido(p),
       desde: listoDesde[p.id] ?? p.createdAt,
     }))
@@ -154,6 +157,19 @@ export function pedidosEnCocina(pedidos: readonly Pedido[]): number {
   return pedidos.filter(
     (p) => p.estado === "RECIBIDO" || p.estado === "EN_PREPARACION",
   ).length;
+}
+
+/**
+ * Dónde va el pedido: «Mesa 4», «Retiro R-042 · Ana» (HU-040) o «Retiro» si
+ * no se conoce el código.
+ */
+export function lugarDelPedido(
+  pedido: Pick<PedidoListo, "mesaNumero" | "retiro">,
+): string {
+  if (pedido.mesaNumero !== null) return `Mesa ${pedido.mesaNumero}`;
+  if (!pedido.retiro) return "Retiro";
+  const nombre = pedido.retiro.nombre ? ` · ${pedido.retiro.nombre}` : "";
+  return `Retiro ${pedido.retiro.codigo}${nombre}`;
 }
 
 /** Minutos enteros desde `desde` (nunca negativos). */

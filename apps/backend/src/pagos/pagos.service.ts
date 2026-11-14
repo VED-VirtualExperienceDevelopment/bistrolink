@@ -29,6 +29,8 @@ import { liberarMesaDelCobro } from './mesa-en-cobro';
 export interface EstadoPagoDelPedido {
   pedidoId: string;
   estadoPedido: PedidoEstado;
+  /** HU-040 (BL-210): código de retiro (R-042); null en mesa o sin pagar. */
+  codigoRetiro: string | null;
   pago: {
     id: string;
     estado: PagoEstado;
@@ -300,6 +302,7 @@ export class PagosService {
             id: true,
             estado: true,
             canal: true,
+            codigoRetiro: true,
             efectivoSolicitadoEn: true,
             efectivoPagaCon: true,
             // HU-022 (BL-494): para calcular el desglose en el backend.
@@ -356,6 +359,8 @@ export class PagosService {
     return {
       pedidoId: pedido.id,
       estadoPedido: pedido.estado,
+      // HU-040 (BL-210): el código que el comensal muestra al retirar.
+      codigoRetiro: pedido.codigoRetiro,
       pago: pago && {
         id: pago.id,
         estado: pago.estado,

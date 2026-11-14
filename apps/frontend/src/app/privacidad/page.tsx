@@ -45,7 +45,8 @@ const LI = 'text-[15px] leading-relaxed text-[#3d3a42]';
  * El responsable de los datos es el establecimiento; BistroLink es la
  * plataforma que los trata por su cuenta. El texto describe lo que el
  * sistema hace hoy: si cambia, se actualiza junto con la funcionalidad
- * (HU-009, BL-453: e-Factura con RUT y razón social).
+ * (HU-009, BL-453: e-Factura con RUT y razón social; HU-040, BL-210:
+ * nombre y contacto del pedido para retirar).
  */
 export default async function PoliticaPrivacidadPage({ searchParams }: PageProps) {
   const datos = await obtenerDatos(await searchParams);
@@ -89,8 +90,15 @@ export default async function PoliticaPrivacidadPage({ searchParams }: PageProps
           <li className={LI}>
             <strong>Tu pedido:</strong> lo que pedís, las notas que escribís,
             la mesa y la hora. Sirve para prepararlo y cobrarlo. No te pedimos
-            nombre ni registro. Te pedimos que no escribas datos personales en
-            las notas.
+            registro. Te pedimos que no escribas datos personales en las notas.
+          </li>
+          <li className={LI}>
+            <strong>Pedido para retirar:</strong> si pedís desde el enlace web
+            del local, podés dejar tu nombre y un teléfono o correo para que te
+            reconozcan en el mostrador. Es opcional y solo se guarda si
+            aceptás este aviso. El pedido se entrega con un código de retiro
+            que te damos al pagar. Si pedís que se eliminen, el local los
+            anonimiza; el pedido y el comprobante no cambian.
           </li>
           <li className={LI}>
             <strong>Pago con tarjeta:</strong> los datos de la tarjeta se
@@ -119,7 +127,9 @@ export default async function PoliticaPrivacidadPage({ searchParams }: PageProps
             recuerda los pedidos que hiciste desde ese teléfono para mostrarlos
             en «Mis pedidos»; se borran cuando el mozo cierra la mesa. No guarda
             datos de la tarjeta ni datos personales. En el pedido para retirar,
-            se borra al cerrar la pestaña.
+            se borra al cerrar la pestaña. Si pedís que te avisemos cuando tu
+            pedido para retirar esté listo, el navegador te pide permiso para
+            mostrar una notificación.
           </li>
           <li className={LI}>
             <strong>Errores de la página:</strong> si algo falla en la

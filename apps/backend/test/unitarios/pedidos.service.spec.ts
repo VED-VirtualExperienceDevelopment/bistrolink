@@ -13,6 +13,14 @@ import { hashTokenAcceso } from '../../src/pedidos/token-acceso-pedido';
 import { CrearPedidoDto } from '../../src/pedidos/dto/crear-pedido.dto';
 
 const TENANT_ID = '11111111-1111-1111-1111-111111111111';
+
+// HU-040 (BL-210): un local que toma pedidos para retirar todo el día.
+const RETIRO_ABIERTO = {
+  timezone: 'America/Montevideo',
+  retiroHabilitado: true,
+  retiroHoraDesde: null,
+  retiroHoraHasta: null,
+};
 // HU-012 (BL-219): al confirmar un pago se recalcula el resumen de ventas.
 // Solo lo usa notificarPedidoConfirmado; el resto de los tests no lo toca.
 const mockResumenVentas = {
@@ -229,7 +237,10 @@ describe('PedidosService.crear — validaciones y mesa virtual', () => {
 
     mockTx.pedido.findUnique.mockResolvedValue(null);
     // BL-308: el restaurante del pedido para retirar es de este tenant.
-    mockTx.restaurante.findUnique.mockResolvedValue({ tenantId: TENANT_ID });
+    mockTx.restaurante.findUnique.mockResolvedValue({
+      tenantId: TENANT_ID,
+      ...RETIRO_ABIERTO,
+    });
   });
 
   it('rechaza con 404 si la mesa no existe', async () => {
@@ -402,7 +413,10 @@ describe('PedidosService.crear — mesa y restaurante (BL-309)', () => {
 
     mockTx.pedido.findUnique.mockResolvedValue(null);
     // BL-308: el restaurante del pedido para retirar es de este tenant.
-    mockTx.restaurante.findUnique.mockResolvedValue({ tenantId: TENANT_ID });
+    mockTx.restaurante.findUnique.mockResolvedValue({
+      tenantId: TENANT_ID,
+      ...RETIRO_ABIERTO,
+    });
     mockTx.itemCarta.findMany.mockResolvedValue([ITEM_DISPONIBLE]);
     mockTx.pedido.create.mockResolvedValue(pedidoPrisma());
   });
@@ -560,7 +574,10 @@ describe('PedidosService.crear — QR de mesa y restaurante del tenant (BL-204)'
   });
 
   it('pedido para retirar: el canal es WEB, aunque no venga mesa', async () => {
-    mockTx.restaurante.findUnique.mockResolvedValue({ tenantId: TENANT_ID });
+    mockTx.restaurante.findUnique.mockResolvedValue({
+      tenantId: TENANT_ID,
+      ...RETIRO_ABIERTO,
+    });
     mockTx.mesa.upsert.mockResolvedValue({
       id: 'mesa-virtual-id',
       numero: 0,
@@ -571,7 +588,13 @@ describe('PedidosService.crear — QR de mesa y restaurante del tenant (BL-204)'
 
     expect(mockTx.restaurante.findUnique).toHaveBeenCalledWith({
       where: { id: RESTAURANTE_ID },
-      select: { tenantId: true },
+      select: {
+        tenantId: true,
+        timezone: true,
+        retiroHabilitado: true,
+        retiroHoraDesde: true,
+        retiroHoraHasta: true,
+      },
     });
     expect(mockTx.pedido.create).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -583,7 +606,10 @@ describe('PedidosService.crear — QR de mesa y restaurante del tenant (BL-204)'
   describe('BL-311 (RD.05): token de acceso del pedido para retirar', () => {
     beforeEach(() => {
       mockTx.pedido.update = jest.fn();
-      mockTx.restaurante.findUnique.mockResolvedValue({ tenantId: TENANT_ID });
+      mockTx.restaurante.findUnique.mockResolvedValue({
+        tenantId: TENANT_ID,
+        ...RETIRO_ABIERTO,
+      });
       mockTx.mesa.upsert.mockResolvedValue({
         id: 'mesa-virtual-id',
         numero: 0,
@@ -904,6 +930,8 @@ describe('PedidosService.confirmarPagoEnTx / notificarPedidoConfirmado (BL-311, 
       estado: 'RECIBIDO',
       createdAt: '2026-10-10T23:41:00.000Z',
       observacionGeneral: null,
+      // HU-040 (BL-210): pedido de mesa, sin retiro.
+      retiro: null,
       lineas: [
         {
           id: 'linea-1',
