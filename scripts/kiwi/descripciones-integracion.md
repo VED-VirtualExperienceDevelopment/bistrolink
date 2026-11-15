@@ -46,6 +46,7 @@
 | 1.39    | 14/11/2026 | TC-I-221 y 222: «Sugerencia del local» (HU-044 / BL-537). Se borran los bloques de TC-I-217 a 220, ya cargados.                                                                                                                           |
 | 1.40    | 14/11/2026 | TC-I-223 y 224: insignia «Más pedido» (HU-045 / BL-543). Se borran los bloques de TC-I-221 y 222, ya cargados.                                                                                                                            |
 | 1.41    | 14/11/2026 | TC-I-225 a 229: complementos antes de pagar (HU-046 / BL-551, BL-552 y BL-554): platos sugeribles y con alcohol, reglas de asociación, endpoint y medición. Se borran los bloques de TC-I-223 y 224, ya cargados.                         |
+| 1.42    | 15/11/2026 | TC-I-230 a 232: el canal en tiempo real de Gestión de Carta (`/menu`) exige el token de un Administrador y toma el tenant del token (BL-515).                                                                                             |
 
 Texto del campo de descripción de cada caso TC-I en Kiwi. Lo carga
 `cargar-casos-integracion.mjs --descripciones`: cada bloque `## TC-I-NNN`
@@ -164,3 +165,50 @@ Igual que TC-I-228. Los contadores de hoy del tenant A se leen con el reporte (`
 3. Cuenta una aceptada: el relleno no es sugerible.
 4. Web: una mostrada y una aceptada más que antes, y la tasa es aceptadas ÷ mostradas en %, con un decimal. En el local: igual que antes.
 5. Cada fila tiene solo `tenantId`, `dia`, `canal`, `mostradas`, `aceptadas` y `actualizadoEn`: nada del comensal ni del pedido. Otro tenant no ve ninguna.
+
+## TC-I-230
+
+### Precondición
+
+API levantada en un puerto libre (`app.listen(0)`). Sin token.
+
+### Pasos
+
+1. Conectar un cliente Socket.io al namespace `/menu`, sin token y con `tenantId` de un tenant cualquiera en el query, sin reconexión automática.
+
+### Resultado esperado
+
+La conexión no se establece: el cliente recibe `connect_error` con el mensaje «Token no provisto en el handshake». El `tenantId` del query no da acceso a ninguna sala.
+
+## TC-I-231
+
+### Precondición
+
+Usuario MOZO del tenant de prueba (`TEST_MOZO_USERNAME`) con token válido de Keycloak.
+
+### Pasos
+
+1. Pedir el token del MOZO a Keycloak.
+2. Conectar un cliente Socket.io al namespace `/menu` con ese token.
+
+### Resultado esperado
+
+La conexión no se establece: `connect_error` con el mensaje «Rol no autorizado para este canal.». El canal es solo de Gestión de Carta (rol ADMIN).
+
+## TC-I-232
+
+### Precondición
+
+Usuario ADMIN del tenant de prueba (`TEST_ADMIN_USERNAME`) con token válido de Keycloak. Un `tenantId` ajeno (`99999999-9999-4999-8999-999999999999`).
+
+### Pasos
+
+1. Pedir el token del ADMIN y leer su `tenant_id`.
+2. Conectar al namespace `/menu` con ese token y con el `tenantId` ajeno en el query.
+3. Emitir desde `MenuGateway` un `menu:item:updated` al tenant ajeno y otro al tenant del token.
+4. Esperar medio segundo y revisar los eventos recibidos.
+
+### Resultado esperado
+
+1. La conexión se establece.
+2. El cliente recibe solo el evento de su tenant (`item-propio`), no el del tenant ajeno: la sala sale del token, no del query.
