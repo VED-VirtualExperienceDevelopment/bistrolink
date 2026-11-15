@@ -41,6 +41,7 @@
 | 1.33 | 14/11/2026 | TC-E-114 a 116: marca propia del local, de Configuración a la carta, y la sección «Marca del local» en un celular de 360 px (HU-043 / BL-535). |
 | 1.34 | 14/11/2026 | Se borran los bloques de TC-E-114 a 116, ya cargados en Kiwi. TC-E-117: «Sugerencia del local» (HU-044 / BL-537). |
 | 1.35 | 14/11/2026 | Se borra el bloque de TC-E-117, ya cargado en Kiwi. TC-E-118: insignia «Más pedido» (HU-045 / BL-543). |
+| 1.36 | 15/11/2026 | Se borra el bloque de TC-E-118, ya cargado en Kiwi. TC-E-119 a 121: revisar el pedido antes de confirmar (BL-378). |
 
 Plantilla para cargar en Kiwi la descripción de casos TC-E (Playwright)
 nuevos o que cambiaron (BL-435). La usa
@@ -85,22 +86,58 @@ Reglas:
 
 ## Casos para cargar
 
-## TC-E-118
+## TC-E-119
 
 ### Precondición
 
-Staging, sin sesión (comensal por el enlace web del local). Tarjeta de prueba de Mercado Pago (titular APRO).
+Staging, sin sesión (comensal por el enlace web del local), con pantalla de celular (360 × 800). Tarjeta de prueba de Mercado Pago (titular APRO).
 
 ### Pasos
 
-1. Agregar 10 unidades de un plato disponible.
-2. Pagar con la tarjeta de prueba.
-3. Volver a abrir el menú del local.
-4. Analizar el menú con axe-core.
+1. Agregar 2 unidades de un plato disponible y tocar «Ver pedido».
+2. En la hoja, tocar «Quitar uno de …» y después «Agregar uno de …».
+3. Revisar el ancho de la página y analizar la hoja con axe-core.
+4. Tocar «Seguir viendo la carta».
+5. Confirmar y pagar con la tarjeta de prueba.
 
 ### Resultado esperado
 
-1. El botón del plato dice «10 en el pedido».
-2. «¡Tu pedido ya está en cocina!».
-3. Al menos un plato muestra la insignia «Más pedido», con el `title` y el texto para lectores «Entre los 3 platos más pedidos del local en los últimos 30 días».
-4. Sin errores graves ni críticos de accesibilidad.
+1. La hoja muestra «2x …» con los botones −, + y «Quitar», de 44 × 44 px como mínimo.
+2. Pasa a «1x …» (el lector de pantalla anuncia «Quitaste una unidad de …») y vuelve a «2x …».
+3. Sin scroll horizontal y sin errores graves ni críticos de accesibilidad.
+4. La hoja se cierra y el botón del plato sigue diciendo «2 en el pedido».
+5. «¡Tu pedido ya está en cocina!».
+
+## TC-E-120
+
+### Precondición
+
+Igual que TC-E-119, sin pago.
+
+### Pasos
+
+1. Agregar 1 unidad de un plato y tocar «Ver pedido».
+2. Tocar «Quitar … del pedido».
+
+### Resultado esperado
+
+1. La hoja muestra el plato.
+2. La hoja se cierra, desaparece la barra del pedido, el botón del plato ya no dice «en el pedido» y el lector de pantalla anuncia «Tu pedido quedó vacío.».
+
+## TC-E-121
+
+### Precondición
+
+Igual que TC-E-120, con pantalla de escritorio (1280 × 800).
+
+### Pasos
+
+1. Agregar 1 unidad de un plato.
+2. En la columna del pedido, tocar «Agregar uno de …» y analizar la columna con axe-core.
+3. Tocar «Quitar … del pedido».
+
+### Resultado esperado
+
+1. La columna muestra «1x …».
+2. Pasa a «2x …», sin errores graves ni críticos de accesibilidad.
+3. La columna desaparece (el pedido quedó vacío).

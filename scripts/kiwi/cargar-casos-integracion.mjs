@@ -1603,6 +1603,23 @@ const DATOS_E2E = {
     priority: "P2",
     tags: ["BL-549", "pago", "responsive", ...axe],
   }),
+  // BL-378: revisar el pedido antes de confirmar, en
+  // comensal/revisar-pedido.spec.ts.
+  119: e2e("comensal", "HU-003", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-378", "carrito", "pago", "responsive", ...axe],
+  }),
+  120: e2e("comensal", "HU-003", {
+    category: "Funcional",
+    priority: "P3",
+    tags: ["BL-378", "carrito", "responsive"],
+  }),
+  121: e2e("comensal", "HU-003", {
+    category: "Funcional",
+    priority: "P3",
+    tags: ["BL-378", "carrito", ...axe],
+  }),
 };
 /**
  * Datos de los contratos PactJS (TC-C). Requirement con la HU que usa el
