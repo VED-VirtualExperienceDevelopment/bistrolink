@@ -73,7 +73,7 @@ export async function continuarAlPago(page: Page): Promise<string> {
  * los que no corresponden: por eso se busca el input por su name, no el
  * primero que aparezca.
  */
-async function llenarCampoSeguro(
+export async function llenarCampoSeguro(
   page: Page,
   etiqueta: string,
   nombreInput: "cardNumber" | "expirationDate" | "securityCode",

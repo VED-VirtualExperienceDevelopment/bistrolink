@@ -1091,6 +1091,14 @@ const DATOS_INTEGRACION = {
     priority: "P2",
     tags: ["reportes", "privacidad", "RLS"],
   }),
+  // HU-051 (BL-563): sello de pago seguro, en tarjetas-aceptadas.e2e-spec.ts.
+  233: {
+    component: "api",
+    requirement: "HU-051",
+    category: "Funcional",
+    priority: "P3",
+    tags: ["HU-051", "BL-563", "pago", "mercado-pago", "cache"],
+  },
 };
 /**
  * BL-435: datos de los E2E TC-E-017 en adelante, con los criterios de
@@ -1670,6 +1678,12 @@ const DATOS_E2E = {
     category: "Funcional",
     priority: "P3",
     tags: ["BL-553", "carrito", ...axe],
+  }),
+  // HU-051 (BL-563): sello de pago seguro.
+  126: e2e("comensal", "HU-051", {
+    category: "Funcional",
+    priority: "P3",
+    tags: ["BL-563", "pago", "responsive", ...axe],
   }),
 };
 /**
