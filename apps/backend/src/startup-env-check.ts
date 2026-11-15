@@ -1,4 +1,4 @@
-/**
+//**
  * Verifica que las variables de entorno críticas para producción/staging
  * estén presentes ANTES de que Nest termine de levantar la app.
  *
@@ -47,9 +47,9 @@ const REQUIRED_ENV_VARS: RequiredEnvVar[] = [
  * (NODE_ENV=production). Con la protección contra fuerza bruta activa en el
  * realm, el usuario técnico del comensal tiene que tener un nombre que no se
  * deduzca del tenantId. Sin el secreto, la API volvería en silencio al nombre
- * anterior (`comensal-<tenantId>`): en un entorno ya migrado, ningún comensal
- * podría pedir; en uno sin migrar, cualquiera podría bloquearlo. En local y en
- * CI (desarrollo) no se exige: ahí se usa el nombre anterior a propósito.
+ * anterior (`comensal-<tenantId>`), que en un entorno ya migrado no existe:
+ * ningún comensal podría pedir. Mejor que no arranque. En local y en CI
+ * (desarrollo) no se exige: ahí se usa el nombre anterior a propósito.
  */
 const REQUIRED_IN_PRODUCTION_ENV_VARS: RequiredEnvVar[] = [
   {
