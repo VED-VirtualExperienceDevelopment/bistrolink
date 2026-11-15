@@ -10,6 +10,8 @@ import {
   etiquetaDePropina,
   type TotalesDelPedido,
 } from "./propina.utils";
+import { ValoracionPedido } from "@/components/valoracion/ValoracionPedido";
+import type { Valoracion } from "@/components/valoracion/valoracion.utils";
 
 interface Props {
   readonly pedidoId: string;
@@ -34,6 +36,8 @@ interface Props {
   /** BL-502: otros pedidos de la mesa que todavía no llegaron. */
   readonly pedidosEnCamino?: number;
   readonly onVerMisPedidos?: () => void;
+  /** HU-050 (BL-558): manda la valoración privada; sin ella, no se ofrece. */
+  readonly onValorar?: (valoracion: Valoracion) => Promise<void>;
 }
 
 const CLASE_TARJETA =
@@ -50,6 +54,7 @@ function textoEnCamino(cantidad: number): string {
  * en otras apps de pedido en la mesa: la confirmación arriba, el detalle de
  * lo que se pagó con el comprobante, y las acciones para seguir (pedir algo
  * más y, si hay, los otros pedidos en camino). Desde lg, en dos columnas.
+ * HU-050 (BL-558): al final, la valoración privada del pedido.
  */
 export function GraciasPorTuCompra({
   pedidoId,
@@ -68,6 +73,7 @@ export function GraciasPorTuCompra({
   onOtroPedido,
   pedidosEnCamino = 0,
   onVerMisPedidos,
+  onValorar,
 }: Props) {
   const tituloRef = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
@@ -196,6 +202,8 @@ export function GraciasPorTuCompra({
           </p>
         </div>
       </div>
+
+      {onValorar && <ValoracionPedido onEnviar={onValorar} />}
     </div>
   );
 }

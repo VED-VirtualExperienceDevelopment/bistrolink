@@ -122,6 +122,14 @@ export default async function PoliticaPrivacidadPage({ searchParams }: PageProps
             anonimiza en sus registros; la e-Factura ya emitida no cambia.
           </li>
           <li className={LI}>
+            <strong>Valoración del pedido:</strong> cuando te entregan el
+            pedido, podés valorarlo de 1 a 5 y dejar un comentario. Es
+            opcional y privada: solo la ve el local, para saber qué mejorar, y
+            no se publica. No guardamos quién sos: se guarda el día, no la
+            hora, y el local no ve la mesa ni el pedido. Te pedimos que no
+            escribas datos personales en el comentario.
+          </li>
+          <li className={LI}>
             <strong>Tu navegador:</strong> guarda el pedido que estás pagando
             para que puedas retomarlo si recargás la página. En la mesa, además,
             recuerda los pedidos que hiciste desde ese teléfono para mostrarlos
