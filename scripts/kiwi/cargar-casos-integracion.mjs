@@ -242,6 +242,15 @@ const masPedido = (extra = {}) => ({
   ...extra,
   tags: ["HU-045", "BL-543", "BL-547", "menu-publico", ...(extra.tags ?? [])],
 });
+// HU-046 (BL-544): complementos antes de pagar. Platos sugeribles en
+// gestion-carta.e2e-spec.ts (BL-551); reglas y endpoint en
+// complementos.e2e-spec.ts (BL-552).
+const complementos = (ticket, extra = {}) => ({
+  component: "api",
+  requirement: "HU-046",
+  ...extra,
+  tags: ["HU-046", "BL-544", ticket, ...(extra.tags ?? [])],
+});
 // HU-020 (BL-72): configuración del establecimiento, en
 // configuracion-establecimiento.e2e-spec.ts.
 // BL-448: avisos de efectivo que no se pierden en el KDS (HU-031b).
@@ -1055,6 +1064,27 @@ const DATOS_INTEGRACION = {
     category: "Funcional",
     priority: "P2",
     tags: ["validacion"],
+  }),
+  // HU-046 (BL-544): complementos antes de pagar.
+  225: complementos("BL-551", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["carta", "auditoria", "validacion"],
+  }),
+  226: complementos("BL-551", {
+    category: "Seguridad",
+    priority: "P2",
+    tags: ["seguridad", "roles"],
+  }),
+  227: complementos("BL-552", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["reglas-de-asociacion", "job", "RLS"],
+  }),
+  228: complementos("BL-552", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["menu-publico", "privacidad", "rate-limiting"],
   }),
 };
 /**
