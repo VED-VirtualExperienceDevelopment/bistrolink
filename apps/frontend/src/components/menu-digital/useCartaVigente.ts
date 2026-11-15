@@ -14,8 +14,9 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 /**
  * BL-570: la carta que se muestra al comensal, con la disponibilidad
  * vigente. Arranca con la que trajo la página y se vuelve a pedir:
- * - al volver a la pestaña (`visibilitychange`), si `activa` (el comensal
- *   está viendo la carta, no el pago) y pasó la espera mínima;
+ * - al volver a la pestaña (`visibilitychange`) o a la ventana (`focus`),
+ *   si `activa` (el comensal está viendo la carta, no el pago) y pasó la
+ *   espera mínima;
  * - cuando la pantalla llama a `recargar` (pedido rechazado por la carta).
  *
  * Si la API falla o responde con error (mesa cerrada, local suspendido), se
@@ -72,8 +73,13 @@ export function useCartaVigente(
       }
     };
     document.addEventListener("visibilitychange", alCambiarVisibilidad);
-    return () =>
+    // En la computadora, pasar de otra ventana a la de la carta no cambia la
+    // visibilidad (las dos se ven): se usa también el foco de la ventana.
+    window.addEventListener("focus", alCambiarVisibilidad);
+    return () => {
       document.removeEventListener("visibilitychange", alCambiarVisibilidad);
+      window.removeEventListener("focus", alCambiarVisibilidad);
+    };
   }, [activa, ruta, recargar]);
 
   return { categorias, recargar };
