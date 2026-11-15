@@ -61,6 +61,17 @@ export type RotacionMesas =
       ocupacionPromedioMin: number;
     };
 
+/**
+ * HU-046 (BL-554): la sugerencia de complementos en el período y el canal.
+ * Contadores agregados: nada del comensal ni del pedido.
+ */
+export interface SugerenciasDelPeriodo {
+  mostradas: number;
+  aceptadas: number;
+  /** Aceptadas ÷ mostradas, en %, con un decimal. 0 si no se mostró. */
+  tasaAceptacion: number;
+}
+
 export interface ReporteVentas {
   rango: RangoDias & { timezone: string };
   canal: CanalReporte;
@@ -80,6 +91,7 @@ export interface ReporteVentas {
     porRecaudado: PlatoVendido[];
   };
   rotacionMesas: RotacionMesas;
+  sugerencias: SugerenciasDelPeriodo;
 }
 
 /** Un número que viene de la base: SUM y AVG llegan como Decimal (o null). */
@@ -244,6 +256,7 @@ export class ReportesService {
         rotacionMesas: aplicaRotacion(filtros.canal)
           ? await consulta.rotacion(rango)
           : { aplica: false },
+        sugerencias: await consulta.sugerencias(rango, canales),
       };
     });
   }
@@ -325,6 +338,34 @@ class ConsultaReportes {
       cantidad: Number(f.cantidad),
       recaudado: pesos(f.recaudado),
     }));
+  }
+
+  /**
+   * HU-046 (BL-554): sugerencias mostradas y aceptadas. `dia` ya es el día
+   * del calendario del local, así que se compara directo con el rango.
+   */
+  async sugerencias(
+    { desde, hasta }: RangoDias,
+    canales: readonly PedidoCanal[] | null,
+  ): Promise<SugerenciasDelPeriodo> {
+    const [fila] = await this.tx.$queryRaw<
+      { mostradas: number | null; aceptadas: number | null }[]
+    >(Prisma.sql`
+      SELECT SUM(mostradas)::int AS mostradas,
+             SUM(aceptadas)::int AS aceptadas
+      FROM metrica_sugerencia_dia
+      WHERE tenant_id = ${this.tenantId}::uuid
+        AND dia >= ${desde}::date
+        AND dia <= ${hasta}::date
+        ${this.delCanal(canales)}`);
+    const mostradas = Number(fila?.mostradas ?? 0);
+    const aceptadas = Number(fila?.aceptadas ?? 0);
+    return {
+      mostradas,
+      aceptadas,
+      tasaAceptacion:
+        mostradas > 0 ? unDecimal((aceptadas / mostradas) * 100) : 0,
+    };
   }
 
   /** Sesiones de mesa cerradas en el período (D3). */

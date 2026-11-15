@@ -979,8 +979,30 @@ describe('PedidosService.confirmarPagoEnTx / notificarPedidoConfirmado (BL-311, 
   it('[TC-U-380] HU-042: con la cola desactivada no toma el lock ni cuenta pedidos (como antes)', async () => {
     await service.confirmarPagoEnTx(mockTx, TENANT_ID, 'pedido-nuevo');
 
-    expect(mockTx.$executeRaw).not.toHaveBeenCalled();
+    // HU-046 (BL-554): la única consulta cruda es la de las sugerencias
+    // aceptadas; la del candado de la cola, no.
+    const consultas = mockTx.$executeRaw.mock.calls.map(
+      ([consulta]: [{ sql: string }]) => consulta.sql,
+    );
+    expect(consultas.some((sql: string) => sql.includes('pg_advisory'))).toBe(
+      false,
+    );
     expect(mockTx.pedido.count).not.toHaveBeenCalled();
+  });
+
+  it('HU-046 (BL-554): al confirmar el pago suma las sugerencias aceptadas del pedido, en la misma transacción', async () => {
+    await service.confirmarPagoEnTx(mockTx, TENANT_ID, 'pedido-nuevo');
+
+    const aceptadas = mockTx.$executeRaw.mock.calls
+      .map(([consulta]: [{ sql: string; values: unknown[] }]) => consulta)
+      .find((c: { sql: string }) => c.sql.includes('metrica_sugerencia_dia'));
+    expect(aceptadas?.values).toEqual([TENANT_ID, 'pedido-nuevo']);
+  });
+
+  it('HU-046 (BL-554): si el pedido ya estaba confirmado, no vuelve a sumar', async () => {
+    mockTx.pedido.updateMany.mockResolvedValueOnce({ count: 0 });
+    await service.confirmarPagoEnTx(mockTx, TENANT_ID, 'pedido-nuevo');
+    expect(mockTx.$executeRaw).not.toHaveBeenCalled();
   });
 
   it('[TC-U-381] HU-042: con lugar en cocina, el pedido pasa a EN_PREPARACION en la misma transacción', async () => {

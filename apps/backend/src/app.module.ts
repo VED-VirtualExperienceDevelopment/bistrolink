@@ -26,6 +26,7 @@ import { ComprobantesModule } from './comprobantes/comprobantes.module';
 import { ReportesModule } from './reportes/reportes.module';
 import { StockModule } from './stock/stock.module';
 import { PosModule } from './pos/pos.module';
+import { ComplementosModule } from './complementos/complementos.module';
 import { modulosDeTesting } from './testing/testing.module';
 import { ContextoAuditoriaMiddleware } from './audit-log/contexto-auditoria';
 
@@ -98,6 +99,8 @@ const configuracionLog = construirConfiguracionLog(process.env);
     StockModule,
     // HU-011 (BL-488): sincronización con el POS del local.
     PosModule,
+    // HU-046 (BL-552): complementos antes de pagar y su job nocturno.
+    ComplementosModule,
     // BL-475 (BL-285): POST /testing/limpieza, solo con
     // E2E_CLEANUP_ENABLED=true (staging y local; nunca en producción).
     ...modulosDeTesting(),

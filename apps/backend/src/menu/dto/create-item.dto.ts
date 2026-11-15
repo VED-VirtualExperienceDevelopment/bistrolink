@@ -41,4 +41,15 @@ export class CreateItemDto {
   @IsOptional()
   @IsBoolean()
   destacado?: boolean;
+
+  // HU-046 (BL-551): se puede sugerir como complemento antes de pagar. Con
+  // alcohol no (400, ver complementoDelPlato en menu-admin.service.ts).
+  @IsOptional()
+  @IsBoolean()
+  sugerible?: boolean;
+
+  // HU-046 (BL-551): marcarlo saca el plato de las sugerencias.
+  @IsOptional()
+  @IsBoolean()
+  contieneAlcohol?: boolean;
 }

@@ -45,6 +45,7 @@
 | 1.38    | 14/11/2026 | TC-I-217 a 220: marca propia del local (HU-043 / BL-531, 532, 561 y 562): plantilla, logo, nombre y dirección, y portada. Se numeran después de los de HU-033.                                                                            |
 | 1.39    | 14/11/2026 | TC-I-221 y 222: «Sugerencia del local» (HU-044 / BL-537). Se borran los bloques de TC-I-217 a 220, ya cargados.                                                                                                                           |
 | 1.40    | 14/11/2026 | TC-I-223 y 224: insignia «Más pedido» (HU-045 / BL-543). Se borran los bloques de TC-I-221 y 222, ya cargados.                                                                                                                            |
+| 1.41    | 14/11/2026 | TC-I-225 a 229: complementos antes de pagar (HU-046 / BL-551, BL-552 y BL-554): platos sugeribles y con alcohol, reglas de asociación, endpoint y medición. Se borran los bloques de TC-I-223 y 224, ya cargados.                         |
 
 Texto del campo de descripción de cada caso TC-I en Kiwi. Lo carga
 `cargar-casos-integracion.mjs --descripciones`: cada bloque `## TC-I-NNN`
@@ -56,34 +57,110 @@ esperado`, igual que los casos cargados a mano desde TC-I-029.
 
 ## Casos para cargar
 
-## TC-I-223
+## TC-I-225
 
 ### Precondición
 
-Tenant A del seed. Categoría de prueba con 6 platos y ventas cargadas en `resumen_platos_hora`: «Muy vendido» 10.000 unidades hace 1 día, «Segundo» 20 hace 2 días, «Empate viejo» 12 hace 5 días, «Empate reciente» 12 hace 1 día, «Fuera de la ventana» 50 hace 31 días y «Pocas ventas» 9 hace 1 día.
+Tenant A del seed, con el administrador logueado. Plato de prueba «Pancho de prueba» (BL-402), sin alcohol y sin sugerir.
 
 ### Pasos
 
-1. Calcular los más pedidos con los 6 platos como candidatos.
-2. Calcular con «Pocas ventas» y «Fuera de la ventana» como candidatos.
-3. Calcular con los 6 platos pero con el id de otro tenant.
+1. `PATCH /admin/menu/item/:id` con `{ sugerible: "si" }`.
+2. `PATCH` con `{ sugerible: true }`.
+3. `PATCH` con `{ contieneAlcohol: true }`.
+4. `PATCH` con `{ sugerible: true }`, y después con `{ sugerible: true, contieneAlcohol: true }`.
+5. Marcarlo sugerible directo en la base, sin pasar por la API.
+6. Leer la carta del administrador y el registro de auditoría del plato.
 
 ### Resultado esperado
 
-1. «Muy vendido», «Segundo» y «Empate reciente», en ese orden: 3 platos, con al menos 10 unidades en 30 días, y a igual cantidad gana la venta más reciente.
-2. Ninguno.
-3. Ninguno: las ventas de un tenant no cuentan para otro.
+1. 400: el valor no es booleano.
+2. 200, con `sugerible: true` y `contieneAlcohol: false`.
+3. 200, con `contieneAlcohol: true` y `sugerible: false`: con alcohol deja de ser sugerible.
+4. 400 las dos veces, con el mensaje «Un plato con alcohol no se puede sugerir como complemento.», y el plato no cambia.
+5. La base lo rechaza (CHECK `item_carta_alcohol_no_sugerible`).
+6. La carta trae `sugerible: false` y `contieneAlcohol: true`. La auditoría (`CARTA_ITEM_MODIFICADO`) tiene `sugerible` de `false` a `true`, y `sugerible` de `true` a `false` con `contieneAlcohol` de `false` a `true`.
 
-## TC-I-224
+## TC-I-226
 
 ### Precondición
 
-Igual que TC-I-223.
+Tenant A del seed, con el usuario MOZO logueado.
 
 ### Pasos
 
-1. `GET /menu/tenant/:tenantId/restaurante/:restauranteId` (menú del comensal).
+1. `PATCH /admin/menu/item/:id` con `{ sugerible: true }`.
+2. `PATCH` con `{ contieneAlcohol: true }`.
 
 ### Resultado esperado
 
-1. «Muy vendido» tiene `masPedido: true`; «Pocas ventas» y «Fuera de la ventana», `false`. Todos los platos traen el campo y a lo sumo 3 lo tienen en `true`. El campo no se puede mandar al crear ni al editar un plato (400, prueba unitaria del DTO).
+1. 403.
+2. 403. Solo el administrador cambia estos campos.
+
+## TC-I-227
+
+### Precondición
+
+Tenant A del seed. Categoría de prueba con Milanesa, Flan (sugerible), Vino (con alcohol), Agua (sugerible), Café (sugerible) y Relleno. Pedidos con pago cargados en la base: 6 con milanesa, flan y vino; 4 con milanesa y agua aprobados y 3 rechazados; 5 con milanesa y café de hace 100 días; 5 solo con relleno.
+
+### Pasos
+
+1. Recalcular las reglas del local.
+2. Leer las reglas de los platos de prueba.
+3. Recalcular otra vez.
+4. Leer las reglas de la milanesa desde el contexto de otro tenant.
+
+### Resultado esperado
+
+1. Termina sin errores.
+2. Solo dos reglas, las dos hacia el flan: milanesa → flan (6 pedidos con los dos, confianza 0,6, lift mayor que 1, soporte mayor que 0) y vino → flan. No hay regla hacia el agua (4 pedidos aprobados: menos de 5), el café (fuera de los 90 días), el vino (tiene alcohol) ni la milanesa (no es sugerible).
+3. Las mismas dos reglas: el recálculo es idempotente.
+4. Ninguna: la RLS no deja ver las reglas de otro local.
+
+## TC-I-228
+
+### Precondición
+
+Igual que TC-I-227, con las reglas recalculadas. El agua tiene 12 unidades vendidas hace 3 días en `resumen_platos_hora` (respaldo de popularidad, HU-045). La mesa 1 del seed, con la sesión abierta.
+
+### Pasos
+
+1. `POST /menu/tenant/:tenantId/restaurante/:restauranteId/complementos` con la milanesa.
+2. Lo mismo con la milanesa y el flan.
+3. Marcar el flan como agotado y pedir con la milanesa. Volver a dejarlo disponible.
+4. Pedir con el vino.
+5. Pedir sin platos, con un id inválido y con un restaurante que no es del tenant.
+6. `POST /menu/qr/:token/complementos` con la milanesa, 21 veces seguidas con el mismo QR.
+7. `POST /menu/qr/inventado/complementos`.
+
+### Resultado esperado
+
+1. 200, `origen: "reglas"` y solo el flan, con `id`, `nombre`, `descripcion`, `precio` e `imagenUrl`: nada de las reglas ni de otros pedidos.
+2. 200, `origen: "popularidad"` y solo el agua: el flan ya está en el pedido.
+3. El flan no aparece.
+4. El vino no aparece.
+5. 400, 400 y 404.
+6. Las primeras 20 responden 200 con el flan; la 21, 429.
+7. 404.
+
+## TC-I-229
+
+### Precondición
+
+Igual que TC-I-228. Los contadores de hoy del tenant A se leen con el reporte (`ReportesService`) antes de empezar, para comparar.
+
+### Pasos
+
+1. `POST /menu/tenant/:tenantId/restaurante/:restauranteId/complementos` con la milanesa (devuelve el flan).
+2. Sacar la sugerencia al agua y al café y pedir con la milanesa y el flan (no hay nada para sugerir). Volver a dejarlos sugeribles.
+3. Cargar un pedido web con milanesa, flan y relleno, con el flan y el relleno agregados desde la sugerencia, y sumar las aceptadas del pedido.
+4. Leer el reporte de hoy con el canal Web y con el canal En el local.
+5. Leer las filas de `metrica_sugerencia_dia` del canal WEB, y leerlas desde el contexto de otro tenant.
+
+### Resultado esperado
+
+1. 200: cuenta una mostrada.
+2. 200 con `origen: "ninguno"`: no cuenta.
+3. Cuenta una aceptada: el relleno no es sugerible.
+4. Web: una mostrada y una aceptada más que antes, y la tasa es aceptadas ÷ mostradas en %, con un decimal. En el local: igual que antes.
+5. Cada fila tiene solo `tenantId`, `dia`, `canal`, `mostradas`, `aceptadas` y `actualizadoEn`: nada del comensal ni del pedido. Otro tenant no ve ninguna.

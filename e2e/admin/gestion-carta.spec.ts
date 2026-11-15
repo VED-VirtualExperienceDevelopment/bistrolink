@@ -338,6 +338,80 @@ test.describe("BL-392 · Gestión de Carta", () => {
     }
   });
 
+  test("[TC-E-122] HU-046: el admin marca un plato como sugerible; con alcohol el switch queda apagado y deshabilitado, y la API lo rechaza (sin errores graves de accesibilidad)", async ({
+    kdsPageAdmin: page,
+  }) => {
+    const authorization = await abrirCarta(page);
+    let categoria: CategoriaDePrueba | undefined;
+    const plato = `Flan complemento E2E ${Date.now()}`;
+    try {
+      categoria = await crearCategoria(page.request, authorization, [plato]);
+      await abrirCarta(page);
+
+      const abrirEdicion = async () => {
+        await seccion(page, categoria as CategoriaDePrueba)
+          .getByRole("button", { name: `Editar ${plato}` })
+          .click();
+        return page.getByRole("dialog", { name: "Editar ítem" });
+      };
+      let dialogo = await abrirEdicion();
+      const sugerible = () =>
+        dialogo.getByRole("switch", {
+          name: "Se puede sugerir como complemento",
+        });
+      const alcohol = () =>
+        dialogo.getByRole("switch", { name: "Contiene alcohol" });
+      await expect(sugerible()).toHaveAttribute("aria-checked", "false");
+
+      // Con alcohol, la sugerencia se apaga y no se puede prender.
+      await sugerible().click();
+      await alcohol().click();
+      await expect(sugerible()).toHaveAttribute("aria-checked", "false");
+      await expect(sugerible()).toBeDisabled();
+      await expect(
+        dialogo.getByText("Los platos con alcohol nunca se sugieren."),
+      ).toBeVisible();
+      expect(await violacionesGraves(page)).toEqual([]);
+
+      // Sin alcohol, se marca y se guarda.
+      await alcohol().click();
+      await expect(sugerible()).toBeEnabled();
+      await sugerible().click();
+      const [guardado] = await Promise.all([
+        page.waitForResponse(
+          (r) =>
+            r.url().endsWith(`/admin/menu/item/${categoria?.items[0].id}`) &&
+            r.request().method() === "PATCH",
+          { timeout: 10_000 },
+        ),
+        dialogo.getByRole("button", { name: "Guardar" }).click(),
+      ]);
+      expect(guardado.status(), "la API no guardó el plato").toBe(200);
+      await expect(dialogo).toBeHidden();
+      await expect(
+        tarjeta(page, categoria, plato).getByText("Sugerible", { exact: true }),
+      ).toBeVisible();
+
+      // Queda guardado.
+      await abrirCarta(page);
+      dialogo = await abrirEdicion();
+      await expect(sugerible()).toHaveAttribute("aria-checked", "true");
+      await dialogo.getByRole("button", { name: "Cancelar" }).click();
+
+      // La API no acepta un plato con alcohol sugerible.
+      const rechazo = await page.request.patch(
+        `${API_URL}/admin/menu/item/${categoria.items[0].id}`,
+        {
+          headers: { authorization },
+          data: { sugerible: true, contieneAlcohol: true },
+        },
+      );
+      expect(rechazo.status()).toBe(400);
+    } finally {
+      await eliminarCategoria(page.request, authorization, categoria);
+    }
+  });
+
   test("[TC-E-053] Carta: el orden se cambia con «Subir» y arrastrando con el teclado, y queda guardado", async ({
     kdsPageAdmin: page,
   }) => {

@@ -19,6 +19,8 @@ import { useMisPedidos } from "@/components/mis-pedidos/useMisPedidos";
 import { MesaCerradaAviso } from "@/components/mesa-cerrada/MesaCerradaAviso";
 import { CarritoBarra } from "@/components/carrito/CarritoBarra";
 import { CarritoDetalle } from "@/components/carrito/CarritoDetalle";
+import { useSugerenciaComplementos } from "@/components/carrito/useSugerenciaComplementos";
+import type { PlatoSugerido } from "@/components/carrito/complementos.utils";
 import { CarritoHoja } from "@/components/carrito/CarritoHoja";
 import {
   anuncioDelCarrito,
@@ -123,6 +125,8 @@ type ItemCarrito = {
   cantidad: number;
   imagenUrl: string | null;
   observacion?: string;
+  /** HU-046 (BL-554): lo agregó desde la sugerencia de complementos. */
+  desdeSugerencia?: boolean;
 };
 
 interface MenuDigitalProps {
@@ -235,6 +239,8 @@ async function crearPedidoComensal(
       itemCartaId: item.itemCartaId,
       cantidad: item.cantidad,
       observacion: item.observacion?.trim() || undefined,
+      // HU-046 (BL-554): para contar las sugerencias aceptadas al pagar.
+      desdeSugerencia: item.desdeSugerencia || undefined,
     })),
     // HU-040 (BL-210): solo si lo completó y aceptó que se guarde.
     contactoRetiro,
@@ -382,11 +388,19 @@ export default function MenuDigital({
   // un plato), para anunciarlo al lector de pantalla.
   const [ultimoCambio, setUltimoCambio] = useState<CambioCarrito | null>(null);
 
+  // HU-046 (BL-553): sugerencia de complementos, una vez por pedido, cuando
+  // el detalle está a la vista (columna en escritorio u hoja abierta).
+  const sugerencia = useSugerenciaComplementos({
+    origen,
+    lineas: carrito,
+    detalleVisible: hayCarrito && (esPantallaAncha || hojaCarritoAbierta),
+  });
+
   // BL-425: true si el ítem ya tiene en el carrito el máximo de unidades.
   const llegoAlTope = (itemId: string) =>
     alcanzoCantidadMaxima(cantidadEnCarrito(carrito, itemId));
 
-  const agregarAlCarrito = (item: ItemMenu) => {
+  const agregarAlCarrito = (item: ItemMenu, desdeSugerencia = false) => {
     setUltimoCambio({ tipo: "agregado", nombre: item.nombre });
     setCarrito((prevCarrito) => {
       const itemExistente = prevCarrito.some((i) => i.itemCartaId === item.id);
@@ -407,6 +421,7 @@ export default function MenuDigital({
           cantidad: 1,
           imagenUrl: item.imagenUrl,
           observacion: "",
+          ...(desdeSugerencia && { desdeSugerencia }),
         },
       ];
     });
@@ -660,6 +675,19 @@ export default function MenuDigital({
     );
   }
 
+  // HU-046 (BL-553): «Agregar» suma el plato con cantidad 1 (si ya estaba,
+  // no se muestra) y la sugerencia queda resuelta; «No, gracias» no cambia
+  // nada del pedido.
+  const complementos = {
+    origen: sugerencia.origen,
+    platos: sugerencia.platos,
+    onAgregar: (plato: PlatoSugerido) => {
+      agregarAlCarrito({ ...plato, disponible: true }, true);
+      sugerencia.resolver();
+    },
+    onRechazar: sugerencia.resolver,
+  };
+
   // BL-519: lo mismo para la columna (lg) y para la hoja (celular).
   const propsDetalleCarrito = {
     lineas: carrito,
@@ -679,6 +707,7 @@ export default function MenuDigital({
     error: erroresDelPedido.delCarrito,
     // HU-040 (BL-210): fuera de horario no se puede pagar el retiro.
     pagoBloqueado: avisoCerrado !== null,
+    complementos,
     // HU-040 (BL-210): nombre y contacto del pedido para retirar.
     contacto: (
       <ContactoDelRetiro

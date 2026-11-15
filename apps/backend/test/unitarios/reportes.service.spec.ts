@@ -34,6 +34,7 @@ describe('ReportesService', () => {
   let porHora: unknown[];
   let platos: unknown[];
   let rotacion: unknown[];
+  let sugerencias: unknown[];
 
   /** El SQL (normalizado) de cada consulta que se hizo. */
   function consultas(): { sql: string; values: unknown[] }[] {
@@ -94,12 +95,15 @@ describe('ReportesService', () => {
       },
     ];
     rotacion = [{ sesiones: 25, minutos: decimal(47.6) }];
+    sugerencias = [{ mostradas: 40, aceptadas: 9 }];
 
     tx = {
       $queryRaw: jest.fn((sql: Prisma.Sql) => {
         const texto = sql.sql;
         if (texto.includes('FROM sesion_mesa'))
           return Promise.resolve(rotacion);
+        if (texto.includes('FROM metrica_sugerencia_dia'))
+          return Promise.resolve(sugerencias);
         if (texto.includes('FROM resumen_platos_hora'))
           return Promise.resolve(platos);
         if (texto.includes('EXTRACT(HOUR')) return Promise.resolve(porHora);
@@ -281,7 +285,40 @@ describe('ReportesService', () => {
         c.values.includes('POS') &&
         !c.values.includes('QR'),
     );
-    expect(filtradas).toHaveLength(2);
+    // Platos, ventas por hora y (HU-046, BL-554) sugerencias.
+    expect(filtradas).toHaveLength(3);
+  });
+
+  it('HU-046 (BL-554): sugerencias mostradas, aceptadas y tasa de aceptación del período y el canal', async () => {
+    const reporte = await service.obtener(
+      TENANT_ID,
+      filtros({ canal: 'LOCAL' }),
+      AHORA,
+    );
+    expect(reporte.sugerencias).toEqual({
+      mostradas: 40,
+      aceptadas: 9,
+      tasaAceptacion: 22.5,
+    });
+    const consulta = consultas().find((c) =>
+      c.sql.includes('FROM metrica_sugerencia_dia'),
+    );
+    expect(consulta?.values).toEqual([
+      TENANT_ID,
+      '2026-11-02',
+      '2026-11-02',
+      'QR',
+      'MOZO',
+    ]);
+
+    // Sin sugerencias mostradas: 0 %, sin dividir por cero.
+    sugerencias = [{ mostradas: null, aceptadas: null }];
+    const vacio = await service.obtener(TENANT_ID, filtros(), AHORA);
+    expect(vacio.sugerencias).toEqual({
+      mostradas: 0,
+      aceptadas: 0,
+      tasaAceptacion: 0,
+    });
   });
 
   it('[TC-U-305] sin ventas: todo en cero, sin dividir por cero', async () => {

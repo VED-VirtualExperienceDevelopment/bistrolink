@@ -31,6 +31,7 @@ import {
 import { cantidadesPorItem, faltaStock } from '../stock/estado-stock';
 import { completarCapacidad, type PedidoPromovido } from './cola-kds';
 import { SincronizacionPosService } from '../pos/sincronizacion-pos.service';
+import { sumarAceptadasEnTx } from '../complementos/metricas-sugerencia';
 
 // BL-311 (RD.03, prepago): el pedido espera el pago aprobado antes de ir a
 // cocina. La transición a RECIBIDO la hace la confirmación del pago.
@@ -257,6 +258,10 @@ export class PedidosService {
       tenantId,
       pedidoId,
     );
+
+    // HU-046 (BL-554): los platos que el comensal agregó desde la sugerencia
+    // de complementos cuentan como aceptadas, en esta misma transacción.
+    await sumarAceptadasEnTx(tx, tenantId, pedidoId);
 
     // HU-011 (BL-488): la venta queda en la bandeja de salida hacia el POS
     // del local, en esta misma transacción: si el POS no responde, no se
@@ -575,6 +580,8 @@ export class PedidosService {
         cantidad: linea.cantidad,
         subtotal: item.precio.mul(linea.cantidad),
         observacion: linea.observacion,
+        // HU-046 (BL-554): para contar las sugerencias aceptadas.
+        ...(linea.desdeSugerencia === true && { desdeSugerencia: true }),
       };
     });
   }

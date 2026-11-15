@@ -397,6 +397,94 @@ describeConAdmin('BL-402: Gestión de Carta (integración)', () => {
     },
   );
 
+  it('[TC-I-225] Carta: el ADMIN marca un plato como sugerible o con alcohol; con alcohol nunca queda sugerible (400) y todo queda auditado', async () => {
+    const editar = (cuerpo: object) =>
+      conToken(
+        tokenAdmin,
+        servidor().patch(`/admin/menu/item/${itemPedidoId}`),
+      ).send(cuerpo);
+
+    // Valor que no es booleano: 400.
+    await editar({ sugerible: 'si' }).expect(HttpStatus.BAD_REQUEST);
+
+    await editar({ sugerible: true })
+      .expect(HttpStatus.OK)
+      .expect((res) => {
+        expect(res.body.sugerible).toBe(true);
+        expect(res.body.contieneAlcohol).toBe(false);
+      });
+
+    // Con alcohol deja de ser sugerible.
+    await editar({ contieneAlcohol: true })
+      .expect(HttpStatus.OK)
+      .expect((res) => {
+        expect(res.body.sugerible).toBe(false);
+        expect(res.body.contieneAlcohol).toBe(true);
+      });
+
+    // Sugerir un plato con alcohol: 400 con el mensaje, y no cambia.
+    await editar({ sugerible: true })
+      .expect(HttpStatus.BAD_REQUEST)
+      .expect((res) =>
+        expect(res.body.message).toBe(
+          'Un plato con alcohol no se puede sugerir como complemento.',
+        ),
+      );
+    await editar({ sugerible: true, contieneAlcohol: true }).expect(
+      HttpStatus.BAD_REQUEST,
+    );
+
+    // La base tampoco lo acepta (CHECK), aunque se saltee la API.
+    await expect(
+      tenantPrisma.runInTenantContext(TENANT_ID, (tx) =>
+        tx.itemCarta.update({
+          where: { id: itemPedidoId },
+          data: { sugerible: true },
+        }),
+      ),
+    ).rejects.toThrow(/item_carta_alcohol_no_sugerible/);
+
+    // La carta del administrador trae los dos campos.
+    const item = (await leerCarta())
+      .flatMap((c) => c.items)
+      .find((i) => i.id === itemPedidoId);
+    expect(item).toMatchObject({ sugerible: false, contieneAlcohol: true });
+
+    // La auditoría tiene cada cambio con antes y después.
+    const auditoria = await tenantPrisma.runInTenantContext(TENANT_ID, (tx) =>
+      tx.registroAuditoria.findMany({
+        where: { accion: 'CARTA_ITEM_MODIFICADO', entidadId: itemPedidoId },
+        select: { valoresAntes: true, valoresDespues: true },
+      }),
+    );
+    expect(auditoria).toContainEqual({
+      valoresAntes: { sugerible: false },
+      valoresDespues: { sugerible: true },
+    });
+    expect(auditoria).toContainEqual({
+      valoresAntes: { sugerible: true, contieneAlcohol: false },
+      valoresDespues: { sugerible: false, contieneAlcohol: true },
+    });
+
+    // Se le saca el alcohol para no afectar a los demás casos.
+    await editar({ contieneAlcohol: false }).expect(HttpStatus.OK);
+  });
+
+  itConMozo(
+    '[TC-I-226] Carta: el MOZO no puede marcar un plato como sugerible ni con alcohol (403)',
+    async () => {
+      const token = await getToken(MOZO_USER as string, MOZO_PASS as string);
+      for (const cuerpo of [{ sugerible: true }, { contieneAlcohol: true }]) {
+        await conToken(
+          token,
+          servidor().patch(`/admin/menu/item/${itemPedidoId}`),
+        )
+          .send(cuerpo)
+          .expect(HttpStatus.FORBIDDEN);
+      }
+    },
+  );
+
   // ── Aislamiento entre tenants (RLS) ───────────────────────────────────────
   itConTenantB(
     '[TC-I-131] Carta: el admin de otro tenant no ve ni modifica la carta (404)',

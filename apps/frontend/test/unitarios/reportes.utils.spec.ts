@@ -1,4 +1,5 @@
 import {
+  ayudaSugerencias,
   CANALES,
   MENSAJE_PLATOS_POS,
   crearRefrescoDiferido,
@@ -264,5 +265,26 @@ describe("reportes.utils", () => {
         ).detalle,
       ).toBe("4 de 4 pedidos dejaron propina");
     });
+  });
+});
+
+describe("HU-046 (BL-554): ayudaSugerencias", () => {
+  const DATOS = { mostradas: 40, aceptadas: 9, tasaAceptacion: 22.5 };
+
+  it("con sugerencias mostradas no hay ayuda", () => {
+    expect(ayudaSugerencias(DATOS, "TODOS")).toBeNull();
+  });
+
+  it("sin sugerencias en el período lo dice", () => {
+    expect(
+      ayudaSugerencias(
+        { mostradas: 0, aceptadas: 0, tasaAceptacion: 0 },
+        "LOCAL",
+      ),
+    ).toBe("Todavía no se mostraron sugerencias en este período.");
+  });
+
+  it("el POS del local no tiene sugerencias", () => {
+    expect(ayudaSugerencias(DATOS, "POS")).toMatch(/POS del local/);
   });
 });

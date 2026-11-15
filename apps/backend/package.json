@@ -23,7 +23,8 @@
     "generate:qr": "ts-node scripts/generate-qr.ts",
     "aprovisionar": "ts-node scripts/aprovisionar-establecimiento.ts",
     "crear-usuario-plataforma": "ts-node scripts/crear-usuario-plataforma.ts",
-    "reprocesar-imagenes": "ts-node scripts/reprocesar-imagenes-carta.ts"
+    "reprocesar-imagenes": "ts-node scripts/reprocesar-imagenes-carta.ts",
+    "evaluar-complementos": "ts-node scripts/evaluar-reglas-complemento.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1161.0",

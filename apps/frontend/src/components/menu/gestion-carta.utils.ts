@@ -14,6 +14,10 @@ export interface ItemGestion {
   readonly disponible: boolean;
   /** HU-044 (BL-537): «Sugerencia del local». */
   readonly destacado?: boolean;
+  /** HU-046 (BL-551): se puede sugerir como complemento antes de pagar. */
+  readonly sugerible?: boolean;
+  /** HU-046 (BL-551): con alcohol nunca se sugiere. */
+  readonly contieneAlcohol?: boolean;
   readonly imagenKey?: string;
   readonly imagenUrl?: string | null;
   readonly categoriaId: string;

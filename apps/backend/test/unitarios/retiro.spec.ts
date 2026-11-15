@@ -338,6 +338,8 @@ describe('PedidosService: pedido para retirar (BL-210)', () => {
     beforeEach(() => {
       tx.pedido.updateMany = jest.fn().mockResolvedValue({ count: 1 });
       tx.pedidoEstadoHistorial = { create: jest.fn() };
+      // HU-046 (BL-554): las sugerencias aceptadas del pedido.
+      tx.$executeRaw = jest.fn().mockResolvedValue(0);
       tx.restaurante.findUnique.mockResolvedValue({
         limitePedidosEnPreparacion: null,
       });

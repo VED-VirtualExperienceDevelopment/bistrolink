@@ -89,6 +89,15 @@ describe("cómo se muestra cada registro", () => {
     ).toEqual(["Sugerencia del local: no → sí"]);
   });
 
+  it("HU-046 (BL-551): marcar un plato con alcohol se lee con el nombre de cada campo", () => {
+    expect(
+      cambiosDelRegistro({
+        valoresAntes: { sugerible: true, contieneAlcohol: false },
+        valoresDespues: { sugerible: false, contieneAlcohol: true },
+      }),
+    ).toEqual(["Se puede sugerir: sí → no", "Contiene alcohol: no → sí"]);
+  });
+
   it("[TC-U-224] BL-396: muestra sobre qué ítem o categoría fue la acción", () => {
     expect(objetoDelRegistro({ detalle: { nombre: "Picada Completa" } })).toBe(
       "«Picada Completa»",
