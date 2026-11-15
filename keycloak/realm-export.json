@@ -16,7 +16,7 @@
   "registrationAllowed": false,
   "loginWithEmailAllowed": true,
   "duplicateEmailsAllowed": false,
-  "passwordPolicy": "length(9) and notUsername(undefined) and passwordHistory(3)",
+  "passwordPolicy": "length(9) and maxLength(128) and notUsername(undefined) and notEmail(undefined)",
   "eventsEnabled": true,
   "eventsExpiration": 7776000,
   "eventsListeners": ["jboss-logging"],
