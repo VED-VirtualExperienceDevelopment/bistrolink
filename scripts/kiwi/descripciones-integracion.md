@@ -45,7 +45,7 @@
 | 1.38    | 14/11/2026 | TC-I-217 a 220: marca propia del local (HU-043 / BL-531, 532, 561 y 562): plantilla, logo, nombre y dirección, y portada. Se numeran después de los de HU-033.                                                                            |
 | 1.39    | 14/11/2026 | TC-I-221 y 222: «Sugerencia del local» (HU-044 / BL-537). Se borran los bloques de TC-I-217 a 220, ya cargados.                                                                                                                           |
 | 1.40    | 14/11/2026 | TC-I-223 y 224: insignia «Más pedido» (HU-045 / BL-543). Se borran los bloques de TC-I-221 y 222, ya cargados.                                                                                                                            |
-| 1.41    | 14/11/2026 | TC-I-225 a 228: complementos antes de pagar (HU-046 / BL-551 y BL-552): platos sugeribles y con alcohol, reglas de asociación y endpoint. Se borran los bloques de TC-I-223 y 224, ya cargados.                                           |
+| 1.41    | 14/11/2026 | TC-I-225 a 229: complementos antes de pagar (HU-046 / BL-551, BL-552 y BL-554): platos sugeribles y con alcohol, reglas de asociación, endpoint y medición. Se borran los bloques de TC-I-223 y 224, ya cargados.                         |
 
 Texto del campo de descripción de cada caso TC-I en Kiwi. Lo carga
 `cargar-casos-integracion.mjs --descripciones`: cada bloque `## TC-I-NNN`
@@ -142,3 +142,25 @@ Igual que TC-I-227, con las reglas recalculadas. El agua tiene 12 unidades vendi
 5. 400, 400 y 404.
 6. Las primeras 20 responden 200 con el flan; la 21, 429.
 7. 404.
+
+## TC-I-229
+
+### Precondición
+
+Igual que TC-I-228. Los contadores de hoy del tenant A se leen con el reporte (`ReportesService`) antes de empezar, para comparar.
+
+### Pasos
+
+1. `POST /menu/tenant/:tenantId/restaurante/:restauranteId/complementos` con la milanesa (devuelve el flan).
+2. Sacar la sugerencia al agua y al café y pedir con la milanesa y el flan (no hay nada para sugerir). Volver a dejarlos sugeribles.
+3. Cargar un pedido web con milanesa, flan y relleno, con el flan y el relleno agregados desde la sugerencia, y sumar las aceptadas del pedido.
+4. Leer el reporte de hoy con el canal Web y con el canal En el local.
+5. Leer las filas de `metrica_sugerencia_dia` del canal WEB, y leerlas desde el contexto de otro tenant.
+
+### Resultado esperado
+
+1. 200: cuenta una mostrada.
+2. 200 con `origen: "ninguno"`: no cuenta.
+3. Cuenta una aceptada: el relleno no es sugerible.
+4. Web: una mostrada y una aceptada más que antes, y la tasa es aceptadas ÷ mostradas en %, con un decimal. En el local: igual que antes.
+5. Cada fila tiene solo `tenantId`, `dia`, `canal`, `mostradas`, `aceptadas` y `actualizadoEn`: nada del comensal ni del pedido. Otro tenant no ve ninguna.

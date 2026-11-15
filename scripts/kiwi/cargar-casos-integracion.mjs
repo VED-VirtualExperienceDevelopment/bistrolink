@@ -1086,6 +1086,11 @@ const DATOS_INTEGRACION = {
     priority: "P1",
     tags: ["menu-publico", "privacidad", "rate-limiting"],
   }),
+  229: complementos("BL-554", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["reportes", "privacidad", "RLS"],
+  }),
 };
 /**
  * BL-435: datos de los E2E TC-E-017 en adelante, con los criterios de
