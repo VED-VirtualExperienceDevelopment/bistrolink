@@ -44,6 +44,7 @@
 | 1.36 | 15/11/2026 | Se borra el bloque de TC-E-118, ya cargado en Kiwi. TC-E-119 a 121: revisar el pedido antes de confirmar (BL-378). |
 | 1.37 | 14/11/2026 | Se borran los bloques de TC-E-119 a 121, ya cargados en Kiwi. TC-E-122 a 124: complementos antes de pagar (HU-046 / BL-551 y BL-553). |
 | 1.38 | 15/11/2026 | TC-E-125: la carta del comensal abierta muestra «No disponible» al volver a la pestaña después de que el administrador agota el plato (BL-570). |
+| 1.39 | 15/11/2026 | Se borran los bloques de TC-E-122 a 125, ya cargados en Kiwi. TC-E-126: sello de pago seguro (HU-051 / BL-563). |
 
 Plantilla para cargar en Kiwi la descripción de casos TC-E (Playwright)
 nuevos o que cambiaron (BL-435). La usa
@@ -88,76 +89,22 @@ Reglas:
 
 ## Casos para cargar
 
-## TC-E-122
+## TC-E-126
 
 ### Precondición
 
-Staging, con el administrador logueado en Gestión de Carta. Categoría de prueba creada por la API con un plato (se elimina al terminar).
+Staging, sin sesión (comensal por el enlace web del local), con pantalla de celular (360 × 800). Cuenta de sandbox de Mercado Pago.
 
 ### Pasos
 
-1. Abrir «Editar» del plato. En «Complemento antes de pagar», prender «Se puede sugerir como complemento» y después «Contiene alcohol». Analizar la pantalla con axe-core.
-2. Apagar «Contiene alcohol», prender «Se puede sugerir como complemento» y tocar «Guardar».
-3. Recargar la carta y abrir «Editar» del plato.
-4. Por la API, editar el plato con `sugerible: true` y `contieneAlcohol: true`.
+1. Agregar un plato disponible y tocar «Continuar al pago».
+2. Mirar el bloque de arriba del formulario de tarjeta.
+3. Escribir el número de la tarjeta de prueba (Mastercard).
+4. Revisar el ancho de la página y analizar el formulario con axe-core.
 
 ### Resultado esperado
 
-1. Con alcohol, el switch de la sugerencia queda apagado y deshabilitado, y se ve «Los platos con alcohol nunca se sugieren.». Sin errores graves ni críticos de accesibilidad.
-2. La API responde 200, el formulario se cierra y la fila del plato muestra el rótulo «Sugerible».
-3. El switch «Se puede sugerir como complemento» está prendido.
-4. 400.
-
-## TC-E-123
-
-### Precondición
-
-Staging, sin sesión (comensal por el enlace web del local), con pantalla de celular (360 × 800). La respuesta del endpoint de complementos se fija con un plato real de la carta (el plato que se sugiere depende de las ventas del local).
-
-### Pasos
-
-1. Llamar al endpoint real de complementos con un plato de la carta.
-2. Agregar un plato disponible y tocar «Ver pedido». Revisar el ancho de la página y analizar la hoja con axe-core.
-3. En «¿Querés sumar algo?», tocar «Agregar … al pedido».
-4. Cerrar la hoja y volver a abrirla.
-
-### Resultado esperado
-
-1. 200, con `origen` «reglas», «popularidad» o «ninguno» y como mucho 2 sugerencias.
-2. La hoja muestra el bloque «¿Querés sumar algo?», con «Suele pedirse junto con lo que elegiste», «Agregar» de 44 px de alto y «No, gracias». Se pidió con el plato del pedido. Sin scroll horizontal y sin errores graves ni críticos de accesibilidad.
-3. La hoja muestra «1x …» del plato sugerido, el bloque desaparece y el lector de pantalla anuncia «Agregaste …».
-4. El bloque no vuelve a aparecer y no se vuelve a pedir la sugerencia.
-
-## TC-E-124
-
-### Precondición
-
-Igual que TC-E-123, con pantalla de escritorio (1280 × 800).
-
-### Pasos
-
-1. Agregar un plato disponible y analizar la columna del pedido con axe-core.
-2. En «¿Querés sumar algo?», tocar «No, gracias».
-
-### Resultado esperado
-
-1. La columna muestra el bloque «¿Querés sumar algo?». Sin errores graves ni críticos de accesibilidad.
-2. El bloque desaparece, el pedido sigue con «1x …» del primer plato y sin el sugerido, y el foco pasa al título «Tu pedido».
-
-## TC-E-125
-
-### Precondición
-
-Staging, con el administrador logueado en Gestión de Carta. Categoría de prueba creada por la API con un plato disponible (se elimina al terminar). Carta del comensal por enlace web abierta en un celular (390 px), con el reloj de la página controlado por el test.
-
-### Pasos
-
-1. Abrir la carta del comensal y buscar el plato de prueba.
-2. Por la API, como administrador, marcar el plato como agotado (`PATCH /admin/menu/item/:id/disponibilidad` con `disponible: false`).
-3. Adelantar el reloj de la página 31 segundos y simular que el comensal vuelve a la pestaña (evento `visibilitychange`).
-
-### Resultado esperado
-
-1. El plato se ve sin «No disponible».
-2. La API responde 200.
-3. Sin recargar la página, el plato muestra «No disponible».
+1. «Pagá tu pedido» con el formulario de tarjeta.
+2. «Pago seguro con» y el logo de Mercado Pago en una sola línea, y debajo la lista «Tarjetas aceptadas» con al menos una tarjeta; cada una con su nombre (texto alternativo de la imagen o texto). Debajo de «Pagar», solo «Tus datos de tarjeta no pasan por BistroLink».
+3. Mastercard queda resaltada y las demás, atenuadas.
+4. Sin scroll horizontal y sin errores graves ni críticos de accesibilidad.

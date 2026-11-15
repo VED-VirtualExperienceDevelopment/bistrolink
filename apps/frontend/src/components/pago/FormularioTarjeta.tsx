@@ -20,6 +20,9 @@ import {
   type TipoDocumento,
 } from './pago.utils';
 import { cargarSdkMercadoPago } from './cargar-sdk-mercadopago';
+import { SelloPagoSeguro } from './SelloPagoSeguro';
+import { marcaDelMedio } from './tarjetas-aceptadas.utils';
+import { useTarjetasAceptadas } from './useTarjetasAceptadas';
 
 /** Lo que necesita POST /pedidos/:id/pagos en `datosPasarela` (MercadoPagoGateway). */
 export interface DatosTarjeta {
@@ -113,6 +116,8 @@ export function FormularioTarjeta({
   const [intentoSdk, setIntentoSdk] = useState(0);
   const [marca, setMarca] = useState<string | null>(null);
   const [metodo, setMetodo] = useState<{ id: string; tipo: string } | null>(null);
+  // HU-051 (BL-563): tarjetas que acepta la cuenta, para el sello de pago seguro.
+  const tarjetasAceptadas = useTarjetasAceptadas();
   const [foco, setFoco] = useState<CampoSeguro | null>(null);
   const [invalidos, setInvalidos] = useState<Partial<Record<CampoSeguro, boolean>>>({});
 
@@ -277,6 +282,12 @@ export function FormularioTarjeta({
 
   return (
     <form onSubmit={enviar} noValidate className="flex flex-col gap-5" aria-busy={ocupado}>
+      {/* HU-051 (BL-563): logo de Mercado Pago y tarjetas aceptadas, con la
+          marca que se detecta al escribir el número. */}
+      <SelloPagoSeguro
+        tarjetas={tarjetasAceptadas}
+        marcaDetectada={marcaDelMedio(metodo?.id)}
+      />
       {(sdk === 'error' || (camposDemorados && !camposListos)) && (
         <div role="alert" className="p-3 rounded-lg bg-[#FFDAD6]/60 text-[#93000a] text-sm font-medium flex flex-col gap-2">
           <p>
@@ -408,12 +419,11 @@ export function FormularioTarjeta({
         )}
       </button>
 
-      <ul className="flex flex-wrap justify-center gap-x-5 gap-y-1 text-xs text-[#5a575e]">
-        <li className="flex items-center gap-1">
-          <IconoEscudo /> Pago procesado por Mercado Pago
-        </li>
-        <li>Tus datos de tarjeta no pasan por BistroLink</li>
-      </ul>
+      {/* HU-051 (BL-563): «Pago seguro con Mercado Pago» ya está arriba, en
+          el sello; acá queda solo lo que agrega. */}
+      <p className="flex items-center justify-center gap-1 text-xs text-[#5a575e]">
+        <IconoEscudo /> Tus datos de tarjeta no pasan por BistroLink
+      </p>
     </form>
   );
 }

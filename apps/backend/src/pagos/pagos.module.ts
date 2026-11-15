@@ -25,6 +25,9 @@ import { CancelacionPedidoController } from './cancelacion/cancelacion-pedido.co
 import { CancelacionPedidoService } from './cancelacion/cancelacion-pedido.service';
 import { PosModule } from '../pos/pos.module';
 
+import { TarjetasAceptadasController } from './tarjetas/tarjetas-aceptadas.controller';
+import { TarjetasAceptadasService } from './tarjetas/tarjetas-aceptadas.service';
+
 @Module({
   // BL-311: QrMesaModule para MesaQrGuard en el pago (RD.05).
   // HU-011 (BL-488): PosModule, para anular la venta en el POS al cancelar.
@@ -44,9 +47,12 @@ import { PosModule } from '../pos/pos.module';
     CobrosController,
     // HU-024 (BL-104): cancelación de pedidos pagados y devolución.
     CancelacionPedidoController,
+    // HU-051 (BL-563): tarjetas aceptadas para el sello de pago seguro.
+    TarjetasAceptadasController,
   ],
   providers: [
     PagosService,
+    TarjetasAceptadasService,
     PagosWebhookService,
     MercadoPagoGateway,
     PlexoGateway,
