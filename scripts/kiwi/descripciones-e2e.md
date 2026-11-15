@@ -42,6 +42,7 @@
 | 1.34 | 14/11/2026 | Se borran los bloques de TC-E-114 a 116, ya cargados en Kiwi. TC-E-117: «Sugerencia del local» (HU-044 / BL-537). |
 | 1.35 | 14/11/2026 | Se borra el bloque de TC-E-117, ya cargado en Kiwi. TC-E-118: insignia «Más pedido» (HU-045 / BL-543). |
 | 1.36 | 15/11/2026 | Se borra el bloque de TC-E-118, ya cargado en Kiwi. TC-E-119 a 121: revisar el pedido antes de confirmar (BL-378). |
+| 1.37 | 14/11/2026 | Se borran los bloques de TC-E-119 a 121, ya cargados en Kiwi. TC-E-122 a 124: complementos antes de pagar (HU-046 / BL-551 y BL-553). |
 
 Plantilla para cargar en Kiwi la descripción de casos TC-E (Playwright)
 nuevos o que cambiaron (BL-435). La usa
@@ -86,58 +87,58 @@ Reglas:
 
 ## Casos para cargar
 
-## TC-E-119
+## TC-E-122
 
 ### Precondición
 
-Staging, sin sesión (comensal por el enlace web del local), con pantalla de celular (360 × 800). Tarjeta de prueba de Mercado Pago (titular APRO).
+Staging, con el administrador logueado en Gestión de Carta. Categoría de prueba creada por la API con un plato (se elimina al terminar).
 
 ### Pasos
 
-1. Agregar 2 unidades de un plato disponible y tocar «Ver pedido».
-2. En la hoja, tocar «Quitar uno de …» y después «Agregar uno de …».
-3. Revisar el ancho de la página y analizar la hoja con axe-core.
-4. Tocar «Seguir viendo la carta».
-5. Confirmar y pagar con la tarjeta de prueba.
+1. Abrir «Editar» del plato. En «Complemento antes de pagar», prender «Se puede sugerir como complemento» y después «Contiene alcohol». Analizar la pantalla con axe-core.
+2. Apagar «Contiene alcohol», prender «Se puede sugerir como complemento» y tocar «Guardar».
+3. Recargar la carta y abrir «Editar» del plato.
+4. Por la API, editar el plato con `sugerible: true` y `contieneAlcohol: true`.
 
 ### Resultado esperado
 
-1. La hoja muestra «2x …» con los botones −, + y «Quitar», de 44 × 44 px como mínimo.
-2. Pasa a «1x …» (el lector de pantalla anuncia «Quitaste una unidad de …») y vuelve a «2x …».
-3. Sin scroll horizontal y sin errores graves ni críticos de accesibilidad.
-4. La hoja se cierra y el botón del plato sigue diciendo «2 en el pedido».
-5. «¡Tu pedido ya está en cocina!».
+1. Con alcohol, el switch de la sugerencia queda apagado y deshabilitado, y se ve «Los platos con alcohol nunca se sugieren.». Sin errores graves ni críticos de accesibilidad.
+2. La API responde 200, el formulario se cierra y la fila del plato muestra el rótulo «Sugerible».
+3. El switch «Se puede sugerir como complemento» está prendido.
+4. 400.
 
-## TC-E-120
+## TC-E-123
 
 ### Precondición
 
-Igual que TC-E-119, sin pago.
+Staging, sin sesión (comensal por el enlace web del local), con pantalla de celular (360 × 800). La respuesta del endpoint de complementos se fija con un plato real de la carta (el plato que se sugiere depende de las ventas del local).
 
 ### Pasos
 
-1. Agregar 1 unidad de un plato y tocar «Ver pedido».
-2. Tocar «Quitar … del pedido».
+1. Llamar al endpoint real de complementos con un plato de la carta.
+2. Agregar un plato disponible y tocar «Ver pedido». Revisar el ancho de la página y analizar la hoja con axe-core.
+3. En «¿Querés sumar algo?», tocar «Agregar … al pedido».
+4. Cerrar la hoja y volver a abrirla.
 
 ### Resultado esperado
 
-1. La hoja muestra el plato.
-2. La hoja se cierra, desaparece la barra del pedido, el botón del plato ya no dice «en el pedido» y el lector de pantalla anuncia «Tu pedido quedó vacío.».
+1. 200, con `origen` «reglas», «popularidad» o «ninguno» y como mucho 2 sugerencias.
+2. La hoja muestra el bloque «¿Querés sumar algo?», con «Suele pedirse junto con lo que elegiste», «Agregar» de 44 px de alto y «No, gracias». Se pidió con el plato del pedido. Sin scroll horizontal y sin errores graves ni críticos de accesibilidad.
+3. La hoja muestra «1x …» del plato sugerido, el bloque desaparece y el lector de pantalla anuncia «Agregaste …».
+4. El bloque no vuelve a aparecer y no se vuelve a pedir la sugerencia.
 
-## TC-E-121
+## TC-E-124
 
 ### Precondición
 
-Igual que TC-E-120, con pantalla de escritorio (1280 × 800).
+Igual que TC-E-123, con pantalla de escritorio (1280 × 800).
 
 ### Pasos
 
-1. Agregar 1 unidad de un plato.
-2. En la columna del pedido, tocar «Agregar uno de …» y analizar la columna con axe-core.
-3. Tocar «Quitar … del pedido».
+1. Agregar un plato disponible y analizar la columna del pedido con axe-core.
+2. En «¿Querés sumar algo?», tocar «No, gracias».
 
 ### Resultado esperado
 
-1. La columna muestra «1x …».
-2. Pasa a «2x …», sin errores graves ni críticos de accesibilidad.
-3. La columna desaparece (el pedido quedó vacío).
+1. La columna muestra el bloque «¿Querés sumar algo?». Sin errores graves ni críticos de accesibilidad.
+2. El bloque desaparece, el pedido sigue con «1x …» del primer plato y sin el sugerido, y el foco pasa al título «Tu pedido».

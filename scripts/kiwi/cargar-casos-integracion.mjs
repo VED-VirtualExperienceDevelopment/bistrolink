@@ -1655,6 +1655,22 @@ const DATOS_E2E = {
     priority: "P3",
     tags: ["BL-378", "carrito", ...axe],
   }),
+  // HU-046 (BL-544): complementos antes de pagar.
+  122: e2e("admin", "HU-046", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-551", "carta", "validacion", ...axe],
+  }),
+  123: e2e("comensal", "HU-046", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-553", "carrito", "responsive", ...axe],
+  }),
+  124: e2e("comensal", "HU-046", {
+    category: "Funcional",
+    priority: "P3",
+    tags: ["BL-553", "carrito", ...axe],
+  }),
 };
 /**
  * Datos de los contratos PactJS (TC-C). Requirement con la HU que usa el
