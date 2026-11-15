@@ -49,6 +49,13 @@ export default function ItemFormModal({
   const [disponible, setDisponible] = useState(itemToEdit?.disponible ?? true);
   // HU-044 (BL-537): «Sugerencia del local».
   const [destacado, setDestacado] = useState(itemToEdit?.destacado ?? false);
+  // HU-046 (BL-551): complemento antes de pagar. Con alcohol no se sugiere.
+  const [contieneAlcohol, setContieneAlcohol] = useState(
+    itemToEdit?.contieneAlcohol ?? false,
+  );
+  const [sugerible, setSugerible] = useState(
+    (itemToEdit?.sugerible ?? false) && !contieneAlcohol,
+  );
   const [imagenKey, setImagenKey] = useState<string | null>(
     itemToEdit?.imagenKey ?? null,
   );
@@ -90,6 +97,8 @@ export default function ItemFormModal({
         precio: normalizarPrecio(precio),
         disponible,
         destacado,
+        sugerible: sugerible && !contieneAlcohol,
+        contieneAlcohol,
         imagenKey: imagenKey || undefined,
       };
 
@@ -243,6 +252,53 @@ export default function ItemFormModal({
             </div>
           </div>
         </div>
+
+        {/* HU-046 (BL-551): con alcohol, el switch de la sugerencia queda
+            apagado y deshabilitado, con el motivo a la vista. */}
+        <fieldset className="space-y-2 rounded-lg border border-outline-variant px-3 pb-3 pt-1">
+          <legend className="px-1 text-label-md text-on-surface-variant">
+            Complemento antes de pagar
+          </legend>
+          <p id="item-complemento-ayuda" className="text-body-sm text-on-surface-variant">
+            Un postre o una bebida que se le ofrece al comensal cuando revisa su
+            pedido.
+          </p>
+          <div className="flex min-h-12 items-center gap-3">
+            <Switch
+              checked={sugerible}
+              onChange={setSugerible}
+              disabled={contieneAlcohol}
+              label="Se puede sugerir como complemento"
+              describedBy={
+                contieneAlcohol ? "item-alcohol-nota" : "item-complemento-ayuda"
+              }
+            />
+            <span
+              aria-hidden="true"
+              className={`text-body-md ${contieneAlcohol ? "text-on-surface-variant" : "text-on-surface"}`}
+            >
+              Se puede sugerir como complemento
+            </span>
+          </div>
+          <div className="flex min-h-12 items-center gap-3">
+            <Switch
+              checked={contieneAlcohol}
+              onChange={(valor) => {
+                setContieneAlcohol(valor);
+                if (valor) setSugerible(false);
+              }}
+              label="Contiene alcohol"
+            />
+            <span aria-hidden="true" className="text-body-md text-on-surface">
+              Contiene alcohol
+            </span>
+          </div>
+          {contieneAlcohol && (
+            <p id="item-alcohol-nota" className="text-body-sm text-on-surface-variant">
+              Los platos con alcohol nunca se sugieren.
+            </p>
+          )}
+        </fieldset>
 
         <div>
           <span className="mb-1 block text-label-md text-on-surface-variant">

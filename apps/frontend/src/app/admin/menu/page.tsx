@@ -154,6 +154,22 @@ function BadgeSugerencia() {
 }
 
 /**
+ * HU-046 (BL-551): el plato se puede ofrecer como complemento antes de
+ * pagar. Rótulo neutro (borde y texto), para no competir con «Agotado» ni
+ * con la «Sugerencia del local».
+ */
+function BadgeSugerible() {
+  return (
+    <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-outline-variant px-2.5 py-0.5 text-body-sm text-on-surface-variant">
+      <span className="material-symbols-outlined text-[16px]" aria-hidden="true">
+        add_circle
+      </span>
+      <span>Sugerible</span>
+    </span>
+  );
+}
+
+/**
  * HU-044 (BL-537): estrella para marcar o desmarcar la sugerencia con un
  * toque (solo ADMIN). 44 × 44 px, nombre fijo y `aria-pressed`.
  */
@@ -271,10 +287,11 @@ function ItemCard({
                 {item.descripcion}
               </p>
             )}
-            {(!item.disponible || item.destacado) && (
+            {(!item.disponible || item.destacado || item.sugerible) && (
               <div className="mt-1 flex flex-wrap gap-2">
                 {!item.disponible && <BadgeAgotado />}
                 {item.destacado && <BadgeSugerencia />}
+                {item.sugerible && <BadgeSugerible />}
               </div>
             )}
           </div>

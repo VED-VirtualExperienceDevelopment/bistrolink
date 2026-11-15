@@ -201,6 +201,9 @@ const NOMBRE_CAMPO: Record<string, string> = {
   umbralAlerta: "Aviso con",
   // HU-044 (BL-537): «Sugerencia del local».
   destacado: "Sugerencia del local",
+  // HU-046 (BL-551): complemento antes de pagar.
+  sugerible: "Se puede sugerir",
+  contieneAlcohol: "Contiene alcohol",
 };
 
 /** HU-020 (BL-72): valores de un campo que se muestran con otro texto. */

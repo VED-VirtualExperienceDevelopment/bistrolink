@@ -44,6 +44,17 @@ export class UpdateItemDto {
   @IsBoolean()
   destacado?: boolean;
 
+  // HU-046 (BL-551): se puede sugerir como complemento antes de pagar. Con
+  // alcohol no (400, ver complementoDelPlato en menu-admin.service.ts).
+  @IsOptional()
+  @IsBoolean()
+  sugerible?: boolean;
+
+  // HU-046 (BL-551): marcarlo saca el plato de las sugerencias.
+  @IsOptional()
+  @IsBoolean()
+  contieneAlcohol?: boolean;
+
   // BL-394: bloqueo optimista. Versión (updatedAt) que cargó el formulario;
   // si otra persona guardó después, la API responde 409.
   @IsOptional()
