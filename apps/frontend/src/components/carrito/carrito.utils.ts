@@ -1,3 +1,4 @@
+import { sumarUnidad } from "@/components/menu-digital.utils";
 import { formatearPrecio } from "@/components/pago/pago.utils";
 
 /**
@@ -40,4 +41,75 @@ export function anuncioAgregado(
   total: number,
 ): string {
   return `Agregaste ${nombre}. Tu pedido: ${textoItems(cantidadTotal)}, ${formatearPrecio(total)}.`;
+}
+
+/**
+ * BL-378: una unidad más de un plato del carrito, sin pasar del tope de
+ * BL-425 (sumarUnidad). Si el plato no está, el carrito no cambia: se
+ * agrega desde la carta.
+ */
+export function conUnaMas<T extends LineaConCantidad>(
+  lineas: readonly T[],
+  itemCartaId: string,
+): T[] {
+  return lineas.map((l) =>
+    l.itemCartaId === itemCartaId
+      ? { ...l, cantidad: sumarUnidad(l.cantidad) }
+      : l,
+  );
+}
+
+/** BL-378: una unidad menos; con la última, el plato sale del pedido. */
+export function conUnaMenos<T extends LineaConCantidad>(
+  lineas: readonly T[],
+  itemCartaId: string,
+): T[] {
+  return lineas.flatMap((l) => {
+    if (l.itemCartaId !== itemCartaId) return [l];
+    return l.cantidad > 1 ? [{ ...l, cantidad: l.cantidad - 1 }] : [];
+  });
+}
+
+/** BL-378: saca el plato del pedido, con todas sus unidades y su nota. */
+export function sinLinea<T extends LineaConCantidad>(
+  lineas: readonly T[],
+  itemCartaId: string,
+): T[] {
+  return lineas.filter((l) => l.itemCartaId !== itemCartaId);
+}
+
+/** BL-378: qué cambió en el carrito, para anunciarlo al lector de pantalla. */
+export type CambioCarrito = {
+  readonly tipo: "agregado" | "restado" | "quitado";
+  readonly nombre: string;
+};
+
+/**
+ * Lo que anuncia el lector de pantalla después de un cambio en el carrito:
+ * qué pasó y cómo quedó el pedido (el total cambia en cada cambio, así el
+ * texto no se repite igual).
+ */
+export function anuncioDelCarrito(
+  cambio: CambioCarrito,
+  cantidadTotal: number,
+  total: number,
+): string {
+  if (cambio.tipo === "agregado") {
+    return anuncioAgregado(cambio.nombre, cantidadTotal, total);
+  }
+  const que =
+    cambio.tipo === "restado"
+      ? `Quitaste una unidad de ${cambio.nombre}.`
+      : `Quitaste ${cambio.nombre} del pedido.`;
+  if (cantidadTotal === 0) return `${que} Tu pedido quedó vacío.`;
+  return `${que} Tu pedido: ${textoItems(cantidadTotal)}, ${formatearPrecio(total)}.`;
+}
+
+/** Nombres accesibles de los botones de cada plato del detalle. */
+export function etiquetasDeLinea(nombre: string) {
+  return {
+    restar: `Quitar uno de ${nombre}`,
+    sumar: `Agregar uno de ${nombre}`,
+    quitar: `Quitar ${nombre} del pedido`,
+  };
 }
