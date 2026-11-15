@@ -1,4 +1,4 @@
-//**
+/**
  * Verifica que las variables de entorno críticas para producción/staging
  * estén presentes ANTES de que Nest termine de levantar la app.
  *
