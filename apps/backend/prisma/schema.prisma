@@ -379,6 +379,10 @@ model ItemCarta {
 
   categoria             CategoriaCarta     @relation(fields: [categoriaId], references: [id])
   lineasPedido          LineaPedido[]
+  // HU-046 (BL-552): reglas de complemento donde el plato es antecedente o
+  // consecuente.
+  reglasComoAntecedente ReglaComplemento[] @relation("ReglaAntecedente")
+  reglasComoConsecuente ReglaComplemento[] @relation("ReglaConsecuente")
 
   @@index([tenantId])
   @@index([tenantId, categoriaId, orden])
@@ -712,6 +716,34 @@ model ResumenPlatosHora {
 
   @@id([tenantId, hora, canal, itemCartaId])
   @@map("resumen_platos_hora")
+}
+
+// ── HU-046 (BL-552) Reglas de complemento ─────────────────────────────────────
+// Análisis de canasta por local: «quien pide A suele pedir B». Las recalcula
+// un job nocturno con los pedidos pagados de los últimos 90 días (borra y
+// vuelve a insertar las del local). El consecuente es siempre un plato
+// sugerible y sin alcohol. Con RLS. Sin datos de comensales ni de pedidos:
+// solo conteos agregados.
+
+model ReglaComplemento {
+  tenantId        String   @map("tenant_id") @db.Uuid
+  antecedenteId   String   @map("antecedente_id") @db.Uuid
+  consecuenteId   String   @map("consecuente_id") @db.Uuid
+  // Pedidos con los dos platos (el soporte en número).
+  pedidosConAmbos Int      @map("pedidos_con_ambos")
+  // Pedidos con A y B / pedidos del local.
+  soporte         Float
+  // Pedidos con A y B / pedidos con A.
+  confianza       Float
+  // Confianza / (pedidos con B / pedidos del local).
+  lift            Float
+  calculadaEn     DateTime @map("calculada_en") @db.Timestamptz(3)
+
+  antecedente ItemCarta @relation("ReglaAntecedente", fields: [antecedenteId], references: [id], onDelete: Cascade)
+  consecuente ItemCarta @relation("ReglaConsecuente", fields: [consecuenteId], references: [id], onDelete: Cascade)
+
+  @@id([tenantId, antecedenteId, consecuenteId])
+  @@map("regla_complemento")
 }
 
 // ── HU-011 (BL-488) Sincronización con el POS del local ───────────────────────
