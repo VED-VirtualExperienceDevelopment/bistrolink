@@ -4,6 +4,10 @@ import type { ReactNode } from "react";
 import { alcanzoCantidadMaxima } from "@/components/menu-digital.utils";
 import { formatearPrecio } from "@/components/pago/pago.utils";
 import { etiquetasDeLinea, ID_TITULO_CARRITO } from "./carrito.utils";
+import {
+  SugerenciaComplementos,
+  type PropsComplementos,
+} from "./SugerenciaComplementos";
 
 export type LineaCarrito = {
   readonly itemCartaId: string;
@@ -37,6 +41,8 @@ interface Props<T extends LineaCarrito> {
   readonly pagoBloqueado?: boolean;
   /** HU-040 (BL-210): datos del comensal del retiro, después de las instrucciones. */
   readonly contacto?: ReactNode;
+  /** HU-046 (BL-553): «¿Querés sumar algo?», una vez por pedido. */
+  readonly complementos?: PropsComplementos;
 }
 
 const UMBRAL_AVISO = 0.9;
@@ -255,6 +261,7 @@ export function CarritoDetalle<T extends LineaCarrito>({
   onCerrar,
   pagoBloqueado = false,
   contacto = null,
+  complementos,
 }: Props<T>) {
   const enHoja = variante === "hoja";
   const caracteres = observacionGeneral.length;
@@ -349,6 +356,24 @@ export function CarritoDetalle<T extends LineaCarrito>({
     </ul>
   );
 
+  // HU-046 (BL-553): al agregar o rechazar, el bloque desaparece; el foco
+  // pasa al título del pedido (como al quitar un plato).
+  const sugerencia = complementos ? (
+    <SugerenciaComplementos
+      {...complementos}
+      nivelTitulo={enHoja ? "h3" : "h4"}
+      deshabilitado={enviando}
+      onAgregar={(plato) => {
+        enfocarTitulo();
+        complementos.onAgregar(plato);
+      }}
+      onRechazar={() => {
+        enfocarTitulo();
+        complementos.onRechazar();
+      }}
+    />
+  ) : null;
+
   const instrucciones = (
     <div className="border-t border-culinary-neutral/15 pt-4">
       <label
@@ -403,6 +428,7 @@ export function CarritoDetalle<T extends LineaCarrito>({
       <>
         <div className="mb-4">{encabezado}</div>
         <div className="mb-4">{platos}</div>
+        {sugerencia && <div className="mb-4">{sugerencia}</div>}
         <div className="mb-4">{instrucciones}</div>
         {contacto}
         <div className="pt-2">{pie}</div>
@@ -423,6 +449,7 @@ export function CarritoDetalle<T extends LineaCarrito>({
       </div>
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-5 py-4">
         {platos}
+        {sugerencia}
         {instrucciones}
         {contacto}
       </div>
