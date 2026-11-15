@@ -34,6 +34,7 @@ describe('ComplementosService', () => {
     itemCarta: { findMany: jest.Mock };
     reglaComplemento: { findMany: jest.Mock };
     $queryRaw: jest.Mock;
+    $executeRaw: jest.Mock;
   };
   let storage: { urlImagenPublica: jest.Mock };
   let servicio: ComplementosService;
@@ -46,6 +47,7 @@ describe('ComplementosService', () => {
       itemCarta: { findMany: jest.fn().mockResolvedValue([]) },
       reglaComplemento: { findMany: jest.fn().mockResolvedValue([]) },
       $queryRaw: jest.fn().mockResolvedValue([]),
+      $executeRaw: jest.fn().mockResolvedValue(1),
     };
     storage = {
       urlImagenPublica: jest.fn((key: string) =>
@@ -62,7 +64,7 @@ describe('ComplementosService', () => {
   afterEach(() => jest.restoreAllMocks());
 
   it('solo busca platos del local, disponibles, sugeribles, sin alcohol, no archivados y que no estén en el pedido', async () => {
-    await servicio.sugerir(TENANT, RESTAURANTE, ['a', 'a', 'b'], AHORA);
+    await servicio.sugerir(TENANT, RESTAURANTE, ['a', 'a', 'b'], 'QR', AHORA);
     expect(tx.itemCarta.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
@@ -85,7 +87,7 @@ describe('ComplementosService', () => {
   it('un restaurante que no es del tenant: 404 genérico', async () => {
     tx.restaurante.findFirst.mockResolvedValue(null);
     await expect(
-      servicio.sugerir(TENANT, RESTAURANTE, ['a'], AHORA),
+      servicio.sugerir(TENANT, RESTAURANTE, ['a'], 'QR', AHORA),
     ).rejects.toThrow(NotFoundException);
     expect(tx.restaurante.findFirst).toHaveBeenCalledWith({
       where: { id: RESTAURANTE, tenantId: TENANT },
@@ -95,7 +97,7 @@ describe('ComplementosService', () => {
 
   it('sin candidatos no consulta reglas y no sugiere nada', async () => {
     await expect(
-      servicio.sugerir(TENANT, RESTAURANTE, ['a'], AHORA),
+      servicio.sugerir(TENANT, RESTAURANTE, ['a'], 'QR', AHORA),
     ).resolves.toEqual({ origen: 'ninguno', sugerencias: [] });
     expect(tx.reglaComplemento.findMany).not.toHaveBeenCalled();
   });
@@ -116,6 +118,7 @@ describe('ComplementosService', () => {
       TENANT,
       RESTAURANTE,
       ['milanesa'],
+      'QR',
       AHORA,
     );
 
@@ -150,6 +153,42 @@ describe('ComplementosService', () => {
     expect(tx.$queryRaw).not.toHaveBeenCalled();
   });
 
+  it('HU-046 (BL-554): con sugerencias suma una mostrada del canal; sin sugerencias, no', async () => {
+    tx.itemCarta.findMany.mockResolvedValue([plato('flan')]);
+    tx.reglaComplemento.findMany.mockResolvedValue([
+      { consecuenteId: 'flan', confianza: 0.5, lift: 2 },
+    ]);
+    await servicio.sugerir(TENANT, RESTAURANTE, ['milanesa'], 'WEB', AHORA);
+    expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
+    const consulta = tx.$executeRaw.mock.calls[0][0];
+    expect(consulta.sql).toContain('INSERT INTO metrica_sugerencia_dia');
+    expect(consulta.values).toEqual(
+      expect.arrayContaining(['WEB', RESTAURANTE, TENANT]),
+    );
+
+    tx.$executeRaw.mockClear();
+    tx.itemCarta.findMany.mockResolvedValue([]);
+    await servicio.sugerir(TENANT, RESTAURANTE, ['milanesa'], 'WEB', AHORA);
+    expect(tx.$executeRaw).not.toHaveBeenCalled();
+  });
+
+  it('HU-046 (BL-554): si no se puede contar la mostrada, la sugerencia sale igual', async () => {
+    tx.itemCarta.findMany.mockResolvedValue([plato('flan')]);
+    tx.reglaComplemento.findMany.mockResolvedValue([
+      { consecuenteId: 'flan', confianza: 0.5, lift: 2 },
+    ]);
+    tx.$executeRaw.mockRejectedValue(new Error('se cortó'));
+    const respuesta = await servicio.sugerir(
+      TENANT,
+      RESTAURANTE,
+      ['milanesa'],
+      'QR',
+      AHORA,
+    );
+    expect(respuesta.sugerencias.map((s) => s.id)).toEqual(['flan']);
+    expect(Logger.prototype.warn).toHaveBeenCalled();
+  });
+
   it('sin reglas: el más pedido entre los candidatos (uno solo)', async () => {
     expect(CANTIDAD_RESPALDO).toBe(1);
     tx.itemCarta.findMany.mockResolvedValue([plato('flan'), plato('agua')]);
@@ -162,6 +201,7 @@ describe('ComplementosService', () => {
       TENANT,
       RESTAURANTE,
       ['milanesa'],
+      'QR',
       AHORA,
     );
 
@@ -172,19 +212,24 @@ describe('ComplementosService', () => {
   it('sin fecha usa la de ahora para la popularidad', async () => {
     tx.itemCarta.findMany.mockResolvedValue([plato('flan')]);
     tx.$queryRaw.mockResolvedValue([{ item_carta_id: 'flan' }]);
-    const respuesta = await servicio.sugerir(TENANT, RESTAURANTE, ['milanesa']);
+    const respuesta = await servicio.sugerir(
+      TENANT,
+      RESTAURANTE,
+      ['milanesa'],
+      'QR',
+    );
     expect(respuesta.origen).toBe('popularidad');
   });
 
   it('sin reglas ni ventas suficientes, o si falla la consulta de popularidad, no sugiere nada', async () => {
     tx.itemCarta.findMany.mockResolvedValue([plato('flan')]);
     await expect(
-      servicio.sugerir(TENANT, RESTAURANTE, ['milanesa'], AHORA),
+      servicio.sugerir(TENANT, RESTAURANTE, ['milanesa'], 'QR', AHORA),
     ).resolves.toEqual({ origen: 'ninguno', sugerencias: [] });
 
     tx.$queryRaw.mockRejectedValue(new Error('se cortó'));
     await expect(
-      servicio.sugerir(TENANT, RESTAURANTE, ['milanesa'], AHORA),
+      servicio.sugerir(TENANT, RESTAURANTE, ['milanesa'], 'QR', AHORA),
     ).resolves.toEqual({ origen: 'ninguno', sugerencias: [] });
     expect(Logger.prototype.warn).toHaveBeenCalled();
   });
@@ -225,9 +270,12 @@ describe('ComplementosController', () => {
       TENANT,
       expect.any(String),
     );
-    expect(complementos.sugerir).toHaveBeenCalledWith(TENANT, RESTAURANTE, [
-      'a',
-    ]);
+    expect(complementos.sugerir).toHaveBeenCalledWith(
+      TENANT,
+      RESTAURANTE,
+      ['a'],
+      'QR',
+    );
   });
 
   it('por QR con la mesa cerrada: no sugiere', async () => {
@@ -247,9 +295,12 @@ describe('ComplementosController', () => {
       TENANT,
       expect.any(String),
     );
-    expect(complementos.sugerir).toHaveBeenCalledWith(TENANT, RESTAURANTE, [
-      'a',
-    ]);
+    expect(complementos.sugerir).toHaveBeenCalledWith(
+      TENANT,
+      RESTAURANTE,
+      ['a'],
+      'WEB',
+    );
   });
 
   it('un local suspendido no sugiere', async () => {

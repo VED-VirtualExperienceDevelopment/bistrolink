@@ -481,6 +481,9 @@ model LineaPedido {
   cantidad               Int
   subtotal               Decimal  @db.Decimal(10, 2)
   observacion            String?  @map("observacion") @db.VarChar(300) // <-- NUEVO
+  // HU-046 (BL-554): el comensal lo agregó desde la sugerencia de
+  // complementos. Solo para contar las aceptadas al aprobarse el pago.
+  desdeSugerencia        Boolean  @default(false) @map("desde_sugerencia")
   createdAt              DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt              DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -744,6 +747,23 @@ model ReglaComplemento {
 
   @@id([tenantId, antecedenteId, consecuenteId])
   @@map("regla_complemento")
+}
+
+// HU-046 (BL-554): medición de la sugerencia de complementos. Contadores por
+// local, día (del calendario del local) y canal: cuántas veces se mostró y
+// cuántos platos sugeridos se pagaron. Nada del comensal ni del pedido. Con
+// RLS.
+
+model MetricaSugerenciaDia {
+  tenantId      String      @map("tenant_id") @db.Uuid
+  dia           DateTime    @db.Date
+  canal         PedidoCanal
+  mostradas     Int         @default(0)
+  aceptadas     Int         @default(0)
+  actualizadoEn DateTime    @default(now()) @map("actualizado_en") @db.Timestamptz(3)
+
+  @@id([tenantId, dia, canal])
+  @@map("metrica_sugerencia_dia")
 }
 
 // ── HU-011 (BL-488) Sincronización con el POS del local ───────────────────────

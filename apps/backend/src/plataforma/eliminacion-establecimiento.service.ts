@@ -148,6 +148,9 @@ export class EliminacionEstablecimientoService {
           // HU-012 (BL-108): el historial de sesiones de mesa (sin pedidos
           // puede haber mesas que se abrieron y cerraron).
           await tx.sesionMesa.deleteMany({ where: { tenantId } });
+          // HU-046 (BL-554): los contadores de la sugerencia de complementos
+          // (puede haber «mostradas» sin pedidos).
+          await tx.metricaSugerenciaDia.deleteMany({ where: { tenantId } });
           await tx.mesa.deleteMany({ where: { tenantId } });
           await tx.usuario.deleteMany({ where: { tenantId } });
           await tx.restaurante.deleteMany({ where: { tenantId } });

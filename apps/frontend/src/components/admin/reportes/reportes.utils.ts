@@ -115,6 +115,18 @@ export interface ReporteVentas {
     porRecaudado: PlatoVendido[];
   };
   rotacionMesas: RotacionMesas;
+  /**
+   * HU-046 (BL-554): sugerencias de complementos mostradas y aceptadas, y
+   * aceptadas ÷ mostradas en %, con un decimal. Opcional: un backend
+   * anterior no lo trae.
+   */
+  sugerencias?: SugerenciasDelPeriodo;
+}
+
+export interface SugerenciasDelPeriodo {
+  mostradas: number;
+  aceptadas: number;
+  tasaAceptacion: number;
 }
 
 /** Las propinas del período, como las devuelve la API. */
@@ -219,7 +231,10 @@ export function textoPropinas(
   pedidos: number,
 ): TextoPropinas {
   if (propinas.total <= 0 && propinas.pedidosConPropina <= 0) {
-    return { detalle: "Nadie dejó propina en este período", equivalencia: null };
+    return {
+      detalle: "Nadie dejó propina en este período",
+      equivalencia: null,
+    };
   }
   const conPropina = Math.min(propinas.pedidosConPropina, pedidos);
   const verbo = pedidos === 1 ? "pedido dejó" : "pedidos dejaron";
@@ -370,4 +385,22 @@ export function crearRefrescoDiferido(
     },
     cancelar,
   };
+}
+
+/**
+ * HU-046 (BL-554): la ayuda de la tarjeta de sugerencias, o null si hay
+ * datos. Las ventas del POS no pasan por la carta, así que no tienen
+ * sugerencias.
+ */
+export function ayudaSugerencias(
+  sugerencias: SugerenciasDelPeriodo,
+  canal: Canal,
+): string | null {
+  if (canal === "POS") {
+    return "Las ventas hechas en el POS del local no pasan por la carta: no tienen sugerencias.";
+  }
+  if (sugerencias.mostradas === 0) {
+    return "Todavía no se mostraron sugerencias en este período.";
+  }
+  return null;
 }

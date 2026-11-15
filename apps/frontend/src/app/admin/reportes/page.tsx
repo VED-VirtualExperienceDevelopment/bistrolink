@@ -9,6 +9,7 @@ import TarjetasResumen from "@/components/admin/reportes/TarjetasResumen";
 import VentasPorHora from "@/components/admin/reportes/VentasPorHora";
 import DentroFueraDelLocal from "@/components/admin/reportes/DentroFueraDelLocal";
 import PlatosMasPedidos from "@/components/admin/reportes/PlatosMasPedidos";
+import SugerenciasComplementos from "@/components/admin/reportes/SugerenciasComplementos";
 import SkeletonReportes from "@/components/admin/reportes/SkeletonReportes";
 import { useReportes } from "@/components/admin/reportes/useReportes";
 import {
@@ -79,6 +80,8 @@ export default function ReportesPage() {
             <DentroFueraDelLocal reporte={reporte} />
           </div>
           <PlatosMasPedidos reporte={reporte} />
+          {/* HU-046 (BL-554): sugerencias de complementos. */}
+          <SugerenciasComplementos reporte={reporte} />
         </div>
       )}
     </div>

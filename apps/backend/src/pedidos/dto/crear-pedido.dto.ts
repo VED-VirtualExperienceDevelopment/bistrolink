@@ -2,6 +2,7 @@ import { Type, Transform } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsInt,
   IsOptional,
   IsString,
@@ -58,6 +59,12 @@ export class CrearPedidoItemDto {
     typeof value === 'string' ? stripHtmlTagsSafely(value) : value,
   )
   observacion?: string;
+
+  // HU-046 (BL-554): el comensal lo agregó desde la sugerencia de
+  // complementos. Solo se usa para contar las aceptadas al pagarse.
+  @IsOptional()
+  @IsBoolean({ message: 'desdeSugerencia debe ser verdadero o falso' })
+  desdeSugerencia?: boolean;
 }
 
 export class CrearPedidoDto {

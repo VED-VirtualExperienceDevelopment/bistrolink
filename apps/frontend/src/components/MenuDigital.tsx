@@ -125,6 +125,8 @@ type ItemCarrito = {
   cantidad: number;
   imagenUrl: string | null;
   observacion?: string;
+  /** HU-046 (BL-554): lo agregó desde la sugerencia de complementos. */
+  desdeSugerencia?: boolean;
 };
 
 interface MenuDigitalProps {
@@ -237,6 +239,8 @@ async function crearPedidoComensal(
       itemCartaId: item.itemCartaId,
       cantidad: item.cantidad,
       observacion: item.observacion?.trim() || undefined,
+      // HU-046 (BL-554): para contar las sugerencias aceptadas al pagar.
+      desdeSugerencia: item.desdeSugerencia || undefined,
     })),
     // HU-040 (BL-210): solo si lo completó y aceptó que se guarde.
     contactoRetiro,
@@ -396,7 +400,7 @@ export default function MenuDigital({
   const llegoAlTope = (itemId: string) =>
     alcanzoCantidadMaxima(cantidadEnCarrito(carrito, itemId));
 
-  const agregarAlCarrito = (item: ItemMenu) => {
+  const agregarAlCarrito = (item: ItemMenu, desdeSugerencia = false) => {
     setUltimoCambio({ tipo: "agregado", nombre: item.nombre });
     setCarrito((prevCarrito) => {
       const itemExistente = prevCarrito.some((i) => i.itemCartaId === item.id);
@@ -417,6 +421,7 @@ export default function MenuDigital({
           cantidad: 1,
           imagenUrl: item.imagenUrl,
           observacion: "",
+          ...(desdeSugerencia && { desdeSugerencia }),
         },
       ];
     });
@@ -677,7 +682,7 @@ export default function MenuDigital({
     origen: sugerencia.origen,
     platos: sugerencia.platos,
     onAgregar: (plato: PlatoSugerido) => {
-      agregarAlCarrito({ ...plato, disponible: true });
+      agregarAlCarrito({ ...plato, disponible: true }, true);
       sugerencia.resolver();
     },
     onRechazar: sugerencia.resolver,

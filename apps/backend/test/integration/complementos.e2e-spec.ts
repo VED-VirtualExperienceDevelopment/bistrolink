@@ -9,6 +9,8 @@ import { AppModule } from '../../src/app.module';
 import { TenantPrismaService } from '../../src/prisma/tenant-prisma.service';
 import { ReglasComplementoService } from '../../src/complementos/reglas-complemento.service';
 import { LIMITE_COMPLEMENTOS_POR_QR } from '../../src/complementos/complementos-throttler.guard';
+import { sumarAceptadasEnTx } from '../../src/complementos/metricas-sugerencia';
+import { ReportesService } from '../../src/reportes/reportes.service';
 import {
   asegurarClaveQr,
   sesionDeMesa,
@@ -33,6 +35,7 @@ describe('HU-046: complementos (integración)', () => {
   let app: INestApplication;
   let tenantPrisma: TenantPrismaService;
   let reglas: ReglasComplementoService;
+  let reportes: ReportesService;
   let categoriaId: string;
   let mesaId: string;
   const ids: Record<string, string> = {};
@@ -45,7 +48,12 @@ describe('HU-046: complementos (integración)', () => {
   /** Un pedido con un plato por línea y un pago, cargado directo. */
   async function pedido(
     platos: string[],
-    opciones: { estadoPago?: 'APROBADO' | 'RECHAZADO'; haceDias?: number } = {},
+    opciones: {
+      estadoPago?: 'APROBADO' | 'RECHAZADO';
+      haceDias?: number;
+      canal?: 'QR' | 'WEB';
+      desdeSugerencia?: string[];
+    } = {},
   ) {
     const pedidoId = randomUUID();
     pedidos.push(pedidoId);
@@ -61,7 +69,7 @@ describe('HU-046: complementos (integración)', () => {
           mesaId,
           idempotencyKey: `hu-046-${randomUUID()}`,
           estado: 'ENTREGADO',
-          canal: 'QR',
+          canal: opciones.canal ?? 'QR',
         },
       });
       await tx.lineaPedido.createMany({
@@ -73,6 +81,7 @@ describe('HU-046: complementos (integración)', () => {
           precioUnitarioSnapshot: new Prisma.Decimal(100),
           cantidad: 1,
           subtotal: new Prisma.Decimal(100),
+          desdeSugerencia: opciones.desdeSugerencia?.includes(nombre) ?? false,
         })),
       });
       await tx.pago.create({
@@ -87,6 +96,7 @@ describe('HU-046: complementos (integración)', () => {
         },
       });
     });
+    return pedidoId;
   }
 
   const complementosPorEnlace = (itemsEnPedido: unknown) =>
@@ -115,6 +125,7 @@ describe('HU-046: complementos (integración)', () => {
     await app.init();
     tenantPrisma = await app.resolve(TenantPrismaService);
     reglas = await app.resolve(ReglasComplementoService);
+    reportes = await app.resolve(ReportesService);
 
     // Platos de prueba: [nombre, sugerible, contiene alcohol].
     const PLATOS: [string, boolean, boolean][] = [
@@ -339,5 +350,71 @@ describe('HU-046: complementos (integración)', () => {
       .post('/menu/qr/inventado/complementos')
       .send({ itemsEnPedido: [ids['Milanesa']] })
       .expect(HttpStatus.NOT_FOUND);
+  });
+
+  it('[TC-I-229] HU-046: los contadores suman las sugerencias mostradas y las aceptadas por día y canal, sin datos del comensal, y Reportes muestra la tasa', async () => {
+    await reglas.recalcular(TENANT_ID, ahora);
+    const delPeriodo = async (canal: 'TODOS' | 'LOCAL' | 'WEB') =>
+      (
+        await reportes.obtener(
+          TENANT_ID,
+          { periodo: 'HOY', canal } as never,
+          new Date(),
+        )
+      ).sugerencias;
+    const antes = await delPeriodo('WEB');
+    const antesLocal = await delPeriodo('LOCAL');
+
+    // Una sugerencia mostrada por el enlace web (canal WEB).
+    await complementosPorEnlace([ids['Milanesa']]).expect(HttpStatus.OK);
+    // Sin sugerencias no se cuenta: con todo lo sugerible ya en el pedido.
+    await editar('Agua', { sugerible: false });
+    await editar('Cafe', { sugerible: false });
+    const sinNada = await complementosPorEnlace([
+      ids['Milanesa'],
+      ids['Flan'],
+    ]).expect(HttpStatus.OK);
+    expect(sinNada.body.origen).toBe('ninguno');
+    await editar('Agua', { sugerible: true });
+    await editar('Cafe', { sugerible: true });
+
+    // Un pedido web pagado con el flan agregado desde la sugerencia. El
+    // relleno también viene marcado, pero no es sugerible: no cuenta.
+    const pedidoId = await pedido(['Milanesa', 'Flan', 'Relleno'], {
+      canal: 'WEB',
+      desdeSugerencia: ['Flan', 'Relleno'],
+    });
+    await enTenant((tx) =>
+      sumarAceptadasEnTx(tx as never, TENANT_ID, pedidoId),
+    );
+
+    const despues = await delPeriodo('WEB');
+    expect(despues.mostradas).toBe(antes.mostradas + 1);
+    expect(despues.aceptadas).toBe(antes.aceptadas + 1);
+    expect(despues.tasaAceptacion).toBe(
+      Math.round((despues.aceptadas / despues.mostradas) * 1000) / 10,
+    );
+    // El filtro de canal: en el local no cambió nada.
+    expect(await delPeriodo('LOCAL')).toEqual(antesLocal);
+
+    // La tabla solo tiene contadores: ni comensal ni pedido.
+    const filas = await enTenant((tx) =>
+      tx.metricaSugerenciaDia.findMany({ where: { canal: 'WEB' } }),
+    );
+    expect(filas.length).toBeGreaterThan(0);
+    expect(Object.keys(filas[0]).sort()).toEqual([
+      'aceptadas',
+      'actualizadoEn',
+      'canal',
+      'dia',
+      'mostradas',
+      'tenantId',
+    ]);
+
+    // Otro tenant no ve los contadores de este (RLS).
+    const desdeOtro = await tenantPrisma.runInTenantContext(OTRO_TENANT, (tx) =>
+      tx.metricaSugerenciaDia.findMany(),
+    );
+    expect(desdeOtro).toEqual([]);
   });
 });

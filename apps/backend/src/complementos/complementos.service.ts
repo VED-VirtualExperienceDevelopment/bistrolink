@@ -1,10 +1,11 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { PedidoCanal, Prisma } from '@prisma/client';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { StorageService } from '../menu/storage.service';
 import { platosMasPedidos } from '../menu/mas-pedidos';
 import { FILTRO_CATEGORIAS_DEL_COMENSAL } from '../menu/menu.service';
 import { mejoresConsecuentes } from './reglas-complemento';
+import { sumarMostradaEnTx } from './metricas-sugerencia';
 
 /** Sin reglas que cumplan, se sugiere el más pedido entre los sugeribles. */
 export const CANTIDAD_RESPALDO = 1;
@@ -41,6 +42,8 @@ const SIN_PLATOS = { origen: 'ninguno' as const, platos: [] as never[] };
  * - La respuesta lleva solo los platos sugeridos: nada de otros pedidos ni
  *   de las métricas de las reglas.
  * - En la transacción del tenant (RLS) y con tenant_id explícito.
+ * - HU-046 (BL-554): si hay al menos un plato, suma una «mostrada» del día
+ *   y del canal. Si eso falla, la sugerencia se devuelve igual.
  */
 @Injectable()
 export class ComplementosService {
@@ -55,6 +58,7 @@ export class ComplementosService {
     tenantId: string,
     restauranteId: string,
     itemsEnPedido: readonly string[],
+    canal: PedidoCanal,
     ahora: Date = new Date(),
   ): Promise<RespuestaComplementos> {
     const enPedido = [...new Set(itemsEnPedido)];
@@ -123,6 +127,7 @@ export class ComplementosService {
     );
 
     if (elegidos.platos.length === 0) return NINGUNO;
+    await this.contarMostrada(tenantId, restauranteId, canal);
     return {
       origen: elegidos.origen,
       sugerencias: await Promise.all(
@@ -137,6 +142,23 @@ export class ComplementosService {
         })),
       ),
     };
+  }
+
+  /** HU-046 (BL-554): una sugerencia mostrada. Nunca lanza. */
+  private async contarMostrada(
+    tenantId: string,
+    restauranteId: string,
+    canal: PedidoCanal,
+  ): Promise<void> {
+    try {
+      await this.tenantPrisma.runInTenantContext(tenantId, (tx) =>
+        sumarMostradaEnTx(tx, tenantId, restauranteId, canal),
+      );
+    } catch (error) {
+      this.logger.warn(
+        `No se pudo contar la sugerencia mostrada: ${(error as Error).message}`,
+      );
+    }
   }
 
   /** El respaldo de popularidad. Si la consulta falla, sin sugerencia. */

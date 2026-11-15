@@ -9,6 +9,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
+import { PedidoCanal } from '@prisma/client';
 import { ApiTags } from '@nestjs/swagger';
 import {
   exigirSesionAbierta,
@@ -36,6 +37,8 @@ import { PedirComplementosDto } from './dto/pedir-complementos.dto';
  *   restaurante no es del tenant.
  * - Establecimiento suspendido: 403, como el menú.
  * - RLS y tenant_id explícito en el servicio; límite de pedidos por minuto.
+ * - HU-046 (BL-554): la mostrada se cuenta con el canal del pedido que se
+ *   haría: QR desde la mesa y WEB desde el enlace (retiro).
  *
  * Es POST porque recibe la lista de platos del pedido, pero no cambia nada:
  * responde 200.
@@ -69,6 +72,7 @@ export class ComplementosController {
       mesa.tenantId,
       mesa.restauranteId,
       dto.itemsEnPedido,
+      PedidoCanal.QR,
     );
   }
 
@@ -88,6 +92,7 @@ export class ComplementosController {
       tenantId,
       restauranteId,
       dto.itemsEnPedido,
+      PedidoCanal.WEB,
     );
   }
 }
