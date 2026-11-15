@@ -42,7 +42,10 @@ import {
 import { LinkPagoThrottlerGuard } from '../../src/link-pago/link-pago-throttler.guard';
 import { LinkPagoService } from '../../src/link-pago/link-pago.service';
 import { LinkPagoController } from '../../src/link-pago/link-pago.controller';
-import { PedidoAccesoGuard } from '../../src/pedidos/pedido-acceso.guard';
+import {
+  PedidoAccesoGuard,
+  PERMITE_LINK_PAGADO,
+} from '../../src/pedidos/pedido-acceso.guard';
 import { AuditAction } from '../../src/audit-log/audit-action.enum';
 import { RolesGuard } from '../../src/auth/roles.guard';
 
@@ -725,6 +728,81 @@ describe('PedidoAccesoGuard con el link de pago', () => {
     await expect(
       guard.canActivate(contexto(request('inventado', 'GET'))),
     ).rejects.toThrow(new ForbiddenException(MENSAJE_LINK_INVALIDO));
+  });
+
+  // HU-050 (BL-558): la valoración se hace con el pedido ya pagado.
+  describe('ruta que acepta el link de un pedido pagado (valoración)', () => {
+    const conMarca = (marcada: boolean) => {
+      const reflector = new Reflector();
+      const handler = () => undefined;
+      if (marcada) Reflect.defineMetadata(PERMITE_LINK_PAGADO, true, handler);
+      const guardConReflector = new PedidoAccesoGuard(
+        {
+          runInTenantContext: jest.fn((_t, fn) =>
+            fn({ pedido: { findUnique } }),
+          ),
+        } as any,
+        reflector,
+      );
+      const ctx = (req: any) =>
+        ({
+          switchToHttp: () => ({ getRequest: () => req }),
+          getHandler: () => handler,
+          getClass: () => class {},
+        }) as unknown as ExecutionContext;
+      return { guardConReflector, ctx };
+    };
+
+    it('[TC-U-575] con el link de un pedido pagado y entregado, la ruta marcada acepta el POST', async () => {
+      const { token, pedido } = linkVigente({
+        estado: 'ENTREGADO',
+        linkPagoVenceEn: new Date(Date.now() - MINUTO),
+      });
+      enLaBase(pedido);
+      const { guardConReflector, ctx } = conMarca(true);
+
+      await expect(
+        guardConReflector.canActivate(ctx(request(token, 'POST'))),
+      ).resolves.toBe(true);
+    });
+
+    it('[TC-U-576] sin la marca, el POST con el link de un pedido pagado sigue siendo 403', async () => {
+      const { token, pedido } = linkVigente({
+        estado: 'ENTREGADO',
+        linkPagoVenceEn: new Date(Date.now() - MINUTO),
+      });
+      enLaBase(pedido);
+      const { guardConReflector, ctx } = conMarca(false);
+
+      await expect(
+        guardConReflector.canActivate(ctx(request(token, 'POST'))),
+      ).rejects.toThrow(new ForbiddenException(MENSAJE_NO_ESPERA_PAGO));
+    });
+
+    it('[TC-U-577] la marca no acepta un link reemplazado ni uno caducado', async () => {
+      const { guardConReflector, ctx } = conMarca(true);
+
+      const reemplazado = linkVigente({
+        estado: 'ENTREGADO',
+        linkPagoVenceEn: new Date(Date.now() - MINUTO),
+      });
+      enLaBase({
+        ...reemplazado.pedido,
+        linkPagoHash: nuevoLinkPago(TENANT, PEDIDO).hash,
+      });
+      await expect(
+        guardConReflector.canActivate(ctx(request(reemplazado.token, 'POST'))),
+      ).rejects.toThrow(new ForbiddenException(MENSAJE_LINK_REEMPLAZADO));
+
+      const caducado = linkVigente({
+        estado: 'ENTREGADO',
+        linkPagoVenceEn: new Date(Date.now() - PLAZO_CONSULTA_LINK_MS - MINUTO),
+      });
+      enLaBase(caducado.pedido);
+      await expect(
+        guardConReflector.canActivate(ctx(request(caducado.token, 'POST'))),
+      ).rejects.toThrow(new ForbiddenException(MENSAJE_LINK_CADUCADO));
+    });
   });
 });
 

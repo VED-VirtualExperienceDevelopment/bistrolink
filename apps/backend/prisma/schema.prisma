@@ -454,6 +454,7 @@ model Pedido {
   comprobantes        ComprobanteFiscal[]
   historialEstados    PedidoEstadoHistorial[]
   sincronizacionesPos SincronizacionPos[]
+  valoracion          ValoracionPedido?
 
   @@index([tenantId])
   // BL-213: KDS y listado de pedidos (por fecha y por estado), dentro
@@ -764,6 +765,28 @@ model MetricaSugerenciaDia {
 
   @@id([tenantId, dia, canal])
   @@map("metrica_sugerencia_dia")
+}
+
+// ── HU-050 (BL-558) Valoración privada del pedido ─────────────────────────────
+// El comensal valora su pedido después de la entrega: de 1 a 5 y un
+// comentario opcional. Solo la ve el Administrador; no se publica.
+// Anónima (E1): no guarda nada del comensal. El pedido es la clave solo para
+// que no se valore dos veces; la pantalla del Administrador no lo muestra (ni
+// la mesa). Del momento se guarda el día del calendario del local, no la
+// hora, para no poder cruzarla con la entrega. Con RLS.
+
+model ValoracionPedido {
+  pedidoId   String   @id @map("pedido_id") @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  dia        DateTime @db.Date
+  estrellas  Int      @db.SmallInt
+  comentario String?  @db.VarChar(500)
+
+  pedido Pedido @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+
+  // Pantalla del Administrador: por período.
+  @@index([tenantId, dia])
+  @@map("valoracion_pedido")
 }
 
 // ── HU-011 (BL-488) Sincronización con el POS del local ───────────────────────

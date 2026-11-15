@@ -28,6 +28,7 @@ import { ReportesModule } from './reportes/reportes.module';
 import { StockModule } from './stock/stock.module';
 import { PosModule } from './pos/pos.module';
 import { ComplementosModule } from './complementos/complementos.module';
+import { ValoracionesModule } from './valoraciones/valoraciones.module';
 import { modulosDeTesting } from './testing/testing.module';
 import { ContextoAuditoriaMiddleware } from './audit-log/contexto-auditoria';
 
@@ -104,6 +105,8 @@ const configuracionLog = construirConfiguracionLog(process.env);
     PosModule,
     // HU-046 (BL-552): complementos antes de pagar y su job nocturno.
     ComplementosModule,
+    // HU-050 (BL-558): valoración privada del pedido.
+    ValoracionesModule,
     // BL-475 (BL-285): POST /testing/limpieza, solo con
     // E2E_CLEANUP_ENABLED=true (staging y local; nunca en producción).
     ...modulosDeTesting(),
