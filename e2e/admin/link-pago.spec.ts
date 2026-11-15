@@ -92,6 +92,12 @@ test.describe("BL-203: Pago por link", () => {
       await expect(
         celular.getByRole("heading", { name: "Pagá tu pedido" }),
       ).toBeVisible({ timeout: 20000 });
+      // En el celular «Tu pedido» arranca plegado (ResumenPedido de
+      // PagoPedido.tsx): el detalle recién se ve al tocar el encabezado.
+      const resumen = celular.getByRole("button", { name: /^Tu pedido/ });
+      await expect(resumen).toHaveAttribute("aria-expanded", "false");
+      await resumen.click();
+      await expect(resumen).toHaveAttribute("aria-expanded", "true");
       await expect(celular.getByText(ITEM_DISPONIBLE)).toBeVisible();
       await expect(
         celular.getByRole("heading", { name: "Tarjeta de débito o crédito" }),

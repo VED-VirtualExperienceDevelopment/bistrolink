@@ -13,6 +13,7 @@ import {
   MENSAJE_SUSPENDIDO_COMENSAL,
   TenantEstadoService,
 } from '../tenant-estado/tenant-estado.service';
+import { nombreComensalTecnico } from './nombre-comensal-tecnico';
 
 export interface TokenComensal {
   accessToken: string;
@@ -120,12 +121,13 @@ export class AuthComensalService {
   }
 
   /**
-   * Pide el JWT del comensal técnico del tenant (comensal-<tenantId>) a
-   * Keycloak. Es el mismo usuario para cualquier mesa del tenant: la mesa se valida
+   * Pide el JWT del comensal técnico del tenant a Keycloak. El nombre del
+   * usuario no se deduce del tenantId (BL-271, nombre-comensal-tecnico.ts).
+   * Es el mismo usuario para cualquier mesa del tenant: la mesa se valida
    * aparte (BL-204, MesaQrGuard en pedidos y llamados).
    */
   private async pedirTokenKeycloak(tenantId: string): Promise<TokenComensal> {
-    const username = `comensal-${tenantId}`;
+    const username = nombreComensalTecnico(tenantId);
 
     const res = await fetch(
       `${this.keycloakUrl}/realms/${this.realm}/protocol/openid-connect/token`,

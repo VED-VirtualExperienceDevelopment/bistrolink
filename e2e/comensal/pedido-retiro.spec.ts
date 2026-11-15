@@ -35,7 +35,9 @@ test.describe("BL-210: Pedidos para retirar", () => {
         name: new RegExp(`Agregar ${ITEM_DISPONIBLE}`, "i"),
       })
       .click();
-    await page.getByLabel("Nombre").fill("Comensal E2E");
+    // El checkbox «Acepto que el local guarde mi nombre…» también contiene
+    // «nombre»: se busca el campo de texto por su rol.
+    await page.getByRole("textbox", { name: "Nombre" }).fill("Comensal E2E");
     await page.getByLabel("Teléfono o correo").fill("099 000 000");
     await page
       .getByRole("checkbox", { name: /Acepto que el local guarde mi nombre/ })

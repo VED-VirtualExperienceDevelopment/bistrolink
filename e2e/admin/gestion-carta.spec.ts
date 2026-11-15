@@ -269,7 +269,6 @@ test.describe("BL-392 · Gestión de Carta", () => {
 
   test("[TC-E-117] HU-044: el admin marca un plato como «Sugerencia del local» con la estrella, queda guardado y el comensal ve la insignia (sin errores graves de accesibilidad)", async ({
     kdsPageAdmin: page,
-    kdsPageMozo,
     browser,
   }) => {
     const authorization = await abrirCarta(page);
@@ -308,13 +307,9 @@ test.describe("BL-392 · Gestión de Carta", () => {
       await expect(tarjeta(page, categoria, plato)).toBeVisible();
       expect(await violacionesGraves(page)).toEqual([]);
 
-      // El mozo ve la carta, pero no la estrella.
-      await abrirCarta(kdsPageMozo);
-      await expect(
-        kdsPageMozo.getByRole("button", {
-          name: `Sugerencia del local: ${plato}`,
-        }),
-      ).toHaveCount(0);
+      // Que el mozo no ve la estrella lo prueba TC-E-054. Acá no se puede:
+      // kdsPageMozo comparte el contexto con kdsPageAdmin, Keycloak reusa la
+      // sesión del admin y el login del mozo nunca llega a /login.
 
       // El comensal ve la insignia en el menú, en el celular.
       const celular = await browser.newPage({
@@ -573,6 +568,10 @@ test.describe("BL-392 · Gestión de Carta", () => {
     await expect(page.getByRole("button", { name: /^Mover / })).toHaveCount(0);
     await expect(
       page.getByRole("button", { name: "Agregar ítem" }),
+    ).toHaveCount(0);
+    // HU-044 (BL-537): la estrella de «Sugerencia del local» es solo del admin.
+    await expect(
+      page.getByRole("button", { name: /^Sugerencia del local: / }),
     ).toHaveCount(0);
     // Los filtros de lo oculto y lo archivado son solo del admin.
     const estados = await page

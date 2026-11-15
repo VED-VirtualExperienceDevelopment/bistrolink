@@ -5,6 +5,7 @@ import { HealthController } from './health.controller';
 import { LoggerModule } from 'nestjs-pino';
 import {
   CABECERAS_CON_IP_EN_LOGS,
+  CABECERAS_CON_TOKENS_EN_LOGS,
   CAMPOS_PERSONALES_EN_LOGS,
 } from './logs-datos-personales';
 import { AuthModule } from './auth/auth.module';
@@ -70,6 +71,8 @@ const configuracionLog = construirConfiguracionLog(process.env);
             'res.headers["set-cookie"]',
             ...CAMPOS_PERSONALES_EN_LOGS,
             ...CABECERAS_CON_IP_EN_LOGS,
+            // BL-572: tokens del pedido, de la mesa y del link de pago.
+            ...CABECERAS_CON_TOKENS_EN_LOGS,
           ],
           censor: '[REDACTED]',
         },
