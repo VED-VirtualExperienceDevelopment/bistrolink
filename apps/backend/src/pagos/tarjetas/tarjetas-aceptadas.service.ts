@@ -57,7 +57,7 @@ export class TarjetasAceptadasService {
       }
       const cuerpo: unknown = await respuesta.json();
       if (!Array.isArray(cuerpo)) {
-        throw new Error('respuesta inesperada de Mercado Pago');
+        throw new TypeError('respuesta inesperada de Mercado Pago');
       }
       this.lista = tarjetasAceptadas(cuerpo as MedioDePagoMp[]);
       this.venceEn = ahora + VIGENCIA_TARJETAS_MS;

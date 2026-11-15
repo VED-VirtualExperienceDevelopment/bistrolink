@@ -49,7 +49,15 @@ export function marcaDelMedio(id: string): string {
 
 /** «Visa Débito» → «Visa»; el nombre de la marca sin el tipo. */
 function nombreDeMarca(nombre: string): string {
-  return nombre.replace(/\s*d[eé]bito\s*/i, ' ').trim();
+  return nombre
+    .split(' ')
+    .filter((palabra) => palabra !== '' && !esPalabraDebito(palabra))
+    .join(' ');
+}
+
+function esPalabraDebito(palabra: string): boolean {
+  const p = palabra.toLowerCase();
+  return p === 'débito' || p === 'debito';
 }
 
 function imagenSegura(url: string | undefined): string | null {

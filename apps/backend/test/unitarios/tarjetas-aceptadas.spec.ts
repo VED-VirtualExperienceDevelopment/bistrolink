@@ -95,6 +95,14 @@ describe('tarjetasAceptadas', () => {
     ]);
   });
 
+  it('saca «débito» sin importar tildes, mayúsculas ni espacios de más', () => {
+    const nombres = tarjetasAceptadas([
+      medio('debcabal', 'Cabal  DEBITO', 'debit_card'),
+      medio('debanda', 'Débito Anda', 'debit_card'),
+    ]).map((t) => t.nombre);
+    expect(nombres).toEqual(['Cabal', 'Anda']);
+  });
+
   it('el id de la marca sale del medio de pago', () => {
     expect(marcaDelMedio('debvisa')).toBe('visa');
     expect(marcaDelMedio('DebMaster')).toBe('master');
