@@ -1,8 +1,9 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { alcanzoCantidadMaxima } from "@/components/menu-digital.utils";
 import { formatearPrecio } from "@/components/pago/pago.utils";
-import { ID_TITULO_CARRITO } from "./carrito.utils";
+import { etiquetasDeLinea, ID_TITULO_CARRITO } from "./carrito.utils";
 
 export type LineaCarrito = {
   readonly itemCartaId: string;
@@ -22,6 +23,10 @@ interface Props<T extends LineaCarrito> {
   readonly maxCaracteresGeneral: number;
   readonly onCambiarObservacion: (texto: string) => void;
   readonly onEditarNota: (linea: T) => void;
+  /** BL-378: cambiar la cantidad y quitar un plato desde el detalle. */
+  readonly onSumar: (linea: T) => void;
+  readonly onRestar: (linea: T) => void;
+  readonly onQuitar: (linea: T) => void;
   readonly onVaciar: () => void;
   readonly onContinuar: () => void;
   readonly enviando: boolean;
@@ -81,6 +86,65 @@ function IconoCerrar() {
   );
 }
 
+function IconoMenos() {
+  return (
+    <svg
+      aria-hidden="true"
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+    >
+      <path d="M5 12h14" />
+    </svg>
+  );
+}
+
+function IconoMas() {
+  return (
+    <svg
+      aria-hidden="true"
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+    >
+      <path d="M12 5v14M5 12h14" />
+    </svg>
+  );
+}
+
+function IconoTacho() {
+  return (
+    <svg
+      aria-hidden="true"
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6" />
+    </svg>
+  );
+}
+
+/** Al quitar un plato, su botón desaparece: el foco pasa al título. */
+function enfocarTitulo() {
+  requestAnimationFrame(() => {
+    document.getElementById(ID_TITULO_CARRITO)?.focus();
+  });
+}
+
 function IconoLapiz() {
   return (
     <svg
@@ -102,6 +166,71 @@ function IconoLapiz() {
 }
 
 /**
+ * BL-378: cantidad (− y +) y «Quitar» de un plato del detalle. Botones de
+ * 44 × 44 px con nombre accesible; con la última unidad, «−» saca el plato.
+ * «+» se deshabilita en el tope de BL-425 (99).
+ */
+function ControlesDeLinea({
+  linea,
+  deshabilitado,
+  onSumar,
+  onRestar,
+  onQuitar,
+}: {
+  readonly linea: LineaCarrito;
+  readonly deshabilitado: boolean;
+  readonly onSumar: () => void;
+  readonly onRestar: () => void;
+  readonly onQuitar: () => void;
+}) {
+  const etiquetas = etiquetasDeLinea(linea.nombre);
+  const enElTope = alcanzoCantidadMaxima(linea.cantidad);
+  const claseBoton =
+    "grid h-11 w-11 place-items-center rounded-full text-marca hover:bg-marca/10 focus:outline-none focus:ring-4 focus:ring-marca/30 disabled:cursor-not-allowed disabled:opacity-40";
+  return (
+    <div className="mt-2 flex items-center justify-between gap-2">
+      <fieldset className="inline-flex items-center rounded-full border border-culinary-neutral/30 bg-white">
+        <legend className="sr-only">Cantidad de {linea.nombre}</legend>
+        <button
+          type="button"
+          onClick={onRestar}
+          disabled={deshabilitado}
+          aria-label={etiquetas.restar}
+          className={claseBoton}
+        >
+          <IconoMenos />
+        </button>
+        <span
+          aria-hidden="true"
+          className="min-w-[2ch] text-center text-sm font-semibold text-foreground"
+        >
+          {linea.cantidad}
+        </span>
+        <button
+          type="button"
+          onClick={onSumar}
+          disabled={deshabilitado || enElTope}
+          aria-label={etiquetas.sumar}
+          className={claseBoton}
+        >
+          <IconoMas />
+        </button>
+      </fieldset>
+      <button
+        type="button"
+        onClick={onQuitar}
+        disabled={deshabilitado}
+        aria-label={etiquetas.quitar}
+        className="inline-flex h-11 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-red-700 hover:bg-red-50 focus:outline-none focus:ring-4 focus:ring-red-700/20 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        <IconoTacho />
+        Quitar
+      </button>
+    </div>
+  );
+}
+
+/**
  * El contenido del carrito: platos con su nota, instrucciones generales,
  * total y «Continuar al pago». BL-519: el mismo contenido va en la columna
  * de la derecha (desde lg) o en la hoja del celular; se muestra uno solo a
@@ -116,6 +245,9 @@ export function CarritoDetalle<T extends LineaCarrito>({
   maxCaracteresGeneral,
   onCambiarObservacion,
   onEditarNota,
+  onSumar,
+  onRestar,
+  onQuitar,
   onVaciar,
   onContinuar,
   enviando,
@@ -134,7 +266,8 @@ export function CarritoDetalle<T extends LineaCarrito>({
     <div className="flex items-center justify-between gap-2">
       <Titulo
         id={ID_TITULO_CARRITO}
-        className="font-bold text-lg text-foreground flex items-center gap-2"
+        tabIndex={-1}
+        className="font-bold text-lg text-foreground flex items-center gap-2 focus:outline-none"
       >
         <span role="img" aria-label="Carrito">
           🛒
@@ -168,7 +301,7 @@ export function CarritoDetalle<T extends LineaCarrito>({
 
   const platos = (
     <ul
-      className={`space-y-3 ${enHoja ? "" : "max-h-60 overflow-y-auto pr-1"}`}
+      className={`space-y-3 ${enHoja ? "" : "max-h-80 overflow-y-auto pr-1"}`}
     >
       {lineas.map((linea) => (
         <li
@@ -198,6 +331,19 @@ export function CarritoDetalle<T extends LineaCarrito>({
               {formatearPrecio(linea.precio * linea.cantidad)}
             </span>
           </div>
+          <ControlesDeLinea
+            linea={linea}
+            deshabilitado={enviando}
+            onSumar={() => onSumar(linea)}
+            onRestar={() => {
+              if (linea.cantidad === 1) enfocarTitulo();
+              onRestar(linea);
+            }}
+            onQuitar={() => {
+              enfocarTitulo();
+              onQuitar(linea);
+            }}
+          />
         </li>
       ))}
     </ul>

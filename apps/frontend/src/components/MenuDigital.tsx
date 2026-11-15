@@ -21,9 +21,13 @@ import { CarritoBarra } from "@/components/carrito/CarritoBarra";
 import { CarritoDetalle } from "@/components/carrito/CarritoDetalle";
 import { CarritoHoja } from "@/components/carrito/CarritoHoja";
 import {
-  anuncioAgregado,
+  anuncioDelCarrito,
   cantidadEnCarrito,
+  conUnaMas,
+  conUnaMenos,
   ID_TITULO_CARRITO,
+  sinLinea,
+  type CambioCarrito,
 } from "@/components/carrito/carrito.utils";
 import { useEsPantallaAncha } from "@/components/carrito/useEsPantallaAncha";
 import { useSesionMesaCerrada } from "@/components/mesa-cerrada/useSesionMesaCerrada";
@@ -374,15 +378,16 @@ export default function MenuDigital({
   const esPantallaAncha = useEsPantallaAncha();
   const [hojaCarritoAbierta, setHojaCarritoAbierta] = useState(false);
   const barraCarritoVisible = hayCarrito && !esPantallaAncha;
-  // BL-519: el último plato agregado, para anunciarlo al lector de pantalla.
-  const [ultimoAgregado, setUltimoAgregado] = useState<string | null>(null);
+  // BL-519 y BL-378: el último cambio del carrito (agregar, restar o quitar
+  // un plato), para anunciarlo al lector de pantalla.
+  const [ultimoCambio, setUltimoCambio] = useState<CambioCarrito | null>(null);
 
   // BL-425: true si el ítem ya tiene en el carrito el máximo de unidades.
   const llegoAlTope = (itemId: string) =>
     alcanzoCantidadMaxima(cantidadEnCarrito(carrito, itemId));
 
   const agregarAlCarrito = (item: ItemMenu) => {
-    setUltimoAgregado(item.nombre);
+    setUltimoCambio({ tipo: "agregado", nombre: item.nombre });
     setCarrito((prevCarrito) => {
       const itemExistente = prevCarrito.some((i) => i.itemCartaId === item.id);
       if (itemExistente) {
@@ -440,6 +445,34 @@ export default function MenuDigital({
     setCarrito([]);
     setHojaCarritoAbierta(false);
   };
+
+  // BL-378: cambiar la cantidad y quitar un plato desde el detalle. Si el
+  // carrito queda vacío, la hoja se cierra (la barra desaparece).
+  const cambiarCarrito = (
+    cambio: CambioCarrito,
+    operar: (lineas: ItemCarrito[]) => ItemCarrito[],
+  ) => {
+    setUltimoCambio(cambio);
+    const nuevo = operar(carrito);
+    setCarrito(nuevo);
+    if (nuevo.length === 0) setHojaCarritoAbierta(false);
+  };
+  const sumarDelDetalle = (linea: ItemCarrito) =>
+    cambiarCarrito({ tipo: "agregado", nombre: linea.nombre }, (l) =>
+      conUnaMas(l, linea.itemCartaId),
+    );
+  const restarDelDetalle = (linea: ItemCarrito) =>
+    cambiarCarrito(
+      {
+        tipo: linea.cantidad > 1 ? "restado" : "quitado",
+        nombre: linea.nombre,
+      },
+      (l) => conUnaMenos(l, linea.itemCartaId),
+    );
+  const quitarDelDetalle = (linea: ItemCarrito) =>
+    cambiarCarrito({ tipo: "quitado", nombre: linea.nombre }, (l) =>
+      sinLinea(l, linea.itemCartaId),
+    );
 
   const totalCarrito = useMemo(
     () =>
@@ -636,6 +669,9 @@ export default function MenuDigital({
     maxCaracteresGeneral: MAX_CHARS_GENERAL,
     onCambiarObservacion: setObservacionGeneral,
     onEditarNota: handleAbrirNotaItem,
+    onSumar: sumarDelDetalle,
+    onRestar: restarDelDetalle,
+    onQuitar: quitarDelDetalle,
     onVaciar: vaciarCarrito,
     onContinuar: continuarAlPago,
     enviando: estadoPedido === "enviando",
@@ -983,11 +1019,12 @@ export default function MenuDigital({
             </>
           )}
 
-          {/* BL-519: aviso para el lector de pantalla al agregar un plato. */}
+          {/* BL-519 y BL-378: aviso para el lector de pantalla al agregar,
+          restar o quitar un plato (también si el pedido queda vacío). */}
           <output aria-live="polite" className="sr-only">
-            {hayCarrito && ultimoAgregado
-              ? anuncioAgregado(
-                  ultimoAgregado,
+            {ultimoCambio
+              ? anuncioDelCarrito(
+                  ultimoCambio,
                   cantidadTotalItems,
                   totalCarrito,
                 )
