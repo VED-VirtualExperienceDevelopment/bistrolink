@@ -45,6 +45,7 @@
 | 1.37 | 14/11/2026 | Se borran los bloques de TC-E-119 a 121, ya cargados en Kiwi. TC-E-122 a 124: complementos antes de pagar (HU-046 / BL-551 y BL-553). |
 | 1.38 | 15/11/2026 | TC-E-125: la carta del comensal abierta muestra «No disponible» al volver a la pestaña después de que el administrador agota el plato (BL-570). |
 | 1.39 | 15/11/2026 | Se borran los bloques de TC-E-122 a 125, ya cargados en Kiwi. TC-E-126: sello de pago seguro (HU-051 / BL-563). |
+| 1.40 | 15/11/2026 | Se borra el bloque de TC-E-126, ya cargado en Kiwi. TC-E-127: valoración privada del pedido (HU-050 / BL-558). |
 
 Plantilla para cargar en Kiwi la descripción de casos TC-E (Playwright)
 nuevos o que cambiaron (BL-435). La usa
@@ -89,22 +90,24 @@ Reglas:
 
 ## Casos para cargar
 
-## TC-E-126
+## TC-E-127
 
 ### Precondición
 
-Staging, sin sesión (comensal por el enlace web del local), con pantalla de celular (360 × 800). Cuenta de sandbox de Mercado Pago.
+Staging, sin sesión (comensal por el enlace web del local) y el Administrador logueado en otra pestaña. Cuenta de sandbox de Mercado Pago.
 
 ### Pasos
 
-1. Agregar un plato disponible y tocar «Continuar al pago».
-2. Mirar el bloque de arriba del formulario de tarjeta.
-3. Escribir el número de la tarjeta de prueba (Mastercard).
-4. Revisar el ancho de la página y analizar el formulario con axe-core.
+1. Agregar un plato, pagar con la tarjeta de prueba y, desde el KDS del Administrador, pasar el pedido por «En preparación» y «Listo para entregar» y entregarlo con el código.
+2. En la pantalla del comensal, tocar «Enviar valoración» sin elegir estrellas.
+3. Con el foco en la primera estrella, apretar la flecha derecha tres veces.
+4. Escribir un comentario y tocar «Enviar valoración».
+5. En la pestaña del Administrador, abrir «Valoraciones» y elegir «Hoy».
 
 ### Resultado esperado
 
-1. «Pagá tu pedido» con el formulario de tarjeta.
-2. «Pago seguro con» y el logo de Mercado Pago en una sola línea, y debajo la lista «Tarjetas aceptadas» con al menos una tarjeta; cada una con su nombre (texto alternativo de la imagen o texto). Debajo de «Pagar», solo «Tus datos de tarjeta no pasan por BistroLink».
-3. Mastercard queda resaltada y las demás, atenuadas.
-4. Sin scroll horizontal y sin errores graves ni críticos de accesibilidad.
+1. «Gracias por tu compra» con la tarjeta «¿Cómo estuvo tu pedido?».
+2. Aviso «Elegí de 1 a 5 estrellas.»; no se envía nada.
+3. Queda elegida «4 de 5: Muy bueno».
+4. «¡Gracias! Le llegó al local. No se publica.»
+5. El comentario aparece con 4 de 5 estrellas y el día, sin la mesa ni el pedido, y se ve el promedio.
