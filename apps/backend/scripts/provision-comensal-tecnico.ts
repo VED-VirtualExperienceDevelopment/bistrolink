@@ -1,4 +1,8 @@
 import 'dotenv/config';
+import {
+  emailComensalTecnico,
+  nombreComensalTecnico,
+} from '../src/auth-comensal/nombre-comensal-tecnico';
 
 const [, , tenantId] = process.argv;
 
@@ -24,7 +28,10 @@ if (!COMENSAL_PASSWORD) {
   process.exit(1);
 }
 
-const username = `comensal-${tenantId}`;
+// BL-271: el mismo nombre que calcula la API (con
+// KEYCLOAK_COMENSAL_USERNAME_SECRET, o el anterior si no está).
+const username = nombreComensalTecnico(tenantId);
+const email = emailComensalTecnico(tenantId);
 
 async function getAdminToken(): Promise<string> {
   const res = await fetch(
@@ -70,7 +77,7 @@ async function main() {
       headers,
       body: JSON.stringify({
         username,
-        email: `${username}@tecnico.bistrolink.local`,
+        email,
         firstName: 'Comensal',
         lastName: 'Técnico',
         enabled: true,
@@ -88,7 +95,7 @@ async function main() {
       headers,
       body: JSON.stringify({
         username,
-        email: `${username}@tecnico.bistrolink.local`, //dominio ficticio, nunca se usa para enviar nada
+        email, // dominio ficticio, nunca se usa para enviar nada
         firstName: 'Comensal',
         lastName: 'Técnico',
         enabled: true,
