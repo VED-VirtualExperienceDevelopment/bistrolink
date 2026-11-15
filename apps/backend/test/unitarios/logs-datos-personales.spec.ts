@@ -2,8 +2,15 @@ import { Writable } from 'node:stream';
 import pino from 'pino';
 import {
   CABECERAS_CON_IP_EN_LOGS,
+  CABECERAS_CON_TOKENS_EN_LOGS,
   CAMPOS_PERSONALES_EN_LOGS,
 } from '../../src/logs-datos-personales';
+import { HEADER_PEDIDO_TOKEN } from '../../src/pedidos/token-acceso-pedido';
+import {
+  HEADER_MESA_SESION,
+  HEADER_MESA_TOKEN,
+} from '../../src/qr-mesa/mesa-qr.guard';
+import { HEADER_LINK_PAGO } from '../../src/link-pago/link-pago';
 
 // HU-036 (BL-206): los datos personales no quedan en texto plano en los
 // logs (Ley 18.331). Se prueba con una instancia real de Pino configurada
@@ -20,7 +27,11 @@ function logger() {
   const log = pino(
     {
       redact: {
-        paths: [...CAMPOS_PERSONALES_EN_LOGS, ...CABECERAS_CON_IP_EN_LOGS],
+        paths: [
+          ...CAMPOS_PERSONALES_EN_LOGS,
+          ...CABECERAS_CON_IP_EN_LOGS,
+          ...CABECERAS_CON_TOKENS_EN_LOGS,
+        ],
         censor: '[REDACTED]',
       },
     },
@@ -141,5 +152,51 @@ describe('logs sin datos personales (HU-036, BL-206)', () => {
     // El resto del request se sigue viendo.
     expect(texto).toContain('bistrolink-api-staging.up.railway.app');
     expect(texto).toContain('/menu');
+  });
+
+  it('[TC-U-570] BL-572: reemplaza los tokens del pedido, de la mesa y del link de pago', () => {
+    const { log, salida } = logger();
+
+    log.info(
+      {
+        req: {
+          method: 'GET',
+          url: '/pedidos/a822372a-978e-438a-b7f3-684a04f2495c/pagos',
+          headers: {
+            host: 'localhost:3001',
+            'x-pedido-token': 'token-del-pedido-de-prueba',
+            'x-mesa-token': 'token-de-la-mesa-de-prueba',
+            'x-mesa-sesion': 'sesion-de-la-mesa-de-prueba',
+            'x-link-pago': 'token-del-link-de-pago-de-prueba',
+          },
+        },
+      },
+      'request completed',
+    );
+
+    const texto = salida();
+    expect(texto).not.toContain('token-del-pedido-de-prueba');
+    expect(texto).not.toContain('token-de-la-mesa-de-prueba');
+    expect(texto).not.toContain('sesion-de-la-mesa-de-prueba');
+    expect(texto).not.toContain('token-del-link-de-pago-de-prueba');
+    expect(texto.match(/\[REDACTED\]/g)).toHaveLength(4);
+    // El resto del request se sigue viendo.
+    expect(texto).toContain(
+      '/pedidos/a822372a-978e-438a-b7f3-684a04f2495c/pagos',
+    );
+    expect(texto).toContain('localhost:3001');
+  });
+
+  it('[TC-U-571] BL-572: los nombres coinciden con las cabeceras que leen los guards', () => {
+    // Si alguien renombra una cabecera, este test avisa que el log la
+    // volvería a mostrar.
+    expect(CABECERAS_CON_TOKENS_EN_LOGS).toEqual(
+      [
+        HEADER_PEDIDO_TOKEN,
+        HEADER_MESA_TOKEN,
+        HEADER_MESA_SESION,
+        HEADER_LINK_PAGO,
+      ].map((cabecera) => `req.headers["${cabecera}"]`),
+    );
   });
 });
