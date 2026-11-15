@@ -314,22 +314,16 @@ JSON
     && echo "[set-client-secret] Protección contra fuerza bruta en master activa (BL-529)." \
     || echo "[set-client-secret] AVISO: no se pudo activar la protección contra fuerza bruta en master (BL-529)." >&2
 
-  # 3. Protección contra fuerza bruta en el realm de la aplicación (BL-271,
-  #    parte 4). Misma configuración que master. Se activa después de que el
-  #    usuario técnico del comensal pasó a tener un nombre que no se deduce
-  #    del tenantId (partes 1 y 3). En local y en CI el comensal sigue con el
-  #    nombre anterior, a propósito. También está en realm-export.json, que lo
-  #    aplica cuando el realm se crea desde cero; acá se aplica al realm que
-  #    ya existe.
-  "$KCADM_BIN" update "realms/${KC_REALM}" \
-      -s bruteForceProtected=true \
-      -s permanentLockout=false \
-      -s failureFactor=5 \
-      -s waitIncrementSeconds=60 \
-      -s maxFailureWaitSeconds=900 \
-      -s maxDeltaTimeSeconds=43200 \
-    && echo "[set-client-secret] Protección contra fuerza bruta en ${KC_REALM} activa (BL-271)." \
-    || echo "[set-client-secret] AVISO: no se pudo activar la protección contra fuerza bruta en ${KC_REALM} (BL-271)." >&2
+  # 3. Protección contra fuerza bruta en el realm de la aplicación:
+  #    DESACTIVADA a propósito hasta BL-573. Con la protección activa,
+  #    Keycloak bloqueó al usuario técnico del comensal en staging (15/11/2026)
+  #    por logins simultáneos: la API pide un token por cada pedido de cada
+  #    comensal. BL-573 hace que la API reuse el token y recién ahí se vuelve
+  #    a activar (BL-271). Se apaga explícitamente porque el realm de staging
+  #    ya la tenía prendida y el import no cambia un realm existente.
+  "$KCADM_BIN" update "realms/${KC_REALM}" -s bruteForceProtected=false \
+    && echo "[set-client-secret] Protección contra fuerza bruta en ${KC_REALM} desactivada hasta BL-573." \
+    || echo "[set-client-secret] AVISO: no se pudo desactivar la protección contra fuerza bruta en ${KC_REALM} (BL-573)." >&2
 
   # BL-264: usuarios de prueba, solo donde el entorno lo pide (local y
   # staging con KC_LOAD_TEST_USERS=true; nunca en producción). Reusa la
