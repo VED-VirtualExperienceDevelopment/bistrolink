@@ -43,6 +43,7 @@
 | 1.35 | 14/11/2026 | Se borra el bloque de TC-E-117, ya cargado en Kiwi. TC-E-118: insignia «Más pedido» (HU-045 / BL-543). |
 | 1.36 | 15/11/2026 | Se borra el bloque de TC-E-118, ya cargado en Kiwi. TC-E-119 a 121: revisar el pedido antes de confirmar (BL-378). |
 | 1.37 | 14/11/2026 | Se borran los bloques de TC-E-119 a 121, ya cargados en Kiwi. TC-E-122 a 124: complementos antes de pagar (HU-046 / BL-551 y BL-553). |
+| 1.38 | 15/11/2026 | TC-E-125: la carta del comensal abierta muestra «No disponible» al volver a la pestaña después de que el administrador agota el plato (BL-570). |
 
 Plantilla para cargar en Kiwi la descripción de casos TC-E (Playwright)
 nuevos o que cambiaron (BL-435). La usa
@@ -142,3 +143,21 @@ Igual que TC-E-123, con pantalla de escritorio (1280 × 800).
 
 1. La columna muestra el bloque «¿Querés sumar algo?». Sin errores graves ni críticos de accesibilidad.
 2. El bloque desaparece, el pedido sigue con «1x …» del primer plato y sin el sugerido, y el foco pasa al título «Tu pedido».
+
+## TC-E-125
+
+### Precondición
+
+Staging, con el administrador logueado en Gestión de Carta. Categoría de prueba creada por la API con un plato disponible (se elimina al terminar). Carta del comensal por enlace web abierta en un celular (390 px), con el reloj de la página controlado por el test.
+
+### Pasos
+
+1. Abrir la carta del comensal y buscar el plato de prueba.
+2. Por la API, como administrador, marcar el plato como agotado (`PATCH /admin/menu/item/:id/disponibilidad` con `disponible: false`).
+3. Adelantar el reloj de la página 31 segundos y simular que el comensal vuelve a la pestaña (evento `visibilitychange`).
+
+### Resultado esperado
+
+1. El plato se ve sin «No disponible».
+2. La API responde 200.
+3. Sin recargar la página, el plato muestra «No disponible».

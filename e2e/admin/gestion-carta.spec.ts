@@ -338,6 +338,53 @@ test.describe("BL-392 · Gestión de Carta", () => {
     }
   });
 
+  test("[TC-E-125] BL-570: el comensal con la carta abierta ve «No disponible» al volver a la pestaña después de que el admin agota el plato", async ({
+    kdsPageAdmin: page,
+    browser,
+  }) => {
+    const authorization = await abrirCarta(page);
+    let categoria: CategoriaDePrueba | undefined;
+    const plato = `Budín E2E ${Date.now()}`;
+    try {
+      categoria = await crearCategoria(page.request, authorization, [plato]);
+
+      const celular = await browser.newPage({
+        viewport: { width: 390, height: 844 },
+      });
+      try {
+        // Reloj controlado: la carta se vuelve a pedir solo si pasaron 30 s
+        // desde la última carga, y el test no espera ese tiempo de verdad.
+        await celular.clock.install();
+        await celular.goto(new URL(MENU_URL_PATH, page.url()).toString());
+        const tarjetaMenu = celular
+          .getByRole("article")
+          .filter({ hasText: plato });
+        await expect(tarjetaMenu).toBeVisible({ timeout: 15_000 });
+        await expect(tarjetaMenu.getByText("No disponible")).toHaveCount(0);
+
+        // El admin agota el plato mientras el comensal tiene la carta abierta.
+        const agotar = await page.request.patch(
+          `${API_URL}/admin/menu/item/${categoria.items[0].id}/disponibilidad`,
+          { headers: { authorization }, data: { disponible: false } },
+        );
+        expect(agotar.status()).toBe(200);
+
+        // El comensal vuelve a la pestaña un rato después.
+        await celular.clock.fastForward(31_000);
+        await celular.evaluate(() =>
+          document.dispatchEvent(new Event("visibilitychange")),
+        );
+        await expect(tarjetaMenu.getByText("No disponible")).toBeVisible({
+          timeout: 10_000,
+        });
+      } finally {
+        await celular.close();
+      }
+    } finally {
+      await eliminarCategoria(page.request, authorization, categoria);
+    }
+  });
+
   test("[TC-E-122] HU-046: el admin marca un plato como sugerible; con alcohol el switch queda apagado y deshabilitado, y la API lo rechaza (sin errores graves de accesibilidad)", async ({
     kdsPageAdmin: page,
   }) => {

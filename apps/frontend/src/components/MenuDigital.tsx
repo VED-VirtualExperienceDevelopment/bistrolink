@@ -33,6 +33,11 @@ import {
 } from "@/components/carrito/carrito.utils";
 import { useEsPantallaAncha } from "@/components/carrito/useEsPantallaAncha";
 import { useSesionMesaCerrada } from "@/components/mesa-cerrada/useSesionMesaCerrada";
+import { useCartaVigente } from "@/components/menu-digital/useCartaVigente";
+import {
+  conAvisoDeCartaActualizada,
+  esRechazoPorLaCarta,
+} from "@/components/menu-digital/carta-vigente.utils";
 import { apiFetch, ApiError } from "@/lib/api-client";
 import {
   alcanzoCantidadMaxima,
@@ -264,7 +269,7 @@ function mensajeErrorAlPedir(origen: OrigenMenu, err: unknown): string {
 export default function MenuDigital({
   origen,
   restaurante,
-  categorias,
+  categorias: categoriasDeLaPagina,
   numeroMesa,
   marca,
   retiro,
@@ -311,6 +316,15 @@ export default function MenuDigital({
   // (cancelado, mesa cerrada, inexistente).
   const [avisoRetoma, setAvisoRetoma] = useState<string | null>(null);
   const clave = clavePedidoEnCurso(origen);
+
+  // BL-570: la disponibilidad se vuelve a pedir al volver a la pestaña
+  // (solo mientras se ve la carta) y cuando el pedido se rechaza por un
+  // plato que ya no se puede pedir. El carrito no se toca.
+  const { categorias, recargar: recargarCarta } = useCartaVigente(
+    origen,
+    categoriasDeLaPagina,
+    vista === "carta",
+  );
 
   // BL-502: «Mis pedidos» en la mesa (los que pagó desde este teléfono en
   // la sesión abierta), con su estado en vivo.
@@ -545,7 +559,16 @@ export default function MenuDigital({
       setVista("pago");
       window.scrollTo({ top: 0 });
     } catch (err) {
-      const mensaje = mensajeErrorAlPedir(origen, err);
+      let mensaje = mensajeErrorAlPedir(origen, err);
+      // BL-570: un plato se agotó o salió de la carta mientras el comensal
+      // la miraba: se actualiza la carta y se le dice qué hacer.
+      if (
+        err instanceof ApiError &&
+        esRechazoPorLaCarta(err.status, err.message, err.codigo)
+      ) {
+        mensaje = conAvisoDeCartaActualizada(err.message);
+        void recargarCarta();
+      }
       // HU-040 (BL-210): el local dejó de tomar pedidos para retirar.
       retiroEnCarta.registrarError(err, mensaje);
       setErrorPedido(mensaje);
