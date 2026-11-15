@@ -452,9 +452,8 @@ export default function AdminMenuPage() {
 
   useEffect(() => {
     void cargarDatos();
-    const keycloak = getKeycloak();
-    const tenantId = keycloak.tokenParsed?.tenant_id || "";
-    const socket = getMenuSocket(tenantId, keycloak.token);
+    // BL-515: el token se lee en cada conexión (el tenant sale del token).
+    const socket = getMenuSocket(() => getKeycloak().token);
     socketRef.current = socket;
     huboConexionRef.current = socket.connected;
 
