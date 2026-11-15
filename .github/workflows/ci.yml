@@ -808,6 +808,9 @@ jobs:
       # cerrado del propio contenedor, así nada sale del runner.
       # OPENAPI_HABILITADO=true para que también se genere el contrato
       # OpenAPI, que en staging está prendido.
+      # BL-271 (parte 4): la imagen corre con NODE_ENV=production, que exige
+      # KEYCLOAK_COMENSAL_USERNAME_SECRET (startup-env-check.ts): va uno al
+      # azar, como QR_TOKEN_KEY.
       - name: Smoke test de la imagen (API)
         if: matrix.name == 'API'
         run: |
@@ -817,6 +820,7 @@ jobs:
             -e DATABASE_URL="postgresql://smoke:smoke@db-inexistente:5432/smoke" \
             -e KEYCLOAK_CLIENT_SECRET="smoke-sin-keycloak" \
             -e QR_TOKEN_KEY="$(openssl rand -base64 32)" \
+            -e KEYCLOAK_COMENSAL_USERNAME_SECRET="$(openssl rand -hex 32)" \
             -e MP_ACCESS_TOKEN="TEST-0000000000000000-000000-ci-smoke" \
             -e MP_API_BASE_URL="http://localhost:9" \
             -e OPENAPI_HABILITADO=true \

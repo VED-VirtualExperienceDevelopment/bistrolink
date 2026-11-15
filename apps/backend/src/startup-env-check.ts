@@ -42,6 +42,26 @@ const REQUIRED_ENV_VARS: RequiredEnvVar[] = [
   },
 ];
 
+/**
+ * BL-271 (parte 4): solo en las imágenes de staging y producción
+ * (NODE_ENV=production). Con la protección contra fuerza bruta activa en el
+ * realm, el usuario técnico del comensal tiene que tener un nombre que no se
+ * deduzca del tenantId. Sin el secreto, la API volvería en silencio al nombre
+ * anterior (`comensal-<tenantId>`): en un entorno ya migrado, ningún comensal
+ * podría pedir; en uno sin migrar, cualquiera podría bloquearlo. En local y en
+ * CI (desarrollo) no se exige: ahí se usa el nombre anterior a propósito.
+ */
+const REQUIRED_IN_PRODUCTION_ENV_VARS: RequiredEnvVar[] = [
+  {
+    name: 'KEYCLOAK_COMENSAL_USERNAME_SECRET',
+    hint:
+      'Secreto con el que se calcula el nombre del usuario técnico del ' +
+      'comensal (BL-271). En Infisical, carpeta /api del entorno. Antes de ' +
+      'cargarlo por primera vez hay que crear los usuarios con ' +
+      'scripts/migrar-comensal-tecnico.ts --aplicar. No va en el .env local.',
+  },
+];
+
 export function checkRequiredEnvVars(): void {
   if (process.env.NODE_ENV === 'test') {
     // Jest corre sin .env real en CI (y sin necesitar Keycloak/Postgres
@@ -50,7 +70,11 @@ export function checkRequiredEnvVars(): void {
     return;
   }
 
-  const missing = REQUIRED_ENV_VARS.filter(({ name }) => !process.env[name]);
+  const required =
+    process.env.NODE_ENV === 'production'
+      ? [...REQUIRED_ENV_VARS, ...REQUIRED_IN_PRODUCTION_ENV_VARS]
+      : REQUIRED_ENV_VARS;
+  const missing = required.filter(({ name }) => !process.env[name]);
 
   if (missing.length === 0) {
     return;
