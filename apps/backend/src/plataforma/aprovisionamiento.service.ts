@@ -14,6 +14,11 @@ import {
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { AuditAction } from '../audit-log/audit-action.enum';
 import { AprovisionarEstablecimientoDto } from './dto/aprovisionar-establecimiento.dto';
+import {
+  DOMINIO_EMAIL_TECNICO,
+  emailComensalTecnico,
+  nombreComensalTecnico,
+} from '../auth-comensal/nombre-comensal-tecnico';
 
 /** Contraseñas iniciales de Admin y Cocina. Si falta una, se genera una temporal. */
 export interface CredencialesIniciales {
@@ -71,9 +76,6 @@ interface DatosEstablecimiento {
 
 const PLAN_POR_DEFECTO = 'BASICO';
 const TIMEZONE_POR_DEFECTO = 'America/Montevideo';
-// Dominio ficticio, nunca se usa para enviar nada (mismo que
-// scripts/provision-comensal-tecnico.ts).
-const DOMINIO_EMAIL_TECNICO = 'tecnico.bistrolink.local';
 // Las cuentas Cocina y comensal no son personas, pero el perfil del realm
 // exige nombre y apellido. Valores fijos y sin símbolos: el validador de
 // nombres de Keycloak rechaza caracteres como & o /, que un nombre de
@@ -84,7 +86,7 @@ const APELLIDO_CUENTA_TECNICA = 'BistroLink';
  * BL-163 (HU-027): alta de un establecimiento con el kit mínimo de un
  * restaurante activo: Tenant, su único Restaurante, mesa virtual, cuenta
  * Administrador (Keycloak + fila en `usuario`), cuenta Cocina (solo Keycloak)
- * y usuario técnico del comensal (`comensal-<tenantId>`).
+ * y usuario técnico del comensal (nombre no adivinable, BL-271).
  *
  * Idempotente: correrlo de nuevo con los mismos datos no duplica nada ni
  * cambia contraseñas de usuarios que ya existen. Por eso, si algo falla a
@@ -172,9 +174,9 @@ export class AprovisionamientoService {
     });
     const comensal = await this.asegurarUsuario({
       rol: 'COMENSAL',
-      username: `comensal-${tenantId}`,
+      username: nombreComensalTecnico(tenantId),
       perfil: {
-        email: `comensal-${tenantId}@${DOMINIO_EMAIL_TECNICO}`,
+        email: emailComensalTecnico(tenantId),
         firstName: 'Comensal',
         lastName: APELLIDO_CUENTA_TECNICA,
       },
