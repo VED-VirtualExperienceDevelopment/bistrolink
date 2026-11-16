@@ -5,7 +5,9 @@ import {
   errorDocumento,
   errorEmail,
   errorTitular,
+  esErrorDeDocumentoMp,
   estadoComprobante,
+  filtrarEntradaCi,
   etiquetaMarca,
   numeroComprobante,
   urlConsultaSegura,
@@ -156,6 +158,40 @@ describe("documento del titular", () => {
   it("cédula con pocos o demasiados dígitos: error", () => {
     expect(errorDocumento("CI", "12345")).toMatch(/7 u 8 dígitos/);
     expect(errorDocumento("CI", "123456789")).toMatch(/7 u 8 dígitos/);
+  });
+
+  it("cédula todo ceros: cumple la fórmula pero no es válida (BL-445)", () => {
+    expect(errorDocumento("CI", "0.000.000-0")).toBe("Ingresá una cédula válida.");
+    expect(errorDocumento("CI", "00000000")).toBe("Ingresá una cédula válida.");
+  });
+
+  it("6 dígitos más el verificador sigue siendo válida (cédulas viejas)", () => {
+    const cuerpo = "987654";
+    expect(errorDocumento("CI", `${cuerpo}${digitoVerificadorCi(cuerpo)}`)).toBeNull();
+  });
+
+  it("filtrarEntradaCi: deja dígitos, puntos y guion, hasta 11 (BL-445)", () => {
+    expect(filtrarEntradaCi("4123abc456")).toBe("4123456");
+    expect(filtrarEntradaCi("4 123 456 3")).toBe("41234563");
+    expect(filtrarEntradaCi("1.234.567-2")).toBe("1.234.567-2");
+    expect(filtrarEntradaCi("1.234.567-23456")).toHaveLength(11);
+  });
+
+  it.each([
+    [[{ code: "324", message: "invalid parameter docNumber" }]],
+    [{ cause: [{ code: "322" }] }],
+    [{ code: 214 }],
+  ])("esErrorDeDocumentoMp reconoce el rechazo del documento: %j", (error) => {
+    expect(esErrorDeDocumentoMp(error)).toBe(true);
+  });
+
+  it.each([
+    [[{ code: "E301" }]],
+    [{ cause: [{ code: "325" }] }],
+    [new Error("sin token")],
+    [null],
+  ])("esErrorDeDocumentoMp ignora otros errores: %j", (error) => {
+    expect(esErrorDeDocumentoMp(error)).toBe(false);
   });
 
   it("otro documento (turistas): alcanza con que no esté vacío", () => {

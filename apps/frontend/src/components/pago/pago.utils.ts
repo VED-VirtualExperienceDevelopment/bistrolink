@@ -145,6 +145,10 @@ export function errorDocumento(
   if (digitos.length < 7 || digitos.length > 8) {
     return "La cédula tiene 7 u 8 dígitos (con el verificador).";
   }
+  // BL-445: 0.000.000-0 cumple la fórmula, pero no es una cédula.
+  if (/^0+$/.test(digitos)) {
+    return "Ingresá una cédula válida.";
+  }
   const cuerpo = digitos.slice(0, -1);
   const verificador = Number(digitos.slice(-1));
   return digitoVerificadorCi(cuerpo) === verificador
@@ -163,6 +167,42 @@ export function documentoParaMercadoPago(
         identificationNumber: normalizarDocumento(valor),
       }
     : { identificationType: "OTRO", identificationNumber: valor.trim() };
+}
+
+/** BL-445: largo máximo de la cédula con formato («1.234.567-8»). */
+export const LARGO_MAXIMO_CI = 11;
+
+/**
+ * BL-445: lo que se deja escribir (o pegar) en el campo con «Cédula»:
+ * solo dígitos, puntos y guion, hasta 11 caracteres.
+ */
+export function filtrarEntradaCi(valor: string): string {
+  return valor.replace(/[^\d.-]/g, "").slice(0, LARGO_MAXIMO_CI);
+}
+
+export const MENSAJE_DOCUMENTO_RECHAZADO_MP =
+  "Mercado Pago no aceptó el documento. Revisalo.";
+
+/**
+ * Códigos con los que Mercado Pago rechaza el documento al generar el token
+ * (errores de carga de datos): 212 y 214 (tipo o número vacío), 322 (tipo
+ * inválido), 323 (subtipo) y 324 (número inválido).
+ */
+const CODIGOS_DOCUMENTO_MP = new Set(["212", "214", "322", "323", "324"]);
+
+/**
+ * BL-445: true si el error de createCardToken es por el documento. El SDK
+ * puede rechazar con una lista de causas o con un objeto que la trae en
+ * `cause`; se aceptan las dos formas.
+ */
+export function esErrorDeDocumentoMp(error: unknown): boolean {
+  const causa = Array.isArray(error)
+    ? error
+    : (error as { cause?: unknown } | null)?.cause;
+  const lista: unknown[] = Array.isArray(causa) ? causa : [causa ?? error];
+  return lista.some((e) =>
+    CODIGOS_DOCUMENTO_MP.has(String((e as { code?: unknown } | null)?.code)),
+  );
 }
 
 /**
