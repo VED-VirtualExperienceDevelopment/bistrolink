@@ -12,7 +12,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
+import { AuthGuardComensal } from '../auth/invitado-jwt.strategy';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Roles, RolesGuard } from '../auth/roles.guard';
 import { AuthenticatedUser } from '../auth/keycloak-jwt.strategy';
@@ -30,7 +30,8 @@ import { GenerarLinkPagoDto } from './dto/generar-link-pago.dto';
 @ApiTags('Link de pago')
 @ApiBearerAuth(SEGURIDAD_KEYCLOAK)
 @Controller()
-@UseGuards(AuthGuard('jwt'), RolesGuard)
+// HU-052 (BL-578): acepta el token de invitado del comensal y el de Keycloak.
+@UseGuards(AuthGuardComensal, RolesGuard)
 export class LinkPagoController {
   constructor(private readonly linkPago: LinkPagoService) {}
 

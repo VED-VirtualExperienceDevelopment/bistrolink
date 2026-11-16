@@ -12,7 +12,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
+import { AuthGuardComensal } from '../auth/invitado-jwt.strategy';
 import { RolesGuard, Roles } from '../auth/roles.guard';
 import { AuthenticatedUser } from '../auth/keycloak-jwt.strategy';
 import { MesaQrGuard } from '../qr-mesa/mesa-qr.guard';
@@ -36,7 +36,8 @@ import {
 @ApiSecurity({ [SEGURIDAD_KEYCLOAK]: [], [SEGURIDAD_MESA_QR]: [] })
 @ApiSecurity({ [SEGURIDAD_KEYCLOAK]: [], [SEGURIDAD_PEDIDO]: [] })
 @Controller('pedidos/:pedidoId/pagos')
-@UseGuards(AuthGuard('jwt'), RolesGuard)
+// HU-052 (BL-578): acepta el token de invitado del comensal y el de Keycloak.
+@UseGuards(AuthGuardComensal, RolesGuard)
 @Roles('COMENSAL')
 export class PagosController {
   constructor(
