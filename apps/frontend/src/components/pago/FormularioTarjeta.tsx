@@ -14,8 +14,12 @@ import {
   errorDocumento,
   errorEmail,
   errorTitular,
+  esErrorDeDocumentoMp,
   etiquetaMarca,
+  filtrarEntradaCi,
   formatearPrecio,
+  LARGO_MAXIMO_CI,
+  MENSAJE_DOCUMENTO_RECHAZADO_MP,
   tipoTarjeta,
   type TipoDocumento,
 } from './pago.utils';
@@ -124,6 +128,10 @@ export function FormularioTarjeta({
   const [titular, setTitular] = useState('');
   const [tipoDocumento, setTipoDocumento] = useState<TipoDocumento>('CI');
   const [documento, setDocumento] = useState('');
+  // BL-445: el error del documento se muestra al salir del campo, no solo al pagar.
+  const [documentoTocado, setDocumentoTocado] = useState(false);
+  // BL-445: Mercado Pago rechazó el documento al generar el token.
+  const [documentoRechazadoMp, setDocumentoRechazadoMp] = useState(false);
   const [email, setEmail] = useState('');
   const [intentoEnviar, setIntentoEnviar] = useState(false);
   const [errorTarjeta, setErrorTarjeta] = useState<string | null>(null);
@@ -156,11 +164,15 @@ export function FormularioTarjeta({
 
   const errores = {
     titular: errorTitular(titular),
-    documento: errorDocumento(tipoDocumento, documento),
+    documento:
+      errorDocumento(tipoDocumento, documento) ??
+      (documentoRechazadoMp ? MENSAJE_DOCUMENTO_RECHAZADO_MP : null),
     email: errorEmail(email),
   };
   const mostrar = (campo: keyof typeof errores) =>
-    intentoEnviar ? errores[campo] : null;
+    intentoEnviar || (campo === 'documento' && documentoTocado)
+      ? errores[campo]
+      : null;
 
   // Los campos de Mercado Pago se crean UNA sola vez (ver más abajo): sus
   // handlers solo usan setters de estado, que React garantiza estables.
@@ -230,11 +242,36 @@ export function FormularioTarjeta({
     };
   }, []);
 
+  function alCambiarDocumento(valor: string) {
+    setDocumento(tipoDocumento === 'CI' ? filtrarEntradaCi(valor) : valor);
+    setDocumentoRechazadoMp(false);
+  }
+
+  // BL-445: al cambiar el tipo, el valor anterior no sirve (un pasaporte
+  // nunca es una cédula válida): se limpia y el error se oculta.
+  function alCambiarTipoDocumento(tipo: TipoDocumento) {
+    setTipoDocumento(tipo);
+    setDocumento('');
+    setDocumentoTocado(false);
+    setDocumentoRechazadoMp(false);
+  }
+
+  function enfocar(campo: 'titular' | 'documento' | 'email') {
+    document.getElementById(`${id}-${campo}`)?.focus();
+  }
+
   async function enviar(evento: FormEvent) {
     evento.preventDefault();
     setIntentoEnviar(true);
     setErrorTarjeta(null);
-    if (errores.titular || errores.documento || errores.email) return;
+    // BL-445: no se llama a Mercado Pago con errores; el foco va al primero.
+    const primerError = (['titular', 'documento', 'email'] as const).find(
+      (campo) => errores[campo],
+    );
+    if (primerError) {
+      enfocar(primerError);
+      return;
+    }
     if (puedePagar && !puedePagar()) return;
     if (!metodo) {
       setErrorTarjeta('Revisá el número de la tarjeta.');
@@ -255,10 +292,17 @@ export function FormularioTarjeta({
         payerEmail: email.trim(),
         installments: 1,
       });
-    } catch {
-      setErrorTarjeta(
-        'Revisá los datos de la tarjeta (número, vencimiento y código de seguridad).',
-      );
+    } catch (error) {
+      // BL-445: si Mercado Pago rechazó el documento, el error va a ese
+      // campo y no a la tarjeta.
+      if (esErrorDeDocumentoMp(error)) {
+        setDocumentoRechazadoMp(true);
+        enfocar('documento');
+      } else {
+        setErrorTarjeta(
+          'Revisá los datos de la tarjeta (número, vencimiento y código de seguridad).',
+        );
+      }
     } finally {
       setTokenizando(false);
     }
@@ -354,7 +398,7 @@ export function FormularioTarjeta({
           <select
             aria-label="Tipo de documento"
             value={tipoDocumento}
-            onChange={(e) => setTipoDocumento(e.target.value as TipoDocumento)}
+            onChange={(e) => alCambiarTipoDocumento(e.target.value as TipoDocumento)}
             className={`${CLASE_INPUT_BASE} ${CLASE_BORDE_OK} !w-auto shrink-0 pr-8`}
           >
             <option value="CI">Cédula</option>
@@ -363,10 +407,13 @@ export function FormularioTarjeta({
           <input
             id={`${id}-documento`}
             value={documento}
-            onChange={(e) => setDocumento(e.target.value)}
+            onChange={(e) => alCambiarDocumento(e.target.value)}
+            onBlur={() => setDocumentoTocado(true)}
             inputMode={tipoDocumento === 'CI' ? 'numeric' : 'text'}
+            maxLength={tipoDocumento === 'CI' ? LARGO_MAXIMO_CI : undefined}
             placeholder={tipoDocumento === 'CI' ? '1.234.567-2' : 'Pasaporte u otro'}
             aria-invalid={!!mostrar('documento')}
+            aria-describedby={mostrar('documento') ? `${id}-documento-error` : undefined}
             className={`${CLASE_INPUT_BASE} ${mostrar('documento') ? CLASE_BORDE_ERROR : CLASE_BORDE_OK}`}
           />
         </div>
@@ -446,7 +493,7 @@ function Campo({
       </label>
       {children}
       {error && (
-        <p className="text-xs font-semibold text-[#BA1A1A]" role="alert">
+        <p id={`${htmlFor}-error`} className="text-xs font-semibold text-[#BA1A1A]" role="alert">
           {error}
         </p>
       )}
