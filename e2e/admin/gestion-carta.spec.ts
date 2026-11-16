@@ -312,9 +312,13 @@ test.describe("BL-392 · Gestión de Carta", () => {
       // sesión del admin y el login del mozo nunca llega a /login.
 
       // El comensal ve la insignia en el menú, en el celular.
-      const celular = await browser.newPage({
+      // BL-575: en un contexto propio. AxeBuilder abre una página auxiliar
+      // en el contexto de la que analiza, y con browser.newPage() no puede
+      // («Please use browser.newContext()»).
+      const contextoCelular = await browser.newContext({
         viewport: { width: 390, height: 844 },
       });
+      const celular = await contextoCelular.newPage();
       try {
         // Página nueva sin el baseURL del config: la URL sale de la del admin.
         await celular.goto(new URL(MENU_URL_PATH, page.url()).toString());
@@ -326,7 +330,7 @@ test.describe("BL-392 · Gestión de Carta", () => {
         ).toBeVisible({ timeout: 15_000 });
         expect(await violacionesGraves(celular)).toEqual([]);
       } finally {
-        await celular.close();
+        await contextoCelular.close();
       }
     } finally {
       await eliminarCategoria(page.request, authorization, categoria);
