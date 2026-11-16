@@ -3,10 +3,12 @@ import * as jwt from 'jsonwebtoken';
 import {
   AUDIENCIA_TOKEN_INVITADO,
   DURACION_TOKEN_INVITADO_S,
+  esTokenDeInvitado,
   ISSUER_TOKEN_INVITADO,
   kidDeClave,
   TokenInvitado,
   TokenInvitadoInvalidoError,
+  tokenInvitadoDesdeEntorno,
 } from '../../src/auth-comensal/token-invitado';
 
 // HU-052 (BL-577): firma y verificación del token de invitado del comensal.
@@ -248,5 +250,56 @@ describe('TokenInvitado (HU-052, BL-577)', () => {
     expect(kid).toMatch(/^[0-9a-f]{16}$/);
     expect(kid).not.toContain(CLAVE.slice(0, 8));
     expect(kidDeClave(CLAVE_NUEVA)).not.toBe(kid);
+  });
+});
+
+describe('Token de invitado: configuración y elección del verificador (HU-052, BL-578)', () => {
+  it('[TC-U-600] tokenInvitadoDesdeEntorno: sin clave, null; con clave, verifica; con la anterior, acepta las dos; una clave corta no arranca', () => {
+    expect(tokenInvitadoDesdeEntorno({})).toBeNull();
+    expect(
+      tokenInvitadoDesdeEntorno({ COMENSAL_TOKEN_CLAVE: '   ' }),
+    ).toBeNull();
+
+    const conClave = tokenInvitadoDesdeEntorno({
+      COMENSAL_TOKEN_CLAVE: CLAVE,
+    })!;
+    const emitido = conClave.emitir({
+      tenantId: TENANT_A,
+      canal: { tipo: 'retiro', restauranteId: RESTAURANTE_A },
+    });
+    expect(conClave.verificar(emitido.accessToken).tenantId).toBe(TENANT_A);
+
+    const rotado = tokenInvitadoDesdeEntorno({
+      COMENSAL_TOKEN_CLAVE: CLAVE_NUEVA,
+      COMENSAL_TOKEN_CLAVE_ANTERIOR: CLAVE,
+    })!;
+    expect(rotado.verificar(emitido.accessToken).tenantId).toBe(TENANT_A);
+
+    expect(() =>
+      tokenInvitadoDesdeEntorno({ COMENSAL_TOKEN_CLAVE: 'corta' }),
+    ).toThrow(/32 bytes/);
+  });
+
+  it('[TC-U-601] esTokenDeInvitado mira solo el emisor; claveDelKid devuelve la clave de la actual o la anterior', () => {
+    const tokens = new TokenInvitado({
+      claveActual: CLAVE_NUEVA,
+      claveAnterior: CLAVE,
+    });
+    const deLaApi = tokens.emitir({
+      tenantId: TENANT_A,
+      canal: { tipo: 'retiro', restauranteId: RESTAURANTE_A },
+    }).accessToken;
+    const deKeycloak = jwt.sign({ tenant_id: TENANT_A }, CLAVE, {
+      issuer: 'http://localhost:8080/realms/bistrolink',
+    });
+
+    expect(esTokenDeInvitado(deLaApi)).toBe(true);
+    expect(esTokenDeInvitado(deKeycloak)).toBe(false);
+    expect(esTokenDeInvitado('basura')).toBe(false);
+
+    expect(tokens.claveDelKid(kidDeClave(CLAVE_NUEVA))).toBe(CLAVE_NUEVA);
+    expect(tokens.claveDelKid(kidDeClave(CLAVE))).toBe(CLAVE);
+    expect(tokens.claveDelKid('0000000000000000')).toBeUndefined();
+    expect(tokens.claveDelKid(undefined)).toBeUndefined();
   });
 });

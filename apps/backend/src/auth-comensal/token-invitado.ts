@@ -26,9 +26,9 @@ export const AUDIENCIA_TOKEN_INVITADO = 'bistrolink-comensal';
 /** 60 minutos, igual que el token de Keycloak (decisión del 16/11/2026). */
 export const DURACION_TOKEN_INVITADO_S = 3600;
 export const LARGO_MINIMO_CLAVE_BYTES = 32;
-const ALGORITMO = 'HS256';
+export const ALGORITMO_TOKEN_INVITADO = 'HS256';
 /** Tolerancia por diferencias de reloj entre réplicas de la API. */
-const TOLERANCIA_RELOJ_S = 5;
+export const TOLERANCIA_RELOJ_TOKEN_INVITADO_S = 5;
 
 export type CanalInvitado =
   | { tipo: 'retiro'; restauranteId: string }
@@ -149,7 +149,7 @@ export class TokenInvitado {
     if (datos.restauranteId) payload.restaurante_id = datos.restauranteId;
 
     const accessToken = jwt.sign(payload, this.claveActual, {
-      algorithm: ALGORITMO,
+      algorithm: ALGORITMO_TOKEN_INVITADO,
       expiresIn: DURACION_TOKEN_INVITADO_S,
       issuer: ISSUER_TOKEN_INVITADO,
       audience: AUDIENCIA_TOKEN_INVITADO,
@@ -177,28 +177,78 @@ export class TokenInvitado {
     let payload: jwt.JwtPayload;
     try {
       payload = jwt.verify(token, clave, {
-        algorithms: [ALGORITMO],
+        algorithms: [ALGORITMO_TOKEN_INVITADO],
         issuer: ISSUER_TOKEN_INVITADO,
         audience: AUDIENCIA_TOKEN_INVITADO,
-        clockTolerance: TOLERANCIA_RELOJ_S,
+        clockTolerance: TOLERANCIA_RELOJ_TOKEN_INVITADO_S,
       }) as jwt.JwtPayload;
     } catch {
       throw new TokenInvitadoInvalidoError('Token de invitado inválido');
     }
 
-    const canal = leerCanal(payload.canal);
-    if (!esTexto(payload.sub) || !esTexto(payload.tenant_id) || !canal) {
-      throw new TokenInvitadoInvalidoError('Token de invitado inválido');
-    }
-
-    return {
-      sub: payload.sub,
-      tenantId: payload.tenant_id,
-      restauranteId: esTexto(payload.restaurante_id)
-        ? payload.restaurante_id
-        : undefined,
-      roles: ['COMENSAL'],
-      canal,
-    };
+    return invitadoDesdePayload(payload);
   }
+
+  /**
+   * La clave que corresponde a un `kid`, si es la actual o la anterior. La
+   * usa la estrategia HTTP (sub-issue 2), que verifica con passport-jwt.
+   */
+  claveDelKid(kid: string | undefined): string | undefined {
+    return kid ? this.claves.get(kid) : undefined;
+  }
+}
+
+/**
+ * Arma el invitado a partir de los claims de un token YA verificado (firma,
+ * algoritmo, emisor, audiencia y vencimiento). El rol no se lee del token:
+ * siempre es COMENSAL. Si faltan claims, TokenInvitadoInvalidoError.
+ */
+export function invitadoDesdePayload(
+  payload: jwt.JwtPayload,
+): InvitadoVerificado {
+  const canal = leerCanal(payload.canal);
+  if (!esTexto(payload.sub) || !esTexto(payload.tenant_id) || !canal) {
+    throw new TokenInvitadoInvalidoError('Token de invitado inválido');
+  }
+
+  return {
+    sub: payload.sub,
+    tenantId: payload.tenant_id,
+    restauranteId: esTexto(payload.restaurante_id)
+      ? payload.restaurante_id
+      : undefined,
+    roles: ['COMENSAL'],
+    canal,
+  };
+}
+
+/**
+ * true si el token dice venir de la API (sin verificarlo todavía). Sirve
+ * solo para elegir con qué verificarlo: la firma la comprueba después
+ * TokenInvitado, y un token de la API nunca se verifica contra Keycloak.
+ */
+export function esTokenDeInvitado(token: string): boolean {
+  const payload = jwt.decode(token, { complete: true })?.payload;
+  return (
+    typeof payload === 'object' &&
+    payload !== null &&
+    payload.iss === ISSUER_TOKEN_INVITADO
+  );
+}
+
+/**
+ * HU-052 (BL-578): el TokenInvitado con las claves del entorno
+ * (`COMENSAL_TOKEN_CLAVE` y, durante una rotación,
+ * `COMENSAL_TOKEN_CLAVE_ANTERIOR`). Sin clave devuelve null: la API no
+ * acepta tokens de invitado. Con una clave inválida (corta, o la anterior
+ * igual a la actual) lanza un error, para que la API no arranque mal
+ * configurada.
+ */
+export function tokenInvitadoDesdeEntorno(
+  env: NodeJS.ProcessEnv = process.env,
+): TokenInvitado | null {
+  const claveActual = env.COMENSAL_TOKEN_CLAVE?.trim();
+  if (!claveActual) return null;
+  const claveAnterior = env.COMENSAL_TOKEN_CLAVE_ANTERIOR?.trim() || undefined;
+  return new TokenInvitado({ claveActual, claveAnterior });
 }
