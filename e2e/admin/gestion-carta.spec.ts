@@ -589,6 +589,12 @@ test.describe("BL-392 · Gestión de Carta", () => {
   test("[TC-E-055] Carta: la vista, el menú «⋯» y los diálogos no tienen errores graves de accesibilidad en celular, tablet y PC (axe-core)", async ({
     kdsPageAdmin: page,
   }) => {
+    // BL-574: tres anchos de pantalla, cada uno con varios diálogos y un
+    // análisis de axe-core por diálogo. Con los 30 s por defecto se cortaba
+    // en la limpieza del final y la categoría «E2E carta …» quedaba en
+    // staging: en cada reintento, otra «Milhojas E2E» más, y TC-E-007
+    // fallaba por encontrar el plato repetido. Mismo criterio que TC-E-053.
+    test.setTimeout(90_000);
     const authorization = await abrirCarta(page);
     let categoria: CategoriaDePrueba | undefined;
     try {
