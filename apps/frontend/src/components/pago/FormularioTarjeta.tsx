@@ -242,6 +242,32 @@ export function FormularioTarjeta({
     };
   }, []);
 
+  // BL-575 (WCAG 4.1.2): Mercado Pago inyecta cada campo seguro en un iframe
+  // sin title, y el lector de pantalla lo anuncia como «marco» sin nombre
+  // (axe: frame-title). El SDK no deja pasarle un título, así que se le pone
+  // cuando aparece. Solo se observan nodos nuevos (childList): cambiar el
+  // atributo no vuelve a disparar el observador.
+  useEffect(() => {
+    if (sdk !== 'listo') return;
+    const campos: readonly (readonly [string, string])[] = [
+      [`${id}-numero`, 'Número de tarjeta'],
+      [`${id}-vence`, 'Vencimiento de la tarjeta'],
+      [`${id}-cvv`, 'Código de seguridad de la tarjeta'],
+    ];
+    const ponerTitulos = () => {
+      for (const [idCampo, titulo] of campos) {
+        const iframe = document.getElementById(idCampo)?.querySelector('iframe');
+        if (iframe && iframe.title !== titulo) iframe.title = titulo;
+      }
+    };
+    ponerTitulos();
+    const raiz = document.getElementById(`${id}-numero`)?.closest('form');
+    if (!raiz) return;
+    const observador = new MutationObserver(ponerTitulos);
+    observador.observe(raiz, { childList: true, subtree: true });
+    return () => observador.disconnect();
+  }, [sdk, id]);
+
   function alCambiarDocumento(valor: string) {
     setDocumento(tipoDocumento === 'CI' ? filtrarEntradaCi(valor) : valor);
     setDocumentoRechazadoMp(false);
