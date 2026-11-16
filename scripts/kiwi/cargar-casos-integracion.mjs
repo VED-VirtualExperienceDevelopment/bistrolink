@@ -1099,6 +1099,14 @@ const DATOS_INTEGRACION = {
     priority: "P3",
     tags: ["HU-051", "BL-563", "pago", "mercado-pago", "cache"],
   },
+  // HU-050 (BL-558): valoración privada del pedido, en valoraciones.e2e-spec.ts.
+  234: {
+    component: "api",
+    requirement: "HU-050",
+    category: "Funcional",
+    priority: "P3",
+    tags: ["HU-050", "BL-558", "valoracion", "privacidad", "RLS"],
+  },
 };
 /**
  * BL-435: datos de los E2E TC-E-017 en adelante, con los criterios de
@@ -1684,6 +1692,12 @@ const DATOS_E2E = {
     category: "Funcional",
     priority: "P3",
     tags: ["BL-563", "pago", "responsive", ...axe],
+  }),
+  // HU-050 (BL-558): valoración privada del pedido.
+  127: e2e("comensal", "HU-050", {
+    category: "Funcional",
+    priority: "P3",
+    tags: ["BL-558", "valoracion", "privacidad", "teclado"],
   }),
 };
 /**

@@ -48,6 +48,7 @@
 | 1.41    | 14/11/2026 | TC-I-225 a 229: complementos antes de pagar (HU-046 / BL-551, BL-552 y BL-554): platos sugeribles y con alcohol, reglas de asociación, endpoint y medición. Se borran los bloques de TC-I-223 y 224, ya cargados.                         |
 | 1.42    | 15/11/2026 | TC-I-230 a 232: el canal en tiempo real de Gestión de Carta (`/menu`) exige el token de un Administrador y toma el tenant del token (BL-515).                                                                                             |
 | 1.43    | 15/11/2026 | TC-I-233: tarjetas aceptadas para el sello de pago seguro (HU-051 / BL-563). Se borran los bloques de TC-I-225 a 232, ya cargados.                                                                                                        |
+| 1.44    | 15/11/2026 | TC-I-234: valoración privada del pedido (HU-050 / BL-558). Se borra el bloque de TC-I-233, ya cargado.                                                                                                                                    |
 
 Texto del campo de descripción de cada caso TC-I en Kiwi. Lo carga
 `cargar-casos-integracion.mjs --descripciones`: cada bloque `## TC-I-NNN`
@@ -59,18 +60,26 @@ esperado`, igual que los casos cargados a mano desde TC-I-029.
 
 ## Casos para cargar
 
-## TC-I-233
+## TC-I-234
 
 ### Precondición
 
-API de integración. La respuesta de Mercado Pago a `GET /v1/payment_methods` se simula: Visa de crédito (con campos de más), Visa de débito y Abitab (no es tarjeta).
+API de integración con la base y RLS reales. Un pedido para retirar ENTREGADO y otro EN_PREPARACION del local de prueba.
 
 ### Pasos
 
-1. `GET /pagos/tarjetas-aceptadas`, sin login.
-2. Repetir el pedido.
+1. Valorar el pedido entregado con 4 estrellas y un comentario.
+2. Valorarlo de nuevo con 1 estrella.
+3. Valorar el pedido en preparación.
+4. Pedir las valoraciones del local con el período «Hoy».
+5. Buscar la valoración desde otro tenant.
+6. Guardar directo en la base una valoración con 6 estrellas.
 
 ### Resultado esperado
 
-1. 200, con `Cache-Control: public, max-age=3600` y `{ tarjetas: [{ id: "visa", nombre: "Visa", imagen: "https://…/visa.gif", credito: true, debito: true }] }`: una tarjeta por marca, sin Abitab y sin ningún otro campo de Mercado Pago.
-2. 200, sin volver a consultar a Mercado Pago (caché del servidor).
+1. Se guarda (`{ valorado: true }`).
+2. 409 con el código `YA_VALORADO`; queda la primera.
+3. 409 «Podés valorar tu pedido cuando te lo entreguen».
+4. Promedio y total del período; el comentario aparece con el día y las 4 estrellas, sin el pedido, la mesa ni la hora.
+5. No la ve (RLS).
+6. La base la rechaza (CHECK de 1 a 5).

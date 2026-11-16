@@ -5,7 +5,10 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
+  SetMetadata,
 } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { isUUID } from 'class-validator';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { RequestConMesaQr } from '../qr-mesa/mesa-qr.guard';
@@ -77,9 +80,24 @@ export function esDeLaSesion(
   );
 }
 
+/**
+ * HU-050 (BL-558): con el link de pago, un pedido ya pagado solo se puede
+ * consultar. Una ruta marcada con este decorador acepta además, con el link
+ * de un pedido pagado, una escritura: la valoración del pedido, que se hace
+ * después de la entrega. No cambia nada para el QR ni para el token del
+ * pedido para retirar.
+ */
+export const PERMITE_LINK_PAGADO = 'pedido-acceso:permite-link-pagado';
+export const PermiteLinkPagado = () => SetMetadata(PERMITE_LINK_PAGADO, true);
+
 @Injectable()
 export class PedidoAccesoGuard implements CanActivate {
-  constructor(private readonly tenantPrisma: TenantPrismaService) {}
+  constructor(
+    private readonly tenantPrisma: TenantPrismaService,
+    // Opcional: sin Reflector (tests que crean el guard a mano) ninguna ruta
+    // acepta el link de un pedido pagado para escribir.
+    @Optional() private readonly reflector?: Reflector,
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<RequestConPedido>();
@@ -120,6 +138,7 @@ export class PedidoAccesoGuard implements CanActivate {
         pedidoId,
         pedido,
         request,
+        this.permiteLinkPagado(context),
       );
     }
 
@@ -148,6 +167,15 @@ export class PedidoAccesoGuard implements CanActivate {
     return true;
   }
 
+  private permiteLinkPagado(context: ExecutionContext): boolean {
+    return (
+      this.reflector?.getAllAndOverride<boolean>(PERMITE_LINK_PAGADO, [
+        context.getHandler(),
+        context.getClass(),
+      ]) === true
+    );
+  }
+
   /** HU-033 (BL-203): el link tiene que ser el vigente de este pedido. */
   private validarLinkPago(
     token: string,
@@ -159,6 +187,7 @@ export class PedidoAccesoGuard implements CanActivate {
       linkPagoVenceEn: Date | null;
     },
     request: RequestConPedido,
+    permitePagado: boolean,
   ): true {
     const datos = leerLinkPago(token);
     if (datos?.tenantId !== tenantId || datos.pedidoId !== pedidoId) {
@@ -166,7 +195,11 @@ export class PedidoAccesoGuard implements CanActivate {
     }
     const estado = estadoDelLink(pedido, datos.nonce, new Date());
     const soloLectura = (request.method ?? 'GET').toUpperCase() === 'GET';
-    if (!linkPermite(estado, soloLectura)) {
+    // HU-050 (BL-558): la ruta marcada acepta el link de un pedido pagado
+    // como si fuera una consulta (sigue sin aceptar reemplazado, cancelado
+    // ni caducado).
+    const comoConsulta = soloLectura || (permitePagado && estado === 'pagado');
+    if (!linkPermite(estado, comoConsulta)) {
       throw new ForbiddenException(mensajeDelLink(estado));
     }
     return true;

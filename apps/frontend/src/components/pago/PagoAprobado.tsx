@@ -8,6 +8,10 @@ import { etiquetaMesa, type OrigenMenu } from '@/components/menu-digital.utils';
 import type { LineaResumen } from './PagoPedido';
 import { GraciasPorTuCompra } from './GraciasPorTuCompra';
 import {
+  rutaValoracion,
+  type Valoracion,
+} from '@/components/valoracion/valoracion.utils';
+import {
   codigoPedido,
   estadoComprobante,
   filasRebajaIva,
@@ -176,6 +180,16 @@ export function PagoAprobado({
     }
   }
 
+  // HU-050 (BL-558): la valoración, con el mismo acceso que el pago (el QR
+  // de la mesa, el token del pedido para retirar o el link de pago).
+  async function valorar(valoracion: Valoracion) {
+    await apiFetch(rutaValoracion(pedidoId), accessToken, {
+      method: 'POST',
+      headers: headersAccesoPedido(origen, tokenAcceso),
+      body: JSON.stringify(valoracion),
+    });
+  }
+
   if (entregado) {
     return (
       <GraciasPorTuCompra
@@ -195,6 +209,7 @@ export function PagoAprobado({
         onOtroPedido={onOtroPedido}
         pedidosEnCamino={pedidosEnCamino}
         onVerMisPedidos={onVerMisPedidos}
+        onValorar={valorar}
       />
     );
   }
