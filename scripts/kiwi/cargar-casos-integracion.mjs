@@ -253,6 +253,20 @@ const complementos = (ticket, extra = {}) => ({
 });
 // HU-020 (BL-72): configuración del establecimiento, en
 // configuracion-establecimiento.e2e-spec.ts.
+// HU-052 (BL-576): token de invitado del comensal, firmado por la API.
+const tokenInvitado = (extra = {}) => ({
+  component: "api",
+  requirement: "HU-052",
+  ...extra,
+  tags: [
+    "HU-052",
+    "BL-576",
+    "BL-578",
+    "seguridad",
+    "autenticacion",
+    ...(extra.tags ?? []),
+  ],
+});
 // BL-448: avisos de efectivo que no se pierden en el KDS (HU-031b).
 const avisoEfectivo = (extra = {}) => ({
   component: "api",
@@ -1107,6 +1121,19 @@ const DATOS_INTEGRACION = {
     priority: "P3",
     tags: ["HU-050", "BL-558", "valoracion", "privacidad", "RLS"],
   },
+  // HU-052 (BL-578): token de invitado del comensal, en
+  // token-invitado.e2e-spec.ts.
+  235: tokenInvitado({ category: "Seguridad", priority: "P1" }),
+  236: tokenInvitado({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["roles"],
+  }),
+  237: tokenInvitado({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["jwt", "validacion"],
+  }),
 };
 /**
  * BL-435: datos de los E2E TC-E-017 en adelante, con los criterios de
