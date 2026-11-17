@@ -50,6 +50,7 @@
 | 1.43    | 15/11/2026 | TC-I-233: tarjetas aceptadas para el sello de pago seguro (HU-051 / BL-563). Se borran los bloques de TC-I-225 a 232, ya cargados.                                                                                                        |
 | 1.44    | 15/11/2026 | TC-I-234: valoración privada del pedido (HU-050 / BL-558). Se borra el bloque de TC-I-233, ya cargado.                                                                                                                                    |
 | 1.45    | 16/11/2026 | TC-I-235 a 237: token de invitado del comensal emitido por la API (HU-052 / BL-578), para cargar con el script antes de mergear el PR.                                                                                                    |
+| 1.46    | 16/11/2026 | Se borran los bloques de TC-I-234 a 237, ya cargados en Kiwi.                                                                                                                                                                             |
 
 Texto del campo de descripción de cada caso TC-I en Kiwi. Lo carga
 `cargar-casos-integracion.mjs --descripciones`: cada bloque `## TC-I-NNN`
@@ -61,79 +62,4 @@ esperado`, igual que los casos cargados a mano desde TC-I-029.
 
 ## Casos para cargar
 
-## TC-I-234
-
-### Precondición
-
-API de integración con la base y RLS reales. Un pedido para retirar ENTREGADO y otro EN_PREPARACION del local de prueba.
-
-### Pasos
-
-1. Valorar el pedido entregado con 4 estrellas y un comentario.
-2. Valorarlo de nuevo con 1 estrella.
-3. Valorar el pedido en preparación.
-4. Pedir las valoraciones del local con el período «Hoy».
-5. Buscar la valoración desde otro tenant.
-6. Guardar directo en la base una valoración con 6 estrellas.
-
-### Resultado esperado
-
-1. Se guarda (`{ valorado: true }`).
-2. 409 con el código `YA_VALORADO`; queda la primera.
-3. 409 «Podés valorar tu pedido cuando te lo entreguen».
-4. Promedio y total del período; el comentario aparece con el día y las 4 estrellas, sin el pedido, la mesa ni la hora.
-5. No la ve (RLS).
-6. La base la rechaza (CHECK de 1 a 5).
-
-## TC-I-235
-
-### Precondición
-
-API de integración con la base, el RLS y Keycloak reales, y una clave de prueba para el token de invitado (`COMENSAL_TOKEN_CLAVE`). Restaurante del tenant de prueba A.
-
-### Pasos
-
-1. Firmar un token de invitado del tenant A, canal retiro, y llamar a `POST /pedidos` con el body vacío.
-2. Pedir un token de comensal por `POST /auth/comensal` (Keycloak) y llamar a `POST /pedidos` con el body vacío.
-3. Llamar a `POST /pedidos` sin token.
-
-### Resultado esperado
-
-1. 400 de validación: el token pasó la autenticación y el rol COMENSAL.
-2. 400 de validación: el token de Keycloak sigue funcionando igual.
-3. 401.
-
-## TC-I-236
-
-### Precondición
-
-API de integración con la base, el RLS y Keycloak reales, y un token de invitado del tenant de prueba A.
-
-### Pasos
-
-1. Con el token de invitado, `GET /mesas/layout` (método del personal en el controlador del comensal).
-2. Con el mismo token, `GET /usuarios`, `GET /auditoria` y `GET /admin/reportes`.
-3. Con el mismo token, `GET /plataforma/establecimientos`.
-
-### Resultado esperado
-
-1. 403: pasa la autenticación, pero el invitado es siempre COMENSAL y RolesGuard lo frena.
-2. 401: los endpoints del personal no aceptan el token de invitado.
-3. 401: la plataforma tampoco.
-
-## TC-I-237
-
-### Precondición
-
-API de integración con la base, el RLS y Keycloak reales, y la clave de prueba del token de invitado.
-
-### Pasos
-
-1. Llamar a `POST /pedidos` con un token con el formato del invitado firmado con otra clave.
-2. Lo mismo con un token vencido.
-3. Lo mismo con otra audiencia (`account`).
-4. Lo mismo con un token firmado con la clave de la API pero con el emisor de Keycloak.
-
-### Resultado esperado
-
-1 a 4. 401 en todos los casos. El paso 4 confirma que un token que dice venir de Keycloak nunca se verifica con la clave de la API.
+Ninguno: todos los bloques ya están cargados en Kiwi.
