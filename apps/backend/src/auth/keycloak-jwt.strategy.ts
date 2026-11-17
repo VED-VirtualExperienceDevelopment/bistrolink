@@ -3,6 +3,7 @@ import { PassportStrategy } from '@nestjs/passport';
 import { Strategy, StrategyOptionsWithoutRequest } from 'passport-jwt';
 import { passportJwtSecret } from 'jwks-rsa';
 import { ROL_PLATAFORMA } from './rol-plataforma';
+import type { CanalInvitado } from '../auth-comensal/token-invitado';
 import {
   mensajeSuspendidoPara,
   TenantEstadoService,
@@ -13,6 +14,12 @@ export interface AuthenticatedUser {
   tenantId: string; // claim custom "tenant_id"
   restauranteId?: string; // <-- AGREGADO: claim custom "restaurante_id"
   roles: string[]; // realm_access.roles: ADMIN | MOZO | COCINA | COMENSAL
+  /**
+   * HU-052 (BL-578): solo en el token de invitado del comensal (emitido por
+   * la API): el canal por el que se emitió. Los tokens de Keycloak no lo
+   * tienen.
+   */
+  canal?: CanalInvitado;
 }
 
 // Derivadas de KEYCLOAK_URL + KEYCLOAK_REALM (ya existen en el .env real del
