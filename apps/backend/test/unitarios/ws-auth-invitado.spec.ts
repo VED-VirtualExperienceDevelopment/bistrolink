@@ -129,4 +129,26 @@ describe('WsAuthService con el token de invitado (HU-052, BL-578)', () => {
       MENSAJE_SUSPENDIDO_COMENSAL,
     );
   });
+
+  it('[TC-U-610] un error inesperado al verificar no se disfraza de token inválido: se propaga tal cual', async () => {
+    const inesperado = new Error('falla inesperada');
+    const espia = jest
+      .spyOn(TokenInvitado.prototype, 'verificar')
+      .mockImplementation(() => {
+        throw inesperado;
+      });
+    try {
+      const { accessToken } = tokens.emitir({
+        tenantId: TENANT_A,
+        canal: { tipo: 'retiro', restauranteId: RESTAURANTE_A },
+      });
+
+      await expect(crearServicio().verify(accessToken)).rejects.toBe(
+        inesperado,
+      );
+      expect(tenantEstado.estaSuspendido).not.toHaveBeenCalled();
+    } finally {
+      espia.mockRestore();
+    }
+  });
 });

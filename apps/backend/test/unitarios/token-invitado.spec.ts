@@ -119,12 +119,22 @@ describe('TokenInvitado (HU-052, BL-577)', () => {
     ['sin tenant_id', () => firmarAMano({ canal: CANAL_RETIRO }, CLAVE)],
     ['sin canal', () => firmarAMano({ tenant_id: TENANT_A }, CLAVE)],
     [
-      'con un canal incompleto',
+      'con una mesa sin sesión',
       () =>
         firmarAMano(
           { tenant_id: TENANT_A, canal: { tipo: 'mesa', mesa_id: MESA_1 } },
           CLAVE,
         ),
+    ],
+    [
+      'con un retiro sin restaurante',
+      () =>
+        firmarAMano({ tenant_id: TENANT_A, canal: { tipo: 'retiro' } }, CLAVE),
+    ],
+    [
+      'con un link sin pedido',
+      () =>
+        firmarAMano({ tenant_id: TENANT_A, canal: { tipo: 'link' } }, CLAVE),
     ],
     [
       'con un canal desconocido',
