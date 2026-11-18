@@ -1134,6 +1134,13 @@ const DATOS_INTEGRACION = {
     priority: "P1",
     tags: ["jwt", "validacion"],
   }),
+  // HU-052 (BL-579): /auth/comensal con el emisor api, en
+  // auth-comensal-api.e2e-spec.ts.
+  238: tokenInvitado({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["BL-579", "emision"],
+  }),
 };
 /**
  * BL-435: datos de los E2E TC-E-017 en adelante, con los criterios de

@@ -51,6 +51,7 @@
 | 1.44    | 15/11/2026 | TC-I-234: valoración privada del pedido (HU-050 / BL-558). Se borra el bloque de TC-I-233, ya cargado.                                                                                                                                    |
 | 1.45    | 16/11/2026 | TC-I-235 a 237: token de invitado del comensal emitido por la API (HU-052 / BL-578), para cargar con el script antes de mergear el PR.                                                                                                    |
 | 1.46    | 16/11/2026 | Se borran los bloques de TC-I-234 a 237, ya cargados en Kiwi.                                                                                                                                                                             |
+| 1.47    | 16/11/2026 | TC-I-238: /auth/comensal entrega el token de invitado de la API con su canal (HU-052 / BL-579).                                                                                                                                           |
 
 Texto del campo de descripción de cada caso TC-I en Kiwi. Lo carga
 `cargar-casos-integracion.mjs --descripciones`: cada bloque `## TC-I-NNN`
@@ -62,4 +63,21 @@ esperado`, igual que los casos cargados a mano desde TC-I-029.
 
 ## Casos para cargar
 
-Ninguno: todos los bloques ya están cargados en Kiwi.
+## TC-I-238
+
+### Precondición
+
+API de integración con la base, el RLS y Keycloak reales, con `COMENSAL_TOKEN_EMISOR=api` y una clave de prueba para el token de invitado (`COMENSAL_TOKEN_CLAVE`). Restaurante y mesa 1 del tenant de prueba A, con la sesión de la mesa abierta.
+
+### Pasos
+
+1. Pedir el token del comensal para retirar: `POST /auth/comensal` con el tenant y el restaurante.
+2. Pedir el token del comensal en la mesa: `POST /auth/comensal/mesa` con el token del QR y la sesión de la mesa.
+3. Verificar los dos tokens con la clave de la API.
+4. Llamar a `POST /pedidos` con el body vacío y cada token.
+
+### Resultado esperado
+
+1. y 2. 200 con `{ accessToken, expiresIn }` y `expiresIn` de 3600 segundos, como con Keycloak.
+2. Los dos los firmó la API, con el rol COMENSAL, el tenant y el restaurante. El de retiro tiene el canal `retiro`; el de la mesa, el canal `mesa` con la mesa y la sesión.
+3. 400 de validación: los dos tokens pasan la autenticación y el rol.
