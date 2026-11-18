@@ -28,10 +28,33 @@ test.describe("BL-518: Mesa cerrada", () => {
     try {
       mesa = await crearMesaTemporal(context.request, authorization);
 
-      // 1. El comensal tiene la carta abierta.
+      // 1. El comensal tiene la carta abierta y ya sigue la sesión de la
+      // mesa por el socket. BL-589: la carta pide `mesa:seguir` después de
+      // mostrar los platos; si el mozo cerraba antes, el test medía una
+      // carrera y no el aviso.
       const comensal = await context.newPage();
+      let siguiendoLaMesa = false;
+      const esSeguirMesa = (contenido: unknown) =>
+        String(contenido ?? "").includes('"mesa:seguir"');
+      // Socket.IO puede mandarlo por WebSocket o, antes del upgrade, por
+      // long-polling (un POST a /socket.io/): se miran los dos.
+      comensal.on("websocket", (ws) =>
+        ws.on("framesent", (frame) => {
+          if (esSeguirMesa(frame.payload)) siguiendoLaMesa = true;
+        }),
+      );
+      comensal.on("request", (req) => {
+        if (
+          req.method() === "POST" &&
+          req.url().includes("/socket.io/") &&
+          esSeguirMesa(req.postData())
+        ) {
+          siguiendoLaMesa = true;
+        }
+      });
       await comensal.goto(mesa.ruta);
       await expect(comensal.getByText(ITEM_DISPONIBLE)).toBeVisible();
+      await expect.poll(() => siguiendoLaMesa, { timeout: 15000 }).toBe(true);
 
       // 2. El mozo cierra la mesa.
       const cerrar = await context.request.post(

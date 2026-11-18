@@ -369,9 +369,9 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
     const cerrada: SesionMesaCerrada = { sesionMesa };
 
+    const acceso = await this.resolverQrMesaAcceso();
     let mesa;
     try {
-      const acceso = await this.resolverQrMesaAcceso();
       mesa = await acceso.resolver(qrToken);
     } catch {
       // QR inválido o reemplazado: ya no puede pedir con él.
@@ -399,7 +399,22 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return NO_SIGUE;
     }
 
-    await client.join(this.salaSesionMesa(mesa.sesionId));
+    const sala = this.salaSesionMesa(mesa.sesionId);
+    await client.join(sala);
+
+    // BL-589: si el mozo cerró la mesa entre la lectura de arriba y la
+    // unión a la sala, el aviso ya salió y este comensal no lo recibió. Se
+    // vuelve a leer la sesión ya dentro de la sala: si cambió, se le avisa
+    // a él. Un cierre posterior le llega por la sala, como a todos.
+    const sigueAbierta = await acceso
+      .resolver(qrToken)
+      .then((actual) => actual.sesionId === sesionMesa)
+      .catch(() => false);
+    if (!sigueAbierta) {
+      await client.leave(sala);
+      client.emit('mesa:sesion_cerrada', cerrada);
+      return NO_SIGUE;
+    }
     return { siguiendo: true };
   }
 

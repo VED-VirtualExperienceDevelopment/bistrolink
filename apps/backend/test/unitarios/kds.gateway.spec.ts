@@ -39,6 +39,7 @@ function mockClient(overrides: Record<string, unknown> = {}) {
     id: 'socket-123',
     handshake: { auth: { token: 'token-valido' }, headers: {} },
     join: jest.fn(),
+    leave: jest.fn(),
     emit: jest.fn(),
     disconnect: jest.fn(),
     ...overrides,
@@ -501,6 +502,55 @@ describe('KdsGateway', () => {
         expect(client.join).not.toHaveBeenCalled();
       },
     );
+
+    it.each([
+      ['se cierra', { sesionId: null }],
+      ['se cierra y se abre para otro grupo', { sesionId: 'otra-sesion' }],
+    ])(
+      '[TC-U-633] BL-589: si la mesa %s mientras el comensal se suscribe, igual se entera (no se pierde el aviso)',
+      async (_caso, despues) => {
+        comensal();
+        // Primera lectura: abierta. La segunda, ya dentro de la sala: el
+        // mozo la cerró en el medio, y el aviso de la sala ya había salido.
+        acceso.resolver
+          .mockResolvedValueOnce(mesa())
+          .mockResolvedValueOnce(mesa(despues));
+        const client = mockClient();
+
+        await expect(
+          gateway.onSeguirMesa(client as any, {
+            qrToken: 'qr-4',
+            sesionMesa: SESION,
+          }),
+        ).resolves.toEqual({ siguiendo: false });
+
+        expect(client.join).toHaveBeenCalledWith(`sesion-mesa:${SESION}`);
+        expect(client.leave).toHaveBeenCalledWith(`sesion-mesa:${SESION}`);
+        expect(client.emit).toHaveBeenCalledWith('mesa:sesion_cerrada', {
+          sesionMesa: SESION,
+        });
+      },
+    );
+
+    it('[TC-U-634] BL-589: si el QR deja de valer mientras se suscribe (se regeneró), también avisa que la sesión terminó', async () => {
+      comensal();
+      acceso.resolver
+        .mockResolvedValueOnce(mesa())
+        .mockRejectedValueOnce(new Error('QR reemplazado'));
+      const client = mockClient();
+
+      await expect(
+        gateway.onSeguirMesa(client as any, {
+          qrToken: 'qr-4',
+          sesionMesa: SESION,
+        }),
+      ).resolves.toEqual({ siguiendo: false });
+
+      expect(client.leave).toHaveBeenCalledWith(`sesion-mesa:${SESION}`);
+      expect(client.emit).toHaveBeenCalledWith('mesa:sesion_cerrada', {
+        sesionMesa: SESION,
+      });
+    });
 
     it('QR inválido o reemplazado: avisa que la sesión terminó', async () => {
       comensal();
