@@ -1,12 +1,14 @@
 import { ForbiddenException } from '@nestjs/common';
+import type { PedidoCanal } from '@prisma/client';
 import type { AuthenticatedUser } from '../auth/keycloak-jwt.strategy';
 import { leerLinkPago } from '../link-pago/link-pago-token';
+import type { CanalInvitado } from './token-invitado';
 
 /**
  * HU-052 (BL-580): el token de invitado solo sirve en el canal por el que se
  * emitió. Las reglas de la mesa están en MesaQrGuard y las de un pedido que
  * ya existe, en PedidoAccesoGuard. Acá van las de los dos endpoints del
- * comensal que no tienen ni mesa ni pedido en la ruta.
+ * comensal que no tienen ni mesa ni pedido en la ruta, y la del socket.
  *
  * Con el token de Keycloak (sin `canal`) no hacen nada.
  */
@@ -54,5 +56,36 @@ export function exigirCanalParaResumenDelLink(
     leerLinkPago(linkToken)?.pedidoId !== canal.pedidoId
   ) {
     throw new ForbiddenException(MENSAJE_RESUMEN_DE_OTRO_LINK);
+  }
+}
+
+/** Lo que hace falta de un pedido para saber si un canal lo puede seguir. */
+export interface AccesoDelPedido {
+  mesaId: string;
+  restauranteId: string;
+  canal: PedidoCanal;
+}
+
+/**
+ * Socket `pedido:seguir` (estado del pedido en vivo). Las mismas reglas que
+ * PedidoAccesoGuard: el link, su pedido; la mesa, los pedidos de su mesa;
+ * el retiro, los pedidos para retirar de su restaurante. Sin canal (token
+ * de Keycloak), como antes: alcanza con el tenant.
+ */
+export function canalPuedeSeguirPedido(
+  canal: CanalInvitado | undefined,
+  pedidoId: string,
+  pedido: AccesoDelPedido,
+): boolean {
+  if (!canal) return true;
+  switch (canal.tipo) {
+    case 'link':
+      return canal.pedidoId === pedidoId;
+    case 'mesa':
+      return pedido.canal === 'QR' && pedido.mesaId === canal.mesaId;
+    case 'retiro':
+      return (
+        pedido.canal !== 'QR' && pedido.restauranteId === canal.restauranteId
+      );
   }
 }

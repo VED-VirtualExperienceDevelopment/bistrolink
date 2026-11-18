@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { ForbiddenException } from '@nestjs/common';
 import {
+  canalPuedeSeguirPedido,
   exigirCanalParaPedidoNuevo,
   exigirCanalParaResumenDelLink,
   MENSAJE_LINK_NO_HACE_PEDIDOS,
@@ -102,5 +103,52 @@ describe('canal del token de invitado (HU-052, BL-580)', () => {
         'no-es-un-link',
       ),
     ).toThrow(MENSAJE_RESUMEN_DE_OTRO_LINK);
+  });
+
+  it('[TC-U-629] socket: cada canal sigue solo los pedidos que podría pagar; sin canal (Keycloak), cualquiera del tenant', () => {
+    const deMesa = {
+      mesaId: 'mesa-4',
+      restauranteId: RESTAURANTE_ID,
+      canal: 'QR' as const,
+    };
+    const paraRetirar = {
+      mesaId: 'mesa-virtual',
+      restauranteId: RESTAURANTE_ID,
+      canal: 'WEB' as const,
+    };
+    const mesa4 = { tipo: 'mesa' as const, mesaId: 'mesa-4', sesionId: 's' };
+    const retiro = { tipo: 'retiro' as const, restauranteId: RESTAURANTE_ID };
+
+    expect(canalPuedeSeguirPedido(undefined, PEDIDO_ID, deMesa)).toBe(true);
+
+    expect(
+      canalPuedeSeguirPedido(
+        { tipo: 'link', pedidoId: PEDIDO_ID },
+        PEDIDO_ID,
+        deMesa,
+      ),
+    ).toBe(true);
+    expect(
+      canalPuedeSeguirPedido(
+        { tipo: 'link', pedidoId: OTRO_PEDIDO },
+        PEDIDO_ID,
+        deMesa,
+      ),
+    ).toBe(false);
+
+    expect(canalPuedeSeguirPedido(mesa4, PEDIDO_ID, deMesa)).toBe(true);
+    expect(
+      canalPuedeSeguirPedido(mesa4, PEDIDO_ID, { ...deMesa, mesaId: 'otra' }),
+    ).toBe(false);
+    expect(canalPuedeSeguirPedido(mesa4, PEDIDO_ID, paraRetirar)).toBe(false);
+
+    expect(canalPuedeSeguirPedido(retiro, PEDIDO_ID, paraRetirar)).toBe(true);
+    expect(
+      canalPuedeSeguirPedido(retiro, PEDIDO_ID, {
+        ...paraRetirar,
+        restauranteId: OTRO_RESTAURANTE,
+      }),
+    ).toBe(false);
+    expect(canalPuedeSeguirPedido(retiro, PEDIDO_ID, deMesa)).toBe(false);
   });
 });

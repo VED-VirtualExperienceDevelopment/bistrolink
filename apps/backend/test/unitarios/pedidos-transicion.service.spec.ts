@@ -476,6 +476,30 @@ describe('PedidosTransicionService', () => {
     });
   });
 
+  describe('accesoDelPedido (HU-052, BL-580)', () => {
+    it('[TC-U-632] devuelve mesa, restaurante y canal del pedido dentro del tenant, o null si no existe', async () => {
+      const acceso = {
+        mesaId: 'mesa-4',
+        restauranteId: 'rest-1',
+        canal: 'QR',
+      };
+      tx().pedido.findUnique.mockResolvedValueOnce(acceso);
+
+      await expect(
+        service.accesoDelPedido(TENANT_ID, PEDIDO_ID),
+      ).resolves.toEqual(acceso);
+      expect(tx().pedido.findUnique).toHaveBeenCalledWith({
+        where: { id: PEDIDO_ID },
+        select: { mesaId: true, restauranteId: true, canal: true },
+      });
+
+      tx().pedido.findUnique.mockResolvedValueOnce(null);
+      await expect(
+        service.accesoDelPedido(TENANT_ID, PEDIDO_ID),
+      ).resolves.toBeNull();
+    });
+  });
+
   describe('obtenerResumen', () => {
     it('[TC-U-KDS-018] con el pedido encontrado, devuelve id/estado/actualizadoEn (HU-006: seguimiento del comensal)', async () => {
       tx().pedido.findUnique.mockResolvedValue({
