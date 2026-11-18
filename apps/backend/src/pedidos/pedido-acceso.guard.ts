@@ -12,6 +12,7 @@ import { Reflector } from '@nestjs/core';
 import { isUUID } from 'class-validator';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { RequestConMesaQr } from '../qr-mesa/mesa-qr.guard';
+import type { CanalInvitado } from '../auth-comensal/token-invitado';
 import {
   HEADER_PEDIDO_TOKEN,
   tokenAccesoCoincide,
@@ -107,6 +108,72 @@ export function esDeLaSesion(
 export const PERMITE_LINK_PAGADO = 'pedido-acceso:permite-link-pagado';
 export const PermiteLinkPagado = () => SetMetadata(PERMITE_LINK_PAGADO, true);
 
+/**
+ * HU-052 (BL-580): el token del link de pago solo sirve para su pedido. Se
+ * controla antes de buscar el pedido, así no se revela si existe.
+ */
+function exigirLinkDelPedido(
+  canal: CanalInvitado | undefined,
+  pedidoId: string,
+): void {
+  if (canal?.tipo === 'link' && canal.pedidoId !== pedidoId) {
+    throw new ForbiddenException(MENSAJE_PEDIDO_DE_OTRO_ACCESO);
+  }
+}
+
+/**
+ * HU-052 (BL-580): el token de una mesa, solo con pedidos de mesa; el del
+ * retiro, solo con pedidos de su restaurante.
+ */
+function exigirPedidoDelCanal(
+  canal: CanalInvitado | undefined,
+  pedido: { canal: string; restauranteId: string },
+): void {
+  const ajeno =
+    (canal?.tipo === 'mesa' && pedido.canal !== 'QR') ||
+    (canal?.tipo === 'retiro' && pedido.restauranteId !== canal.restauranteId);
+  if (ajeno) {
+    throw new ForbiddenException(MENSAJE_PEDIDO_DE_OTRO_ACCESO);
+  }
+}
+
+/**
+ * Pedido de mesa: el QR de esa mesa y, BL-502, de la sesión en la que se
+ * hizo el pedido.
+ */
+function exigirMesaDelPedido(
+  request: RequestConPedido,
+  pedido: { mesaId: string; createdAt: Date },
+): true {
+  if (!request.mesaQr) {
+    throw new BadRequestException(
+      'Falta X-Mesa-Token: escaneá el QR de la mesa',
+    );
+  }
+  if (request.mesaQr.mesaId !== pedido.mesaId) {
+    throw new ForbiddenException('Este pedido es de otra mesa');
+  }
+  if (!esDeLaSesion(pedido.createdAt, request.mesaQr.sesionAbiertaEn)) {
+    throw new ForbiddenException(MENSAJE_PEDIDO_DE_OTRA_SESION);
+  }
+  return true;
+}
+
+/** Pedido para retirar: el token que se devolvió al crearlo. */
+function exigirTokenDelPedido(
+  request: RequestConPedido,
+  pedido: { accesoTokenHash: string | null },
+): true {
+  const token = request.headers[HEADER_PEDIDO_TOKEN];
+  if (typeof token !== 'string' || token.length === 0) {
+    throw new BadRequestException('Falta X-Pedido-Token');
+  }
+  if (!tokenAccesoCoincide(token, pedido.accesoTokenHash)) {
+    throw new ForbiddenException('No tenés acceso a este pedido');
+  }
+  return true;
+}
+
 @Injectable()
 export class PedidoAccesoGuard implements CanActivate {
   constructor(
@@ -129,9 +196,7 @@ export class PedidoAccesoGuard implements CanActivate {
       throw new ForbiddenException('No tenés acceso a este pedido');
     }
     const canal = request.user?.canal;
-    if (canal?.tipo === 'link' && canal.pedidoId !== pedidoId) {
-      throw new ForbiddenException(MENSAJE_PEDIDO_DE_OTRO_ACCESO);
-    }
+    exigirLinkDelPedido(canal, pedidoId);
 
     const pedido = await this.tenantPrisma.runInTenantContext(tenantId, (tx) =>
       tx.pedido.findUnique({
@@ -151,15 +216,7 @@ export class PedidoAccesoGuard implements CanActivate {
     if (!pedido) {
       throw new NotFoundException('Pedido no encontrado');
     }
-    if (canal?.tipo === 'mesa' && pedido.canal !== 'QR') {
-      throw new ForbiddenException(MENSAJE_PEDIDO_DE_OTRO_ACCESO);
-    }
-    if (
-      canal?.tipo === 'retiro' &&
-      pedido.restauranteId !== canal.restauranteId
-    ) {
-      throw new ForbiddenException(MENSAJE_PEDIDO_DE_OTRO_ACCESO);
-    }
+    exigirPedidoDelCanal(canal, pedido);
 
     const linkPago = request.headers[HEADER_LINK_PAGO];
     if (typeof linkPago === 'string' && linkPago.length > 0) {
@@ -173,29 +230,9 @@ export class PedidoAccesoGuard implements CanActivate {
       );
     }
 
-    if (pedido.canal === 'QR') {
-      if (!request.mesaQr) {
-        throw new BadRequestException(
-          'Falta X-Mesa-Token: escaneá el QR de la mesa',
-        );
-      }
-      if (request.mesaQr.mesaId !== pedido.mesaId) {
-        throw new ForbiddenException('Este pedido es de otra mesa');
-      }
-      if (!esDeLaSesion(pedido.createdAt, request.mesaQr.sesionAbiertaEn)) {
-        throw new ForbiddenException(MENSAJE_PEDIDO_DE_OTRA_SESION);
-      }
-      return true;
-    }
-
-    const token = request.headers[HEADER_PEDIDO_TOKEN];
-    if (typeof token !== 'string' || token.length === 0) {
-      throw new BadRequestException('Falta X-Pedido-Token');
-    }
-    if (!tokenAccesoCoincide(token, pedido.accesoTokenHash)) {
-      throw new ForbiddenException('No tenés acceso a este pedido');
-    }
-    return true;
+    return pedido.canal === 'QR'
+      ? exigirMesaDelPedido(request, pedido)
+      : exigirTokenDelPedido(request, pedido);
   }
 
   private permiteLinkPagado(context: ExecutionContext): boolean {
