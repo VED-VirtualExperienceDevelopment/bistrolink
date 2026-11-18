@@ -50,6 +50,9 @@
 | 1.43    | 15/11/2026 | TC-I-233: tarjetas aceptadas para el sello de pago seguro (HU-051 / BL-563). Se borran los bloques de TC-I-225 a 232, ya cargados.                                                                                                        |
 | 1.44    | 15/11/2026 | TC-I-234: valoración privada del pedido (HU-050 / BL-558). Se borra el bloque de TC-I-233, ya cargado.                                                                                                                                    |
 | 1.45    | 16/11/2026 | TC-I-235 a 237: token de invitado del comensal emitido por la API (HU-052 / BL-578), para cargar con el script antes de mergear el PR.                                                                                                    |
+| 1.46    | 16/11/2026 | Se borran los bloques de TC-I-234 a 237, ya cargados en Kiwi.                                                                                                                                                                             |
+| 1.47    | 16/11/2026 | TC-I-238: /auth/comensal entrega el token de invitado de la API con su canal (HU-052 / BL-579).                                                                                                                                           |
+| 1.48    | 18/11/2026 | TC-I-239 a 242: el token de invitado del comensal atado a su canal (HU-052 / BL-580).                                                                                                                                                     |
 
 Texto del campo de descripción de cada caso TC-I en Kiwi. Lo carga
 `cargar-casos-integracion.mjs --descripciones`: cada bloque `## TC-I-NNN`
@@ -61,79 +64,88 @@ esperado`, igual que los casos cargados a mano desde TC-I-029.
 
 ## Casos para cargar
 
-## TC-I-234
+## TC-I-238
 
 ### Precondición
 
-API de integración con la base y RLS reales. Un pedido para retirar ENTREGADO y otro EN_PREPARACION del local de prueba.
+API de integración con la base, el RLS y Keycloak reales, con `COMENSAL_TOKEN_EMISOR=api` y una clave de prueba para el token de invitado (`COMENSAL_TOKEN_CLAVE`). Restaurante y mesa 1 del tenant de prueba A, con la sesión de la mesa abierta.
 
 ### Pasos
 
-1. Valorar el pedido entregado con 4 estrellas y un comentario.
-2. Valorarlo de nuevo con 1 estrella.
-3. Valorar el pedido en preparación.
-4. Pedir las valoraciones del local con el período «Hoy».
-5. Buscar la valoración desde otro tenant.
-6. Guardar directo en la base una valoración con 6 estrellas.
+1. Pedir el token del comensal para retirar: `POST /auth/comensal` con el tenant y el restaurante.
+2. Pedir el token del comensal en la mesa: `POST /auth/comensal/mesa` con el token del QR y la sesión de la mesa.
+3. Verificar los dos tokens con la clave de la API.
+4. Llamar a `POST /pedidos` con el body vacío y cada token.
 
 ### Resultado esperado
 
-1. Se guarda (`{ valorado: true }`).
-2. 409 con el código `YA_VALORADO`; queda la primera.
-3. 409 «Podés valorar tu pedido cuando te lo entreguen».
-4. Promedio y total del período; el comentario aparece con el día y las 4 estrellas, sin el pedido, la mesa ni la hora.
-5. No la ve (RLS).
-6. La base la rechaza (CHECK de 1 a 5).
+1. y 2. 200 con `{ accessToken, expiresIn }` y `expiresIn` de 3600 segundos, como con Keycloak.
+2. Los dos los firmó la API, con el rol COMENSAL, el tenant y el restaurante. El de retiro tiene el canal `retiro`; el de la mesa, el canal `mesa` con la mesa y la sesión.
+3. 400 de validación: los dos tokens pasan la autenticación y el rol.
 
-## TC-I-235
+## TC-I-239
 
 ### Precondición
 
-API de integración con la base, el RLS y Keycloak reales, y una clave de prueba para el token de invitado (`COMENSAL_TOKEN_CLAVE`). Restaurante del tenant de prueba A.
+API de integración con la base, el RLS, los QR y las sesiones de mesa reales, y una clave de prueba para el token de invitado (`COMENSAL_TOKEN_CLAVE`). Los tokens de invitado se firman con esa clave en el test; la verificación es la de la API. Tenant de prueba A: restaurante 1 y mesas 1 y 2 con la sesión abierta.
 
 ### Pasos
 
-1. Firmar un token de invitado del tenant A, canal retiro, y llamar a `POST /pedidos` con el body vacío.
-2. Pedir un token de comensal por `POST /auth/comensal` (Keycloak) y llamar a `POST /pedidos` con el body vacío.
-3. Llamar a `POST /pedidos` sin token.
+1. Con el token de invitado de la mesa 1 (su mesa y su sesión), `POST /pedidos` con el body vacío y el QR y la sesión de la mesa 1.
+2. Lo mismo con el QR y la sesión de la mesa 2.
+3. Lo mismo sin el QR.
 
 ### Resultado esperado
 
-1. 400 de validación: el token pasó la autenticación y el rol COMENSAL.
-2. 400 de validación: el token de Keycloak sigue funcionando igual.
-3. 401.
+1. 400 de validación: el token pasó la autenticación, el rol y la mesa.
+2. 403: el token es de otra mesa.
+3. 400: el token de una mesa no sirve sin el QR de la mesa (no pide para retirar).
 
-## TC-I-236
+## TC-I-240
 
 ### Precondición
 
-API de integración con la base, el RLS y Keycloak reales, y un token de invitado del tenant de prueba A.
+API de integración con la base, el RLS, los QR y las sesiones de mesa reales, y una clave de prueba para el token de invitado (`COMENSAL_TOKEN_CLAVE`). Los tokens de invitado se firman con esa clave en el test; la verificación es la de la API. Tenant de prueba A: restaurante 1 y mesas 1 y 2 con la sesión abierta.
 
 ### Pasos
 
-1. Con el token de invitado, `GET /mesas/layout` (método del personal en el controlador del comensal).
-2. Con el mismo token, `GET /usuarios`, `GET /auditoria` y `GET /admin/reportes`.
-3. Con el mismo token, `GET /plataforma/establecimientos`.
+1. Firmar un token de invitado de la mesa 1 con una sesión que no es la abierta (como el de un grupo anterior, antes de que el mozo cerrara y volviera a abrir la mesa).
+2. `POST /pedidos` con ese token, el QR de la mesa 1 y la sesión abierta.
 
 ### Resultado esperado
 
-1. 403: pasa la autenticación, pero el invitado es siempre COMENSAL y RolesGuard lo frena.
-2. 401: los endpoints del personal no aceptan el token de invitado.
-3. 401: la plataforma tampoco.
+- Paso 2: 410 con el código `SESION_VENCIDA`: el token de una sesión anterior deja de servir, aunque el QR y la sesión del pedido sean los actuales.
 
-## TC-I-237
+## TC-I-241
 
 ### Precondición
 
-API de integración con la base, el RLS y Keycloak reales, y la clave de prueba del token de invitado.
+API de integración con la base, el RLS, los QR y las sesiones de mesa reales, y una clave de prueba para el token de invitado (`COMENSAL_TOKEN_CLAVE`). Los tokens de invitado se firman con esa clave en el test; la verificación es la de la API. Tenant de prueba A: restaurante 1 y mesas 1 y 2 con la sesión abierta.
 
 ### Pasos
 
-1. Llamar a `POST /pedidos` con un token con el formato del invitado firmado con otra clave.
-2. Lo mismo con un token vencido.
-3. Lo mismo con otra audiencia (`account`).
-4. Lo mismo con un token firmado con la clave de la API pero con el emisor de Keycloak.
+1. Firmar un token de invitado del link de pago del pedido A.
+2. `GET /pedidos/<pedido B>/pagos` con ese token.
+3. `POST /pedidos` con ese token y un pedido válido.
 
 ### Resultado esperado
 
-1 a 4. 401 en todos los casos. El paso 4 confirma que un token que dice venir de Keycloak nunca se verifica con la clave de la API.
+- Paso 2: 403, antes de buscar el pedido B (no revela si existe).
+- Paso 3: 403: el token del link de pago no hace pedidos.
+
+## TC-I-242
+
+### Precondición
+
+API de integración con la base, el RLS, los QR y las sesiones de mesa reales, y una clave de prueba para el token de invitado (`COMENSAL_TOKEN_CLAVE`). Los tokens de invitado se firman con esa clave en el test; la verificación es la de la API. Tenant de prueba A: restaurante 1 y mesas 1 y 2 con la sesión abierta.
+
+### Pasos
+
+1. Firmar un token de invitado del retiro del restaurante 1.
+2. `POST /pedidos` con ese token y el QR y la sesión de la mesa 1.
+3. `POST /pedidos` con ese token y un pedido válido para otro restaurante.
+
+### Resultado esperado
+
+- Paso 2: 403: el token del retiro no sirve en una mesa.
+- Paso 3: 403: el token del retiro solo pide en su restaurante.

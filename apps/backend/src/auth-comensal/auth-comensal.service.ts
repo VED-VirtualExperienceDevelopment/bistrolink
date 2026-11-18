@@ -14,6 +14,11 @@ import {
   TenantEstadoService,
 } from '../tenant-estado/tenant-estado.service';
 import { nombreComensalTecnico } from './nombre-comensal-tecnico';
+import {
+  DatosTokenInvitado,
+  emisorTokenComensalDesdeEntorno,
+  tokenInvitadoDesdeEntorno,
+} from './token-invitado';
 
 export interface TokenComensal {
   accessToken: string;
@@ -22,6 +27,17 @@ export interface TokenComensal {
 
 @Injectable()
 export class AuthComensalService {
+  /**
+   * HU-052 (BL-579): quién emite el token (COMENSAL_TOKEN_EMISOR). Por
+   * defecto Keycloak, como hasta ahora. Se lee al crear el servicio: un
+   * cambio de la variable se aplica con el redeploy de la API.
+   */
+  private readonly emisor = emisorTokenComensalDesdeEntorno();
+
+  /** Solo con el emisor `api`; null si falta COMENSAL_TOKEN_CLAVE. */
+  private readonly tokensInvitado =
+    this.emisor === 'api' ? tokenInvitadoDesdeEntorno() : null;
+
   constructor(
     private readonly tenantPrisma: TenantPrismaService,
     private readonly qrMesaAcceso: QrMesaAccesoService,
@@ -81,7 +97,11 @@ export class AuthComensalService {
       tenantId,
       MENSAJE_SUSPENDIDO_COMENSAL,
     );
-    return this.pedirTokenKeycloak(tenantId);
+    return this.emitirSegunEmisor({
+      tenantId,
+      restauranteId,
+      canal: { tipo: 'retiro', restauranteId },
+    });
   }
 
   /**
@@ -102,7 +122,16 @@ export class AuthComensalService {
     // HU-017 (BL-60): solo con la sesión de la mesa abierta, y la de esta
     // página (410 MESA_CERRADA / SESION_VENCIDA).
     exigirSesionAbierta(mesa, sesionMesa);
-    return this.pedirTokenKeycloak(mesa.tenantId);
+    return this.emitirSegunEmisor({
+      tenantId: mesa.tenantId,
+      restauranteId: mesa.restauranteId,
+      // exigirSesionAbierta ya garantizó que la sesión existe.
+      canal: {
+        tipo: 'mesa',
+        mesaId: mesa.mesaId,
+        sesionId: mesa.sesionId as string,
+      },
+    });
   }
 
   /**
@@ -117,7 +146,34 @@ export class AuthComensalService {
       link.tenantId,
       MENSAJE_SUSPENDIDO_COMENSAL,
     );
-    return this.pedirTokenKeycloak(link.tenantId);
+    return this.emitirSegunEmisor({
+      tenantId: link.tenantId,
+      restauranteId: link.restauranteId,
+      canal: { tipo: 'link', pedidoId: link.pedidoId },
+    });
+  }
+
+  /**
+   * HU-052 (BL-579): con el emisor `api`, la API firma el token de invitado
+   * con el canal por el que entró el comensal, sin ir a Keycloak. Con
+   * `keycloak`, el usuario técnico del tenant, como hasta ahora. El contrato
+   * de la respuesta ({ accessToken, expiresIn }) es el mismo.
+   */
+  private async emitirSegunEmisor(
+    datos: DatosTokenInvitado,
+  ): Promise<TokenComensal> {
+    if (this.emisor === 'keycloak') {
+      return this.pedirTokenKeycloak(datos.tenantId);
+    }
+    if (!this.tokensInvitado) {
+      console.error(
+        'COMENSAL_TOKEN_EMISOR=api sin COMENSAL_TOKEN_CLAVE: no se puede emitir el token del comensal',
+      );
+      throw new InternalServerErrorException(
+        'No se pudo emitir el token de acceso',
+      );
+    }
+    return this.tokensInvitado.emitir(datos);
   }
 
   /**

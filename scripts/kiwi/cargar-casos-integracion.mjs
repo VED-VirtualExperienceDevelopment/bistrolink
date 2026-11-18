@@ -1134,6 +1134,35 @@ const DATOS_INTEGRACION = {
     priority: "P1",
     tags: ["jwt", "validacion"],
   }),
+  // HU-052 (BL-579): /auth/comensal con el emisor api, en
+  // auth-comensal-api.e2e-spec.ts.
+  238: tokenInvitado({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["BL-579", "emision"],
+  }),
+  // HU-052 (BL-580): el token de invitado atado a su canal, en
+  // token-invitado-canal.e2e-spec.ts.
+  239: tokenInvitado({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["BL-580", "canal", "mesa"],
+  }),
+  240: tokenInvitado({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["BL-580", "canal", "mesa", "revocacion"],
+  }),
+  241: tokenInvitado({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["BL-580", "canal", "link-pago"],
+  }),
+  242: tokenInvitado({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["BL-580", "canal", "retiro"],
+  }),
 };
 /**
  * BL-435: datos de los E2E TC-E-017 en adelante, con los criterios de

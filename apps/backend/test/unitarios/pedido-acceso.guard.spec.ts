@@ -8,6 +8,7 @@ import {
   esDeLaSesion,
   MARGEN_RELOJ_SESION_MS,
   MENSAJE_PEDIDO_DE_OTRA_SESION,
+  MENSAJE_PEDIDO_DE_OTRO_ACCESO,
   PedidoAccesoGuard,
 } from '../../src/pedidos/pedido-acceso.guard';
 import {
@@ -223,6 +224,7 @@ describe('PedidoAccesoGuard (BL-311, RD.05: solo quien hizo el pedido lo paga y 
       where: { id: PEDIDO_ID },
       select: {
         mesaId: true,
+        restauranteId: true,
         canal: true,
         accesoTokenHash: true,
         createdAt: true,
@@ -245,5 +247,132 @@ describe('PedidoAccesoGuard (BL-311, RD.05: solo quien hizo el pedido lo paga y 
       guard.canActivate(contexto(request({ params: { pedidoId: 'x' } }))),
     ).rejects.toThrow(BadRequestException);
     expect(findUnique).not.toHaveBeenCalled();
+  });
+});
+
+// HU-052 (BL-580): el token de invitado solo sirve para los pedidos de su
+// canal. Con el token de Keycloak (sin canal) todo sigue como arriba.
+describe('PedidoAccesoGuard con el token de invitado (HU-052, BL-580)', () => {
+  const OTRO_PEDIDO = '7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d';
+  let findUnique: jest.Mock;
+  let guard: PedidoAccesoGuard;
+
+  const conCanal = (canal: unknown, overrides: Record<string, unknown> = {}) =>
+    request({
+      user: {
+        sub: 'invitado',
+        tenantId: TENANT_ID,
+        roles: ['COMENSAL'],
+        canal,
+      },
+      ...overrides,
+    });
+
+  beforeEach(() => {
+    findUnique = jest.fn();
+    guard = new PedidoAccesoGuard({
+      runInTenantContext: jest.fn((_tenantId, fn) =>
+        fn({ pedido: { findUnique } }),
+      ),
+    } as any);
+  });
+
+  it('[TC-U-622] el token del link de otro pedido → 403, sin buscar el pedido', async () => {
+    await expect(
+      guard.canActivate(
+        contexto(conCanal({ tipo: 'link', pedidoId: OTRO_PEDIDO })),
+      ),
+    ).rejects.toThrow(MENSAJE_PEDIDO_DE_OTRO_ACCESO);
+    expect(findUnique).not.toHaveBeenCalled();
+  });
+
+  it('[TC-U-623] el token de una mesa con un pedido para retirar → 403, aunque traiga el token del pedido', async () => {
+    const acceso = generarTokenAcceso();
+    findUnique.mockResolvedValue({
+      mesaId: null,
+      canal: 'WEB',
+      accesoTokenHash: acceso.hash,
+    });
+
+    await expect(
+      guard.canActivate(
+        contexto(
+          conCanal(
+            { tipo: 'mesa', mesaId: MESA_ID, sesionId: 's' },
+            {
+              mesaQr: mesaQr(MESA_ID),
+              headers: { [HEADER_PEDIDO_TOKEN]: acceso.token },
+            },
+          ),
+        ),
+      ),
+    ).rejects.toThrow(MENSAJE_PEDIDO_DE_OTRO_ACCESO);
+  });
+
+  it('[TC-U-624] cada token con un pedido de su canal sigue las reglas de siempre', async () => {
+    // Mesa: el pedido de su mesa.
+    findUnique.mockResolvedValue({
+      mesaId: MESA_ID,
+      canal: 'QR',
+      accesoTokenHash: null,
+    });
+    await expect(
+      guard.canActivate(
+        contexto(
+          conCanal(
+            { tipo: 'mesa', mesaId: MESA_ID, sesionId: 's' },
+            { mesaQr: mesaQr(MESA_ID) },
+          ),
+        ),
+      ),
+    ).resolves.toBe(true);
+
+    // Retiro: el pedido para retirar de su restaurante, con su token.
+    const acceso = generarTokenAcceso();
+    findUnique.mockResolvedValue({
+      mesaId: null,
+      restauranteId: 'r',
+      canal: 'WEB',
+      accesoTokenHash: acceso.hash,
+    });
+    await expect(
+      guard.canActivate(
+        contexto(
+          conCanal(
+            { tipo: 'retiro', restauranteId: 'r' },
+            { headers: { [HEADER_PEDIDO_TOKEN]: acceso.token } },
+          ),
+        ),
+      ),
+    ).resolves.toBe(true);
+
+    // Link: su propio pedido pasa el chequeo del canal; sin credencial del
+    // pedido, el 400 de siempre.
+    await expect(
+      guard.canActivate(
+        contexto(conCanal({ tipo: 'link', pedidoId: PEDIDO_ID })),
+      ),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('[TC-U-628] el token del retiro con un pedido de otro restaurante del mismo establecimiento → 403, aunque traiga el token del pedido', async () => {
+    const acceso = generarTokenAcceso();
+    findUnique.mockResolvedValue({
+      mesaId: null,
+      restauranteId: 'otro-restaurante',
+      canal: 'WEB',
+      accesoTokenHash: acceso.hash,
+    });
+
+    await expect(
+      guard.canActivate(
+        contexto(
+          conCanal(
+            { tipo: 'retiro', restauranteId: 'r' },
+            { headers: { [HEADER_PEDIDO_TOKEN]: acceso.token } },
+          ),
+        ),
+      ),
+    ).rejects.toThrow(MENSAJE_PEDIDO_DE_OTRO_ACCESO);
   });
 });

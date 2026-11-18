@@ -13,6 +13,11 @@
  * Se salta automáticamente en NODE_ENV=test para no afectar a Jest.
  */
 
+import {
+  emisorTokenComensalDesdeEntorno,
+  tokenInvitadoDesdeEntorno,
+} from './auth-comensal/token-invitado';
+
 interface RequiredEnvVar {
   name: string;
   hint: string;
@@ -62,6 +67,59 @@ const REQUIRED_IN_PRODUCTION_ENV_VARS: RequiredEnvVar[] = [
   },
 ];
 
+const COMO_GENERAR_CLAVE_COMENSAL =
+  "Generala con: node -e \"console.log(require('crypto').randomBytes(32).toString('base64'))\". " +
+  'Va en Infisical, carpeta /api de cada entorno; nunca por chat ni en tickets.';
+
+/**
+ * HU-052 (BL-579): configuración del token del comensal. Con
+ * COMENSAL_TOKEN_EMISOR=api, la API firma el token de invitado: sin una
+ * clave válida arrancaría «bien» y respondería 500 a cada comensal. Un
+ * emisor desconocido o una clave mal formada (corta, o la anterior igual a
+ * la actual) tampoco arrancan, aunque el emisor sea Keycloak, porque la
+ * verificación (BL-578) también usa la clave.
+ */
+export function problemasTokenComensal(
+  env: NodeJS.ProcessEnv,
+): RequiredEnvVar[] {
+  let emisor: string;
+  try {
+    emisor = emisorTokenComensalDesdeEntorno(env);
+  } catch (error) {
+    return [
+      {
+        name: 'COMENSAL_TOKEN_EMISOR',
+        hint:
+          `${(error as Error).message}. Sin la variable se usa keycloak ` +
+          '(el usuario técnico del tenant, como hasta ahora).',
+      },
+    ];
+  }
+
+  try {
+    const tokens = tokenInvitadoDesdeEntorno(env);
+    if (emisor === 'api' && !tokens) {
+      return [
+        {
+          name: 'COMENSAL_TOKEN_CLAVE',
+          hint:
+            'Con COMENSAL_TOKEN_EMISOR=api la API firma el token del ' +
+            'comensal y necesita su clave (al menos 32 bytes). ' +
+            COMO_GENERAR_CLAVE_COMENSAL,
+        },
+      ];
+    }
+  } catch (error) {
+    return [
+      {
+        name: 'COMENSAL_TOKEN_CLAVE',
+        hint: `${(error as Error).message}. ${COMO_GENERAR_CLAVE_COMENSAL}`,
+      },
+    ];
+  }
+  return [];
+}
+
 export function checkRequiredEnvVars(): void {
   if (process.env.NODE_ENV === 'test') {
     // Jest corre sin .env real en CI (y sin necesitar Keycloak/Postgres
@@ -74,7 +132,10 @@ export function checkRequiredEnvVars(): void {
     process.env.NODE_ENV === 'production'
       ? [...REQUIRED_ENV_VARS, ...REQUIRED_IN_PRODUCTION_ENV_VARS]
       : REQUIRED_ENV_VARS;
-  const missing = required.filter(({ name }) => !process.env[name]);
+  const missing = [
+    ...required.filter(({ name }) => !process.env[name]),
+    ...problemasTokenComensal(process.env),
+  ];
 
   if (missing.length === 0) {
     return;
@@ -88,6 +149,7 @@ export function checkRequiredEnvVars(): void {
     `\n\n` +
       `═══════════════════════════════════════════════════════════════\n` +
       `  ERROR DE ARRANQUE: faltan variables de entorno obligatorias\n` +
+      `  o tienen un valor inválido\n` +
       `═══════════════════════════════════════════════════════════════\n` +
       `\n` +
       `El backend no puede arrancar sin las siguientes variables ` +
