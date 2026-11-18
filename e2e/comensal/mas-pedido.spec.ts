@@ -19,6 +19,7 @@ const EXPLICACION =
 test.describe("BL-543: Insignia «Más pedido»", () => {
   test("[TC-E-118] HU-045: después de una venta de 10 unidades, el menú muestra la insignia «Más pedido» con su explicación (sin errores graves de accesibilidad)", async ({
     page,
+    browser,
   }) => {
     test.slow();
     await page.goto(MENU_URL_PATH);
@@ -31,22 +32,34 @@ test.describe("BL-543: Insignia «Más pedido»", () => {
 
     await confirmarYPagar(page);
 
-    // La carta vuelve a pedir el menú, con el ranking actualizado.
-    await page.goto(MENU_URL_PATH);
-    const insignia = page.getByTitle(EXPLICACION).first();
-    await expect(insignia).toBeVisible({ timeout: 15000 });
-    await expect(insignia).toContainText("Más pedido");
-    // El lector de pantalla oye de dónde sale (texto solo para lectores).
-    await expect(insignia).toContainText(EXPLICACION);
+    // BL-589: la carta se mira desde OTRO comensal (un contexto nuevo, sin
+    // el pedido recordado). En la misma pestaña, la carta sigue el pedido
+    // recién pagado (BL-448, BL-502) y, cuando se entrega, pasa sola a
+    // «Gracias por tu compra»: desaparecían la insignia y el <main>. Además
+    // es lo que pide la HU: la insignia es para cualquier comensal.
+    const otroComensal = await browser.newContext({
+      baseURL: test.info().project.use.baseURL,
+    });
+    try {
+      const carta = await otroComensal.newPage();
+      await carta.goto(MENU_URL_PATH);
+      const insignia = carta.getByTitle(EXPLICACION).first();
+      await expect(insignia).toBeVisible({ timeout: 15000 });
+      await expect(insignia).toContainText("Más pedido");
+      // El lector de pantalla oye de dónde sale (texto solo para lectores).
+      await expect(insignia).toContainText(EXPLICACION);
 
-    const resultados = await new AxeBuilder({ page })
-      .include("main")
-      .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
-      .analyze();
-    expect(
-      resultados.violations
-        .filter((v) => v.impact === "critical" || v.impact === "serious")
-        .map((v) => ({ id: v.id, nodos: v.nodes.map((n) => n.target) })),
-    ).toEqual([]);
+      const resultados = await new AxeBuilder({ page: carta })
+        .include("main")
+        .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
+        .analyze();
+      expect(
+        resultados.violations
+          .filter((v) => v.impact === "critical" || v.impact === "serious")
+          .map((v) => ({ id: v.id, nodos: v.nodes.map((n) => n.target) })),
+      ).toEqual([]);
+    } finally {
+      await otroComensal.close();
+    }
   });
 });
