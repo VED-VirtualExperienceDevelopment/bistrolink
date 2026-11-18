@@ -16,6 +16,7 @@ import { AuthGuardComensal } from '../auth/invitado-jwt.strategy';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Roles, RolesGuard } from '../auth/roles.guard';
 import { AuthenticatedUser } from '../auth/keycloak-jwt.strategy';
+import { exigirCanalParaResumenDelLink } from '../auth-comensal/canal-invitado';
 import { SEGURIDAD_KEYCLOAK } from '../openapi';
 import { HEADER_LINK_PAGO, MENSAJE_LINK_INVALIDO } from './link-pago';
 import { LinkPagoService } from './link-pago.service';
@@ -58,6 +59,8 @@ export class LinkPagoController {
     @Headers(HEADER_LINK_PAGO) token: string | undefined,
   ) {
     if (!token) throw new NotFoundException(MENSAJE_LINK_INVALIDO);
+    // HU-052 (BL-580): con el token de invitado, solo el de este link.
+    exigirCanalParaResumenDelLink(req.user, token);
     return this.linkPago.resumen(req.user.tenantId, token);
   }
 }
