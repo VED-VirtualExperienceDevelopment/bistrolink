@@ -48,12 +48,27 @@ interface RequestConPedido extends RequestConMesaQr {
  *   sin vencer; para consultar (GET), aunque haya vencido, así se puede
  *   seguir un pago que se estaba verificando.
  *
- * Va después de AuthGuard('jwt'), RolesGuard y MesaQrGuard: necesita
+ * HU-052 (BL-580): con el token de invitado (trae `canal`), además el
+ * pedido tiene que ser el del canal por el que se emitió:
+ * - token del link de pago: solo su pedido (403 con cualquier otro, antes
+ *   de buscarlo);
+ * - token de una mesa: solo pedidos de mesa (403 con uno para retirar). La
+ *   mesa y la sesión ya las ató MesaQrGuard.
+ * Con el token de Keycloak (sin `canal`) todo sigue como antes.
+ *
+ * Va después de AuthGuardComensal, RolesGuard y MesaQrGuard: necesita
  * `request.user` y, si vino el QR, `request.mesaQr` ya validado.
  *
  * Errores: 400 si falta la credencial (no es una sesión vencida), 403 si no
  * corresponde y 404 si el pedido no existe en este tenant (RLS).
  */
+/**
+ * HU-052 (BL-580): el token de invitado usado con un pedido que no es de su
+ * canal (el link de otro pedido, o el de una mesa con un pedido para
+ * retirar).
+ */
+export const MENSAJE_PEDIDO_DE_OTRO_ACCESO = 'Este acceso no es de este pedido';
+
 export const MENSAJE_PEDIDO_DE_OTRA_SESION =
   'Este pedido es de una sesión anterior de la mesa';
 
@@ -111,6 +126,10 @@ export class PedidoAccesoGuard implements CanActivate {
       // No debería pasar: AuthGuard('jwt') corre antes. Denegación por defecto.
       throw new ForbiddenException('No tenés acceso a este pedido');
     }
+    const canal = request.user?.canal;
+    if (canal?.tipo === 'link' && canal.pedidoId !== pedidoId) {
+      throw new ForbiddenException(MENSAJE_PEDIDO_DE_OTRO_ACCESO);
+    }
 
     const pedido = await this.tenantPrisma.runInTenantContext(tenantId, (tx) =>
       tx.pedido.findUnique({
@@ -128,6 +147,9 @@ export class PedidoAccesoGuard implements CanActivate {
     );
     if (!pedido) {
       throw new NotFoundException('Pedido no encontrado');
+    }
+    if (canal?.tipo === 'mesa' && pedido.canal !== 'QR') {
+      throw new ForbiddenException(MENSAJE_PEDIDO_DE_OTRO_ACCESO);
     }
 
     const linkPago = request.headers[HEADER_LINK_PAGO];
