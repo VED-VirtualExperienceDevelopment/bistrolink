@@ -224,6 +224,7 @@ describe('PedidoAccesoGuard (BL-311, RD.05: solo quien hizo el pedido lo paga y 
       where: { id: PEDIDO_ID },
       select: {
         mesaId: true,
+        restauranteId: true,
         canal: true,
         accesoTokenHash: true,
         createdAt: true,
@@ -326,10 +327,11 @@ describe('PedidoAccesoGuard con el token de invitado (HU-052, BL-580)', () => {
       ),
     ).resolves.toBe(true);
 
-    // Retiro: el pedido para retirar con su token.
+    // Retiro: el pedido para retirar de su restaurante, con su token.
     const acceso = generarTokenAcceso();
     findUnique.mockResolvedValue({
       mesaId: null,
+      restauranteId: 'r',
       canal: 'WEB',
       accesoTokenHash: acceso.hash,
     });
@@ -351,5 +353,26 @@ describe('PedidoAccesoGuard con el token de invitado (HU-052, BL-580)', () => {
         contexto(conCanal({ tipo: 'link', pedidoId: PEDIDO_ID })),
       ),
     ).rejects.toThrow(BadRequestException);
+  });
+
+  it('[TC-U-628] el token del retiro con un pedido de otro restaurante del mismo establecimiento → 403, aunque traiga el token del pedido', async () => {
+    const acceso = generarTokenAcceso();
+    findUnique.mockResolvedValue({
+      mesaId: null,
+      restauranteId: 'otro-restaurante',
+      canal: 'WEB',
+      accesoTokenHash: acceso.hash,
+    });
+
+    await expect(
+      guard.canActivate(
+        contexto(
+          conCanal(
+            { tipo: 'retiro', restauranteId: 'r' },
+            { headers: { [HEADER_PEDIDO_TOKEN]: acceso.token } },
+          ),
+        ),
+      ),
+    ).rejects.toThrow(MENSAJE_PEDIDO_DE_OTRO_ACCESO);
   });
 });

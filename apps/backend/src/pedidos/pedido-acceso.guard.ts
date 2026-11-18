@@ -53,7 +53,9 @@ interface RequestConPedido extends RequestConMesaQr {
  * - token del link de pago: solo su pedido (403 con cualquier otro, antes
  *   de buscarlo);
  * - token de una mesa: solo pedidos de mesa (403 con uno para retirar). La
- *   mesa y la sesión ya las ató MesaQrGuard.
+ *   mesa y la sesión ya las ató MesaQrGuard;
+ * - token del retiro: solo pedidos de su restaurante (403 con uno de otro
+ *   restaurante del mismo establecimiento, aunque traiga su credencial).
  * Con el token de Keycloak (sin `canal`) todo sigue como antes.
  *
  * Va después de AuthGuardComensal, RolesGuard y MesaQrGuard: necesita
@@ -136,6 +138,7 @@ export class PedidoAccesoGuard implements CanActivate {
         where: { id: pedidoId },
         select: {
           mesaId: true,
+          restauranteId: true,
           canal: true,
           accesoTokenHash: true,
           createdAt: true,
@@ -149,6 +152,12 @@ export class PedidoAccesoGuard implements CanActivate {
       throw new NotFoundException('Pedido no encontrado');
     }
     if (canal?.tipo === 'mesa' && pedido.canal !== 'QR') {
+      throw new ForbiddenException(MENSAJE_PEDIDO_DE_OTRO_ACCESO);
+    }
+    if (
+      canal?.tipo === 'retiro' &&
+      pedido.restauranteId !== canal.restauranteId
+    ) {
       throw new ForbiddenException(MENSAJE_PEDIDO_DE_OTRO_ACCESO);
     }
 
