@@ -84,6 +84,8 @@ FROM quay.io/keycloak/keycloak:26.7.2
 # afuera (JWT, credenciales de cliente), así que la falla aplica. Esta opción
 # apaga el camino vulnerable (las instrucciones AVX-512 del decodificador) y
 # vuelve al código Java normal. kc.sh la agrega a las opciones de la JVM.
+# En Railway, la variable JAVA_OPTS_APPEND del servicio pisa este valor (lleva las
+# opciones de memoria, Anexo 12 K4): ahí también tiene que estar -XX:-UseBASE64Intrinsics.
 # Quitarla cuando el FROM traiga el JDK corregido (y su línea de .trivyignore).
 ENV JAVA_OPTS_APPEND="-XX:-UseBASE64Intrinsics"
 
