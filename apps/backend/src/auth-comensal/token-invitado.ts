@@ -252,30 +252,3 @@ export function tokenInvitadoDesdeEntorno(
   const claveAnterior = env.COMENSAL_TOKEN_CLAVE_ANTERIOR?.trim() || undefined;
   return new TokenInvitado({ claveActual, claveAnterior });
 }
-
-/**
- * HU-052 (BL-579): quién emite el token del comensal en /auth/comensal.
- * `keycloak` (por defecto): el usuario técnico del tenant, como hasta ahora.
- * `api`: el token de invitado que firma la API. Volver a `keycloak` es la
- * vuelta atrás, sin deploy de código.
- */
-export const EMISORES_TOKEN_COMENSAL = ['keycloak', 'api'] as const;
-export type EmisorTokenComensal = (typeof EMISORES_TOKEN_COMENSAL)[number];
-
-/**
- * Lee `COMENSAL_TOKEN_EMISOR`. Vacía o sin definir: `keycloak`. Un valor
- * que no es ninguno de los dos lanza un error, para que la API no arranque
- * con un emisor que nadie eligió.
- */
-export function emisorTokenComensalDesdeEntorno(
-  env: NodeJS.ProcessEnv = process.env,
-): EmisorTokenComensal {
-  const valor = env.COMENSAL_TOKEN_EMISOR?.trim().toLowerCase();
-  if (!valor) return 'keycloak';
-  if ((EMISORES_TOKEN_COMENSAL as readonly string[]).includes(valor)) {
-    return valor as EmisorTokenComensal;
-  }
-  throw new Error(
-    `COMENSAL_TOKEN_EMISOR debe ser ${EMISORES_TOKEN_COMENSAL.join(' o ')}`,
-  );
-}

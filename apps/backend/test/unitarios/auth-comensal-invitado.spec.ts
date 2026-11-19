@@ -2,15 +2,14 @@ import { InternalServerErrorException } from '@nestjs/common';
 import { AuthComensalService } from '../../src/auth-comensal/auth-comensal.service';
 import {
   DURACION_TOKEN_INVITADO_S,
-  emisorTokenComensalDesdeEntorno,
   TokenInvitado,
 } from '../../src/auth-comensal/token-invitado';
 
-// HU-052 (BL-579): quién emite el token del comensal en /auth/comensal.
-// Con `keycloak` (por defecto) no cambia nada; con `api` la API firma el
-// token de invitado con el canal por el que entró el comensal y no va a
-// Keycloak. Las validaciones de cada canal (404, 410, suspensión) son las
-// de siempre y se prueban en auth-comensal.service.spec.ts.
+// HU-052: /auth/comensal entrega el token de invitado que firma la API, con
+// el canal por el que entró el comensal, sin ir a Keycloak. Desde BL-581 es
+// el único emisor (antes se elegía con COMENSAL_TOKEN_EMISOR; TC-U-611 y 614
+// probaban esa elección y se retiraron). Las validaciones de cada canal
+// (404, 410, suspensión) se prueban en auth-comensal.service.spec.ts.
 
 const CLAVE = 'clave-de-prueba-del-token-de-invitado-0001';
 const TENANT_ID = '11111111-1111-1111-1111-111111111111';
@@ -19,7 +18,7 @@ const MESA_ID = '33333333-3333-3333-3333-333333333333';
 const SESION = '99999999-9999-4999-8999-999999999999';
 const PEDIDO_ID = '55555555-5555-4555-8555-555555555555';
 
-describe('AuthComensalService: emisor del token (HU-052, BL-579)', () => {
+describe('AuthComensalService: token de invitado (HU-052)', () => {
   const envOriginal = process.env;
   let fetchMock: jest.Mock;
 
@@ -46,13 +45,10 @@ describe('AuthComensalService: emisor del token (HU-052, BL-579)', () => {
     },
   });
 
-  /** El servicio lee el emisor y la clave al crearse: se crea por test. */
+  /** El servicio lee la clave al crearse: se crea por test. */
   const crearServicio = (env: NodeJS.ProcessEnv) => {
     process.env = {
       ...envOriginal,
-      KEYCLOAK_CLIENT_SECRET: 'secreto-de-prueba',
-      KEYCLOAK_COMENSAL_PASSWORD: 'password-de-prueba',
-      COMENSAL_TOKEN_EMISOR: undefined,
       COMENSAL_TOKEN_CLAVE: undefined,
       COMENSAL_TOKEN_CLAVE_ANTERIOR: undefined,
       ...env,
@@ -79,42 +75,8 @@ describe('AuthComensalService: emisor del token (HU-052, BL-579)', () => {
     jest.restoreAllMocks();
   });
 
-  it.each([
-    ['sin COMENSAL_TOKEN_EMISOR', {}],
-    [
-      'con COMENSAL_TOKEN_EMISOR=keycloak',
-      { COMENSAL_TOKEN_EMISOR: 'keycloak' },
-    ],
-    [
-      'con keycloak aunque haya clave',
-      { COMENSAL_TOKEN_EMISOR: 'keycloak', COMENSAL_TOKEN_CLAVE: CLAVE },
-    ],
-  ])(
-    '[TC-U-611] %s, los tres endpoints siguen pidiendo el token a Keycloak',
-    async (_caso, env) => {
-      const service = crearServicio(env);
-
-      const respuestas = [
-        await service.emitirToken(TENANT_ID, RESTAURANTE_ID),
-        await service.emitirTokenPorQr('token-del-qr', SESION),
-        await service.emitirTokenPorLink('token-del-link'),
-      ];
-
-      expect(fetchMock).toHaveBeenCalledTimes(3);
-      for (const respuesta of respuestas) {
-        expect(respuesta).toEqual({
-          accessToken: 'jwt-de-keycloak',
-          expiresIn: 3600,
-        });
-      }
-    },
-  );
-
-  it('[TC-U-612] con api, los tres endpoints firman el token de invitado con su canal, sin ir a Keycloak, y con el mismo contrato', async () => {
-    const service = crearServicio({
-      COMENSAL_TOKEN_EMISOR: 'api',
-      COMENSAL_TOKEN_CLAVE: CLAVE,
-    });
+  it('[TC-U-612] los tres endpoints firman el token de invitado con su canal, sin ir a Keycloak, y con el mismo contrato', async () => {
+    const service = crearServicio({ COMENSAL_TOKEN_CLAVE: CLAVE });
     const verificador = new TokenInvitado({ claveActual: CLAVE });
 
     const retiro = await service.emitirToken(TENANT_ID, RESTAURANTE_ID);
@@ -148,29 +110,13 @@ describe('AuthComensalService: emisor del token (HU-052, BL-579)', () => {
     });
   });
 
-  it('[TC-U-613] con api y sin COMENSAL_TOKEN_CLAVE no emite nada (500) y tampoco va a Keycloak', async () => {
+  it('[TC-U-613] sin COMENSAL_TOKEN_CLAVE no emite nada (500) y tampoco va a Keycloak', async () => {
     jest.spyOn(console, 'error').mockImplementation(() => undefined);
-    const service = crearServicio({ COMENSAL_TOKEN_EMISOR: 'api' });
+    const service = crearServicio({});
 
     await expect(
       service.emitirToken(TENANT_ID, RESTAURANTE_ID),
     ).rejects.toThrow(InternalServerErrorException);
     expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it('[TC-U-614] COMENSAL_TOKEN_EMISOR: vacío es keycloak, acepta mayúsculas y espacios, y un valor desconocido no arranca', () => {
-    expect(emisorTokenComensalDesdeEntorno({})).toBe('keycloak');
-    expect(
-      emisorTokenComensalDesdeEntorno({ COMENSAL_TOKEN_EMISOR: '  ' }),
-    ).toBe('keycloak');
-    expect(
-      emisorTokenComensalDesdeEntorno({ COMENSAL_TOKEN_EMISOR: ' API ' }),
-    ).toBe('api');
-    expect(() =>
-      emisorTokenComensalDesdeEntorno({ COMENSAL_TOKEN_EMISOR: 'auth0' }),
-    ).toThrow(/keycloak o api/);
-    expect(() => crearServicio({ COMENSAL_TOKEN_EMISOR: 'auth0' })).toThrow(
-      /keycloak o api/,
-    );
   });
 });
