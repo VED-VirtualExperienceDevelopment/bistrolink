@@ -366,8 +366,13 @@ describe('Alta de establecimientos por la plataforma (HU-027) - e2e', () => {
   itConPlataforma(
     '[TC-I-052] Plataforma: el comensal del establecimiento nuevo no puede dar de alta otro (401: su token de invitado no sirve en la plataforma)',
     async () => {
+      // Filtro explícito por tenant, como en TC-I-050: este PrismaClient se
+      // conecta con el dueño del esquema, al que el RLS no le filtra filas.
       const restaurante = await enTenant(tenantIdCreado as string, (tx) =>
-        tx.restaurante.findFirst({ select: { id: true } }),
+        tx.restaurante.findFirst({
+          where: { tenantId: tenantIdCreado },
+          select: { id: true },
+        }),
       );
       const tokenComensal = (
         await request(app.getHttpServer())
