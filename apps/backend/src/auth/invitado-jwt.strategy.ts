@@ -111,9 +111,12 @@ export class InvitadoJwtStrategy extends PassportStrategy(
 
 /**
  * Guard de los controladores que atienden al comensal: acepta el token de
- * invitado y, mientras convivan (hasta la sub-issue 5), el de Keycloak.
- * Prueba primero el de invitado porque no usa la red: un token de Keycloak
- * se descarta ahí al instante, sin pedir el JWKS.
+ * invitado y el de Keycloak, porque esos controladores también tienen
+ * métodos del personal (mesas, pedidos, link de pago). Desde BL-581, un
+ * token de Keycloak con el rol COMENSAL se rechaza en KeycloakJwtStrategy:
+ * el comensal entra solo con el de invitado. Prueba primero el de invitado
+ * porque no usa la red: un token de Keycloak se descarta ahí al instante,
+ * sin pedir el JWKS.
  *
  * Los métodos del personal dentro de esos controladores siguen protegidos
  * por RolesGuard: un invitado es siempre COMENSAL, así que recibe 403.

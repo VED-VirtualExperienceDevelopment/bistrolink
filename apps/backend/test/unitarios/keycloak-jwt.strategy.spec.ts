@@ -1,10 +1,12 @@
-import { KeycloakJwtStrategy } from '../../src/auth/keycloak-jwt.strategy';
+import {
+  KeycloakJwtStrategy,
+  MENSAJE_COMENSAL_DE_KEYCLOAK,
+} from '../../src/auth/keycloak-jwt.strategy';
 import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { passportJwtSecret } from 'jwks-rsa';
 import {
   CODIGO_ESTABLECIMIENTO_SUSPENDIDO,
   errorEstablecimientoSuspendido,
-  MENSAJE_SUSPENDIDO_COMENSAL,
   MENSAJE_SUSPENDIDO_PERSONAL,
   TenantEstadoService,
 } from '../../src/tenant-estado/tenant-estado.service';
@@ -63,7 +65,7 @@ describe('KeycloakJwtStrategy', () => {
         sub: 'user-123',
         tenant_id: 'tenant-456',
         realm_access: {
-          roles: ['COMENSAL'],
+          roles: ['COCINA'],
         },
       };
 
@@ -73,8 +75,23 @@ describe('KeycloakJwtStrategy', () => {
         sub: 'user-123',
         tenantId: 'tenant-456',
         restauranteId: undefined,
-        roles: ['COMENSAL'],
+        roles: ['COCINA'],
       });
+    });
+
+    it('[TC-U-638] rechaza (401) un token de Keycloak con el rol COMENSAL: el comensal entra solo con el token de invitado (BL-581)', async () => {
+      const strategy = crearEstrategia();
+
+      await expect(
+        strategy.validate({
+          sub: 'comensal-tecnico-sin-borrar',
+          tenant_id: 'tenant-456',
+          realm_access: { roles: ['COMENSAL'] },
+        }),
+      ).rejects.toThrow(
+        new UnauthorizedException(MENSAJE_COMENSAL_DE_KEYCLOAK),
+      );
+      expect(tenantEstado.asegurarActivo).not.toHaveBeenCalled();
     });
 
     it('should handle empty roles array', async () => {
@@ -193,18 +210,9 @@ describe('KeycloakJwtStrategy', () => {
         },
       );
 
-      it('[TC-U-121] al comensal le responde «no disponible», sin el mensaje para el personal', async () => {
-        suspender();
-        const strategy = crearEstrategia();
-
-        await expect(
-          strategy.validate({
-            sub: 'comensal-tecnico',
-            tenant_id: 'tenant-456',
-            realm_access: { roles: ['COMENSAL'] },
-          }),
-        ).rejects.toThrow(MENSAJE_SUSPENDIDO_COMENSAL);
-      });
+      // TC-U-121 (el comensal con un token de Keycloak recibe el mensaje
+      // «no disponible») se retiró con BL-581: ese token ya no se acepta. El
+      // mismo mensaje con el token de invitado lo prueban TC-U-605 y 609.
 
       it('no consulta el estado si el token no tiene tenant_id (sigue siendo 401)', async () => {
         const strategy = crearEstrategia();

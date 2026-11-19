@@ -1,7 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import * as jwt from 'jsonwebtoken';
 import { JwksClient } from 'jwks-rsa';
-import { AuthenticatedUser } from '../auth/keycloak-jwt.strategy';
+import {
+  AuthenticatedUser,
+  MENSAJE_COMENSAL_DE_KEYCLOAK,
+  ROL_COMENSAL,
+} from '../auth/keycloak-jwt.strategy';
 import {
   mensajeSuspendidoPara,
   TenantEstadoService,
@@ -101,6 +105,12 @@ export class WsAuthService {
     }
 
     const roles: string[] = (payload.realm_access as any)?.roles ?? [];
+
+    // BL-581: mismo criterio que KeycloakJwtStrategy. El comensal entra solo
+    // con el token de invitado; uno de Keycloak con COMENSAL no se acepta.
+    if (roles.includes(ROL_COMENSAL)) {
+      throw new WsAuthError(MENSAJE_COMENSAL_DE_KEYCLOAK);
+    }
 
     // BL-413: mismo control que KeycloakJwtStrategy. Cada evento del KDS
     // vuelve a pasar por verify(), así que una conexión que ya estaba
