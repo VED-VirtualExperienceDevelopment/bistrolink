@@ -71,7 +71,8 @@ export interface ResultadoEliminacion {
  *   hace fallar el DELETE (P2003): se responde 409 y no se borra nada.
  *
  * Keycloak, después del commit: borra todas las cuentas con ese tenant_id
- * (Administradores, Cocina, Mozos y comensal-<tenantId>). Si alguna falla,
+ * (Administradores, Cocina, Mozos y, en altas anteriores a BL-581, el
+ * comensal técnico). Si alguna falla,
  * la respuesta y la auditoría dicen cuál quedó.
  *
  * Reintento: si el tenant ya no existe pero quedaron cuentas en Keycloak,
@@ -217,7 +218,7 @@ export class EliminacionEstablecimientoService {
       return { eliminadas: 0, pendientes: null };
     }
 
-    // En paralelo: son pocas (personal, Cocina y el comensal) y cada una
+    // En paralelo: son pocas (personal y Cocina) y cada una
     // es independiente. allSettled: una que falla no corta las demás.
     const resultados = await Promise.allSettled(
       cuentas.map((cuenta) => this.keycloakAdmin.deleteUser(cuenta.id)),

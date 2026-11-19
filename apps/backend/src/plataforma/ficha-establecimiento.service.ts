@@ -132,7 +132,7 @@ export function cuentaParaFicha(
  *   `usuario`, cuenta de Cocina desde Keycloak y último ingreso con una sola
  *   búsqueda de eventos. Si Keycloak no responde, la ficha sale igual, sin
  *   Cocina o sin último ingreso.
- * - El comensal técnico y los Mozos no se muestran. Nada de comensales.
+ * - Los Mozos no se muestran. Nada de comensales.
  */
 @Injectable()
 export class FichaEstablecimientoService {

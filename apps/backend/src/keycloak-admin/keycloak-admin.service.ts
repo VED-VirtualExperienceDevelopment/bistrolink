@@ -29,9 +29,7 @@ export interface KeycloakUserPayload {
   /**
    * Si la contraseña es temporal (Keycloak obliga a cambiarla en el primer
    * login). Por defecto true, como en el alta de HU-013. BL-163 la crea
-   * permanente para el usuario técnico del comensal (el backend se loguea
-   * con ella por password grant) y para las contraseñas fijas de los
-   * establecimientos de prueba.
+   * permanente para las contraseñas fijas de los establecimientos de prueba.
    */
   temporary?: boolean;
 }
@@ -489,8 +487,8 @@ export class KeycloakAdminService {
   /**
    * BL-362: usuarios de Keycloak de un tenant (atributo tenant_id), con la
    * representación completa (atributos, enabled, createdTimestamp). Un
-   * tenant tiene pocos: el personal, la cuenta de cocina y el comensal
-   * técnico. El tope de 200 es solo una red de seguridad.
+   * tenant tiene pocos: el personal y la cuenta de cocina. El tope de 200 es
+   * solo una red de seguridad.
    *
    * Quien llama igual compara el tenant_id de cada usuario: la búsqueda por
    * atributo es del lado de Keycloak y la verificación queda en nuestro código.
