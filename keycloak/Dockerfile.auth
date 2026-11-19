@@ -78,6 +78,17 @@ RUN set -eu; \
 
 FROM quay.io/keycloak/keycloak:26.7.2
 
+# BL-590: mitigación de CVE-2026-114938 ("Java4Shell"), escritura fuera de límites
+# en el decodificador Base64 del JDK 21 de la imagen base (Red Hat todavía no
+# publicó el JDK corregido, 21.0.13.1). Keycloak decodifica Base64 que llega de
+# afuera (JWT, credenciales de cliente), así que la falla aplica. Esta opción
+# apaga el camino vulnerable (las instrucciones AVX-512 del decodificador) y
+# vuelve al código Java normal. kc.sh la agrega a las opciones de la JVM.
+# En Railway, la variable JAVA_OPTS_APPEND del servicio pisa este valor (lleva las
+# opciones de memoria, Anexo 12 K4): ahí también tiene que estar -XX:-UseBASE64Intrinsics.
+# Quitarla cuando el FROM traiga el JDK corregido (y su línea de .trivyignore).
+ENV JAVA_OPTS_APPEND="-XX:-UseBASE64Intrinsics"
+
 # realm-export.json a la carpeta de importación estándar. Al arrancar con
 # --import-realm, Keycloak busca acá y lo carga automáticamente (solo si el
 # realm no existe). No tiene campo "secret" para bistrolink-backend — lo

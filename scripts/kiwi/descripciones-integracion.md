@@ -53,6 +53,7 @@
 | 1.46    | 16/11/2026 | Se borran los bloques de TC-I-234 a 237, ya cargados en Kiwi.                                                                                                                                                                             |
 | 1.47    | 16/11/2026 | TC-I-238: /auth/comensal entrega el token de invitado de la API con su canal (HU-052 / BL-579).                                                                                                                                           |
 | 1.48    | 18/11/2026 | TC-I-239 a 242: el token de invitado del comensal atado a su canal (HU-052 / BL-580).                                                                                                                                                     |
+| 1.49    | 19/11/2026 | Se borran los bloques de TC-I-238 a 242, ya cargados en Kiwi (HU-052 / BL-584).                                                                                                                                                           |
 
 Texto del campo de descripción de cada caso TC-I en Kiwi. Lo carga
 `cargar-casos-integracion.mjs --descripciones`: cada bloque `## TC-I-NNN`
@@ -64,88 +65,4 @@ esperado`, igual que los casos cargados a mano desde TC-I-029.
 
 ## Casos para cargar
 
-## TC-I-238
-
-### Precondición
-
-API de integración con la base, el RLS y Keycloak reales, con `COMENSAL_TOKEN_EMISOR=api` y una clave de prueba para el token de invitado (`COMENSAL_TOKEN_CLAVE`). Restaurante y mesa 1 del tenant de prueba A, con la sesión de la mesa abierta.
-
-### Pasos
-
-1. Pedir el token del comensal para retirar: `POST /auth/comensal` con el tenant y el restaurante.
-2. Pedir el token del comensal en la mesa: `POST /auth/comensal/mesa` con el token del QR y la sesión de la mesa.
-3. Verificar los dos tokens con la clave de la API.
-4. Llamar a `POST /pedidos` con el body vacío y cada token.
-
-### Resultado esperado
-
-1. y 2. 200 con `{ accessToken, expiresIn }` y `expiresIn` de 3600 segundos, como con Keycloak.
-2. Los dos los firmó la API, con el rol COMENSAL, el tenant y el restaurante. El de retiro tiene el canal `retiro`; el de la mesa, el canal `mesa` con la mesa y la sesión.
-3. 400 de validación: los dos tokens pasan la autenticación y el rol.
-
-## TC-I-239
-
-### Precondición
-
-API de integración con la base, el RLS, los QR y las sesiones de mesa reales, y una clave de prueba para el token de invitado (`COMENSAL_TOKEN_CLAVE`). Los tokens de invitado se firman con esa clave en el test; la verificación es la de la API. Tenant de prueba A: restaurante 1 y mesas 1 y 2 con la sesión abierta.
-
-### Pasos
-
-1. Con el token de invitado de la mesa 1 (su mesa y su sesión), `POST /pedidos` con el body vacío y el QR y la sesión de la mesa 1.
-2. Lo mismo con el QR y la sesión de la mesa 2.
-3. Lo mismo sin el QR.
-
-### Resultado esperado
-
-1. 400 de validación: el token pasó la autenticación, el rol y la mesa.
-2. 403: el token es de otra mesa.
-3. 400: el token de una mesa no sirve sin el QR de la mesa (no pide para retirar).
-
-## TC-I-240
-
-### Precondición
-
-API de integración con la base, el RLS, los QR y las sesiones de mesa reales, y una clave de prueba para el token de invitado (`COMENSAL_TOKEN_CLAVE`). Los tokens de invitado se firman con esa clave en el test; la verificación es la de la API. Tenant de prueba A: restaurante 1 y mesas 1 y 2 con la sesión abierta.
-
-### Pasos
-
-1. Firmar un token de invitado de la mesa 1 con una sesión que no es la abierta (como el de un grupo anterior, antes de que el mozo cerrara y volviera a abrir la mesa).
-2. `POST /pedidos` con ese token, el QR de la mesa 1 y la sesión abierta.
-
-### Resultado esperado
-
-- Paso 2: 410 con el código `SESION_VENCIDA`: el token de una sesión anterior deja de servir, aunque el QR y la sesión del pedido sean los actuales.
-
-## TC-I-241
-
-### Precondición
-
-API de integración con la base, el RLS, los QR y las sesiones de mesa reales, y una clave de prueba para el token de invitado (`COMENSAL_TOKEN_CLAVE`). Los tokens de invitado se firman con esa clave en el test; la verificación es la de la API. Tenant de prueba A: restaurante 1 y mesas 1 y 2 con la sesión abierta.
-
-### Pasos
-
-1. Firmar un token de invitado del link de pago del pedido A.
-2. `GET /pedidos/<pedido B>/pagos` con ese token.
-3. `POST /pedidos` con ese token y un pedido válido.
-
-### Resultado esperado
-
-- Paso 2: 403, antes de buscar el pedido B (no revela si existe).
-- Paso 3: 403: el token del link de pago no hace pedidos.
-
-## TC-I-242
-
-### Precondición
-
-API de integración con la base, el RLS, los QR y las sesiones de mesa reales, y una clave de prueba para el token de invitado (`COMENSAL_TOKEN_CLAVE`). Los tokens de invitado se firman con esa clave en el test; la verificación es la de la API. Tenant de prueba A: restaurante 1 y mesas 1 y 2 con la sesión abierta.
-
-### Pasos
-
-1. Firmar un token de invitado del retiro del restaurante 1.
-2. `POST /pedidos` con ese token y el QR y la sesión de la mesa 1.
-3. `POST /pedidos` con ese token y un pedido válido para otro restaurante.
-
-### Resultado esperado
-
-- Paso 2: 403: el token del retiro no sirve en una mesa.
-- Paso 3: 403: el token del retiro solo pide en su restaurante.
+Ninguno: todos los bloques ya están cargados en Kiwi.
