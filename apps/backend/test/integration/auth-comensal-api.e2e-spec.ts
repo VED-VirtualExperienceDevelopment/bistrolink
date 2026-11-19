@@ -15,31 +15,26 @@ import {
   tokenQrDeMesa,
 } from './support/qr-mesa';
 
-// HU-052 (BL-579): con COMENSAL_TOKEN_EMISOR=api, /auth/comensal entrega el
-// token de invitado que firma la API, con el canal por el que entró el
-// comensal, y ese token sirve en los endpoints del comensal. Con la base, el
-// RLS y Keycloak reales.
-//
-// Esta suite fuerza el emisor `api` aunque el entorno diga otra cosa (en el
-// CI ya es `api`). La clave se genera acá si el entorno no trae una. El link
-// de pago (/auth/comensal/link-pago) lo cubre link-pago.e2e-spec.ts, que en
-// el CI corre con el mismo emisor.
+// HU-052: /auth/comensal entrega el token de invitado que firma la API, con
+// el canal por el que entró el comensal, y ese token sirve en los endpoints
+// del comensal. Con la base, el RLS y Keycloak reales. Desde BL-581 es el
+// único emisor. La clave la pone support/clave-comensal.ts si el entorno no
+// trae una. El link de pago (/auth/comensal/link-pago) lo cubre
+// link-pago.e2e-spec.ts.
 
 const TENANT_ID = '11111111-1111-1111-1111-111111111111';
 const RESTAURANTE_ID = '22222222-2222-2222-2222-222222222222';
 const MESA_ID = '33333333-3333-3333-3333-333333333333';
 
-describe('HU-052 (BL-579): /auth/comensal con el emisor api', () => {
+describe('HU-052: /auth/comensal entrega el token de invitado de la API', () => {
   let app: INestApplication;
   let verificador: TokenInvitado;
-  const emisorAnterior = process.env.COMENSAL_TOKEN_EMISOR;
 
   const http = () => request(app.getHttpServer());
 
   beforeAll(async () => {
     asegurarClaveQr();
     process.env.COMENSAL_TOKEN_CLAVE ||= randomBytes(32).toString('base64');
-    process.env.COMENSAL_TOKEN_EMISOR = 'api';
     verificador = new TokenInvitado({
       claveActual: process.env.COMENSAL_TOKEN_CLAVE,
     });
@@ -61,8 +56,6 @@ describe('HU-052 (BL-579): /auth/comensal con el emisor api', () => {
 
   afterAll(async () => {
     await app?.close();
-    if (emisorAnterior === undefined) delete process.env.COMENSAL_TOKEN_EMISOR;
-    else process.env.COMENSAL_TOKEN_EMISOR = emisorAnterior;
   });
 
   it('[TC-I-238] retiro y mesa por QR entregan el token de la API con su canal, y ese token sirve para pedir', async () => {

@@ -449,7 +449,7 @@ jobs:
             echo "$1=${valor}" >> apps/backend/.env
           }
           : > apps/backend/.env
-          for var in KEYCLOAK_CLIENT_SECRET KEYCLOAK_COMENSAL_PASSWORD \
+          for var in KEYCLOAK_CLIENT_SECRET \
                      TEST_ADMIN_PASSWORD TEST_COCINA_PASSWORD \
                      TEST_NO_TENANT_PASSWORD TEST_TENANT_B_PASSWORD \
                      TEST_MOZO_PASSWORD TEST_COCINA_B_PASSWORD; do
