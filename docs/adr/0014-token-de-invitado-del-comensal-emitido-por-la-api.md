@@ -1,11 +1,11 @@
 # ADR 0014 — Token de invitado del comensal emitido por la API
 
-| Campo       | Valor                                                                                                        |
-| ----------- | ------------------------------------------------------------------------------------------------------------ |
-| Estado      | Aceptada; implementada en staging (18/11/2026), producción con el próximo release                            |
-| Fecha       | 18/11/2026                                                                                                   |
-| Referencias | HU-052 (BL-576: BL-577 a BL-582 y BL-584); BL-266; BL-271; BL-573; BL-574; RFC 9700 §2.4; ADR 0002; ADR 0003 |
-| Autores     | E. Arenas, V. Couto, D. Silvera                                                                              |
+| Campo       | Valor                                                                                                                                    |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Estado      | Aceptada; implementada en staging (18/11/2026); el comensal técnico se retira con BL-581 (19/11/2026); producción con el próximo release |
+| Fecha       | 18/11/2026                                                                                                                               |
+| Referencias | HU-052 (BL-576: BL-577 a BL-582 y BL-584); BL-266; BL-271; BL-573; BL-574; RFC 9700 §2.4; ADR 0002; ADR 0003                             |
+| Autores     | E. Arenas, V. Couto, D. Silvera                                                                                                          |
 
 ## Contexto
 
@@ -41,9 +41,11 @@ Los E2E confirmaron el problema antes de llegar a producción.
 
 **El token solo sirve en su canal** (BL-580): el de una mesa, con el QR y la sesión abierta de esa mesa y con sus pedidos; el del link de pago, con su pedido y el resumen de su link, y no hace pedidos nuevos; el del retiro, en su restaurante, y nunca en una mesa. Lo mismo vale para el seguimiento por socket. Cerrar la mesa deja inservible el token del grupo anterior: es la **revocación por comensal** que antes no existía.
 
-**Despliegue gradual y vuelta atrás:** `COMENSAL_TOKEN_EMISOR` elige quién emite (`keycloak` por defecto, o `api`). La API verifica los dos mientras convivan, así que volver a `keycloak` es un cambio de variable, sin deploy de código. La API no arranca si el emisor es desconocido o si la clave falta o está mal formada; el error nunca muestra la clave.
+**Despliegue gradual y vuelta atrás:** `COMENSAL_TOKEN_EMISOR` elegía quién emite (`keycloak` por defecto, o `api`). La API verificaba los dos mientras convivían, así que volver a `keycloak` era un cambio de variable, sin deploy de código. Se usó para pasar staging a `api` el 18/11/2026. La API no arranca si la clave falta o está mal formada; el error nunca muestra la clave.
 
-**Retiro del usuario técnico** (BL-581, después de validar `api` en producción): se quitan el camino de Keycloak, el emisor configurable y el comensal técnico de cada restaurante. Recién entonces se vuelve a activar la protección contra fuerza bruta en el realm `bistrolink` (BL-582), porque del lado del comensal ya no hay nada que bloquear.
+**Retiro del usuario técnico** (BL-581): se quitan el camino de Keycloak, el emisor configurable y el comensal técnico de cada restaurante; el alta de establecimientos deja de crearlo, y un token de Keycloak con el rol `COMENSAL` se rechaza en HTTP y en el socket. Los que ya existen se borran con `scripts/borrar-comensales-tecnicos.ts`. Después se activa la protección contra fuerza bruta en el realm `bistrolink` (BL-582), porque del lado del comensal ya no hay nada que bloquear.
+
+**Cambio de orden (19/11/2026):** el plan era hacer BL-581 después de validar `api` en producción, para poder volver a `keycloak` con solo cambiar la variable. Se adelantó para que entre en el mismo release que el token de invitado: producción todavía no tiene establecimientos ni usuarios, staging está validado con `api` desde el 18/11, y el release es la primera vez que producción recibe HU-052. Lo que se pierde es la vuelta atrás por variable: si el token de invitado fallara en producción, se vuelve a la imagen anterior con el rollback del pipeline.
 
 ## Alternativas consideradas
 
@@ -64,11 +66,13 @@ Los E2E confirmaron el problema antes de llegar a producción.
   - Pedir el token ya no depende de que Keycloak responda: el comensal puede abrir la carta aunque Keycloak esté lento o reiniciándose.
 - **Una clave nueva que cuidar:** `COMENSAL_TOKEN_CLAVE`, con un valor distinto por entorno, en Infisical (ADR 0003). Quien la tenga puede firmar tokens de comensal de cualquier restaurante de ese entorno, con los permisos del rol `COMENSAL`. Se rota con la clave anterior en `COMENSAL_TOKEN_CLAVE_ANTERIOR` durante una vida útil del token (60 minutos), y ante una sospecha de filtración se reemplaza sin clave anterior: todos los tokens emitidos dejan de servir al instante. El procedimiento está en el runbook de gestión de secretos y en el Anexo 12.
 - **El token de retiro y el del link de pago no se revocan antes de vencer** (60 minutos como máximo): su alcance está limitado a su restaurante o a su pedido, y el acceso a un pedido existente sigue exigiendo el token del pedido o del link.
-- **Mientras convivan los dos emisores**, un token de Keycloak del comensal no tiene canal y sigue con las reglas de antes. Por eso BL-581 retira el camino de Keycloak después de validar `api` en producción.
-- **Casos de prueba:** unitarios TC-U-591 a 634 (firma y verificación, confusión de emisores y algoritmos, emisión, arranque y reglas de canal en HTTP y en el socket); integración TC-I-235 a 242 (token de invitado contra la base, el RLS y Keycloak reales, y los criterios de BL-580), con el CI de integración corriendo con `COMENSAL_TOKEN_EMISOR=api`. En staging, el 18/11/2026: token con emisor `bistrolink-api` y canal de la mesa, y los cuatro jobs de E2E con los flujos del comensal en verde.
+- **Mientras convivieron los dos emisores** (18/11 y 19/11, solo en staging), un token de Keycloak del comensal no tenía canal y seguía con las reglas de antes. BL-581 cerró esa puerta: ese token ya no se acepta.
+- **Variables que sobran:** `COMENSAL_TOKEN_EMISOR`, `KEYCLOAK_COMENSAL_PASSWORD` y `KEYCLOAK_COMENSAL_USERNAME_SECRET` ya no se leen. Si siguen cargadas, la API arranca igual y avisa en el log para que se borren de Infisical.
+- **Casos de prueba:** unitarios TC-U-591 a 640 (firma y verificación, confusión de emisores y algoritmos, emisión, arranque, reglas de canal en HTTP y en el socket y, con BL-581, el rechazo del token de Keycloak del comensal y el borrado de los comensales técnicos); integración TC-I-235 a 242 (token de invitado contra la base, el RLS y Keycloak reales, y los criterios de BL-580), con el CI de integración corriendo con el token de invitado. En staging, el 18/11/2026: token con emisor `bistrolink-api` y canal de la mesa, y los cuatro jobs de E2E con los flujos del comensal en verde.
 
 ## Control de versiones
 
-| Versión | Fecha      | Modificación                                                                         |
-| ------- | ---------- | ------------------------------------------------------------------------------------ |
-| 1.0     | 18/11/2026 | Versión inicial (BL-584). Decisión implementada en BL-577 a BL-580 (PR #525 y #526). |
+| Versión | Fecha      | Modificación                                                                                                                                      |
+| ------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1.0     | 18/11/2026 | Versión inicial (BL-584). Decisión implementada en BL-577 a BL-580 (PR #525 y #526).                                                              |
+| 1.1     | 19/11/2026 | Retiro del comensal técnico (BL-581) y cambio de orden: se adelanta al release, antes de validar en producción, con el motivo y lo que se pierde. |

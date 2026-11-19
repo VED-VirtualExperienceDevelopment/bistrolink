@@ -44,7 +44,7 @@ KC_ADMIN_PASS="${KC_BOOTSTRAP_ADMIN_PASSWORD:-${KEYCLOAK_ADMIN_PASSWORD:-admin}}
 # política de contraseñas del realm. Tiene que ser igual a la de
 # realm-export.json. Sin historial (ASVS 2.1.10) y con tope de 128
 # caracteres (2.1.2). El mínimo sigue en 9 porque las contraseñas de prueba
-# (TEST_*, KEYCLOAK_COMENSAL_PASSWORD) tienen 9: con un mínimo mayor,
+# (TEST_*) tienen 9: con un mínimo mayor,
 # load-test-users.sh borraría esos usuarios y fallaría el alta de locales.
 POLITICA_CONTRASENAS='length(9) and maxLength(128) and notUsername(undefined) and notEmail(undefined)'
 

@@ -13,7 +13,8 @@ import { AuditAction } from '../../src/audit-log/audit-action.enum';
 
 /**
  * BL-163 (HU-027), entrega 1: alta idempotente de un establecimiento con el
- * kit mínimo (tenant, restaurante, mesa virtual, Admin, Cocina y comensal).
+ * kit mínimo (tenant, restaurante, mesa virtual, Admin y Cocina). Desde
+ * BL-581 no se crea el comensal técnico (HU-052: token de invitado de la API).
  */
 
 const TENANT_ID = 'aaaaaaaa-1111-4111-8111-111111111111';
@@ -23,7 +24,6 @@ const MESA_VIRTUAL_ID = 'dddddddd-4444-4444-8444-444444444444';
 const RUT = '219999999901';
 // Alta desde el endpoint: solo el sub del token; el username se busca en Keycloak.
 const ACTOR = { id: 'kc-plataforma-1' };
-const COMENSAL_PASSWORD = 'comensal-de-prueba';
 
 function dtoBase(
   overrides: Partial<AprovisionarEstablecimientoDto> = {},
@@ -70,7 +70,6 @@ describe('AprovisionamientoService (BL-163)', () => {
     >
   >;
   let auditLog: { registrar: jest.Mock };
-  const passwordOriginal = process.env.KEYCLOAK_COMENSAL_PASSWORD;
 
   // Estado de la "base" de cada test: qué existe antes del alta.
   let tenantPorRut: { id: string } | null;
@@ -78,7 +77,6 @@ describe('AprovisionamientoService (BL-163)', () => {
   let restauranteExistente: { id: string } | null;
 
   beforeEach(async () => {
-    process.env.KEYCLOAK_COMENSAL_PASSWORD = COMENSAL_PASSWORD;
     tenantPorRut = null;
     tenantPorId = null;
     restauranteExistente = null;
@@ -135,10 +133,6 @@ describe('AprovisionamientoService (BL-163)', () => {
     service = await module.resolve(AprovisionamientoService);
   });
 
-  afterAll(() => {
-    process.env.KEYCLOAK_COMENSAL_PASSWORD = passwordOriginal;
-  });
-
   const aprovisionar = (
     dto = dtoBase(),
     credenciales: CredencialesIniciales = {},
@@ -192,15 +186,11 @@ describe('AprovisionamientoService (BL-163)', () => {
       );
     });
 
-    it('crea Admin, Cocina y comensal técnico en Keycloak, con el tenant_id y el rol de cada uno', async () => {
+    it('[TC-U-636] crea Admin y Cocina en Keycloak, con el tenant_id y el rol de cada uno, y ningún comensal técnico (BL-581)', async () => {
       await aprovisionar();
 
-      expect(keycloakAdmin.createUser).toHaveBeenCalledTimes(3);
-      for (const username of [
-        'prueba-admin',
-        'prueba-cocina',
-        `comensal-${TENANT_ID}`,
-      ]) {
+      expect(keycloakAdmin.createUser).toHaveBeenCalledTimes(2);
+      for (const username of ['prueba-admin', 'prueba-cocina']) {
         expect(keycloakAdmin.createUser).toHaveBeenCalledWith(
           expect.objectContaining({ username, tenantId: TENANT_ID }),
         );
@@ -213,9 +203,14 @@ describe('AprovisionamientoService (BL-163)', () => {
         'kc-prueba-cocina',
         'COCINA',
       );
-      expect(keycloakAdmin.assignRealmRole).toHaveBeenCalledWith(
-        `kc-comensal-${TENANT_ID}`,
+      expect(keycloakAdmin.assignRealmRole).not.toHaveBeenCalledWith(
+        expect.anything(),
         'COMENSAL',
+      );
+      expect(keycloakAdmin.createUser).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          username: expect.stringMatching(/^comensal-/),
+        }),
       );
     });
 
@@ -238,14 +233,6 @@ describe('AprovisionamientoService (BL-163)', () => {
           lastName: 'BistroLink',
         }),
       );
-      expect(keycloakAdmin.createUser).toHaveBeenCalledWith(
-        expect.objectContaining({
-          username: `comensal-${TENANT_ID}`,
-          email: `comensal-${TENANT_ID}@tecnico.bistrolink.local`,
-          firstName: 'Comensal',
-          lastName: 'BistroLink',
-        }),
-      );
     });
 
     it('la cuenta Cocina usa el email indicado si viene en los datos', async () => {
@@ -259,18 +246,6 @@ describe('AprovisionamientoService (BL-163)', () => {
         expect.objectContaining({
           username: 'prueba-cocina',
           email: 'cocina@restaurante.uy',
-        }),
-      );
-    });
-
-    it('el comensal técnico usa KEYCLOAK_COMENSAL_PASSWORD como contraseña permanente', async () => {
-      await aprovisionar();
-
-      expect(keycloakAdmin.createUser).toHaveBeenCalledWith(
-        expect.objectContaining({
-          username: `comensal-${TENANT_ID}`,
-          temporaryPassword: COMENSAL_PASSWORD,
-          temporary: false,
         }),
       );
     });
@@ -325,8 +300,6 @@ describe('AprovisionamientoService (BL-163)', () => {
           temporary: true,
         }),
       );
-      const comensal = resultado.usuarios.find((u) => u.rol === 'COMENSAL');
-      expect(comensal?.passwordGenerada).toBeUndefined();
     });
 
     it('guarda como "creado por" el username de Keycloak del actor (alta desde el endpoint)', async () => {
@@ -378,12 +351,11 @@ describe('AprovisionamientoService (BL-163)', () => {
           restauranteId: RESTAURANTE_ID,
           tenantCreado: true,
           restauranteCreado: true,
-          usuariosCreados: ['ADMIN', 'COCINA', 'COMENSAL'],
+          usuariosCreados: ['ADMIN', 'COCINA'],
         },
       });
       const registro = JSON.stringify(auditLog.registrar.mock.calls[0][0]);
       expect(registro).not.toContain('prueba-admin');
-      expect(registro).not.toContain(COMENSAL_PASSWORD);
     });
   });
 
@@ -503,10 +475,6 @@ describe('AprovisionamientoService (BL-163)', () => {
           lastName: 'De Prueba',
         },
       );
-      expect(keycloakAdmin.completarPerfil).toHaveBeenCalledWith(
-        `kc-comensal-${TENANT_ID}`,
-        expect.objectContaining({ firstName: 'Comensal' }),
-      );
       expect(keycloakAdmin.createUser).not.toHaveBeenCalled();
       expect(resultado.usuarios.every((u) => u.perfilCompletado)).toBe(true);
       expect(resultado.usuarios.every((u) => !u.creado)).toBe(true);
@@ -603,7 +571,7 @@ describe('AprovisionamientoService (BL-163)', () => {
       });
       expect(keycloakAdmin.createUser).toHaveBeenCalledWith(
         expect.objectContaining({
-          username: `comensal-${resultado.tenantId}`,
+          username: 'prueba-admin',
           tenantId: resultado.tenantId,
         }),
       );
@@ -714,7 +682,7 @@ describe('AprovisionamientoService (BL-163)', () => {
       expect(tenantPrisma.runInTenantContext).not.toHaveBeenCalled();
     });
 
-    it('rechaza con 400 un username reservado para el comensal técnico', async () => {
+    it('rechaza con 400 un username con el prefijo reservado «comensal-»', async () => {
       await expect(
         aprovisionar(
           dtoBase({ admin: { ...dtoBase().admin, username: 'comensal-algo' } }),
@@ -722,14 +690,16 @@ describe('AprovisionamientoService (BL-163)', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
-    it('falla antes de escribir nada si falta KEYCLOAK_COMENSAL_PASSWORD', async () => {
+    it('[TC-U-637] ya no necesita KEYCLOAK_COMENSAL_PASSWORD (BL-581)', async () => {
+      const original = process.env.KEYCLOAK_COMENSAL_PASSWORD;
       delete process.env.KEYCLOAK_COMENSAL_PASSWORD;
-
-      await expect(aprovisionar()).rejects.toThrow(
-        'Falta KEYCLOAK_COMENSAL_PASSWORD',
-      );
-      expect(tenantPrisma.runInTenantContext).not.toHaveBeenCalled();
-      expect(keycloakAdmin.createUser).not.toHaveBeenCalled();
+      try {
+        await expect(aprovisionar()).resolves.toBeDefined();
+      } finally {
+        if (original !== undefined) {
+          process.env.KEYCLOAK_COMENSAL_PASSWORD = original;
+        }
+      }
     });
   });
 

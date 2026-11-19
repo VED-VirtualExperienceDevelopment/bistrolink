@@ -1,7 +1,7 @@
 import * as jwt from 'jsonwebtoken';
 import { WsAuthService, WsAuthError } from '../../src/pedidos/ws-auth.service';
+import { MENSAJE_COMENSAL_DE_KEYCLOAK } from '../../src/auth/keycloak-jwt.strategy';
 import {
-  MENSAJE_SUSPENDIDO_COMENSAL,
   MENSAJE_SUSPENDIDO_PERSONAL,
   TenantEstadoService,
 } from '../../src/tenant-estado/tenant-estado.service';
@@ -121,7 +121,7 @@ describe('WsAuthService', () => {
 
       expect(resultado.roles).toEqual([]);
     });
-    it('[TC-U-122] WsAuthService.verify rechaza el token de un establecimiento suspendido (personal y comensal)', async () => {
+    it('[TC-U-122] WsAuthService.verify rechaza el token del personal de un establecimiento suspendido', async () => {
       (jwt.decode as jest.Mock).mockReturnValue({ header: { kid: 'kid-1' } });
       tenantEstado.estaSuspendido.mockResolvedValue(true);
 
@@ -133,16 +133,22 @@ describe('WsAuthService', () => {
       await expect(service.verify('token-cocina')).rejects.toThrow(
         new WsAuthError(MENSAJE_SUSPENDIDO_PERSONAL),
       );
+      expect(tenantEstado.estaSuspendido).toHaveBeenCalledWith('tenant-abc');
+      // El comensal suspendido con el token de invitado: TC-U-609.
+    });
 
+    it('[TC-U-639] rechaza un token de Keycloak con el rol COMENSAL, sin consultar el estado (BL-581)', async () => {
+      (jwt.decode as jest.Mock).mockReturnValue({ header: { kid: 'kid-1' } });
       (jwt.verify as jest.Mock).mockReturnValue({
-        sub: 'comensal-tecnico',
+        sub: 'comensal-tecnico-sin-borrar',
         tenant_id: 'tenant-abc',
         realm_access: { roles: ['COMENSAL'] },
       });
+
       await expect(service.verify('token-comensal')).rejects.toThrow(
-        new WsAuthError(MENSAJE_SUSPENDIDO_COMENSAL),
+        new WsAuthError(MENSAJE_COMENSAL_DE_KEYCLOAK),
       );
-      expect(tenantEstado.estaSuspendido).toHaveBeenCalledWith('tenant-abc');
+      expect(tenantEstado.estaSuspendido).not.toHaveBeenCalled();
     });
   });
 });

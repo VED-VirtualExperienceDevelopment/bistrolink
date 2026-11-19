@@ -45,7 +45,7 @@ services:
     entrypoint: ["/bin/bash", "/opt/keycloak/bin/set-client-secret.sh"]
     command: ["start-dev", "--import-realm"]
     # Carga KEYCLOAK_CLIENT_SECRET y las variables de los usuarios de prueba
-    # (TEST_*_USERNAME/PASSWORD y KEYCLOAK_COMENSAL_PASSWORD) directo del
+    # (TEST_*_USERNAME/PASSWORD) directo del
     # .env del backend — así cualquiera del equipo levanta lo mismo con solo
     # correr 'docker compose up -d'. BL-264: los usuarios de prueba ya no
     # están en realm-export.json; los carga keycloak/load-test-users.sh al

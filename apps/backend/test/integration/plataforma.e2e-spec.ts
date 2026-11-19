@@ -19,17 +19,19 @@ import {
  * BL-163 (HU-027), entrega 2: POST /plataforma/establecimientos.
  *
  * Cubre el DoD de seguridad de la historia:
- * - Un token de ADMIN, COCINA o COMENSAL contra /plataforma/* → 403.
+ * - Un token de ADMIN o COCINA contra /plataforma/* → 403; el del comensal
+ *   (token de invitado de la API, HU-052) → 401.
  * - Un token PLATAFORMA contra endpoints de tenant → 401.
- * - El alta crea el kit mínimo y el comensal técnico puede emitir su token.
+ * - El alta crea el kit mínimo (sin comensal técnico desde BL-581) y el
+ *   comensal del local nuevo recibe su token de invitado.
  * - Reintentar el alta no duplica nada.
  * - El listado muestra el establecimiento nuevo y quién lo dio de alta.
  * - BL-472: el alta sin cola deja la cola del KDS desactivada (null); con
  *   cola, guarda el límite elegido (TC-I-208 y TC-I-209).
  *
  * Setup: el realm tiene que tener el rol PLATAFORMA (keycloak/realm-export.json;
- * en un Keycloak ya levantado, crearlo a mano o reimportar el realm) y el
- * .env del backend, KEYCLOAK_COMENSAL_PASSWORD. El usuario PLATAFORMA del
+ * en un Keycloak ya levantado, crearlo a mano o reimportar el realm) y los
+ * usuarios de prueba de Keycloak (TEST_ADMIN_PASSWORD). El usuario PLATAFORMA del
  * test se crea y se borra acá, sin OTP: el OTP es del login en el navegador
  * y este test pide el token por password grant.
  *
@@ -44,7 +46,6 @@ const ADMIN_USER = process.env.TEST_ADMIN_USERNAME ?? 'admin-test';
 const ADMIN_PASS = process.env.TEST_ADMIN_PASSWORD;
 const COCINA_USER = process.env.TEST_COCINA_USERNAME;
 const COCINA_PASS = process.env.TEST_COCINA_PASSWORD;
-const COMENSAL_PASS = process.env.KEYCLOAK_COMENSAL_PASSWORD;
 
 // Datos únicos por corrida.
 const SUFIJO = Date.now().toString().slice(-10);
@@ -101,7 +102,9 @@ describe('Alta de establecimientos por la plataforma (HU-027) - e2e', () => {
   let tenantIdCreado: string | undefined;
   let tenantIdConCola: string | undefined;
 
-  const itConPlataforma = COMENSAL_PASS ? it : it.skip;
+  // Con los usuarios de prueba cargados en Keycloak (en el CI, siempre).
+  // Antes de BL-581 la señal era KEYCLOAK_COMENSAL_PASSWORD.
+  const itConPlataforma = ADMIN_PASS ? it : it.skip;
   const itConAdmin = ADMIN_PASS ? it : it.skip;
   const itConCocina = COCINA_USER && COCINA_PASS ? it : it.skip;
 
@@ -127,7 +130,7 @@ describe('Alta de establecimientos por la plataforma (HU-027) - e2e', () => {
     await app.init();
     prisma = new PrismaClient();
 
-    if (!COMENSAL_PASS) return;
+    if (!ADMIN_PASS) return;
 
     // Usuario PLATAFORMA del test: sin tenant_id y sin OTP.
     tokenPlataforma = await crearUsuarioPlataforma(
@@ -149,7 +152,6 @@ describe('Alta de establecimientos por la plataforma (HU-027) - e2e', () => {
       COCINA_NUEVO,
       ADMIN_COLA,
       COCINA_COLA,
-      ...tenantIds.map((id) => `comensal-${id}`),
     ];
     for (const username of usernames) {
       await borrarUsuarioKeycloak(username).catch(() => undefined);
@@ -215,7 +217,7 @@ describe('Alta de establecimientos por la plataforma (HU-027) - e2e', () => {
   );
 
   itConPlataforma(
-    '[TC-I-050] Plataforma: el alta crea el kit mínimo del establecimiento y el comensal técnico obtiene su token (201)',
+    '[TC-I-050] Plataforma: el alta crea el kit mínimo del establecimiento, sin comensal técnico, y el comensal del local nuevo recibe su token de invitado (201)',
     async () => {
       const res = await request(app.getHttpServer())
         .post('/plataforma/establecimientos')
@@ -251,11 +253,11 @@ describe('Alta de establecimientos por la plataforma (HU-027) - e2e', () => {
         expect.objectContaining({ username: ADMIN_NUEVO, rol: 'ADMIN' }),
       ]);
 
-      // Keycloak: los tres usuarios, con su rol y el perfil completo.
+      // Keycloak: Admin y Cocina, con su rol y el perfil completo. Sin
+      // comensal técnico (BL-581).
       const esperados: [string, string][] = [
         [ADMIN_NUEVO, 'ADMIN'],
         [COCINA_NUEVO, 'COCINA'],
-        [`comensal-${tenantId}`, 'COMENSAL'],
       ];
       for (const [username, rol] of esperados) {
         const usuario = await buscarUsuarioKeycloak(username);
@@ -274,13 +276,24 @@ describe('Alta de establecimientos por la plataforma (HU-027) - e2e', () => {
         .map((u) => u.rol);
       expect(conPassword.sort()).toEqual(['ADMIN', 'COCINA']);
 
-      // El comensal técnico emite su token (sin VERIFY_PROFILE pendiente) y
-      // el token es del tenant nuevo.
-      const tokenComensal = await pedirToken(
-        `comensal-${tenantId}`,
-        COMENSAL_PASS as string,
+      expect(
+        await buscarUsuarioKeycloak(`comensal-${tenantId}`),
+      ).toBeUndefined();
+
+      // El comensal del local nuevo recibe el token de invitado de la API,
+      // del tenant nuevo.
+      const tokenComensal = (
+        await request(app.getHttpServer())
+          .post('/auth/comensal')
+          .send({ tenantId, restauranteId: filas.restaurantes[0].id })
+          .expect(200)
+      ).body.accessToken as string;
+      expect(claims(tokenComensal)).toEqual(
+        expect.objectContaining({
+          iss: 'bistrolink-api',
+          tenant_id: tenantId,
+        }),
       );
-      expect(claims(tokenComensal).tenant_id).toBe(tenantId);
     },
   );
 
@@ -351,17 +364,27 @@ describe('Alta de establecimientos por la plataforma (HU-027) - e2e', () => {
   );
 
   itConPlataforma(
-    '[TC-I-052] Plataforma: el comensal técnico del establecimiento nuevo no puede dar de alta otro (403)',
+    '[TC-I-052] Plataforma: el comensal del establecimiento nuevo no puede dar de alta otro (401: su token de invitado no sirve en la plataforma)',
     async () => {
-      const tokenComensal = await pedirToken(
-        `comensal-${tenantIdCreado}`,
-        COMENSAL_PASS as string,
+      // Filtro explícito por tenant, como en TC-I-050: este PrismaClient se
+      // conecta con el dueño del esquema, al que el RLS no le filtra filas.
+      const restaurante = await enTenant(tenantIdCreado as string, (tx) =>
+        tx.restaurante.findFirst({
+          where: { tenantId: tenantIdCreado },
+          select: { id: true },
+        }),
       );
+      const tokenComensal = (
+        await request(app.getHttpServer())
+          .post('/auth/comensal')
+          .send({ tenantId: tenantIdCreado, restauranteId: restaurante?.id })
+          .expect(200)
+      ).body.accessToken as string;
       await request(app.getHttpServer())
         .post('/plataforma/establecimientos')
         .set('Authorization', `Bearer ${tokenComensal}`)
         .send(ALTA)
-        .expect(403);
+        .expect(401);
     },
   );
 

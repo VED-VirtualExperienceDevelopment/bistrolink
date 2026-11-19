@@ -37,7 +37,7 @@ const MENSAJE_NO_EXISTE = 'No existe un establecimiento con ese id';
  *   cualquier token del tenant recibe 403 (estrategia JWT, WebSocket, token del
  *   comensal y menú público).
  * - Cierra las sesiones de Keycloak de todos los usuarios del tenant
- *   (también Cocina y el comensal técnico), para que no puedan renovar el
+ *   (también Cocina), para que no puedan renovar el
  *   token. Si Keycloak falla, la suspensión ya quedó hecha y el 403 la
  *   cubre igual: se registra cuántas no se pudieron cerrar.
  *
