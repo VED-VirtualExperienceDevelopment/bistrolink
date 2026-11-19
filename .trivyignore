@@ -387,3 +387,33 @@ CVE-2026-76844 exp:2026-12-31
 # junto con la opción de la JVM cuando Keycloak publique una imagen con el JDK corregido.
 
 CVE-2026-114938 exp:2026-12-19
+
+# CVE-2026-114939, 114940, 114941 y 114942 (HIGH) — java-21-openjdk-headless
+
+# 1:21.0.12.1.1-1.2.el9 de la imagen base de Keycloak (quay.io/keycloak/keycloak:26.7.2,
+
+# Red Hat UBI 9.8). Son de la actualización de seguridad de Java de Oracle del
+
+# 17/11/2026, la misma que CVE-2026-114938; Red Hat todavía no publicó el JDK
+
+# corregido ("affected"). No aplican en la práctica: 114939 es de Kerberos, que el
+
+# realm no usa; 114940, de conexiones TLS salientes, que Keycloak no hace en este
+
+# proyecto; 114942, de la Vector API, un módulo en incubación que Keycloak no
+
+# activa. 114941 (compresión de enteros) es interna de la JVM, sin detalle público
+
+# ni opción para desactivarla. La imagen no trae gestor de paquetes.
+
+# Agregadas el 19/11/2026 (BL-590). Vencen con CVE-2026-114938: quitarlas cuando
+
+# Keycloak publique una imagen con el JDK corregido.
+
+CVE-2026-114939 exp:2026-12-19
+
+CVE-2026-114940 exp:2026-12-19
+
+CVE-2026-114941 exp:2026-12-19
+
+CVE-2026-114942 exp:2026-12-19
