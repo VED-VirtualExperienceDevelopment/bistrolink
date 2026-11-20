@@ -74,6 +74,12 @@ const DIAS_DE_EVENTOS = 90;
 const EVENTOS_POR_PAGINA = 500;
 const PAGINAS_DE_EVENTOS = 10;
 
+/** BL-371: estado del bloqueo por intentos fallidos (sin la IP). */
+export interface EstadoDeBloqueo {
+  bloqueada: boolean;
+  fallos: number;
+}
+
 @Injectable()
 export class KeycloakAdminService {
   private readonly logger = new Logger(KeycloakAdminService.name);
@@ -593,6 +599,63 @@ export class KeycloakAdminService {
       );
     }
     return ((await res.json()) as { name: string }[]).map((r) => r.name);
+  }
+
+  /**
+   * BL-371: si la protección contra fuerza bruta del realm bloqueó la cuenta
+   * por intentos fallidos (GET /attack-detection/brute-force/users/{id},
+   * requiere view-users). Con la protección apagada, Keycloak responde
+   * `disabled: false` y nunca hay bloqueo.
+   *
+   * [S] La respuesta trae la IP del último intento fallido: no se devuelve
+   * ni se loguea (dato personal, Ley 18.331). Solo el estado y los fallos.
+   */
+  async estadoDeBloqueo(keycloakId: string): Promise<EstadoDeBloqueo> {
+    const res = await this.adminFetch(
+      `/attack-detection/brute-force/users/${encodeURIComponent(keycloakId)}`,
+    );
+    if (!res.ok) {
+      const body = await res.text();
+      this.logAndBuildError(
+        `No se pudo leer el bloqueo por intentos fallidos del usuario ${keycloakId} en Keycloak`,
+        res.status,
+        body,
+      );
+      throw new InternalServerErrorException(
+        `No se pudo leer el bloqueo del usuario en Keycloak: ${res.status}`,
+      );
+    }
+    const estado = (await res.json()) as {
+      disabled?: boolean;
+      numFailures?: number;
+    };
+    return {
+      bloqueada: estado.disabled === true,
+      fallos: estado.numFailures ?? 0,
+    };
+  }
+
+  /**
+   * BL-371: levanta el bloqueo por intentos fallidos y pone en cero los
+   * fallos (DELETE /attack-detection/brute-force/users/{id}, requiere
+   * manage-users). No cambia la contraseña ni las sesiones.
+   */
+  async desbloquear(keycloakId: string): Promise<void> {
+    const res = await this.adminFetch(
+      `/attack-detection/brute-force/users/${encodeURIComponent(keycloakId)}`,
+      { method: 'DELETE' },
+    );
+    if (!res.ok) {
+      const body = await res.text();
+      this.logAndBuildError(
+        `No se pudo desbloquear al usuario ${keycloakId} en Keycloak`,
+        res.status,
+        body,
+      );
+      throw new InternalServerErrorException(
+        `No se pudo desbloquear al usuario en Keycloak: ${res.status}`,
+      );
+    }
   }
 
   /**

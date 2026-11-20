@@ -134,7 +134,11 @@ export class UsuariosService {
       tenantId,
       new Set(filas.map((fila) => fila.keycloakId)),
     );
-    return this.conUltimoIngreso(tenantId, [...personal, ...cocina]);
+    const conIngreso = await this.conUltimoIngreso(tenantId, [
+      ...personal,
+      ...cocina,
+    ]);
+    return this.conBloqueo(tenantId, conIngreso);
   }
 
   /**
@@ -163,6 +167,34 @@ export class UsuariosService {
     } catch (error) {
       this.logger.warn(
         `No se pudo leer el último ingreso de los usuarios del tenant ${tenantId}: ${describirError(error)}`,
+      );
+      return usuarios;
+    }
+  }
+
+  /**
+   * BL-371: suma `bloqueada` (true si Keycloak bloqueó la cuenta por
+   * intentos fallidos). Un restaurante tiene pocos usuarios: una consulta
+   * por cada uno, en paralelo. Si alguna falla, el listado sale igual, sin
+   * el campo (como `ultimoIngreso`): mejor no mostrar el dato que mostrar
+   * «no bloqueada» por error.
+   */
+  private async conBloqueo<T extends { keycloakId: string }>(
+    tenantId: string,
+    usuarios: T[],
+  ): Promise<(T & { bloqueada?: boolean })[]> {
+    if (usuarios.length === 0) return usuarios;
+    try {
+      const estados = await Promise.all(
+        usuarios.map((u) => this.keycloakAdmin.estadoDeBloqueo(u.keycloakId)),
+      );
+      return usuarios.map((u, i) => ({
+        ...u,
+        bloqueada: estados[i].bloqueada,
+      }));
+    } catch (error) {
+      this.logger.warn(
+        `No se pudo leer el bloqueo de los usuarios del tenant ${tenantId}: ${describirError(error)}`,
       );
       return usuarios;
     }
@@ -336,6 +368,77 @@ export class UsuariosService {
     });
 
     return { id: keycloakId, sesionesCerradas: true as const };
+  }
+
+  /**
+   * BL-371: levanta el bloqueo por intentos fallidos de una persona (por
+   * ejemplo, un mozo que se equivocó varias veces con la contraseña), sin
+   * esperar a que venza. No cambia la contraseña: si no la recuerda, está
+   * «Restablecer contraseña». Si no estaba bloqueada, no hace nada ni se
+   * audita. Bajo RLS: un usuario de otro tenant responde 404.
+   */
+  async desbloquear(
+    tenantId: string,
+    actorKeycloakId: string,
+    usuarioId: string,
+  ) {
+    const usuario = await this.tenantPrisma.runInTenantContext(tenantId, (tx) =>
+      this.obtenerOFallar(tx, usuarioId),
+    );
+    const fallos = await this.desbloquearEnKeycloak(usuario.keycloakId);
+    if (fallos !== null) {
+      this.auditLog.registrar({
+        action: AuditAction.USUARIO_DESBLOQUEADO,
+        tenantId,
+        actorKeycloakId,
+        targetUsuarioId: usuarioId,
+        detalle: { rol: usuario.rol, fallos },
+      });
+    }
+    return { id: usuarioId, bloqueada: false as const };
+  }
+
+  /** BL-371: lo mismo para la cuenta de cocina (BL-362). */
+  async desbloquearCocina(
+    tenantId: string,
+    actorKeycloakId: string,
+    keycloakId: string,
+  ) {
+    await this.obtenerCuentaCocinaOFallar(tenantId, keycloakId);
+    const fallos = await this.desbloquearEnKeycloak(keycloakId);
+    if (fallos !== null) {
+      this.auditLog.registrar({
+        action: AuditAction.USUARIO_DESBLOQUEADO,
+        tenantId,
+        actorKeycloakId,
+        targetUsuarioId: keycloakId,
+        detalle: { rol: 'COCINA', cuentaCompartida: true, fallos },
+      });
+    }
+    return { id: keycloakId, bloqueada: false as const };
+  }
+
+  /**
+   * Desbloquea si está bloqueada y devuelve cuántos fallos tenía; null si no
+   * estaba bloqueada. Si Keycloak no responde, 503: el admin tiene que saber
+   * que no se hizo, y no se audita algo que no pasó.
+   */
+  private async desbloquearEnKeycloak(
+    keycloakId: string,
+  ): Promise<number | null> {
+    try {
+      const estado = await this.keycloakAdmin.estadoDeBloqueo(keycloakId);
+      if (!estado.bloqueada) return null;
+      await this.keycloakAdmin.desbloquear(keycloakId);
+      return estado.fallos;
+    } catch (error) {
+      this.logger.error(
+        `No se pudo desbloquear al usuario ${keycloakId}: ${describirError(error)}`,
+      );
+      throw new ServiceUnavailableException(
+        'No se pudo desbloquear la cuenta. Probá de nuevo en un momento.',
+      );
+    }
   }
 
   /**

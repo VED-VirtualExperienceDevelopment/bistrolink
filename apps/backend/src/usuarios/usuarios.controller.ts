@@ -89,6 +89,20 @@ export class UsuariosController {
     );
   }
 
+  // BL-371: levantar el bloqueo por intentos fallidos de la cuenta de cocina.
+  @Post('cocina/:keycloakId/desbloquear')
+  @HttpCode(HttpStatus.OK)
+  desbloquearCocina(
+    @Req() req: { user: AuthenticatedUser },
+    @Param('keycloakId', new ParseUUIDPipe()) keycloakId: string,
+  ) {
+    return this.usuariosService.desbloquearCocina(
+      req.user.tenantId,
+      req.user.sub,
+      keycloakId,
+    );
+  }
+
   @Delete('cocina/:keycloakId')
   desactivarCocina(
     @Req() req: { user: AuthenticatedUser },
@@ -157,6 +171,21 @@ export class UsuariosController {
     @Param('id', new ParseUUIDPipe()) id: string,
   ) {
     return this.usuariosService.cerrarSesiones(
+      req.user.tenantId,
+      req.user.sub,
+      id,
+    );
+  }
+
+  // BL-371: levanta el bloqueo por intentos fallidos sin esperar a que
+  // venza. 200 y no 201: no se crea ningún recurso.
+  @Post(':id/desbloquear')
+  @HttpCode(HttpStatus.OK)
+  desbloquear(
+    @Req() req: { user: AuthenticatedUser },
+    @Param('id', new ParseUUIDPipe()) id: string,
+  ) {
+    return this.usuariosService.desbloquear(
       req.user.tenantId,
       req.user.sub,
       id,
