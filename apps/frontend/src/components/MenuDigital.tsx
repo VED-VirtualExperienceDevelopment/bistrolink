@@ -780,13 +780,26 @@ export default function MenuDigital({
               onAbrir={() => setMisPedidosAbierto(true)}
             />
           )}
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-marca/10 rounded-full">
-            <span className="text-sm font-medium">
-              {tipo === "mesa"
-                ? "📍 En el local"
-                : "Pedido desde fuera del local"}
-            </span>
-          </div>
+          {/* BL-592: en el pedido desde la mesa, «Llamar al mozo» va en la
+          barra superior, siempre a la vista. En la pantalla de pago no se
+          muestra acá: ahí el botón va dentro del contenido (PagoPedido), y
+          así nunca hay dos botones iguales a la vez. «En el local» pasó a
+          la portada, junto al número de mesa. */}
+          {origen.tipo === "mesa" ? (
+            !pantallaPago && (
+              <LlamarMozoButton
+                qrToken={origen.qrToken}
+                sesionMesa={origen.sesionMesa}
+                variante="nav"
+              />
+            )
+          ) : (
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-marca/10 rounded-full">
+              <span className="text-sm font-medium">
+                Pedido desde fuera del local
+              </span>
+            </div>
+          )}
         </div>
       </nav>
 
@@ -828,8 +841,9 @@ export default function MenuDigital({
 
                 <div className="absolute bottom-0 left-0 p-6 md:p-8 w-full flex flex-col justify-end">
                   <span className="inline-flex items-center px-3 py-1 rounded-full bg-white/20 backdrop-blur-sm text-white font-medium text-xs md:text-sm mb-3 w-max">
+                    {/* BL-592: «En el local» sale de la barra superior y va acá. */}
                     {tipo === "mesa"
-                      ? etiquetaMesa(numeroMesa)
+                      ? `En el local · ${etiquetaMesa(numeroMesa)}`
                       : `📍 ${restaurante.direccion || "Local"}`}
                   </span>
                   <h1 className="text-3xl md:text-5xl font-bold text-white mb-2 tracking-tight">
@@ -1009,15 +1023,6 @@ export default function MenuDigital({
                     </div>
                   </section>
                 ))}
-              </div>
-            )}
-
-            {origen.tipo === "mesa" && (
-              <div className="mt-8 flex justify-center w-full">
-                <LlamarMozoButton
-                  qrToken={origen.qrToken}
-                  sesionMesa={origen.sesionMesa}
-                />
               </div>
             )}
 

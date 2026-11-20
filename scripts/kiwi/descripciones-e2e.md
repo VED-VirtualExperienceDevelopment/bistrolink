@@ -46,6 +46,7 @@
 | 1.38 | 15/11/2026 | TC-E-125: la carta del comensal abierta muestra «No disponible» al volver a la pestaña después de que el administrador agota el plato (BL-570). |
 | 1.39 | 15/11/2026 | Se borran los bloques de TC-E-122 a 125, ya cargados en Kiwi. TC-E-126: sello de pago seguro (HU-051 / BL-563). |
 | 1.40 | 15/11/2026 | Se borra el bloque de TC-E-126, ya cargado en Kiwi. TC-E-127: valoración privada del pedido (HU-050 / BL-558). |
+| 1.41 | 20/11/2026 | TC-E-002, 012 y 013 cambian: «Llamar al mozo» en la barra superior, con la confirmación en el botón y «En el local · Mesa N» en la portada. TC-E-128 y 129: el botón a 360 px y «Volver a llamar» pasado el minuto (BL-592). |
 
 Plantilla para cargar en Kiwi la descripción de casos TC-E (Playwright)
 nuevos o que cambiaron (BL-435). La usa
@@ -111,3 +112,81 @@ Staging, sin sesión (comensal por el enlace web del local) y el Administrador l
 3. Queda elegida «4 de 5: Muy bueno».
 4. «¡Gracias! Le llegó al local. No se publica.»
 5. El comentario aparece con 4 de 5 estrellas y el día, sin la mesa ni el pedido, y se ve el promedio.
+
+## TC-E-002
+
+### Precondición
+
+Mesa 1 del seed abierta. Comensal sin sesión, con el QR de la mesa.
+
+### Pasos
+
+1. Abrir la carta desde el QR de la mesa 1.
+
+### Resultado esperado
+
+1. Se ven el nombre, la descripción y el precio de «Milanesa a la napolitana» ($ 590), y la portada dice «En el local · Mesa 1».
+
+## TC-E-012
+
+### Precondición
+
+Mesa 1 del seed abierta. El Mozo logueado en la pantalla Alertas, en otra pestaña.
+
+### Pasos
+
+1. Abrir la carta desde el QR de la mesa 1.
+2. Tocar «Llamar al mozo» en la barra superior.
+
+### Resultado esperado
+
+1. El botón «Llamar al mozo» está en la barra superior.
+2. En la pantalla del Mozo aparece «Mesa 1 solicita atención» en vivo, sin recargar. El botón del comensal pasa a «Mozo avisado», sin tiempos, y el lector de pantalla anuncia «Listo, avisamos al mozo.».
+
+## TC-E-013
+
+### Precondición
+
+Mesa 2 del seed abierta, sin llamados en el último minuto.
+
+### Pasos
+
+1. Abrir la carta desde el QR de la mesa 2 y tocar «Llamar al mozo».
+2. Recargar la página y tocar «Llamar al mozo» otra vez.
+
+### Resultado esperado
+
+1. El botón pasa a «Mozo avisado».
+2. La API responde 429 (1 llamado por minuto por mesa). El botón queda en «Mozo avisado», igual que en el primer llamado, sin tono de error ni tiempos; el lector de pantalla anuncia «Ya avisamos al mozo.».
+
+## TC-E-128
+
+### Precondición
+
+Mesa 1 del seed abierta. Comensal sin sesión, en un celular de 360 px de ancho.
+
+### Pasos
+
+1. Abrir la carta desde el QR de la mesa 1, sin tocar el botón.
+2. Revisar la barra superior con axe (WCAG 2.1 AA).
+
+### Resultado esperado
+
+1. En la barra superior hay un solo botón para llamar al mozo: se ve «Mozo», su nombre accesible es «Llamar al mozo» y mide 44 px de alto o más. Al final de la carta no hay otro. La portada dice «En el local · Mesa 1».
+2. Sin errores graves ni críticos de accesibilidad.
+
+## TC-E-129
+
+### Precondición
+
+Una mesa de prueba creada y abierta por el Administrador, sin llamados. El reloj del navegador controlado por el test.
+
+### Pasos
+
+1. Abrir la carta desde el QR de la mesa y tocar «Llamar al mozo».
+2. Adelantar el reloj 61 segundos.
+
+### Resultado esperado
+
+1. El botón pasa a «Mozo avisado», sin números ni cuenta regresiva, y no se puede volver a tocar (aria-disabled).
+2. El botón pasa a «Volver a llamar» y se puede tocar de nuevo.

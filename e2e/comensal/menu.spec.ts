@@ -55,8 +55,11 @@ test.describe("HU-001: Menú digital vía QR", () => {
     // TC-E-050 (gestion-carta.spec.ts) en paralelo, o que dejó una corrida
     // anterior, y el locator falla por strict mode.
     await expect(page.getByText("$ 590", { exact: true })).toBeVisible();
-    // BL-204: el encabezado muestra el número de la mesa del QR.
-    await expect(page.getByText("Mesa 1", { exact: true })).toBeVisible();
+    // BL-204: la portada muestra el número de la mesa del QR. BL-592: junto
+    // a «En el local», que salió de la barra superior.
+    await expect(
+      page.getByText("En el local · Mesa 1", { exact: true }),
+    ).toBeVisible();
   });
 
   test("[TC-E-003] HU-001: bloquea visualmente un ítem no disponible sin ocultarlo", async ({
