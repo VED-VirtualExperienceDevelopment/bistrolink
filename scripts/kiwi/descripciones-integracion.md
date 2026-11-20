@@ -75,19 +75,21 @@ API de integración con la base, el RLS y Keycloak reales. Administrador del ten
 
 ### Pasos
 
-1. Dar de alta un mozo y ponerle una contraseña definitiva.
-2. Intentar ingresar 3 veces con una contraseña equivocada y una vez con la correcta.
-3. Pedir `GET /usuarios` como Administrador.
-4. Llamar a `POST /usuarios/:id/desbloquear`.
-5. Ingresar con la contraseña correcta y volver a pedir el listado.
+1. Dar de alta un mozo con email, nombre y apellido, y ponerle una contraseña definitiva.
+2. Ingresar con esa contraseña.
+3. Intentar ingresar 3 veces con una contraseña equivocada y una vez con la correcta.
+4. Pedir `GET /usuarios` como Administrador.
+5. Llamar a `POST /usuarios/:id/desbloquear`.
+6. Ingresar con la contraseña correcta y volver a pedir el listado.
 
 ### Resultado esperado
 
 1. 201.
-2. Ningún intento entra: después del tercero, tampoco con la contraseña correcta.
-3. El mozo figura con `bloqueada: true`.
-4. 200 con `{ id, bloqueada: false }`.
-5. Ingresa con la misma contraseña (no se cambió) y el listado lo muestra con `bloqueada: false`.
+2. 200: la cuenta está completa y la contraseña sirve antes del bloqueo.
+3. Ningún intento entra: después del tercero, tampoco con la contraseña correcta.
+4. El mozo figura con `bloqueada: true`.
+5. 200 con `{ id, bloqueada: false }`.
+6. Ingresa con la misma contraseña (no se cambió) y el listado lo muestra con `bloqueada: false`.
 
 ## TC-I-244
 

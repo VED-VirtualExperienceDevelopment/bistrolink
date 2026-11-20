@@ -1723,7 +1723,12 @@ describe('Gestión de usuarios (HU-013) - desbloquear (BL-371)', () => {
         }),
       },
     );
-    return res.status;
+    // El motivo de Keycloak (sin tokens) para que un fallo diga qué pasó.
+    const cuerpo = (await res.json()) as { error_description?: string };
+    return {
+      status: res.status,
+      error: res.ok ? undefined : cuerpo.error_description,
+    };
   }
 
   beforeAll(async () => {
@@ -1781,6 +1786,10 @@ describe('Gestión de usuarios (HU-013) - desbloquear (BL-371)', () => {
         .set('Authorization', `Bearer ${tokenAdmin}`)
         .send({
           username,
+          // Sin email, el perfil del realm deja la cuenta «not fully set up»
+          // y el password grant responde 400 aunque la contraseña sea la
+          // correcta (como en TC-I-045).
+          email: `${username}@bistrolink.dev`,
           nombre: 'Mozo',
           apellido: 'Bloqueo',
           rol: 'MOZO',
@@ -1796,26 +1805,42 @@ describe('Gestión de usuarios (HU-013) - desbloquear (BL-371)', () => {
 
       // Contraseña definitiva para poder ingresar después del desbloqueo.
       const contrasena = `Bloqueo-${Date.now()}`;
-      await fetch(
-        `${KEYCLOAK_URL}/admin/realms/${REALM}/users/${keycloakId}/reset-password`,
-        {
-          method: 'PUT',
-          headers: await adminHeaders(),
-          body: JSON.stringify({
-            type: 'password',
-            value: contrasena,
-            temporary: false,
-          }),
-        },
-      );
+      const base = `${KEYCLOAK_URL}/admin/realms/${REALM}/users/${keycloakId}`;
+      const perfil = await fetch(base, {
+        method: 'PUT',
+        headers: await adminHeaders(),
+        body: JSON.stringify({ firstName: 'Mozo', lastName: 'Bloqueo' }),
+      });
+      expect(perfil.ok).toBe(true);
+      const reset = await fetch(`${base}/reset-password`, {
+        method: 'PUT',
+        headers: await adminHeaders(),
+        body: JSON.stringify({
+          type: 'password',
+          value: contrasena,
+          temporary: false,
+        }),
+      });
+      expect(reset.ok).toBe(true);
+
+      // Antes de bloquearla, la cuenta entra: así el 200 del final prueba el
+      // desbloqueo y no otra cosa (perfil incompleto, contraseña temporal).
+      expect(await intentarIngreso(username, contrasena)).toEqual({
+        status: 200,
+        error: undefined,
+      });
 
       // Tres intentos fallidos: Keycloak bloquea la cuenta y rechaza incluso
       // la contraseña correcta (con el mismo error genérico, sin decir que
       // está bloqueada).
       for (let i = 0; i < 3; i++) {
-        expect(await intentarIngreso(username, 'equivocada')).not.toBe(200);
+        expect((await intentarIngreso(username, 'equivocada')).status).not.toBe(
+          200,
+        );
       }
-      expect(await intentarIngreso(username, contrasena)).not.toBe(200);
+      expect((await intentarIngreso(username, contrasena)).status).not.toBe(
+        200,
+      );
 
       const lista = await request(app.getHttpServer())
         .get('/usuarios')
@@ -1833,7 +1858,10 @@ describe('Gestión de usuarios (HU-013) - desbloquear (BL-371)', () => {
       expect(res.body).toEqual({ id, bloqueada: false });
 
       // Ingresa con la misma contraseña de antes.
-      expect(await intentarIngreso(username, contrasena)).toBe(200);
+      expect(await intentarIngreso(username, contrasena)).toEqual({
+        status: 200,
+        error: undefined,
+      });
       const otraVez = await request(app.getHttpServer())
         .get('/usuarios')
         .set('Authorization', `Bearer ${tokenAdmin}`)
