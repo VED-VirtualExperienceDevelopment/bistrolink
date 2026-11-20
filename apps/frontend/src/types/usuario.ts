@@ -31,6 +31,9 @@ export interface Usuario {
   // BL-382: tiene pedidos o historial de estados. Solo los que no tienen se
   // pueden eliminar. No viene en la cuenta de cocina (no se elimina).
   tieneHistorial?: boolean;
+  // BL-371: Keycloak la bloqueó por intentos fallidos de ingreso. undefined
+  // = el backend no lo pudo leer (no se muestra ni se ofrece desbloquear).
+  bloqueada?: boolean;
 }
 
 export interface CrearUsuarioPayload {
@@ -88,6 +91,13 @@ export interface RestablecerContrasenaResponse {
 export interface CerrarSesionesResponse {
   id: string;
   sesionesCerradas: true;
+}
+
+// BL-371: respuesta de POST /usuarios/:id/desbloquear (y de la cuenta de
+// cocina). Si Keycloak no responde, el backend responde 503.
+export interface DesbloquearResponse {
+  id: string;
+  bloqueada: false;
 }
 
 export interface ApiErrorBody {
