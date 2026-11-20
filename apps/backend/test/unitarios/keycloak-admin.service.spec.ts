@@ -627,6 +627,63 @@ describe('KeycloakAdminService', () => {
     });
   });
 
+  describe('bloqueo por intentos fallidos (BL-371)', () => {
+    it('[TC-U-647] KeycloakAdminService.estadoDeBloqueo lee attack-detection y devuelve el estado y los fallos, sin la IP', async () => {
+      mockTokenRequest();
+      fetchMock.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          disabled: true,
+          numFailures: 5,
+          lastIPFailure: '203.0.113.7',
+          lastFailure: 1,
+        }),
+      });
+
+      const estado = await service.estadoDeBloqueo('kc-1');
+
+      expect(estado).toEqual({ bloqueada: true, fallos: 5 });
+      expect(fetchMock.mock.calls[1][0]).toMatch(
+        /\/attack-detection\/brute-force\/users\/kc-1$/,
+      );
+    });
+
+    it('[TC-U-648] KeycloakAdminService.desbloquear llama a DELETE de attack-detection', async () => {
+      mockTokenRequest();
+      fetchMock.mockResolvedValueOnce({ ok: true, status: 204 });
+
+      await service.desbloquear('kc-1');
+
+      expect(fetchMock.mock.calls[1][0]).toMatch(
+        /\/attack-detection\/brute-force\/users\/kc-1$/,
+      );
+      expect(fetchMock.mock.calls[1][1]).toMatchObject({ method: 'DELETE' });
+    });
+
+    it('[TC-U-649] KeycloakAdminService.estadoDeBloqueo y desbloquear lanzan si Keycloak rechaza (por ejemplo, sin manage-users)', async () => {
+      mockTokenRequest();
+      fetchMock.mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        text: async () => 'forbidden',
+      });
+      await expect(service.estadoDeBloqueo('kc-1')).rejects.toThrow(
+        InternalServerErrorException,
+      );
+
+      mockTokenRequest();
+      fetchMock.mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        text: async () => 'forbidden',
+      });
+      await expect(service.desbloquear('kc-1')).rejects.toThrow(
+        InternalServerErrorException,
+      );
+      expect(loggerErrorSpy).toHaveBeenCalled();
+    });
+  });
+
   describe('deleteUser', () => {
     it('[TC-U-017] resuelve sin lanzar cuando Keycloak confirma la eliminación (204)', async () => {
       mockTokenRequest();

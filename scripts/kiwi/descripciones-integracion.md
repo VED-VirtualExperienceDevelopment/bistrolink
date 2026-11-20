@@ -55,6 +55,7 @@
 | 1.48    | 18/11/2026 | TC-I-239 a 242: el token de invitado del comensal atado a su canal (HU-052 / BL-580).                                                                                                                                                     |
 | 1.49    | 19/11/2026 | Se borran los bloques de TC-I-238 a 242, ya cargados en Kiwi (HU-052 / BL-584).                                                                                                                                                           |
 | 1.50    | 19/11/2026 | TC-I-034, 044, 050, 052, 090 y 238: el comensal usa siempre el token de invitado de la API y el alta ya no crea el comensal técnico (HU-052 / BL-581).                                                                                    |
+| 1.51    | 19/11/2026 | Se borran los bloques de TC-I-034, 044, 050, 052, 090 y 238, ya cargados en Kiwi. TC-I-243 y 244: desbloquear una cuenta bloqueada por intentos fallidos (BL-371), para cargar con el script antes de mergear el PR.                      |
 
 Texto del campo de descripción de cada caso TC-I en Kiwi. Lo carga
 `cargar-casos-integracion.mjs --descripciones`: cada bloque `## TC-I-NNN`
@@ -66,116 +67,40 @@ esperado`, igual que los casos cargados a mano desde TC-I-029.
 
 ## Casos para cargar
 
-## TC-I-034
+## TC-I-243
 
 ### Precondición
 
-Backend de integración con la base, el RLS y Keycloak reales, y el seed aplicado: mesa 1 (`33333333-3333-3333-3333-333333333333`) del tenant de prueba A, abierta.
+API de integración con la base, el RLS y Keycloak reales. Administrador del tenant de prueba A (`admin-test`). El test enciende la protección contra fuerza bruta del realm (3 intentos fallidos) y al final la deja como estaba.
 
 ### Pasos
 
-1. Pedir el token del comensal de la mesa 1: `POST /auth/comensal/mesa` con el token del QR y la sesión de la mesa (token de invitado que firma la API, HU-052).
-2. Con ese token, el token del QR y la sesión, llamar al mozo: `POST /mesas/llamar` (control positivo).
-3. Con el mismo token: `GET /mesas/layout`, `POST /mesas/layout`, `PUT /mesas/{id}` y `POST /mesas/{id}/abrir`, `/cerrar` y `/limpia`.
-4. Leer la mesa en la base.
+1. Dar de alta un mozo y ponerle una contraseña definitiva.
+2. Intentar ingresar 3 veces con una contraseña equivocada y una vez con la correcta.
+3. Pedir `GET /usuarios` como Administrador.
+4. Llamar a `POST /usuarios/:id/desbloquear`.
+5. Ingresar con la contraseña correcta y volver a pedir el listado.
 
 ### Resultado esperado
 
-1. 200 con el token del comensal.
-2. 201: el token es válido y tiene el rol COMENSAL.
-3. 403 en todos: el rol del método (ADMIN o MOZO) reemplaza al COMENSAL de la clase.
-4. El layout y el estado de la mesa no cambiaron.
+1. 201.
+2. Ningún intento entra: después del tercero, tampoco con la contraseña correcta.
+3. El mozo figura con `bloqueada: true`.
+4. 200 con `{ id, bloqueada: false }`.
+5. Ingresa con la misma contraseña (no se cambió) y el listado lo muestra con `bloqueada: false`.
 
-## TC-I-044
+## TC-I-244
 
 ### Precondición
 
-Keycloak, Postgres y backend con el seed aplicado: tenant de prueba A (`11111111-1111-1111-1111-111111111111`) con la mesa `33333333-3333-3333-3333-333333333333` y su sesión abierta. El comensal usa el token de invitado que firma la API, sin usuario en Keycloak (HU-052; desde BL-581, el único emisor).
+API de integración con Keycloak real. Administrador del tenant de prueba A y la cuenta de cocina del tenant B (`test-users.json`).
 
 ### Pasos
 
-1. Pedir un token de comensal de la mesa: `POST /auth/comensal/mesa` con el token del QR y la sesión de la mesa.
-2. Con ese token, leer la cuenta: `GET /realms/bistrolink/account`.
-3. Con ese token, intentar el cambio de tenant: `POST /realms/bistrolink/account` con `attributes.tenant_id = ["b02579f2-2bb0-496b-abf2-33c494c93122"]`.
-4. Leer los claims del token.
+1. Llamar a `POST /usuarios/cocina/:keycloakId/desbloquear` con la cuenta de cocina del tenant B.
+2. Llamar a `POST /usuarios/:id/desbloquear` con un id que no existe en el tenant.
 
 ### Resultado esperado
 
-El paso 1 responde 200 con `accessToken`. Los pasos 2 y 3 responden 401 o 403: la API de cuenta de Keycloak rechaza el token, que no firmó Keycloak. En el paso 4 el emisor es `bistrolink-api` y el `tenant_id` sigue siendo `11111111-1111-1111-1111-111111111111`: no hay cuenta que cambiar, y el tenant del token no se puede modificar sin la clave de la API.
-
-## TC-I-050
-
-### Precondición
-
-Backend de integración con la base y Keycloak reales, el rol PLATAFORMA en el realm y un usuario PLATAFORMA creado por el test (sin OTP). RUT válido y único por corrida.
-
-### Pasos
-
-1. `POST /plataforma/establecimientos` con el token PLATAFORMA y los datos del alta (razón social, RUT, restaurante, Administrador y Cocina).
-2. Leer en la base el tenant, el restaurante, la mesa virtual y la fila del Administrador.
-3. Buscar en Keycloak al Administrador, la cuenta Cocina y un usuario `comensal-<tenantId>`.
-4. Pedir el token del comensal del local nuevo: `POST /auth/comensal` con el tenant y el restaurante creados.
-
-### Resultado esperado
-
-1. 201 con `Cache-Control: no-store`, tenant y restaurante creados, y contraseña temporal solo para el Administrador y Cocina.
-2. Tenant con quien dio el alta, un restaurante, la mesa virtual (número 0) y solo la fila del Administrador.
-3. Administrador y Cocina con su rol y el perfil completo. No existe ningún comensal técnico (BL-581).
-4. 200: token de invitado con emisor `bistrolink-api` y el tenant nuevo.
-
-## TC-I-052
-
-### Precondición
-
-El establecimiento creado en TC-I-050, con su restaurante.
-
-### Pasos
-
-1. Pedir el token del comensal del local nuevo: `POST /auth/comensal` con su tenant y su restaurante.
-2. Con ese token, `POST /plataforma/establecimientos` con los datos de un alta.
-
-### Resultado esperado
-
-1. 200 con el token de invitado.
-2. 401: el token del comensal lo firma la API y no sirve en los endpoints de la plataforma, que solo aceptan el token de Keycloak con el rol PLATAFORMA. No se crea nada.
-
-## TC-I-090
-
-### Precondición
-
-Establecimiento dado de alta por el test desde la plataforma, con Administrador y Cocina con contraseña fija, y su restaurante.
-
-### Pasos
-
-1. Pedir los tokens del Administrador y de Cocina (Keycloak) y el del comensal (`POST /auth/comensal`, token de invitado de la API).
-2. Con cada token del personal, `GET /test/mi-tenant`; con el del comensal, `POST /pedidos` sin body; y abrir el menú público.
-3. Suspender el establecimiento desde la plataforma, con un motivo.
-4. Repetir el paso 2 con los mismos tokens, abrir el menú público y pedir un token nuevo de comensal.
-5. Reactivar el establecimiento, pedir un token nuevo del Administrador y abrir el menú.
-
-### Resultado esperado
-
-1. Los tres tokens se emiten.
-2. 200 con el personal; 400 de validación con el comensal (el token pasó la autenticación); menú 200.
-3. 200 con estado SUSPENDIDO y el motivo.
-4. 403 con `codigo: ESTABLECIMIENTO_SUSPENDIDO` para el personal, el comensal y el menú, sin el motivo ni la palabra «suspendido» en lo que ve el comensal; `POST /auth/comensal` responde 403.
-5. Estado ACTIVO; el Administrador vuelve a entrar y el menú responde 200.
-
-## TC-I-238
-
-### Precondición
-
-API de integración con la base, el RLS y Keycloak reales, y la clave del token de invitado (`COMENSAL_TOKEN_CLAVE`). Restaurante y mesa 1 del tenant de prueba A, con la sesión de la mesa abierta.
-
-### Pasos
-
-1. Pedir el token del comensal para retirar: `POST /auth/comensal` con el tenant y el restaurante.
-2. Pedir el token del comensal en la mesa: `POST /auth/comensal/mesa` con el token del QR y la sesión de la mesa.
-3. Verificar los dos tokens con la clave de la API.
-4. Llamar a `POST /pedidos` con el body vacío y cada token.
-
-### Resultado esperado
-
-1. y 2. 200 con `{ accessToken, expiresIn }` y `expiresIn` de 3600 segundos.
-2. Los dos los firmó la API, con el rol COMENSAL, el tenant y el restaurante. El de retiro tiene el canal `retiro`; el de la mesa, el canal `mesa` con la mesa y la sesión.
-3. 400 de validación: los dos tokens pasan la autenticación y el rol.
+1. 404: no se puede tocar ni averiguar una cuenta de otro tenant.
+2. 404.

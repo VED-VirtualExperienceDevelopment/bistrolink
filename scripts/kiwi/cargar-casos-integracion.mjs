@@ -1163,6 +1163,18 @@ const DATOS_INTEGRACION = {
     priority: "P1",
     tags: ["BL-580", "canal", "retiro"],
   }),
+  // BL-371: desbloquear una cuenta bloqueada por intentos fallidos, en
+  // usuarios.e2e-spec.ts.
+  243: usuarios("BL-371", {
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["seguridad", "fuerza-bruta"],
+  }),
+  244: usuarios("BL-371", {
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["seguridad", "multi-tenant"],
+  }),
 };
 /**
  * BL-435: datos de los E2E TC-E-017 en adelante, con los criterios de
