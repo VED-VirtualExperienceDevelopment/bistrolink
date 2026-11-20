@@ -51,6 +51,7 @@ export const ETIQUETAS_ACCION: Record<string, string> = {
   USUARIO_DATOS_MODIFICADOS: "Datos de usuario modificados",
   USUARIO_SESIONES_CERRADAS: "Sesiones cerradas",
   USUARIO_ELIMINADO: "Usuario eliminado",
+  USUARIO_DESBLOQUEADO: "Cuenta desbloqueada", // BL-371
   ESTABLECIMIENTO_APROVISIONADO: "Alta del establecimiento",
   ESTABLECIMIENTO_DATOS_MODIFICADOS: "Datos del establecimiento modificados",
   ESTABLECIMIENTO_SUSPENDIDO: "Establecimiento suspendido",

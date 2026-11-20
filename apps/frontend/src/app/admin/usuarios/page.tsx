@@ -12,6 +12,7 @@ import { ReactivarUsuarioDialog } from '@/components/admin/usuarios/ReactivarUsu
 import { RestablecerContrasenaDialog } from '@/components/admin/usuarios/RestablecerContrasenaDialog';
 import { CerrarSesionesDialog } from '@/components/admin/usuarios/CerrarSesionesDialog';
 import { EliminarUsuarioDialog } from '@/components/admin/usuarios/EliminarUsuarioDialog';
+import { DesbloquearUsuarioDialog } from '@/components/admin/usuarios/DesbloquearUsuarioDialog';
 import { FiltrosUsuarios } from '@/components/admin/usuarios/FiltrosUsuarios';
 import {
   FILTROS_INICIALES,
@@ -63,6 +64,8 @@ export default function UsuariosPage() {
   const [usuarioAEliminar, setUsuarioAEliminar] = useState<Usuario | null>(null);
   const [usuarioARestablecer, setUsuarioARestablecer] = useState<Usuario | null>(null);
   const [usuarioACerrarSesiones, setUsuarioACerrarSesiones] = useState<Usuario | null>(null);
+  // BL-371: cuenta bloqueada por intentos fallidos.
+  const [usuarioADesbloquear, setUsuarioADesbloquear] = useState<Usuario | null>(null);
 
   const cargarUsuarios = useCallback(async () => {
     if (!token) return;
@@ -183,6 +186,7 @@ export default function UsuariosPage() {
           onRestablecerContrasena={setUsuarioARestablecer}
           onCerrarSesiones={setUsuarioACerrarSesiones}
           onEliminar={setUsuarioAEliminar}
+          onDesbloquear={setUsuarioADesbloquear}
           keycloakIdPropio={keycloakId}
         />
       )}
@@ -247,6 +251,18 @@ export default function UsuariosPage() {
         usuario={usuarioAReactivar}
         onReactivado={(id) =>
           setUsuarios((prev) => prev.map((u) => (u.id === id ? { ...u, activo: true } : u)))
+        }
+      />
+
+      {/* BL-371: key por usuario, así el error no queda de una persona a otra. */}
+      <DesbloquearUsuarioDialog
+        key={`desbloquear-${usuarioADesbloquear?.id ?? 'ninguno'}`}
+        open={usuarioADesbloquear !== null}
+        onClose={() => setUsuarioADesbloquear(null)}
+        token={token}
+        usuario={usuarioADesbloquear}
+        onDesbloqueado={(id) =>
+          setUsuarios((prev) => prev.map((u) => (u.id === id ? { ...u, bloqueada: false } : u)))
         }
       />
 
