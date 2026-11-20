@@ -185,7 +185,8 @@ export function UsuariosTable({
                       <span className="material-symbols-outlined text-[18px]" aria-hidden="true">
                         lock
                       </span>
-                      Ingreso bloqueado
+                      {/* En su propio span: el espacio lo da gap-1.5 (Sonar S6772). */}
+                      <span>Ingreso bloqueado</span>
                     </span>
                   )}
                 </span>
