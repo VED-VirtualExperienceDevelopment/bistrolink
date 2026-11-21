@@ -8,6 +8,7 @@ import {
   AVISO_SIN_DETALLE,
   anotaciones,
   falla,
+  leerFueraDeAlcance,
   leerReglas,
   renderMarkdown,
   resumirInforme,
@@ -250,5 +251,136 @@ describe("anotaciones", () => {
       anotaciones(resumirInforme(sinRelevantes), "API (completo)", false),
       [],
     );
+  });
+});
+
+// Verificación del 21/11/2026: falso positivo de inyección SQL acotado a dos
+// rutas con OUTOFSCOPE, sin apagar la regla en el resto de la API.
+const API = "https://bistrolink-api-staging.up.railway.app";
+const informeSql = {
+  site: [
+    {
+      "@name": API,
+      alerts: [
+        {
+          pluginid: "40018",
+          name: "SQL Injection",
+          riskcode: "3",
+          confidence: "2",
+          count: "2",
+          cweid: "89",
+          instances: [
+            { uri: `${API}/admin/menu/categoria`, method: "POST" },
+            { uri: `${API}/admin/menu/imagenes/confirmar`, method: "POST" },
+          ],
+        },
+      ],
+    },
+  ],
+};
+const REGLAS_SQL = [
+  "# Falso positivo revisado: Prisma parametriza la consulta",
+  "40018\tOUTOFSCOPE\thttps://[^/]+/admin/menu/categoria$",
+  "",
+  "# Falso positivo revisado: no consulta la base de datos",
+  "40018\tOUTOFSCOPE\thttps://[^/]+/admin/menu/imagenes/confirmar$",
+].join("\n");
+
+describe("leerFueraDeAlcance", () => {
+  test("lee las rutas por regla con el motivo del comentario anterior", () => {
+    const fuera = leerFueraDeAlcance(REGLAS_SQL);
+    assert.deepEqual([...fuera.keys()], ["40018"]);
+    assert.equal(fuera.get("40018").length, 2);
+    assert.equal(
+      fuera.get("40018")[0].motivo,
+      "Falso positivo revisado: Prisma parametriza la consulta",
+    );
+  });
+
+  test("acepta varias reglas separadas por coma y «*» para todas", () => {
+    const fuera = leerFueraDeAlcance(
+      "# motivo de prueba largo\n10010,10011\tOUTOFSCOPE\thttps://x/a$\n# otro motivo largo\n*\tOUTOFSCOPE\thttps://x/b$",
+    );
+    assert.deepEqual([...fuera.keys()].sort(), ["*", "10010", "10011"]);
+  });
+
+  test("leerReglas no toma las líneas OUTOFSCOPE como acción de la regla", () => {
+    assert.equal(leerReglas(REGLAS_SQL).has("40018"), false);
+  });
+
+  test("la regex se compara desde el principio de la URL, como ZAP", () => {
+    const [entrada] = leerFueraDeAlcance(
+      "# motivo de prueba largo\n40018\tOUTOFSCOPE\t/admin/menu/categoria$",
+    ).get("40018");
+    assert.equal(entrada.patron.test(`${API}/admin/menu/categoria`), false);
+    assert.equal(entrada.patron.test("/admin/menu/categoria"), true);
+  });
+
+  test("el archivo real: cada OUTOFSCOPE tiene motivo y una ruta concreta", () => {
+    const fuera = leerFueraDeAlcance(
+      readFileSync(new URL("./reglas-zap.tsv", import.meta.url), "utf-8"),
+    );
+    for (const [id, entradas] of fuera) {
+      for (const e of entradas) {
+        assert.ok(
+          e.motivo.length > 10,
+          `OUTOFSCOPE de ${id} sin motivo: ${e.regex}`,
+        );
+        assert.ok(
+          e.regex.endsWith("$"),
+          `OUTOFSCOPE de ${id} sin «$»: ${e.regex}`,
+        );
+        assert.match(
+          e.regex,
+          /\/[a-z]/,
+          `OUTOFSCOPE de ${id} sin ruta: ${e.regex}`,
+        );
+      }
+    }
+  });
+});
+
+describe("resumirInforme con OUTOFSCOPE", () => {
+  test("si todas las instancias están fuera de alcance, la alerta no cuenta", () => {
+    const r = resumirInforme(
+      informeSql,
+      leerReglas(REGLAS_SQL),
+      leerFueraDeAlcance(REGLAS_SQL),
+    );
+    assert.equal(r.porRiesgo[3], 0);
+    assert.equal(r.ignoradas.length, 1);
+    assert.equal(falla(r), false);
+  });
+
+  test("una instancia en otra ruta sigue contando: la regla no se apaga", () => {
+    const otra = structuredClone(informeSql);
+    otra.site[0].alerts[0].count = "3";
+    otra.site[0].alerts[0].instances.push({
+      uri: `${API}/pedidos`,
+      method: "POST",
+    });
+    const r = resumirInforme(
+      otra,
+      leerReglas(REGLAS_SQL),
+      leerFueraDeAlcance(REGLAS_SQL),
+    );
+    assert.equal(r.porRiesgo[3], 1);
+    assert.equal(r.vigentes[0].cantidad, 1);
+    assert.equal(r.vigentes[0].ejemplo, `POST ${API}/pedidos`);
+    assert.equal(falla(r), true);
+  });
+
+  test("las rutas parecidas no quedan fuera de alcance", () => {
+    const parecida = structuredClone(informeSql);
+    parecida.site[0].alerts[0].instances = [
+      { uri: `${API}/admin/menu/categoria/123`, method: "PUT" },
+    ];
+    parecida.site[0].alerts[0].count = "1";
+    const r = resumirInforme(
+      parecida,
+      leerReglas(REGLAS_SQL),
+      leerFueraDeAlcance(REGLAS_SQL),
+    );
+    assert.equal(falla(r), true);
   });
 });

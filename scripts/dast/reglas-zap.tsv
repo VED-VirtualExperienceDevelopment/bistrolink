@@ -2,6 +2,15 @@
 #
 # Formato (separado por TAB, no por espacios):
 #   <id de la regla>	<IGNORE|INFO|WARN|FAIL>	<motivo>
+#   <id de la regla>	OUTOFSCOPE	<regex de la URL>
+#
+# IGNORE descarta la regla en todo el objetivo. OUTOFSCOPE la descarta solo en
+# las URLs que coinciden con la regex (ZAP la compara desde el principio de la
+# URL), y la regla sigue activa en el resto: es la opción para un falso
+# positivo de una ruta concreta. La línea OUTOFSCOPE no tiene columna de
+# motivo (ZAP toma todo lo que sigue al segundo TAB como regex): el motivo va
+# en el bloque de comentarios # inmediatamente anterior, sin línea en blanco
+# en el medio. Lo controla resumen-zap.test.mjs.
 #
 # Se agrega una línea IGNORE solo después de revisar la alerta y concluir que
 # es un falso positivo o un riesgo aceptado. El motivo es obligatorio (lo
@@ -12,4 +21,17 @@
 # lista de reglas está en https://www.zaproxy.org/docs/alerts/
 #
 # Triage de la primera corrida (baseline y completo): sin falsos positivos.
+# Triage de la verificación del 21/11/2026: un falso positivo de inyección SQL
+# en dos rutas (abajo).
 # Los riesgos aceptados no se ignoran acá: están en docs/security/dast-informe.md.
+
+# 40018 (SQL Injection, booleana): falso positivo revisado contra el código el
+# 21/11/2026 (docs/security/dast-informe.md, «Falsos positivos»). La categoría
+# se guarda con Prisma (consulta parametrizada) y es un endpoint que crea
+# datos: las respuestas difieren por estado, no por SQL.
+40018	OUTOFSCOPE	https://[^/]+/admin/menu/categoria$
+
+# 40018 (SQL Injection, booleana): falso positivo revisado contra el código el
+# 21/11/2026. La confirmación de imágenes no consulta la base: valida la key
+# con un patrón y las respuestas cambian por el límite de pedidos (400 o 429).
+40018	OUTOFSCOPE	https://[^/]+/admin/menu/imagenes/confirmar$
