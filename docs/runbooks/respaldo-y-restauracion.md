@@ -1,7 +1,7 @@
 # Runbook: respaldo y restauración de bases de datos
 
-> **Historia:** HU-029 (BL-183) · **Relacionado:** HU-030 (réplica en Cloudflare R2), BL-217 (contingencia Railway → Render) · **Documentación del proyecto:** Anexo 12, secciones 4, 5 y 6.
-> **Última revisión:** 29/09/2026.
+> **Historias:** HU-029 (BL-183) y HU-030 (BL-184, réplica en Cloudflare R2, sección 9) · **Relacionado:** BL-217 (contingencia Railway → Render) · **Documentación del proyecto:** Anexo 12, secciones 4, 5 y 6.
+> **Última revisión:** 21/11/2026.
 
 ## 1. Qué se respalda y por qué
 
@@ -154,3 +154,113 @@ Después de cada verificación, registrar el resultado en la tabla del Anexo 12,
 - **Secretos:** las credenciales viven en variables _sealed_ de Railway y en secrets de GitHub. El script nunca imprime las URLs de conexión.
 - **Cifrado:** en tránsito (HTTPS a S3) y en reposo (SSE-S3). Los buckets bloquean el acceso público.
 - **Mejora futura:** reemplazar las access keys permanentes por credenciales temporales (OIDC de GitHub a un rol de IAM).
+
+## 9. Réplica en Cloudflare R2 (HU-030)
+
+Completa la regla **3-2-1**: además de la copia en Amazon S3, producción tiene una copia en otro proveedor. Si S3 no está disponible, o se pierde la cuenta de AWS, los respaldos y los CFE se recuperan desde R2.
+
+### 9.1 Qué se replica y cómo
+
+| Origen (S3, producción)   | Réplica (R2)                      | Contenido                                        | Cómo se copia                                                                                  |
+| ------------------------- | --------------------------------- | ------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| `bistrolink-backups-prod` | `bistrolink-backups-prod-replica` | Dumps diarios y mensuales de las dos bases       | Por checksum: un dump que se vuelve a generar el mismo día («Run now») se actualiza en R2      |
+| `bistrolink-cfe-prod`     | `bistrolink-cfe-prod-replica`     | PDF de los CFE (`{tenant_id}/cfe/{yyyy}/{mm}/…`) | Inmutable: un CFE ya replicado nunca se reemplaza; si cambiara en S3, la réplica falla y avisa |
+
+- **Servicio:** `replica-r2-prod` (`infra/replica-r2/`), cron **cada hora** en el entorno `production` de Railway. Usa `rclone copy`, nunca `sync`: **un borrado en S3 no se propaga a R2.**
+- **Atraso máximo esperado:** 1 hora. Los dumps se generan una vez por día, así que no cambia el RPO de la sección 1.
+- **Marca de control:** al terminar bien, el servicio escribe `_replica/estado.json` en `bistrolink-backups-prod-replica` con la fecha de la última réplica correcta.
+- **Staging no se replica.**
+
+```mermaid
+flowchart LR
+  S3B[("S3: bistrolink-backups-prod")] --> RP["replica-r2-prod<br/>Railway, cron cada hora<br/>infra/replica-r2"]
+  S3C[("S3: bistrolink-cfe-prod")] --> RP
+  RP -- "rclone copy" --> R2B[("R2: bistrolink-backups-prod-replica")]
+  RP -- "rclone copy (inmutable)" --> R2C[("R2: bistrolink-cfe-prod-replica")]
+  CK["db-backup-check.yml<br/>job replica-r2, diario"] -- "solo lectura" --> R2B
+  CK -. "falla = alerta por mail" .-> Equipo((Equipo))
+```
+
+### 9.2 Credenciales (mínimo privilegio)
+
+| Quién                           | Credencial                             | Permisos                                                        | Dónde vive                                                                        |
+| ------------------------------- | -------------------------------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `replica-r2-prod`, lectura S3   | Usuario de IAM `bistrolink-replica-r2` | `ListBucket` y `GetObject` en los dos buckets de origen         | Infisical `prod/replica-r2`, sincronizado al servicio de Railway                  |
+| `replica-r2-prod`, escritura R2 | Token de R2 `bistrolink-replica-prod`  | Object Read & Write, solo en los dos buckets de réplica         | Infisical `prod/replica-r2`, sincronizado al servicio de Railway                  |
+| Control diario (GitHub)         | Token de R2 `bistrolink-replica-check` | **Object Read only**, solo en `bistrolink-backups-prod-replica` | Infisical `staging/github` → secrets `R2_CHECK_*` y `R2_ENDPOINT` del repositorio |
+
+El usuario de IAM de la réplica **no puede modificar ni borrar** los originales de S3. Los tokens de R2 no pueden crear ni borrar buckets.
+
+### 9.3 Configuración del servicio `replica-r2-prod` en Railway
+
+Se hace una vez, en el entorno **production**.
+
+1. Proyecto de Railway → entorno **production** → **+ New** → **GitHub Repo** → repositorio `bistrolink`.
+2. Renombrar el servicio a **`replica-r2-prod`**.
+3. **Settings → Source:**
+   - **Branch:** la misma que usa `db-backup-prod` en el entorno production.
+   - **Root Directory:** `/infra/replica-r2`.
+   - **Watch Paths:** `/infra/replica-r2/**`.
+4. **Settings → Build:** Builder **Dockerfile**.
+5. **Settings → Deploy:**
+   - **Cron Schedule:** `17 * * * *`, a los 17 minutos de cada hora (UTC). No coincide con el respaldo de las 06:00 UTC: el dump del día se replica a las 06:17 o, si el respaldo tarda, a las 07:17.
+   - **Restart Policy:** **Never**. Una réplica fallida no se reintenta en bucle; la próxima hora vuelve a intentar y el control diario avisa si se atrasa.
+6. **Settings → Networking:** **sin** dominio público ni TCP Proxy.
+7. **Variables:** en Infisical, crear la **sync** de `prod/replica-r2` al servicio `replica-r2-prod` de Railway (entorno production). No cargar valores a mano en Railway. Son las 10 variables que lista `infra/replica-r2/replica.sh`.
+
+**Primera ejecución:** igual que en la sección 4.3, cambiar el horario a unos minutos después de la hora actual (UTC), revisar los logs (tienen que terminar con `réplica completa: 2 de 2 buckets`), verificar en R2 que estén los objetos y `_replica/estado.json`, y volver a dejar `17 * * * *`. Después, correr **Respaldo — verificar respaldo del día** eligiendo `prod`: el job **Réplica en R2** tiene que dar ✅.
+
+### 9.4 Retención en R2
+
+La réplica no borra nada, así que R2 necesita **sus propias reglas**, alineadas con S3. Se configuran en el panel de Cloudflare → **R2** → bucket → **Settings**.
+
+| Bucket                            | Regla                                                                                                                                                   | Igual que en S3                                    |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| `bistrolink-backups-prod-replica` | **Object Lifecycle Rules:** prefijo `daily/` → borrar a los **35 días**; prefijo `monthly/` → borrar a los **365 días**. **Sin** regla para `_replica/` | Reglas `respaldos-diarios` y `respaldos-mensuales` |
+| `bistrolink-cfe-prod-replica`     | **Bucket lock rules:** todo el bucket, retención de **5 años** (1825 días)                                                                              | Object Lock Governance de 5 años (RD.01)           |
+
+**No cambiar los prefijos de `infra/backup/backup.sh` sin cambiar también estas reglas.**
+
+### 9.5 Control diario
+
+El workflow **Respaldo — verificar respaldo del día** (`db-backup-check.yml`) tiene el job **Réplica en R2**. Corre todos los días y, a mano, al elegir `prod`. Falla si:
+
+1. la última réplica correcta (`_replica/estado.json`) tiene más de **3 horas** (variable `REPLICA_MAX_AGE_HOURS` del repositorio), o
+2. el último respaldo diario de alguna base de S3 no está en R2 con el mismo tamaño.
+
+Una corrida fallida **es la alerta**: GitHub avisa por mail y queda en la pestaña Actions.
+
+### 9.6 Restaurar desde R2
+
+> Para cuando S3 no está disponible. Una vez descargado y verificado el dump, la restauración sigue igual que en la sección 6, pasos 3 a 6.
+
+Se usa la AWS CLI contra la API de R2, con un token que pueda leer el bucket de réplica (el de solo lectura alcanza para los dumps). Los valores salen de Infisical; **no se pegan en chats ni en tickets**.
+
+```bash
+export AWS_ACCESS_KEY_ID=<access key del token de R2>
+export AWS_SECRET_ACCESS_KEY=<secret del token de R2>
+export R2_ENDPOINT=<R2_ENDPOINT de Infisical>
+
+# Ver los respaldos disponibles de una base
+aws s3 ls s3://bistrolink-backups-prod-replica/daily/bistrolink-db/2026/11/ \
+  --endpoint-url "$R2_ENDPOINT" --region auto
+
+# Bajar el dump y su checksum, y verificarlo
+aws s3 cp s3://bistrolink-backups-prod-replica/daily/bistrolink-db/2026/11/2026-11-21.dump . --endpoint-url "$R2_ENDPOINT" --region auto
+aws s3 cp s3://bistrolink-backups-prod-replica/daily/bistrolink-db/2026/11/2026-11-21.sha256 . --endpoint-url "$R2_ENDPOINT" --region auto
+sha256sum 2026-11-21.dump   # comparar con el contenido del .sha256
+```
+
+**CFE:** se baja igual desde `bistrolink-cfe-prod-replica` (necesita un token con lectura en ese bucket) y se verifica contra el SHA-256 guardado en `comprobante_fiscal.pdf_sha256`.
+
+**Simulacro:** la restauración desde R2 con S3 «caído» se ejecuta al menos una vez (BL-184) y en el simulacro de contingencia (BL-217). El resultado se registra en el Anexo 12, sección 6.3.
+
+### 9.7 Qué hacer si algo falla
+
+| Síntoma                                                   | Dónde se ve                      | Acción                                                                                                                                                             |
+| --------------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Falla el job **Réplica en R2** («Sin marca» o «Atrasada») | Mail de GitHub y pestaña Actions | Revisar los logs de `replica-r2-prod` en Railway. Si el servicio todavía no se creó, configurarlo (sección 9.3)                                                    |
+| Log con `falta la variable de entorno …`                  | Logs de `replica-r2-prod`        | Revisar la sync de Infisical `prod/replica-r2` al servicio                                                                                                         |
+| Log con `immutable file modified`                         | Logs de `replica-r2-prod`        | **Un CFE cambió en S3 después de replicarse.** No debería pasar: revisar el objeto en S3 y su `pdf_sha256`. La copia de R2 queda intacta. Registrar como incidente |
+| `AccessDenied` o `403`                                    | Logs o job de GitHub             | Token de R2 vencido o rotado, o política de IAM modificada: revisar la sección 9.2                                                                                 |
+| Falta un dump en R2 (job de GitHub)                       | Pestaña Actions                  | Ejecutar `replica-r2-prod` a mano (horario temporal, sección 9.3) y volver a correr el control                                                                     |
