@@ -57,6 +57,7 @@
 | 1.50    | 19/11/2026 | TC-I-034, 044, 050, 052, 090 y 238: el comensal usa siempre el token de invitado de la API y el alta ya no crea el comensal técnico (HU-052 / BL-581).                                                                                    |
 | 1.51    | 19/11/2026 | Se borran los bloques de TC-I-034, 044, 050, 052, 090 y 238, ya cargados en Kiwi. TC-I-243 y 244: desbloquear una cuenta bloqueada por intentos fallidos (BL-371), para cargar con el script antes de mergear el PR.                      |
 | 1.52    | 20/11/2026 | TC-I-243: la precondición dice que el realm ya trae la fuerza bruta encendida (BL-582) y que el test la fija en 3 intentos.                                                                                                               |
+| 1.53    | 21/11/2026 | Se borran los bloques de TC-I-243 y 244, ya cargados en Kiwi. TC-I-245 y 246: bot de pedidos para retirar por WhatsApp (HU-010 / BL-112), para cargar con el script antes de mergear el PR.                                               |
 
 Texto del campo de descripción de cada caso TC-I en Kiwi. Lo carga
 `cargar-casos-integracion.mjs --descripciones`: cada bloque `## TC-I-NNN`
@@ -68,42 +69,50 @@ esperado`, igual que los casos cargados a mano desde TC-I-029.
 
 ## Casos para cargar
 
-## TC-I-243
+## TC-I-245
 
 ### Precondición
 
-API de integración con la base, el RLS y Keycloak reales. Administrador del tenant de prueba A (`admin-test`). El realm trae encendida la protección contra fuerza bruta (BL-582: 5 intentos fallidos); el test la fija en 3 para no depender de esa configuración y al final la deja como estaba.
+API de integración con la base y el RLS reales. Evolution API simulado por un servidor HTTP local (el CI no usa WhatsApp). Variables del bot generadas en la corrida, con la instancia de prueba asignada al tenant A. El local del tenant A toma pedidos para retirar todo el día.
 
 ### Pasos
 
-1. Dar de alta un mozo con email, nombre y apellido, y ponerle una contraseña definitiva.
-2. Ingresar con esa contraseña.
-3. Intentar ingresar 3 veces con una contraseña equivocada y una vez con la correcta.
-4. Pedir `GET /usuarios` como Administrador.
-5. Llamar a `POST /usuarios/:id/desbloquear`.
-6. Ingresar con la contraseña correcta y volver a pedir el listado.
+1. Mandar «hola» al webhook sin el header del secreto y con un secreto equivocado.
+2. Mandar «Hola» con el secreto correcto.
+3. Mandar «1».
+4. Mandar el número del plato de prueba con «x2».
+5. Mandar «0».
+6. Mandar «1» (confirmar).
+7. Volver a mandar el mismo evento de confirmación (mismo id de mensaje).
+8. Leer la conversación del teléfono en la base.
 
 ### Resultado esperado
 
-1. 201.
-2. 200: la cuenta está completa y la contraseña sirve antes del bloqueo.
-3. Ningún intento entra: después del tercero, tampoco con la contraseña correcta.
-4. El mozo figura con `bloqueada: true`.
-5. 200 con `{ id, bloqueada: false }`.
-6. Ingresa con la misma contraseña (no se cambió) y el listado lo muestra con `bloqueada: false`.
+1. 401 las dos veces, y el bot no manda nada.
+2. 200. El bot manda el aviso de privacidad con el link a la política del local, a la instancia de prueba y con la API key.
+3. El bot manda la carta numerada.
+4. «Agregué 2 × …».
+5. El resumen con el plato, la cantidad y el total.
+6. El bot manda el link de pago (`/pagar/…`). Hay un pedido con canal `WHATSAPP`, en `PENDIENTE_PAGO`, en la mesa virtual, con el teléfono como contacto y la fecha del consentimiento, una línea con 2 unidades y un link de pago vigente. La auditoría del link tiene como actor `sistema:whatsapp`.
+7. 200, sin mensajes nuevos y sin otro pedido.
+8. Paso `ARMANDO`, carrito vacío y sin el número en claro (solo el HMAC).
 
-## TC-I-244
+## TC-I-246
 
 ### Precondición
 
-API de integración con Keycloak real. Administrador del tenant de prueba A y la cuenta de cocina del tenant B (`test-users.json`).
+La misma que TC-I-245. Tenants de prueba A y B.
 
 ### Pasos
 
-1. Llamar a `POST /usuarios/cocina/:keycloakId/desbloquear` con la cuenta de cocina del tenant B.
-2. Llamar a `POST /usuarios/:id/desbloquear` con un id que no existe en el tenant.
+1. Mandar «hola» desde un teléfono nuevo.
+2. Contar la conversación de ese teléfono en el contexto del tenant A y en el del B.
+3. Desde el contexto del tenant B, intentar crear una conversación con el tenant A.
+4. Mandar «1» como mensaje propio del número del local (`fromMe`), «hola» desde una instancia que no está configurada y un evento que no es un mensaje (`connection.update`).
 
 ### Resultado esperado
 
-1. 404: no se puede tocar ni averiguar una cuenta de otro tenant.
-2. 404.
+1. 200 y el aviso de privacidad.
+2. 1 en el tenant A y 0 en el B.
+3. La base lo rechaza (RLS).
+4. 200 las tres veces, sin mensajes. La conversación sigue sin el aviso aceptado.

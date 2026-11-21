@@ -152,6 +152,9 @@ export class EliminacionEstablecimientoService {
           // HU-046 (BL-554): los contadores de la sugerencia de complementos
           // (puede haber «mostradas» sin pedidos).
           await tx.metricaSugerenciaDia.deleteMany({ where: { tenantId } });
+          // HU-010 (BL-112): conversaciones del bot de WhatsApp (puede haber
+          // sin pedidos: alguien escribió y no terminó).
+          await tx.conversacionWhatsapp.deleteMany({ where: { tenantId } });
           await tx.mesa.deleteMany({ where: { tenantId } });
           await tx.usuario.deleteMany({ where: { tenantId } });
           await tx.restaurante.deleteMany({ where: { tenantId } });

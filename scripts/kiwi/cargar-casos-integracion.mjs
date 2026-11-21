@@ -207,6 +207,13 @@ const linkPago = (extra = {}) => ({
   ...extra,
   tags: ["HU-033", "BL-203", "pagos", "link-de-pago", ...(extra.tags ?? [])],
 });
+// HU-010 (BL-112): bot de pedidos para retirar por WhatsApp (Evolution API).
+const whatsapp = (extra = {}) => ({
+  component: "api",
+  requirement: "HU-010",
+  ...extra,
+  tags: ["HU-010", "BL-112", "whatsapp", "retiro", ...(extra.tags ?? [])],
+});
 // HU-039 (BL-209): pedido cargado por el mozo.
 const pedidoMozo = (extra = {}) => ({
   component: "api",
@@ -1174,6 +1181,17 @@ const DATOS_INTEGRACION = {
     category: "Seguridad",
     priority: "P1",
     tags: ["seguridad", "multi-tenant"],
+  }),
+  // HU-010 (BL-112): bot de WhatsApp, en whatsapp.e2e-spec.ts.
+  245: whatsapp({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["pedidos", "link-de-pago", "idempotencia"],
+  }),
+  246: whatsapp({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["multi-tenant", "rls", "webhook"],
   }),
 };
 /**
