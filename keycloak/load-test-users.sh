@@ -104,7 +104,7 @@ log "Importando usuarios de prueba (${#nuevos[@]} nuevos, los existentes se salt
 "$KCADM" create partialImport -r "$KC_REALM" -f "$TMP_FILE" >/dev/null
 
 # 4. Contraseña solo para los recién creados.
-#    BL-266: el realm tiene política de contraseñas (mínimo 9 caracteres,
+#    BL-266 y BL-429: el realm tiene política de contraseñas (mínimo 12 caracteres,
 #    distinta del usuario). Si una contraseña de prueba no la cumple,
 #    Keycloak la rechaza: en ese caso se borra el usuario recién creado, así
 #    no queda un usuario sin contraseña y el próximo arranque lo vuelve a

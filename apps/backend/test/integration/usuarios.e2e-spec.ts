@@ -1761,8 +1761,9 @@ describe('Gestión de usuarios (HU-013) - desbloquear (BL-371)', () => {
   itConAdmin(
     '[TC-I-243] Usuarios: una cuenta bloqueada por intentos fallidos se ve en el listado y el ADMIN la desbloquea sin cambiar la contraseña',
     async () => {
-      // Fuerza bruta encendida solo durante el test (el realm de CI la tiene
-      // apagada); en afterAll vuelve a como estaba.
+      // El realm ya trae la fuerza bruta encendida (BL-582: 5 fallos). El
+      // test la fija en 3 para no depender de esa configuración y, en
+      // afterAll, la deja como estaba.
       const realm = await (
         await fetch(`${KEYCLOAK_URL}/admin/realms/${REALM}`, {
           headers: await adminHeaders(),

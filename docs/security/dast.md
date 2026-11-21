@@ -90,15 +90,21 @@ El repositorio es público: el resumen del job, el log y los artifacts los puede
 
 ## Falsos positivos y riesgos aceptados
 
-Las alertas revisadas y descartadas van en [`scripts/dast/reglas-zap.tsv`](../../scripts/dast/reglas-zap.tsv):
+Las alertas revisadas y descartadas van en [`scripts/dast/reglas-zap.tsv`](../../scripts/dast/reglas-zap.tsv), de una de dos formas:
 
 ```text
 <id>	IGNORE	<motivo: qué se revisó y dónde quedó la evidencia>
+
+# <motivo: qué se revisó y dónde quedó la evidencia>
+<id>	OUTOFSCOPE	<regex de la URL>
 ```
 
+- **IGNORE** descarta la regla en todo el objetivo. **OUTOFSCOPE** la descarta solo en las URLs que coinciden con la regex, y la regla sigue activa en el resto: es la forma de registrar un falso positivo de una ruta concreta sin ocultar casos reales en otras.
+- La regex se compara desde el principio de la URL completa (por ejemplo, `https://[^/]+/admin/menu/categoria$`). Terminarla en `$` para no cubrir rutas parecidas.
+- ZAP aplica OUTOFSCOPE a su resumen por consola, pero el informe JSON trae igual esas alertas: `resumen-zap.mjs` también lo aplica para decidir si la corrida pasa.
 - El separador es un **TAB**, no espacios.
-- El motivo es obligatorio. Lo controla el test `npm run test:dast`.
-- Ignorar una alerta de riesgo alto necesita la aprobación del Security Engineer y la evidencia en el issue.
+- El motivo es obligatorio. En OUTOFSCOPE va en el comentario `#` inmediatamente anterior, porque ZAP toma todo lo que sigue al segundo TAB como la regex. Lo controla el test `npm run test:dast`.
+- Ignorar o acotar una alerta de riesgo alto necesita la aprobación del Security Engineer y la evidencia en el informe o en el aviso de seguridad.
 
 Los resultados de cada corrida, las decisiones y los riesgos aceptados están en [`dast-informe.md`](dast-informe.md).
 
@@ -109,5 +115,5 @@ Los resultados de cada corrida, las decisiones y los riesgos aceptados están en
 | `.github/workflows/dast.yml`        | Los dos modos del escaneo.                                                                                                                              |
 | `scripts/dast/resumen-zap.mjs`      | Lee el informe JSON de ZAP, arma el resumen del job y decide si pasa (sin riesgo alto). Con `--detalle no` (modo completo) publica solo las cantidades. |
 | `scripts/dast/resumen-zap.test.mjs` | Tests del resumen: `npm run test:dast`.                                                                                                                 |
-| `scripts/dast/reglas-zap.tsv`       | Alertas revisadas e ignoradas, con su motivo.                                                                                                           |
+| `scripts/dast/reglas-zap.tsv`       | Alertas revisadas: ignoradas (IGNORE) o acotadas a rutas concretas (OUTOFSCOPE), con su motivo.                                                         |
 | `docs/security/dast-informe.md`     | Resultados de las corridas, decisiones y riesgos aceptados.                                                                                             |
