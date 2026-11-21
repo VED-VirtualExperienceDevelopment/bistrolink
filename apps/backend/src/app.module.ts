@@ -29,6 +29,7 @@ import { StockModule } from './stock/stock.module';
 import { PosModule } from './pos/pos.module';
 import { ComplementosModule } from './complementos/complementos.module';
 import { ValoracionesModule } from './valoraciones/valoraciones.module';
+import { WhatsappModule } from './whatsapp/whatsapp.module';
 import { modulosDeTesting } from './testing/testing.module';
 import { ContextoAuditoriaMiddleware } from './audit-log/contexto-auditoria';
 
@@ -107,6 +108,8 @@ const configuracionLog = construirConfiguracionLog(process.env);
     ComplementosModule,
     // HU-050 (BL-558): valoración privada del pedido.
     ValoracionesModule,
+    // HU-010 (BL-112): bot de pedidos por WhatsApp (Evolution API).
+    WhatsappModule,
     // BL-475 (BL-285): POST /testing/limpieza, solo con
     // E2E_CLEANUP_ENABLED=true (staging y local; nunca en producción).
     ...modulosDeTesting(),
