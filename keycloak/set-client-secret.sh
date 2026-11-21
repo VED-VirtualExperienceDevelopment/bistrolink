@@ -42,11 +42,11 @@ KC_ADMIN_PASS="${KC_BOOTSTRAP_ADMIN_PASSWORD:-${KEYCLOAK_ADMIN_PASSWORD:-admin}}
 
 # BL-429 (revisión OWASP ASVS nivel 1, docs/security/asvs-nivel-1.md):
 # política de contraseñas del realm. Tiene que ser igual a la de
-# realm-export.json. Sin historial (ASVS 2.1.10) y con tope de 128
-# caracteres (2.1.2). El mínimo sigue en 9 porque las contraseñas de prueba
-# (TEST_*) tienen 9: con un mínimo mayor,
-# load-test-users.sh borraría esos usuarios y fallaría el alta de locales.
-POLITICA_CONTRASENAS='length(9) and maxLength(128) and notUsername(undefined) and notEmail(undefined)'
+# realm-export.json. Mínimo de 12 caracteres (ASVS 2.1.1), tope de 128
+# (2.1.2) y sin historial (2.1.10). Solo se valida al fijar una contraseña:
+# las que ya existen siguen sirviendo. Las de prueba (TEST_*) tienen que
+# tener 12 o más: si no, load-test-users.sh no puede crear esos usuarios.
+POLITICA_CONTRASENAS='length(12) and maxLength(128) and notUsername(undefined) and notEmail(undefined)'
 
 # 1. Arranca Keycloak en background. "$@" son los args reales que definía
 #    CMD/command antes (start-dev --import-realm, o start --http-port=8080

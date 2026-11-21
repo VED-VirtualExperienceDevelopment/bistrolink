@@ -31,6 +31,14 @@ on:
   # El dashboard de bugs se actualiza con cada cambio de un issue.
   issues:
     types: [opened, closed, reopened, labeled, unlabeled]
+  # BL-487: cuando termina el CI de un push a develop, se vuelve a publicar
+  # el sitio con el reporte Allure de los E2E de esa corrida. «branches» filtra
+  # por la rama de la corrida que terminó: los CI de los PR no lo disparan.
+  # Corre con el código de develop (rama por defecto), no con el del CI.
+  workflow_run:
+    workflows: ["CI/CD BistroLink"]
+    types: [completed]
+    branches: [develop]
 
 # Una sola publicación a la vez; las nuevas esperan en cola (cada deploy
 # reemplaza el sitio entero, así que la última corrida deja los datos más
@@ -50,6 +58,8 @@ jobs:
       contents: read
       # Search API de GitHub para leer los bugs.
       issues: read
+      # BL-487: listar y bajar el artifact «allure-e2e» del CI.
+      actions: read
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -75,6 +85,31 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/dashboards/update-github-bugs-dashboard.mjs
 
+      # BL-487: reporte Allure de los E2E, ya generado y sanitizado por el CI
+      # (artifact «allure-e2e»). Se toma el más nuevo de una corrida de
+      # develop de este mismo repositorio (no de un fork). Corre en todas las
+      # publicaciones, no solo en workflow_run: cada deploy reemplaza el
+      # sitio entero, y sin esto un cambio de un issue borraría el reporte.
+      # Si no hay ninguno vigente o falla la descarga, se publica sin él.
+      - name: Bajar el reporte Allure de los E2E (último de develop)
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          run_id=$(gh api "repos/$GH_REPO/actions/artifacts?name=allure-e2e&per_page=50" --jq '
+            [.artifacts[]
+              | select(.expired | not)
+              | select(.workflow_run.head_branch == "develop")
+              | select(.workflow_run.head_repository_id == .workflow_run.repository_id)]
+            | sort_by(.created_at) | last | .workflow_run.id // empty')
+          if [ -z "$run_id" ]; then
+            echo "::notice::No hay un reporte Allure vigente de develop: el sitio se publica sin él."
+            exit 0
+          fi
+          gh run download "$run_id" --name allure-e2e --dir allure-e2e
+          echo "Reporte Allure de la corrida $run_id."
+
       - name: Armar el sitio (HTML)
         env:
           # BL-243: link público del dashboard de estado de Grafana Cloud.
@@ -82,6 +117,9 @@ jobs:
           # Actions → Variables), no un secret: el link es público, pero no se
           # escribe en el repositorio. Si falta, el sitio sale sin ese enlace.
           GRAFANA_ESTADO_URL: ${{ vars.GRAFANA_ESTADO_URL }}
+          # BL-487: si el paso anterior no bajó nada, la carpeta no existe y
+          # el script publica el sitio sin el enlace al reporte.
+          ALLURE_E2E_DIR: allure-e2e
         run: node scripts/dashboards/publicar-dashboards.mjs _site
 
       - name: Subir el sitio
@@ -116,6 +154,10 @@ jobs:
     needs: publicar
     if: github.event_name == 'schedule' || github.event.inputs.enviar_email == 'true'
     runs-on: ubuntu-latest
+    # BL-326 (G12): MAIL_USERNAME y MAIL_PASSWORD son secrets de este
+    # environment, que solo acepta la rama develop. Un workflow lanzado desde
+    # otra rama no puede leer la contraseña del correo.
+    environment: notificaciones
     permissions:
       contents: read
       issues: read
@@ -130,6 +172,13 @@ jobs:
           # Fuerza la última 22.x publicada: la caché del runner puede ir atrasada
           # y quedarse con una versión sin los parches de seguridad.
           check-latest: true
+          cache: npm
+
+      # BL-326: nodemailer sale del lockfile (versión revisada por Trivy,
+      # dependency-review y Dependabot). --ignore-scripts: no hace falta
+      # ningún script de instalación para mandar un correo.
+      - name: Instalar dependencias
+        run: npm ci --ignore-scripts
 
       - name: Generar email de estado (avance + calidad)
         id: status-email
@@ -140,14 +189,14 @@ jobs:
           DASHBOARD_EMAIL_RECIPIENTS: ${{ secrets.DASHBOARD_EMAIL_RECIPIENTS }}
         run: node scripts/dashboards/send-status-email.mjs
 
+      # BL-326 (G12): reemplaza a dawidd6/action-send-mail. La contraseña solo
+      # la recibe nuestro script (enviar-email.mjs), no código de terceros.
       - name: Enviar email de estado
-        uses: dawidd6/action-send-mail@v23
-        with:
-          server_address: smtp.gmail.com
-          server_port: 465
-          username: ${{ secrets.MAIL_USERNAME }}
-          password: ${{ secrets.MAIL_PASSWORD }}
-          subject: ${{ steps.status-email.outputs.subject }}
-          to: ${{ steps.status-email.outputs.to }}
-          from: ${{ steps.status-email.outputs.from }}
-          html_body: file://${{ steps.status-email.outputs.body_path }}
+        env:
+          MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
+          MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
+          EMAIL_TO: ${{ steps.status-email.outputs.to }}
+          EMAIL_FROM: ${{ steps.status-email.outputs.from }}
+          EMAIL_SUBJECT: ${{ steps.status-email.outputs.subject }}
+          EMAIL_BODY_PATH: ${{ steps.status-email.outputs.body_path }}
+        run: node scripts/dashboards/enviar-email.mjs

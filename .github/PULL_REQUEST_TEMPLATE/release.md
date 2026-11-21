@@ -42,8 +42,9 @@ Comandos útiles para completarla (desde la raíz del repo, con origin actualiza
 
 ## Regresión en staging
 
-- [ ] Regresión de la capa en verde en staging (Anexo 11). Link a la corrida: <!-- Kiwi TCMS / Allure -->
-- [ ] E2E (Playwright, 4 navegadores) en verde en la última corrida de `develop`. Link: <!-- corrida de Actions -->
+- [ ] Regresión de la capa en verde en staging (Anexo 11). Test Runs de Kiwi TCMS del build: <!-- links a los Test Runs -e2e, -integration y -contract -->
+- [ ] E2E (Playwright, 4 navegadores) en verde en la última corrida de `develop`. Corrida: <!-- link a la corrida de Actions -->
+  - Reporte Allure: [última corrida de develop](https://ved-virtualexperiencedevelopment.github.io/bistrolink/allure/e2e/). Como evidencia del release, adjuntar también el artifact `allure-e2e` de esa corrida (el sitio siempre muestra la última).
 - [ ] Sin alertas críticas o altas abiertas en Security (Trivy, CodeQL, Dependabot) o justificadas abajo.
 
 ## Checklist del release

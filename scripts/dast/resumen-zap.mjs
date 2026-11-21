@@ -13,6 +13,12 @@
 // archivo con -c, y este script lo vuelve a leer para no contarlas aunque
 // aparezcan en el informe.
 //
+// Un falso positivo que aparece solo en algunas rutas va con OUTOFSCOPE y una
+// expresión regular de la URL: la regla sigue activa en el resto. ZAP lo
+// aplica a su resumen por consola, pero el informe JSON trae igual esas
+// alertas, así que este script también lo aplica (BL-218, verificación del
+// 21/11/2026).
+//
 // BL-525: el repositorio es público, así que el resumen del job y el log los
 // puede ver cualquiera. Con --detalle no (modo completo) solo se publican las
 // cantidades por riesgo y si la corrida pasa: sin alertas, URLs ni motivos.
@@ -34,13 +40,15 @@ const NIVEL_FALLA = { medio: 2, alto: 3 };
 // --- Reglas ------------------------------------------------------------------
 
 // Formato de ZAP: id <TAB> IGNORE|INFO|WARN|FAIL <TAB> comentario. Las líneas
-// que empiezan con # son comentarios.
+// que empiezan con # son comentarios. Las OUTOFSCOPE se leen aparte
+// (leerFueraDeAlcance).
 export function leerReglas(texto) {
   const reglas = new Map();
   for (const linea of texto.split(/\r?\n/)) {
     if (!linea.trim() || linea.trimStart().startsWith("#")) continue;
     const [id, accion, ...resto] = linea.split("\t");
     if (!/^\d+$/.test(id?.trim() ?? "")) continue;
+    if ((accion ?? "").trim().toUpperCase() === "OUTOFSCOPE") continue;
     reglas.set(id.trim(), {
       accion: (accion ?? "").trim().toUpperCase(),
       motivo: resto.join(" ").trim(),
@@ -49,27 +57,91 @@ export function leerReglas(texto) {
   return reglas;
 }
 
+// Formato de ZAP: id[,id…] <TAB> OUTOFSCOPE <TAB> regex de la URL. ZAP toma
+// todo lo que sigue al segundo TAB como la regex (no hay columna de motivo),
+// y la compara desde el principio de la URL (re.match de Python): por eso se
+// arma con «^». El motivo es el bloque de comentarios # inmediatamente
+// anterior. Devuelve un Map de id (o «*», todas las reglas) a sus rutas.
+export function leerFueraDeAlcance(texto) {
+  const fuera = new Map();
+  let comentario = [];
+  for (const linea of texto.split(/\r?\n/)) {
+    const limpia = linea.trim();
+    if (!limpia) {
+      comentario = [];
+      continue;
+    }
+    if (limpia.startsWith("#")) {
+      comentario.push(limpia.replace(/^#\s?/, ""));
+      continue;
+    }
+    const partes = linea.split("\t");
+    if ((partes[1] ?? "").trim().toUpperCase() !== "OUTOFSCOPE") {
+      comentario = [];
+      continue;
+    }
+    const regex = partes.slice(2).join("\t").trim();
+    const entrada = {
+      regex,
+      patron: new RegExp(`^(?:${regex})`),
+      motivo: comentario.join(" ").trim(),
+    };
+    for (const id of partes[0]
+      .split(",")
+      .map((i) => i.trim())
+      .filter(Boolean)) {
+      if (!fuera.has(id)) fuera.set(id, []);
+      fuera.get(id).push(entrada);
+    }
+    comentario = [];
+  }
+  return fuera;
+}
+
+function fueraDeAlcanceDe(id, uri, fuera) {
+  return [...(fuera.get("*") ?? []), ...(fuera.get(id) ?? [])].some((e) =>
+    e.patron.test(uri ?? ""),
+  );
+}
+
 // --- Informe -----------------------------------------------------------------
 
-export function resumirInforme(informe, reglas = new Map()) {
+export function resumirInforme(
+  informe,
+  reglas = new Map(),
+  fueraDeAlcance = new Map(),
+) {
   const alertas = [];
   for (const sitio of informe.site ?? []) {
     for (const a of sitio.alerts ?? []) {
       const id = String(a.pluginid ?? a.alertRef ?? "");
       const regla = reglas.get(id);
-      const instancias = a.instances ?? [];
+      const todas = a.instances ?? [];
+      // Las instancias en rutas OUTOFSCOPE no cuentan; si son todas, la
+      // alerta queda como revisada (igual que un IGNORE).
+      const instancias = todas.filter(
+        (i) => !fueraDeAlcanceDe(id, i.uri, fueraDeAlcance),
+      );
+      const descartadas = todas.length - instancias.length;
+      const sinInstancias = todas.length > 0 && instancias.length === 0;
+      const ignorada = regla?.accion === "IGNORE" || sinInstancias;
       alertas.push({
         id,
         nombre: a.name ?? a.alert ?? "(sin nombre)",
         riesgo: Number(a.riskcode ?? 0),
         confianza: Number(a.confidence ?? 0),
-        cantidad: Number(a.count ?? instancias.length),
+        cantidad: Math.max(Number(a.count ?? todas.length) - descartadas, 0),
         ejemplo: instancias[0]
           ? `${instancias[0].method ?? "GET"} ${instancias[0].uri}`
           : sitio["@name"],
         cwe: a.cweid && a.cweid !== "-1" ? a.cweid : null,
-        ignorada: regla?.accion === "IGNORE",
-        motivo: regla?.accion === "IGNORE" ? regla.motivo : null,
+        ignorada,
+        motivo:
+          regla?.accion === "IGNORE"
+            ? regla.motivo
+            : sinInstancias
+              ? "Fuera de alcance en las rutas revisadas (OUTOFSCOPE en reglas-zap.tsv)"
+              : null,
       });
     }
   }
@@ -218,13 +290,14 @@ function main() {
     process.exit(2);
   }
   const detalle = args.detalle !== "no";
-  const reglas =
+  const textoReglas =
     args.reglas && fs.existsSync(args.reglas)
-      ? leerReglas(fs.readFileSync(args.reglas, "utf-8"))
-      : new Map();
+      ? fs.readFileSync(args.reglas, "utf-8")
+      : "";
   const resumen = resumirInforme(
     JSON.parse(fs.readFileSync(args.informe, "utf-8")),
-    reglas,
+    leerReglas(textoReglas),
+    leerFueraDeAlcance(textoReglas),
   );
   const md = renderMarkdown(resumen, args.objetivo, args["falla-con"], detalle);
 
