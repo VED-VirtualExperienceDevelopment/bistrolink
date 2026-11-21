@@ -1582,10 +1582,22 @@ jobs:
       # actions/upload-artifact, ver el job "jest" para el detalle) no debe
       # marcar este matrix-run en falla — el job "playwright-report" igual
       # puede mergear con los artifacts que sí llegaron a subir.
-      - name: Preparar los resultados de Allure (${{ matrix.project }})
+      # junit.xml (va a Kiwi y al artifact combinado) y resultados de Allure
+      # sin credenciales: el mensaje de error de un pedido a la API que falla
+      # trae sus encabezados. Si no se pueden preparar, no se suben (nunca
+      # sin preparar): Kiwi y Allure quedan sin ese navegador.
+      - name: Preparar los resultados para publicar (${{ matrix.project }})
         if: always()
         continue-on-error: true
-        run: node scripts/dashboards/sanitizar-allure.mjs playwright-report/allure-results
+        run: |
+          if [ -f playwright-report/junit.xml ]; then
+            node scripts/dashboards/sanitizar-allure.mjs --junit playwright-report/junit.xml \
+              || { echo "::warning::No se pudo preparar junit.xml: no se sube."; rm -f playwright-report/junit.xml; }
+          fi
+          if [ -d playwright-report/allure-results ]; then
+            node scripts/dashboards/sanitizar-allure.mjs playwright-report/allure-results \
+              || { echo "::warning::No se pudieron preparar los resultados de Allure: no se suben."; rm -rf playwright-report/allure-results; }
+          fi
 
       - name: Upload resultados E2E (artifact, ${{ matrix.project }})
         if: always()

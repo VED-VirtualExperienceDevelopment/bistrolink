@@ -34,7 +34,12 @@ describe("enlacesExternos", () => {
 });
 
 describe("pagina", () => {
-  const base = { titulo: "Dashboards", contenido: "", actualizado: "08/11/2026", conMermaid: false };
+  const base = {
+    titulo: "Dashboards",
+    contenido: "",
+    actualizado: "08/11/2026",
+    conMermaid: false,
+  };
 
   test("sin enlaces externos el menú no cambia", () => {
     const html = pagina(base);
@@ -45,6 +50,9 @@ describe("pagina", () => {
     const html = pagina({ ...base, externos: enlacesExternos(PUBLICO) });
     // Comparación literal (no RegExp): los "." de la URL no actúan como comodín.
     const esperado = `<a href="${PUBLICO}" target="_blank" rel="noopener noreferrer">Estado del servicio ↗</a>`;
-    assert.ok(html.includes(esperado), `no se encontró el enlace esperado:\n${esperado}`);
+    assert.ok(
+      html.includes(esperado),
+      `no se encontró el enlace esperado:\n${esperado}`,
+    );
   });
 });

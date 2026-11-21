@@ -249,6 +249,54 @@ Las URL son las que usa el job de Playwright en `ci.yml`. Los usuarios de prueba
 | Retries     | 0                     | 2                                                                  |
 | Reporter    | `list`                | `github`                                                           |
 
+En los dos casos también se generan `junit`, `html` y los resultados de Allure (`playwright-report/`).
+
+### Reporte Allure (BL-487)
+
+Cada corrida de `develop` publica un reporte Allure con los 4 navegadores juntos: **[reporte E2E en GitHub Pages](https://ved-virtualexperiencedevelopment.github.io/bistrolink/allure/e2e/)**. Tiene, por test, el navegador, la duración, los pasos, los reintentos y la captura de pantalla de los que fallan.
+
+- **Es solo una vista.** Kiwi TCMS sigue siendo la fuente de verdad de los casos y el criterio de pase o falla del pipeline no cambia.
+- **Cómo se arma.** `allure-playwright` (en `playwright.config.ts`) deja los resultados en `playwright-report/allure-results`. El job «Merge + reporte E2E» de `ci.yml` junta los 4 navegadores, los prepara para publicar con `scripts/dashboards/sanitizar-allure.mjs` y genera el HTML (artifact `allure-e2e`). Cuando termina el CI, el workflow «Publicar dashboards» lo publica en `/allure/e2e/` junto a los dashboards.
+- **Qué no se publica.** El sitio es público: el texto que los tests escriben en los campos se reemplaza por `•••`, y solo quedan las imágenes. Las trazas (`trace.zip`) y el resto del detalle están en el reporte completo de cada navegador, cifrado (ver abajo).
+- **Para un release** se adjunta el artifact `allure-e2e` de la corrida que se usa como evidencia, porque el sitio siempre muestra la última.
+- Si falla la generación o la publicación del reporte, el pipeline no falla (como el reporte a Kiwi).
+
+Para verlo en local después de una corrida (en PowerShell; `allure-playwright` no borra los resultados viejos, por eso el primer comando):
+
+```powershell
+Remove-Item -Recurse -Force playwright-report/allure-results -ErrorAction SilentlyContinue
+npx playwright test --project=chromium --ignore-snapshots
+npx allure generate playwright-report/allure-results -c scripts/dashboards/allurerc.mjs -o allure-report --open
+```
+
+El reporte local no pasa por `sanitizar-allure.mjs`: tiene los pasos completos y no se comparte.
+
+### Artifacts de la corrida en CI
+
+Cada navegador sube dos artifacts:
+
+| Artifact                           | Contenido                                                                                                                                | Para qué                                |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| `playwright-resultados-<proyecto>` | `junit.xml` y resultados de Allure, sin el texto escrito en los campos ni credenciales en los mensajes de error (`sanitizar-allure.mjs`) | Kiwi TCMS y el reporte Allure           |
+| `playwright-report-<proyecto>`     | Reporte HTML completo de Playwright, con trazas, **cifrado**                                                                             | Investigar un fallo con todo el detalle |
+
+El repositorio es público y cualquier cuenta de GitHub puede bajar sus artifacts, por eso el reporte completo se sube cifrado (AES-256 con `gpg`, como el informe del DAST). La clave está en el secret de Actions `E2E_REPORTE_CLAVE` (fuente: el gestor de secretos del equipo; copia para descifrar: KeePass del equipo). Si falta, el reporte completo no se sube: nunca se sube sin cifrar.
+
+**Leer el reporte completo:**
+
+1. En la corrida: **Summary** → **Artifacts** → `playwright-report-<proyecto>`. Se descarga un `.zip` con `playwright-report-<proyecto>.tar.gz.gpg` adentro.
+2. Descomprimir el `.zip` y, en Git Bash (trae `gpg`), desde esa carpeta:
+
+   ```bash
+   gpg --decrypt -o reporte.tar.gz playwright-report-<proyecto>.tar.gz.gpg
+   tar -xzf reporte.tar.gz
+   npx playwright show-report html
+   ```
+
+   `gpg` pide la clave (la de KeePass). Para una traza: `npx playwright show-trace <ruta al trace.zip dentro de html/data>`.
+
+3. Revisarlo en la máquina propia, **sin subirlo** al repositorio, a un issue ni a un PR. Al terminar, borrar los archivos descargados.
+
 ## Regresión visual (baselines)
 
 > ⏸️ **Desactivada por ahora.** La regresión visual corresponde a los **sprints 8 y 9**; hasta entonces el foco está en los tests **funcionales** (flujos, datos y comportamiento) y no se escriben tests visuales nuevos. El `test.describe('Regresión visual...')` de `e2e/comensal/menu-publico.spec.ts` está comentado, con una nota (`COMENTADA A PROPÓSITO`) que explica por qué y cómo reactivarlo.

@@ -10,18 +10,32 @@ import { describe, test } from "node:test";
 import {
   OCULTO,
   adjuntoPublicable,
+  ocultarCredenciales,
   ocultarTexto,
   sanitizarCarpeta,
+  sanitizarJunit,
   sanitizarObjeto,
 } from "./sanitizar-allure.mjs";
 
 const CLAVE = "clave-de-prueba-123";
+const TOKEN = "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJ0ZXN0In0.firma-de-prueba";
+// Como lo escribe Playwright cuando falla un pedido a la API.
+const CALL_LOG = `apiRequestContext.get: Timeout 30000ms exceeded.
+Call log:
+  - → GET https://api.ejemplo.com/plataforma/establecimientos
+  -   user-agent: Playwright/1.63.0
+  -   authorization: Bearer ${TOKEN}
+  -   cookie: sesion=${CLAVE}`;
 
 function resultado() {
   return {
     uuid: "r1",
     name: "[TC-E-001] Ingreso: el mozo entra con usuario y contraseña",
     status: "failed",
+    statusDetails: {
+      message: CALL_LOG,
+      trace: `Error: ${CALL_LOG}\n    at prueba.spec.ts:10:5`,
+    },
     parameters: [{ name: "Project", value: "chromium" }],
     attachments: [
       { name: "screenshot", source: "a-attachment.png", type: "image/png" },
@@ -45,6 +59,7 @@ function resultado() {
       },
       {
         name: "Ingresar",
+        statusDetails: { message: `"authorization":"Bearer ${TOKEN}"` },
         attachments: [
           {
             name: "error-context",
@@ -91,6 +106,51 @@ describe("ocultarTexto", () => {
   });
 });
 
+describe("ocultarCredenciales", () => {
+  test("oculta los encabezados con credenciales del call log", () => {
+    const limpio = ocultarCredenciales(CALL_LOG);
+    assert.doesNotMatch(limpio, new RegExp(CLAVE));
+    assert.doesNotMatch(limpio, /eyJhbGci/);
+    assert.match(limpio, new RegExp(`authorization: ${OCULTO}`));
+    assert.match(limpio, new RegExp(`cookie: ${OCULTO}`));
+    // El resto del mensaje se conserva.
+    assert.match(
+      limpio,
+      /GET https:\/\/api\.ejemplo\.com\/plataforma\/establecimientos/,
+    );
+    assert.match(limpio, /user-agent: Playwright/);
+  });
+
+  test("también en JSON y con un token suelto", () => {
+    assert.equal(
+      ocultarCredenciales(`{"authorization":"Bearer ${TOKEN}"}`),
+      `{"authorization":"${OCULTO}"}`,
+    );
+    assert.equal(
+      ocultarCredenciales(`token Bearer ${TOKEN} vencido`),
+      `token Bearer ${OCULTO} vencido`,
+    );
+  });
+
+  test("dentro de un junit.xml no se come el cierre de la etiqueta", () => {
+    const xml = `<failure message="authorization: Bearer ${TOKEN}">x</failure>`;
+    assert.equal(
+      ocultarCredenciales(xml),
+      `<failure message="authorization: ${OCULTO}">x</failure>`,
+    );
+  });
+
+  test("no toca el texto sin credenciales", () => {
+    for (const texto of [
+      "Expected: 3\nReceived: 2",
+      "Bearer token",
+      undefined,
+    ]) {
+      assert.equal(ocultarCredenciales(texto), texto);
+    }
+  });
+});
+
 describe("adjuntoPublicable", () => {
   test("solo las imágenes", () => {
     assert.equal(adjuntoPublicable({ type: "image/png" }), true);
@@ -105,10 +165,12 @@ describe("adjuntoPublicable", () => {
 });
 
 describe("sanitizarObjeto", () => {
-  test("no queda la contraseña en ninguna parte del resultado", () => {
+  test("no queda la contraseña ni el token en ninguna parte del resultado", () => {
     const r = resultado();
     sanitizarObjeto(r);
-    assert.doesNotMatch(JSON.stringify(r), new RegExp(CLAVE));
+    const json = JSON.stringify(r);
+    assert.doesNotMatch(json, new RegExp(CLAVE));
+    assert.doesNotMatch(json, /eyJhbGci/);
   });
 
   test("deja solo las capturas y devuelve los adjuntos quitados", () => {
@@ -166,10 +228,12 @@ describe("sanitizarCarpeta", () => {
     const dir = await carpetaDePrueba();
     try {
       const resumen = await sanitizarCarpeta(dir);
+      // 4 pasos que escriben, y en los errores: 2 encabezados del mensaje,
+      // 2 de la traza y 1 del paso «Ingresar».
       assert.deepEqual(resumen, {
         resultados: 1,
         adjuntosQuitados: 2,
-        pasosOcultos: 4,
+        valoresOcultos: 9,
       });
       assert.deepEqual((await fs.readdir(dir)).sort(), [
         "a-attachment.png",
@@ -187,6 +251,24 @@ describe("sanitizarCarpeta", () => {
     }
   });
 
+  test("sanitizarlo dos veces no cambia nada", async () => {
+    const dir = await carpetaDePrueba();
+    try {
+      await sanitizarCarpeta(dir);
+      const primera = await fs.readFile(
+        path.join(dir, "r1-result.json"),
+        "utf-8",
+      );
+      await sanitizarCarpeta(dir);
+      assert.equal(
+        await fs.readFile(path.join(dir, "r1-result.json"), "utf-8"),
+        primera,
+      );
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
   test("falla si la carpeta no tiene resultados", async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "allure-"));
     try {
@@ -194,6 +276,28 @@ describe("sanitizarCarpeta", () => {
         sanitizarCarpeta(dir),
         /No hay resultados de Allure/,
       );
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("sanitizarJunit", () => {
+  test("oculta las credenciales del junit.xml y conserva el resto", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "junit-"));
+    const ruta = path.join(dir, "junit.xml");
+    try {
+      await fs.writeFile(
+        ruta,
+        `<testsuites><testsuite><testcase name="[TC-E-001] prueba"><failure message="falló">${CALL_LOG}</failure></testcase></testsuite></testsuites>`,
+      );
+      const { valoresOcultos } = await sanitizarJunit(ruta);
+      const xml = await fs.readFile(ruta, "utf-8");
+      assert.equal(valoresOcultos, 2);
+      assert.doesNotMatch(xml, /eyJhbGci/);
+      assert.doesNotMatch(xml, new RegExp(CLAVE));
+      assert.match(xml, /\[TC-E-001\] prueba/);
+      assert.match(xml, /<\/failure><\/testcase>/);
     } finally {
       await fs.rm(dir, { recursive: true, force: true });
     }

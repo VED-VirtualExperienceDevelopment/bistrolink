@@ -1,27 +1,35 @@
 #!/usr/bin/env node
 // BL-487: deja los resultados de Allure de los E2E listos para publicarse.
 //
-// El reporte se publica en GitHub Pages, que es público como el repositorio.
-// Los resultados crudos de Playwright tienen datos que no pueden quedar ahí:
-//   - Los pasos «Fill» y «Type» muestran el texto escrito, por ejemplo la
-//     contraseña de un usuario de prueba en el login de Keycloak.
-//   - Las trazas (trace.zip), el contexto del error, los videos y la salida
-//     de consola pueden tener contraseñas, tokens y encabezados de las llamadas.
+// El reporte se publica en GitHub Pages y el junit.xml va a Kiwi TCMS y a un
+// artifact del CI: los tres son públicos o los ve más gente que el equipo.
+// Los resultados crudos de Playwright tienen datos de las sesiones de prueba
+// que no pueden quedar ahí:
+//   - Los pasos «Fill», «Type» y «Press sequentially» muestran el texto que
+//     se escribe en los campos.
+//   - Cuando falla un pedido a la API, el mensaje de error incluye los
+//     encabezados del pedido (authorization, cookie…).
+//   - Las trazas, los videos, el contexto del error y la salida de consola.
 //
-// Este script, sobre la carpeta de resultados (*-result.json y
-// *-container.json):
-//   1. Reemplaza el texto de los pasos que escriben en un campo por «•••».
-//   2. Deja solo los adjuntos de imagen (capturas de pantalla y comparaciones
+// Sobre una carpeta de resultados de Allure (*-result.json y
+// *-container.json), este script:
+//   1. Reemplaza por «•••» el texto de los pasos que escriben en un campo.
+//   2. Oculta los encabezados con credenciales y los tokens Bearer o Basic en
+//      los mensajes de error.
+//   3. Deja solo los adjuntos de imagen (capturas de pantalla y comparaciones
 //      visuales) y borra los archivos del resto.
-// El detalle completo queda en el reporte HTML de cada navegador, que el CI
-// sube cifrado (artifact playwright-report-<proyecto>, ver e2e/README.md).
-// El CI corre este script en cada job de Playwright, antes de subir los
-// resultados, y otra vez al juntarlos (no cambia nada si ya están listos).
+// Con --junit hace el punto 2 sobre un junit.xml.
+//
+// El CI lo corre en cada job de Playwright, antes de subir los resultados, y
+// otra vez al juntarlos (si ya están listos, no cambia nada). El detalle
+// completo queda en el reporte HTML de cada navegador, que el CI sube cifrado
+// (artifact playwright-report-<proyecto>, ver e2e/README.md).
 //
 // Sin dependencias. Termina con error si la carpeta no tiene resultados, para
 // no publicar un reporte vacío: el sitio conserva el último reporte bueno.
 //
 // Uso: node scripts/dashboards/sanitizar-allure.mjs <carpeta de resultados>
+//      node scripts/dashboards/sanitizar-allure.mjs --junit <junit.xml>
 
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -37,6 +45,22 @@ export function ocultarTexto(nombre) {
   if (typeof nombre !== "string") return nombre;
   const m = nombre.match(PASO_QUE_ESCRIBE);
   return m ? `${m[1]} "${OCULTO}"` : nombre;
+}
+
+// Encabezados con credenciales, como los escribe el call log de Playwright
+// («  authorization: Bearer …») o un JSON («"authorization":"…"»). El valor
+// termina en el fin de línea o en un carácter que lo cierra en XML o JSON.
+const ENCABEZADO_SENSIBLE =
+  /\b(proxy-authorization|authorization|set-cookie|cookie|x-api-key|x-auth-token)("?\s*:\s*"?)[^\r\n&<"]+/gi;
+// Un token suelto, fuera de un encabezado.
+const TOKEN = /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{8,}/g;
+
+/** Texto sin credenciales: encabezados sensibles y tokens Bearer o Basic. */
+export function ocultarCredenciales(texto) {
+  if (typeof texto !== "string") return texto;
+  return texto
+    .replace(ENCABEZADO_SENSIBLE, `$1$2${OCULTO}`)
+    .replace(TOKEN, `$1 ${OCULTO}`);
 }
 
 /** Solo se publican imágenes: capturas y comparaciones visuales. */
@@ -66,6 +90,15 @@ export function sanitizarObjeto(objeto) {
       nodo.attachments = nodo.attachments.filter(adjuntoPublicable);
     }
 
+    // Mensaje y detalle del error (del test o de un paso).
+    if (nodo.statusDetails && typeof nodo.statusDetails === "object") {
+      for (const clave of ["message", "trace", "actual", "expected"]) {
+        nodo.statusDetails[clave] = ocultarCredenciales(
+          nodo.statusDetails[clave],
+        );
+      }
+    }
+
     // Un paso (o un hook de un contenedor) que escribe texto: se oculta el
     // texto y se quitan sus parámetros, que podrían repetirlo.
     if (typeof nodo.name === "string" && PASO_QUE_ESCRIBE.test(nodo.name)) {
@@ -93,13 +126,13 @@ export async function sanitizarCarpeta(carpeta) {
   }
 
   const quitados = new Set();
-  let pasosOcultos = 0;
+  let valoresOcultos = 0;
   for (const archivo of archivos.filter((a) => ES_RESULTADO.test(a))) {
     const ruta = path.join(carpeta, archivo);
     const objeto = JSON.parse(await fs.readFile(ruta, "utf-8"));
     for (const fuente of sanitizarObjeto(objeto)) quitados.add(fuente);
     const sanitizado = JSON.stringify(objeto);
-    pasosOcultos += sanitizado.split(OCULTO).length - 1;
+    valoresOcultos += sanitizado.split(OCULTO).length - 1;
     await fs.writeFile(ruta, sanitizado, "utf-8");
   }
 
@@ -111,22 +144,44 @@ export async function sanitizarCarpeta(carpeta) {
   return {
     resultados: resultados.length,
     adjuntosQuitados: quitados.size,
-    pasosOcultos,
+    valoresOcultos,
+  };
+}
+
+/** Oculta las credenciales de un junit.xml (lo reescribe en el lugar). */
+export async function sanitizarJunit(ruta) {
+  const original = await fs.readFile(ruta, "utf-8");
+  const sanitizado = ocultarCredenciales(original);
+  await fs.writeFile(ruta, sanitizado, "utf-8");
+  return {
+    valoresOcultos:
+      sanitizado.split(OCULTO).length - original.split(OCULTO).length,
   };
 }
 
 async function main() {
-  const carpeta = process.argv[2];
-  if (!carpeta) {
+  const [opcion, ruta] = process.argv.slice(2);
+  if (opcion === "--junit") {
+    if (!ruta)
+      throw new Error(
+        "Uso: node scripts/dashboards/sanitizar-allure.mjs --junit <junit.xml>",
+      );
+    const { valoresOcultos } = await sanitizarJunit(ruta);
+    console.log(
+      `✅ JUnit: ${ruta} listo para Kiwi (${valoresOcultos} credenciales ocultas).`,
+    );
+    return;
+  }
+  if (!opcion) {
     throw new Error(
       "Uso: node scripts/dashboards/sanitizar-allure.mjs <carpeta de resultados>",
     );
   }
-  const { resultados, adjuntosQuitados, pasosOcultos } =
-    await sanitizarCarpeta(carpeta);
+  const { resultados, adjuntosQuitados, valoresOcultos } =
+    await sanitizarCarpeta(opcion);
   console.log(
     `✅ Allure: ${resultados} resultados listos para publicar ` +
-      `(${pasosOcultos} pasos con texto oculto, ${adjuntosQuitados} adjuntos no publicables quitados).`,
+      `(${valoresOcultos} valores ocultos, ${adjuntosQuitados} adjuntos no publicables quitados).`,
   );
 }
 

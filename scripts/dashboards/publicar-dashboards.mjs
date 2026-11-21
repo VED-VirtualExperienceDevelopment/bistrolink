@@ -20,7 +20,11 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+const ROOT = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "..",
+);
 const SALIDA = path.resolve(ROOT, process.argv[2] ?? "_site");
 
 // Versiones fijas, como el resto del pipeline: se suben a propósito.
@@ -55,13 +59,15 @@ const DASHBOARDS = [
     archivo: "docs/dashboard-avance-edt.md",
     salida: "avance-edt.html",
     titulo: "Avance del proyecto (EDT)",
-    descripcion: "Avance del MVP contra la Línea de Base y trabajo cerrado por sprint, desde Linear.",
+    descripcion:
+      "Avance del MVP contra la Línea de Base y trabajo cerrado por sprint, desde Linear.",
   },
   {
     archivo: "docs/dashboard-bugs-github.md",
     salida: "bugs.html",
     titulo: "Bugs (GitHub Issues)",
-    descripcion: "Bugs abiertos y cerrados, por severidad y por semana, desde GitHub Issues.",
+    descripcion:
+      "Bugs abiertos y cerrados, por severidad y por semana, desde GitHub Issues.",
   },
 ];
 
@@ -76,7 +82,9 @@ export function enlacesExternos(url) {
   try {
     destino = new URL(url.trim());
   } catch {
-    console.warn("⚠️ GRAFANA_ESTADO_URL no es una URL válida: se publica sin el enlace al estado.");
+    console.warn(
+      "⚠️ GRAFANA_ESTADO_URL no es una URL válida: se publica sin el enlace al estado.",
+    );
     return [];
   }
   const esPublicoDeGrafana =
@@ -102,7 +110,8 @@ export function enlacesExternos(url) {
 
 // Lo que está entre estos marcadores es solo para quien lee el .md en el
 // repositorio (por ejemplo, el aviso de que la versión al día está en Pages).
-const SOLO_REPO = /<!--\s*SOLO-REPO:start\s*-->[\s\S]*?<!--\s*SOLO-REPO:end\s*-->/g;
+const SOLO_REPO =
+  /<!--\s*SOLO-REPO:start\s*-->[\s\S]*?<!--\s*SOLO-REPO:end\s*-->/g;
 
 export function limpiarMarkdown(md) {
   return md.replace(SOLO_REPO, "");
@@ -120,21 +129,31 @@ export function escaparHtml(texto) {
 // hay que entrecomillar los argumentos (las rutas pueden tener espacios).
 function ejecutarNpx(args) {
   const esWindows = process.platform === "win32";
-  execFileSync(esWindows ? "npx.cmd" : "npx", esWindows ? args.map((a) => `"${a}"`) : args, {
-    stdio: "inherit",
-    shell: esWindows,
-  });
+  execFileSync(
+    esWindows ? "npx.cmd" : "npx",
+    esWindows ? args.map((a) => `"${a}"`) : args,
+    {
+      stdio: "inherit",
+      shell: esWindows,
+    },
+  );
 }
 
 function markdownAHtml(md, tmpDir, nombre) {
   const entrada = path.join(tmpDir, `${nombre}.md`);
   const salida = path.join(tmpDir, `${nombre}.html`);
-  return fs
-    .writeFile(entrada, md, "utf-8")
-    .then(() => {
-      ejecutarNpx(["--yes", `marked@${MARKED_VERSION}`, "-i", entrada, "-o", salida, "--gfm"]);
-      return fs.readFile(salida, "utf-8");
-    });
+  return fs.writeFile(entrada, md, "utf-8").then(() => {
+    ejecutarNpx([
+      "--yes",
+      `marked@${MARKED_VERSION}`,
+      "-i",
+      entrada,
+      "-o",
+      salida,
+      "--gfm",
+    ]);
+    return fs.readFile(salida, "utf-8");
+  });
 }
 
 function fechaActualizacion() {
@@ -209,10 +228,18 @@ function enlaceExterno(e, clase) {
   return `<a${atributoClase} href="${escaparHtml(e.url)}" target="_blank" rel="noopener noreferrer">`;
 }
 
-export function pagina({ titulo, contenido, actualizado, conMermaid, externos = [] }) {
+export function pagina({
+  titulo,
+  contenido,
+  actualizado,
+  conMermaid,
+  externos = [],
+}) {
   const nav = [
     `<a href="./">Inicio</a>`,
-    ...DASHBOARDS.map((d) => `<a href="./${d.salida}">${escaparHtml(d.titulo)}</a>`),
+    ...DASHBOARDS.map(
+      (d) => `<a href="./${d.salida}">${escaparHtml(d.titulo)}</a>`,
+    ),
     ...externos.map((e) => `${enlaceExterno(e)}${escaparHtml(e.titulo)} ↗</a>`),
   ].join("\n        ");
   const scriptMermaid = conMermaid
@@ -326,15 +353,26 @@ async function main() {
   const externos = enlacesExternos(process.env.GRAFANA_ESTADO_URL);
 
   for (const fuente of FUENTES) {
-    await fs.copyFile(path.join(ROOT, fuente), path.join(SALIDA, path.basename(fuente)));
+    await fs.copyFile(
+      path.join(ROOT, fuente),
+      path.join(SALIDA, path.basename(fuente)),
+    );
   }
 
   for (const [i, d] of DASHBOARDS.entries()) {
-    const md = limpiarMarkdown(await fs.readFile(path.join(ROOT, d.archivo), "utf-8"));
+    const md = limpiarMarkdown(
+      await fs.readFile(path.join(ROOT, d.archivo), "utf-8"),
+    );
     const contenido = await markdownAHtml(md, tmpDir, `dashboard-${i}`);
     await fs.writeFile(
       path.join(SALIDA, d.salida),
-      pagina({ titulo: d.titulo, contenido, actualizado, conMermaid: true, externos }),
+      pagina({
+        titulo: d.titulo,
+        contenido,
+        actualizado,
+        conMermaid: true,
+        externos,
+      }),
       "utf-8",
     );
   }
@@ -353,7 +391,10 @@ async function main() {
       </a>`,
     ),
   ].join("\n");
-  const fuentes = externos.length > 0 ? "Linear, GitHub Issues y Grafana" : "Linear y GitHub Issues";
+  const fuentes =
+    externos.length > 0
+      ? "Linear, GitHub Issues y Grafana"
+      : "Linear y GitHub Issues";
   const indice = `    <h1>Dashboards de BistroLink</h1>
     <p>Estado del proyecto, generado automáticamente desde ${fuentes}.</p>
     <div class="tarjetas">
@@ -361,16 +402,27 @@ ${tarjetas}
     </div>`;
   await fs.writeFile(
     path.join(SALIDA, "index.html"),
-    pagina({ titulo: "Dashboards", contenido: indice, actualizado, conMermaid: false, externos }),
+    pagina({
+      titulo: "Dashboards",
+      contenido: indice,
+      actualizado,
+      conMermaid: false,
+      externos,
+    }),
     "utf-8",
   );
 
   await fs.rm(tmpDir, { recursive: true, force: true });
-  console.log(`✅ Sitio de dashboards generado en ${path.relative(ROOT, SALIDA) || "."}`);
+  console.log(
+    `✅ Sitio de dashboards generado en ${path.relative(ROOT, SALIDA) || "."}`,
+  );
 }
 
 // Solo corre main() si se ejecuta directo (no al importarlo desde un test).
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (
+  process.argv[1] &&
+  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+) {
   main().catch((err) => {
     console.error("❌ Error generando el sitio de dashboards:", err);
     process.exit(1);
