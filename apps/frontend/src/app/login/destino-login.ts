@@ -23,7 +23,7 @@ const ORIGEN_DE_REFERENCIA = "https://bistrolink.invalid";
 export function destinoDespuesDelLogin(
   valor: string | null | undefined,
 ): string {
-  if (!valor || !valor.startsWith("/")) return DESTINO_POR_DEFECTO;
+  if (!valor?.startsWith("/")) return DESTINO_POR_DEFECTO;
   try {
     const url = new URL(valor, ORIGEN_DE_REFERENCIA);
     if (url.origin !== ORIGEN_DE_REFERENCIA) return DESTINO_POR_DEFECTO;
