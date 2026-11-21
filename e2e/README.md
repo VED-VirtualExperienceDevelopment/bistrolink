@@ -258,6 +258,14 @@ Cada corrida de `develop` publica un reporte Allure con los 4 navegadores juntos
 - **Es solo una vista.** Kiwi TCMS sigue siendo la fuente de verdad de los casos y el criterio de pase o falla del pipeline no cambia.
 - **Cómo se arma.** `allure-playwright` (en `playwright.config.ts`) deja los resultados en `playwright-report/allure-results`. El job «Merge + reporte E2E» de `ci.yml` junta los 4 navegadores, los prepara para publicar con `scripts/dashboards/sanitizar-allure.mjs` y genera el HTML (artifact `allure-e2e`). Cuando termina el CI, el workflow «Publicar dashboards» lo publica en `/allure/e2e/` junto a los dashboards.
 - **Qué no se publica.** El sitio es público: el texto que los tests escriben en los campos se reemplaza por `•••`, y solo quedan las imágenes. Las trazas (`trace.zip`) y el resto del detalle están en el reporte completo de cada navegador, cifrado (ver abajo).
+- **Qué agrega el CI (BL-597).** Antes de generar el reporte, `scripts/dashboards/datos-allure.mjs` completa:
+  - **Ambiente:** entorno, URLs públicas de staging, navegadores, versión, commit, rama y corrida.
+  - **Ejecutor:** el enlace a la corrida de GitHub Actions.
+  - **Categorías:** los fallos agrupados por causa probable (inestables, regresión visual, 401/403, error 5xx, tiempo de espera, fallo de producto y fallo del test).
+  - **Funcionalidades:** el área sale de la carpeta del spec (`admin`, `comensal`, `kds`, `plataforma`, `sesion`) y la historia, del primer `test.describe()`. Un spec puede poner sus propias etiquetas `feature` y `story` con la API de Allure, y se respetan.
+
+  Después, `scripts/dashboards/marca-allure.mjs` aplica la marca de BistroLink (`scripts/dashboards/allure-marca.css`, el ícono de la app y la fuente Plus Jakarta Sans). Una carpeta nueva en `e2e/` aparece con su nombre; para darle un nombre propio, agregarla en `AREAS` de `datos-allure.mjs`.
+
 - **Para un release** se adjunta el artifact `allure-e2e` de la corrida que se usa como evidencia, porque el sitio siempre muestra la última.
 - Si falla la generación o la publicación del reporte, el pipeline no falla (como el reporte a Kiwi).
 
@@ -270,6 +278,17 @@ npx allure generate playwright-report/allure-results -c scripts/dashboards/allur
 ```
 
 El reporte local no pasa por `sanitizar-allure.mjs`: tiene los pasos completos y no se comparte.
+
+### Aviso de E2E que empiezan a fallar (BL-599)
+
+En `develop` los E2E no frenan el pipeline (BL-250). Para que un test roto por un cambio no pase desapercibido, el job «📧 Aviso de E2E que empiezan a fallar» de `ci.yml` compara cada corrida con la corrida anterior de `develop`:
+
+- **Fallo nuevo:** un test que, en un navegador, falla después de los reintentos y en la corrida anterior pasaba, estaba salteado o no existía. Los que ya fallaban antes no se avisan.
+- Si hay fallos nuevos, manda **un correo al equipo** que nombra con @usuario a los autores de los PR mergeados entre las dos corridas y les pide verificar los tests. Lleva la lista de tests y navegadores, los PR y los enlaces a la corrida y al reporte Allure; **no** lleva mensajes de error.
+- Usa la misma cuenta y los mismos destinatarios que el correo de estado (environment `notificaciones`, BL-326). Los destinatarios se enmascaran en el log.
+- Sin corrida anterior con resultados (se guardan 14 días), no se avisa. Solo corre en un push a `develop`, y nunca hace fallar el pipeline.
+
+**Si te llega el aviso:** abrí el reporte Allure, buscá el test en **Categorías** o **Funcionalidades** y, si hace falta, el reporte completo cifrado (abajo). Si es un defecto del producto, registralo como GitHub Issue; si el test quedó desactualizado por tu cambio, ajustalo en un PR.
 
 ### Artifacts de la corrida en CI
 

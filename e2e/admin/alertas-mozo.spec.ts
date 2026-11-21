@@ -38,15 +38,17 @@ async function erroresGraves(page: Page, selector: string) {
 }
 
 /**
- * El comensal llama al mozo desde el QR de la mesa y espera la confirmación
- * «Avisamos al mozo». Cierra su pestaña al terminar.
+ * El comensal llama al mozo desde el QR de la mesa y espera la confirmación:
+ * el botón pasa a «Mozo avisado» (BL-592). Cierra su pestaña al terminar.
  */
 async function llamarAlMozo(context: BrowserContext, mesa: MesaTemporal) {
   const mesaPage = await context.newPage();
   try {
     await mesaPage.goto(mesa.ruta);
     await mesaPage.getByRole("button", { name: /Llamar al mozo/i }).click();
-    await expect(mesaPage.getByText(/Avisamos al mozo/i)).toBeVisible();
+    await expect(
+      mesaPage.getByRole("button", { name: "Mozo avisado" }),
+    ).toBeVisible();
   } finally {
     await mesaPage.close();
   }
@@ -72,7 +74,9 @@ test.describe("BL-441: Alertas del mozo", () => {
       const mesaPage = await context.newPage();
       await mesaPage.goto(mesa.ruta);
       await mesaPage.getByRole("button", { name: /Llamar al mozo/i }).click();
-      await expect(mesaPage.getByText(/Avisamos al mozo/i)).toBeVisible();
+      await expect(
+        mesaPage.getByRole("button", { name: "Mozo avisado" }),
+      ).toBeVisible();
 
       // La campana del encabezado avisa que hay pendientes. El encabezado
       // está dentro de <main> (AdminShell), así que no tiene rol «banner».

@@ -1,0 +1,77 @@
+/*
+ * BL-597: marca de BistroLink en el reporte Allure de los E2E.
+ *
+ * marca-allure.mjs copia este archivo al reporte generado (carpeta marca/),
+ * junto con el ícono de la app (apps/frontend/src/app/icon.svg) y la fuente
+ * Plus Jakarta Sans (licencia SIL OFL 1.1, la misma de la web y del login).
+ * Se carga después de los estilos de Allure; los !important pisan los que
+ * Allure agrega en tiempo de ejecución.
+ *
+ * Colores de la marca (apps/frontend/tailwind.config.ts): el violeta es el
+ * principal y la mostaza, un acento (como en el login y en la landing).
+ *   primary-container #4f378a · primary-fixed #e9ddff · primary-fixed-dim #d0bcff
+ *   tertiary #765b00 · tertiary-fixed-dim #e7c365
+ */
+
+@font-face {
+  font-family: "Plus Jakarta Sans";
+  src: url("plus-jakarta-sans.woff2") format("woff2");
+  font-weight: 200 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --font-family:
+    "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif !important;
+  --color-nav-item-bg-active: #e9ddff !important;
+  --color-nav-item-bg-active-hover: #d0bcff !important;
+  --color-nav-item-text-active: #4f378a !important;
+  --color-nav-item-icon-active: #4f378a !important;
+  --color-link-text: #4f378a !important;
+  --bl-acento: #765b00;
+  --bl-acento-linea: #c9a74d;
+}
+
+:root[data-theme="dark"] {
+  --color-nav-item-bg-active: #4f378a !important;
+  --color-nav-item-bg-active-hover: #5b468f !important;
+  --color-nav-item-text-active: #e9ddff !important;
+  --color-nav-item-icon-active: #e9ddff !important;
+  --color-link-text: #d0bcff !important;
+  --bl-acento: #e7c365;
+  --bl-acento-linea: #e7c365;
+}
+
+/* Ícono de BistroLink en lugar del de Allure. */
+.side-nav__brand-icon {
+  background: url("logo.svg") center / contain no-repeat !important;
+}
+
+/* «BistroLink» en lugar de «Allure» junto al ícono, con «Link» en mostaza
+   (el acento de la marca, como en el panel del login). */
+.side-nav__brand-text {
+  font-size: 0 !important;
+  overflow: visible !important;
+  padding-inline-end: 0 !important;
+}
+
+.side-nav__brand-text::before,
+.side-nav__brand-text::after {
+  font-size: var(--font-size-xl);
+}
+
+.side-nav__brand-text::before {
+  content: "Bistro";
+}
+
+.side-nav__brand-text::after {
+  content: "Link";
+  color: var(--bl-acento);
+}
+
+/* Ítem activo del menú: fondo violeta claro y una línea mostaza a la izquierda. */
+.side-nav__link_active,
+.side-nav__overview_active {
+  box-shadow: inset 3px 0 0 var(--bl-acento-linea) !important;
+}
