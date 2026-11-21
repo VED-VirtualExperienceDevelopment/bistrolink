@@ -9,6 +9,13 @@
 # Credenciales: usuario IAM bistrolink-backup-ci (List/Get/Put sobre los buckets
 # de respaldo, sin borrado). Secrets: AWS_BACKUP_ACCESS_KEY_ID,
 # AWS_BACKUP_SECRET_ACCESS_KEY, AWS_REGION.
+#
+# BL-184 (HU-030): el job «replica-r2» verifica además la copia de producción
+# en Cloudflare R2 (servicio replica-r2-prod, infra/replica-r2): que la última
+# réplica correcta sea reciente y que el último respaldo de cada base de S3
+# esté en R2 con el mismo tamaño. Usa un token de R2 de SOLO LECTURA, limitado
+# a los buckets de réplica. Secrets: R2_CHECK_ACCESS_KEY_ID,
+# R2_CHECK_SECRET_ACCESS_KEY y R2_ENDPOINT (fuente: Infisical staging/github).
 name: Respaldo — verificar respaldo del día
 
 on:
@@ -88,6 +95,93 @@ jobs:
               resultado="✅ OK"
             fi
             echo "| $base | \`$key\` | $edad_h | $mb | $resultado |" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+          exit "$estado"
+
+  replica-r2:
+    name: Réplica en R2 < ${{ vars.REPLICA_MAX_AGE_HOURS || 3 }} h (prod)
+    # Solo producción: la réplica en R2 existe solo para prod. En un
+    # workflow_dispatch corre únicamente si se eligió prod.
+    if: github.event_name == 'schedule' || inputs.entorno == 'prod'
+    runs-on: ubuntu-latest
+    env:
+      # S3 (origen): el mismo usuario de solo lectura de los respaldos.
+      S3_ACCESS_KEY_ID: ${{ secrets.AWS_BACKUP_ACCESS_KEY_ID }}
+      S3_SECRET_ACCESS_KEY: ${{ secrets.AWS_BACKUP_SECRET_ACCESS_KEY }}
+      S3_REGION: ${{ secrets.AWS_REGION }}
+      S3_BUCKET: bistrolink-backups-prod
+      # R2 (réplica): token de solo lectura. La región de R2 es siempre «auto».
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_CHECK_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_CHECK_SECRET_ACCESS_KEY }}
+      R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+      R2_BUCKET: bistrolink-backups-prod-replica
+      # La réplica corre cada hora: más de 3 h sin una réplica correcta es que
+      # fallaron al menos dos ejecuciones seguidas.
+      MAX_AGE_HOURS: ${{ vars.REPLICA_MAX_AGE_HOURS || 3 }}
+    steps:
+      - name: Verificar la réplica en R2
+        shell: bash
+        run: |
+          set -euo pipefail
+          for var in S3_ACCESS_KEY_ID S3_SECRET_ACCESS_KEY S3_REGION R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_ENDPOINT; do
+            if [ -z "${!var:-}" ]; then
+              echo "::error::Falta el secret de $var (ver docs/runbooks/respaldo-y-restauracion.md, sección 9)."
+              exit 1
+            fi
+          done
+
+          # Cada proveedor con sus credenciales, sin mezclarlas.
+          s3() { AWS_ACCESS_KEY_ID="$S3_ACCESS_KEY_ID" AWS_SECRET_ACCESS_KEY="$S3_SECRET_ACCESS_KEY" AWS_REGION="$S3_REGION" aws "$@"; }
+          r2() { AWS_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID" AWS_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY" AWS_REGION=auto aws --endpoint-url "$R2_ENDPOINT" "$@"; }
+
+          ahora=$(date -u +%s)
+          estado=0
+          {
+            echo "## Réplica de producción en Cloudflare R2"
+            echo
+            echo "| Control | Detalle | Resultado |"
+            echo "|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # 1. Última réplica correcta: la marca que escribe replica.sh al terminar.
+          if r2 s3 cp "s3://$R2_BUCKET/_replica/estado.json" marca.json --only-show-errors 2>/dev/null; then
+            ultima=$(jq -r '.ultima_replica' marca.json)
+            edad_h=$(( (ahora - $(date -u -d "$ultima" +%s)) / 3600 ))
+            if [ "$edad_h" -gt "$MAX_AGE_HOURS" ]; then
+              echo "| Última réplica | $ultima (hace $edad_h h) | ❌ Atrasada (> $MAX_AGE_HOURS h) |" >> "$GITHUB_STEP_SUMMARY"
+              echo "::error::La última réplica correcta en R2 es de hace $edad_h h ($ultima). Revisar los logs de replica-r2-prod en Railway."
+              estado=1
+            else
+              echo "| Última réplica | $ultima (hace $edad_h h) | ✅ OK |" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          else
+            echo "| Última réplica | — | ❌ Sin marca |" >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::No se encontró _replica/estado.json en R2: la réplica nunca terminó bien o no tiene acceso."
+            estado=1
+          fi
+
+          # 2. El último respaldo de cada base en S3 está en R2 con el mismo tamaño.
+          for base in bistrolink-db keycloak-db; do
+            linea=$(s3 s3api list-objects-v2 --bucket "$S3_BUCKET" --prefix "daily/$base/" \
+              --query "sort_by(Contents[?ends_with(Key, '.dump')], &LastModified)[-1].[Key, Size]" \
+              --output text 2>/dev/null || true)
+            if [ -z "$linea" ] || [ "$linea" = "None" ]; then
+              echo "| $base | sin respaldos en S3 | ❌ |" >> "$GITHUB_STEP_SUMMARY"
+              echo "::error::$base: no hay respaldos en s3://$S3_BUCKET/daily/$base/"
+              estado=1
+              continue
+            fi
+            read -r key bytes_s3 <<< "$linea"
+            bytes_r2=$(r2 s3api head-object --bucket "$R2_BUCKET" --key "$key" \
+              --query 'ContentLength' --output text 2>/dev/null || echo "")
+            if [ "$bytes_r2" = "$bytes_s3" ]; then
+              echo "| $base | \`$key\` | ✅ En R2 |" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "| $base | \`$key\` | ❌ Falta en R2 o es distinto |" >> "$GITHUB_STEP_SUMMARY"
+              echo "::error::$base: el último respaldo ($key) no está en R2 o tiene otro tamaño."
+              estado=1
+            fi
           done
 
           exit "$estado"
