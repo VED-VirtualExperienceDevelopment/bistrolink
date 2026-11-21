@@ -121,8 +121,15 @@ export class PedidosService {
   /**
    * @param mesaQr mesa del QR validada por MesaQrGuard (BL-204). Si viene,
    *   el pedido es de esa mesa y de ninguna otra.
+   * @param canalSinMesa canal de un pedido para retirar: WEB (el enlace web)
+   *   o WHATSAPP (el bot, HU-010). Lo decide el servidor, nunca el cliente.
    */
-  async crear(tenantId: string, dto: CrearPedidoDto, mesaQr?: MesaDelQr) {
+  async crear(
+    tenantId: string,
+    dto: CrearPedidoDto,
+    mesaQr?: MesaDelQr,
+    canalSinMesa: 'WEB' | 'WHATSAPP' = 'WEB',
+  ) {
     // BL-311 (RD.05): token de acceso, solo para pedidos para retirar (WEB).
     // Los de mesa se autorizan con el QR. Se genera afuera de la transacción
     // para devolverlo en claro: en la base queda solo el hash.
@@ -176,7 +183,7 @@ export class PedidosService {
             estado: ESTADO_INICIAL_PEDIDO,
             // BL-204: el canal lo decide el servidor según cómo se resolvió
             // la mesa, no lo que diga el cliente.
-            canal: esPedidoDeMesa ? 'QR' : 'WEB',
+            canal: esPedidoDeMesa ? 'QR' : canalSinMesa,
             accesoTokenHash: esPedidoDeMesa ? null : acceso.hash,
             observacionGeneral: dto.observacionGeneral,
             // HU-040 (BL-210): solo con el consentimiento del comensal.

@@ -19,6 +19,15 @@ Este documento describe el modelo de seguridad de los endpoints públicos de Bis
 - **Propósito**: Permitir a comensales acceder al menú desde fuera del local vía enlace web
 - **Criterio de aceptación**: "Funciona sin login ni instalación previa"
 
+### HU-010: Webhook del bot de WhatsApp (BL-112)
+
+- **Ruta**: `POST /webhooks/whatsapp`
+- **Quién lo llama**: Evolution API, con cada mensaje que recibe el número del local.
+- **Autenticación**: secreto compartido en el header `x-bistrolink-webhook-secreto` (`WHATSAPP_WEBHOOK_SECRETO`, al menos 32 caracteres), comparado en tiempo constante. Sin el secreto configurado, el bot está apagado y responde `401` a todo.
+- **Tenant**: sale de la instancia de Evolution (`EVOLUTION_INSTANCIAS`), nunca del cuerpo del mensaje. Todo lo que lee o escribe corre en el contexto RLS de ese tenant.
+- **Abuso**: límite de 20 mensajes por minuto por teléfono (por hash, no por IP: todo llega desde Evolution). Los mensajes repetidos (mismo id) se descartan y la confirmación crea un solo pedido (`idempotencyKey` por mensaje).
+- **Datos personales**: la conversación se guarda con un HMAC del teléfono; el número queda en el pedido solo con el aviso de privacidad aceptado. Detalle en `docs/runbooks/whatsapp-evolution.md`.
+
 ---
 
 ## Modelo de Amenazas (Threat Model)
