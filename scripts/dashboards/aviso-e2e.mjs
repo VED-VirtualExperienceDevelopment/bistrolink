@@ -88,13 +88,20 @@ export function leerJunit(xml, estados = new Map()) {
   return estados;
 }
 
-/** Lee todos los junit.xml de las subcarpetas de una carpeta. */
+/**
+ * Lee los junit.xml de una carpeta: el de cada subcarpeta (un artifact por
+ * navegador) y, si está, el de la carpeta misma (gh run download no crea la
+ * subcarpeta cuando baja un solo artifact).
+ */
 export async function leerCarpeta(carpeta) {
   const estados = new Map();
   let archivos = 0;
+  const rutas = [path.join(carpeta, "junit.xml")];
   for (const entrada of await fs.readdir(carpeta, { withFileTypes: true })) {
-    if (!entrada.isDirectory()) continue;
-    const ruta = path.join(carpeta, entrada.name, "junit.xml");
+    if (entrada.isDirectory())
+      rutas.push(path.join(carpeta, entrada.name, "junit.xml"));
+  }
+  for (const ruta of rutas) {
     try {
       leerJunit(await fs.readFile(ruta, "utf-8"), estados);
       archivos += 1;

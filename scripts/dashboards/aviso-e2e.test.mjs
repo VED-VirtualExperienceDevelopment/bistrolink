@@ -12,6 +12,7 @@ import {
   cuerpoCorreo,
   destinatarios,
   fallosNuevos,
+  leerCarpeta,
   leerJunit,
   main,
   mencionar,
@@ -53,6 +54,30 @@ describe("leerJunit", () => {
     );
     assert.equal(estados.get(`chromium › ${B}`), "falla");
     assert.equal(estados.get(`chromium › ${C}`), "salteado");
+  });
+});
+
+describe("leerCarpeta", () => {
+  test("lee el junit.xml de cada subcarpeta y el de la carpeta misma", async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "aviso-e2e-"));
+    try {
+      await fs.mkdir(path.join(tmp, "playwright-resultados-firefox"));
+      await fs.writeFile(
+        path.join(tmp, "playwright-resultados-firefox", "junit.xml"),
+        junit("firefox", [[B, "pasa"]]),
+      );
+      await fs.writeFile(
+        path.join(tmp, "junit.xml"),
+        junit("chromium", [[B, "falla"]]),
+      );
+      await fs.mkdir(path.join(tmp, "sin-junit"));
+      const { estados, archivos } = await leerCarpeta(tmp);
+      assert.equal(archivos, 2);
+      assert.equal(estados.get(`firefox › ${B}`), "pasa");
+      assert.equal(estados.get(`chromium › ${B}`), "falla");
+    } finally {
+      await fs.rm(tmp, { recursive: true, force: true });
+    }
   });
 });
 

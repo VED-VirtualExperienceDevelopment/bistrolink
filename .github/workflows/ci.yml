@@ -1914,6 +1914,114 @@ jobs:
           # días no hay ninguno, el sitio sale sin el enlace al reporte.
           retention-days: 30
 
+  # ── JOB 10C: AVISO DE E2E QUE EMPIEZAN A FALLAR (BL-599) ─────────────────
+  # En develop los E2E son informativos (BL-250): si fallan, el pipeline sigue
+  # en verde. Este job compara los resultados de la corrida con los de la
+  # corrida anterior de develop y, si hay tests que pasaban y ahora fallan,
+  # manda un correo al equipo que nombra a los autores de los PR mergeados
+  # entre las dos corridas y les pide verificar los tests
+  # (scripts/dashboards/aviso-e2e.mjs).
+  #
+  # Reutiliza el correo de estado (BL-326): la cuenta del environment
+  # «notificaciones» (solo develop), enviar-email.mjs y los destinatarios de
+  # DASHBOARD_EMAIL_RECIPIENTS. El correo no lleva mensajes de error, y los
+  # destinatarios se enmascaran en el log: el repositorio es público.
+  #
+  # Solo en un push a develop: en un workflow_dispatch no hay un cambio al que
+  # atribuir el fallo. continue-on-error: el aviso nunca frena el pipeline.
+  aviso-e2e:
+    name: 📧 Aviso de E2E que empiezan a fallar
+    needs: [playwright]
+    if: ${{ !cancelled() && needs.playwright.result != 'skipped' && github.event_name == 'push' && github.ref == 'refs/heads/develop' }}
+    runs-on: ubuntu-latest
+    environment: notificaciones
+    continue-on-error: true
+    # actions: buscar y bajar los resultados de la corrida anterior.
+    # pull-requests: encontrar el PR (y su autor) de cada commit del rango.
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          check-latest: true
+          cache: npm
+
+      # nodemailer (para enviar-email.mjs) sale del lockfile.
+      - name: Instalar dependencias
+        run: npm ci --ignore-scripts
+
+      - name: Bajar los resultados de esta corrida
+        uses: actions/download-artifact@v8
+        with:
+          pattern: playwright-resultados-*
+          path: ${{ runner.temp }}/aviso/actual
+          merge-multiple: false
+
+      # La corrida anterior es la más nueva de develop (push, terminada) que
+      # tenga los artifacts playwright-resultados-* vigentes (se guardan 14
+      # días). Una corrida sin E2E (por ejemplo, sin deploy) se saltea. Si no
+      # hay ninguna, el aviso no compara y no manda nada.
+      - name: Bajar los resultados de la corrida anterior de develop
+        id: anterior
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_NUMBER: ${{ github.run_number }}
+          DESTINO: ${{ runner.temp }}/aviso/anterior
+        run: |
+          set -euo pipefail
+          corridas=$(gh api "repos/$REPO/actions/workflows/ci.yml/runs?branch=develop&event=push&status=completed&per_page=30" \
+            --jq ".workflow_runs[] | select(.id != $RUN_ID and .run_number < $RUN_NUMBER) | \"\(.id) \(.head_sha)\"")
+          while read -r id sha; do
+            [ -n "$id" ] || continue
+            vigentes=$(gh api "repos/$REPO/actions/runs/$id/artifacts?per_page=100" \
+              --jq '[.artifacts[] | select((.name | startswith("playwright-resultados-")) and (.expired | not))] | length')
+            if [ "$vigentes" -gt 0 ]; then
+              gh run download "$id" -R "$REPO" -p 'playwright-resultados-*' -D "$DESTINO"
+              echo "Corrida anterior con E2E: $id ($sha)."
+              echo "carpeta=$DESTINO" >> "$GITHUB_OUTPUT"
+              echo "sha=$sha" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done <<< "$corridas"
+          echo "No hay una corrida anterior de develop con resultados de E2E."
+
+      - name: Comparar y armar el correo
+        id: aviso
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SHA_ANTERIOR: ${{ steps.anterior.outputs.sha }}
+          EQUIPO_CORREOS: ${{ secrets.DASHBOARD_EMAIL_RECIPIENTS }}
+          MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
+          ALLURE_REPORT_URL: https://ved-virtualexperiencedevelopment.github.io/bistrolink/allure/e2e/
+          ACTUAL: ${{ runner.temp }}/aviso/actual
+          ANTERIOR: ${{ steps.anterior.outputs.carpeta }}
+        run: |
+          if [ -n "$ANTERIOR" ]; then
+            node scripts/dashboards/aviso-e2e.mjs --actual "$ACTUAL" --anterior "$ANTERIOR"
+          else
+            node scripts/dashboards/aviso-e2e.mjs --actual "$ACTUAL"
+          fi
+
+      - name: Enviar el correo
+        if: steps.aviso.outputs.enviar == 'true'
+        env:
+          MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
+          MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
+          EMAIL_TO: ${{ steps.aviso.outputs.to }}
+          EMAIL_FROM: ${{ steps.aviso.outputs.from }}
+          EMAIL_SUBJECT: ${{ steps.aviso.outputs.subject }}
+          EMAIL_BODY_PATH: ${{ steps.aviso.outputs.body_path }}
+        run: node scripts/dashboards/enviar-email.mjs
+
   # ── JOB 11: DEPLOY PRODUCCIÓN (tag v*.*.*, con aprobación) ───────────────
   # BL-220. Se dispara SOLO con el push de un tag v*.*.* (no con un
   # workflow_dispatch desde un tag: el rollback de production usa el job
