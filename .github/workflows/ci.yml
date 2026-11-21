@@ -1884,6 +1884,13 @@ jobs:
         env:
           ALLURE_NO_ANALYTICS: "true"
           ALLURE_REPORT_NAME: "BistroLink — E2E ${{ needs.version.outputs.label }}"
+          # BL-597: datos de la sección «Ambiente» (datos-allure.mjs). Solo
+          # datos públicos: las mismas URLs del job de Playwright.
+          ALLURE_ENTORNO: staging
+          ALLURE_WEB_URL: https://bistrolink-web-staging.up.railway.app
+          ALLURE_API_URL: https://bistrolink-api-staging.up.railway.app
+          ALLURE_VERSION: ${{ needs.version.outputs.label }}
+          ALLURE_REPORT_URL: https://ved-virtualexperiencedevelopment.github.io/bistrolink/allure/e2e/
         run: |
           npm ci --ignore-scripts
           mkdir -p ../allure-results
@@ -1895,7 +1902,11 @@ jobs:
           done
           echo "Resultados Allure de $navegadores navegador(es)."
           node scripts/dashboards/sanitizar-allure.mjs ../allure-results
+          # BL-597: Ambiente, Ejecutor, Categorías y Funcionalidades.
+          node scripts/dashboards/datos-allure.mjs ../allure-results
           npx allure generate ../allure-results -c scripts/dashboards/allurerc.mjs -o ../allure-report
+          # BL-597: marca de BistroLink (ícono, nombre, fuente y colores).
+          node scripts/dashboards/marca-allure.mjs ../allure-report
           {
             echo "### 📊 Reporte Allure de los E2E"
             echo ""
