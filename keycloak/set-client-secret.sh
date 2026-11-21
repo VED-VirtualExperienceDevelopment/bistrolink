@@ -44,7 +44,7 @@ KC_ADMIN_PASS="${KC_BOOTSTRAP_ADMIN_PASSWORD:-${KEYCLOAK_ADMIN_PASSWORD:-admin}}
 # política de contraseñas del realm. Tiene que ser igual a la de
 # realm-export.json. Sin historial (ASVS 2.1.10) y con tope de 128
 # caracteres (2.1.2). El mínimo sigue en 9 porque las contraseñas de prueba
-# (TEST_*, KEYCLOAK_COMENSAL_PASSWORD) tienen 9: con un mínimo mayor,
+# (TEST_*) tienen 9: con un mínimo mayor,
 # load-test-users.sh borraría esos usuarios y fallaría el alta de locales.
 POLITICA_CONTRASENAS='length(9) and maxLength(128) and notUsername(undefined) and notEmail(undefined)'
 
@@ -314,16 +314,24 @@ JSON
     && echo "[set-client-secret] Protección contra fuerza bruta en master activa (BL-529)." \
     || echo "[set-client-secret] AVISO: no se pudo activar la protección contra fuerza bruta en master (BL-529)." >&2
 
-  # 3. Protección contra fuerza bruta en el realm de la aplicación:
-  #    DESACTIVADA a propósito hasta BL-573. Con la protección activa,
-  #    Keycloak bloqueó al usuario técnico del comensal en staging (15/11/2026)
-  #    por logins simultáneos: la API pide un token por cada pedido de cada
-  #    comensal. BL-573 hace que la API reuse el token y recién ahí se vuelve
-  #    a activar (BL-271). Se apaga explícitamente porque el realm de staging
-  #    ya la tenía prendida y el import no cambia un realm existente.
-  "$KCADM_BIN" update "realms/${KC_REALM}" -s bruteForceProtected=false \
-    && echo "[set-client-secret] Protección contra fuerza bruta en ${KC_REALM} desactivada hasta BL-573." \
-    || echo "[set-client-secret] AVISO: no se pudo desactivar la protección contra fuerza bruta en ${KC_REALM} (BL-573)." >&2
+  # 3. Protección contra fuerza bruta en el realm de la aplicación (BL-582).
+  #    Misma configuración que master: bloqueo temporal, nunca permanente.
+  #    Estuvo apagada desde el 15/11/2026 porque bloqueaba al usuario técnico
+  #    del comensal. Desde HU-052 el comensal usa el token de invitado de la
+  #    API y ese usuario ya no existe (BL-581): solo cuentan los fallos del
+  #    personal. Se aplica acá porque el import no cambia un realm existente;
+  #    los mismos valores están en realm-export.json.
+  "$KCADM_BIN" update "realms/${KC_REALM}" \
+      -s bruteForceProtected=true \
+      -s permanentLockout=false \
+      -s failureFactor=5 \
+      -s waitIncrementSeconds=60 \
+      -s maxFailureWaitSeconds=900 \
+      -s maxDeltaTimeSeconds=43200 \
+      -s quickLoginCheckMilliSeconds=1000 \
+      -s minimumQuickLoginWaitSeconds=60 \
+    && echo "[set-client-secret] Protección contra fuerza bruta en ${KC_REALM} activa (BL-582)." \
+    || echo "[set-client-secret] AVISO: no se pudo activar la protección contra fuerza bruta en ${KC_REALM} (BL-582)." >&2
 
   # BL-264: usuarios de prueba, solo donde el entorno lo pide (local y
   # staging con KC_LOAD_TEST_USERS=true; nunca en producción). Reusa la

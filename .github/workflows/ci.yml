@@ -449,7 +449,7 @@ jobs:
             echo "$1=${valor}" >> apps/backend/.env
           }
           : > apps/backend/.env
-          for var in KEYCLOAK_CLIENT_SECRET KEYCLOAK_COMENSAL_PASSWORD \
+          for var in KEYCLOAK_CLIENT_SECRET \
                      TEST_ADMIN_PASSWORD TEST_COCINA_PASSWORD \
                      TEST_NO_TENANT_PASSWORD TEST_TENANT_B_PASSWORD \
                      TEST_MOZO_PASSWORD TEST_COCINA_B_PASSWORD; do
@@ -463,6 +463,11 @@ jobs:
           qr="$(openssl rand -base64 32)"
           echo "::add-mask::${qr}"
           echo "QR_TOKEN_KEY=${qr}" >> "$GITHUB_ENV"
+          # HU-052: clave del token de invitado del comensal (la API firma
+          # siempre el token del comensal; sin la clave no arranca).
+          clave_comensal="$(openssl rand -base64 32)"
+          echo "::add-mask::${clave_comensal}"
+          echo "COMENSAL_TOKEN_CLAVE=${clave_comensal}" >> "$GITHUB_ENV"
 
       # --wait espera los healthchecks de docker-compose.yml (Postgres listo
       # y Keycloak con /health/ready en 200).
@@ -808,9 +813,9 @@ jobs:
       # cerrado del propio contenedor, así nada sale del runner.
       # OPENAPI_HABILITADO=true para que también se genere el contrato
       # OpenAPI, que en staging está prendido.
-      # BL-271 (parte 4): la imagen corre con NODE_ENV=production, que exige
-      # KEYCLOAK_COMENSAL_USERNAME_SECRET (startup-env-check.ts): va uno al
-      # azar, como QR_TOKEN_KEY.
+      # HU-052 (BL-581): la API exige COMENSAL_TOKEN_CLAVE para firmar el
+      # token del comensal (startup-env-check.ts): va una al azar, como
+      # QR_TOKEN_KEY.
       - name: Smoke test de la imagen (API)
         if: matrix.name == 'API'
         run: |
@@ -820,7 +825,7 @@ jobs:
             -e DATABASE_URL="postgresql://smoke:smoke@db-inexistente:5432/smoke" \
             -e KEYCLOAK_CLIENT_SECRET="smoke-sin-keycloak" \
             -e QR_TOKEN_KEY="$(openssl rand -base64 32)" \
-            -e KEYCLOAK_COMENSAL_USERNAME_SECRET="$(openssl rand -hex 32)" \
+            -e COMENSAL_TOKEN_CLAVE="$(openssl rand -base64 32)" \
             -e MP_ACCESS_TOKEN="TEST-0000000000000000-000000-ci-smoke" \
             -e MP_API_BASE_URL="http://localhost:9" \
             -e OPENAPI_HABILITADO=true \

@@ -1,11 +1,20 @@
 import { Injectable } from '@nestjs/common';
 import * as jwt from 'jsonwebtoken';
 import { JwksClient } from 'jwks-rsa';
-import { AuthenticatedUser } from '../auth/keycloak-jwt.strategy';
+import {
+  AuthenticatedUser,
+  MENSAJE_COMENSAL_DE_KEYCLOAK,
+  ROL_COMENSAL,
+} from '../auth/keycloak-jwt.strategy';
 import {
   mensajeSuspendidoPara,
   TenantEstadoService,
 } from '../tenant-estado/tenant-estado.service';
+import {
+  esTokenDeInvitado,
+  TokenInvitadoInvalidoError,
+  tokenInvitadoDesdeEntorno,
+} from '../auth-comensal/token-invitado';
 
 // Mismo issuer/JWKS que KeycloakJwtStrategy (auth/keycloak-jwt.strategy.ts).
 // No se agrega KEYCLOAK_ISSUER_URL/KEYCLOAK_JWKS_URI como variables nuevas
@@ -39,6 +48,13 @@ export class WsAuthError extends Error {
 export class WsAuthService {
   constructor(private readonly tenantEstado: TenantEstadoService) {}
 
+  /**
+   * HU-052 (BL-578): token de invitado del comensal, firmado por la API.
+   * Null sin COMENSAL_TOKEN_CLAVE: entonces se rechaza todo token de
+   * invitado.
+   */
+  private readonly tokensInvitado = tokenInvitadoDesdeEntorno();
+
   private readonly jwks = new JwksClient({
     jwksUri: JWKS_URI,
     cache: true,
@@ -49,6 +65,13 @@ export class WsAuthService {
   async verify(token: string | undefined): Promise<AuthenticatedUser> {
     if (!token) {
       throw new WsAuthError('Token no provisto en el handshake');
+    }
+
+    // HU-052 (BL-578): el token de invitado lo verifica la API con su
+    // clave (HS256), nunca Keycloak; y uno de Keycloak nunca se verifica con
+    // la clave de la API. Mismo criterio que la estrategia 'jwt-invitado'.
+    if (esTokenDeInvitado(token)) {
+      return this.verificarInvitado(token);
     }
 
     const decoded = jwt.decode(token, { complete: true });
@@ -83,6 +106,12 @@ export class WsAuthService {
 
     const roles: string[] = (payload.realm_access as any)?.roles ?? [];
 
+    // BL-581: mismo criterio que KeycloakJwtStrategy. El comensal entra solo
+    // con el token de invitado; uno de Keycloak con COMENSAL no se acepta.
+    if (roles.includes(ROL_COMENSAL)) {
+      throw new WsAuthError(MENSAJE_COMENSAL_DE_KEYCLOAK);
+    }
+
     // BL-413: mismo control que KeycloakJwtStrategy. Cada evento del KDS
     // vuelve a pasar por verify(), así que una conexión que ya estaba
     // abierta tampoco puede operar después de la suspensión.
@@ -94,6 +123,38 @@ export class WsAuthService {
       sub: payload.sub as string,
       tenantId,
       roles,
+    };
+  }
+
+  /**
+   * HU-052 (BL-578): verifica el token de invitado. El rol es siempre
+   * COMENSAL y la suspensión del establecimiento se aplica igual.
+   */
+  private async verificarInvitado(token: string): Promise<AuthenticatedUser> {
+    if (!this.tokensInvitado) {
+      throw new WsAuthError('Token inválido o expirado');
+    }
+
+    let invitado;
+    try {
+      invitado = this.tokensInvitado.verificar(token);
+    } catch (error) {
+      if (error instanceof TokenInvitadoInvalidoError) {
+        throw new WsAuthError('Token inválido o expirado');
+      }
+      throw error;
+    }
+
+    if (await this.tenantEstado.estaSuspendido(invitado.tenantId)) {
+      throw new WsAuthError(mensajeSuspendidoPara(invitado.roles));
+    }
+
+    return {
+      sub: invitado.sub,
+      tenantId: invitado.tenantId,
+      restauranteId: invitado.restauranteId,
+      roles: invitado.roles,
+      canal: invitado.canal,
     };
   }
 }

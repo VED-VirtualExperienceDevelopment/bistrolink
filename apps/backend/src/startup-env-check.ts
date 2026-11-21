@@ -13,6 +13,8 @@
  * Se salta automáticamente en NODE_ENV=test para no afectar a Jest.
  */
 
+import { tokenInvitadoDesdeEntorno } from './auth-comensal/token-invitado';
+
 interface RequiredEnvVar {
   name: string;
   hint: string;
@@ -42,25 +44,55 @@ const REQUIRED_ENV_VARS: RequiredEnvVar[] = [
   },
 ];
 
+const COMO_GENERAR_CLAVE_COMENSAL =
+  "Generala con: node -e \"console.log(require('crypto').randomBytes(32).toString('base64'))\". " +
+  'Va en Infisical, carpeta /api de cada entorno; nunca por chat ni en tickets.';
+
 /**
- * BL-271 (parte 4): solo en las imágenes de staging y producción
- * (NODE_ENV=production). Con la protección contra fuerza bruta activa en el
- * realm, el usuario técnico del comensal tiene que tener un nombre que no se
- * deduzca del tenantId. Sin el secreto, la API volvería en silencio al nombre
- * anterior (`comensal-<tenantId>`), que en un entorno ya migrado no existe:
- * ningún comensal podría pedir. Mejor que no arranque. En local y en CI
- * (desarrollo) no se exige: ahí se usa el nombre anterior a propósito.
+ * HU-052: la API firma el token de invitado del comensal (desde BL-581, el
+ * único emisor). Sin una clave válida arrancaría «bien» y respondería 500 a
+ * cada comensal, así que no arranca: ni sin clave, ni con una clave mal
+ * formada (corta, o la anterior igual a la actual).
  */
-const REQUIRED_IN_PRODUCTION_ENV_VARS: RequiredEnvVar[] = [
-  {
-    name: 'KEYCLOAK_COMENSAL_USERNAME_SECRET',
-    hint:
-      'Secreto con el que se calcula el nombre del usuario técnico del ' +
-      'comensal (BL-271). En Infisical, carpeta /api del entorno. Antes de ' +
-      'cargarlo por primera vez hay que crear los usuarios con ' +
-      'scripts/migrar-comensal-tecnico.ts --aplicar. No va en el .env local.',
-  },
-];
+export function problemasTokenComensal(
+  env: NodeJS.ProcessEnv,
+): RequiredEnvVar[] {
+  try {
+    if (!tokenInvitadoDesdeEntorno(env)) {
+      return [
+        {
+          name: 'COMENSAL_TOKEN_CLAVE',
+          hint:
+            'La API firma el token del comensal y necesita su clave (al ' +
+            'menos 32 bytes). ' +
+            COMO_GENERAR_CLAVE_COMENSAL,
+        },
+      ];
+    }
+  } catch (error) {
+    return [
+      {
+        name: 'COMENSAL_TOKEN_CLAVE',
+        hint: `${(error as Error).message}. ${COMO_GENERAR_CLAVE_COMENSAL}`,
+      },
+    ];
+  }
+  return [];
+}
+
+/**
+ * BL-581: variables del comensal técnico de Keycloak, que ya no se usan.
+ * No impiden el arranque; se avisa para borrarlas de Infisical y del .env.
+ */
+export const VARIABLES_OBSOLETAS_COMENSAL = [
+  'COMENSAL_TOKEN_EMISOR',
+  'KEYCLOAK_COMENSAL_PASSWORD',
+  'KEYCLOAK_COMENSAL_USERNAME_SECRET',
+] as const;
+
+export function variablesObsoletasPresentes(env: NodeJS.ProcessEnv): string[] {
+  return VARIABLES_OBSOLETAS_COMENSAL.filter((name) => env[name]);
+}
 
 export function checkRequiredEnvVars(): void {
   if (process.env.NODE_ENV === 'test') {
@@ -70,11 +102,17 @@ export function checkRequiredEnvVars(): void {
     return;
   }
 
-  const required =
-    process.env.NODE_ENV === 'production'
-      ? [...REQUIRED_ENV_VARS, ...REQUIRED_IN_PRODUCTION_ENV_VARS]
-      : REQUIRED_ENV_VARS;
-  const missing = required.filter(({ name }) => !process.env[name]);
+  const obsoletas = variablesObsoletasPresentes(process.env);
+  if (obsoletas.length > 0) {
+    console.warn(
+      `[startup] Variables que ya no se usan desde BL-581 (comensal técnico de Keycloak): ${obsoletas.join(', ')}. Borrarlas de Infisical y del .env.`,
+    );
+  }
+
+  const missing = [
+    ...REQUIRED_ENV_VARS.filter(({ name }) => !process.env[name]),
+    ...problemasTokenComensal(process.env),
+  ];
 
   if (missing.length === 0) {
     return;
@@ -88,6 +126,7 @@ export function checkRequiredEnvVars(): void {
     `\n\n` +
       `═══════════════════════════════════════════════════════════════\n` +
       `  ERROR DE ARRANQUE: faltan variables de entorno obligatorias\n` +
+      `  o tienen un valor inválido\n` +
       `═══════════════════════════════════════════════════════════════\n` +
       `\n` +
       `El backend no puede arrancar sin las siguientes variables ` +

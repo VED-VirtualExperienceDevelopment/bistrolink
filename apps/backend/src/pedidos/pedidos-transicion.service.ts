@@ -23,6 +23,7 @@ import {
   umbralesDelRestaurante,
   type UmbralesEspera,
 } from './umbrales-espera';
+import type { AccesoDelPedido } from '../auth-comensal/canal-invitado';
 
 /**
  * BL-448: un aviso de «Mesa N quiere pagar en efectivo» pendiente, con la
@@ -302,6 +303,23 @@ export class PedidosTransicionService {
       });
       return umbralesDelRestaurante(restaurante);
     });
+  }
+
+  /**
+   * HU-052 (BL-580): mesa, restaurante y canal del pedido, para atar el
+   * seguimiento por socket al canal del token de invitado. null si no existe
+   * en el tenant (RLS).
+   */
+  async accesoDelPedido(
+    tenantId: string,
+    pedidoId: string,
+  ): Promise<AccesoDelPedido | null> {
+    return this.tenantPrisma.runInTenantContext(tenantId, (tx) =>
+      tx.pedido.findUnique({
+        where: { id: pedidoId },
+        select: { mesaId: true, restauranteId: true, canal: true },
+      }),
+    );
   }
 
   /** Para HU-006: estado actual de un pedido puntual, al suscribirse (por

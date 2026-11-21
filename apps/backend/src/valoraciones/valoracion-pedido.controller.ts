@@ -7,7 +7,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
+import { AuthGuardComensal } from '../auth/invitado-jwt.strategy';
 import { Throttle } from '@nestjs/throttler';
 import { ApiSecurity, ApiTags } from '@nestjs/swagger';
 import { RolesGuard, Roles } from '../auth/roles.guard';
@@ -42,7 +42,8 @@ import { ValoracionesService } from './valoraciones.service';
 @ApiSecurity({ [SEGURIDAD_KEYCLOAK]: [], [SEGURIDAD_MESA_QR]: [] })
 @ApiSecurity({ [SEGURIDAD_KEYCLOAK]: [], [SEGURIDAD_PEDIDO]: [] })
 @Controller('pedidos/:pedidoId/valoracion')
-@UseGuards(AuthGuard('jwt'), RolesGuard)
+// HU-052 (BL-578): acepta el token de invitado del comensal y el de Keycloak.
+@UseGuards(AuthGuardComensal, RolesGuard)
 @Roles('COMENSAL')
 export class ValoracionPedidoController {
   constructor(private readonly valoraciones: ValoracionesService) {}

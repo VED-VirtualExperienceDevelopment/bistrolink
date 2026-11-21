@@ -9,9 +9,10 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
+import { AuthGuardComensal } from '../auth/invitado-jwt.strategy';
 import { RolesGuard, Roles } from '../auth/roles.guard';
 import { AuthenticatedUser } from '../auth/keycloak-jwt.strategy';
+import { exigirCanalParaPedidoNuevo } from '../auth-comensal/canal-invitado';
 import { MesaDelQr } from '../qr-mesa/qr-mesa-acceso.service';
 import {
   MesaDelQrActual,
@@ -35,7 +36,8 @@ import { SEGURIDAD_KEYCLOAK, SEGURIDAD_MESA_QR } from '../openapi';
 @ApiBearerAuth(SEGURIDAD_KEYCLOAK)
 @ApiSecurity({ [SEGURIDAD_KEYCLOAK]: [], [SEGURIDAD_MESA_QR]: [] })
 @Controller('pedidos')
-@UseGuards(AuthGuard('jwt'), RolesGuard)
+// HU-052 (BL-578): acepta el token de invitado del comensal y el de Keycloak.
+@UseGuards(AuthGuardComensal, RolesGuard)
 @Roles('COMENSAL')
 export class PedidosController {
   constructor(
@@ -54,6 +56,8 @@ export class PedidosController {
     @Body() dto: CrearPedidoDto,
     @MesaDelQrActual() mesaQr?: MesaDelQr,
   ) {
+    // HU-052 (BL-580): el token de invitado solo pide en su canal.
+    exigirCanalParaPedidoNuevo(req.user, dto.restauranteId);
     return this.pedidosService.crear(req.user.tenantId, dto, mesaQr);
   }
 

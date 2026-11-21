@@ -1673,3 +1673,221 @@ describe('Gestión de usuarios (HU-013) - eliminar sin historial (BL-382)', () =
     },
   );
 });
+
+// ── BL-371: desbloquear una cuenta bloqueada por intentos fallidos ─────────
+describe('Gestión de usuarios (HU-013) - desbloquear (BL-371)', () => {
+  let app: INestApplication;
+  let prisma: PrismaClient;
+  let creado: { id: string; keycloakId: string; tenantId: string } | undefined;
+  // Configuración de fuerza bruta del realm antes del test, para dejarla igual.
+  let configuracionOriginal: Record<string, unknown> | undefined;
+
+  const itConAdmin = ADMIN_PASS ? it : it.skip;
+  const CAMPOS_FUERZA_BRUTA = [
+    'bruteForceProtected',
+    'permanentLockout',
+    'failureFactor',
+    'waitIncrementSeconds',
+    'maxFailureWaitSeconds',
+    'quickLoginCheckMilliSeconds',
+    'minimumQuickLoginWaitSeconds',
+    'maxDeltaTimeSeconds',
+  ];
+
+  const adminHeaders = async () => ({
+    Authorization: `Bearer ${await getMasterAdminToken()}`,
+    'Content-Type': 'application/json',
+  });
+
+  async function actualizarRealm(cambios: Record<string, unknown>) {
+    const res = await fetch(`${KEYCLOAK_URL}/admin/realms/${REALM}`, {
+      method: 'PUT',
+      headers: await adminHeaders(),
+      body: JSON.stringify(cambios),
+    });
+    expect(res.ok).toBe(true);
+  }
+
+  async function intentarIngreso(username: string, password: string) {
+    const res = await fetch(
+      `${KEYCLOAK_URL}/realms/${REALM}/protocol/openid-connect/token`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'password',
+          client_id: CLIENT_ID,
+          client_secret: CLIENT_SECRET,
+          username,
+          password,
+        }),
+      },
+    );
+    // El motivo de Keycloak (sin tokens) para que un fallo diga qué pasó.
+    const cuerpo = (await res.json()) as { error_description?: string };
+    return {
+      status: res.status,
+      error: res.ok ? undefined : cuerpo.error_description,
+    };
+  }
+
+  beforeAll(async () => {
+    const moduleRef: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
+    app = moduleRef.createNestApplication();
+    await app.init();
+    prisma = new PrismaClient();
+  });
+
+  afterAll(async () => {
+    if (configuracionOriginal) {
+      await actualizarRealm(configuracionOriginal).catch(() => undefined);
+    }
+    if (creado) {
+      const { keycloakId, tenantId } = creado;
+      await borrarUsuarioKeycloak(keycloakId).catch(() => undefined);
+      await prisma
+        .$transaction(async (tx) => {
+          await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`;
+          await tx.usuario.deleteMany({ where: { keycloakId } });
+        })
+        .catch(() => undefined); // best-effort
+    }
+    await prisma.$disconnect();
+    await app.close();
+  });
+
+  itConAdmin(
+    '[TC-I-243] Usuarios: una cuenta bloqueada por intentos fallidos se ve en el listado y el ADMIN la desbloquea sin cambiar la contraseña',
+    async () => {
+      // Fuerza bruta encendida solo durante el test (el realm de CI la tiene
+      // apagada); en afterAll vuelve a como estaba.
+      const realm = await (
+        await fetch(`${KEYCLOAK_URL}/admin/realms/${REALM}`, {
+          headers: await adminHeaders(),
+        })
+      ).json();
+      configuracionOriginal = Object.fromEntries(
+        CAMPOS_FUERZA_BRUTA.map((campo) => [campo, realm[campo]]),
+      );
+      await actualizarRealm({
+        bruteForceProtected: true,
+        permanentLockout: false,
+        failureFactor: 3,
+        waitIncrementSeconds: 300,
+        maxFailureWaitSeconds: 900,
+      });
+
+      const tokenAdmin = await getToken(ADMIN_USER, ADMIN_PASS as string);
+      const username = `mozo-bloqueo-${Date.now()}`;
+      const alta = await request(app.getHttpServer())
+        .post('/usuarios')
+        .set('Authorization', `Bearer ${tokenAdmin}`)
+        .send({
+          username,
+          // Sin email, el perfil del realm deja la cuenta «not fully set up»
+          // y el password grant responde 400 aunque la contraseña sea la
+          // correcta (como en TC-I-045).
+          email: `${username}@bistrolink.dev`,
+          nombre: 'Mozo',
+          apellido: 'Bloqueo',
+          rol: 'MOZO',
+          restauranteId: RESTAURANTE_TENANT_A,
+        })
+        .expect(201);
+      creado = {
+        id: alta.body.id,
+        keycloakId: alta.body.keycloakId,
+        tenantId: alta.body.tenantId,
+      };
+      const { id, keycloakId } = creado;
+
+      // Contraseña definitiva para poder ingresar después del desbloqueo.
+      const contrasena = `Bloqueo-${Date.now()}`;
+      const base = `${KEYCLOAK_URL}/admin/realms/${REALM}/users/${keycloakId}`;
+      const perfil = await fetch(base, {
+        method: 'PUT',
+        headers: await adminHeaders(),
+        body: JSON.stringify({ firstName: 'Mozo', lastName: 'Bloqueo' }),
+      });
+      expect(perfil.ok).toBe(true);
+      const reset = await fetch(`${base}/reset-password`, {
+        method: 'PUT',
+        headers: await adminHeaders(),
+        body: JSON.stringify({
+          type: 'password',
+          value: contrasena,
+          temporary: false,
+        }),
+      });
+      expect(reset.ok).toBe(true);
+
+      // Antes de bloquearla, la cuenta entra: así el 200 del final prueba el
+      // desbloqueo y no otra cosa (perfil incompleto, contraseña temporal).
+      expect(await intentarIngreso(username, contrasena)).toEqual({
+        status: 200,
+        error: undefined,
+      });
+
+      // Tres intentos fallidos: Keycloak bloquea la cuenta y rechaza incluso
+      // la contraseña correcta (con el mismo error genérico, sin decir que
+      // está bloqueada).
+      for (let i = 0; i < 3; i++) {
+        expect((await intentarIngreso(username, 'equivocada')).status).not.toBe(
+          200,
+        );
+      }
+      expect((await intentarIngreso(username, contrasena)).status).not.toBe(
+        200,
+      );
+
+      const lista = await request(app.getHttpServer())
+        .get('/usuarios')
+        .set('Authorization', `Bearer ${tokenAdmin}`)
+        .expect(200);
+      const fila = (lista.body as { id: string; bloqueada?: boolean }[]).find(
+        (u) => u.id === id,
+      );
+      expect(fila?.bloqueada).toBe(true);
+
+      const res = await request(app.getHttpServer())
+        .post(`/usuarios/${id}/desbloquear`)
+        .set('Authorization', `Bearer ${tokenAdmin}`)
+        .expect(200);
+      expect(res.body).toEqual({ id, bloqueada: false });
+
+      // Ingresa con la misma contraseña de antes.
+      expect(await intentarIngreso(username, contrasena)).toEqual({
+        status: 200,
+        error: undefined,
+      });
+      const otraVez = await request(app.getHttpServer())
+        .get('/usuarios')
+        .set('Authorization', `Bearer ${tokenAdmin}`)
+        .expect(200);
+      expect(
+        (otraVez.body as { id: string; bloqueada?: boolean }[]).find(
+          (u) => u.id === id,
+        )?.bloqueada,
+      ).toBe(false);
+    },
+  );
+
+  itConAdmin(
+    '[TC-I-244] Usuarios: desbloquear un usuario o la cuenta de cocina de otro tenant responde 404',
+    async () => {
+      const token = await getToken(ADMIN_USER, ADMIN_PASS as string);
+      const COCINA_B_KEYCLOAK_ID = '0fd5421a-a1f4-4fe4-ab95-8a3482a3e5cd'; // test-users.json
+
+      await request(app.getHttpServer())
+        .post(`/usuarios/cocina/${COCINA_B_KEYCLOAK_ID}/desbloquear`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(404);
+      await request(app.getHttpServer())
+        .post('/usuarios/00000000-0000-4000-8000-000000000000/desbloquear')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(404);
+    },
+  );
+});

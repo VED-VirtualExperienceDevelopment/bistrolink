@@ -49,6 +49,13 @@
 | 1.42    | 15/11/2026 | TC-I-230 a 232: el canal en tiempo real de Gestión de Carta (`/menu`) exige el token de un Administrador y toma el tenant del token (BL-515).                                                                                             |
 | 1.43    | 15/11/2026 | TC-I-233: tarjetas aceptadas para el sello de pago seguro (HU-051 / BL-563). Se borran los bloques de TC-I-225 a 232, ya cargados.                                                                                                        |
 | 1.44    | 15/11/2026 | TC-I-234: valoración privada del pedido (HU-050 / BL-558). Se borra el bloque de TC-I-233, ya cargado.                                                                                                                                    |
+| 1.45    | 16/11/2026 | TC-I-235 a 237: token de invitado del comensal emitido por la API (HU-052 / BL-578), para cargar con el script antes de mergear el PR.                                                                                                    |
+| 1.46    | 16/11/2026 | Se borran los bloques de TC-I-234 a 237, ya cargados en Kiwi.                                                                                                                                                                             |
+| 1.47    | 16/11/2026 | TC-I-238: /auth/comensal entrega el token de invitado de la API con su canal (HU-052 / BL-579).                                                                                                                                           |
+| 1.48    | 18/11/2026 | TC-I-239 a 242: el token de invitado del comensal atado a su canal (HU-052 / BL-580).                                                                                                                                                     |
+| 1.49    | 19/11/2026 | Se borran los bloques de TC-I-238 a 242, ya cargados en Kiwi (HU-052 / BL-584).                                                                                                                                                           |
+| 1.50    | 19/11/2026 | TC-I-034, 044, 050, 052, 090 y 238: el comensal usa siempre el token de invitado de la API y el alta ya no crea el comensal técnico (HU-052 / BL-581).                                                                                    |
+| 1.51    | 19/11/2026 | Se borran los bloques de TC-I-034, 044, 050, 052, 090 y 238, ya cargados en Kiwi. TC-I-243 y 244: desbloquear una cuenta bloqueada por intentos fallidos (BL-371), para cargar con el script antes de mergear el PR.                      |
 
 Texto del campo de descripción de cada caso TC-I en Kiwi. Lo carga
 `cargar-casos-integracion.mjs --descripciones`: cada bloque `## TC-I-NNN`
@@ -60,26 +67,42 @@ esperado`, igual que los casos cargados a mano desde TC-I-029.
 
 ## Casos para cargar
 
-## TC-I-234
+## TC-I-243
 
 ### Precondición
 
-API de integración con la base y RLS reales. Un pedido para retirar ENTREGADO y otro EN_PREPARACION del local de prueba.
+API de integración con la base, el RLS y Keycloak reales. Administrador del tenant de prueba A (`admin-test`). El test enciende la protección contra fuerza bruta del realm (3 intentos fallidos) y al final la deja como estaba.
 
 ### Pasos
 
-1. Valorar el pedido entregado con 4 estrellas y un comentario.
-2. Valorarlo de nuevo con 1 estrella.
-3. Valorar el pedido en preparación.
-4. Pedir las valoraciones del local con el período «Hoy».
-5. Buscar la valoración desde otro tenant.
-6. Guardar directo en la base una valoración con 6 estrellas.
+1. Dar de alta un mozo con email, nombre y apellido, y ponerle una contraseña definitiva.
+2. Ingresar con esa contraseña.
+3. Intentar ingresar 3 veces con una contraseña equivocada y una vez con la correcta.
+4. Pedir `GET /usuarios` como Administrador.
+5. Llamar a `POST /usuarios/:id/desbloquear`.
+6. Ingresar con la contraseña correcta y volver a pedir el listado.
 
 ### Resultado esperado
 
-1. Se guarda (`{ valorado: true }`).
-2. 409 con el código `YA_VALORADO`; queda la primera.
-3. 409 «Podés valorar tu pedido cuando te lo entreguen».
-4. Promedio y total del período; el comentario aparece con el día y las 4 estrellas, sin el pedido, la mesa ni la hora.
-5. No la ve (RLS).
-6. La base la rechaza (CHECK de 1 a 5).
+1. 201.
+2. 200: la cuenta está completa y la contraseña sirve antes del bloqueo.
+3. Ningún intento entra: después del tercero, tampoco con la contraseña correcta.
+4. El mozo figura con `bloqueada: true`.
+5. 200 con `{ id, bloqueada: false }`.
+6. Ingresa con la misma contraseña (no se cambió) y el listado lo muestra con `bloqueada: false`.
+
+## TC-I-244
+
+### Precondición
+
+API de integración con Keycloak real. Administrador del tenant de prueba A y la cuenta de cocina del tenant B (`test-users.json`).
+
+### Pasos
+
+1. Llamar a `POST /usuarios/cocina/:keycloakId/desbloquear` con la cuenta de cocina del tenant B.
+2. Llamar a `POST /usuarios/:id/desbloquear` con un id que no existe en el tenant.
+
+### Resultado esperado
+
+1. 404: no se puede tocar ni averiguar una cuenta de otro tenant.
+2. 404.

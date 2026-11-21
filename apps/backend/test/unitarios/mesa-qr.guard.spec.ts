@@ -174,6 +174,93 @@ describe('MesaQrGuard (BL-204)', () => {
   );
 });
 
+// HU-052 (BL-580): el token de invitado solo sirve en el canal por el que se
+// emitió. Con el token de Keycloak (sin canal) todo sigue como arriba.
+describe('MesaQrGuard con el token de invitado (HU-052, BL-580)', () => {
+  const OTRA_MESA = '44444444-4444-4444-4444-444444444444';
+  const OTRA_SESION = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const HEADERS_DEL_QR = {
+    [HEADER_MESA_TOKEN]: 'token-del-qr',
+    [HEADER_MESA_SESION]: SESION_ID,
+  };
+
+  let mockQrMesaAcceso: { resolver: jest.Mock };
+  let guard: MesaQrGuard;
+
+  const requestInvitado = (
+    headers: RequestConMesaQr['headers'],
+    canal: NonNullable<RequestConMesaQr['user']>['canal'],
+  ): RequestConMesaQr => ({
+    headers,
+    user: { sub: 'invitado', tenantId: TENANT_ID, roles: ['COMENSAL'], canal },
+  });
+
+  const canalMesa = (mesaId = MESA_DEL_QR.mesaId, sesionId = SESION_ID) => ({
+    tipo: 'mesa' as const,
+    mesaId,
+    sesionId,
+  });
+
+  beforeEach(() => {
+    mockQrMesaAcceso = { resolver: jest.fn().mockResolvedValue(MESA_DEL_QR) };
+    guard = new MesaQrGuard(mockQrMesaAcceso as any);
+  });
+
+  it('[TC-U-618] el token de la mesa con el QR y la sesión de esa mesa pasa y deja la mesa en el request', async () => {
+    const request = requestInvitado(HEADERS_DEL_QR, canalMesa());
+
+    await expect(guard.canActivate(contextoCon(request))).resolves.toBe(true);
+    expect(request.mesaQr).toEqual(MESA_DEL_QR);
+  });
+
+  it('[TC-U-619] el token de la mesa con el QR de otra mesa → 403; de una sesión anterior → 410 SESION_VENCIDA', async () => {
+    const deOtraMesa = requestInvitado(HEADERS_DEL_QR, canalMesa(OTRA_MESA));
+    await expect(guard.canActivate(contextoCon(deOtraMesa))).rejects.toThrow(
+      ForbiddenException,
+    );
+    expect(deOtraMesa.mesaQr).toBeUndefined();
+
+    const deOtraSesion = requestInvitado(
+      HEADERS_DEL_QR,
+      canalMesa(MESA_DEL_QR.mesaId, OTRA_SESION),
+    );
+    const error = await guard
+      .canActivate(contextoCon(deOtraSesion))
+      .catch((e: GoneException) => e);
+    expect(error).toBeInstanceOf(GoneException);
+    expect((error as GoneException).getResponse()).toMatchObject({
+      codigo: 'SESION_VENCIDA',
+    });
+    expect(deOtraSesion.mesaQr).toBeUndefined();
+  });
+
+  it('[TC-U-620] el token de la mesa sin X-Mesa-Token → 400 (no sirve para pedir para retirar)', async () => {
+    const request = requestInvitado({}, canalMesa());
+
+    await expect(guard.canActivate(contextoCon(request))).rejects.toThrow(
+      BadRequestException,
+    );
+    expect(mockQrMesaAcceso.resolver).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['del retiro', { tipo: 'retiro' as const, restauranteId: 'r' }],
+    ['del link de pago', { tipo: 'link' as const, pedidoId: 'p' }],
+  ])(
+    '[TC-U-621] el token %s con un QR de mesa → 403, sin resolver el QR; sin QR pasa',
+    async (_caso, canal) => {
+      const conQr = requestInvitado(HEADERS_DEL_QR, canal);
+      await expect(guard.canActivate(contextoCon(conQr))).rejects.toThrow(
+        ForbiddenException,
+      );
+      expect(mockQrMesaAcceso.resolver).not.toHaveBeenCalled();
+
+      const sinQr = requestInvitado({}, canal);
+      await expect(guard.canActivate(contextoCon(sinQr))).resolves.toBe(true);
+    },
+  );
+});
+
 describe('MesaQrObligatoriaGuard (BL-204)', () => {
   const guard = new MesaQrObligatoriaGuard();
 
