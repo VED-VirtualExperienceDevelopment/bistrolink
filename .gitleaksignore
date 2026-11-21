@@ -1,2 +1,6 @@
 # BL-299: token local y vencido de scripts/token_response.json (ya borrado del repo).
 5e9f38ea3273b906c1ef9e5731b2b7046754fd9e:scripts/token_response.json:jwt:1
+# BL-487: JWT ficticio de un test de sanitizar-allure.test.mjs (encabezado
+# {"alg":"RS256"}, sujeto "test" y firma inventada). Ya no está en el código
+# (el test usa un token sin forma de JWT), pero queda en este commit.
+cb02c5ae8165ec5b98e1437e8b2baee240cde433:scripts/dashboards/sanitizar-allure.test.mjs:jwt:21
