@@ -865,3 +865,29 @@ model VentaPosImportada {
   @@index([tenantId, actualizadaEnPos])
   @@map("venta_pos_importada")
 }
+
+// ── HU-010 (BL-112) Conversación del bot de WhatsApp ──────────────────────────
+// Lo que el bot de pedidos para retirar necesita recordar entre un mensaje y
+// el siguiente: en qué paso está, si aceptó el aviso de privacidad y el
+// pedido que va armando. No guarda el teléfono: la clave es un HMAC del
+// tenant y el número (WHATSAPP_TELEFONO_CLAVE). Vence a los 30 minutos sin
+// mensajes; las vencidas se borran al llegar el próximo mensaje del local.
+// Con RLS.
+
+model ConversacionWhatsapp {
+  tenantId        String   @map("tenant_id") @db.Uuid
+  telefonoHash    String   @map("telefono_hash") @db.Char(64)
+  // INICIO | PRIVACIDAD | ARMANDO | CONFIRMAR (CHECK en la migración).
+  paso            String   @db.VarChar(12)
+  consentido      Boolean  @default(false)
+  // [{ itemCartaId, cantidad }]
+  carrito         Json     @default("[]")
+  // Para descartar el mismo mensaje si Evolution lo manda dos veces.
+  ultimoMensajeId String?  @map("ultimo_mensaje_id") @db.VarChar(128)
+  venceEn         DateTime @map("vence_en") @db.Timestamptz(3)
+  actualizadaEn   DateTime @default(now()) @updatedAt @map("actualizada_en") @db.Timestamptz(3)
+
+  @@id([tenantId, telefonoHash])
+  @@index([tenantId, venceEn])
+  @@map("conversacion_whatsapp")
+}
