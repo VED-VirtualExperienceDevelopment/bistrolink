@@ -2,6 +2,8 @@
 // BL-298: arma el sitio de GitHub Pages con los dos dashboards.
 // BL-243: suma un enlace al estado del servicio (dashboard público de Grafana
 // Cloud), si el workflow pasa GRAFANA_ESTADO_URL.
+// BL-487: suma el reporte Allure de los E2E en /allure/e2e/, si el workflow
+// pasa ALLURE_E2E_DIR (la carpeta del reporte ya generado y sanitizado).
 //
 // Se corre DESPUÉS de update-dashboard-from-linear.mjs y
 // update-github-bugs-dashboard.mjs, que actualizan los bloques AUTO de los
@@ -14,6 +16,7 @@
 //
 // Uso: node scripts/dashboards/publicar-dashboards.mjs [carpeta de salida]   (por defecto _site)
 //      GRAFANA_ESTADO_URL (opcional): link público del dashboard de estado.
+//      ALLURE_E2E_DIR (opcional): carpeta con el reporte Allure de los E2E.
 
 import { execFileSync } from "node:child_process";
 import fs from "node:fs/promises";
@@ -108,10 +111,43 @@ export function enlacesExternos(url) {
   ];
 }
 
+// BL-487: reporte Allure de los E2E. Lo genera (sin contraseñas ni trazas) el
+// job «Merge + reporte E2E» de ci.yml, y el workflow lo baja del último push a
+// develop. Se copia al sitio en ALLURE_RUTA. Si no llega, el sitio se publica
+// igual, sin el enlace.
+export const ALLURE_RUTA = "allure/e2e/";
+
+export async function reporteAllure(carpeta) {
+  if (!carpeta) return [];
+  try {
+    await fs.access(path.join(carpeta, "index.html"));
+  } catch {
+    console.warn(
+      "⚠️ No llegó el reporte Allure de los E2E: se publica sin el enlace.",
+    );
+    return [];
+  }
+  return [
+    {
+      carpeta,
+      ruta: ALLURE_RUTA,
+      titulo: "Reporte E2E (Allure)",
+      descripcion:
+        "Resultado de la última corrida de los E2E de Playwright en develop, en los 4 navegadores. Kiwi TCMS sigue siendo la fuente de verdad de los casos.",
+    },
+  ];
+}
+
 // Lo que está entre estos marcadores es solo para quien lee el .md en el
 // repositorio (por ejemplo, el aviso de que la versión al día está en Pages).
 const SOLO_REPO =
   /<!--\s*SOLO-REPO:start\s*-->[\s\S]*?<!--\s*SOLO-REPO:end\s*-->/g;
+
+// «A, B y C»: enumera las fuentes del índice.
+export function listaEnEspanol(items) {
+  if (items.length <= 1) return items.join("");
+  return `${items.slice(0, -1).join(", ")} y ${items.at(-1)}`;
+}
 
 export function limpiarMarkdown(md) {
   return md.replace(SOLO_REPO, "");
@@ -234,11 +270,15 @@ export function pagina({
   actualizado,
   conMermaid,
   externos = [],
+  internos = [],
 }) {
   const nav = [
     `<a href="./">Inicio</a>`,
     ...DASHBOARDS.map(
       (d) => `<a href="./${d.salida}">${escaparHtml(d.titulo)}</a>`,
+    ),
+    ...internos.map(
+      (i) => `<a href="./${i.ruta}">${escaparHtml(i.titulo)}</a>`,
     ),
     ...externos.map((e) => `${enlaceExterno(e)}${escaparHtml(e.titulo)} ↗</a>`),
   ].join("\n        ");
@@ -351,12 +391,23 @@ async function main() {
   const tmpDir = await fs.mkdtemp(path.join(SALIDA, ".tmp-"));
   const actualizado = fechaActualizacion();
   const externos = enlacesExternos(process.env.GRAFANA_ESTADO_URL);
+  const internos = await reporteAllure(
+    process.env.ALLURE_E2E_DIR
+      ? path.resolve(ROOT, process.env.ALLURE_E2E_DIR)
+      : undefined,
+  );
 
   for (const fuente of FUENTES) {
     await fs.copyFile(
       path.join(ROOT, fuente),
       path.join(SALIDA, path.basename(fuente)),
     );
+  }
+
+  for (const reporte of internos) {
+    await fs.cp(reporte.carpeta, path.join(SALIDA, reporte.ruta), {
+      recursive: true,
+    });
   }
 
   for (const [i, d] of DASHBOARDS.entries()) {
@@ -372,6 +423,7 @@ async function main() {
         actualizado,
         conMermaid: true,
         externos,
+        internos,
       }),
       "utf-8",
     );
@@ -384,6 +436,12 @@ async function main() {
         ${escaparHtml(d.descripcion)}
       </a>`,
     ),
+    ...internos.map(
+      (r) => `      <a class="tarjeta" href="./${r.ruta}">
+        <strong>${escaparHtml(r.titulo)}</strong>
+        ${escaparHtml(r.descripcion)}
+      </a>`,
+    ),
     ...externos.map(
       (e) => `      ${enlaceExterno(e, "tarjeta")}
         <strong>${escaparHtml(e.titulo)} ↗</strong>
@@ -391,10 +449,12 @@ async function main() {
       </a>`,
     ),
   ].join("\n");
-  const fuentes =
-    externos.length > 0
-      ? "Linear, GitHub Issues y Grafana"
-      : "Linear y GitHub Issues";
+  const fuentes = listaEnEspanol([
+    "Linear",
+    "GitHub Issues",
+    ...(internos.length > 0 ? ["los E2E de Playwright"] : []),
+    ...(externos.length > 0 ? ["Grafana"] : []),
+  ]);
   const indice = `    <h1>Dashboards de BistroLink</h1>
     <p>Estado del proyecto, generado automáticamente desde ${fuentes}.</p>
     <div class="tarjetas">
@@ -408,6 +468,7 @@ ${tarjetas}
       actualizado,
       conMermaid: false,
       externos,
+      internos,
     }),
     "utf-8",
   );

@@ -18,13 +18,15 @@ import {
 } from "./sanitizar-allure.mjs";
 
 const CLAVE = "clave-de-prueba-123";
-const TOKEN = "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJ0ZXN0In0.firma-de-prueba";
+// Token ficticio, a propósito sin forma de JWT: Gitleaks marca cualquier JWT
+// (aunque sea de prueba) como secreto.
+const TOKEN_FALSO = "abcabcabcabc.prueba.falsa";
 // Como lo escribe Playwright cuando falla un pedido a la API.
 const CALL_LOG = `apiRequestContext.get: Timeout 30000ms exceeded.
 Call log:
   - → GET https://api.ejemplo.com/plataforma/establecimientos
   -   user-agent: Playwright/1.63.0
-  -   authorization: Bearer ${TOKEN}
+  -   authorization: Bearer ${TOKEN_FALSO}
   -   cookie: sesion=${CLAVE}`;
 
 function resultado() {
@@ -59,7 +61,7 @@ function resultado() {
       },
       {
         name: "Ingresar",
-        statusDetails: { message: `"authorization":"Bearer ${TOKEN}"` },
+        statusDetails: { message: `"authorization":"Bearer ${TOKEN_FALSO}"` },
         attachments: [
           {
             name: "error-context",
@@ -110,7 +112,7 @@ describe("ocultarCredenciales", () => {
   test("oculta los encabezados con credenciales del call log", () => {
     const limpio = ocultarCredenciales(CALL_LOG);
     assert.doesNotMatch(limpio, new RegExp(CLAVE));
-    assert.doesNotMatch(limpio, /eyJhbGci/);
+    assert.doesNotMatch(limpio, new RegExp(TOKEN_FALSO));
     assert.match(limpio, new RegExp(`authorization: ${OCULTO}`));
     assert.match(limpio, new RegExp(`cookie: ${OCULTO}`));
     // El resto del mensaje se conserva.
@@ -123,17 +125,17 @@ describe("ocultarCredenciales", () => {
 
   test("también en JSON y con un token suelto", () => {
     assert.equal(
-      ocultarCredenciales(`{"authorization":"Bearer ${TOKEN}"}`),
+      ocultarCredenciales(`{"authorization":"Bearer ${TOKEN_FALSO}"}`),
       `{"authorization":"${OCULTO}"}`,
     );
     assert.equal(
-      ocultarCredenciales(`token Bearer ${TOKEN} vencido`),
+      ocultarCredenciales(`token Bearer ${TOKEN_FALSO} vencido`),
       `token Bearer ${OCULTO} vencido`,
     );
   });
 
   test("dentro de un junit.xml no se come el cierre de la etiqueta", () => {
-    const xml = `<failure message="authorization: Bearer ${TOKEN}">x</failure>`;
+    const xml = `<failure message="authorization: Bearer ${TOKEN_FALSO}">x</failure>`;
     assert.equal(
       ocultarCredenciales(xml),
       `<failure message="authorization: ${OCULTO}">x</failure>`,
@@ -170,7 +172,7 @@ describe("sanitizarObjeto", () => {
     sanitizarObjeto(r);
     const json = JSON.stringify(r);
     assert.doesNotMatch(json, new RegExp(CLAVE));
-    assert.doesNotMatch(json, /eyJhbGci/);
+    assert.doesNotMatch(json, new RegExp(TOKEN_FALSO));
   });
 
   test("deja solo las capturas y devuelve los adjuntos quitados", () => {
@@ -294,7 +296,7 @@ describe("sanitizarJunit", () => {
       const { valoresOcultos } = await sanitizarJunit(ruta);
       const xml = await fs.readFile(ruta, "utf-8");
       assert.equal(valoresOcultos, 2);
-      assert.doesNotMatch(xml, /eyJhbGci/);
+      assert.doesNotMatch(xml, new RegExp(TOKEN_FALSO));
       assert.doesNotMatch(xml, new RegExp(CLAVE));
       assert.match(xml, /\[TC-E-001\] prueba/);
       assert.match(xml, /<\/failure><\/testcase>/);
