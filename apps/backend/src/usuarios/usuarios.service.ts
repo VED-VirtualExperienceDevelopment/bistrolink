@@ -919,7 +919,7 @@ export class UsuariosService {
 
   /**
    * 12 bytes aleatorios en base64url: 16 caracteres, por encima del mínimo
-   * de 9 de la política del realm (BL-266). Se usa en el alta y al
+   * de 12 de la política del realm (BL-429). Se usa en el alta y al
    * restablecer, así las dos generan contraseñas con el mismo criterio.
    */
   private generarContrasenaTemporal(): string {

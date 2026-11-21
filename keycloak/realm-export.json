@@ -16,7 +16,7 @@
   "registrationAllowed": false,
   "loginWithEmailAllowed": true,
   "duplicateEmailsAllowed": false,
-  "passwordPolicy": "length(9) and maxLength(128) and notUsername(undefined) and notEmail(undefined)",
+  "passwordPolicy": "length(12) and maxLength(128) and notUsername(undefined) and notEmail(undefined)",
   "bruteForceProtected": true,
   "permanentLockout": false,
   "failureFactor": 5,
