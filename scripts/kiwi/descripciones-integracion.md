@@ -56,6 +56,7 @@
 | 1.49    | 19/11/2026 | Se borran los bloques de TC-I-238 a 242, ya cargados en Kiwi (HU-052 / BL-584).                                                                                                                                                           |
 | 1.50    | 19/11/2026 | TC-I-034, 044, 050, 052, 090 y 238: el comensal usa siempre el token de invitado de la API y el alta ya no crea el comensal técnico (HU-052 / BL-581).                                                                                    |
 | 1.51    | 19/11/2026 | Se borran los bloques de TC-I-034, 044, 050, 052, 090 y 238, ya cargados en Kiwi. TC-I-243 y 244: desbloquear una cuenta bloqueada por intentos fallidos (BL-371), para cargar con el script antes de mergear el PR.                      |
+| 1.52    | 20/11/2026 | TC-I-243: la precondición dice que el realm ya trae la fuerza bruta encendida (BL-582) y que el test la fija en 3 intentos.                                                                                                               |
 
 Texto del campo de descripción de cada caso TC-I en Kiwi. Lo carga
 `cargar-casos-integracion.mjs --descripciones`: cada bloque `## TC-I-NNN`
@@ -71,7 +72,7 @@ esperado`, igual que los casos cargados a mano desde TC-I-029.
 
 ### Precondición
 
-API de integración con la base, el RLS y Keycloak reales. Administrador del tenant de prueba A (`admin-test`). El test enciende la protección contra fuerza bruta del realm (3 intentos fallidos) y al final la deja como estaba.
+API de integración con la base, el RLS y Keycloak reales. Administrador del tenant de prueba A (`admin-test`). El realm trae encendida la protección contra fuerza bruta (BL-582: 5 intentos fallidos); el test la fija en 3 para no depender de esa configuración y al final la deja como estaba.
 
 ### Pasos
 
