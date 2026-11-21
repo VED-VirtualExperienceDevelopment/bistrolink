@@ -1565,23 +1565,85 @@ jobs:
             echo "### ⚠️ E2E con fallos — ${{ matrix.project }}"
             echo ""
             echo "La suite Playwright falló en **${{ matrix.project }}**. En develop es **informativa**: no hace fallar el pipeline (BL-250)."
-            echo "Ver el artifact \`playwright-report-${{ matrix.project }}\` y el Test Run \`-e2e\` en Kiwi TCMS, y registrar el defecto antes del próximo release."
+            echo "Ver el reporte Allure, el Test Run \`-e2e\` en Kiwi TCMS y, si hace falta el detalle, el artifact cifrado \`playwright-report-${{ matrix.project }}\` (e2e/README.md). Registrar el defecto antes del próximo release."
           } >> "$GITHUB_STEP_SUMMARY"
 
-      # Un artifact por proyecto (nombre único) para que el job
-      # "playwright-report" pueda bajarlos todos con un patrón y mergearlos.
+      # BL-487: cada proyecto sube dos artifacts (nombres únicos, para que el
+      # job "playwright-report" los baje con un patrón):
+      #   - playwright-resultados-<proyecto>: junit.xml y los resultados de
+      #     Allure ya preparados para publicar (sanitizar-allure.mjs). Los usan
+      #     Kiwi y el reporte Allure.
+      #   - playwright-report-<proyecto>: el reporte HTML completo (pasos,
+      #     trazas y adjuntos), cifrado como el informe del DAST (BL-525).
+      #     El repositorio es público y cualquier cuenta de GitHub puede bajar
+      #     sus artifacts: el detalle completo de las sesiones de prueba no se
+      #     sube sin cifrar.
       # continue-on-error: un 403 transitorio acá (mismo issue conocido de
       # actions/upload-artifact, ver el job "jest" para el detalle) no debe
       # marcar este matrix-run en falla — el job "playwright-report" igual
       # puede mergear con los artifacts que sí llegaron a subir.
-      - name: Upload Playwright report (artifact, ${{ matrix.project }})
+      - name: Preparar los resultados de Allure (${{ matrix.project }})
+        if: always()
+        continue-on-error: true
+        run: node scripts/dashboards/sanitizar-allure.mjs playwright-report/allure-results
+
+      - name: Upload resultados E2E (artifact, ${{ matrix.project }})
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-resultados-${{ matrix.project }}
+          path: |
+            playwright-report/junit.xml
+            playwright-report/allure-results/
+          retention-days: 14
+          if-no-files-found: ignore
+
+      # Cifrado simétrico AES-256 con gpg, igual que el DAST. Si la imagen de
+      # Playwright no trae gpg, avisa y no sube el reporte completo. La clave pasa por un archivo temporal y no por la
+      # línea de comandos. Sin clave o sin gpg no se sube el reporte completo
+      # (nunca se sube sin cifrar). Cómo leerlo: e2e/README.md.
+      - name: Cifrar el reporte completo (${{ matrix.project }})
+        if: always()
+        continue-on-error: true
+        env:
+          CLAVE: ${{ secrets.E2E_REPORTE_CLAVE }}
+          PROYECTO: ${{ matrix.project }}
+        run: |
+          if [ ! -d playwright-report/html ]; then
+            echo "No hay reporte HTML para cifrar."
+            exit 0
+          fi
+          if [ -z "$CLAVE" ]; then
+            echo "::warning::Falta el secret E2E_REPORTE_CLAVE: no se sube el reporte completo de $PROYECTO (ver e2e/README.md)."
+            exit 0
+          fi
+          if ! command -v gpg >/dev/null; then
+            echo "::warning::La imagen no trae gpg: no se sube el reporte completo de $PROYECTO."
+            exit 0
+          fi
+          # Directorio propio de gpg: el contenedor corre con otro usuario.
+          export GNUPGHOME="$RUNNER_TEMP/gnupg"
+          mkdir -p -m 700 "$GNUPGHOME"
+          archivo_clave="$RUNNER_TEMP/clave-e2e"
+          ( umask 077; printf '%s' "$CLAVE" > "$archivo_clave" )
+          tar -czf - -C playwright-report html | gpg --batch --yes --pinentry-mode loopback \
+            --symmetric --cipher-algo AES256 \
+            --passphrase-file "$archivo_clave" \
+            -o "playwright-report-$PROYECTO.tar.gz.gpg"
+          rm -f "$archivo_clave"
+          rm -rf playwright-report/html
+          echo "Reporte cifrado: playwright-report-$PROYECTO.tar.gz.gpg"
+
+      - name: Upload reporte completo cifrado (artifact, ${{ matrix.project }})
         if: always()
         continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: playwright-report-${{ matrix.project }}
-          path: playwright-report/
+          path: playwright-report-${{ matrix.project }}.tar.gz.gpg
           retention-days: 14
+          if-no-files-found: ignore
 
   # ── JOB 10B: MERGE + REPORTE A KIWI (Playwright) ──────────────────────────
   # Junta los 4 junit.xml (uno por proyecto, generados por el matrix de
@@ -1600,17 +1662,19 @@ jobs:
     if: ${{ !cancelled() && needs.playwright.result != 'skipped' }}
     runs-on: ubuntu-latest
     steps:
+      # BL-487: los resultados (junit.xml y Allure), no el reporte completo
+      # cifrado. Quedan en reports/playwright-resultados-<proyecto>/.
       - name: Descargar los 4 reportes
         uses: actions/download-artifact@v8
         with:
-          pattern: playwright-report-*
+          pattern: playwright-resultados-*
           path: reports
           merge-multiple: false
 
       - name: Crear playwright-report/ antes del merge
         run: mkdir -p playwright-report
 
-      # Cada carpeta bajo reports/ es un artifact (playwright-report-chromium,
+      # Cada carpeta bajo reports/ es un artifact (playwright-resultados-chromium,
       # etc.), cada uno con su propio junit.xml. Se combinan los <testsuite>
       # de los 4 bajo una única raíz <testsuites>, con la stdlib (sin
       # dependencias nuevas) — alcanza para lo que necesita Kiwi.
@@ -1764,6 +1828,79 @@ jobs:
           eval "$variables"
           echo "Plan E2E-Playwright: id $TCMS_PLAN_ID, producto $TCMS_PRODUCT"
           tcms-junit.xml-plugin --verbose --summary-template '${name}' playwright-report/kiwi-junit.xml
+
+      # ── BL-487: reporte Allure de los E2E ──────────────────────────────────
+      # Junta los resultados Allure de los 4 navegadores (cada artifact trae
+      # playwright-report/allure-results), los prepara para publicar
+      # (sanitizar-allure.mjs: sin texto escrito en los campos ni trazas) y
+      # genera el HTML. Queda como artifact «allure-e2e»; el workflow
+      # «Publicar dashboards» baja el del último push a develop y lo publica
+      # en GitHub Pages (/allure/e2e/). Allure es solo una vista: Kiwi sigue
+      # siendo la fuente de verdad y el pase o falla del pipeline no cambia.
+      # Todos los pasos llevan continue-on-error, como el reporte a Kiwi: si
+      # falla Allure, el job no falla.
+      #
+      # El checkout va en repo/ para no tocar reports/ ni playwright-report/,
+      # que bajaron los pasos de arriba.
+      - name: Checkout (Allure)
+        if: always()
+        continue-on-error: true
+        uses: actions/checkout@v7
+        with:
+          path: repo
+
+      - name: Setup Node (Allure)
+        if: always()
+        continue-on-error: true
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          # Fuerza la última 22.x publicada: la caché del runner puede ir atrasada
+          # y quedarse con una versión sin los parches de seguridad.
+          check-latest: true
+          cache: npm
+          cache-dependency-path: repo/package-lock.json
+
+      # allure (CLI) y allure-playwright salen del lockfile. ALLURE_NO_ANALYTICS:
+      # el reporte se publica, sin el script de analítica de Allure (ver
+      # scripts/dashboards/allurerc.mjs).
+      - name: Generar el reporte Allure (4 navegadores)
+        id: allure
+        if: always()
+        continue-on-error: true
+        working-directory: repo
+        env:
+          ALLURE_NO_ANALYTICS: "true"
+          ALLURE_REPORT_NAME: "BistroLink — E2E ${{ needs.version.outputs.label }}"
+        run: |
+          npm ci --ignore-scripts
+          mkdir -p ../allure-results
+          navegadores=0
+          for dir in ../reports/playwright-resultados-*/allure-results; do
+            [ -d "$dir" ] || continue
+            cp -r "$dir"/. ../allure-results/
+            navegadores=$((navegadores + 1))
+          done
+          echo "Resultados Allure de $navegadores navegador(es)."
+          node scripts/dashboards/sanitizar-allure.mjs ../allure-results
+          npx allure generate ../allure-results -c scripts/dashboards/allurerc.mjs -o ../allure-report
+          {
+            echo "### 📊 Reporte Allure de los E2E"
+            echo ""
+            echo "Generado con los resultados de $navegadores navegador(es): artifact \`allure-e2e\`."
+            echo "En un push a develop, el workflow «Publicar dashboards» lo publica en GitHub Pages (/allure/e2e/)."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Subir el reporte Allure (artifact)
+        if: always() && steps.allure.outcome == 'success'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: allure-e2e
+          path: allure-report/
+          # «Publicar dashboards» publica el más nuevo de develop: si en 30
+          # días no hay ninguno, el sitio sale sin el enlace al reporte.
+          retention-days: 30
 
   # ── JOB 11: DEPLOY PRODUCCIÓN (tag v*.*.*, con aprobación) ───────────────
   # BL-220. Se dispara SOLO con el push de un tag v*.*.* (no con un
