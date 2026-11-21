@@ -2,6 +2,8 @@
 // BL-298: arma el sitio de GitHub Pages con los dos dashboards.
 // BL-243: suma un enlace al estado del servicio (dashboard público de Grafana
 // Cloud), si el workflow pasa GRAFANA_ESTADO_URL.
+// BL-487: suma el reporte Allure de los E2E en /allure/e2e/, si el workflow
+// pasa ALLURE_E2E_DIR (la carpeta del reporte ya generado y sanitizado).
 //
 // Se corre DESPUÉS de update-dashboard-from-linear.mjs y
 // update-github-bugs-dashboard.mjs, que actualizan los bloques AUTO de los
@@ -14,13 +16,18 @@
 //
 // Uso: node scripts/dashboards/publicar-dashboards.mjs [carpeta de salida]   (por defecto _site)
 //      GRAFANA_ESTADO_URL (opcional): link público del dashboard de estado.
+//      ALLURE_E2E_DIR (opcional): carpeta con el reporte Allure de los E2E.
 
 import { execFileSync } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+const ROOT = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "..",
+);
 const SALIDA = path.resolve(ROOT, process.argv[2] ?? "_site");
 
 // Versiones fijas, como el resto del pipeline: se suben a propósito.
@@ -55,13 +62,15 @@ const DASHBOARDS = [
     archivo: "docs/dashboard-avance-edt.md",
     salida: "avance-edt.html",
     titulo: "Avance del proyecto (EDT)",
-    descripcion: "Avance del MVP contra la Línea de Base y trabajo cerrado por sprint, desde Linear.",
+    descripcion:
+      "Avance del MVP contra la Línea de Base y trabajo cerrado por sprint, desde Linear.",
   },
   {
     archivo: "docs/dashboard-bugs-github.md",
     salida: "bugs.html",
     titulo: "Bugs (GitHub Issues)",
-    descripcion: "Bugs abiertos y cerrados, por severidad y por semana, desde GitHub Issues.",
+    descripcion:
+      "Bugs abiertos y cerrados, por severidad y por semana, desde GitHub Issues.",
   },
 ];
 
@@ -76,7 +85,9 @@ export function enlacesExternos(url) {
   try {
     destino = new URL(url.trim());
   } catch {
-    console.warn("⚠️ GRAFANA_ESTADO_URL no es una URL válida: se publica sin el enlace al estado.");
+    console.warn(
+      "⚠️ GRAFANA_ESTADO_URL no es una URL válida: se publica sin el enlace al estado.",
+    );
     return [];
   }
   const esPublicoDeGrafana =
@@ -100,9 +111,43 @@ export function enlacesExternos(url) {
   ];
 }
 
+// BL-487: reporte Allure de los E2E. Lo genera (sin contraseñas ni trazas) el
+// job «Merge + reporte E2E» de ci.yml, y el workflow lo baja del último push a
+// develop. Se copia al sitio en ALLURE_RUTA. Si no llega, el sitio se publica
+// igual, sin el enlace.
+export const ALLURE_RUTA = "allure/e2e/";
+
+export async function reporteAllure(carpeta) {
+  if (!carpeta) return [];
+  try {
+    await fs.access(path.join(carpeta, "index.html"));
+  } catch {
+    console.warn(
+      "⚠️ No llegó el reporte Allure de los E2E: se publica sin el enlace.",
+    );
+    return [];
+  }
+  return [
+    {
+      carpeta,
+      ruta: ALLURE_RUTA,
+      titulo: "Reporte E2E (Allure)",
+      descripcion:
+        "Resultado de la última corrida de los E2E de Playwright en develop, en los 4 navegadores. Kiwi TCMS sigue siendo la fuente de verdad de los casos.",
+    },
+  ];
+}
+
 // Lo que está entre estos marcadores es solo para quien lee el .md en el
 // repositorio (por ejemplo, el aviso de que la versión al día está en Pages).
-const SOLO_REPO = /<!--\s*SOLO-REPO:start\s*-->[\s\S]*?<!--\s*SOLO-REPO:end\s*-->/g;
+const SOLO_REPO =
+  /<!--\s*SOLO-REPO:start\s*-->[\s\S]*?<!--\s*SOLO-REPO:end\s*-->/g;
+
+// «A, B y C»: enumera las fuentes del índice.
+export function listaEnEspanol(items) {
+  if (items.length <= 1) return items.join("");
+  return `${items.slice(0, -1).join(", ")} y ${items.at(-1)}`;
+}
 
 export function limpiarMarkdown(md) {
   return md.replace(SOLO_REPO, "");
@@ -120,21 +165,31 @@ export function escaparHtml(texto) {
 // hay que entrecomillar los argumentos (las rutas pueden tener espacios).
 function ejecutarNpx(args) {
   const esWindows = process.platform === "win32";
-  execFileSync(esWindows ? "npx.cmd" : "npx", esWindows ? args.map((a) => `"${a}"`) : args, {
-    stdio: "inherit",
-    shell: esWindows,
-  });
+  execFileSync(
+    esWindows ? "npx.cmd" : "npx",
+    esWindows ? args.map((a) => `"${a}"`) : args,
+    {
+      stdio: "inherit",
+      shell: esWindows,
+    },
+  );
 }
 
 function markdownAHtml(md, tmpDir, nombre) {
   const entrada = path.join(tmpDir, `${nombre}.md`);
   const salida = path.join(tmpDir, `${nombre}.html`);
-  return fs
-    .writeFile(entrada, md, "utf-8")
-    .then(() => {
-      ejecutarNpx(["--yes", `marked@${MARKED_VERSION}`, "-i", entrada, "-o", salida, "--gfm"]);
-      return fs.readFile(salida, "utf-8");
-    });
+  return fs.writeFile(entrada, md, "utf-8").then(() => {
+    ejecutarNpx([
+      "--yes",
+      `marked@${MARKED_VERSION}`,
+      "-i",
+      entrada,
+      "-o",
+      salida,
+      "--gfm",
+    ]);
+    return fs.readFile(salida, "utf-8");
+  });
 }
 
 function fechaActualizacion() {
@@ -209,10 +264,22 @@ function enlaceExterno(e, clase) {
   return `<a${atributoClase} href="${escaparHtml(e.url)}" target="_blank" rel="noopener noreferrer">`;
 }
 
-export function pagina({ titulo, contenido, actualizado, conMermaid, externos = [] }) {
+export function pagina({
+  titulo,
+  contenido,
+  actualizado,
+  conMermaid,
+  externos = [],
+  internos = [],
+}) {
   const nav = [
     `<a href="./">Inicio</a>`,
-    ...DASHBOARDS.map((d) => `<a href="./${d.salida}">${escaparHtml(d.titulo)}</a>`),
+    ...DASHBOARDS.map(
+      (d) => `<a href="./${d.salida}">${escaparHtml(d.titulo)}</a>`,
+    ),
+    ...internos.map(
+      (i) => `<a href="./${i.ruta}">${escaparHtml(i.titulo)}</a>`,
+    ),
     ...externos.map((e) => `${enlaceExterno(e)}${escaparHtml(e.titulo)} ↗</a>`),
   ].join("\n        ");
   const scriptMermaid = conMermaid
@@ -324,17 +391,40 @@ async function main() {
   const tmpDir = await fs.mkdtemp(path.join(SALIDA, ".tmp-"));
   const actualizado = fechaActualizacion();
   const externos = enlacesExternos(process.env.GRAFANA_ESTADO_URL);
+  const internos = await reporteAllure(
+    process.env.ALLURE_E2E_DIR
+      ? path.resolve(ROOT, process.env.ALLURE_E2E_DIR)
+      : undefined,
+  );
 
   for (const fuente of FUENTES) {
-    await fs.copyFile(path.join(ROOT, fuente), path.join(SALIDA, path.basename(fuente)));
+    await fs.copyFile(
+      path.join(ROOT, fuente),
+      path.join(SALIDA, path.basename(fuente)),
+    );
+  }
+
+  for (const reporte of internos) {
+    await fs.cp(reporte.carpeta, path.join(SALIDA, reporte.ruta), {
+      recursive: true,
+    });
   }
 
   for (const [i, d] of DASHBOARDS.entries()) {
-    const md = limpiarMarkdown(await fs.readFile(path.join(ROOT, d.archivo), "utf-8"));
+    const md = limpiarMarkdown(
+      await fs.readFile(path.join(ROOT, d.archivo), "utf-8"),
+    );
     const contenido = await markdownAHtml(md, tmpDir, `dashboard-${i}`);
     await fs.writeFile(
       path.join(SALIDA, d.salida),
-      pagina({ titulo: d.titulo, contenido, actualizado, conMermaid: true, externos }),
+      pagina({
+        titulo: d.titulo,
+        contenido,
+        actualizado,
+        conMermaid: true,
+        externos,
+        internos,
+      }),
       "utf-8",
     );
   }
@@ -346,6 +436,12 @@ async function main() {
         ${escaparHtml(d.descripcion)}
       </a>`,
     ),
+    ...internos.map(
+      (r) => `      <a class="tarjeta" href="./${r.ruta}">
+        <strong>${escaparHtml(r.titulo)}</strong>
+        ${escaparHtml(r.descripcion)}
+      </a>`,
+    ),
     ...externos.map(
       (e) => `      ${enlaceExterno(e, "tarjeta")}
         <strong>${escaparHtml(e.titulo)} ↗</strong>
@@ -353,7 +449,12 @@ async function main() {
       </a>`,
     ),
   ].join("\n");
-  const fuentes = externos.length > 0 ? "Linear, GitHub Issues y Grafana" : "Linear y GitHub Issues";
+  const fuentes = listaEnEspanol([
+    "Linear",
+    "GitHub Issues",
+    ...(internos.length > 0 ? ["los E2E de Playwright"] : []),
+    ...(externos.length > 0 ? ["Grafana"] : []),
+  ]);
   const indice = `    <h1>Dashboards de BistroLink</h1>
     <p>Estado del proyecto, generado automáticamente desde ${fuentes}.</p>
     <div class="tarjetas">
@@ -361,16 +462,28 @@ ${tarjetas}
     </div>`;
   await fs.writeFile(
     path.join(SALIDA, "index.html"),
-    pagina({ titulo: "Dashboards", contenido: indice, actualizado, conMermaid: false, externos }),
+    pagina({
+      titulo: "Dashboards",
+      contenido: indice,
+      actualizado,
+      conMermaid: false,
+      externos,
+      internos,
+    }),
     "utf-8",
   );
 
   await fs.rm(tmpDir, { recursive: true, force: true });
-  console.log(`✅ Sitio de dashboards generado en ${path.relative(ROOT, SALIDA) || "."}`);
+  console.log(
+    `✅ Sitio de dashboards generado en ${path.relative(ROOT, SALIDA) || "."}`,
+  );
 }
 
 // Solo corre main() si se ejecuta directo (no al importarlo desde un test).
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (
+  process.argv[1] &&
+  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+) {
   main().catch((err) => {
     console.error("❌ Error generando el sitio de dashboards:", err);
     process.exit(1);

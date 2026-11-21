@@ -34,15 +34,27 @@ export default defineConfig({
   // 'github' solo en CI: en local también imprime cada error como una
   // anotación «::error …» en una sola línea, que duplica el detalle del
   // 'list' y ensucia la terminal.
+  //
+  // BL-487: 'allure-playwright' deja los resultados en
+  // playwright-report/allure-results, así viajan en el mismo artifact de cada
+  // proyecto. El job «Merge + reporte E2E» de ci.yml junta los 4 navegadores
+  // y genera el reporte Allure que se publica en GitHub Pages. Allure es solo
+  // una vista: Kiwi TCMS sigue siendo la fuente de verdad de los casos.
+  // Cada resultado lleva el proyecto (parámetro «Project» y suite padre), así
+  // que un mismo test en 4 navegadores se ve 4 veces, no como reintentos.
   reporter: [
     ["list"],
     ...(process.env.CI ? [["github"] as const] : []),
     ["junit", { outputFile: "playwright-report/junit.xml" }],
     ["html", { outputFolder: "playwright-report/html", open: "never" }],
+    ["allure-playwright", { resultsDir: "playwright-report/allure-results" }],
   ],
   use: {
     baseURL: process.env.BASE_URL ?? "http://localhost:3000",
     trace: "on-first-retry",
+    // BL-487: captura de pantalla de los tests que fallan, para el reporte
+    // HTML y el de Allure.
+    screenshot: "only-on-failure",
   },
   projects: [
     {
