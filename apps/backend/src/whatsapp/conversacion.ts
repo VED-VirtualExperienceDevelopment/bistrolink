@@ -88,14 +88,27 @@ const NO = new Set(['2', 'no', 'no acepto']);
 const MENU = new Set(['menu', 'carta', 'hola', 'buenas', 'inicio']);
 const CANCELAR = new Set(['cancelar', 'vaciar', 'borrar']);
 
+const LETRA_O_NUMERO = /[\p{L}\p{N}]/u;
+
 /** Minúsculas, sin tildes ni signos alrededor: «¡Menú!» → «menu». */
 export function normalizarTexto(texto: string): string {
-  return texto
-    .normalize('NFD')
-    .replaceAll(/\p{M}/gu, '')
-    .toLowerCase()
-    .replaceAll(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '')
-    .trim();
+  const caracteres = [
+    ...texto.normalize('NFD').replaceAll(/\p{M}/gu, '').toLowerCase(),
+  ];
+  // Recorre los extremos en lugar de una regex con dos clases negadas
+  // (backtracking cuadrático con textos llenos de signos, Sonar S8786).
+  let inicio = 0;
+  while (
+    inicio < caracteres.length &&
+    !LETRA_O_NUMERO.test(caracteres[inicio])
+  ) {
+    inicio += 1;
+  }
+  let fin = caracteres.length;
+  while (fin > inicio && !LETRA_O_NUMERO.test(caracteres[fin - 1])) {
+    fin -= 1;
+  }
+  return caracteres.slice(inicio, fin).join('').trim();
 }
 
 function centesimos(precio: string): number {
@@ -329,15 +342,14 @@ function confirmar(
   return terminar(estado, carta);
 }
 
-export function responder(
+/** Antes de aceptar el aviso de privacidad. */
+function responderSinConsentimiento(
   estado: EstadoConversacion,
-  texto: string,
+  comando: string,
   carta: CartaParaElBot,
 ): RespuestaConversacion {
-  const comando = normalizarTexto(texto);
-
-  if (!estado.consentido) {
-    if (SI.has(comando) && estado.paso === 'PRIVACIDAD') {
+  if (estado.paso === 'PRIVACIDAD') {
+    if (SI.has(comando)) {
       const aceptado: EstadoConversacion = {
         paso: 'ARMANDO',
         consentido: true,
@@ -350,14 +362,25 @@ export function responder(
       }
       return respuesta(aceptado, ['¡Gracias!', ...textoCarta(carta)]);
     }
-    if (NO.has(comando) && estado.paso === 'PRIVACIDAD') {
+    if (NO.has(comando)) {
       return respuesta(ESTADO_INICIAL, [
         'Entendido: sin aceptar no podemos tomar tu pedido por WhatsApp. Si cambiás de idea, escribinos de nuevo.',
       ]);
     }
-    return respuesta({ ...ESTADO_INICIAL, paso: 'PRIVACIDAD' }, [
-      textoPrivacidad(carta),
-    ]);
+  }
+  return respuesta({ ...ESTADO_INICIAL, paso: 'PRIVACIDAD' }, [
+    textoPrivacidad(carta),
+  ]);
+}
+
+export function responder(
+  estado: EstadoConversacion,
+  texto: string,
+  carta: CartaParaElBot,
+): RespuestaConversacion {
+  const comando = normalizarTexto(texto);
+  if (!estado.consentido) {
+    return responderSinConsentimiento(estado, comando, carta);
   }
 
   if (!carta.retiro.abierto) {

@@ -14,6 +14,7 @@ import { TenantEstadoService } from '../tenant-estado/tenant-estado.service';
 import {
   configuracionWhatsapp,
   hashTelefono,
+  motivoDelError,
   type ConfiguracionWhatsapp,
 } from './configuracion-whatsapp';
 import {
@@ -214,11 +215,11 @@ export class WhatsappService {
     } catch (error) {
       texto =
         error instanceof HttpException && error.getStatus() < 500
-          ? textoPedidoRechazado(motivoDelError(error))
+          ? textoPedidoRechazado(motivoParaElComensal(error))
           : MENSAJE_ERROR_INESPERADO;
       if (!(error instanceof HttpException) || error.getStatus() >= 500) {
         this.logger.error(
-          `No se pudo crear el pedido de WhatsApp de ${telefonoParaLog(mensaje.telefono)}: ${error instanceof Error ? error.message : String(error)}`,
+          `No se pudo crear el pedido de WhatsApp de ${telefonoParaLog(mensaje.telefono)}: ${motivoDelError(error)}`,
         );
       }
     }
@@ -373,7 +374,7 @@ export function urlPrivacidad(tenantId: string, restauranteId: string): string {
 }
 
 /** El mensaje de un 4xx de la API, para el comensal. */
-function motivoDelError(error: HttpException): string {
+function motivoParaElComensal(error: HttpException): string {
   const cuerpo = error.getResponse();
   const mensaje =
     typeof cuerpo === 'object' && cuerpo !== null && 'message' in cuerpo

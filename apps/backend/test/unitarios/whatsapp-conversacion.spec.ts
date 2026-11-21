@@ -2,6 +2,7 @@ import {
   configuracionWhatsapp,
   hashTelefono,
   leerInstancias,
+  motivoDelError,
   secretoWebhookValido,
 } from '../../src/whatsapp/configuracion-whatsapp';
 import {
@@ -209,6 +210,12 @@ describe('WhatsApp: mensaje de Evolution y configuración (HU-010, BL-112)', () 
     expect(secretoWebhookValido('', secreto)).toBe(false);
     expect(secretoWebhookValido(undefined, secreto)).toBe(false);
     expect(secretoWebhookValido(secreto, undefined)).toBe(false);
+    // El motivo para los logs nunca vuelca un objeto desconocido.
+    expect(motivoDelError(new Error('caído'))).toBe('caído');
+    expect(motivoDelError('texto')).toBe('texto');
+    expect(motivoDelError({ telefono: '598991234567' })).toBe(
+      'error desconocido',
+    );
 
     const clave = 'k'.repeat(32);
     const hash = hashTelefono(clave, TENANT, '598991234567');
@@ -230,6 +237,11 @@ describe('WhatsApp: conversación del pedido para retirar (HU-010, BL-112)', () 
   it('[TC-U-654] textos de apoyo: normalizar, leer el plato, pesos y mensajes largos', () => {
     expect(normalizarTexto('¡Menú!')).toBe('menu');
     expect(normalizarTexto('  Sí. ')).toBe('si');
+    expect(normalizarTexto('¿?¡!')).toBe('');
+    // Muchos signos no hacen backtracking (Sonar S8786).
+    expect(normalizarTexto(`${'!'.repeat(20_000)}a${'?'.repeat(20_000)}`)).toBe(
+      'a',
+    );
     expect(leerPlato('3')).toEqual({ numero: 3, cantidad: 1 });
     expect(leerPlato('3 x2')).toEqual({ numero: 3, cantidad: 2 });
     expect(leerPlato('3x2')).toEqual({ numero: 3, cantidad: 2 });

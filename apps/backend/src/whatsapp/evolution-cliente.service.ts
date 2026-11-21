@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { BrokenCircuitError, TaskCancelledError } from 'cockatiel';
 import { crearPoliticaResiliencia } from '../pagos/circuit-breaker.provider';
 import type { ConfiguracionWhatsapp } from './configuracion-whatsapp';
+import { motivoDelError } from './configuracion-whatsapp';
 import { telefonoParaLog } from './mensaje-evolution';
 
 /** Evolution responde en milisegundos; si tarda más, algo anda mal. */
@@ -63,18 +64,19 @@ export class EvolutionClienteService {
       });
       return true;
     } catch (error) {
-      const motivo =
-        error instanceof BrokenCircuitError
-          ? 'circuito abierto'
-          : error instanceof TaskCancelledError
-            ? `sin respuesta en ${TIMEOUT_EVOLUTION_MS} ms`
-            : error instanceof Error
-              ? error.message
-              : 'error desconocido';
       this.logger.warn(
-        `No se pudo mandar el mensaje de WhatsApp a ${telefonoParaLog(telefono)} (instancia ${instancia}): ${motivo}`,
+        `No se pudo mandar el mensaje de WhatsApp a ${telefonoParaLog(telefono)} (instancia ${instancia}): ${motivoDelFallo(error)}`,
       );
       return false;
     }
   }
+}
+
+/** Por qué falló el envío, para el log. */
+function motivoDelFallo(error: unknown): string {
+  if (error instanceof BrokenCircuitError) return 'circuito abierto';
+  if (error instanceof TaskCancelledError) {
+    return `sin respuesta en ${TIMEOUT_EVOLUTION_MS} ms`;
+  }
+  return motivoDelError(error);
 }

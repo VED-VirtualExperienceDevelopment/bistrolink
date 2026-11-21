@@ -1,4 +1,5 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
+import { sinBarraFinal } from '../link-pago/link-pago';
 
 /**
  * HU-010 (BL-112): configuración del bot de WhatsApp, leída del entorno.
@@ -59,7 +60,8 @@ export function leerInstancias(valor: string | undefined): Map<string, string> {
 export function configuracionWhatsapp(
   env: NodeJS.ProcessEnv,
 ): ConfiguracionWhatsapp | null {
-  const evolutionUrl = env.EVOLUTION_API_URL?.trim().replace(/\/+$/, '');
+  const url = env.EVOLUTION_API_URL?.trim();
+  const evolutionUrl = url ? sinBarraFinal(url) : undefined;
   const evolutionApiKey = env.EVOLUTION_API_KEY?.trim();
   const secretoWebhook = env.WHATSAPP_WEBHOOK_SECRETO ?? '';
   const claveTelefono = env.WHATSAPP_TELEFONO_CLAVE ?? '';
@@ -95,6 +97,15 @@ export function secretoWebhookValido(
   const a = createHash('sha256').update(recibido).digest();
   const b = createHash('sha256').update(esperado).digest();
   return timingSafeEqual(a, b);
+}
+
+/**
+ * El motivo de un error para los logs, sin volcar objetos desconocidos
+ * (que podrían traer datos del mensaje).
+ */
+export function motivoDelError(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return typeof error === 'string' ? error : 'error desconocido';
 }
 
 /**

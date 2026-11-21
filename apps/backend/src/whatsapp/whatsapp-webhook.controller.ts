@@ -12,6 +12,7 @@ import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import {
   HEADER_SECRETO_WEBHOOK,
+  motivoDelError,
   secretoWebhookValido,
 } from './configuracion-whatsapp';
 import { leerMensajeEntrante } from './mensaje-evolution';
@@ -68,7 +69,7 @@ export class WhatsappWebhookController {
     } catch (error) {
       // Sin el texto ni el número: solo el motivo.
       this.logger.error(
-        `Falló el procesamiento de un mensaje de WhatsApp: ${error instanceof Error ? error.message : String(error)}`,
+        `Falló el procesamiento de un mensaje de WhatsApp: ${motivoDelError(error)}`,
       );
     }
     return { ok: true };
