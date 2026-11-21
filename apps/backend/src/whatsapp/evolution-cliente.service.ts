@@ -73,7 +73,7 @@ export class EvolutionClienteService {
 }
 
 /** Por qué falló el envío, para el log. */
-function motivoDelFallo(error: unknown): string {
+export function motivoDelFallo(error: unknown): string {
   if (error instanceof BrokenCircuitError) return 'circuito abierto';
   if (error instanceof TaskCancelledError) {
     return `sin respuesta en ${TIMEOUT_EVOLUTION_MS} ms`;

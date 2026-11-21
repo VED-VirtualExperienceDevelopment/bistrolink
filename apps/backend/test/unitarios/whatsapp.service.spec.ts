@@ -5,7 +5,13 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { HEADER_SECRETO_WEBHOOK } from '../../src/whatsapp/configuracion-whatsapp';
-import { EvolutionClienteService } from '../../src/whatsapp/evolution-cliente.service';
+import { BrokenCircuitError, TaskCancelledError } from 'cockatiel';
+import {
+  EvolutionClienteService,
+  motivoDelFallo,
+  TIMEOUT_EVOLUTION_MS,
+} from '../../src/whatsapp/evolution-cliente.service';
+import { WhatsappThrottlerGuard } from '../../src/whatsapp/whatsapp-throttler.guard';
 import type { MensajeEntrante } from '../../src/whatsapp/mensaje-evolution';
 import { WhatsappWebhookController } from '../../src/whatsapp/whatsapp-webhook.controller';
 import {
@@ -268,6 +274,16 @@ describe('WhatsappService (HU-010, BL-112)', () => {
     );
   });
 
+  it('[TC-U-670] si el tenant no tiene restaurante, avisa que el local no está disponible y no guarda nada', async () => {
+    const { servicio, tx, enviados } = armar();
+    tx.restaurante.findUnique.mockResolvedValue(null);
+    expect(await servicio.procesar(mensaje('hola'), AHORA)).toBe(
+      'local-no-disponible',
+    );
+    expect(tx.conversacionWhatsapp.upsert).not.toHaveBeenCalled();
+    expect(enviados()).toEqual([MENSAJE_LOCAL_NO_DISPONIBLE]);
+  });
+
   it('[TC-U-667] estadoGuardado es defensivo con lo que hay en la base y la clave de idempotencia cabe en la columna', () => {
     expect(
       estadoGuardado({
@@ -428,5 +444,54 @@ describe('EvolutionClienteService (HU-010, BL-112)', () => {
     expect(log).toContain('***567');
     expect(log).not.toContain('598991234567');
     expect(log).not.toContain('dos');
+  });
+});
+
+describe('WhatsApp: rate limiting y motivos de fallo (HU-010, BL-112)', () => {
+  it('[TC-U-671] el rate limiting cuenta por chat con un hash (nunca el número) y los eventos sin chat comparten un cupo', async () => {
+    const guard = Object.create(
+      WhatsappThrottlerGuard.prototype,
+    ) as WhatsappThrottlerGuard;
+    const tracker = (body: unknown) =>
+      (
+        guard as unknown as {
+          getTracker: (req: Record<string, unknown>) => Promise<string>;
+        }
+      ).getTracker({ body });
+
+    const uno = await tracker({
+      data: { key: { remoteJid: '598991234567@s.whatsapp.net' } },
+    });
+    const otro = await tracker({
+      data: { key: { remoteJid: '598997654321@s.whatsapp.net' } },
+    });
+    expect(uno).toMatch(/^whatsapp:[0-9a-f]{64}$/);
+    expect(uno).not.toContain('598991234567');
+    expect(otro).not.toBe(uno);
+    expect(
+      await tracker({
+        data: { key: { remoteJid: '598991234567@s.whatsapp.net' } },
+      }),
+    ).toBe(uno);
+    expect(await tracker({ event: 'connection.update' })).toBe(
+      'whatsapp:sin-chat',
+    );
+    expect(await tracker(undefined)).toBe('whatsapp:sin-chat');
+    expect(await tracker({ data: { key: { remoteJid: '' } } })).toBe(
+      'whatsapp:sin-chat',
+    );
+  });
+
+  it('[TC-U-672] el log de un envío fallido dice si fue el circuito abierto, el timeout o el error', () => {
+    expect(motivoDelFallo(new BrokenCircuitError())).toBe('circuito abierto');
+    expect(motivoDelFallo(new TaskCancelledError())).toBe(
+      `sin respuesta en ${TIMEOUT_EVOLUTION_MS} ms`,
+    );
+    expect(motivoDelFallo(new Error('Evolution respondió 500'))).toBe(
+      'Evolution respondió 500',
+    );
+    expect(motivoDelFallo({ numero: '598991234567' })).toBe(
+      'error desconocido',
+    );
   });
 });

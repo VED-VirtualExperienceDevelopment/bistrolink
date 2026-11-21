@@ -149,6 +149,38 @@ describe('WhatsApp: mensaje de Evolution y configuración (HU-010, BL-112)', () 
       null,
     );
     expect(leerMensajeEntrante(null)).toBeNull();
+    expect(leerMensajeEntrante(evento({ instance: '' }))).toBeNull();
+    expect(leerMensajeEntrante(evento({ event: 42 }))).toBeNull();
+    for (const id of ['', 'x'.repeat(129), 7]) {
+      expect(
+        leerMensajeEntrante(
+          conClave({
+            remoteJid: '598991234567@s.whatsapp.net',
+            fromMe: false,
+            id,
+          }),
+        ),
+      ).toBeNull();
+    }
+    expect(
+      leerMensajeEntrante(
+        conClave({ remoteJid: '12ab@s.whatsapp.net', fromMe: false, id: 'A' }),
+      ),
+    ).toBeNull();
+    expect(
+      leerMensajeEntrante(
+        evento({
+          data: {
+            key: {
+              remoteJid: '598991234567@s.whatsapp.net',
+              fromMe: false,
+              id: 'V',
+            },
+            message: { conversation: '   ' },
+          },
+        }),
+      ),
+    ).toBeNull();
     expect(leerMensajeEntrante('texto')).toBeNull();
     // Texto largo: se recorta.
     const largo = leerMensajeEntrante(
@@ -380,6 +412,12 @@ describe('WhatsApp: conversación del pedido para retirar (HU-010, BL-112)', () 
     // El carrito se vacía recién cuando se crea el pedido.
     expect(confirma.estado.carrito).toHaveLength(2);
 
+    // Si ningún plato sigue en la carta, no se crea nada: vuelve a armar.
+    const sinNada = responder(resumen.estado, '1', carta({ items: [] }));
+    expect(sinNada.accion).toBeNull();
+    expect(sinNada.estado).toEqual(ACEPTADO);
+    expect(sinNada.mensajes[0]).toContain('Tu pedido está vacío');
+
     // Un plato que salió de la carta no entra al pedido.
     const sinFlan = carta({
       items: carta().items.filter((i) => i.id !== FLAN),
@@ -415,6 +453,14 @@ describe('WhatsApp: conversación del pedido para retirar (HU-010, BL-112)', () 
       'Este local toma pedidos para retirar de 19:00 a 23:00.',
     ]);
     expect(responder(confirmando, '1', cerrado).accion).toBeNull();
+    const sinMotivo = carta({ retiro: { abierto: false, mensaje: null } });
+    expect(responder(conPlatos, '1', sinMotivo).mensajes).toEqual([
+      'Ahora no estamos tomando pedidos.',
+    ]);
+    const avisoSinMotivo = responder(ESTADO_INICIAL, 'hola', sinMotivo).estado;
+    expect(responder(avisoSinMotivo, 'si', sinMotivo).mensajes).toEqual([
+      'Ahora no estamos tomando pedidos.',
+    ]);
     // Al aceptar el aviso con el local cerrado: el horario, no la carta.
     const aviso = responder(ESTADO_INICIAL, 'hola', cerrado).estado;
     expect(responder(aviso, '1', cerrado).mensajes).toEqual([
