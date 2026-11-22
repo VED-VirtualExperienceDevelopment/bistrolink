@@ -3,8 +3,8 @@ name: Publicar dashboards (GitHub Pages)
 # BL-298: reemplaza a update-dashboard.yml y update-github-bugs-dashboard.yml.
 # Antes, cada workflow regeneraba su .md y abría un PR contra develop que
 # requería la aprobación de otra persona (Actions no puede aprobar PRs), con
-# un token personal (DASHBOARD_PUSH_TOKEN, G12) y carreras entre corridas
-# (G15, BL-296). Ahora los dos dashboards se generan en cada corrida y se
+# un token personal (DASHBOARD_PUSH_TOKEN) y carreras entre corridas
+# (BL-296). Ahora los dos dashboards se generan en cada corrida y se
 # publican en GitHub Pages: sin PRs, sin commits y sin token personal.
 # Sitio: https://ved-virtualexperiencedevelopment.github.io/bistrolink/
 
@@ -42,7 +42,7 @@ on:
 
 # Una sola publicación a la vez; las nuevas esperan en cola (cada deploy
 # reemplaza el sitio entero, así que la última corrida deja los datos más
-# nuevos). Reemplaza el concurrency propuesto en BL-296 (G15).
+# nuevos). Reemplaza el concurrency propuesto en BL-296.
 concurrency:
   group: pages
   cancel-in-progress: false
@@ -191,7 +191,7 @@ jobs:
     needs: publicar
     if: github.event_name == 'schedule' || github.event.inputs.enviar_email == 'true'
     runs-on: ubuntu-latest
-    # BL-326 (G12): MAIL_USERNAME y MAIL_PASSWORD son secrets de este
+    # BL-326: MAIL_USERNAME y MAIL_PASSWORD son secrets de este
     # environment, que solo acepta la rama develop. Un workflow lanzado desde
     # otra rama no puede leer la contraseña del correo.
     environment: notificaciones
@@ -229,7 +229,7 @@ jobs:
           DASHBOARD_EMAIL_RECIPIENTS: ${{ secrets.DASHBOARD_EMAIL_RECIPIENTS }}
         run: node scripts/dashboards/send-status-email.mjs
 
-      # BL-326 (G12): reemplaza a dawidd6/action-send-mail. La contraseña solo
+      # BL-326: reemplaza a dawidd6/action-send-mail. La contraseña solo
       # la recibe nuestro script (enviar-email.mjs), no código de terceros.
       - name: Enviar email de estado
         env:

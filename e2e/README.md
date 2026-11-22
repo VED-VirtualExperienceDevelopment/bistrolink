@@ -88,7 +88,7 @@ Cada test es un caso del Test Plan «E2E-Playwright» de Kiwi, y el pipeline reg
 
 Si tu spec también debe correr en mobile/Safari, agregalo al `testMatch` de esos proyectos en `playwright.config.ts`.
 
-**Specs que cambian la configuración del establecimiento (BL-452).** Un spec que cambia la configuración del establecimiento del seed (por ejemplo, apaga un medio de pago) afecta a todos los tests que corren al mismo tiempo. Por eso va en el proyecto `chromium-configuracion`, que `chromium` ignora y que arranca recién cuando `chromium` termina; dentro del spec, los tests corren en serie y cada uno deja la configuración como estaba en un `finally`. Para correrlo solo en local: `npm run test:e2e -- --project=chromium-configuracion --no-deps`.
+**Specs que cambian la configuración del establecimiento (BL-452).** Un spec que cambia la configuración del establecimiento del seed (por ejemplo, apaga un medio de pago) afecta a todos los tests que corren al mismo tiempo. Por eso va en el proyecto `chromium-configuracion`, que `chromium` ignora y que arranca recién cuando `chromium` termina; dentro del spec, los tests corren en serie y cada uno deja la configuración como estaba en un `finally`. Para correrlo solo en local: `npm run test:e2e -- --project=chromium-configuracion --no-deps`. En el CI tiene su propio job, «Tests E2E (Playwright, chromium-configuracion)», que arranca cuando terminan los 4 navegadores y corre con `--no-deps` (BL-606).
 
 ### `e2e/support/`
 
@@ -253,11 +253,11 @@ En los dos casos también se generan `junit`, `html` y los resultados de Allure 
 
 ### Reporte Allure (BL-487)
 
-Cada corrida de `develop` publica un reporte Allure con los 4 navegadores juntos: **[reporte E2E en GitHub Pages](https://ved-virtualexperiencedevelopment.github.io/bistrolink/allure/e2e/)**. Tiene, por test, el navegador, la duración, los pasos, los reintentos y la captura de pantalla de los que fallan.
+Cada corrida de `develop` publica un reporte Allure con los 5 proyectos juntos: **[reporte E2E en GitHub Pages](https://ved-virtualexperiencedevelopment.github.io/bistrolink/allure/e2e/)**. Tiene, por test, el navegador, la duración, los pasos, los reintentos y la captura de pantalla de los que fallan.
 
 - **Es solo una vista.** Kiwi TCMS sigue siendo la fuente de verdad de los casos y el criterio de pase o falla del pipeline no cambia.
-- **Cómo se arma.** `allure-playwright` (en `playwright.config.ts`) deja los resultados en `playwright-report/allure-results`. El job «Merge + reporte E2E» de `ci.yml` junta los 4 navegadores, los prepara para publicar con `scripts/dashboards/sanitizar-allure.mjs` y genera el HTML (artifact `allure-e2e`). Cuando termina el CI, el workflow «Publicar dashboards» lo publica en `/allure/e2e/` junto a los dashboards.
-- **Qué no se publica.** El sitio es público: el texto que los tests escriben en los campos se reemplaza por `•••`, y solo quedan las imágenes. Las trazas (`trace.zip`) y el resto del detalle están en el reporte completo de cada navegador, cifrado (ver abajo).
+- **Cómo se arma.** `allure-playwright` (en `playwright.config.ts`) deja los resultados en `playwright-report/allure-results`. El job «Merge + reporte E2E» de `ci.yml` junta los 5 proyectos, los prepara para publicar con `scripts/dashboards/sanitizar-allure.mjs` y genera el HTML (artifact `allure-e2e`). Cuando termina el CI, el workflow «Publicar dashboards» lo publica en `/allure/e2e/` junto a los dashboards.
+- **Qué no se publica.** El sitio es público: el texto que los tests escriben en los campos se reemplaza por `•••`, y solo quedan las imágenes. Las trazas (`trace.zip`) y el resto del detalle están en el reporte completo de cada proyecto, cifrado (ver abajo).
 - **Qué agrega el CI (BL-597).** Antes de generar el reporte, `scripts/dashboards/datos-allure.mjs` completa:
   - **Ambiente:** entorno, URLs públicas de staging, navegadores, versión, commit, rama y corrida.
   - **Ejecutor:** el enlace a la corrida de GitHub Actions.
@@ -284,15 +284,15 @@ El reporte local no pasa por `sanitizar-allure.mjs`: tiene los pasos completos y
 En `develop` los E2E no frenan el pipeline (BL-250). Para que un test roto por un cambio no pase desapercibido, el job «📧 Aviso de E2E que empiezan a fallar» de `ci.yml` compara cada corrida con la corrida anterior de `develop`:
 
 - **Fallo nuevo:** un test que, en un navegador, falla después de los reintentos y en la corrida anterior pasaba, estaba salteado o no existía. Los que ya fallaban antes no se avisan.
-- Si hay fallos nuevos, manda **un correo al equipo** que nombra con @usuario a los autores de los PR mergeados entre las dos corridas y les pide verificar los tests. Lleva la lista de tests y navegadores, los PR y los enlaces a la corrida y al reporte Allure; **no** lleva mensajes de error.
-- Usa la misma cuenta y los mismos destinatarios que el correo de estado (environment `notificaciones`, BL-326). Los destinatarios se enmascaran en el log.
+- Si hay fallos nuevos, manda **un correo a los autores de los PR** mergeados entre las dos corridas, **con el resto del equipo en copia**, y les pide verificar los tests. Lleva la lista de tests y navegadores, los PR y los enlaces a la corrida y al reporte Allure; **no** lleva mensajes de error. Tiene la marca del correo de estado y un enlace para **reportar el bug** con la plantilla de bug, con el entorno (Staging), el PR y las etiquetas `bug` y `regresion` ya completos.
+- Usa la misma cuenta y el mismo equipo que el correo de estado (environment `notificaciones` y secret `DASHBOARD_EMAIL_RECIPIENTS`, BL-326). El correo de cada autor sale del secret `EQUIPO_GITHUB_CORREOS`, con el formato `usuario-de-github=correo` separados por coma (fuente: el gestor de secretos del equipo). Si falta o el autor no está, el correo va a todo el equipo. Los correos se enmascaran en el log.
 - Sin corrida anterior con resultados (se guardan 14 días), no se avisa. Solo corre en un push a `develop`, y nunca hace fallar el pipeline.
 
-**Si te llega el aviso:** abrí el reporte Allure, buscá el test en **Categorías** o **Funcionalidades** y, si hace falta, el reporte completo cifrado (abajo). Si es un defecto del producto, registralo como GitHub Issue; si el test quedó desactualizado por tu cambio, ajustalo en un PR.
+**Si te llega el aviso:** abrí el reporte Allure, buscá el test en **Categorías** o **Funcionalidades** y, si hace falta, el reporte completo cifrado (abajo). Si es un defecto del producto, registralo como GitHub Issue con el enlace del correo; si el test quedó desactualizado por tu cambio, ajustalo en un PR.
 
 ### Artifacts de la corrida en CI
 
-Cada navegador sube dos artifacts:
+Cada proyecto sube dos artifacts:
 
 | Artifact                           | Contenido                                                                                                                                | Para qué                                |
 | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |

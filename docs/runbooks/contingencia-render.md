@@ -1,6 +1,6 @@
 # Runbook: contingencia de producción en Render
 
-> **Ticket:** BL-217 (EDT 1.2.11, riesgo R-03) · **Relacionado:** BL-183 y BL-184 (respaldo en S3 y réplica en R2), BL-227 (Infisical), BL-240 (producción con integraciones en sandbox), BL-261 (respuesta a incidentes) · **Documentación del proyecto:** Anexo 12, secciones 6 y 9; Línea de Base, 3.3.6.
+> **Ticket:** BL-217 (EDT 1.2.11, riesgo R-03) · **Relacionado:** BL-183 y BL-184 (respaldo en S3 y réplica en R2), BL-227 (Infisical), BL-240 (producción con integraciones en sandbox), BL-261 (respuesta a incidentes) · **Documentación del proyecto:** Línea de Base, 3.3.6.
 
 ## Control de versiones
 
@@ -12,7 +12,7 @@
 
 Si Railway no está disponible, producción se levanta en **Render** con las mismas imágenes y el último respaldo de las bases.
 
-- **Modelo:** contingencia pasiva (decisión D2, opción B). API, Keycloak y Web quedan **creados, probados y suspendidos**. Render no cobra un servicio suspendido. La base **no** existe en reposo: se crea al activar y se restaura el último respaldo.
+- **Modelo:** contingencia pasiva. API, Keycloak y Web quedan **creados, probados y suspendidos**. Render no cobra un servicio suspendido. La base **no** existe en reposo: se crea al activar y se restaura el último respaldo.
 - **Objetivos (Línea de Base, 3.3.6):** **RPO ≤ 24 h** (respaldo diario de las 03:00 de Uruguay) y **RTO ≤ 4 h**. Los valores reales se miden en el simulacro (sección 6).
 - **Quién decide activarla:** el equipo, con el procedimiento de respuesta a incidentes (`respuesta-a-incidentes.md`). Se activa si Railway está caído y su página de estado no da un horario de vuelta, o si lo da a más de 1 hora. Mientras se decide, el local sigue con el modo degradado de R-03 (pedido al mozo y cobro manual).
 - **Qué no cubre:** la pérdida de datos entre el último respaldo y la caída (hasta 24 h). Los datos de ese período quedan en Railway y se revisan al volver (5.2).
@@ -42,7 +42,7 @@ Proyecto de Render **`bistrolink-contingencia`**, entorno `production`, región 
 
 ### 3.2 Credencial de GHCR
 
-Las imágenes de GHCR son privadas (Anexo 12, 2.2).
+Las imágenes de GHCR son privadas.
 
 1. En GitHub, con la cuenta del equipo: *Settings → Developer settings → Personal access tokens → Tokens (classic) → Generate new token*. Nombre **`render-ghcr-pull`**, solo **`read:packages`**, vencimiento a 90 días. Es un token aparte del de Railway, para poder revocar uno sin tocar el otro.
 2. Guardar el valor en Infisical `prod`, carpeta `/registry` (sin sincronización), o en KeePass.
@@ -83,7 +83,7 @@ Hay configuración no secreta de Railway que no está en Infisical ni en `render
 1. En Railway `production`, abrir las variables de `bistrolink-api` y de `bistrolink-auth` y mirar **solo los nombres**.
 2. Para cada nombre que falte en el servicio de Render equivalente, decidir:
    - **Agregar a mano** en Render: configuración que el código usa y no apunta a Railway. Como mínimo, `IMAGES_CDN_URL` y `MP_FORCE_PAYER_EMAIL` (este último solo mientras producción use el sandbox de Mercado Pago).
-   - **No agregar:** `DATABASE_URL`, `RUNTIME_DATABASE_URL` y `KC_DB_*` (se cargan al activar), variables que nombran servicios de Railway (`${{…}}`), `LOKI_*` y `DEV_NAME` (los logs quedan en Render), y las que el código no usa (Anexo 12, A12).
+   - **No agregar:** `DATABASE_URL`, `RUNTIME_DATABASE_URL` y `KC_DB_*` (se cargan al activar), variables que nombran servicios de Railway (`${{…}}`), `LOKI_*` y `DEV_NAME` (los logs quedan en Render), y las que el código no usa.
 3. En `bistrolink-web-contingencia`, agregar `NEXT_PUBLIC_MP_PUBLIC_KEY` con la Public Key de la aplicación de prueba de producción (la variable del repositorio `MP_PUBLIC_KEY_PRODUCTION`). No es secreta, pero se lee en el build: sin ella, el pago con tarjeta queda deshabilitado.
 
 ### 3.6 Primera prueba
@@ -93,7 +93,7 @@ Ejecutar la sección 4 completa, de punta a punta. Esta corrida **no** cuenta co
 ### 3.7 Dejar en reposo
 
 1. Hacer el cierre de la sección 5.1 (suspender los servicios y borrar la base).
-2. Registrar la preparación en el Anexo 12, sección 9: fecha, tag desplegado y resultado.
+2. Registrar la preparación en el ticket de Linear (BL-217): fecha, tag desplegado y resultado.
 
 ## 4. Activación
 
@@ -380,11 +380,11 @@ Lo decide el equipo cuando Railway vuelve y está estable. Se hace en un horario
 
 1. Avisar la ventana de mantenimiento y suspender la API de Render (corta las escrituras).
 2. Respaldar las dos bases de Render con el mismo formato del respaldo diario (`pg_dump --format=custom --compress=9 --no-owner --no-acl`), desde la PC y con la IP habilitada temporalmente, como en 4.3.
-3. Restaurar en Railway sobre **servicios PostgreSQL nuevos** (`respaldo-y-restauracion.md`, sección 6), para conservar las bases originales intactas. Volver a crear los permisos de `bistrolink_app` como en Railway (Anexo 12, D9).
+3. Restaurar en Railway sobre **servicios PostgreSQL nuevos** (`respaldo-y-restauracion.md`, sección 6), para conservar las bases originales intactas. Volver a crear los permisos de `bistrolink_app` como en Railway.
 4. Apuntar `bistrolink-api` y `bistrolink-auth` de Railway a las bases nuevas, desplegar y validar como en 4.9 con las URLs de Railway.
 5. Volver la URL de notificaciones de Mercado Pago a Railway.
 6. Los datos que quedaron en las bases originales de Railway entre el último respaldo y la caída se revisan a mano y se recuperan solo si hace falta.
-7. Cerrar la contingencia como en 5.1 y registrar el incidente (Anexo 12, sección 9).
+7. Cerrar la contingencia como en 5.1 y registrar el incidente en su ticket de Linear.
 
 ## 6. Simulacro
 
@@ -396,7 +396,7 @@ Lo decide el equipo cuando Railway vuelve y está estable. Se hace en un horario
 - **RPO** = T0 − hora del respaldo usado (columna de `aws s3 ls`, en UTC: convertir a la hora de Uruguay, UTC−3).
 - **RTO** = T1 − T0 (`tiempos.txt`).
 
-**Registro** (BL-217, Anexo 12 secciones 6.5 y 9, y portafolio):
+**Registro** (ticket BL-217 y portafolio):
 
 | Dato | Valor |
 | ---- | ----- |
@@ -413,7 +413,7 @@ Lo decide el equipo cuando Railway vuelve y está estable. Se hace en un horario
 
 ## 7. Con cada release
 
-Para que la contingencia no levante una versión vieja (decisión D2):
+Para que la contingencia no levante una versión vieja:
 
 1. Después del release, un PR que cambia en `render.yaml` el tag de las imágenes de API y Auth y `NEXT_PUBLIC_APP_VERSION` al tag nuevo (`docs/RELEASE.md`, «Después»).
 2. Al mergearlo, Render sincroniza el Blueprint y actualiza los servicios, aunque estén suspendidos. Comprobar en *Settings → Image* de API y Auth que quedó el tag nuevo.

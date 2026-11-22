@@ -26,8 +26,9 @@ Cómo se pasa una versión de `develop` a producción, cómo se corrige un error
 ### 1.1 Antes (en `develop`)
 
 1. Todo lo que entra en la versión está mergeado en `develop` y desplegado en staging.
-2. La última corrida de `develop` tiene los E2E (Playwright, 4 navegadores) en verde.
+2. La última corrida de `develop` tiene los E2E (Playwright, 4 navegadores y `chromium-configuracion`) en verde.
 3. La regresión de la capa en staging está en verde (Anexo 11).
+4. La última corrida de `develop` tiene Lighthouse del menú en celular ≥ 80 (job «Lighthouse Performance»).
 
 ### 1.2 Ensayo (opcional, recomendado antes de una versión menor)
 
@@ -74,7 +75,7 @@ Cómo se pasa una versión de `develop` a producción, cómo se corrige un error
 - [ ] Si hubo cambios solo en `main`, hacer el *back-merge* de `main` a `develop`.
 - [ ] Contingencia en Render: PR que cambia en `render.yaml` el tag de las imágenes de API y Auth y `NEXT_PUBLIC_APP_VERSION` al tag nuevo, para que la contingencia no levante una versión vieja (`runbooks/contingencia-render.md`, sección 7).
 - [ ] Actions → **Publicar dashboards** → **Run workflow** (rama `develop`), para que el release entre en las métricas DORA del dashboard «Calidad del proceso». El workflow no se dispara solo con un deploy a producción.
-- [ ] Registrar el release en el Anexo 12 (registro de verificaciones).
+- [ ] Registrar el release en el ticket de Linear del release.
 
 ---
 

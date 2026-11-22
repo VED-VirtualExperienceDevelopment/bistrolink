@@ -1040,8 +1040,8 @@ jobs:
       AUTH_SERVICE_ID: dd1b662a-4bcb-450c-a57e-fa0fe6fb5773
     steps:
       # BL-231: las migraciones ya NO se aplican desde acá. La base de
-      # staging no tiene acceso público (se borró el TCP Proxy, hallazgo D2
-      # del Anexo 12) y GitHub ya no tiene su URL (se eliminó el secret
+      # staging no tiene acceso público (se borró el TCP Proxy) y GitHub ya
+      # no tiene su URL (se eliminó el secret
       # STAGING_DATABASE_URL). Las aplica Railway con el pre-deploy command
       # de bistrolink-api (apps/backend/docker/predeploy-migrate.sh), con la
       # imagen nueva, dentro de la red privada y antes de ponerla en línea.
@@ -1393,8 +1393,11 @@ jobs:
   # BL-437: mismo comportamiento que los E2E (JOB 10): corre contra staging
   # después de cada deploy de develop (o a mano) y reporta a Kiwi TCMS, al
   # caso TC-P-003 del plan «Performance-k6-Lighthouse». El umbral
-  # (performance >= 0.8, lighthouserc.json) está en "warn": un puntaje bajo
-  # no hace fallar el job; queda como FAILED en Kiwi y con ❌ en el resumen.
+  # (performance >= 0.8, lighthouserc.json) está en "error" (BL-607): un
+  # puntaje bajo deja el job en rojo, queda como FAILED en Kiwi y con ❌ en
+  # el resumen. Igual que los E2E (BL-250), en develop es informativo: el
+  # job queda en rojo pero no hace fallar el workflow. Es criterio de salida
+  # del release (docs/RELEASE.md).
   #
   # URL (lighthouserc.json): el menú por el link web del local
   # (/m/<tenant>/restaurante/<restaurante>), público y con la misma carta
@@ -1406,6 +1409,7 @@ jobs:
     needs: [deploy-staging, version]
     if: github.ref == 'refs/heads/develop'
     runs-on: ubuntu-latest
+    continue-on-error: ${{ !startsWith(github.ref, 'refs/tags/v') && github.ref != 'refs/heads/main' }}
     steps:
       - uses: actions/checkout@v7
 
@@ -1706,16 +1710,150 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
 
+  # ── JOB 10A: E2E QUE CAMBIAN LA CONFIGURACIÓN (BL-606) ────────────────────
+  # Proyecto «chromium-configuracion» de playwright.config.ts: pago-medios y
+  # marca (BL-452, HU-043). Esos specs apagan medios de pago y cambian la
+  # marca del establecimiento del seed, así que no pueden correr al mismo
+  # tiempo que el resto: por eso no están en el matrix de arriba y este job
+  # espera a que terminen los 4 navegadores (needs: playwright).
+  # --no-deps: las dependencias del proyecto ya corrieron en el matrix; sin
+  # esto, Playwright las volvería a correr acá.
+  # Mismas reglas que el matrix: informativo en develop (BL-250), mismos
+  # secrets y mismos artifacts (playwright-resultados-* y playwright-report-*),
+  # así entra al reporte a Kiwi, al Allure y al aviso de fallos sin cambios.
+  # "!cancelled()": corre aunque algún navegador haya fallado.
+  playwright-configuracion:
+    name: 🎭 Tests E2E (Playwright, chromium-configuracion)
+    needs: [playwright, version]
+    if: ${{ !cancelled() && needs.playwright.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    # Misma imagen que el job "playwright": cambiar las dos juntas.
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble
+      options: --user 1001
+    continue-on-error: ${{ !startsWith(github.ref, 'refs/tags/v') && github.ref != 'refs/heads/main' }}
+    env:
+      PROYECTO: chromium-configuracion
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          check-latest: true
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      # El job "playwright" ya verifica que la imagen coincida con el
+      # lockfile; si no coincide, este job falla en el paso de los tests.
+
+      - name: Despertar staging
+        uses: ./.github/actions/despertar-staging
+
+      - name: Tests E2E Playwright en staging (chromium-configuracion)
+        run: npx playwright test --project="$PROYECTO" --no-deps
+        env:
+          # Mismas URLs y usuarios de prueba que el job "playwright".
+          BASE_URL: https://bistrolink-web-staging.up.railway.app
+          API_URL: https://bistrolink-api-staging.up.railway.app
+          TEST_MOZO_USERNAME: ${{ secrets.TEST_MOZO_USERNAME }}
+          TEST_MOZO_PASSWORD: ${{ secrets.TEST_MOZO_PASSWORD }}
+          TEST_ADMIN_USERNAME: ${{ secrets.TEST_ADMIN_USERNAME }}
+          TEST_ADMIN_PASSWORD: ${{ secrets.TEST_ADMIN_PASSWORD }}
+          TEST_COCINA_USERNAME: ${{ secrets.TEST_COCINA_USERNAME }}
+          TEST_COCINA_PASSWORD: ${{ secrets.TEST_COCINA_PASSWORD }}
+
+      - name: Aviso de E2E con fallos (chromium-configuracion)
+        if: failure()
+        run: |
+          {
+            echo "### ⚠️ E2E con fallos — $PROYECTO"
+            echo ""
+            echo "La suite Playwright falló en **$PROYECTO**. En develop es **informativa**: no hace fallar el pipeline (BL-250)."
+            echo "Ver el reporte Allure, el Test Run \`-e2e\` en Kiwi TCMS y, si hace falta el detalle, el artifact cifrado \`playwright-report-$PROYECTO\` (e2e/README.md). Registrar el defecto antes del próximo release."
+            echo ""
+            echo "Si un test falló a la mitad, revisar en staging que los medios de pago y la marca del establecimiento hayan quedado como estaban."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Igual que en el job "playwright" (BL-487): nunca se suben sin preparar.
+      - name: Preparar los resultados para publicar (chromium-configuracion)
+        if: always()
+        continue-on-error: true
+        run: |
+          if [ -f playwright-report/junit.xml ]; then
+            node scripts/dashboards/sanitizar-allure.mjs --junit playwright-report/junit.xml \
+              || { echo "::warning::No se pudo preparar junit.xml: no se sube."; rm -f playwright-report/junit.xml; }
+          fi
+          if [ -d playwright-report/allure-results ]; then
+            node scripts/dashboards/sanitizar-allure.mjs playwright-report/allure-results \
+              || { echo "::warning::No se pudieron preparar los resultados de Allure: no se suben."; rm -rf playwright-report/allure-results; }
+          fi
+
+      - name: Upload resultados E2E (artifact, chromium-configuracion)
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-resultados-chromium-configuracion
+          path: |
+            playwright-report/junit.xml
+            playwright-report/allure-results/
+          retention-days: 14
+          if-no-files-found: ignore
+
+      # Igual que en el job "playwright" (BL-525): solo se sube cifrado.
+      - name: Cifrar el reporte completo (chromium-configuracion)
+        if: always()
+        continue-on-error: true
+        env:
+          CLAVE: ${{ secrets.E2E_REPORTE_CLAVE }}
+        run: |
+          if [ ! -d playwright-report/html ]; then
+            echo "No hay reporte HTML para cifrar."
+            exit 0
+          fi
+          if [ -z "$CLAVE" ]; then
+            echo "::warning::Falta el secret E2E_REPORTE_CLAVE: no se sube el reporte completo de $PROYECTO (ver e2e/README.md)."
+            exit 0
+          fi
+          if ! command -v gpg >/dev/null; then
+            echo "::warning::La imagen no trae gpg: no se sube el reporte completo de $PROYECTO."
+            exit 0
+          fi
+          export GNUPGHOME="$RUNNER_TEMP/gnupg"
+          mkdir -p -m 700 "$GNUPGHOME"
+          archivo_clave="$RUNNER_TEMP/clave-e2e"
+          ( umask 077; printf '%s' "$CLAVE" > "$archivo_clave" )
+          tar -czf - -C playwright-report html | gpg --batch --yes --pinentry-mode loopback \
+            --symmetric --cipher-algo AES256 \
+            --passphrase-file "$archivo_clave" \
+            -o "playwright-report-$PROYECTO.tar.gz.gpg"
+          rm -f "$archivo_clave"
+          rm -rf playwright-report/html
+          echo "Reporte cifrado: playwright-report-$PROYECTO.tar.gz.gpg"
+
+      - name: Upload reporte completo cifrado (artifact, chromium-configuracion)
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-chromium-configuracion
+          path: playwright-report-chromium-configuracion.tar.gz.gpg
+          retention-days: 14
+          if-no-files-found: ignore
+
   # ── JOB 10B: MERGE + REPORTE A KIWI (Playwright) ──────────────────────────
-  # Junta los 4 junit.xml (uno por proyecto, generados por el matrix de
-  # arriba) en uno solo, para que el TestRun de Kiwi quede único ("-e2e"),
+  # Junta los junit.xml (uno por proyecto: los 4 del matrix de arriba y el
+  # de chromium-configuracion, BL-606) en uno solo, para que el TestRun de Kiwi quede único ("-e2e"),
   # igual que antes de paralelizar por browser. "if: always()" porque
   # interesa reportar aunque algún proyecto haya fallado (matrix con
   # fail-fast: false). "!cancelled()" en vez de "always()": reporta igual
   # si hubo fallos, pero no corre si alguien canceló la corrida (BL-250).
   playwright-report:
     name: 📋 Merge + reporte E2E a Kiwi TCMS
-    needs: [playwright, version]
+    needs: [playwright, playwright-configuracion, version]
     # Corre solo si los E2E corrieron de verdad (push a develop con deploy a
     # staging, o un workflow_dispatch sobre develop). Con "!cancelled()" solo,
     # el job corría también en PRs, en main y en tags con playwright
@@ -1725,7 +1863,7 @@ jobs:
     steps:
       # BL-487: los resultados (junit.xml y Allure), no el reporte completo
       # cifrado. Quedan en reports/playwright-resultados-<proyecto>/.
-      - name: Descargar los 4 reportes
+      - name: Descargar los reportes de los 5 proyectos
         uses: actions/download-artifact@v8
         with:
           pattern: playwright-resultados-*
@@ -1737,7 +1875,7 @@ jobs:
 
       # Cada carpeta bajo reports/ es un artifact (playwright-resultados-chromium,
       # etc.), cada uno con su propio junit.xml. Se combinan los <testsuite>
-      # de los 4 bajo una única raíz <testsuites>, con la stdlib (sin
+      # de todos bajo una única raíz <testsuites>, con la stdlib (sin
       # dependencias nuevas) — alcanza para lo que necesita Kiwi.
       - name: Mergear los junit.xml en uno solo
         run: |
@@ -1891,7 +2029,7 @@ jobs:
           tcms-junit.xml-plugin --verbose --summary-template '${name}' playwright-report/kiwi-junit.xml
 
       # ── BL-487: reporte Allure de los E2E ──────────────────────────────────
-      # Junta los resultados Allure de los 4 navegadores (cada artifact trae
+      # Junta los resultados Allure de los 5 proyectos (cada artifact trae
       # playwright-report/allure-results), los prepara para publicar
       # (sanitizar-allure.mjs: sin texto escrito en los campos ni trazas) y
       # genera el HTML. Queda como artifact «allure-e2e»; el workflow
@@ -1922,14 +2060,14 @@ jobs:
           cache: npm
           cache-dependency-path: repo/package-lock.json
 
-      # BL-601: resumen de los E2E de los 4 navegadores en el Summary
+      # BL-601: resumen de los E2E de los 5 proyectos en el Summary
       # (informativo). Usa el junit combinado del paso de merge.
       - name: Resumen de las pruebas (Summary)
         if: always()
         continue-on-error: true
         run: |
           node repo/scripts/dashboards/resumen-pruebas.mjs \
-            --titulo "🎭 E2E (Playwright, 4 navegadores)" \
+            --titulo "🎭 E2E (Playwright, 5 proyectos)" \
             --artifact playwright-report \
             --kiwi E2E-Playwright \
             --allure https://ved-virtualexperiencedevelopment.github.io/bistrolink/allure/e2e/ \
@@ -1938,7 +2076,7 @@ jobs:
       # allure (CLI) y allure-playwright salen del lockfile. ALLURE_NO_ANALYTICS:
       # el reporte se publica, sin el script de analítica de Allure (ver
       # scripts/dashboards/allurerc.mjs).
-      - name: Generar el reporte Allure (4 navegadores)
+      - name: Generar el reporte Allure (5 proyectos)
         id: allure
         if: always()
         continue-on-error: true
@@ -1991,20 +2129,22 @@ jobs:
   # En develop los E2E son informativos (BL-250): si fallan, el pipeline sigue
   # en verde. Este job compara los resultados de la corrida con los de la
   # corrida anterior de develop y, si hay tests que pasaban y ahora fallan,
-  # manda un correo al equipo que nombra a los autores de los PR mergeados
-  # entre las dos corridas y les pide verificar los tests
+  # manda un correo a los autores de los PR mergeados entre las dos corridas,
+  # con el resto del equipo en copia, y les pide verificar los tests
   # (scripts/dashboards/aviso-e2e.mjs).
   #
   # Reutiliza el correo de estado (BL-326): la cuenta del environment
   # «notificaciones» (solo develop), enviar-email.mjs y los destinatarios de
-  # DASHBOARD_EMAIL_RECIPIENTS. El correo no lleva mensajes de error, y los
-  # destinatarios se enmascaran en el log: el repositorio es público.
+  # DASHBOARD_EMAIL_RECIPIENTS. El correo de cada autor sale de
+  # EQUIPO_GITHUB_CORREOS («usuario=correo»); si falta, va a todo el equipo.
+  # El correo no lleva mensajes de error, y los destinatarios se enmascaran
+  # en el log: el repositorio es público.
   #
   # Solo en un push a develop: en un workflow_dispatch no hay un cambio al que
   # atribuir el fallo. continue-on-error: el aviso nunca frena el pipeline.
   aviso-e2e:
     name: 📧 Aviso de E2E que empiezan a fallar
-    needs: [playwright]
+    needs: [playwright, playwright-configuracion]
     if: ${{ !cancelled() && needs.playwright.result != 'skipped' && github.event_name == 'push' && github.ref == 'refs/heads/develop' }}
     runs-on: ubuntu-latest
     environment: notificaciones
@@ -2073,6 +2213,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           SHA_ANTERIOR: ${{ steps.anterior.outputs.sha }}
           EQUIPO_CORREOS: ${{ secrets.DASHBOARD_EMAIL_RECIPIENTS }}
+          EQUIPO_GITHUB: ${{ secrets.EQUIPO_GITHUB_CORREOS }}
           MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
           ALLURE_REPORT_URL: https://ved-virtualexperiencedevelopment.github.io/bistrolink/allure/e2e/
           ACTUAL: ${{ runner.temp }}/aviso/actual
@@ -2090,6 +2231,7 @@ jobs:
           MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
           MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
           EMAIL_TO: ${{ steps.aviso.outputs.to }}
+          EMAIL_CC: ${{ steps.aviso.outputs.cc }}
           EMAIL_FROM: ${{ steps.aviso.outputs.from }}
           EMAIL_SUBJECT: ${{ steps.aviso.outputs.subject }}
           EMAIL_BODY_PATH: ${{ steps.aviso.outputs.body_path }}
@@ -2304,7 +2446,7 @@ jobs:
           check "${AUTH_URL}/realms/bistrolink/.well-known/openid-configuration" || fallos=1
 
           # El emisor de los tokens tiene que ser el de production: si no, la
-          # API rechaza todos los logins (Anexo 12, A9).
+          # API rechaza todos los logins.
           ISSUER=$(curl -fsS --max-time 15 "${AUTH_URL}/realms/bistrolink/.well-known/openid-configuration" | jq -r '.issuer // empty' || true)
           if [ "$ISSUER" = "${AUTH_URL}/realms/bistrolink" ]; then
             echo "OK    issuer $ISSUER"

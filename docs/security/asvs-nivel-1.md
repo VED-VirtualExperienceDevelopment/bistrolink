@@ -36,7 +36,7 @@ Es una **revisión guiada**, no una certificación. Cada requisito tiene su esta
 | Capítulos   | V2 Autenticación, V3 Sesión, V4 Control de acceso, V5 Validación y codificación, V7 Errores y registros (77 requisitos de nivel 1)                                        |
 | Componentes | API (NestJS), web (Next.js) y Keycloak 26 (realm `bistrolink`)                                                                                                            |
 | Fuente      | Rama `develop` del 21/11/2026: código, configuración del realm y tests de integración. Las verificaciones en el navegador se hicieron en staging                          |
-| Fuera       | V1 (arquitectura), V6 (criptografía en reposo), V8 a V14: cubiertos por el DAST, los checks del pipeline (CodeQL, SonarCloud, Gitleaks, Trivy) y el Anexo 12 del proyecto |
+| Fuera       | V1 (arquitectura), V6 (criptografía en reposo), V8 a V14: cubiertos por el DAST, los checks del pipeline (CodeQL, SonarCloud, Gitleaks, Trivy) |
 
 ## V2 Autenticación
 

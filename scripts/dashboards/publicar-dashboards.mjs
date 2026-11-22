@@ -144,7 +144,7 @@ export async function reporteAllure(carpeta) {
       ruta: ALLURE_RUTA,
       titulo: "Reporte E2E (Allure)",
       descripcion:
-        "Resultado de la última corrida de los E2E de Playwright en develop, en los 4 navegadores. Kiwi TCMS sigue siendo la fuente de verdad de los casos.",
+        "Resultado de la última corrida de los E2E de Playwright en develop, en los 4 navegadores y en el proyecto de configuración. Kiwi TCMS sigue siendo la fuente de verdad de los casos.",
     },
   ];
 }

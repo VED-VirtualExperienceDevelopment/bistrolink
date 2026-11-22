@@ -103,17 +103,26 @@ jobs:
       - name: Instalar k6
         uses: grafana/setup-k6-action@43b9fc21641a76002687994433dd586f56e791b1 # v1.2.2
 
+      # BL-607: el resultado de cada caso sale del código de salida de k6
+      # (0 = umbrales cumplidos, 99 = algún umbral no se cumplió, otro =
+      # error de la corrida), que no cambia entre versiones de k6. El JSON de
+      # --summary-export queda solo como detalle: en ese formato, «true» en
+      # un umbral significa que NO se cumplió.
       - name: k6 — TC-P-001 (load-test.js)
-        continue-on-error: true
         env:
           BASE_URL: https://bistrolink-api-staging.up.railway.app
-        run: k6 run --summary-export=k6-load-test-summary.json k6/load-test.js
+        run: |
+          set +e
+          k6 run --summary-export=k6-load-test-summary.json k6/load-test.js
+          echo $? > k6-load-test.exit
 
       - name: k6 — TC-P-002 (pedidos-carga.js)
-        continue-on-error: true
         env:
           BASE_URL: https://bistrolink-api-staging.up.railway.app
-        run: k6 run --summary-export=k6-pedidos-carga-summary.json k6/pedidos-carga.js
+        run: |
+          set +e
+          k6 run --summary-export=k6-pedidos-carga-summary.json k6/pedidos-carga.js
+          echo $? > k6-pedidos-carga.exit
 
       # ── Lighthouse ──────────────────────────────────────────────────────
       - name: Lighthouse CI — TC-P-003 (menú digital, HU-001)
@@ -140,40 +149,41 @@ jobs:
                   failure = ET.SubElement(case, "failure", message="umbral no cumplido")
                   failure.text = detail
 
-          # TC-P-001 — thresholds de http_req_duration (p95) y http_req_failed
-          try:
-              with open("k6-load-test-summary.json") as f:
-                  data = json.load(f)
-              metrics = data.get("metrics", {})
-              thresholds = {}
-              thresholds.update(metrics.get("http_req_duration", {}).get("thresholds", {}))
-              thresholds.update(metrics.get("http_req_failed", {}).get("thresholds", {}))
-              passed = bool(thresholds) and all(thresholds.values())
-              add_case(
-                  "[TC-P-001] HU-001: performance de /api/menu bajo carga (70 sesiones simultáneas, p95 menor a 1.5s)",
-                  "k6.load-test", passed, str(thresholds),
-              )
-          except FileNotFoundError:
-              add_case(
-                  "[TC-P-001] HU-001: performance de /api/menu bajo carga (70 sesiones simultáneas, p95 menor a 1.5s)",
-                  "k6.load-test", False, "no se generó k6-load-test-summary.json (k6 run no llegó a terminar)",
-              )
+          # BL-607: pasa solo si k6 terminó con código 0. Antes se leía el
+          # JSON con «all(thresholds.values())», pero ahí «true» significa
+          # umbral NO cumplido: el caso daba al revés.
+          def resultado_k6(base):
+              try:
+                  codigo = int(open(f"{base}.exit").read().strip())
+              except (FileNotFoundError, ValueError):
+                  return False, "k6 no llegó a correr"
+              umbrales = []
+              try:
+                  with open(f"{base}-summary.json") as f:
+                      data = json.load(f)
+                  for nombre, metrica in data.get("metrics", {}).items():
+                      for umbral, fallo in (metrica.get("thresholds") or {}).items():
+                          umbrales.append(f"{nombre} {umbral}: {'no cumplido' if fallo else 'cumplido'}")
+              except (FileNotFoundError, ValueError):
+                  umbrales.append(f"sin {base}-summary.json")
+              if codigo == 0:
+                  return True, "; ".join(umbrales)
+              motivo = "umbral no cumplido" if codigo == 99 else f"k6 terminó con código {codigo}"
+              return False, "; ".join([motivo] + umbrales)
 
-          # TC-P-002 — threshold de http_req_failed (rate==0)
-          try:
-              with open("k6-pedidos-carga-summary.json") as f:
-                  data = json.load(f)
-              thresholds = data.get("metrics", {}).get("http_req_failed", {}).get("thresholds", {})
-              passed = bool(thresholds) and all(thresholds.values())
-              add_case(
-                  "[TC-P-002] HU-003: 20 comensales confirman pedido en simultáneo sin errores 5xx",
-                  "k6.pedidos-carga", passed, str(thresholds),
-              )
-          except FileNotFoundError:
-              add_case(
-                  "[TC-P-002] HU-003: 20 comensales confirman pedido en simultáneo sin errores 5xx",
-                  "k6.pedidos-carga", False, "no se generó k6-pedidos-carga-summary.json (k6 run no llegó a terminar)",
-              )
+          # TC-P-001 — p95 < 1,5 s y menos de 1 % de errores con 70 sesiones
+          passed, detail = resultado_k6("k6-load-test")
+          add_case(
+              "[TC-P-001] HU-001: performance de /api/menu bajo carga (70 sesiones simultáneas, p95 menor a 1.5s)",
+              "k6.load-test", passed, detail,
+          )
+
+          # TC-P-002 — sin errores y p95 de POST /pedidos < 500 ms con 20 comensales
+          passed, detail = resultado_k6("k6-pedidos-carga")
+          add_case(
+              "[TC-P-002] HU-003: 20 comensales confirman pedido en simultáneo sin errores 5xx y p95 menor a 500 ms",
+              "k6.pedidos-carga", passed, detail,
+          )
 
           # TC-P-003 — score de Lighthouse (categories:performance >= 0.8),
           # leído del manifest.json que deja lhci en el outputDir configurado
@@ -219,6 +229,7 @@ jobs:
           path: |
             performance-junit.xml
             k6-*-summary.json
+            k6-*.exit
             lighthouse-results/
           retention-days: 14
 

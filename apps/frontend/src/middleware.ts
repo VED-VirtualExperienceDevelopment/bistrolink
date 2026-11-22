@@ -3,7 +3,7 @@ import type { NextRequest } from "next/server";
 
 /**
  * BL-223: ruta del healthcheck. Railway la consulta por HTTP interno y no
- * sigue redirecciones: con el 301 a HTTPS el deploy fallaba (Anexo 12, W4).
+ * sigue redirecciones: con el 301 a HTTPS el deploy fallaba.
  */
 export const RUTA_HEALTHCHECK = "/api/health";
 

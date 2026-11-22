@@ -30,7 +30,7 @@ Copiados del dashboard [Calidad del proceso](https://ved-virtualexperiencedevelo
 | Unitarias (Jest) | — | <n> | <n> | <n> | <%> | — |
 | Integración (TC-I) | <n> | <n> | <n> | <n> | <%> | <n> |
 | Contrato (TC-C) | <n> | <n> | <n> | <n> | <%> | <n> |
-| E2E (TC-E, 4 navegadores) | <n> | <n> | <n> | <n> | <%> | <n> |
+| E2E (TC-E, 5 proyectos) | <n> | <n> | <n> | <n> | <%> | <n> |
 | Performance (TC-P) | <n> | <n> | <n> | <n> | <%> | <n> |
 | Manuales (plan de la capa) | <n> | <n> | <n> | <n> | <%> | <n> |
 

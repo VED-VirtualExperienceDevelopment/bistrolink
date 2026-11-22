@@ -1,6 +1,6 @@
 // scripts/dashboards/enviar-email.mjs
 //
-// BL-326 (G12): envía el email de estado que arma send-status-email.mjs.
+// BL-326: envía el email de estado que arma send-status-email.mjs.
 // Reemplaza a la action de terceros dawidd6/action-send-mail: la contraseña
 // del correo ya no pasa por código ajeno. Usa nodemailer, que queda en el
 // lockfile del repo (la revisan Trivy, dependency-review y Dependabot).
@@ -16,6 +16,7 @@
 //   EMAIL_SUBJECT                -> asunto
 //   EMAIL_BODY_PATH              -> ruta del HTML generado
 // Opcionales:
+//   EMAIL_CC                     -> en copia, separados por coma (BL-599)
 //   SMTP_HOST, SMTP_PORT         -> por defecto smtp.gmail.com y 465 (TLS)
 //
 // No escribe en el log destinatarios ni credenciales: el repositorio es
@@ -45,9 +46,12 @@ export function leerConfiguracion(env) {
     throw new Error(`Faltan variables de entorno: ${faltan.join(", ")}`);
   }
 
-  const destinatarios = env.EMAIL_TO.split(",")
-    .map((correo) => correo.trim())
-    .filter(Boolean);
+  const lista = (texto) =>
+    (texto ?? "")
+      .split(",")
+      .map((correo) => correo.trim())
+      .filter(Boolean);
+  const destinatarios = lista(env.EMAIL_TO);
   if (destinatarios.length === 0) {
     throw new Error("EMAIL_TO no tiene destinatarios");
   }
@@ -73,6 +77,7 @@ export function leerConfiguracion(env) {
     mensaje: {
       from: env.EMAIL_FROM.trim(),
       to: destinatarios,
+      ...(lista(env.EMAIL_CC).length > 0 && { cc: lista(env.EMAIL_CC) }),
       subject: env.EMAIL_SUBJECT.trim(),
     },
     rutaCuerpo: env.EMAIL_BODY_PATH.trim(),
@@ -91,9 +96,7 @@ async function main() {
   if (rechazados > 0) {
     throw new Error(`El servidor rechazó ${rechazados} destinatario(s)`);
   }
-  console.log(
-    `✅ Email de estado enviado a ${info.accepted.length} destinatario(s).`,
-  );
+  console.log(`✅ Correo enviado a ${info.accepted.length} destinatario(s).`);
 }
 
 // Solo envía si se ejecuta directo (node enviar-email.mjs), no al importarlo
@@ -104,7 +107,7 @@ const esPrincipal =
 
 if (esPrincipal) {
   main().catch((err) => {
-    console.error("❌ No se pudo enviar el email de estado:", err.message);
+    console.error("❌ No se pudo enviar el correo:", err.message);
     process.exit(1);
   });
 }

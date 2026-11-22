@@ -50,6 +50,17 @@
  * código que en Kiwi siguen en otro estado (PROPOSED): se corre después de
  * una corrida en verde.
  *
+ * Duplicados y renumerados: si en el plan hay más de un caso para el mismo
+ * número (el plugin de JUnit crea uno nuevo cuando no encuentra el título
+ * exacto), queda el de título exacto más completo. Los demás, y los de
+ * números que ya no existen en el código, se listan y, con --aplicar, se
+ * sacan del plan, pasan a DISABLED y su título empieza con «[RETIRADO]»,
+ * para que el plugin no les vuelva a registrar resultados.
+ *
+ * Campos vacíos: en los casos que quedan, completa la categoría, el
+ * requirement, el script, la descripción, los tags y el componente que
+ * falten, con los datos de la tabla. No pisa lo que ya está cargado.
+ *
  * Se puede correr las veces que haga falta: lo que ya está igual no se toca.
  * Las credenciales salen de variables de entorno, nunca del repositorio.
  */
@@ -1500,6 +1511,18 @@ const DATOS_E2E = {
     priority: "P2",
     tags: ["BL-96", "cfe", ...axe],
   }),
+  // HU-019 (BL-441): alertas del mozo en la campana y en la pantalla
+  // Alertas. Antes eran TC-E-069 y 070 (BL-512 los renumeró).
+  73: e2e("admin", "HU-019", {
+    category: "Accesibilidad",
+    priority: "P1",
+    tags: ["BL-441", "alertas", ...axe],
+  }),
+  74: e2e("admin", "HU-019", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-441", "alertas"],
+  }),
   // BL-473: pantalla de Configuración responsive y accesible.
   75: e2e("admin", "HU-020", {
     category: "Accesibilidad",
@@ -1785,6 +1808,13 @@ const DATOS_E2E = {
     priority: "P3",
     tags: ["BL-553", "carrito", ...axe],
   }),
+  // BL-570: la carta abierta se entera de un plato agotado al volver a la
+  // pestaña.
+  125: e2e("comensal", "HU-001", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-570", "stock", "tiempo-real"],
+  }),
   // HU-051 (BL-563): sello de pago seguro.
   126: e2e("comensal", "HU-051", {
     category: "Funcional",
@@ -1796,6 +1826,17 @@ const DATOS_E2E = {
     category: "Funcional",
     priority: "P3",
     tags: ["BL-558", "valoracion", "privacidad", "teclado"],
+  }),
+  // BL-592: «Llamar al mozo» en la barra superior del menú.
+  128: e2e("comensal", "HU-019", {
+    category: "Accesibilidad",
+    priority: "P2",
+    tags: ["BL-592", "responsive", "llamado-mozo"],
+  }),
+  129: e2e("comensal", "HU-019", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-592", "llamado-mozo"],
   }),
 };
 /**
@@ -2058,25 +2099,65 @@ async function main() {
   // Se busca por el TC-I del principio del título y, si en Kiwi está sin ese
   // prefijo, por el texto. Así un caso cargado sin «[TC-I-NNN] » aparece
   // como «otro título» (se corrige) y no como faltante (se duplicaría).
+  // Puede haber más de un caso con el mismo número: el plugin de JUnit crea
+  // uno nuevo cuando no encuentra el título exacto (por ejemplo, después de
+  // un cambio de título o de una renumeración). Se agrupan todos.
   const porNumero = new Map();
   const porTexto = new Map();
   for (const caso of enPlan) {
     const numero = numeroDe(caso.summary);
     if (numero === null)
       porTexto.set(sinPrefijo(sinEscapar(caso.summary)), caso);
-    else porNumero.set(numero, caso);
+    else porNumero.set(numero, [...(porNumero.get(numero) ?? []), caso]);
   }
 
   const iguales = [];
   const titulosDistintos = [];
   const faltantes = [];
+  // Casos de Kiwi que sobran: duplicados del mismo test y casos con un
+  // número que en el código es de otro test (renumerados).
+  const sobrantes = [];
+  const elegidos = [];
   for (const caso of casos) {
-    const enKiwi =
-      porNumero.get(caso.numero) ?? porTexto.get(sinPrefijo(caso.titulo));
-    if (!enKiwi) faltantes.push(caso);
-    else if (sinEscapar(enKiwi.summary) === caso.titulo) iguales.push(caso);
-    else titulosDistintos.push({ ...caso, enKiwi });
+    const candidatos = porNumero.get(caso.numero) ?? [];
+    const porTitulo = porTexto.get(sinPrefijo(caso.titulo));
+    if (porTitulo) candidatos.push(porTitulo);
+    if (candidatos.length === 0) {
+      faltantes.push(caso);
+      continue;
+    }
+    const exactos = candidatos.filter(
+      (k) => sinEscapar(k.summary) === caso.titulo,
+    );
+    // Se queda el de título exacto más completo (el cargado por este script
+    // antes que el que creó el plugin solo con el título); a igualdad, el
+    // más viejo.
+    const elegido = (exactos.length ? exactos : candidatos)
+      .slice()
+      .sort((a, b) => completitud(b) - completitud(a) || a.id - b.id)[0];
+    for (const k of candidatos) {
+      if (k !== elegido) sobrantes.push({ caso: k, queda: elegido, del: caso });
+    }
+    elegidos.push({ caso, enKiwi: elegido });
+    if (sinEscapar(elegido.summary) === caso.titulo) iguales.push(caso);
+    else titulosDistintos.push({ ...caso, enKiwi: elegido });
   }
+  // Números que ya no existen en el código.
+  const enCodigo = new Set(casos.map((c) => c.numero));
+  for (const [numero, grupo] of porNumero) {
+    if (enCodigo.has(numero)) continue;
+    for (const k of grupo) sobrantes.push({ caso: k, queda: null, del: null });
+  }
+
+  // Campos que faltan en los casos que quedan (los que creó el plugin solo
+  // con el título): se completan con DATOS, sin pisar lo que ya tienen.
+  const incompletos = elegidos
+    .map(({ caso, enKiwi }) => ({
+      caso,
+      enKiwi,
+      cambios: camposQueFaltan(caso, enKiwi),
+    }))
+    .filter((x) => Object.keys(x.cambios).length > 0);
 
   console.log(`\nYa están igual: ${iguales.length}.`);
 
@@ -2087,6 +2168,23 @@ async function main() {
     console.log(`    Código: ${c.titulo}`);
   }
 
+  console.log(
+    `\nSobran en Kiwi (duplicados o renumerados): ${sobrantes.length}.`,
+  );
+  for (const { caso, queda, del } of sobrantes) {
+    const motivo = queda
+      ? `queda TC-${queda.id} para ${TIPO.prefijo}-${String(del.numero).padStart(3, "0")}`
+      : "el número ya no existe en el código";
+    console.log(`  TC-${caso.id} ${caso.summary}  (${motivo})`);
+  }
+
+  console.log(`\nCon campos sin completar: ${incompletos.length}.`);
+  for (const { enKiwi, cambios } of incompletos) {
+    console.log(
+      `  TC-${enKiwi.id} ${enKiwi.summary}  (${Object.keys(cambios).join(", ")})`,
+    );
+  }
+
   // Casos del código que en Kiwi no están en CONFIRMED (los E2E cargados a
   // mano quedaron en PROPOSED hasta su primera corrida en verde).
   const confirmado = await unico(
@@ -2094,13 +2192,8 @@ async function main() {
     { name: "CONFIRMED" },
     "estado CONFIRMED",
   );
-  const sinConfirmar = [...iguales, ...titulosDistintos]
-    .map(
-      (c) =>
-        c.enKiwi ??
-        porNumero.get(c.numero) ??
-        porTexto.get(sinPrefijo(c.titulo)),
-    )
+  const sinConfirmar = elegidos
+    .map((e) => e.enKiwi)
     .filter((caso) => caso.case_status !== confirmado.id);
   console.log(`\nSin CONFIRMED en Kiwi: ${sinConfirmar.length}.`);
   for (const caso of sinConfirmar) {
@@ -2136,10 +2229,139 @@ async function main() {
     console.log(`Confirmado: TC-${caso.id}`);
   }
 
+  if (sobrantes.length > 0) {
+    await retirarSobrantes(sobrantes, plan.id);
+  }
+  if (incompletos.length > 0) {
+    await completarCampos(incompletos, plan.product);
+  }
+
   if (faltantes.length > 0) {
     await crearFaltantes(faltantes, plan.id, plan.product);
   }
   if (DESCRIPCIONES) await sincronizarDescripciones(plan.id, true);
+}
+
+/**
+ * Qué tan completo está un caso de Kiwi: los que creó el plugin de JUnit
+ * solo tienen el título (categoría por defecto, sin requirement, script ni
+ * descripción).
+ */
+function completitud(caso) {
+  return (
+    (caso.category__name && caso.category__name !== "--default--" ? 1 : 0) +
+    (caso.requirement ? 1 : 0) +
+    (caso.script ? 1 : 0) +
+    (textoNormalizado(caso.text) ? 1 : 0)
+  );
+}
+
+/** Descripción que se carga cuando el caso no tiene ninguna. */
+const textoPorDefecto = (script) =>
+  [
+    "### Precondición",
+    "Ver el test automatizado.",
+    "",
+    "### Pasos",
+    `Automatizado en \`${DIRECTORIO_TESTS}/${script}\`.`,
+    "",
+    "### Resultado esperado",
+    "El test pasa.",
+  ].join("\n");
+
+/**
+ * Campos vacíos de un caso que quedó en Kiwi, con el valor que les
+ * corresponde según DATOS. No pisa lo que ya tiene cargado.
+ */
+function camposQueFaltan(caso, enKiwi) {
+  const datos = DATOS[caso.numero];
+  const cambios = {};
+  if (
+    datos &&
+    (!enKiwi.category__name || enKiwi.category__name === "--default--")
+  )
+    cambios.category = datos.category ?? DATOS_POR_DEFECTO.category;
+  if (datos?.requirement && !enKiwi.requirement)
+    cambios.requirement = datos.requirement;
+  if (!enKiwi.script) cambios.script = TIPO.comando(caso.script, caso.titulo);
+  if (!enKiwi.is_automated) cambios.is_automated = true;
+  if (!textoNormalizado(enKiwi.text))
+    cambios.text = textoPorDefecto(caso.script);
+  // Tags y componente: solo en los casos que creó el plugin (sin categoría),
+  // que no tienen ninguno.
+  if (datos && cambios.category) {
+    if (datos.tags?.length) cambios.tags = datos.tags;
+    if (datos.component) cambios.component = datos.component;
+  }
+  return cambios;
+}
+
+/**
+ * Saca del plan los casos que sobran, los pasa a DISABLED y les cambia el
+ * título a «[RETIRADO] …». El plugin de JUnit busca por título exacto en
+ * todo el producto: con el título original seguiría registrando
+ * resultados en el caso equivocado.
+ */
+async function retirarSobrantes(sobrantes, idPlan) {
+  const deshabilitado = await unico(
+    "TestCaseStatus.filter",
+    { name: "DISABLED" },
+    "estado DISABLED",
+  );
+  for (const { caso, queda } of sobrantes) {
+    const titulo = sinEscapar(caso.summary);
+    await rpc("TestCase.update", [
+      caso.id,
+      {
+        summary: titulo.startsWith("[RETIRADO]")
+          ? titulo
+          : `[RETIRADO] ${titulo}`.slice(0, 255),
+        case_status: deshabilitado.id,
+      },
+    ]);
+    await rpc("TestPlan.remove_case", [idPlan, caso.id]);
+    console.log(
+      `Retirado: TC-${caso.id}${queda ? ` (queda TC-${queda.id})` : ""}`,
+    );
+  }
+}
+
+/** Completa los campos vacíos de los casos que quedan. */
+async function completarCampos(incompletos, producto) {
+  const categorias = new Map();
+  for (const { enKiwi, cambios } of incompletos) {
+    const { tags, component, category, ...resto } = cambios;
+    const actualizacion = { ...resto };
+    if (category) {
+      if (!categorias.has(category)) {
+        const c = await unico(
+          "Category.filter",
+          { name: category, product: producto },
+          `Category ${category}`,
+        );
+        categorias.set(category, c.id);
+      }
+      actualizacion.category = categorias.get(category);
+    }
+    if (Object.keys(actualizacion).length > 0) {
+      await rpc("TestCase.update", [enKiwi.id, actualizacion]);
+    }
+    for (const tag of tags ?? []) {
+      await rpc("TestCase.add_tag", [enKiwi.id, tag]);
+    }
+    if (component) {
+      try {
+        await rpc("TestCase.add_component", [enKiwi.id, component]);
+      } catch (error) {
+        console.warn(
+          `  Aviso: no se pudo asignar el componente ${component} a TC-${enKiwi.id}: ${error.message}`,
+        );
+      }
+    }
+    console.log(
+      `Completado: TC-${enKiwi.id} (${Object.keys(cambios).join(", ")})`,
+    );
+  }
 }
 
 /** Crea los casos que faltan y los agrega al plan. */
@@ -2185,16 +2407,7 @@ async function crearFaltantes(faltantes, idPlan, producto) {
         is_automated: true,
         script: TIPO.comando(c.script, c.titulo),
         requirement: datos.requirement,
-        text: [
-          "### Precondición",
-          "Ver el test automatizado.",
-          "",
-          "### Pasos",
-          `Automatizado en \`${DIRECTORIO_TESTS}/${c.script}\`.`,
-          "",
-          "### Resultado esperado",
-          "El test pasa.",
-        ].join("\n"),
+        text: textoPorDefecto(c.script),
       },
     ]);
     await rpc("TestPlan.add_case", [idPlan, creado.id]);
