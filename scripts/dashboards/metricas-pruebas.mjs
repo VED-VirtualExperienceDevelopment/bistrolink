@@ -6,7 +6,7 @@
 //
 // Fuentes:
 //   - Kiwi TCMS: el JSON que deja datos-kiwi.py (casos y últimos Test Runs de
-//     cada Test Plan activo). Ruta en KIWI_DATOS.
+//     cada Test Plan activo de la versión develop). Ruta en KIWI_DATOS.
 //   - Codecov: API pública del repositorio (cobertura total y por flag).
 //
 // Si falta una fuente, su bloque dice que no hubo datos en esta publicación.
@@ -89,7 +89,7 @@ export function renderKiwi(datos) {
   const planes = datos.planes
     .map(resumenPlan)
     .filter((p) => p.casos > 0 || p.runsTotales > 0);
-  if (planes.length === 0) return "_Kiwi TCMS no tiene Test Plans activos con casos._";
+  if (planes.length === 0) return "_Kiwi TCMS no tiene Test Plans activos con casos en la versión develop._";
 
   const filas = planes.map((p) => {
     const u = p.ultimo;

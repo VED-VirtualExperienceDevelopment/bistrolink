@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """BL-601: datos de Kiwi TCMS para el dashboard «Calidad del proceso».
 
-Lee, de cada Test Plan activo, sus casos y sus últimos Test Runs con las
-ejecuciones, y los guarda en un JSON que procesa metricas-pruebas.mjs. No
+Lee, de cada Test Plan activo del producto y la versión del dashboard
+(por defecto «Bistrolink» y «develop»), sus casos y sus últimos Test Runs con
+las ejecuciones, y los guarda en un JSON que procesa metricas-pruebas.mjs. No
 calcula nada: solo trae los datos.
 
 Autenticación igual que cleanup-test-runs.yml: Auth.login y la cookie de
@@ -12,6 +13,8 @@ la contraseña en la URL, y un transporte HTTP a secas recibe 301 sin fin).
 Uso:
   KIWI_URL=... KIWI_USERNAME=... KIWI_PASSWORD=... \\
     python3 scripts/dashboards/datos-kiwi.py kiwi.json
+Opcionales: KIWI_PRODUCTO (por defecto Bistrolink) y KIWI_VERSION (por
+defecto develop): solo se leen los Test Plans de ese producto y esa versión.
 
 Solo lectura. Sin dependencias fuera de la biblioteca estándar.
 """
@@ -24,6 +27,8 @@ import xmlrpc.client
 from urllib.parse import urlparse
 
 RUNS_POR_PLAN = 10  # los mismos que conserva cleanup-test-runs.yml por defecto
+PRODUCTO = os.environ.get("KIWI_PRODUCTO", "").strip() or "Bistrolink"
+VERSION = os.environ.get("KIWI_VERSION", "").strip() or "develop"
 
 
 class CookieTransport(xmlrpc.client.SafeTransport):
@@ -81,9 +86,17 @@ def main():
         for e in con_reintentos(lambda: servidor.TestExecutionStatus.filter({}))
     }
 
+    # Solo los Test Plans activos del producto y la versión del dashboard:
+    # los de otras versiones (por ejemplo, de pruebas viejas) no cuentan.
+    filtro = {
+        "is_active": True,
+        "product__name": PRODUCTO,
+        "product_version__value": VERSION,
+    }
+    print(f"Test Plans activos de {PRODUCTO}, versión {VERSION}:")
     planes = []
     for plan in sorted(
-        con_reintentos(lambda: servidor.TestPlan.filter({"is_active": True})),
+        con_reintentos(lambda: servidor.TestPlan.filter(filtro)),
         key=lambda p: p["id"],
     ):
         plan_id = plan["id"]
