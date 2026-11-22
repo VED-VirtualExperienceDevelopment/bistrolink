@@ -21,10 +21,15 @@ export function textoPagoAprobado(codigo: string | null): string {
   ].join('\n');
 }
 
+// BL-611: el aviso de listo es el último que recibe el comensal, así que
+// cierra con el agradecimiento (como la pantalla «Gracias por tu compra»).
 export function textoPedidoListo(codigo: string | null): string {
-  return codigo
-    ? `¡Tu pedido está listo! Pasá por el mostrador y decí el código *${codigo}*.`
-    : '¡Tu pedido está listo! Pasá por el mostrador a retirarlo.';
+  return [
+    codigo
+      ? `¡Tu pedido está listo! Pasá por el mostrador y decí el código *${codigo}*.`
+      : '¡Tu pedido está listo! Pasá por el mostrador a retirarlo.',
+    '¡Gracias por tu compra!',
+  ].join('\n');
 }
 
 /** La primera instancia configurada para el tenant, o null. */
