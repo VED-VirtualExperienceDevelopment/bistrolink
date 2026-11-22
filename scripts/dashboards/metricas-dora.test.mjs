@@ -7,6 +7,7 @@ import { describe, test } from "node:test";
 import {
   analizarProduccion,
   analizarStaging,
+  celdasDoraCorreo,
   esHotfix,
   esPrDeCambio,
   frecuenciaPorSprint,
@@ -292,5 +293,18 @@ describe("staging (Línea de Base, Tabla 24)", () => {
     assert.match(md, /Lead time de cambios \| Mediana 4 h/);
     assert.match(md, /Tasa de fallas en cambios \| 40 % \(2 de 5\)/);
     assert.match(md, /bar \[1, 2\]/);
+  });
+});
+
+describe("correo de estado", () => {
+  test("cuatro celdas con valor, etiqueta y estado", () => {
+    const celdas = celdasDoraCorreo({
+      releases: 2, releasesPorSprint: 0.5, leadTimeMedianaDias: 3, leadTimeP85Dias: 4,
+      prsMedidos: 5, fallidos: 0, tasaFallas: 0, recuperacionMedianaHoras: null,
+    });
+    assert.equal(celdas.length, 4);
+    assert.deepEqual(celdas.map((c) => c.estado), ["🔴", "🟢", "🟢", "⚪"]);
+    assert.equal(celdas[1].valor, "3 d");
+    assert.equal(celdas[3].etiqueta, "recuperación (sin fallas)");
   });
 });

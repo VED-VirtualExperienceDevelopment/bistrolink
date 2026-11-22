@@ -5,6 +5,8 @@
 //     update-dashboard-from-linear.mjs).
 //   - Resumen breve de calidad (recalculado desde GitHub Issues, misma
 //     lógica que update-github-bugs-dashboard.mjs).
+//   - BL-601: las cuatro métricas DORA de producción (misma lógica que
+//     metricas-dora.mjs). Si no se pueden calcular, el correo sale sin ellas.
 //
 // Se ejecuta en el job "Email de estado" del workflow "Publicar dashboards
 // (GitHub Pages)" (publicar-dashboards.yml, BL-298), solo en las fechas de
@@ -37,6 +39,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { calcularAvance, leerConfiguracion, traerIssuesDeLinear } from "./avance-mvp.mjs";
+import { celdasDoraCorreo, doraProduccion } from "./metricas-dora.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..", "..");
@@ -217,7 +220,32 @@ function fraseTendenciaBugs({ nuevosEstaSemana, nuevosSemanaPasada }) {
 // confiable de detectar el modo oscuro de la bandeja de entrada del
 // destinatario, y forzar un fondo oscuro puede salir mal si el cliente de
 // correo re-invierte colores automáticamente.
-function renderEmailBody(progreso, calidad, fechaHoy) {
+// BL-601: bloque con las cuatro métricas DORA de producción (o nada).
+function renderDora(dora) {
+  if (!dora) return "";
+  const url = buildPagesUrl("calidad-proceso.html");
+  const celdas = celdasDoraCorreo(dora)
+    .map(
+      (c) => `<td style="padding:10px; background-color:#f1ecf4; border-radius:6px; text-align:center; width:25%;">
+                  <div style="font-size:20px; font-weight:bold; color:#1c1b20;">${c.valor} ${c.estado}</div>
+                  <div style="font-size:12px; color:#494551;">${c.etiqueta}</div>
+                </td>`,
+    )
+    .join('\n                <td style="width:8px;"></td>\n                ');
+  return `<h3 style="margin:24px 0 10px; font-size:14px; color:#381e72;">🚀 Entrega a producción (DORA)</h3>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:10px;">
+              <tr>
+                ${celdas}
+              </tr>
+            </table>
+            ${
+              url
+                ? `<p style="margin:0; font-size:13px;"><a href="${url}" style="color:#4f378a; text-decoration:underline;">Ver calidad del proceso (DORA, staging y pruebas) →</a></p>`
+                : ""
+            }`;
+}
+
+function renderEmailBody(progreso, calidad, fechaHoy, dora = null) {
   // BL-298: los dashboards al día están en GitHub Pages; los .md del
   // repositorio son solo las plantillas.
   const dashboardUrl = buildPagesUrl("avance-edt.html");
@@ -318,6 +346,8 @@ function renderEmailBody(progreso, calidad, fechaHoy) {
                 ? `<p style="margin:0; font-size:13px;"><a href="${bugsUrl}" style="color:#4f378a; text-decoration:underline;">Ver dashboard de bugs completo →</a></p>`
                 : ""
             }
+
+            ${renderDora(dora)}
           </td></tr>
 
           <tr><td style="padding:12px 24px; background-color:#f7f2fa; border-top:1px solid #cbc4d2;">
@@ -337,11 +367,20 @@ function renderEmailBody(progreso, calidad, fechaHoy) {
 
 async function main() {
   const [progreso, calidad] = await Promise.all([computeProgreso(), computeCalidad()]);
+  let dora = null;
+  try {
+    ({ resumen: dora } = await doraProduccion({
+      token: GITHUB_TOKEN,
+      repo: process.env.GITHUB_REPOSITORY,
+    }));
+  } catch (err) {
+    console.warn(`⚠️ El correo sale sin las métricas DORA: ${err.message}`);
+  }
   const fechaHoy = new Date().toISOString().slice(0, 10).split("-").reverse().join("/");
 
   const emailConfig = JSON.parse(await fs.readFile(EMAIL_CONFIG_PATH, "utf-8"));
   const destinatarios = DASHBOARD_EMAIL_RECIPIENTS.split(",").map((e) => e.trim()).filter(Boolean);
-  const html = renderEmailBody(progreso, calidad, fechaHoy);
+  const html = renderEmailBody(progreso, calidad, fechaHoy, dora);
   await fs.writeFile(EMAIL_BODY_PATH, html, "utf-8");
 
   const asunto = `${emailConfig.asuntoPrefijo} — ${progreso.sprintActual} (MVP ${progreso.pctAvanceGlobal}, ${calidad.abiertos} bugs abiertos)`;

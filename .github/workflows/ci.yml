@@ -265,6 +265,18 @@ jobs:
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
 
+      # BL-601: resumen de la corrida (aprobados, fallidos, salteados y
+      # duración) en el Summary. Informativo: nunca hace fallar el job.
+      - name: Resumen de las pruebas (Summary)
+        if: always()
+        continue-on-error: true
+        run: |
+          node scripts/dashboards/resumen-pruebas.mjs \
+            --titulo "🧪 Tests unitarios (Jest)" \
+            --artifact "coverage-report-backend y coverage-report-frontend" \
+            "Backend=apps/backend/coverage/junit.xml" \
+            "Frontend=apps/frontend/coverage/junit.xml"
+
       # Los resultados de los tests unitarios NO se suben a Kiwi TCMS
       # (decisión del 27/09/2026, Anexo 11 §9.4; BL-269/BL-268): no se cargan
       # como casos en Kiwi porque son demasiados y cambian con el código. Su
@@ -321,6 +333,17 @@ jobs:
             echo "::error::Un contrato con un proveedor (Mercado Pago o Surtec) cambió y no está commiteado. Corré 'npm run test:pact --workspace=backend', revisá el diff de apps/backend/pacts y commitealo."
             exit 1
           fi
+
+      # BL-601: resumen de la corrida en el Summary (informativo).
+      - name: Resumen de las pruebas (Summary)
+        if: always()
+        continue-on-error: true
+        run: |
+          node scripts/dashboards/resumen-pruebas.mjs \
+            --titulo "🤝 Tests de contrato (PactJS)" \
+            --artifact contract-report \
+            --kiwi Contract-PactJS \
+            "Contratos=apps/backend/reports/contract-junit.xml"
 
       - name: Upload contract artifacts
         if: always()
@@ -520,6 +543,17 @@ jobs:
       - name: Log de Keycloak (si falló)
         if: failure()
         run: docker compose logs --no-color --tail=300 bistrolink-auth
+
+      # BL-601: resumen de la corrida en el Summary (informativo).
+      - name: Resumen de las pruebas (Summary)
+        if: always()
+        continue-on-error: true
+        run: |
+          node scripts/dashboards/resumen-pruebas.mjs \
+            --titulo "🔗 Tests de integración" \
+            --artifact integration-report \
+            --kiwi "Integration tests" \
+            "Integración=apps/backend/reports/integration-junit.xml"
 
       - name: Upload integration artifacts
         if: always()
@@ -1887,6 +1921,19 @@ jobs:
           check-latest: true
           cache: npm
           cache-dependency-path: repo/package-lock.json
+
+      # BL-601: resumen de los E2E de los 4 navegadores en el Summary
+      # (informativo). Usa el junit combinado del paso de merge.
+      - name: Resumen de las pruebas (Summary)
+        if: always()
+        continue-on-error: true
+        run: |
+          node repo/scripts/dashboards/resumen-pruebas.mjs \
+            --titulo "🎭 E2E (Playwright, 4 navegadores)" \
+            --artifact playwright-report \
+            --kiwi E2E-Playwright \
+            --allure https://ved-virtualexperiencedevelopment.github.io/bistrolink/allure/e2e/ \
+            "E2E=playwright-report/kiwi-junit.xml"
 
       # allure (CLI) y allure-playwright salen del lockfile. ALLURE_NO_ANALYTICS:
       # el reporte se publica, sin el script de analítica de Allure (ver

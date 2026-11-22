@@ -4,10 +4,11 @@
 // Cloud), si el workflow pasa GRAFANA_ESTADO_URL.
 // BL-487: suma el reporte Allure de los E2E en /allure/e2e/, si el workflow
 // pasa ALLURE_E2E_DIR (la carpeta del reporte ya generado y sanitizado).
-// BL-221: suma el dashboard «Calidad del proceso» (métricas DORA).
+// BL-221 y BL-601: suma el dashboard «Calidad del proceso» (métricas DORA,
+// plan de pruebas y cobertura).
 //
 // Se corre DESPUÉS de update-dashboard-from-linear.mjs,
-// update-github-bugs-dashboard.mjs y metricas-dora.mjs, que actualizan los bloques AUTO de los
+// update-github-bugs-dashboard.mjs, metricas-dora.mjs y metricas-pruebas.mjs, que actualizan los bloques AUTO de los
 // .md en la copia del repositorio del runner (no se commitean). Este script
 // convierte cada .md a HTML con marked, lo envuelve en una página con estilos
 // propios y genera un índice. Los diagramas ```mermaid se dibujan en el
@@ -74,12 +75,13 @@ const DASHBOARDS = [
       "Bugs abiertos y cerrados, por severidad y por semana, desde GitHub Issues.",
   },
   {
-    // BL-221: métricas DORA de producción (metricas-dora.mjs).
+    // BL-221: métricas DORA (metricas-dora.mjs). BL-601: plan de pruebas
+    // (metricas-pruebas.mjs, con Kiwi TCMS y Codecov).
     archivo: "docs/dashboard-calidad-proceso.md",
     salida: "calidad-proceso.html",
-    titulo: "Calidad del proceso (DORA)",
+    titulo: "Calidad del proceso",
     descripcion:
-      "Frecuencia de despliegue, lead time, tasa de fallas y recuperación de producción, desde GitHub.",
+      "Métricas DORA de producción y staging, plan de pruebas en Kiwi TCMS y cobertura de código.",
   },
 ];
 
@@ -462,6 +464,8 @@ async function main() {
     "Linear",
     "GitHub Issues",
     "los deploys de GitHub Actions",
+    "Kiwi TCMS",
+    "Codecov",
     ...(internos.length > 0 ? ["los E2E de Playwright"] : []),
     ...(externos.length > 0 ? ["Grafana"] : []),
   ]);
