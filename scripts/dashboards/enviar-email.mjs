@@ -1,6 +1,6 @@
 // scripts/dashboards/enviar-email.mjs
 //
-// BL-326 (G12): envía el email de estado que arma send-status-email.mjs.
+// BL-326: envía el email de estado que arma send-status-email.mjs.
 // Reemplaza a la action de terceros dawidd6/action-send-mail: la contraseña
 // del correo ya no pasa por código ajeno. Usa nodemailer, que queda en el
 // lockfile del repo (la revisan Trivy, dependency-review y Dependabot).

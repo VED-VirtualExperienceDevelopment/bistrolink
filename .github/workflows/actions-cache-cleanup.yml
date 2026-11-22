@@ -1,6 +1,6 @@
 name: Limpieza de cachés de Actions
 
-# BL-282 (Anexo 12, G16). GitHub da 10 GB de caché por repositorio. Al
+# BL-282. GitHub da 10 GB de caché por repositorio. Al
 # pasarlos, desaloja entradas sin avisar: las corridas vuelven a descargar
 # la base de Trivy (~1,3 GB) y las dependencias de npm, más lentas y con
 # más riesgo de fallas de red. El 08/10/2026 la caché llegó a 9,69 GB.
@@ -21,13 +21,13 @@ name: Limpieza de cachés de Actions
 #      anteriores. Es lo que más ocupa.
 #   2. Cachés de PRs ya cerrados (por si alguna se escapó del disparador
 #      de cierre, por ejemplo las anteriores a este workflow).
-#   3. Cachés de ramas que ya no existen (se borran al mergear, G6).
+#   3. Cachés de ramas que ya no existen (se borran al mergear).
 #   Las cachés de develop y main y el resto de las claves (npm, binario de
 #   Trivy, CodeQL) no se tocan: las que no se usan en 7 días las borra
 #   GitHub solo.
 #
 # Por qué "gh" directo y no una action de terceros: queda legible y
-# versionado acá, y no le pasa el token a código ajeno (G12).
+# versionado acá, y no le pasa el token a código ajeno.
 
 on:
   pull_request:

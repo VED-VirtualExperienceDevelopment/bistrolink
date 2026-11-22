@@ -3,7 +3,7 @@
 # Blueprint de los servicios que reemplazan a producción si Railway no está
 # disponible. Runbook: docs/runbooks/contingencia-render.md.
 #
-# Modelo (decisión D2, opción B): los tres servicios quedan creados, probados y
+# Modelo: contingencia pasiva. Los tres servicios quedan creados, probados y
 # SUSPENDIDOS (Render no cobra un servicio suspendido). La base de PostgreSQL
 # NO se declara acá: se crea al activar la contingencia y se restaura el último
 # respaldo de producción (S3, o su réplica en R2). Por eso las variables de
@@ -68,7 +68,7 @@ projects:
               - key: S3_BUCKET_CFE
                 value: bistrolink-cfe-prod
               # El emisor (iss) de los tokens es la URL pública de Keycloak:
-              # la API lo valida contra esta misma URL (Anexo 12, A9).
+              # la API lo valida contra esta misma URL.
               - key: KEYCLOAK_URL
                 value: https://bistrolink-auth-contingencia.onrender.com
               - key: KEYCLOAK_REALM

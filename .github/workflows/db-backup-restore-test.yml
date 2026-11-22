@@ -9,7 +9,7 @@
 #     la configuración OIDC del realm "bistrolink".
 # Mide el RPO (antigüedad del respaldo) y el RTO (tiempo desde que empieza la
 # descarga hasta que ambas bases quedan verificadas) y deja el informe en el
-# resumen de la corrida y como artifact (evidencia para el Anexo 12 §6.3).
+# resumen de la corrida y como artifact (evidencia de la verificación).
 #
 # No toca ninguna base real ni Railway: todo pasa dentro del runner y se
 # descarta al terminar. Credenciales: usuario IAM bistrolink-backup-ci.

@@ -1040,8 +1040,8 @@ jobs:
       AUTH_SERVICE_ID: dd1b662a-4bcb-450c-a57e-fa0fe6fb5773
     steps:
       # BL-231: las migraciones ya NO se aplican desde acá. La base de
-      # staging no tiene acceso público (se borró el TCP Proxy, hallazgo D2
-      # del Anexo 12) y GitHub ya no tiene su URL (se eliminó el secret
+      # staging no tiene acceso público (se borró el TCP Proxy) y GitHub ya
+      # no tiene su URL (se eliminó el secret
       # STAGING_DATABASE_URL). Las aplica Railway con el pre-deploy command
       # de bistrolink-api (apps/backend/docker/predeploy-migrate.sh), con la
       # imagen nueva, dentro de la red privada y antes de ponerla en línea.
@@ -2308,7 +2308,7 @@ jobs:
           check "${AUTH_URL}/realms/bistrolink/.well-known/openid-configuration" || fallos=1
 
           # El emisor de los tokens tiene que ser el de production: si no, la
-          # API rechaza todos los logins (Anexo 12, A9).
+          # API rechaza todos los logins.
           ISSUER=$(curl -fsS --max-time 15 "${AUTH_URL}/realms/bistrolink/.well-known/openid-configuration" | jq -r '.issuer // empty' || true)
           if [ "$ISSUER" = "${AUTH_URL}/realms/bistrolink" ]; then
             echo "OK    issuer $ISSUER"
