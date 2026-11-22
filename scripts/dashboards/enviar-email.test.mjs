@@ -36,6 +36,22 @@ describe("leerConfiguracion", () => {
     assert.equal(rutaCuerpo, "email-status.html");
   });
 
+  test("sin EMAIL_CC el mensaje no lleva copia", () => {
+    assert.equal("cc" in leerConfiguracion(BASE).mensaje, false);
+    assert.equal(
+      "cc" in leerConfiguracion({ ...BASE, EMAIL_CC: " , " }).mensaje,
+      false,
+    );
+  });
+
+  test("con EMAIL_CC agrega la copia, sin vacíos", () => {
+    const { mensaje } = leerConfiguracion({
+      ...BASE,
+      EMAIL_CC: " d@ejemplo.com, ,e@ejemplo.com ",
+    });
+    assert.deepEqual(mensaje.cc, ["d@ejemplo.com", "e@ejemplo.com"]);
+  });
+
   test("nombra todas las variables que faltan o están vacías", () => {
     assert.throws(
       () =>

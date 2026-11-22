@@ -3,19 +3,21 @@
 //
 // En develop los E2E son informativos (BL-250): si fallan, el pipeline sigue
 // en verde. Este script compara los resultados de la corrida con los de la
-// corrida anterior de develop y, si hay fallos nuevos, arma un correo para
-// el equipo que nombra a los autores de los PR mergeados entre las dos
-// corridas y les pide verificar los tests. Lo manda enviar-email.mjs con la
-// cuenta del environment «notificaciones» (BL-326), en el mismo job.
+// corrida anterior de develop y, si hay fallos nuevos, arma un correo
+// dirigido a los autores de los PR mergeados entre las dos corridas, con el
+// resto del equipo en copia, que les pide verificar los tests. Si no se
+// encuentra el correo de ningún autor, va a todo el equipo. Lo manda
+// enviar-email.mjs con la cuenta del environment «notificaciones» (BL-326),
+// en el mismo job.
 //
 // Fallo nuevo: un test (por navegador) que falla ahora, después de los
 // reintentos, y en la corrida anterior pasaba, estaba salteado o no
 // existía. Los que ya fallaban antes no se avisan.
 //
 // El repositorio es público: el correo no lleva mensajes de error (pueden
-// traer datos de la sesión de prueba), y los destinatarios salen del mismo
-// secret que el correo de estado (DASHBOARD_EMAIL_RECIPIENTS) y se
-// enmascaran en el log.
+// traer datos de la sesión de prueba), y los correos salen de secrets
+// (DASHBOARD_EMAIL_RECIPIENTS, el mismo del correo de estado, y
+// EQUIPO_GITHUB_CORREOS) y se enmascaran en el log.
 //
 // Uso:
 //   node scripts/dashboards/aviso-e2e.mjs --actual <carpeta> [--anterior <carpeta>]
@@ -28,10 +30,14 @@
 //   SHA_ANTERIOR          commit de la corrida anterior (rango de cambios)
 //   EQUIPO_CORREOS        correos del equipo, separados por coma
 //                         (secret DASHBOARD_EMAIL_RECIPIENTS)
+//   EQUIPO_GITHUB         usuario de GitHub y correo de cada integrante,
+//                         «usuario=correo» separados por coma (secret
+//                         EQUIPO_GITHUB_CORREOS; opcional: sin él, el correo
+//                         va a todo el equipo)
 //   MAIL_USERNAME         cuenta que envía (para el remitente)
 //   ALLURE_REPORT_URL     enlace al reporte Allure publicado (opcional)
 //   GITHUB_OUTPUT, GITHUB_STEP_SUMMARY, RUNNER_TEMP (los pone Actions)
-// Salidas (GITHUB_OUTPUT): enviar, to, from, subject, body_path.
+// Salidas (GITHUB_OUTPUT): enviar, to, cc, from, subject, body_path.
 
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -191,6 +197,39 @@ export function destinatarios(equipo) {
     );
 }
 
+/**
+ * Correo de cada usuario de GitHub, desde «usuario=correo» separados por
+ * coma. El usuario se compara sin mayúsculas, como en GitHub.
+ */
+export function correosPorUsuario(texto) {
+  const mapa = new Map();
+  for (const par of (texto ?? "").split(",")) {
+    const [usuario, correo] = par.split("=").map((t) => t?.trim());
+    if (usuario && correo) mapa.set(usuario.toLowerCase(), correo);
+  }
+  return mapa;
+}
+
+/**
+ * Para: los autores con correo conocido. Copia: el resto del equipo. Si no
+ * se conoce el correo de ningún autor, va a todo el equipo sin copia.
+ */
+export function repartirDestinatarios({ autores, equipo, correos }) {
+  const para = destinatarios(
+    autores
+      .map((a) => correos.get(a.toLowerCase()))
+      .filter(Boolean)
+      .join(","),
+  );
+  if (para.length === 0) return { para: equipo, copia: [], personal: false };
+  const enPara = new Set(para.map((c) => c.toLowerCase()));
+  return {
+    para,
+    copia: equipo.filter((c) => !enPara.has(c.toLowerCase())),
+    personal: true,
+  };
+}
+
 /** «@ana», «@ana y @beto», «@ana, @beto y @caro». */
 export function mencionar(autores) {
   const conArroba = autores.map((a) => `@${a}`);
@@ -207,51 +246,145 @@ const escapar = (t) =>
       ],
   );
 
-/** Cuerpo HTML del correo. Sin mensajes de error: solo nombres y enlaces. */
+/**
+ * Enlace para reportar el bug con la plantilla de bug (BL-601), con el
+ * entorno, el PR y las etiquetas «bug» y «regresion» ya completos: un E2E
+ * que pasaba y ahora falla es una regresión. GitHub completa los campos del
+ * formulario por su id (bug.yml).
+ */
+export function urlNuevoIssue({ servidor, repo, prs = [] }) {
+  const parametros = new URLSearchParams({
+    template: "bug.yml",
+    labels: "bug,regresion",
+    entorno: "Staging",
+  });
+  if (prs.length)
+    parametros.set("introducido", prs.map((p) => `#${p.numero}`).join(", "));
+  return `${servidor || "https://github.com"}/${repo}/issues/new?${parametros}`;
+}
+
+// Paleta del correo de estado (send-status-email.mjs): misma marca.
+const MARCA = {
+  fondo: "#fdf8ff",
+  borde: "#cbc4d2",
+  encabezado: "#381e72",
+  primario: "#4f378a",
+  suave: "#e9ddff",
+  tabla: "#e0d4fd",
+  pie: "#f7f2fa",
+  texto: "#1c1b20",
+  secundario: "#494551",
+  tenue: "#7a7582",
+  aviso: "#ffdf93",
+  avisoTexto: "#594400",
+};
+
+const celda = `padding:6px 10px; border:1px solid ${MARCA.borde};`;
+const enlace = (url, texto) =>
+  `<a href="${escapar(url)}" style="color:${MARCA.primario}; text-decoration:underline;">${texto}</a>`;
+
+/**
+ * Cuerpo HTML del correo, con la marca del correo de estado. Sin mensajes de
+ * error: solo nombres y enlaces. «personal»: va dirigido a los autores, con
+ * el equipo en copia; si no, al equipo.
+ */
 export function cuerpoCorreo({
   fallos,
-  prs,
-  autores,
+  prs = [],
+  autores = [],
+  personal = false,
   corrida,
   urlCorrida,
   urlAllure,
+  urlIssue,
+  urlSeguridad,
 }) {
+  const varios = autores.length > 1;
+  const saludo = autores.length
+    ? `Hola ${escapar(mencionar(autores))}`
+    : "Hola, equipo";
+  const intro = personal
+    ? `en la corrida #${escapar(corrida)} de develop hay <strong>${fallos.length} E2E</strong> que en la corrida anterior pasaban y ahora fallan. Entre las dos corridas ${varios ? "entraron sus PR" : prs.length > 1 ? "entraron tus PR" : "entró tu PR"}:`
+    : `en la corrida #${escapar(corrida)} de develop hay <strong>${fallos.length} E2E</strong> que en la corrida anterior pasaban y ahora fallan. Pueden venir de estos cambios:`;
+  const pedido =
+    autores.length === 1
+      ? "Por favor, verificá los tests que fallan"
+      : "Por favor, verifiquen los tests que fallan";
+
   const filas = fallos
     .map(
       (f) =>
-        `<tr><td style="padding:4px 8px;border-bottom:1px solid #eee">${escapar(f.test)}</td>` +
-        `<td style="padding:4px 8px;border-bottom:1px solid #eee">${escapar(f.navegador)}</td></tr>`,
+        `<tr><td style="${celda}">${escapar(f.test)}</td>` +
+        `<td style="${celda} text-align:center;">${escapar(f.navegador)}</td></tr>`,
     )
     .join("\n");
   const cambios = prs.length
-    ? `<ul>${prs
+    ? `<ul style="margin:0 0 16px; padding-left:20px; font-size:13px; color:${MARCA.texto};">${prs
         .map(
           (p) =>
             `<li>#${escapar(p.numero)} ${escapar(p.titulo)} (${escapar(p.autor ?? "—")})</li>`,
         )
         .join("")}</ul>`
-    : "<p>No se encontró el PR de los cambios: revisá los commits de la corrida.</p>";
+    : `<p style="margin:0 0 16px; font-size:13px; color:${MARCA.texto};">No se encontró el PR de los cambios: revisá los commits de la corrida.</p>`;
   const enlaces = [
-    `<li><a href="${escapar(urlCorrida)}">Corrida #${escapar(corrida)} en GitHub Actions</a></li>`,
+    `<li>${enlace(urlCorrida, `Corrida #${escapar(corrida)} en GitHub Actions →`)}</li>`,
     urlAllure
-      ? `<li><a href="${escapar(urlAllure)}">Reporte Allure de los E2E</a></li>`
+      ? `<li>${enlace(urlAllure, "Reporte Allure de los E2E →")}</li>`
       : "",
-    "<li>El detalle completo de cada navegador está en el artifact cifrado <code>playwright-report-&lt;navegador&gt;</code> de la corrida (cómo abrirlo: <code>e2e/README.md</code>).</li>",
+    `<li style="color:${MARCA.secundario};">El detalle completo de cada navegador está en el artifact cifrado <code>playwright-report-&lt;navegador&gt;</code> de la corrida (cómo abrirlo: <code>e2e/README.md</code>).</li>`,
   ].join("");
+  const reportar = urlIssue
+    ? `
+            <h3 style="margin:20px 0 10px; font-size:14px; color:${MARCA.encabezado};">🐛 Dónde reportarlo</h3>
+            <p style="margin:0 0 8px; font-size:13px; color:${MARCA.texto};">${enlace(urlIssue, "Reportar el bug en GitHub Issues →")}</p>
+            <p style="margin:0; font-size:12px; color:${MARCA.secundario};">Abre la plantilla de bug con el entorno (Staging)${prs.length ? ", el PR" : ""} y las etiquetas <code>bug</code> y <code>regresion</code>. Completá qué pasa y cómo reproducirlo, sin pegar mensajes de error ni datos de la sesión: el repositorio es público.${urlSeguridad ? ` Si es una vulnerabilidad, no abras un issue: seguí ${enlace(urlSeguridad, "SECURITY.md")}.` : ""}</p>`
+    : "";
+  const copia = personal
+    ? " El resto del equipo recibe este aviso en copia."
+    : "";
 
-  return `<!DOCTYPE html>
-<html lang="es"><body style="font-family:Arial,sans-serif;color:#1c1b20;max-width:720px">
-<h2 style="color:#4f378a">E2E que empezaron a fallar en develop</h2>
-<p>Hola${autores.length ? ` ${escapar(mencionar(autores))}` : ""}: en la corrida #${escapar(corrida)} de develop hay ${fallos.length} E2E que en la corrida anterior pasaban y ahora fallan. Pueden venir de estos cambios:</p>
-${cambios}
-<p><strong>${autores.length ? "Por favor, verificá" : "Por favor, verifiquen"} los tests que fallan</strong>: si es un defecto del producto, registralo como GitHub Issue; si el test quedó desactualizado por el cambio, ajustalo. En develop los E2E no frenan el pipeline, pero tienen que estar en verde antes del próximo release.</p>
-<table style="border-collapse:collapse;width:100%">
-<tr><th style="text-align:left;padding:4px 8px;border-bottom:2px solid #4f378a">Test</th><th style="text-align:left;padding:4px 8px;border-bottom:2px solid #4f378a">Navegador</th></tr>
-${filas}
-</table>
-<ul>${enlaces}</ul>
-<p style="color:#7a7582;font-size:12px">Aviso automático del CI de BistroLink (BL-599). Los tests que ya fallaban en la corrida anterior no se incluyen.</p>
-</body></html>
+  return `<!doctype html>
+<html lang="es">
+  <body style="margin:0; padding:0; background-color:${MARCA.fondo}; font-family: 'Plus Jakarta Sans', -apple-system, Segoe UI, Roboto, Arial, sans-serif;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:${MARCA.fondo}; padding:24px 0;">
+      <tr><td align="center">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="background-color:#ffffff; border-radius:8px; overflow:hidden; border:1px solid ${MARCA.borde};">
+
+          <tr><td style="background-color:${MARCA.encabezado}; padding:20px 24px;">
+            <span style="color:#ffffff; font-size:18px; font-weight:bold;">⚠️ BistroLink — E2E que empezaron a fallar</span>
+          </td></tr>
+
+          <tr><td style="padding:24px;">
+            <p style="margin:0 0 16px; color:${MARCA.texto}; font-size:14px;">${saludo}: ${intro}</p>
+            ${cambios}
+
+            <p style="margin:0 0 20px; padding:10px 12px; background-color:${MARCA.aviso}; border-left:3px solid ${MARCA.avisoTexto}; font-size:13px; color:${MARCA.avisoTexto};">
+              <strong>${pedido}</strong>: si es un defecto del producto, registralo como GitHub Issue (abajo); si el test quedó desactualizado por el cambio, ajustalo. En develop los E2E no frenan el pipeline, pero tienen que estar en verde antes del próximo release.
+            </p>
+
+            <h3 style="margin:0 0 10px; font-size:14px; color:${MARCA.encabezado};">🧪 Tests que empezaron a fallar</h3>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse; font-size:13px; color:${MARCA.texto}; margin-bottom:20px;">
+              <tr style="background-color:${MARCA.tabla}; color:${MARCA.encabezado};">
+                <th style="${celda} text-align:left;">Test</th>
+                <th style="${celda}">Navegador</th>
+              </tr>
+              ${filas}
+            </table>
+
+            <h3 style="margin:0 0 10px; font-size:14px; color:${MARCA.encabezado};">🔎 Dónde ver el detalle</h3>
+            <ul style="margin:0; padding-left:20px; font-size:13px; line-height:1.6;">${enlaces}</ul>
+            ${reportar}
+          </td></tr>
+
+          <tr><td style="padding:12px 24px; background-color:${MARCA.pie}; border-top:1px solid ${MARCA.borde};">
+            <span style="font-size:11px; color:${MARCA.tenue};">Aviso automático del CI de BistroLink (BL-599) — no responder a este correo. Los tests que ya fallaban en la corrida anterior no se incluyen.${copia}</span>
+          </td></tr>
+
+        </table>
+      </td></tr>
+    </table>
+  </body>
+</html>
 `;
 }
 
@@ -286,7 +419,11 @@ async function resumen(env, texto) {
   console.log(texto.replace(/^#+ /gm, ""));
 }
 
-export async function main(argv = process.argv.slice(2), env = process.env) {
+export async function main(
+  argv = process.argv.slice(2),
+  env = process.env,
+  fetch = globalThis.fetch,
+) {
   const { actual, anterior } = opciones(argv);
   const titulo = "### 📧 Aviso de E2E nuevos con fallos";
 
@@ -325,13 +462,21 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
     base: env.SHA_ANTERIOR?.trim() || null,
     head: env.GITHUB_SHA,
     token: env.GITHUB_TOKEN,
+    fetch,
   });
-  const to = destinatarios(env.EQUIPO_CORREOS);
-  if (to.length === 0)
+  const equipo = destinatarios(env.EQUIPO_CORREOS);
+  if (equipo.length === 0)
     throw new Error("No hay destinatarios: revisar EQUIPO_CORREOS");
+  const correos = correosPorUsuario(env.EQUIPO_GITHUB);
+  const { para, copia, personal } = repartirDestinatarios({
+    autores,
+    equipo,
+    correos,
+  });
 
   // Los correos no pueden quedar en el log: el repositorio es público.
-  for (const correo of to) console.log(`::add-mask::${correo}`);
+  for (const correo of new Set([...equipo, ...correos.values()]))
+    console.log(`::add-mask::${correo}`);
 
   const corrida = env.GITHUB_RUN_NUMBER ?? env.GITHUB_RUN_ID;
   const urlCorrida = `${env.GITHUB_SERVER_URL}/${env.GITHUB_REPOSITORY}/actions/runs/${env.GITHUB_RUN_ID}`;
@@ -342,16 +487,25 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
     cuerpoCorreo({
       fallos,
       prs,
+      autores,
+      personal,
       corrida,
       urlCorrida,
       urlAllure: env.ALLURE_REPORT_URL,
+      urlIssue: urlNuevoIssue({
+        servidor: env.GITHUB_SERVER_URL,
+        repo: env.GITHUB_REPOSITORY,
+        prs,
+      }),
+      urlSeguridad: `${env.GITHUB_SERVER_URL || "https://github.com"}/${env.GITHUB_REPOSITORY}/blob/develop/SECURITY.md`,
     }),
     "utf-8",
   );
 
   await salida(env, {
     enviar: "true",
-    to: to.join(","),
+    to: para.join(","),
+    cc: copia.join(","),
     from: `BistroLink CI <${env.MAIL_USERNAME ?? ""}>`,
     subject:
       `⚠️ BistroLink — ${fallos.length} E2E empezaron a fallar en develop (corrida #${corrida})` +
@@ -364,7 +518,7 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
   await resumen(
     env,
     `${titulo}\n\n${fallos.length} E2E empezaron a fallar. Cambios: ${prsTexto}. ` +
-      `Autores: ${mencionar(autores) || "—"}. Se avisa al equipo (${to.length} destinatario(s)).\n\n${lista}`,
+      `Autores: ${mencionar(autores) || "—"}. ${personal ? `Se avisa a los autores (${para.length}) con el equipo en copia (${copia.length}).` : `Se avisa al equipo (${para.length} destinatario(s)).`}\n\n${lista}`,
   );
 }
 

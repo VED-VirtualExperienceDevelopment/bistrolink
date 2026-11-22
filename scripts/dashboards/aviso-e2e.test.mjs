@@ -9,6 +9,7 @@ import path from "node:path";
 import { describe, test } from "node:test";
 import {
   cambiosDelRango,
+  correosPorUsuario,
   cuerpoCorreo,
   destinatarios,
   fallosNuevos,
@@ -16,6 +17,8 @@ import {
   leerJunit,
   main,
   mencionar,
+  repartirDestinatarios,
+  urlNuevoIssue,
 } from "./aviso-e2e.mjs";
 
 // Como lo escribe el reporter junit de Playwright: una <testsuite> por
@@ -203,6 +206,92 @@ describe("destinatarios", () => {
   });
 });
 
+describe("correosPorUsuario", () => {
+  test("usuario de GitHub sin mayúsculas y su correo; ignora lo incompleto", () => {
+    const m = correosPorUsuario(
+      " Daiana = d@ejemplo.com, eric=, =x@y, veronica=v@ejemplo.com ",
+    );
+    assert.deepEqual(
+      [...m],
+      [
+        ["daiana", "d@ejemplo.com"],
+        ["veronica", "v@ejemplo.com"],
+      ],
+    );
+    assert.equal(correosPorUsuario(undefined).size, 0);
+  });
+});
+
+describe("repartirDestinatarios", () => {
+  const equipo = ["d@ejemplo.com", "e@ejemplo.com", "v@ejemplo.com"];
+  const correos = correosPorUsuario("daiana=D@ejemplo.com,eric=e@ejemplo.com");
+
+  test("para el autor y el resto del equipo en copia", () => {
+    assert.deepEqual(
+      repartirDestinatarios({ autores: ["Daiana"], equipo, correos }),
+      {
+        para: ["D@ejemplo.com"],
+        copia: ["e@ejemplo.com", "v@ejemplo.com"],
+        personal: true,
+      },
+    );
+  });
+
+  test("varios autores van todos en para", () => {
+    const r = repartirDestinatarios({
+      autores: ["daiana", "eric", "externo"],
+      equipo,
+      correos,
+    });
+    assert.deepEqual(r.para, ["D@ejemplo.com", "e@ejemplo.com"]);
+    assert.deepEqual(r.copia, ["v@ejemplo.com"]);
+  });
+
+  test("sin el correo de ningún autor, va a todo el equipo sin copia", () => {
+    assert.deepEqual(
+      repartirDestinatarios({ autores: ["externo"], equipo, correos }),
+      { para: equipo, copia: [], personal: false },
+    );
+    assert.deepEqual(
+      repartirDestinatarios({ autores: [], equipo, correos: new Map() }).para,
+      equipo,
+    );
+  });
+});
+
+describe("urlNuevoIssue", () => {
+  test("plantilla de bug con entorno, PR y etiquetas de regresión", () => {
+    const url = new URL(
+      urlNuevoIssue({
+        servidor: "https://github.com",
+        repo: "o/r",
+        prs: [{ numero: 550 }, { numero: 551 }],
+      }),
+    );
+    assert.equal(url.pathname, "/o/r/issues/new");
+    assert.equal(url.searchParams.get("template"), "bug.yml");
+    assert.equal(url.searchParams.get("labels"), "bug,regresion");
+    assert.equal(url.searchParams.get("entorno"), "Staging");
+    assert.equal(url.searchParams.get("introducido"), "#550, #551");
+  });
+
+  test("sin PR no completa «introducido»", () => {
+    const url = new URL(urlNuevoIssue({ repo: "o/r" }));
+    assert.equal(url.origin, "https://github.com");
+    assert.equal(url.searchParams.has("introducido"), false);
+  });
+
+  test("las opciones coinciden con la plantilla real", async () => {
+    const plantilla = await fs.readFile(
+      new URL("../../.github/ISSUE_TEMPLATE/bug.yml", import.meta.url),
+      "utf-8",
+    );
+    for (const id of ["entorno", "introducido"])
+      assert.match(plantilla, new RegExp(`id: ${id}\\b`));
+    assert.match(plantilla, /- Staging$/m);
+  });
+});
+
 describe("mencionar", () => {
   test("nombra a los autores con @", () => {
     assert.equal(mencionar([]), "");
@@ -227,6 +316,61 @@ describe("cuerpoCorreo", () => {
     assert.ok(html.includes("allure/e2e/"));
     assert.match(html, /Hola @daiana/);
     assert.match(html, /verificá los tests que fallan/);
+  });
+
+  test("sin autores ni PR, saluda al equipo y no falla", () => {
+    const html = cuerpoCorreo({
+      fallos: [{ navegador: "chromium", test: "login" }],
+      corrida: 1,
+      urlCorrida: "https://github.com/o/r/actions/runs/1",
+    });
+    assert.match(html, /Hola, equipo: en la corrida #1/);
+    assert.match(html, /verifiquen los tests que fallan/);
+    assert.doesNotMatch(html, /en copia/);
+  });
+
+  test("dirigido al autor: le habla de su PR y avisa que el equipo va en copia", () => {
+    const html = cuerpoCorreo({
+      fallos: [{ navegador: "chromium", test: "login" }],
+      prs: [{ numero: 550, titulo: "fix: link de pago", autor: "daiana" }],
+      autores: ["daiana"],
+      personal: true,
+      corrida: 2,
+      urlCorrida: "https://github.com/o/r/actions/runs/2",
+    });
+    assert.match(html, /Hola @daiana: .*entró tu PR:/s);
+    assert.match(html, /verificá los tests que fallan/);
+    assert.match(html, /El resto del equipo recibe este aviso en copia/);
+    assert.doesNotMatch(html, /Dónde reportarlo/);
+  });
+
+  test("con el enlace para reportar, también avisa de SECURITY.md", () => {
+    const html = cuerpoCorreo({
+      fallos: [{ navegador: "chromium", test: "login" }],
+      prs: [{ numero: 550, titulo: "x" }],
+      corrida: 4,
+      urlCorrida: "https://github.com/o/r/actions/runs/4",
+      urlIssue: urlNuevoIssue({ repo: "o/r", prs: [{ numero: 550 }] }),
+      urlSeguridad: "https://github.com/o/r/blob/develop/SECURITY.md",
+    });
+    assert.match(html, /Dónde reportarlo/);
+    assert.match(
+      html,
+      /issues\/new\?template=bug\.yml&amp;labels=bug%2Cregresion/,
+    );
+    assert.match(html, /SECURITY\.md/);
+  });
+
+  test("tiene la marca del correo de estado y no repite estilos sueltos", () => {
+    const html = cuerpoCorreo({
+      fallos: [{ navegador: "chromium", test: "login" }],
+      corrida: 3,
+      urlCorrida: "https://github.com/o/r/actions/runs/3",
+    });
+    assert.match(html, /background-color:#381e72/);
+    assert.match(html, /⚠️ BistroLink — E2E que empezaron a fallar/);
+    assert.match(html, /Plus Jakarta Sans/);
+    assert.match(html, /color:#4f378a; text-decoration:underline;/);
   });
 });
 
@@ -275,6 +419,64 @@ describe("main", () => {
         await fs.readFile(env.GITHUB_STEP_SUMMARY, "utf-8"),
         /Ningún E2E empezó a fallar/,
       );
+    } finally {
+      await fs.rm(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test("con fallos nuevos: para el autor del PR y el equipo en copia", async () => {
+    const { tmp, env } = await preparar([[A, "falla"]], [[A, "pasa"]]);
+    const respuestas = {
+      "/compare/aaa...bbb": { commits: [{ sha: "c1" }] },
+      "/commits/c1/pulls": [
+        {
+          number: 550,
+          title: "fix: link de pago",
+          user: { login: "daiana" },
+          merged_at: "2026-11-22",
+        },
+      ],
+    };
+    const fetchFalso = async (url) => {
+      const ruta = url.replace("https://api.github.com/repos/o/r", "");
+      return {
+        ok: ruta in respuestas,
+        status: 404,
+        json: async () => respuestas[ruta],
+      };
+    };
+    try {
+      await main(
+        [
+          "--actual",
+          path.join(tmp, "actual"),
+          "--anterior",
+          path.join(tmp, "anterior"),
+        ],
+        {
+          ...env,
+          GITHUB_REPOSITORY: "o/r",
+          GITHUB_SHA: "bbb",
+          SHA_ANTERIOR: "aaa",
+          GITHUB_TOKEN: "t",
+          EQUIPO_CORREOS: "d@ejemplo.com,b@ejemplo.com,c@ejemplo.com",
+          EQUIPO_GITHUB: "daiana=d@ejemplo.com,beto=b@ejemplo.com",
+          MAIL_USERNAME: "ci@ejemplo.com",
+          GITHUB_RUN_NUMBER: "7",
+        },
+        fetchFalso,
+      );
+      const salida = await fs.readFile(env.GITHUB_OUTPUT, "utf-8");
+      assert.match(salida, /^enviar=true$/m);
+      assert.match(salida, /^to=d@ejemplo\.com$/m);
+      assert.match(salida, /^cc=b@ejemplo\.com,c@ejemplo\.com$/m);
+      assert.match(salida, /^subject=.*1 E2E empezaron a fallar.*@daiana$/m);
+      const html = await fs.readFile(path.join(tmp, "aviso-e2e.html"), "utf-8");
+      assert.match(html, /Hola @daiana/);
+      assert.match(html, /entró tu PR/);
+      assert.match(html, /o\/r\/issues\/new\?template=bug\.yml/);
+      assert.match(html, /introducido=%23550/);
+      assert.match(html, /#550 fix: link de pago \(daiana\)/);
     } finally {
       await fs.rm(tmp, { recursive: true, force: true });
     }
