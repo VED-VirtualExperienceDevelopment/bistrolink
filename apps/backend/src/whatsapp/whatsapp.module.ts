@@ -3,7 +3,7 @@ import { LinkPagoModule } from '../link-pago/link-pago.module';
 import { PedidosModule } from '../pedidos/pedidos.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { TenantEstadoModule } from '../tenant-estado/tenant-estado.module';
-import { EvolutionClienteService } from './evolution-cliente.service';
+import { AvisosWhatsappModule } from './avisos-whatsapp.module';
 import { WhatsappWebhookController } from './whatsapp-webhook.controller';
 import { WhatsappService } from './whatsapp.service';
 
@@ -12,9 +12,16 @@ import { WhatsappService } from './whatsapp.service';
  * API. El ThrottlerModule lo registra MesasModule (global).
  */
 @Module({
-  imports: [PrismaModule, PedidosModule, LinkPagoModule, TenantEstadoModule],
+  imports: [
+    PrismaModule,
+    PedidosModule,
+    LinkPagoModule,
+    TenantEstadoModule,
+    // BL-604: el cliente de Evolution (y los avisos) vienen de acá.
+    AvisosWhatsappModule,
+  ],
   controllers: [WhatsappWebhookController],
-  providers: [WhatsappService, EvolutionClienteService],
-  exports: [WhatsappService, EvolutionClienteService],
+  providers: [WhatsappService],
+  exports: [WhatsappService],
 })
 export class WhatsappModule {}

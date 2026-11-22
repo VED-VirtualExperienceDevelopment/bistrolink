@@ -160,23 +160,39 @@ export function partirMensaje(
   return partes;
 }
 
+/**
+ * La carta para WhatsApp (BL-604): las instrucciones arriba, las categorías
+ * en negrita y mayúsculas, y sin los platos agotados (no se pueden pedir y
+ * alargan la lista). El número de cada plato es su posición en la carta
+ * completa, así no cambia si otro plato se agota mientras el comensal elige
+ * (por eso puede haber saltos: 1, 2, 4).
+ */
 export function textoCarta(carta: CartaParaElBot): string[] {
-  const lineas = [`*Carta de ${carta.restaurante}*`];
+  const lineas = [
+    `*${carta.restaurante}* · Pedido para retirar`,
+    'Mandá el número del plato (ej.: *3*) o *3 x2* para dos.',
+  ];
   let categoria: string | null = null;
+  let hayDisponibles = false;
   carta.items.forEach((item, indice) => {
+    if (!item.disponible) return;
+    hayDisponibles = true;
     if (item.categoria !== categoria) {
       categoria = item.categoria;
-      lineas.push('', `_${categoria}_`);
+      lineas.push('', `*${categoria.toLocaleUpperCase('es-UY')}*`);
     }
-    const estado = item.disponible
-      ? formatearPesos(centesimos(item.precio))
-      : 'agotado';
-    lineas.push(`${indice + 1}. ${item.nombre} — ${estado}`);
+    lineas.push(
+      `${indice + 1}. ${item.nombre} · ${formatearPesos(centesimos(item.precio))}`,
+    );
   });
+  if (!hayDisponibles) {
+    return [
+      `*${carta.restaurante}*\nAhora no hay platos disponibles para pedir. Probá de nuevo más tarde.`,
+    ];
+  }
   lineas.push(
     '',
-    'Mandá el número del plato, por ejemplo «3», o «3 x2» para dos.',
-    'Cuando termines, mandá *0*.',
+    'Cuando termines, mandá *0*. Para ver la carta otra vez: *menu*.',
   );
   return partirMensaje(lineas.join('\n'));
 }
