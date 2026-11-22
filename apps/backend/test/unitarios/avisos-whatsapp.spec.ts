@@ -65,9 +65,11 @@ describe('Avisos por WhatsApp (HU-010, BL-604)', () => {
       '¡Pago aprobado! Tu pedido ya está en cocina.\nTe avisamos por acá cuando esté listo.',
     );
     expect(textoPedidoListo('R-042')).toBe(
-      '¡Tu pedido está listo! Pasá por el mostrador y decí el código *R-042*.',
+      '¡Tu pedido está listo! Pasá por el mostrador y decí el código *R-042*.\n¡Gracias por tu compra!',
     );
-    expect(textoPedidoListo(null)).toContain('a retirarlo');
+    expect(textoPedidoListo(null)).toBe(
+      '¡Tu pedido está listo! Pasá por el mostrador a retirarlo.\n¡Gracias por tu compra!',
+    );
 
     const config = {
       evolutionUrl: 'https://evo.test',

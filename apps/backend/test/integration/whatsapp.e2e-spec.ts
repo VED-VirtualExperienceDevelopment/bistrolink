@@ -462,6 +462,7 @@ describe('HU-010 (BL-112): bot de pedidos por WhatsApp', () => {
     }
     const listo = await esperarMensaje(telefono, /está listo/);
     expect(listo).toContain(`*${codigoRetiro}*`);
+    expect(listo).toContain('¡Gracias por tu compra!');
 
     // Un aviso de cada uno, por la instancia del tenant y con la API key.
     const avisos = enviados.filter(
