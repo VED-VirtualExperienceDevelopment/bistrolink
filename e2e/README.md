@@ -284,11 +284,11 @@ El reporte local no pasa por `sanitizar-allure.mjs`: tiene los pasos completos y
 En `develop` los E2E no frenan el pipeline (BL-250). Para que un test roto por un cambio no pase desapercibido, el job «📧 Aviso de E2E que empiezan a fallar» de `ci.yml` compara cada corrida con la corrida anterior de `develop`:
 
 - **Fallo nuevo:** un test que, en un navegador, falla después de los reintentos y en la corrida anterior pasaba, estaba salteado o no existía. Los que ya fallaban antes no se avisan.
-- Si hay fallos nuevos, manda **un correo al equipo** que nombra con @usuario a los autores de los PR mergeados entre las dos corridas y les pide verificar los tests. Lleva la lista de tests y navegadores, los PR y los enlaces a la corrida y al reporte Allure; **no** lleva mensajes de error.
-- Usa la misma cuenta y los mismos destinatarios que el correo de estado (environment `notificaciones`, BL-326). Los destinatarios se enmascaran en el log.
+- Si hay fallos nuevos, manda **un correo a los autores de los PR** mergeados entre las dos corridas, **con el resto del equipo en copia**, y les pide verificar los tests. Lleva la lista de tests y navegadores, los PR y los enlaces a la corrida y al reporte Allure; **no** lleva mensajes de error. Tiene la marca del correo de estado y un enlace para **reportar el bug** con la plantilla de bug, con el entorno (Staging), el PR y las etiquetas `bug` y `regresion` ya completos.
+- Usa la misma cuenta y el mismo equipo que el correo de estado (environment `notificaciones` y secret `DASHBOARD_EMAIL_RECIPIENTS`, BL-326). El correo de cada autor sale del secret `EQUIPO_GITHUB_CORREOS`, con el formato `usuario-de-github=correo` separados por coma (fuente: el gestor de secretos del equipo). Si falta o el autor no está, el correo va a todo el equipo. Los correos se enmascaran en el log.
 - Sin corrida anterior con resultados (se guardan 14 días), no se avisa. Solo corre en un push a `develop`, y nunca hace fallar el pipeline.
 
-**Si te llega el aviso:** abrí el reporte Allure, buscá el test en **Categorías** o **Funcionalidades** y, si hace falta, el reporte completo cifrado (abajo). Si es un defecto del producto, registralo como GitHub Issue; si el test quedó desactualizado por tu cambio, ajustalo en un PR.
+**Si te llega el aviso:** abrí el reporte Allure, buscá el test en **Categorías** o **Funcionalidades** y, si hace falta, el reporte completo cifrado (abajo). Si es un defecto del producto, registralo como GitHub Issue con el enlace del correo; si el test quedó desactualizado por tu cambio, ajustalo en un PR.
 
 ### Artifacts de la corrida en CI
 

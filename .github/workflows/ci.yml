@@ -1991,14 +1991,16 @@ jobs:
   # En develop los E2E son informativos (BL-250): si fallan, el pipeline sigue
   # en verde. Este job compara los resultados de la corrida con los de la
   # corrida anterior de develop y, si hay tests que pasaban y ahora fallan,
-  # manda un correo al equipo que nombra a los autores de los PR mergeados
-  # entre las dos corridas y les pide verificar los tests
+  # manda un correo a los autores de los PR mergeados entre las dos corridas,
+  # con el resto del equipo en copia, y les pide verificar los tests
   # (scripts/dashboards/aviso-e2e.mjs).
   #
   # Reutiliza el correo de estado (BL-326): la cuenta del environment
   # «notificaciones» (solo develop), enviar-email.mjs y los destinatarios de
-  # DASHBOARD_EMAIL_RECIPIENTS. El correo no lleva mensajes de error, y los
-  # destinatarios se enmascaran en el log: el repositorio es público.
+  # DASHBOARD_EMAIL_RECIPIENTS. El correo de cada autor sale de
+  # EQUIPO_GITHUB_CORREOS («usuario=correo»); si falta, va a todo el equipo.
+  # El correo no lleva mensajes de error, y los destinatarios se enmascaran
+  # en el log: el repositorio es público.
   #
   # Solo en un push a develop: en un workflow_dispatch no hay un cambio al que
   # atribuir el fallo. continue-on-error: el aviso nunca frena el pipeline.
@@ -2073,6 +2075,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           SHA_ANTERIOR: ${{ steps.anterior.outputs.sha }}
           EQUIPO_CORREOS: ${{ secrets.DASHBOARD_EMAIL_RECIPIENTS }}
+          EQUIPO_GITHUB: ${{ secrets.EQUIPO_GITHUB_CORREOS }}
           MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
           ALLURE_REPORT_URL: https://ved-virtualexperiencedevelopment.github.io/bistrolink/allure/e2e/
           ACTUAL: ${{ runner.temp }}/aviso/actual
@@ -2090,6 +2093,7 @@ jobs:
           MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
           MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
           EMAIL_TO: ${{ steps.aviso.outputs.to }}
+          EMAIL_CC: ${{ steps.aviso.outputs.cc }}
           EMAIL_FROM: ${{ steps.aviso.outputs.from }}
           EMAIL_SUBJECT: ${{ steps.aviso.outputs.subject }}
           EMAIL_BODY_PATH: ${{ steps.aviso.outputs.body_path }}
