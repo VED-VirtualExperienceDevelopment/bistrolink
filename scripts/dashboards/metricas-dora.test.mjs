@@ -6,11 +6,13 @@ import { strict as assert } from "node:assert";
 import { describe, test } from "node:test";
 import {
   analizarProduccion,
+  analizarStaging,
   esHotfix,
   esPrDeCambio,
   frecuenciaPorSprint,
   leadTimePrs,
   percentil,
+  prDeMensaje,
   porSemana,
   prsDeCommits,
   reemplazarBloque,
@@ -18,6 +20,7 @@ import {
   renderLeadTime,
   renderReleases,
   renderResumen,
+  renderStaging,
   resultadoDeploy,
   resumenDora,
   semaforo,
@@ -238,5 +241,56 @@ describe("markdown", () => {
     const plantilla = "a\n<!-- AUTO:x:start -->\nviejo\n<!-- AUTO:x:end -->\nb";
     assert.equal(reemplazarBloque(plantilla, "x", "nuevo"), "a\n<!-- AUTO:x:start -->\n\nnuevo\n\n<!-- AUTO:x:end -->\nb");
     assert.throws(() => reemplazarBloque(plantilla, "y", "nuevo"), /AUTO:y/);
+  });
+});
+
+describe("staging (Línea de Base, Tabla 24)", () => {
+  const prs = new Map([
+    [540, d("2026-11-20T10:00:00Z")],
+    [541, d("2026-11-21T09:00:00Z")],
+  ]);
+  const deploys = [
+    { exitoso: true, fin: d("2026-11-20T14:00:00Z"), pr: 540 },
+    { exitoso: false, fin: d("2026-11-21T10:00:00Z"), pr: 541 },
+    { exitoso: false, fin: d("2026-11-21T11:00:00Z"), pr: null },
+    { exitoso: true, fin: d("2026-11-21T13:00:00Z"), pr: 541 },
+    { exitoso: true, fin: d("2026-11-22T10:00:00Z"), pr: 999 },
+  ];
+
+  test("frecuencia, fallas, recuperación y lead time", () => {
+    const s = analizarStaging(deploys, prs, 2);
+    assert.equal(s.deploys, 5);
+    assert.equal(s.exitosos, 3);
+    assert.equal(s.deploysPorSemana, 1.5);
+    assert.equal(s.tasaFallas, 0.4);
+    // Dos fallidos seguidos son una sola caída: de las 10:00 a las 13:00.
+    assert.equal(s.recuperaciones, 1);
+    assert.equal(s.recuperacionMedianaHoras, 3);
+    // PR 540: 4 h; PR 541: 4 h (abierto 09:00, desplegado 13:00). El 999 no
+    // está en la lista de PR y no cuenta.
+    assert.equal(s.prsMedidos, 2);
+    assert.equal(s.leadTimeMedianaHoras, 4);
+    assert.equal(s.sinRecuperar, false);
+  });
+
+  test("si el último deploy falló, queda sin recuperar", () => {
+    const s = analizarStaging([{ exitoso: false, fin: d("2026-11-21T10:00:00Z"), pr: null }], new Map(), 1);
+    assert.equal(s.sinRecuperar, true);
+    assert.equal(s.recuperacionMedianaHoras, null);
+  });
+
+  test("número de PR del mensaje de merge", () => {
+    assert.equal(prDeMensaje("Merge pull request #547 from VED/docs/BL-217\n\ndocs"), 547);
+    assert.equal(prDeMensaje("fix(BL-1): algo"), null);
+    assert.equal(prDeMensaje(undefined), null);
+  });
+
+  test("la tabla de staging usa las metas de la Línea de Base", () => {
+    const s = analizarStaging(deploys, prs, 2);
+    const md = renderStaging(s, [{ semana: "2026-11-16", cantidad: 1 }, { semana: "2026-11-23", cantidad: 2 }]);
+    assert.match(md, /Frecuencia de despliegue \| 1,5 por semana \(deploys exitosos: 3\) \| ≥ 3 por semana \| 🔴/);
+    assert.match(md, /Lead time de cambios \| Mediana 4 h/);
+    assert.match(md, /Tasa de fallas en cambios \| 40 % \(2 de 5\)/);
+    assert.match(md, /bar \[1, 2\]/);
   });
 });

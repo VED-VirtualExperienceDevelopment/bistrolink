@@ -8,13 +8,16 @@
 
 > **Nota de control:** las secciones marcadas con `<!-- AUTO -->` las llena `scripts/dashboards/metricas-dora.mjs` desde GitHub (deployments, PR y corridas del CI). No se editan a mano.
 
-**Por qué se mide sobre producción.** Las métricas DORA miden el proceso de release: con qué frecuencia llega un cambio a producción, cuánto tarda, cuántas veces sale mal y cuánto lleva recuperarse. Staging se despliega con cada push a `develop`, así que ahí solo se muestra como contexto (ADR 0004 y Anexo 9 §10.2).
+**Dos vistas de las mismas cuatro métricas.** Las métricas DORA miden con qué frecuencia llega un cambio, cuánto tarda, cuántas veces sale mal y cuánto lleva recuperarse.
 
-**Nota metodológica.** El equipo es de 3 personas y producción existe desde el release v0.5.0 (08/11/2026): hay pocos releases hasta la entrega. Los porcentajes y las medianas se leen junto con las cantidades.
+- **Producción (medición oficial, Anexo 9 §10.2 y ADR 0004):** mide el proceso de release. Producción existe desde v0.5.0 (08/11/2026), así que hasta la entrega hay pocos releases.
+- **Staging (integración continua, Línea de Base, Tabla 24):** cada merge a `develop` que cambia la aplicación se despliega solo en staging. Tiene muchos más datos y muestra el ritmo de trabajo del equipo. Antes de que existiera producción, era la única medición.
+
+Las dos no se suman: miden cosas distintas. **Nota metodológica:** el equipo es de 3 personas y el historial es corto; los porcentajes y las medianas se leen junto con las cantidades.
 
 ---
 
-## 📊 Resumen
+## 📊 Producción: resumen (medición oficial)
 
 <!-- AUTO:dora-resumen:start -->
 
@@ -54,7 +57,17 @@ _Sin datos en esta publicación: se completa en la próxima corrida del workflow
 
 ---
 
-## 🧭 Contexto: staging y pipeline
+## 🔁 Integración continua (staging)
+
+<!-- AUTO:dora-staging:start -->
+
+_Sin datos en esta publicación: se completa en la próxima corrida del workflow «Publicar dashboards»._
+
+<!-- AUTO:dora-staging:end -->
+
+---
+
+## 🧭 Contexto: pipeline e incidentes
 
 <!-- AUTO:dora-contexto:start -->
 
@@ -73,8 +86,22 @@ _Sin datos en esta publicación: se completa en la próxima corrida del workflow
 | Tasa de fallas en cambios | Releases que necesitaron un rollback de producción o un hotfix (el release siguiente es un parche, `vX.Y.Z` con Z > 0), sobre el total de releases | Deployments del job «Rollback manual» y tags de parche | < 15 % |
 | Tiempo de recuperación | Desde el deploy del release fallido hasta el rollback o el hotfix exitoso | Deployments | < 1 día hábil (24 h) |
 
+- **Staging (Línea de Base, Tabla 24):** las mismas cuatro métricas sobre los jobs «Deploy staging» de las últimas 4 semanas. Frecuencia: deploys exitosos por semana (meta ≥ 3). Lead time: desde que se abre el PR hasta que su merge queda desplegado en staging (meta < 2 días hábiles, 48 h). Tasa de fallas: deploys fallidos sobre el total (meta < 15 %). Recuperación: desde un deploy fallido hasta el siguiente exitoso (meta < 1 día hábil, 24 h).
 - **Un deploy fallido** (por ejemplo, porque falló el *pre-deploy* de migraciones) no es una falla en producción: Railway deja la versión anterior. Se muestra en la tabla de releases, pero no cuenta en la tasa de fallas.
 - **Incidentes:** los issues con la etiqueta `incidente` se cuentan como contexto. Si un incidente de producción termina en un rollback o un hotfix, ya queda medido por esa vía.
 - **Duración del pipeline:** desde que empieza la corrida del CI en `develop` hasta que termina «Deploy staging». No incluye los E2E ni el reporte, que corren después del deploy.
 
 Runbook del release, hotfix y rollback: [`docs/RELEASE.md`](RELEASE.md).
+
+---
+
+## 🔗 Otras métricas del proceso
+
+Estas métricas ya se publican en otras páginas del sitio y no se repiten acá:
+
+| Página | Qué aporta a la calidad del proceso |
+| --- | --- |
+| [Bugs (GitHub Issues)](https://ved-virtualexperiencedevelopment.github.io/bistrolink/bugs.html) | Bugs abiertos y cerrados, por severidad y por semana, y su tiempo de resolución |
+| [Reporte E2E (Allure)](https://ved-virtualexperiencedevelopment.github.io/bistrolink/allure/e2e/) | Resultado de los E2E de la última corrida de `develop`, por área y navegador |
+| [Avance del proyecto (EDT)](https://ved-virtualexperiencedevelopment.github.io/bistrolink/avance-edt.html) | Avance del MVP contra la Línea de Base y trabajo cerrado por sprint |
+| Estado del servicio (desde el [índice](https://ved-virtualexperiencedevelopment.github.io/bistrolink/)) | Disponibilidad y tiempo de respuesta de la API y Keycloak (Grafana) |

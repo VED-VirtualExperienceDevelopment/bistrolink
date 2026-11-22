@@ -22,11 +22,12 @@ BL-298, BL-493, BL-221. Los scripts de esta carpeta generan los tres dashboards 
 
 ## Cómo se miden las métricas DORA
 
-Se miden sobre **producción** (Anexo 9 §10.2, ADR 0004); staging se muestra solo como contexto. Las definiciones están al final de `docs/dashboard-calidad-proceso.md`:
+Se muestran dos vistas de las mismas cuatro métricas: **producción**, la medición oficial (Anexo 9 §10.2, ADR 0004), y **staging**, la integración continua, con las metas de la Línea de Base (Tabla 24). No se suman. Las definiciones están al final de `docs/dashboard-calidad-proceso.md`:
 
 - **Release:** deploy exitoso del job «Deploy producción» con un tag `vX.Y.Z`. Los ensayos (`-rc.N`) no cuentan.
 - **Falla:** el release necesitó un rollback de producción (job «Rollback manual») o un hotfix (el release siguiente es un parche).
 - **Lead time:** por PR mergeado a `develop` que entró en el release, desde su primer commit hasta el deploy. El primer release (v0.5.0) es la línea base y no se mide.
+- **Staging:** los jobs «Deploy staging» de las últimas 4 semanas. El lead time va desde que se abre el PR hasta que su merge queda desplegado; la recuperación, desde un deploy fallido hasta el siguiente exitoso.
 - El workflow no se dispara con un deploy a producción: después de un release o un rollback, correr **Publicar dashboards** a mano (`docs/RELEASE.md`).
 
 ## Cuándo hay que tocar `backlog-hu.json`

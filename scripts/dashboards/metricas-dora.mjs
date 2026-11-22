@@ -10,8 +10,9 @@
 //     el job deploy-prod con el tag (vX.Y.Z) y el job rollback con la rama
 //     desde la que se lanza (main).
 //   - Comparación entre tags y los PR mergeados a develop, para el lead time.
-//   - Jobs «Deploy staging» de las corridas del CI en develop: deploys a
-//     staging por semana y duración del pipeline hasta staging (contexto).
+//   - Jobs «Deploy staging» de las corridas del CI en develop y los PR
+//     mergeados a develop: las mismas cuatro métricas sobre staging, con las
+//     metas de la Línea de Base (Tabla 24), y la duración del pipeline.
 //   - Issues con la etiqueta "incidente".
 //
 // Definiciones (Anexo 9 §10.2):
@@ -52,6 +53,15 @@ export const METAS = {
   tasaFallas: 0.15, // < 15 %
   recuperacionHoras: 24, // < 1 día hábil (aproximado a 24 h)
   pipelineMinutos: 10, // hasta staging
+};
+
+// Metas de staging de la Línea de Base (Tabla 24): las cuatro métricas DORA
+// sobre la integración continua, antes de que existiera producción.
+export const METAS_STAGING = {
+  deploysPorSemana: 3, // ≥ 3 por semana de desarrollo
+  leadTimeHoras: 48, // < 2 días hábiles (aproximado a 48 h)
+  tasaFallas: 0.15, // < 15 %
+  recuperacionHoras: 24, // < 1 día hábil (aproximado a 24 h)
 };
 
 const TAG_RELEASE = /^v(\d+)\.(\d+)\.(\d+)$/;
@@ -259,6 +269,60 @@ export function porSemana(fechas, hoy, semanas) {
 }
 
 // ---------------------------------------------------------------------------
+// Integración continua en staging (Línea de Base, Tabla 24)
+// ---------------------------------------------------------------------------
+
+/**
+ * Las cuatro métricas sobre los deploys a staging de un período.
+ *   deploys: [{ exitoso, fin: Date, pr: número|null }] (jobs «Deploy staging»)
+ *   prsCreados: Map número de PR → fecha de apertura
+ * Lead time: desde que se abre el PR hasta que su merge queda desplegado en
+ * staging (solo los PR cuyo merge disparó un deploy: los de documentación o
+ * infraestructura no lo hacen). Recuperación: desde un deploy fallido hasta
+ * el siguiente exitoso.
+ */
+export function analizarStaging(deploys, prsCreados, semanas) {
+  const ordenados = [...deploys].sort((a, b) => a.fin - b.fin);
+  const exitosos = ordenados.filter((d) => d.exitoso);
+
+  const recuperaciones = [];
+  let caida = null;
+  for (const d of ordenados) {
+    if (!d.exitoso && caida === null) caida = d.fin;
+    if (d.exitoso && caida !== null) {
+      recuperaciones.push((d.fin - caida) / HORA);
+      caida = null;
+    }
+  }
+
+  const leadHoras = exitosos
+    .filter((d) => d.pr !== null && prsCreados.has(d.pr))
+    .map((d) => (d.fin - prsCreados.get(d.pr)) / HORA);
+
+  return {
+    deploys: ordenados.length,
+    exitosos: exitosos.length,
+    fallidos: ordenados.length - exitosos.length,
+    deploysPorSemana: semanas > 0 ? exitosos.length / semanas : null,
+    tasaFallas: ordenados.length
+      ? (ordenados.length - exitosos.length) / ordenados.length
+      : null,
+    leadTimeMedianaHoras: percentil(leadHoras, 0.5),
+    leadTimeP85Horas: percentil(leadHoras, 0.85),
+    prsMedidos: leadHoras.length,
+    recuperaciones: recuperaciones.length,
+    recuperacionMedianaHoras: percentil(recuperaciones, 0.5),
+    sinRecuperar: caida !== null,
+  };
+}
+
+/** Número de PR del mensaje de un commit de merge, o null. */
+export function prDeMensaje(mensaje) {
+  const m = MERGE_PR.exec(mensaje ?? "");
+  return m ? Number(m[1]) : null;
+}
+
+// ---------------------------------------------------------------------------
 // Resumen y semáforo
 // ---------------------------------------------------------------------------
 
@@ -389,22 +453,38 @@ ${medidos
 > **Revisión:** desde que se abre el PR hasta el merge a \`develop\`. **Release:** desde el merge hasta el deploy en producción. El lead time completo empieza en el primer commit del PR.`;
 }
 
-export function renderContexto(c) {
-  const semanas = c.stagingPorSemana;
-  return `| Métrica de contexto | Valor | Meta |
-| --- | --- | --- |
-| Deploys a staging (últimas ${semanas.length} semanas) | Exitosos: ${semanas.reduce((a, s) => a + s.cantidad, 0)} · fallidos: ${c.stagingFallidos} | ≥ 3 por semana |
-| Duración del pipeline hasta staging (mediana) | ${c.pipelineMedianaMin === null ? "—" : `${num(c.pipelineMedianaMin)} min (corridas medidas: ${c.pipelineCorridas})`} | < ${METAS.pipelineMinutos} min |
-| Rollbacks de producción | ${c.rollbacksProduccion} | — |
-| Incidentes registrados (etiqueta \`incidente\`) | ${c.incidentesAbiertos} abiertos · ${c.incidentesCerrados} cerrados | — |
+export function renderStaging(s, porSemanaStaging) {
+  const semanas = porSemanaStaging.length;
+  const m = METAS_STAGING;
+  const pct = s.tasaFallas === null ? "—" : `${num(s.tasaFallas * 100, 0)} %`;
+  const recuperacion =
+    s.fallidos === 0
+      ? "Sin deploys fallidos"
+      : `Mediana ${duracion(s.recuperacionMedianaHoras)} (recuperaciones: ${s.recuperaciones}${s.sinRecuperar ? "; el último deploy sigue fallido" : ""})`;
+  return `| Métrica (staging) | Valor (últimas ${semanas} semanas) | Meta (Línea de Base) | Estado |
+| --- | --- | --- | --- |
+| Frecuencia de despliegue | ${num(s.deploysPorSemana)} por semana (deploys exitosos: ${s.exitosos}) | ≥ ${m.deploysPorSemana} por semana | ${semaforo(s.deploysPorSemana, m.deploysPorSemana, "min")} |
+| Lead time de cambios | Mediana ${duracion(s.leadTimeMedianaHoras)} · p85 ${duracion(s.leadTimeP85Horas)} (${s.prsMedidos} PR) | < 2 días hábiles (48 h) | ${semaforo(s.leadTimeMedianaHoras, m.leadTimeHoras, "max")} |
+| Tasa de fallas en cambios | ${pct} (${s.fallidos} de ${s.deploys}) | < ${num(m.tasaFallas * 100, 0)} % | ${semaforo(s.tasaFallas, m.tasaFallas - 1e-9, "max")} |
+| Tiempo de recuperación | ${recuperacion} | < 1 día hábil (24 h) | ${s.fallidos === 0 ? "⚪" : semaforo(s.recuperacionMedianaHoras, m.recuperacionHoras, "max")} |
+
+> **Staging:** cada merge a \`develop\` que cambia la aplicación se despliega solo. El lead time va desde que se abre el PR hasta que su merge queda desplegado; los PR que no cambian la aplicación (documentación, infraestructura) no disparan un deploy y no entran. Una falla es un deploy a staging que no terminó bien, y la recuperación es el tiempo hasta el siguiente deploy exitoso.
 
 \`\`\`mermaid
 xychart-beta
     title "Deploys exitosos a staging por semana"
-    x-axis [${semanas.map((s) => `"${s.semana.slice(8, 10)}/${s.semana.slice(5, 7)}"`).join(", ")}]
-    y-axis "Deploys" 0 --> ${Math.max(3, ...semanas.map((s) => s.cantidad))}
-    bar [${semanas.map((s) => s.cantidad).join(", ")}]
+    x-axis [${porSemanaStaging.map((b) => `"${b.semana.slice(8, 10)}/${b.semana.slice(5, 7)}"`).join(", ")}]
+    y-axis "Deploys" 0 --> ${Math.max(METAS_STAGING.deploysPorSemana, ...porSemanaStaging.map((b) => b.cantidad))}
+    bar [${porSemanaStaging.map((b) => b.cantidad).join(", ")}]
 \`\`\``;
+}
+
+export function renderContexto(c) {
+  return `| Métrica de contexto | Valor | Meta |
+| --- | --- | --- |
+| Duración del pipeline hasta staging (mediana) | ${c.pipelineMedianaMin === null ? "—" : `${num(c.pipelineMedianaMin)} min (corridas medidas: ${c.pipelineCorridas})`} | < ${METAS.pipelineMinutos} min |
+| Rollbacks de producción | ${c.rollbacksProduccion} | — |
+| Incidentes registrados (etiqueta \`incidente\`) | ${c.incidentesAbiertos} abiertos · ${c.incidentesCerrados} cerrados | — |`;
 }
 
 export function reemplazarBloque(contenido, marcador, interior) {
@@ -517,9 +597,22 @@ async function deploysStaging(gh, desde, maximo) {
       exitoso: job.conclusion === "success",
       fin,
       minutos: (fin - new Date(run.run_started_at)) / 60000,
+      pr: prDeMensaje(run.head_commit?.message),
     });
   }
   return deploys;
+}
+
+/** Fecha de apertura de los PR mergeados a develop desde `desde`. */
+async function prsMergeados(gh, repo, desde) {
+  const q = encodeURIComponent(
+    `repo:${repo} is:pr base:develop is:merged merged:>=${diaUy(desde)}`,
+  );
+  const items = await gh.todos(
+    `https://api.github.com/search/issues?q=${q}&per_page=100`,
+    { clave: "items", maximo: 300 },
+  );
+  return new Map(items.map((i) => [i.number, new Date(i.created_at)]));
 }
 
 async function incidentes(gh, repo) {
@@ -561,12 +654,13 @@ async function main() {
   // límite de pedidos del GITHUB_TOKEN (el workflow también corre con cada
   // evento de issue).
   const semanas = 4;
-  const staging = await deploysStaging(
-    gh,
-    new Date(hoy.getTime() - semanas * 7 * DIA),
-    60,
-  );
+  const desdeStaging = new Date(hoy.getTime() - semanas * 7 * DIA);
+  const staging = await deploysStaging(gh, desdeStaging, 80);
   const exitososStaging = staging.filter((s) => s.exitoso);
+  // Un PR mergeado antes del período puede desplegarse adentro: se buscan
+  // los PR desde una semana antes.
+  const prs = await prsMergeados(gh, repo, new Date(desdeStaging.getTime() - 7 * DIA));
+  const metricasStaging = analizarStaging(staging, prs, semanas);
   const inc = await incidentes(gh, repo);
 
   const frecuencia = frecuenciaPorSprint(produccion.releases, sprints, hoy);
@@ -588,14 +682,16 @@ async function main() {
   md = reemplazarBloque(md, "dora-lead-time", renderLeadTime(leadTimes));
   md = reemplazarBloque(
     md,
+    "dora-staging",
+    renderStaging(
+      metricasStaging,
+      porSemana(exitososStaging.map((s) => s.fin), hoy, semanas),
+    ),
+  );
+  md = reemplazarBloque(
+    md,
     "dora-contexto",
     renderContexto({
-      stagingPorSemana: porSemana(
-        exitososStaging.map((s) => s.fin),
-        hoy,
-        semanas,
-      ),
-      stagingFallidos: staging.length - exitososStaging.length,
       pipelineMedianaMin: exitososStaging.length
         ? percentil(exitososStaging.map((s) => s.minutos), 0.5)
         : null,
