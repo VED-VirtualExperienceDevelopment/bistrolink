@@ -124,6 +124,12 @@ COPY --from=tema /tema /opt/keycloak/themes/bistrolink
 COPY --chmod=0755 keycloak/set-client-secret.sh /opt/keycloak/bin/set-client-secret.sh
 COPY --chmod=0755 keycloak/load-test-users.sh /opt/keycloak/bin/load-test-users.sh
 
+# BL-242: usuario no-root explícito. La imagen base de Keycloak ya corre como
+# el usuario 1000 (no root); se declara acá para que quede a la vista y para
+# que el control de configuración de los Dockerfile (Trivy config, job
+# «Dependencias» de ci.yml) lo verifique en lugar de depender de la imagen base.
+USER 1000
+
 ENTRYPOINT ["/bin/bash", "/opt/keycloak/bin/set-client-secret.sh"]
 
 # El comando real (flags de start) lo puede seguir pisando el "Custom Start
