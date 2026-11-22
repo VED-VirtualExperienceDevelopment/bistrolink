@@ -62,6 +62,8 @@ interface PagoAprobadoProps {
   /** BL-502: otros pedidos de la mesa que todavía no llegaron. */
   readonly pedidosEnCamino?: number;
   readonly onVerMisPedidos?: () => void;
+  /** BL-602: sin la barra fija de la carta arriba (link de pago). */
+  readonly sinBarraDeLaCarta?: boolean;
 }
 
 const CLASE_TARJETA =
@@ -94,6 +96,7 @@ export function PagoAprobado({
   nombreLocal,
   pedidosEnCamino,
   onVerMisPedidos,
+  sinBarraDeLaCarta = false,
 }: PagoAprobadoProps) {
   const [comprobante, setComprobante] = useState<EstadoComprobante>({ tipo: 'emitiendo' });
   const [agotado, setAgotado] = useState(false);
@@ -210,12 +213,15 @@ export function PagoAprobado({
         pedidosEnCamino={pedidosEnCamino}
         onVerMisPedidos={onVerMisPedidos}
         onValorar={valorar}
+        sinBarraDeLaCarta={sinBarraDeLaCarta}
       />
     );
   }
 
   return (
-    <div className="pt-20 pb-12 px-4 md:px-8 max-w-[640px] mx-auto flex flex-col gap-6">
+    <div
+      className={`${sinBarraDeLaCarta ? 'pt-6' : 'pt-20'} pb-12 px-4 md:px-8 max-w-[640px] mx-auto flex flex-col gap-6`}
+    >
       <section className={`${CLASE_TARJETA} text-center flex flex-col items-center gap-2`}>
         <span className="grid place-items-center w-20 h-20 rounded-full bg-marca/10 text-marca mb-2">
           <svg aria-hidden="true" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">

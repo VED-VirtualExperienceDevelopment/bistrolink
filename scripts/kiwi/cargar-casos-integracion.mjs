@@ -1711,6 +1711,12 @@ const DATOS_E2E = {
     priority: "P2",
     tags: ["BL-203", "link-de-pago"],
   }),
+  // BL-602: el link de pago en una PC (dos columnas a todo el ancho).
+  130: e2e("comensal", "HU-033", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-602", "link-de-pago", "responsive", ...axe],
+  }),
   // HU-043 (BL-535): marca propia del local, en admin/marca.spec.ts
   // (114 y 115) y admin/configuracion-pantalla.spec.ts (116).
   114: e2e("admin", "HU-043", {

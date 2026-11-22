@@ -155,4 +155,70 @@ test.describe("BL-203: Pago por link", () => {
       await celular.close();
     }
   });
+
+  test("[TC-E-130] BL-602: en una PC el link de pago usa todo el ancho: la columna del pago y el resumen a la derecha, alineados con el encabezado", async ({
+    page,
+    kdsPageMozo,
+    browser,
+  }) => {
+    test.slow();
+    const codigo = await pedidoPendiente(page);
+    const { dialogo } = await abrirLinkDePago(kdsPageMozo, codigo);
+    const url = await dialogo.getByLabel("Link para copiar").inputValue();
+    await dialogo.getByRole("button", { name: "Listo" }).click();
+
+    const pc = await browser.newPage({
+      viewport: { width: 1366, height: 900 },
+    });
+    try {
+      await pc.goto(url);
+      const titulo = pc.getByRole("heading", { name: "Pagá tu pedido" });
+      await expect(titulo).toBeVisible({ timeout: 20000 });
+
+      // Antes de BL-602 la columna del pago quedaba en ~250 px y el título
+      // se partía en dos líneas.
+      const tarjeta = titulo.locator("xpath=ancestor::section[1]");
+      const cajaTarjeta = await tarjeta.boundingBox();
+      const cajaTitulo = await titulo.boundingBox();
+      const resumen = pc.locator('aside[aria-labelledby="resumen-pedido"]');
+      const cajaResumen = await resumen.boundingBox();
+      // Donde empieza el texto del nombre del local (sin su padding).
+      const inicioLocal = await pc
+        .locator("header p")
+        .first()
+        .evaluate(
+          (el) =>
+            el.getBoundingClientRect().left +
+            Number.parseFloat(getComputedStyle(el).paddingLeft),
+        );
+      expect(cajaTarjeta && cajaTitulo && cajaResumen).toBeTruthy();
+
+      expect(cajaTarjeta!.width).toBeGreaterThan(500);
+      // Una sola línea (el título mide ~40 px de alto).
+      expect(cajaTitulo!.height).toBeLessThan(60);
+      // El resumen, a la derecha de la columna del pago.
+      expect(cajaResumen!.x).toBeGreaterThan(
+        cajaTarjeta!.x + cajaTarjeta!.width,
+      );
+      // El nombre del local, alineado con el contenido.
+      expect(Math.abs(inicioLocal - cajaTarjeta!.x)).toBeLessThanOrEqual(2);
+      // Sin scroll horizontal.
+      expect(
+        await pc.evaluate(
+          () => document.documentElement.scrollWidth <= window.innerWidth,
+        ),
+      ).toBe(true);
+
+      const resultados = await new AxeBuilder({ page: pc })
+        .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
+        .analyze();
+      expect(
+        resultados.violations
+          .filter((v) => v.impact === "critical" || v.impact === "serious")
+          .map((v) => ({ id: v.id, nodos: v.nodes.map((n) => n.target) })),
+      ).toEqual([]);
+    } finally {
+      await pc.close();
+    }
+  });
 });

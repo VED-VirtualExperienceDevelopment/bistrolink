@@ -90,6 +90,12 @@ interface PagoPedidoProps {
   /** HU-033 (BL-203): sin carta (link de pago), no hay «Volver a la carta». */
   readonly onVolver?: () => void;
   readonly onAprobado: () => void;
+  /**
+   * BL-602: sin la barra fija de la carta arriba (link de pago). La
+   * página pone su propio encabezado, así que no hace falta el espacio de
+   * 80 px que deja la carta.
+   */
+  readonly sinBarraDeLaCarta?: boolean;
 }
 
 type Pantalla =
@@ -151,6 +157,7 @@ export function PagoPedido({
   numeroMesa,
   onVolver,
   onAprobado,
+  sinBarraDeLaCarta = false,
 }: PagoPedidoProps) {
   const [pantalla, setPantalla] = useState<Pantalla>({ tipo: 'formulario' });
   // Cambia en cada rechazo para volver a montar el formulario vacío (el
@@ -518,7 +525,9 @@ export function PagoPedido({
   const muestraPropina = pideDatos && propinaLocal !== null && totalesGuardados !== null;
 
   return (
-    <div className="pt-20 pb-12 px-4 md:px-8 max-w-[1100px] mx-auto">
+    <div
+      className={`${sinBarraDeLaCarta ? 'pt-6' : 'pt-20'} pb-12 px-4 md:px-8 max-w-[1100px] mx-auto`}
+    >
       {onVolver && (
         <button
           type="button"
@@ -730,6 +739,7 @@ export function PagoPedido({
           }
           total={totalAPagar}
           cantidadItems={cantidadItems}
+          sinBarraDeLaCarta={sinBarraDeLaCarta}
         />
       </div>
     </div>
@@ -937,6 +947,7 @@ function ResumenPedido({
   propina,
   total,
   cantidadItems,
+  sinBarraDeLaCarta,
 }: {
   readonly lineas: readonly LineaResumen[];
   readonly consumo: number;
@@ -945,13 +956,14 @@ function ResumenPedido({
   /** Lo que se cobra: el consumo más la propina. */
   readonly total: number;
   readonly cantidadItems: number;
+  readonly sinBarraDeLaCarta: boolean;
 }) {
   const [abierto, setAbierto] = useState(false);
 
   return (
     <aside
       aria-labelledby="resumen-pedido"
-      className="order-first lg:order-none bg-white rounded-[1rem] border border-culinary-neutral/15 p-5 md:p-6 shadow-[0px_4px_20px_rgba(121,118,125,0.08)] lg:sticky lg:top-24"
+      className={`order-first lg:order-none bg-white rounded-[1rem] border border-culinary-neutral/15 p-5 md:p-6 shadow-[0px_4px_20px_rgba(121,118,125,0.08)] lg:sticky ${sinBarraDeLaCarta ? 'lg:top-6' : 'lg:top-24'}`}
     >
       <button
         type="button"

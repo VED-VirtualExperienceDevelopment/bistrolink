@@ -47,6 +47,7 @@
 | 1.39 | 15/11/2026 | Se borran los bloques de TC-E-122 a 125, ya cargados en Kiwi. TC-E-126: sello de pago seguro (HU-051 / BL-563). |
 | 1.40 | 15/11/2026 | Se borra el bloque de TC-E-126, ya cargado en Kiwi. TC-E-127: valoración privada del pedido (HU-050 / BL-558). |
 | 1.41 | 20/11/2026 | TC-E-002, 012 y 013 cambian: «Llamar al mozo» en la barra superior, con la confirmación en el botón y «En el local · Mesa N» en la portada. TC-E-128 y 129: el botón a 360 px y «Volver a llamar» pasado el minuto (BL-592). |
+| 1.42 | 22/11/2026 | Se borran los bloques de TC-E-002, 012, 013, 127, 128 y 129, ya cargados en Kiwi. TC-E-130: el link de pago en una PC usa todo el ancho (BL-602). |
 
 Plantilla para cargar en Kiwi la descripción de casos TC-E (Playwright)
 nuevos o que cambiaron (BL-435). La usa
@@ -91,102 +92,20 @@ Reglas:
 
 ## Casos para cargar
 
-## TC-E-127
+## TC-E-130
 
 ### Precondición
 
-Staging, sin sesión (comensal por el enlace web del local) y el Administrador logueado en otra pestaña. Cuenta de sandbox de Mercado Pago.
+El comensal arma un pedido para retirar desde la carta y lo deja esperando el pago, como en TC-E-112. El mozo de prueba, en /admin/cobros. El link se abre en una PC con una ventana de 1366 × 900.
 
 ### Pasos
 
-1. Agregar un plato, pagar con la tarjeta de prueba y, desde el KDS del Administrador, pasar el pedido por «En preparación» y «Listo para entregar» y entregarlo con el código.
-2. En la pantalla del comensal, tocar «Enviar valoración» sin elegir estrellas.
-3. Con el foco en la primera estrella, apretar la flecha derecha tres veces.
-4. Escribir un comentario y tocar «Enviar valoración».
-5. En la pestaña del Administrador, abrir «Valoraciones» y elegir «Hoy».
+1. El mozo genera el link de pago del pedido y copia la URL.
+2. Abrir la URL en la PC.
+3. Revisar la página con axe (WCAG 2.1 AA).
 
 ### Resultado esperado
 
-1. «Gracias por tu compra» con la tarjeta «¿Cómo estuvo tu pedido?».
-2. Aviso «Elegí de 1 a 5 estrellas.»; no se envía nada.
-3. Queda elegida «4 de 5: Muy bueno».
-4. «¡Gracias! Le llegó al local. No se publica.»
-5. El comentario aparece con 4 de 5 estrellas y el día, sin la mesa ni el pedido, y se ve el promedio.
-
-## TC-E-002
-
-### Precondición
-
-Mesa 1 del seed abierta. Comensal sin sesión, con el QR de la mesa.
-
-### Pasos
-
-1. Abrir la carta desde el QR de la mesa 1.
-
-### Resultado esperado
-
-1. Se ven el nombre, la descripción y el precio de «Milanesa a la napolitana» ($ 590), y la portada dice «En el local · Mesa 1».
-
-## TC-E-012
-
-### Precondición
-
-Mesa 1 del seed abierta. El Mozo logueado en la pantalla Alertas, en otra pestaña.
-
-### Pasos
-
-1. Abrir la carta desde el QR de la mesa 1.
-2. Tocar «Llamar al mozo» en la barra superior.
-
-### Resultado esperado
-
-1. El botón «Llamar al mozo» está en la barra superior.
-2. En la pantalla del Mozo aparece «Mesa 1 solicita atención» en vivo, sin recargar. El botón del comensal pasa a «Mozo avisado», sin tiempos, y el lector de pantalla anuncia «Listo, avisamos al mozo.».
-
-## TC-E-013
-
-### Precondición
-
-Mesa 2 del seed abierta, sin llamados en el último minuto.
-
-### Pasos
-
-1. Abrir la carta desde el QR de la mesa 2 y tocar «Llamar al mozo».
-2. Recargar la página y tocar «Llamar al mozo» otra vez.
-
-### Resultado esperado
-
-1. El botón pasa a «Mozo avisado».
-2. La API responde 429 (1 llamado por minuto por mesa). El botón queda en «Mozo avisado», igual que en el primer llamado, sin tono de error ni tiempos; el lector de pantalla anuncia «Ya avisamos al mozo.».
-
-## TC-E-128
-
-### Precondición
-
-Mesa 1 del seed abierta. Comensal sin sesión, en un celular de 360 px de ancho.
-
-### Pasos
-
-1. Abrir la carta desde el QR de la mesa 1, sin tocar el botón.
-2. Revisar la barra superior con axe (WCAG 2.1 AA).
-
-### Resultado esperado
-
-1. En la barra superior hay un solo botón para llamar al mozo: se ve «Mozo», su nombre accesible es «Llamar al mozo» y mide 44 px de alto o más. Al final de la carta no hay otro. La portada dice «En el local · Mesa 1».
-2. Sin errores graves ni críticos de accesibilidad.
-
-## TC-E-129
-
-### Precondición
-
-Una mesa de prueba creada y abierta por el Administrador, sin llamados. El reloj del navegador controlado por el test.
-
-### Pasos
-
-1. Abrir la carta desde el QR de la mesa y tocar «Llamar al mozo».
-2. Adelantar el reloj 61 segundos.
-
-### Resultado esperado
-
-1. El botón pasa a «Mozo avisado», sin números ni cuenta regresiva, y no se puede volver a tocar (aria-disabled).
-2. El botón pasa a «Volver a llamar» y se puede tocar de nuevo.
+1. Se genera el link.
+2. «Pagá tu pedido» se ve en una sola línea, en una columna de más de 500 px de ancho. El resumen «Tu pedido» queda a la derecha de esa columna. El nombre del local, en el encabezado, empieza alineado con el contenido. No hay scroll horizontal.
+3. Sin errores graves ni críticos de accesibilidad.
