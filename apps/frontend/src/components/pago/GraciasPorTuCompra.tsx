@@ -38,6 +38,8 @@ interface Props {
   readonly onVerMisPedidos?: () => void;
   /** HU-050 (BL-558): manda la valoración privada; sin ella, no se ofrece. */
   readonly onValorar?: (valoracion: Valoracion) => Promise<void>;
+  /** BL-602: sin la barra fija de la carta arriba (link de pago). */
+  readonly sinBarraDeLaCarta?: boolean;
 }
 
 const CLASE_TARJETA =
@@ -74,6 +76,7 @@ export function GraciasPorTuCompra({
   pedidosEnCamino = 0,
   onVerMisPedidos,
   onValorar,
+  sinBarraDeLaCarta = false,
 }: Props) {
   const tituloRef = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
@@ -92,7 +95,7 @@ export function GraciasPorTuCompra({
   return (
     <div
       data-testid="gracias-por-tu-compra"
-      className="pt-20 pb-12 px-4 md:px-8 max-w-[720px] mx-auto flex flex-col gap-6"
+      className={`${sinBarraDeLaCarta ? 'pt-6' : 'pt-20'} pb-12 px-4 md:px-8 max-w-[720px] mx-auto flex flex-col gap-6`}
     >
       <section className={`${CLASE_TARJETA} flex items-center gap-4`}>
         <span className="grid h-14 w-14 shrink-0 place-items-center rounded-full bg-emerald-50 text-emerald-800">

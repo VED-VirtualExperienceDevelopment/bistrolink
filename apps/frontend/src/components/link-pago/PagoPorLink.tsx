@@ -147,14 +147,22 @@ export function PagoPorLink({ token }: Props) {
   const total = Number(resumen.consumo);
   const numeroMesa = resumen.mesaNumero ?? undefined;
 
+  // BL-602: PagoPedido y PagoAprobado traen su propio contenedor (el mismo
+  // que en la carta). Envolverlos en uno más angosto apretaba las dos
+  // columnas del pago en PC. El encabezado se alinea con ese contenedor.
+  const anchoEncabezado =
+    estado.tipo === "pagar" ? "max-w-[1100px]" : "max-w-[640px]";
+
   return (
     <main className="min-h-screen bg-culinary-background">
-      <header className="border-b border-culinary-neutral/15 bg-white px-4 py-4">
-        <p className="mx-auto max-w-2xl text-lg font-bold text-[#6e54ad]">
+      <header className="border-b border-culinary-neutral/15 bg-white py-4">
+        <p
+          className={`mx-auto ${anchoEncabezado} px-4 md:px-8 text-lg font-bold text-[#6e54ad]`}
+        >
           {resumen.restaurante.nombre}
         </p>
       </header>
-      <div className="mx-auto max-w-2xl px-4 py-6">
+      <div>
         {estado.tipo === "pagar" ? (
           <PagoPedido
             origen={origen}
@@ -166,6 +174,7 @@ export function PagoPorLink({ token }: Props) {
             onAprobado={() =>
               setEstado({ tipo: "aprobado", accessToken, resumen })
             }
+            sinBarraDeLaCarta
           />
         ) : (
           <PagoAprobado
@@ -176,6 +185,7 @@ export function PagoPorLink({ token }: Props) {
             total={total}
             numeroMesa={numeroMesa}
             nombreLocal={resumen.restaurante.nombre}
+            sinBarraDeLaCarta
           />
         )}
       </div>
