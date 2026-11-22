@@ -99,14 +99,17 @@ _Sin datos en esta publicación: se completa en la próxima corrida del workflow
 
 ## 🔐 Hallazgos de seguridad
 
-Se revisan en cada herramienta; el pipeline corta ante cualquier hallazgo crítico o alto (Anexo 9 §10.2, meta: 0):
+Meta del Anexo 9 §10.2: **0 hallazgos críticos o altos abiertos**. Cada herramienta actúa en un momento distinto:
 
-| Herramienta | Dónde |
-| --- | --- |
-| CodeQL y Trivy | [Security → Code scanning](https://github.com/VED-VirtualExperienceDevelopment/bistrolink/security/code-scanning) |
-| SonarCloud | [Proyecto en SonarCloud](https://sonarcloud.io/project/overview?id=VED-VirtualExperienceDevelopment_bistrolink) |
-| Dependencias | [Security → Dependabot](https://github.com/VED-VirtualExperienceDevelopment/bistrolink/security/dependabot) |
-| DAST (OWASP ZAP) | Corrida diaria del workflow `dast.yml` ([criterio de salida](https://github.com/VED-VirtualExperienceDevelopment/bistrolink/blob/develop/docs/security/dast.md)) |
+| Herramienta | Qué revisa | Ante un hallazgo crítico o alto | Dónde se ve |
+| --- | --- | --- | --- |
+| Trivy | Dependencias, Dockerfile e imágenes | El job falla: no se publica la imagen ni se despliega | Log de los jobs «Dependencias (Trivy)» y «Build + Escaneo» del CI |
+| Revisión de dependencias | Dependencias nuevas o actualizadas en un PR | El check del PR falla | En el PR |
+| Gitleaks | Secretos en el código | El job falla | Log del job y [Security → Code scanning](https://github.com/VED-VirtualExperienceDevelopment/bistrolink/security/code-scanning) |
+| CodeQL | Análisis estático del código | Alerta en el PR; se corrige antes del merge | [Security → Code scanning](https://github.com/VED-VirtualExperienceDevelopment/bistrolink/security/code-scanning) |
+| SonarCloud | Análisis estático y calidad | El *Quality Gate* del PR no pasa | [Proyecto en SonarCloud](https://sonarcloud.io/project/overview?id=VED-VirtualExperienceDevelopment_bistrolink) |
+| Dependabot | Avisos sobre las dependencias ya instaladas | Alerta y PR de actualización | [Security → Dependabot](https://github.com/VED-VirtualExperienceDevelopment/bistrolink/security/dependabot) |
+| DAST (OWASP ZAP) | La aplicación en staging, de noche | La corrida diaria de `dast.yml` falla y bloquea el release | [Criterio de salida](https://github.com/VED-VirtualExperienceDevelopment/bistrolink/blob/develop/docs/security/dast.md#criterio-de-salida) |
 
 ---
 
@@ -121,7 +124,8 @@ Se revisan en cada herramienta; el pipeline corta ante cualquier hallazgo críti
 
 - **Staging (Línea de Base, Tabla 24):** las mismas cuatro métricas sobre los jobs «Deploy staging» de las últimas 4 semanas. Frecuencia: deploys exitosos por semana (meta ≥ 3). Lead time: desde que se abre el PR hasta que su merge queda desplegado en staging (meta < 2 días hábiles, 48 h). Tasa de fallas: deploys fallidos sobre el total (meta < 15 %). Recuperación: desde un deploy fallido hasta el siguiente exitoso (meta < 1 día hábil, 24 h).
 - **Un deploy fallido** (por ejemplo, porque falló el *pre-deploy* de migraciones) no es una falla en producción: Railway deja la versión anterior. Se muestra en la tabla de releases, pero no cuenta en la tasa de fallas.
-- **Plan de pruebas (Kiwi TCMS):** por cada Test Plan activo, los casos confirmados y los últimos 10 Test Runs (los que conserva la limpieza de `cleanup-test-runs.yml`). Aprobación: aprobados sobre ejecutados del último run. «Nunca ejecutados»: casos sin ninguna ejecución terminada en esos runs. El resumen de cada corrida (aprobados, fallidos, salteados y duración) está en el Summary de la corrida del CI.
+- **Plan de pruebas (Kiwi TCMS):** por cada Test Plan activo del producto Bistrolink en la versión `develop` (los de otras versiones no se cuentan), los casos confirmados y los últimos 10 Test Runs (los que conserva la limpieza de `cleanup-test-runs.yml`). Aprobación: aprobados sobre ejecutados del último run. «Nunca ejecutados»: casos sin ninguna ejecución terminada en esos runs. El resumen de cada corrida (aprobados, fallidos, salteados y duración) está en el Summary de la corrida del CI.
+- **Cobertura (Codecov):** del último commit de `develop`, la misma rama de los Test Plans de Kiwi (`main` cambia recién con cada release). Total, backend y frontend. La meta del Anexo 9 (≥ 80 % en la lógica de negocio) se aplica al backend; el frontend se muestra para seguir su evolución y en cada PR tiene un check informativo de Codecov que no frena el merge.
 - **Regresiones:** bugs con la etiqueta `regresion`: algo que ya funcionaba y dejó de funcionar después de un cambio. La plantilla de bug pide en qué release o PR apareció.
 - **Incidentes:** los issues con la etiqueta `incidente` se cuentan como contexto. Si un incidente de producción termina en un rollback o un hotfix, ya queda medido por esa vía.
 - **Duración del pipeline:** desde que empieza la corrida del CI en `develop` hasta que termina «Deploy staging». No incluye los E2E ni el reporte, que corren después del deploy.

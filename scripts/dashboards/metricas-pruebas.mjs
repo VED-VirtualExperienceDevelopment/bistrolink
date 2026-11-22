@@ -6,7 +6,7 @@
 //
 // Fuentes:
 //   - Kiwi TCMS: el JSON que deja datos-kiwi.py (casos y últimos Test Runs de
-//     cada Test Plan activo). Ruta en KIWI_DATOS.
+//     cada Test Plan activo de la versión develop). Ruta en KIWI_DATOS.
 //   - Codecov: API pública del repositorio (cobertura total y por flag).
 //
 // Si falta una fuente, su bloque dice que no hubo datos en esta publicación.
@@ -25,6 +25,11 @@ const ROOT = path.resolve(__dirname, "..", "..");
 const DASHBOARD = path.join(ROOT, "docs", "dashboard-calidad-proceso.md");
 const CODECOV =
   "https://api.codecov.io/api/v2/github/VED-VirtualExperienceDevelopment/repos/bistrolink";
+
+// Rama de la que se lee la cobertura: la de integración, la misma de los
+// Test Plans de Kiwi. main recién cambia con cada release.
+export const RAMA_COBERTURA = process.env.CODECOV_RAMA?.trim() || "develop";
+export const FLAGS_COBERTURA = ["backend", "frontend"];
 
 export const META_COBERTURA = 80; // Anexo 9: ≥ 80 % en la lógica de negocio
 const MAX_NUNCA = 10;
@@ -89,7 +94,7 @@ export function renderKiwi(datos) {
   const planes = datos.planes
     .map(resumenPlan)
     .filter((p) => p.casos > 0 || p.runsTotales > 0);
-  if (planes.length === 0) return "_Kiwi TCMS no tiene Test Plans activos con casos._";
+  if (planes.length === 0) return "_Kiwi TCMS no tiene Test Plans activos con casos en la versión develop._";
 
   const filas = planes.map((p) => {
     const u = p.ultimo;
@@ -152,23 +157,30 @@ export function renderCobertura(c) {
 | --- | --- | --- |
 ${[fila("**Total**", c.total, false), ...c.flags.map((f) => fila(f.nombre, f.cobertura, f.nombre === "backend"))].join("\n")}
 
-> Meta del Anexo 9: ≥ ${META_COBERTURA} % en la lógica de negocio, que está en el backend: el semáforo se aplica solo a esa fila. El total mezcla backend y frontend, y el frontend recién empezó a tener tests (BL-160). Detalle por archivo en [Codecov](https://app.codecov.io/gh/VED-VirtualExperienceDevelopment/bistrolink).`;
+> Meta del Anexo 9: ≥ ${META_COBERTURA} % en la lógica de negocio, que está en el backend: el semáforo se aplica solo a esa fila. El frontend se muestra para seguir su evolución: sus tests empezaron con BL-160 y la mayor parte de su código son pantallas, que cubren los E2E. El total mezcla los dos. Detalle por archivo en [Codecov](https://app.codecov.io/gh/VED-VirtualExperienceDevelopment/bistrolink).`;
 }
 
-async function leerCodecov() {
+export async function leerCodecov(fetchFn = globalThis.fetch) {
   const pedir = async (url) => {
-    const res = await fetch(url, { headers: { Accept: "application/json" } });
+    const res = await fetchFn(url, { headers: { Accept: "application/json" } });
     if (!res.ok) throw new Error(`Codecov respondió ${res.status}`);
     return res.json();
   };
-  const repo = await pedir(`${CODECOV}/`);
-  let flags = null;
-  try {
-    flags = await pedir(`${CODECOV}/flags/`);
-  } catch {
-    // Sin flags, se muestra solo el total.
+  // Totales del último commit de la rama, en total y por flag.
+  const totales = (flag) =>
+    pedir(
+      `${CODECOV}/totals/?branch=${encodeURIComponent(RAMA_COBERTURA)}${flag ? `&flag=${encodeURIComponent(flag)}` : ""}`,
+    );
+  const repo = { branch: RAMA_COBERTURA, totals: (await totales()).totals };
+  const results = [];
+  for (const flag of FLAGS_COBERTURA) {
+    try {
+      results.push({ flag_name: flag, coverage: (await totales(flag)).totals?.coverage });
+    } catch {
+      // Un flag sin datos en la rama no corta el resto.
+    }
   }
-  return datosCodecov(repo, flags);
+  return datosCodecov(repo, { results });
 }
 
 // ---------------------------------------------------------------------------
