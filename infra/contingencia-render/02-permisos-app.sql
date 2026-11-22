@@ -18,7 +18,13 @@
 
 \set ON_ERROR_STOP on
 
-GRANT CONNECT ON DATABASE bistrolink TO bistrolink_app;
+-- La base actual, con el nombre que tenga: Render puede agregarle un sufijo
+-- al nombre que se pidió (runbook, 4.3).
+DO $$
+BEGIN
+  EXECUTE format('GRANT CONNECT ON DATABASE %I TO bistrolink_app', current_database());
+END
+$$;
 GRANT USAGE ON SCHEMA public TO bistrolink_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO bistrolink_app;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO bistrolink_app;

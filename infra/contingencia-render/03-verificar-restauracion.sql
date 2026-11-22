@@ -1,7 +1,8 @@
 -- 03-verificar-restauracion.sql — Contingencia en Render (BL-217)
 --
 -- Se ejecuta conectado como bistrolink_user a la base "bistrolink", después de
--- 02-permisos-app.sql. No modifica nada. Runbook: contingencia-render.md, 4.4.
+-- 02-permisos-app.sql. No modifica datos: ANALYZE solo actualiza las
+-- estadísticas. Runbook: contingencia-render.md, 4.4.
 
 \set ON_ERROR_STOP on
 
@@ -12,17 +13,32 @@ SELECT migration_name, finished_at
  ORDER BY finished_at DESC
  LIMIT 1;
 
-\echo '== Datos restaurados (filas por tabla principal)'
-SELECT 'tenant' AS tabla, count(*) AS filas FROM tenant
-UNION ALL SELECT 'pedido', count(*) FROM pedido
-UNION ALL SELECT 'pago', count(*) FROM pago
-UNION ALL SELECT 'comprobante_fiscal', count(*) FROM comprobante_fiscal;
-
-\echo '== Fecha del dato más nuevo (para el RPO)'
-SELECT max(created_at) AS ultimo_pedido FROM pedido;
+\echo '== Datos restaurados: tamaño y filas por tabla'
+-- No se usa count(*): en Render el dueño de las tablas (bistrolink_user) no es
+-- superusuario y el RLS forzado también se le aplica, así que un count(*) sin
+-- app.tenant_id da error. El tamaño en disco y las estadísticas (después de
+-- ANALYZE) no pasan por el RLS. Una tabla con 0 bytes está vacía.
+DO $$
+DECLARE t record;
+BEGIN
+  -- Solo las tablas del esquema public: un ANALYZE general avisa por cada
+  -- tabla del sistema que el usuario de Render no puede analizar.
+  FOR t IN SELECT relname FROM pg_class
+            WHERE relnamespace = 'public'::regnamespace AND relkind = 'r' LOOP
+    EXECUTE format('ANALYZE public.%I', t.relname);
+  END LOOP;
+END
+$$;
+SELECT c.relname AS tabla,
+       pg_relation_size(c.oid) AS bytes,
+       c.reltuples::bigint AS filas_estimadas
+  FROM pg_class c
+ WHERE c.relnamespace = 'public'::regnamespace AND c.relkind = 'r'
+ ORDER BY pg_relation_size(c.oid) DESC, c.relname;
 
 \echo '== Tablas con RLS activo y forzado'
-SELECT count(*) FILTER (WHERE relrowsecurity) AS con_rls,
+SELECT count(*) AS tablas,
+       count(*) FILTER (WHERE relrowsecurity) AS con_rls,
        count(*) FILTER (WHERE relforcerowsecurity) AS con_rls_forzado
   FROM pg_class
  WHERE relnamespace = 'public'::regnamespace AND relkind = 'r';
@@ -30,5 +46,8 @@ SELECT count(*) FILTER (WHERE relrowsecurity) AS con_rls,
 \echo '== Políticas de RLS'
 SELECT count(*) AS politicas FROM pg_policies WHERE schemaname = 'public';
 
-\echo '== Rol de la API: tiene que dar rolsuper = f y rolbypassrls = f'
-SELECT rolname, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = 'bistrolink_app';
+\echo '== Roles: los dos tienen que dar rolsuper = f y rolbypassrls = f'
+SELECT rolname, rolsuper, rolbypassrls
+  FROM pg_roles
+ WHERE rolname IN ('bistrolink_app', 'bistrolink_user')
+ ORDER BY rolname;
