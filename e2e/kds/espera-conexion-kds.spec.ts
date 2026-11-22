@@ -60,10 +60,21 @@ async function erroresGravesAxe(page: Page) {
 /**
  * Corta y restablece el socket del KDS sin sacarle la red al navegador. Se
  * instala antes de recargar el KDS, así pasa por acá la conexión que abre.
+ *
+ * socket.io se conecta por polling y después prueba el WebSocket; recién
+ * cuando el cliente manda el paquete «5» (upgrade) deja el polling. Si se
+ * corta antes, se cierra el WebSocket a mitad de la prueba, socket.io sigue
+ * por polling con el pedido que ya estaba en curso y el KDS no se entera
+ * del corte (TC-E-088 fallaba así de a ratos). Por eso hay que esperar el
+ * upgrade (`esperarWebSocket`) antes de cortar.
  */
 async function controlarSocket(kdsPage: Page) {
   let cortado = false;
   const abiertos: { pagina: WebSocketRoute; servidor: WebSocketRoute }[] = [];
+  let avisarUpgrade: () => void = () => {};
+  const upgrade = new Promise<void>((listo) => {
+    avisarUpgrade = listo;
+  });
 
   // socket.io empieza con HTTP (polling) y después pasa a WebSocket.
   await kdsPage.route(/\/socket\.io\/.*transport=polling/, (ruta) =>
@@ -74,10 +85,33 @@ async function controlarSocket(kdsPage: Page) {
       void ws.close();
       return;
     }
-    abiertos.push({ pagina: ws, servidor: ws.connectToServer() });
+    const servidor = ws.connectToServer();
+    // Con onMessage, lo que manda la página ya no pasa solo al servidor.
+    ws.onMessage((mensaje) => {
+      if (mensaje === "5") avisarUpgrade();
+      servidor.send(mensaje);
+    });
+    abiertos.push({ pagina: ws, servidor });
   });
 
   return {
+    /** Espera a que socket.io deje el polling y use el WebSocket. */
+    async esperarWebSocket() {
+      let plazo: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          upgrade,
+          new Promise<never>((_, falla) => {
+            plazo = setTimeout(
+              () => falla(new Error("socket.io no pasó a WebSocket en 15 s")),
+              15000,
+            );
+          }),
+        ]);
+      } finally {
+        clearTimeout(plazo);
+      }
+    },
     async cortar() {
       cortado = true;
       for (const { pagina, servidor } of abiertos.splice(0)) {
@@ -159,7 +193,9 @@ test.describe("HU-038: tiempo de espera e indicador de conexión en el KDS", () 
       timeout: 15000,
     });
 
-    // Se cae el servidor (el navegador sigue con red).
+    // Se cae el servidor (el navegador sigue con red). Antes, socket.io
+    // tiene que estar en WebSocket: si no, el corte no lo afecta.
+    await socket.esperarWebSocket();
     await socket.cortar();
     await expect(indicador(kdsPageMozo)).toHaveAttribute(
       "data-estado",
