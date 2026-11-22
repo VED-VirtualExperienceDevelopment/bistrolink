@@ -1,4 +1,4 @@
-# 📈 Calidad del proceso (métricas DORA)
+# 📈 Calidad del proceso
 
 <!-- SOLO-REPO:start -->
 
@@ -77,6 +77,39 @@ _Sin datos en esta publicación: se completa en la próxima corrida del workflow
 
 ---
 
+## 🧪 Plan de pruebas (Kiwi TCMS)
+
+<!-- AUTO:pruebas-kiwi:start -->
+
+_Sin datos en esta publicación: se completa en la próxima corrida del workflow «Publicar dashboards»._
+
+<!-- AUTO:pruebas-kiwi:end -->
+
+---
+
+## 🎯 Cobertura de código (Codecov)
+
+<!-- AUTO:pruebas-cobertura:start -->
+
+_Sin datos en esta publicación: se completa en la próxima corrida del workflow «Publicar dashboards»._
+
+<!-- AUTO:pruebas-cobertura:end -->
+
+---
+
+## 🔐 Hallazgos de seguridad
+
+Se revisan en cada herramienta; el pipeline corta ante cualquier hallazgo crítico o alto (Anexo 9 §10.2, meta: 0):
+
+| Herramienta | Dónde |
+| --- | --- |
+| CodeQL y Trivy | [Security → Code scanning](https://github.com/VED-VirtualExperienceDevelopment/bistrolink/security/code-scanning) |
+| SonarCloud | [Proyecto en SonarCloud](https://sonarcloud.io/project/overview?id=VED-VirtualExperienceDevelopment_bistrolink) |
+| Dependencias | [Security → Dependabot](https://github.com/VED-VirtualExperienceDevelopment/bistrolink/security/dependabot) |
+| DAST (OWASP ZAP) | Corrida diaria del workflow `dast.yml` ([criterio de salida](https://github.com/VED-VirtualExperienceDevelopment/bistrolink/blob/develop/docs/security/dast.md)) |
+
+---
+
 ## 📖 Cómo se calcula
 
 | Métrica | Definición | Fuente | Meta (Anexo 9 §10.2) |
@@ -88,6 +121,8 @@ _Sin datos en esta publicación: se completa en la próxima corrida del workflow
 
 - **Staging (Línea de Base, Tabla 24):** las mismas cuatro métricas sobre los jobs «Deploy staging» de las últimas 4 semanas. Frecuencia: deploys exitosos por semana (meta ≥ 3). Lead time: desde que se abre el PR hasta que su merge queda desplegado en staging (meta < 2 días hábiles, 48 h). Tasa de fallas: deploys fallidos sobre el total (meta < 15 %). Recuperación: desde un deploy fallido hasta el siguiente exitoso (meta < 1 día hábil, 24 h).
 - **Un deploy fallido** (por ejemplo, porque falló el *pre-deploy* de migraciones) no es una falla en producción: Railway deja la versión anterior. Se muestra en la tabla de releases, pero no cuenta en la tasa de fallas.
+- **Plan de pruebas (Kiwi TCMS):** por cada Test Plan activo, los casos confirmados y los últimos 10 Test Runs (los que conserva la limpieza de `cleanup-test-runs.yml`). Aprobación: aprobados sobre ejecutados del último run. «Nunca ejecutados»: casos sin ninguna ejecución terminada en esos runs. El resumen de cada corrida (aprobados, fallidos, salteados y duración) está en el Summary de la corrida del CI.
+- **Regresiones:** bugs con la etiqueta `regresion`: algo que ya funcionaba y dejó de funcionar después de un cambio. La plantilla de bug pide en qué release o PR apareció.
 - **Incidentes:** los issues con la etiqueta `incidente` se cuentan como contexto. Si un incidente de producción termina en un rollback o un hotfix, ya queda medido por esa vía.
 - **Duración del pipeline:** desde que empieza la corrida del CI en `develop` hasta que termina «Deploy staging». No incluye los E2E ni el reporte, que corren después del deploy.
 
