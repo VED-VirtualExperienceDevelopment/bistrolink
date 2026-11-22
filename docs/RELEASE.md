@@ -5,6 +5,7 @@ Cómo se pasa una versión de `develop` a producción, cómo se corrige un error
 | Versión | Fecha | Cambios |
 |---|---|---|
 | 1.0 | 07/11/2026 | Primera versión: release por tag, aprobación, smoke test, rollback y hotfix (BL-220). |
+| 1.1 | 21/11/2026 | «Después» del release: actualizar el tag de la contingencia en Render (BL-217). |
 
 ---
 
@@ -70,6 +71,7 @@ Cómo se pasa una versión de `develop` a producción, cómo se corrige un error
 - [ ] Probar a mano el login, el menú del tenant de demo y el panel de administración.
 - [ ] Revisar los logs de la API en Railway (sin errores al arrancar).
 - [ ] Si hubo cambios solo en `main`, hacer el *back-merge* de `main` a `develop`.
+- [ ] Contingencia en Render: PR que cambia en `render.yaml` el tag de las imágenes de API y Auth y `NEXT_PUBLIC_APP_VERSION` al tag nuevo, para que la contingencia no levante una versión vieja (`runbooks/contingencia-render.md`, sección 7).
 - [ ] Registrar el release en el Anexo 12 (registro de verificaciones).
 
 ---

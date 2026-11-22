@@ -15,6 +15,7 @@
 |---|---|
 | [Migraciones y seed](runbooks/migraciones-y-seed.md) | Cómo llegan las migraciones a cada entorno, cómo correr el seed y qué hacer si falla el *pre-deploy* |
 | [Respaldo y restauración](runbooks/respaldo-y-restauracion.md) | Configuración, operación y restauración de los respaldos de las bases |
+| [Contingencia en Render](runbooks/contingencia-render.md) | Cómo se levanta producción en Render si Railway no está disponible: preparación, restauración desde S3 o R2, validación, vuelta a Railway y simulacro con RTO y RPO (BL-217) |
 | [Respuesta a incidentes](runbooks/respuesta-a-incidentes.md) | Quién hace qué en los primeros 30 minutos de un incidente: severidad, bitácora, contención y revocación de credenciales |
 | [Bot de WhatsApp con Evolution API](runbooks/whatsapp-evolution.md) | Variables, Evolution en Railway, webhook de la instancia, prueba local y datos personales del bot de pedidos (HU-010) |
 
