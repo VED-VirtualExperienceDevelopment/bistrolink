@@ -293,9 +293,42 @@ describe('WhatsApp: conversación del pedido para retirar (HU-010, BL-112)', () 
     expect(partes.join('\n').split('\n')).toHaveLength(50);
 
     const textoDeLaCarta = textoCarta(carta()).join('\n');
-    expect(textoDeLaCarta).toContain('1. Milanesa — $ 350');
-    expect(textoDeLaCarta).toContain('2. Flan — $ 120,50');
-    expect(textoDeLaCarta).toContain('3. Agua — agotado');
+    expect(textoDeLaCarta).toContain('1. Milanesa · $ 350');
+    expect(textoDeLaCarta).toContain('2. Flan · $ 120,50');
+  });
+
+  it('[TC-U-673] la carta para WhatsApp: instrucciones arriba, categorías en negrita y sin los agotados, con la numeración de la carta completa', () => {
+    const conAgotado = carta({
+      items: [
+        { ...carta().items[0] },
+        { ...carta().items[1], disponible: false },
+        { ...carta().items[2], disponible: true, categoria: 'Bebidas' },
+      ],
+    });
+    const lineas = textoCarta(conAgotado).join('\n').split('\n');
+    expect(lineas[0]).toBe('*La Cantina* · Pedido para retirar');
+    expect(lineas[1]).toContain('Mandá el número del plato');
+    expect(lineas).toContain('*PLATOS*');
+    expect(lineas).toContain('*BEBIDAS*');
+    // La categoría Postres solo tenía el Flan (agotado): no aparece.
+    expect(lineas).not.toContain('*POSTRES*');
+    expect(lineas.join('\n')).not.toContain('Flan');
+    // El Agua sigue siendo el 3: la numeración no se corre.
+    expect(lineas).toContain('3. Agua · $ 90');
+    expect(lineas[lineas.length - 1]).toBe(
+      'Cuando termines, mandá *0*. Para ver la carta otra vez: *menu*.',
+    );
+    // Pedir el 2 (agotado) avisa que está agotado.
+    expect(responder(ACEPTADO, '2', conAgotado).mensajes[0]).toContain(
+      'Flan está agotado',
+    );
+
+    const todoAgotado = carta({
+      items: carta().items.map((i) => ({ ...i, disponible: false })),
+    });
+    expect(textoCarta(todoAgotado)).toEqual([
+      '*La Cantina*\nAhora no hay platos disponibles para pedir. Probá de nuevo más tarde.',
+    ]);
   });
 
   it('[TC-U-655] primero el aviso de privacidad: aunque el primer mensaje sea «1», no se acepta sin haberlo mostrado', () => {
@@ -435,7 +468,9 @@ describe('WhatsApp: conversación del pedido para retirar (HU-010, BL-112)', () 
     const menu = responder(confirmando, 'Menú', carta());
     expect(menu.estado.paso).toBe('ARMANDO');
     expect(menu.estado.carrito).toEqual(conPlatos.carrito);
-    expect(menu.mensajes.join('\n')).toContain('Carta de La Cantina');
+    expect(menu.mensajes.join('\n')).toContain(
+      '*La Cantina* · Pedido para retirar',
+    );
 
     expect(responder(confirmando, 'cancelar', carta()).estado).toEqual(
       ACEPTADO,

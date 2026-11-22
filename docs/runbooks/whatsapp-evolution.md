@@ -5,7 +5,7 @@
 
 ## 1. Qué es
 
-El comensal le escribe al número de WhatsApp del local y arma un **pedido para retirar** con la carta numerada. Al confirmar, la API crea el pedido con el canal `WHATSAPP` (las mismas reglas que el retiro web: franja horaria, stock y precios del servidor) y le manda el **link de pago** de HU-033. El pago, el código R-NNN y la entrega siguen el flujo de siempre.
+El comensal le escribe al número de WhatsApp del local y arma un **pedido para retirar** con la carta numerada. Al confirmar, la API crea el pedido con el canal `WHATSAPP` (las mismas reglas que el retiro web: franja horaria, stock y precios del servidor) y le manda el **link de pago** de HU-033. El pago y la entrega siguen el flujo de siempre; además, el bot le avisa por WhatsApp cuando se aprueba el pago (con el código de retiro R-NNN) y cuando cocina marca el pedido como listo (BL-604). Si Evolution no responde, el aviso no sale y el pago y el KDS siguen igual.
 
 [Evolution API](https://github.com/evolution-foundation/evolution-api) conecta un número de WhatsApp como si fuera WhatsApp Web (Baileys) y nos reenvía cada mensaje por un webhook.
 
@@ -75,14 +75,14 @@ Cada entorno se arma **desde cero**: no se clona ni se sincroniza staging en pro
 | Ajuste (Settings)        | Evolution                   | Postgres de Evolution  | Redis de Evolution     |
 | ------------------------ | --------------------------- | ---------------------- | ---------------------- |
 | Región                   | La misma que la API         | La misma que la API    | La misma que la API    |
-| Límites (Replica Limits) | 1 vCPU · 1 GB               | 0,5 vCPU · 512 MB      | 0,25 vCPU · 256 MB     |
+| Límites (Replica Limits) | 1 vCPU · 1 GB               | 0,5 vCPU · 0,5 GB      | 0,5 vCPU · 0,5 GB      |
 | Healthcheck Path         | `/` (timeout 120 s)         | No aplica (no es HTTP) | No aplica (no es HTTP) |
 | Restart Policy           | On Failure                  | On Failure             | On Failure             |
 | Serverless y Teardown    | Apagados                    | Apagados               | Apagados               |
 | TCP Proxy (Networking)   | —                           | **Borrado**            | **Borrado**            |
 | Dominio público          | Solo para el manager (§5.4) | No                     | No                     |
 
-- Los límites los cambia un Admin del workspace. Railway cobra por lo usado, no por el límite: el límite evita que una falla se lleve los recursos de los demás. Revisar **Metrics** a los pocos días y subir Evolution a 1,5 GB si anda cerca de 1 GB.
+- 0,5 vCPU y 0,5 GB es el mínimo que permite Railway. Los límites los cambia un Admin del workspace. Railway cobra por lo usado, no por el límite: el límite evita que una falla se lleve los recursos de los demás. Revisar **Metrics** a los pocos días y subir Evolution a 1,5 GB si anda cerca de 1 GB.
 - El healthcheck de Railway corre **solo durante el deploy**: evita que un deploy roto reemplace a uno sano, pero no monitorea después. Si Evolution no alcanza su Postgres o su Redis, no arranca y el deploy nuevo no se activa. Para las bases, el reinicio automático es la Restart Policy.
 - **Serverless apagado** en Evolution: si se duerme, se corta la conexión con WhatsApp y los mensajes no llegan.
 
@@ -177,13 +177,18 @@ WHATSAPP_WEBHOOK_SECRETO=<generar, §4>
 WHATSAPP_TELEFONO_CLAVE=<generar, §4>
 ```
 
-## 8. Datos personales
+## 8. Respaldo y contingencia
+
+- **La base de Evolution no se respalda, a propósito.** Con `DATABASE_SAVE_DATA_*=false` solo guarda la instancia y la **sesión de WhatsApp**, que es una credencial: una copia permitiría usar el número. Si se pierde, se rehace en unos 10 minutos: crear la instancia, escanear el QR (§5.4) y configurar el webhook (§6). Ningún pedido ni dato del negocio vive ahí: están en `bistrolink-db`, que sí tiene respaldo.
+- **Si se cae Railway:** Evolution está incluido en la contingencia en Render (`docs/runbooks/contingencia-render.md`). Como no hay datos que restaurar, se levanta de cero y se vuelve a escanear el QR, así que hace falta alguien con el teléfono del chip. El bot es un canal degradable: mientras no esté, los comensales piden por el QR o la web.
+
+## 9. Datos personales
 
 - La conversación **no guarda el número**: la clave es `HMAC-SHA256(WHATSAPP_TELEFONO_CLAVE, tenant:número)`. Vence a los 30 minutos y se borra con el próximo mensaje del local; también se borra al eliminar el establecimiento.
 - El número queda en el pedido (`retiro_contacto`) **solo** si el comensal aceptó el aviso de privacidad, igual que en el retiro web. Sale con la anonimización por contacto de siempre (runbook de privacidad).
 - Los logs muestran solo los últimos 3 dígitos del número y nunca el texto de los mensajes.
 
-## 9. Problemas comunes
+## 10. Problemas comunes
 
 **Cómo buscar en los logs de Railway:** el buscador mira el texto del mensaje, no los campos del pedido. Buscar `webhooks/whatsapp` no encuentra las llamadas; buscar `request completed` y abrir la línea, o los textos del bot (`WhatsApp`, `no está configurado`).
 

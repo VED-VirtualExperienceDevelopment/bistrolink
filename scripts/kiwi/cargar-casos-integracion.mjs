@@ -1204,6 +1204,12 @@ const DATOS_INTEGRACION = {
     priority: "P1",
     tags: ["multi-tenant", "rls", "webhook"],
   }),
+  // BL-604: avisos por WhatsApp de pago aprobado y pedido listo.
+  247: whatsapp({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-604", "avisos", "codigo-de-retiro"],
+  }),
 };
 /**
  * BL-435: datos de los E2E TC-E-017 en adelante, con los criterios de

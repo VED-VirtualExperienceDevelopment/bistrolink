@@ -1,11 +1,13 @@
 import {
   Injectable,
+  Optional,
   BadRequestException,
   ConflictException,
   NotFoundException,
 } from '@nestjs/common';
 import { PedidoEstado, Prisma } from '@prisma/client';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
+import { AvisosWhatsappService } from '../whatsapp/avisos-whatsapp.service';
 import { aPedidoKds } from './pedido-kds.mapper';
 import { normalizarCodigoRetiro } from './retiro';
 import type { LlamadoPagoEfectivo } from './kds.gateway';
@@ -83,7 +85,12 @@ export interface ResultadoTransicion {
 
 @Injectable()
 export class PedidosTransicionService {
-  constructor(private readonly tenantPrisma: TenantPrismaService) {}
+  constructor(
+    private readonly tenantPrisma: TenantPrismaService,
+    // HU-010 (BL-604): aviso de «pedido listo» a los pedidos del bot.
+    // Opcional, para los tests que arman el servicio a mano.
+    @Optional() private readonly avisosWhatsapp?: AvisosWhatsappService,
+  ) {}
 
   /**
    * Transición de estado pedida desde el KDS. Reusa exactamente el mismo
@@ -98,101 +105,118 @@ export class PedidosTransicionService {
   }): Promise<ResultadoTransicion> {
     const { tenantId, keycloakId, pedidoId, nuevoEstado } = params;
 
-    return this.tenantPrisma.runInTenantContext(tenantId, async (tx) => {
-      const pedido = await tx.pedido.findUnique({ where: { id: pedidoId } });
+    const resultado = await this.tenantPrisma.runInTenantContext(
+      tenantId,
+      async (tx): Promise<ResultadoTransicion> => {
+        const pedido = await tx.pedido.findUnique({ where: { id: pedidoId } });
 
-      // No distinguir "no existe" de "existe en otro tenant" (RLS ya lo
-      // oculta): ambos casos devuelven el mismo 404 hacia el cliente WS.
-      if (!pedido) {
-        throw new NotFoundException('Pedido no encontrado');
-      }
+        // No distinguir "no existe" de "existe en otro tenant" (RLS ya lo
+        // oculta): ambos casos devuelven el mismo 404 hacia el cliente WS.
+        if (!pedido) {
+          throw new NotFoundException('Pedido no encontrado');
+        }
 
-      const permitidas = TRANSICIONES_KDS[pedido.estado] ?? [];
-      if (!permitidas.includes(nuevoEstado)) {
-        throw new BadRequestException(
-          `Transición inválida: ${pedido.estado} → ${nuevoEstado}`,
-        );
-      }
-      // HU-040 (BL-210): un pedido para retirar se entrega verificando el
-      // código que muestra el comensal (POST /pedidos/:id/entregar-retiro).
-      if (nuevoEstado === PedidoEstado.ENTREGADO && pedido.codigoRetiro) {
-        throw new BadRequestException(MENSAJE_ENTREGA_CON_CODIGO);
-      }
+        const permitidas = TRANSICIONES_KDS[pedido.estado] ?? [];
+        if (!permitidas.includes(nuevoEstado)) {
+          throw new BadRequestException(
+            `Transición inválida: ${pedido.estado} → ${nuevoEstado}`,
+          );
+        }
+        // HU-040 (BL-210): un pedido para retirar se entrega verificando el
+        // código que muestra el comensal (POST /pedidos/:id/entregar-retiro).
+        if (nuevoEstado === PedidoEstado.ENTREGADO && pedido.codigoRetiro) {
+          throw new BadRequestException(MENSAJE_ENTREGA_CON_CODIGO);
+        }
 
-      // El JWT trae el keycloakId (payload.sub), pero el historial
-      // referencia Usuario.id (PK interna) — hay que resolverlo. A
-      // diferencia de Comensal/Cocina (que nunca tienen fila en Usuario,
-      // por diseño), un token MOZO/ADMIN SIEMPRE debería resolver a una
-      // fila real: si no la encuentra, es una desincronización real entre
-      // Keycloak y Postgres, no un caso válido a tolerar con un
-      // usuarioId null. Se corta acá en vez de dejar un historial huérfano.
-      const usuario = await tx.usuario.findUnique({
-        where: { keycloakId },
-      });
+        // El JWT trae el keycloakId (payload.sub), pero el historial
+        // referencia Usuario.id (PK interna) — hay que resolverlo. A
+        // diferencia de Comensal/Cocina (que nunca tienen fila en Usuario,
+        // por diseño), un token MOZO/ADMIN SIEMPRE debería resolver a una
+        // fila real: si no la encuentra, es una desincronización real entre
+        // Keycloak y Postgres, no un caso válido a tolerar con un
+        // usuarioId null. Se corta acá en vez de dejar un historial huérfano.
+        const usuario = await tx.usuario.findUnique({
+          where: { keycloakId },
+        });
 
-      if (!usuario) {
-        throw new NotFoundException(
-          'El usuario autenticado (MOZO/ADMIN) no tiene fila correspondiente en Usuario — revisar sincronización con Keycloak',
-        );
-      }
+        if (!usuario) {
+          throw new NotFoundException(
+            'El usuario autenticado (MOZO/ADMIN) no tiene fila correspondiente en Usuario — revisar sincronización con Keycloak',
+          );
+        }
 
-      // HU-042 (BL-463, ADR 0010): con la cola activa, pasar un pedido a
-      // preparación a mano respeta el límite. El lock evita que un pago
-      // aprobado en el mismo momento ocupe el mismo lugar.
-      if (nuevoEstado === PedidoEstado.EN_PREPARACION) {
-        const limite = await limiteDeLaCola(tx, tenantId);
-        if (limite !== null) {
-          await bloquearColaDelTenant(tx, tenantId);
-          if ((await contarEnPreparacion(tx, tenantId)) >= limite) {
-            throw new BadRequestException(
-              `La cocina está al límite de ${limite} pedidos en preparación. El pedido sigue en espera.`,
-            );
+        // HU-042 (BL-463, ADR 0010): con la cola activa, pasar un pedido a
+        // preparación a mano respeta el límite. El lock evita que un pago
+        // aprobado en el mismo momento ocupe el mismo lugar.
+        if (nuevoEstado === PedidoEstado.EN_PREPARACION) {
+          const limite = await limiteDeLaCola(tx, tenantId);
+          if (limite !== null) {
+            await bloquearColaDelTenant(tx, tenantId);
+            if ((await contarEnPreparacion(tx, tenantId)) >= limite) {
+              throw new BadRequestException(
+                `La cocina está al límite de ${limite} pedidos en preparación. El pedido sigue en espera.`,
+              );
+            }
           }
         }
-      }
 
-      const actualizado = await tx.pedido.update({
-        where: { id: pedidoId },
-        data: { estado: nuevoEstado },
-        select: {
-          id: true,
-          estado: true,
-          updatedAt: true,
-          mesa: { select: { numero: true } },
-          lineas: {
-            select: { id: true, nombreSnapshot: true, cantidad: true },
+        const actualizado = await tx.pedido.update({
+          where: { id: pedidoId },
+          data: { estado: nuevoEstado },
+          select: {
+            id: true,
+            estado: true,
+            updatedAt: true,
+            mesa: { select: { numero: true } },
+            lineas: {
+              select: { id: true, nombreSnapshot: true, cantidad: true },
+            },
           },
-        },
-      });
+        });
 
-      await tx.pedidoEstadoHistorial.create({
-        data: {
-          tenantId,
-          pedidoId,
-          usuarioId: usuario.id,
-          estadoAnterior: pedido.estado,
-          estadoNuevo: nuevoEstado,
-        },
-      });
+        await tx.pedidoEstadoHistorial.create({
+          data: {
+            tenantId,
+            pedidoId,
+            usuarioId: usuario.id,
+            estadoAnterior: pedido.estado,
+            estadoNuevo: nuevoEstado,
+          },
+        });
 
-      // HU-042 (BL-463): el pedido salió de preparación y liberó un lugar:
-      // pasa a preparación el más antiguo de la cola, en esta transacción.
-      const promovidos =
-        nuevoEstado === PedidoEstado.LISTO_PARA_ENTREGAR
-          ? await completarCapacidad(tx, tenantId)
-          : [];
+        // HU-042 (BL-463): el pedido salió de preparación y liberó un lugar:
+        // pasa a preparación el más antiguo de la cola, en esta transacción.
+        const promovidos =
+          nuevoEstado === PedidoEstado.LISTO_PARA_ENTREGAR
+            ? await completarCapacidad(tx, tenantId)
+            : [];
 
-      return {
-        actualizado: {
-          id: actualizado.id,
-          estado: actualizado.estado,
-          actualizadoEn: actualizado.updatedAt.toISOString(),
-          mesaNumero: actualizado.mesa.numero,
-          lineas: actualizado.lineas,
-        },
-        promovidos,
-      };
-    });
+        return {
+          actualizado: {
+            id: actualizado.id,
+            estado: actualizado.estado,
+            actualizadoEn: actualizado.updatedAt.toISOString(),
+            mesaNumero: actualizado.mesa.numero,
+            lineas: actualizado.lineas,
+          },
+          promovidos,
+        };
+      },
+    );
+
+    // HU-010 (BL-604): con el cambio ya confirmado, si el pedido vino por el
+    // bot de WhatsApp se le avisa al comensal que está listo. En segundo
+    // plano: el KDS no espera al aviso.
+    if (
+      nuevoEstado === PedidoEstado.LISTO_PARA_ENTREGAR &&
+      this.avisosWhatsapp
+    ) {
+      this.avisosWhatsapp.enSegundoPlano(
+        this.avisosWhatsapp.pedidoListo(tenantId, pedidoId),
+        pedidoId,
+      );
+    }
+    return resultado;
   }
 
   /**

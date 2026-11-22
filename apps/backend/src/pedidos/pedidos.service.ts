@@ -31,6 +31,7 @@ import {
 import { cantidadesPorItem, faltaStock } from '../stock/estado-stock';
 import { completarCapacidad, type PedidoPromovido } from './cola-kds';
 import { SincronizacionPosService } from '../pos/sincronizacion-pos.service';
+import { AvisosWhatsappService } from '../whatsapp/avisos-whatsapp.service';
 import { sumarAceptadasEnTx } from '../complementos/metricas-sugerencia';
 
 // BL-311 (RD.03, prepago): el pedido espera el pago aprobado antes de ir a
@@ -116,6 +117,9 @@ export class PedidosService {
     private readonly descuentoStock: DescuentoStockService,
     // HU-011 (BL-488): opcional, para los tests que arman el servicio a mano.
     @Optional() private readonly pos?: SincronizacionPosService,
+    // HU-010 (BL-604): aviso por WhatsApp a los pedidos del bot. Opcional
+    // por lo mismo.
+    @Optional() private readonly avisosWhatsapp?: AvisosWhatsappService,
   ) {}
 
   /**
@@ -367,6 +371,12 @@ export class PedidosService {
     }
     // HU-011 (BL-488): la venta al POS del local, en segundo plano.
     this.pos?.enviarEnSegundoPlano(tenantId, pedido.id);
+    // HU-010 (BL-604): si el pedido vino por el bot, el código de retiro
+    // por WhatsApp. En segundo plano: el pago ya está confirmado.
+    this.avisosWhatsapp?.enSegundoPlano(
+      this.avisosWhatsapp.pagoAprobado(tenantId, pedido.id),
+      pedido.id,
+    );
   }
 
   /**
