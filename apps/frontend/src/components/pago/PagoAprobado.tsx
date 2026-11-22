@@ -25,6 +25,7 @@ import {
   type EstadoPagoDelPedido,
   type RebajaIva,
 } from './pago.utils';
+import { textoCuandoEsteListo } from '@/components/retiro/retiro.utils';
 import {
   eleccionGuardada,
   etiquetaDePropina,
@@ -111,6 +112,9 @@ export function PagoAprobado({
   // HU-040 (BL-210): código de retiro (R-042). Lo asigna el backend al
   // aprobarse el pago y viene en GET /pedidos/:id/pagos.
   const [codigoRetiro, setCodigoRetiro] = useState<string | null>(null);
+  // BL-603: pedido del bot de WhatsApp (lo avisa el bot). null hasta la
+  // primera respuesta, para no ofrecer la notificación del navegador antes.
+  const [avisoPorWhatsapp, setAvisoPorWhatsapp] = useState<boolean | null>(null);
   const tituloRef = useRef<HTMLHeadingElement>(null);
   // BL-502: cuando el mozo lo entrega, «Gracias por tu compra» (con la hora).
   const [entregado, setEntregado] = useState<{ en: string | null } | null>(null);
@@ -133,6 +137,7 @@ export function PagoAprobado({
         if (estado.totales) setTotales(estado.totales);
         setConsultado(true);
         if (estado.codigoRetiro) setCodigoRetiro(estado.codigoRetiro);
+        setAvisoPorWhatsapp(estado.avisoPorWhatsapp === true);
         const resultado = estadoComprobante(estado);
         if (resultado.tipo === 'emitido') {
           setComprobante(resultado);
@@ -238,7 +243,7 @@ export function PagoAprobado({
           ¡Tu pedido ya está en cocina!
         </h1>
         <p className="text-sm text-[#5a575e]">
-          {esMesa ? 'Te lo llevamos a la mesa apenas esté listo.' : 'Te avisamos acá cuando esté listo para retirar.'}
+          {textoCuandoEsteListo(esMesa, avisoPorWhatsapp)}
         </p>
 
         <div className="mt-4 w-full rounded-[0.75rem] bg-marca/10 px-4 py-5">
@@ -264,6 +269,7 @@ export function PagoAprobado({
           estadoInicial="RECIBIDO"
           paraRetirar={!esMesa}
           codigoRetiro={codigoRetiro}
+          avisoPorWhatsapp={avisoPorWhatsapp}
           onCambioDeEstado={(estado, en) => {
             if (estado === 'ENTREGADO') setEntregado({ en });
           }}

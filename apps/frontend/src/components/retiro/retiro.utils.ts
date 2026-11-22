@@ -178,3 +178,60 @@ export function permisoDeAviso(
   }
   return "no-soportado";
 }
+
+/**
+ * BL-603: qué ofrece la pantalla de seguimiento, antes de que el pedido esté
+ * listo, para avisarle al comensal.
+ *
+ * - Pedido del bot de WhatsApp: nada en el navegador (lo avisa el bot).
+ *   `null` mientras no se sabe el canal, para no mostrar el botón un
+ *   instante y sacarlo.
+ * - Pedido web: el botón de la notificación del navegador si todavía no dio
+ *   permiso, o el texto de que quedó activada si ya lo dio. La notificación
+ *   solo llega con la página abierta (no hay notificaciones push), y los
+ *   textos lo dicen.
+ */
+export type AvisoDelSeguimiento =
+  | { tipo: "nada" }
+  | { tipo: "boton"; boton: string; ayuda: string }
+  | { tipo: "activado"; texto: string };
+
+export const TEXTO_AYUDA_AVISO =
+  "Te mandamos una notificación mientras esta página siga abierta.";
+export const TEXTO_AVISO_ACTIVADO =
+  "Listo: te mandamos una notificación cuando esté listo, mientras esta página siga abierta.";
+
+export function avisoDelSeguimiento(
+  porWhatsapp: boolean | null,
+  permiso: PermisoAviso,
+): AvisoDelSeguimiento {
+  if (porWhatsapp !== false) return { tipo: "nada" };
+  if (permiso === "default") {
+    return {
+      tipo: "boton",
+      boton: "Avisarme cuando esté listo",
+      ayuda: TEXTO_AYUDA_AVISO,
+    };
+  }
+  if (permiso === "granted") {
+    return { tipo: "activado", texto: TEXTO_AVISO_ACTIVADO };
+  }
+  return { tipo: "nada" };
+}
+
+/**
+ * BL-603: debajo de «¡Tu pedido ya está en cocina!», según quién avisa
+ * (null: todavía no se sabe el canal).
+ */
+export function textoCuandoEsteListo(
+  esMesa: boolean,
+  porWhatsapp: boolean | null,
+): string {
+  if (esMesa) return "Te lo llevamos a la mesa apenas esté listo.";
+  if (porWhatsapp === null)
+    return "Te avisamos cuando esté listo para retirar.";
+  if (porWhatsapp) {
+    return "Te avisamos por WhatsApp cuando esté listo para retirar.";
+  }
+  return "Te avisamos en esta página cuando esté listo para retirar.";
+}

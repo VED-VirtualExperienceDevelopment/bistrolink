@@ -242,6 +242,8 @@ export interface EstadoPagoDelPedido {
   estadoPedido: string;
   /** HU-040 (BL-210): código de retiro (R-042); null en mesa o sin pagar. Opcional: un backend anterior no lo trae. */
   codigoRetiro?: string | null;
+  /** BL-603: pedido del bot de WhatsApp. Opcional: un backend anterior no lo trae. */
+  avisoPorWhatsapp?: boolean;
   pago: {
     id: string;
     estado: EstadoPago;
