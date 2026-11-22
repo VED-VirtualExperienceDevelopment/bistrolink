@@ -100,6 +100,28 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/dashboards/metricas-dora.mjs
 
+      # BL-601: plan de pruebas. datos-kiwi.py lee Kiwi TCMS (solo lectura,
+      # con los mismos secrets que los reportes del CI) y metricas-pruebas.mjs
+      # arma la sección con esos datos y la cobertura de Codecov (API
+      # pública). Si Kiwi no responde (por ejemplo, porque Railway lo
+      # suspendió), el sitio se publica igual y la sección lo avisa.
+      - name: Datos de Kiwi TCMS (plan de pruebas)
+        continue-on-error: true
+        timeout-minutes: 5
+        env:
+          KIWI_URL: ${{ secrets.KIWI_TCMS_URL }}
+          KIWI_USERNAME: ${{ secrets.KIWI_TCMS_USERNAME }}
+          KIWI_PASSWORD: ${{ secrets.KIWI_TCMS_PASSWORD }}
+        run: python3 scripts/dashboards/datos-kiwi.py "$RUNNER_TEMP/kiwi.json"
+
+      - name: Dashboard de calidad del proceso (plan de pruebas)
+        continue-on-error: true
+        run: |
+          if [ -f "$RUNNER_TEMP/kiwi.json" ]; then
+            export KIWI_DATOS="$RUNNER_TEMP/kiwi.json"
+          fi
+          node scripts/dashboards/metricas-pruebas.mjs
+
       # BL-487: reporte Allure de los E2E, ya generado y sanitizado por el CI
       # (artifact «allure-e2e»). Se toma el más nuevo de una corrida de
       # develop de este mismo repositorio (no de un fork). Corre en todas las
@@ -176,6 +198,9 @@ jobs:
     permissions:
       contents: read
       issues: read
+      # BL-601: métricas DORA de producción en el correo (solo lectura).
+      deployments: read
+      pull-requests: read
     steps:
       - name: Checkout
         uses: actions/checkout@v7

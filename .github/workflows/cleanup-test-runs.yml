@@ -6,6 +6,12 @@
 # tienen start_date) y borra el resto vía TestRun.remove (API RPC:
 # https://kiwitcms.readthedocs.io/en/latest/modules/tcms.rpc.api.testrun.html).
 #
+# BL-601: los Test Runs que son evidencia de una regresión por capa o del
+# cierre NO se borran nunca, aunque queden fuera de los últimos N: son los
+# que tienen en el resumen (summary) la marca [REGRESION-HX] (por ejemplo,
+# [REGRESION-H8]) o [CIERRE]. La marca se agrega a mano en Kiwi al terminar
+# la regresión (docs/informes/README.md).
+#
 # Por defecto corre en modo dry-run (no borra nada, solo lista qué borraría)
 # para poder revisar antes de confirmar. Para borrar de verdad, correr de
 # nuevo con el input "dry_run" en false.
@@ -166,12 +172,23 @@ jobs:
               def sort_key(r):
                   return (r.get("start_date") or "", r["id"])
 
-              runs_sorted = sorted(runs, key=sort_key, reverse=True)
+              # BL-601: evidencia de regresión o de cierre, nunca se borra.
+              def es_evidencia(r):
+                  resumen = (r.get("summary") or "").upper()
+                  return "[REGRESION-" in resumen or "[CIERRE]" in resumen
+
+              evidencia = [r for r in runs if es_evidencia(r)]
+              runs_sorted = sorted(
+                  [r for r in runs if not es_evidencia(r)], key=sort_key, reverse=True
+              )
               keep = runs_sorted[:keep_last]
               to_remove = runs_sorted[keep_last:]
 
-              print(f"TP-{plan_id} ({plan_name}): {len(runs_sorted)} runs totales — "
-                    f"conservando {len(keep)}, borrando {len(to_remove)}")
+              print(f"TP-{plan_id} ({plan_name}): {len(runs)} runs totales — "
+                    f"conservando {len(keep)} recientes y {len(evidencia)} de evidencia, "
+                    f"borrando {len(to_remove)}")
+              for r in evidencia:
+                  print(f"  conservado (evidencia) TR-{r['id']}: {r['summary']}")
 
               for r in to_remove:
                   prefix = "  [DRY RUN] borraría" if dry_run else "  borrando"

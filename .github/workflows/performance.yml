@@ -199,6 +199,17 @@ jobs:
           ET.ElementTree(testsuites).write("performance-junit.xml", encoding="utf-8", xml_declaration=True)
           PY
 
+      # BL-601: resumen de la corrida en el Summary (informativo).
+      - name: Resumen de las pruebas (Summary)
+        if: always()
+        continue-on-error: true
+        run: |
+          node scripts/dashboards/resumen-pruebas.mjs \
+            --titulo "⚡ Performance (k6 + Lighthouse)" \
+            --artifact performance-results \
+            --kiwi "TP-7" \
+            "Performance=performance-junit.xml"
+
       - name: Upload resultados de performance (artifact)
         if: always()
         continue-on-error: true

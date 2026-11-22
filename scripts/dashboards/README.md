@@ -1,6 +1,6 @@
 # Dashboards de avance, bugs y calidad del proceso (GitHub Pages)
 
-BL-298, BL-493, BL-221. Los scripts de esta carpeta generan los tres dashboards publicados en https://ved-virtualexperiencedevelopment.github.io/bistrolink/ y el email de estado del cierre de cada Sprint. Los corre el workflow [`publicar-dashboards.yml`](../../.github/workflows/publicar-dashboards.yml); no se commitea nada.
+BL-298, BL-493, BL-221, BL-601. Los scripts de esta carpeta generan los tres dashboards publicados en https://ved-virtualexperiencedevelopment.github.io/bistrolink/ y el email de estado del cierre de cada Sprint. Los corre el workflow [`publicar-dashboards.yml`](../../.github/workflows/publicar-dashboards.yml); no se commitea nada.
 
 | Archivo                            | Qué hace                                                                                                                                      |
 | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -10,8 +10,11 @@ BL-298, BL-493, BL-221. Los scripts de esta carpeta generan los tres dashboards 
 | `update-dashboard-from-linear.mjs` | Llena los bloques `AUTO` de `docs/dashboard-avance-edt.md`.                                                                                   |
 | `update-github-bugs-dashboard.mjs` | Llena los bloques `AUTO` de `docs/dashboard-bugs-github.md` desde GitHub Issues (configuración en `github-bugs-config.json`).                 |
 | `metricas-dora.mjs`                | Llena los bloques `AUTO` de `docs/dashboard-calidad-proceso.md` con las métricas DORA de producción (deployments, PR y corridas del CI).        |
+| `datos-kiwi.py`                    | Lee de Kiwi TCMS (solo lectura) los casos y los últimos Test Runs de cada Test Plan activo, y los guarda en un JSON.                       |
+| `metricas-pruebas.mjs`             | Llena la sección del plan de pruebas de `docs/dashboard-calidad-proceso.md` con los datos de Kiwi y la cobertura de Codecov.                |
+| `resumen-pruebas.mjs`              | Escribe en el Summary de cada corrida del CI una tabla con los resultados de un junit.xml (aprobados, fallidos, salteados y duración).     |
 | `publicar-dashboards.mjs`          | Convierte los tres `.md` a HTML con los colores de la app y arma el sitio.                                                                     |
-| `send-status-email.mjs`            | Arma el email de estado (avance + bugs); el asunto sale de `email-config.json`.                                                               |
+| `send-status-email.mjs`            | Arma el email de estado (avance, bugs y métricas DORA de producción); el asunto sale de `email-config.json`.                                                               |
 | `*.test.mjs`                       | Tests sin dependencias: `npm run test:dashboards`.                                                                                            |
 
 ## Cómo se mide el avance
@@ -29,6 +32,12 @@ Se muestran dos vistas de las mismas cuatro métricas: **producción**, la medic
 - **Lead time:** por PR mergeado a `develop` que entró en el release, desde su primer commit hasta el deploy. El primer release (v0.5.0) es la línea base y no se mide.
 - **Staging:** los jobs «Deploy staging» de las últimas 4 semanas. El lead time va desde que se abre el PR hasta que su merge queda desplegado; la recuperación, desde un deploy fallido hasta el siguiente exitoso.
 - El workflow no se dispara con un deploy a producción: después de un release o un rollback, correr **Publicar dashboards** a mano (`docs/RELEASE.md`).
+
+## Plan de pruebas y resumen por corrida
+
+- **Dashboard:** por cada Test Plan activo de Kiwi, los casos confirmados, el último Test Run (aprobación y tendencia de los últimos 5) y los casos que nunca se ejecutaron en los 10 runs que conserva `cleanup-test-runs.yml`. La cobertura sale de la API pública de Codecov.
+- **Resumen por corrida:** los jobs de Jest, contratos, integración, E2E y performance llaman a `resumen-pruebas.mjs` con `if: always()` y `continue-on-error`: el resumen nunca hace fallar un job. Solo muestra el nombre de los tests que fallaron, nunca el mensaje de error (el repositorio es público).
+- **Evidencia de las regresiones por capa:** los Test Runs con `[REGRESION-HX]` o `[CIERRE]` en el resumen no se borran (`docs/informes/README.md`).
 
 ## Cuándo hay que tocar `backlog-hu.json`
 

@@ -1,0 +1,75 @@
+# BL-601: plantilla de bug. La etiqueta "bug" la usa el dashboard de bugs; la
+# etiqueta "regresion" la suma quien carga el bug si algo que ya funcionaba
+# dejó de funcionar, y la cuenta el dashboard «Calidad del proceso».
+# Las vulnerabilidades NO van acá: SECURITY.md.
+name: Bug
+description: Algo no funciona como debería (en local, staging o producción).
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        El repositorio es **público**: no pegues contraseñas, tokens, datos de usuarios reales ni mensajes de error completos con datos de la sesión. Si es una **vulnerabilidad**, no abras un issue: seguí [SECURITY.md](https://github.com/VED-VirtualExperienceDevelopment/bistrolink/blob/develop/SECURITY.md).
+
+  - type: textarea
+    id: descripcion
+    attributes:
+      label: Qué pasa
+      description: Qué se ve y qué se esperaba ver.
+    validations:
+      required: true
+
+  - type: textarea
+    id: pasos
+    attributes:
+      label: Cómo reproducirlo
+      placeholder: |
+        1. Entrar como …
+        2. Ir a …
+        3. …
+    validations:
+      required: true
+
+  - type: dropdown
+    id: entorno
+    attributes:
+      label: Entorno
+      options:
+        - Staging
+        - Producción
+        - Local
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severidad
+    attributes:
+      label: Severidad (Anexo 11 §9.5)
+      options:
+        - Crítica — bloquea pedido, pago o CFE, o expone datos de otro establecimiento
+        - Alta — una función importante no anda y no hay cómo seguir
+        - Media — anda con un rodeo o falla en un caso poco común
+        - Baja — detalle visual o de texto
+    validations:
+      required: true
+
+  - type: input
+    id: introducido
+    attributes:
+      label: Introducido en (release o PR)
+      description: Si se sabe, la versión (`v0.6.0`) o el PR (`#548`) desde el que pasa. Sirve para medir las regresiones y la tasa de fallas.
+      placeholder: "v0.6.0 o #548"
+
+  - type: checkboxes
+    id: regresion
+    attributes:
+      label: ¿Es una regresión?
+      options:
+        - label: Esto funcionaba antes y dejó de funcionar después de un cambio. **Si lo marcás, agregá también la etiqueta `regresion` al issue.**
+
+  - type: input
+    id: ticket
+    attributes:
+      label: Ticket de Linear
+      placeholder: "BL-NNN"

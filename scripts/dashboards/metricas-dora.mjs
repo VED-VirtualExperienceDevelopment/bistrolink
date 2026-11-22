@@ -13,7 +13,7 @@
 //   - Jobs «Deploy staging» de las corridas del CI en develop y los PR
 //     mergeados a develop: las mismas cuatro métricas sobre staging, con las
 //     metas de la Línea de Base (Tabla 24), y la duración del pipeline.
-//   - Issues con la etiqueta "incidente".
+//   - Issues con las etiquetas "incidente" y "regresion" (BL-601).
 //
 // Definiciones (Anexo 9 §10.2):
 //   - Release: deploy exitoso a production de un tag vX.Y.Z. Los ensayos
@@ -484,7 +484,40 @@ export function renderContexto(c) {
 | --- | --- | --- |
 | Duración del pipeline hasta staging (mediana) | ${c.pipelineMedianaMin === null ? "—" : `${num(c.pipelineMedianaMin)} min (corridas medidas: ${c.pipelineCorridas})`} | < ${METAS.pipelineMinutos} min |
 | Rollbacks de producción | ${c.rollbacksProduccion} | — |
-| Incidentes registrados (etiqueta \`incidente\`) | ${c.incidentesAbiertos} abiertos · ${c.incidentesCerrados} cerrados | — |`;
+| Incidentes registrados (etiqueta \`incidente\`) | ${c.incidentesAbiertos} abiertos · ${c.incidentesCerrados} cerrados | — |
+| Regresiones (bugs con la etiqueta \`regresion\`) | ${c.regresionesAbiertas ?? 0} abiertas · ${c.regresionesCerradas ?? 0} cerradas | — |`;
+}
+
+/**
+ * Las cuatro métricas de producción en celdas cortas para el correo de
+ * estado: [{ valor, etiqueta, estado }].
+ */
+export function celdasDoraCorreo(r) {
+  return [
+    {
+      valor: num(r.releasesPorSprint),
+      etiqueta: `releases por sprint (${r.releases} en total)`,
+      estado: semaforo(r.releasesPorSprint, METAS.releasesPorSprint, "min"),
+    },
+    {
+      valor: r.leadTimeMedianaDias === null ? "—" : `${num(r.leadTimeMedianaDias)} d`,
+      etiqueta: "lead time (mediana)",
+      estado: semaforo(r.leadTimeMedianaDias, METAS.leadTimeMedianaDias, "max"),
+    },
+    {
+      valor: r.tasaFallas === null ? "—" : `${num(r.tasaFallas * 100, 0)} %`,
+      etiqueta: `tasa de fallas (${r.fallidos} de ${r.releases})`,
+      estado: semaforo(r.tasaFallas, METAS.tasaFallas - 1e-9, "max"),
+    },
+    {
+      valor: r.fallidos === 0 ? "—" : duracion(r.recuperacionMedianaHoras),
+      etiqueta: r.fallidos === 0 ? "recuperación (sin fallas)" : "recuperación (mediana)",
+      estado:
+        r.fallidos === 0
+          ? "⚪"
+          : semaforo(r.recuperacionMedianaHoras, METAS.recuperacionHoras, "max"),
+    },
+  ];
 }
 
 export function reemplazarBloque(contenido, marcador, interior) {
@@ -615,8 +648,9 @@ async function prsMergeados(gh, repo, desde) {
   return new Map(items.map((i) => [i.number, new Date(i.created_at)]));
 }
 
-async function incidentes(gh, repo) {
-  const q = encodeURIComponent(`repo:${repo} is:issue label:incidente`);
+/** Issues abiertos y cerrados con una etiqueta. */
+async function porEtiqueta(gh, repo, etiqueta) {
+  const q = encodeURIComponent(`repo:${repo} is:issue label:${etiqueta}`);
   const json = await gh.uno(
     `https://api.github.com/search/issues?q=${q}&per_page=100`,
   );
@@ -628,18 +662,14 @@ async function incidentes(gh, repo) {
 // Main
 // ---------------------------------------------------------------------------
 
-async function main() {
-  const token = process.env.GITHUB_TOKEN;
-  const repo = process.env.GITHUB_REPOSITORY;
-  if (!token || !repo) {
-    throw new Error("Faltan GITHUB_TOKEN o GITHUB_REPOSITORY en el entorno.");
-  }
+/**
+ * Métricas DORA de producción: releases, lead time por release, frecuencia
+ * por sprint y el resumen con las metas. También la usa el correo de estado.
+ */
+export async function doraProduccion({ token, repo, hoy = new Date() }) {
   const gh = cliente(token, repo);
-  const hoy = new Date();
   const { sprints } = JSON.parse(await fs.readFile(SPRINTS, "utf-8"));
-
   const produccion = analizarProduccion(await deploysDe(gh, "production"));
-
   const leadTimes = [];
   for (const [i, r] of produccion.releases.entries()) {
     if (i === 0) {
@@ -649,6 +679,23 @@ async function main() {
     const prs = await prsDeRelease(gh, produccion.releases[i - 1].tag, r.tag);
     leadTimes.push({ tag: r.tag, primero: false, prs: leadTimePrs(prs, r.desplegado) });
   }
+  const frecuencia = frecuenciaPorSprint(produccion.releases, sprints, hoy);
+  const resumen = resumenDora({ releases: produccion.releases, frecuencia, leadTimes });
+  return { gh, produccion, leadTimes, frecuencia, resumen };
+}
+
+async function main() {
+  const token = process.env.GITHUB_TOKEN;
+  const repo = process.env.GITHUB_REPOSITORY;
+  if (!token || !repo) {
+    throw new Error("Faltan GITHUB_TOKEN o GITHUB_REPOSITORY en el entorno.");
+  }
+  const hoy = new Date();
+  const { gh, produccion, leadTimes, frecuencia, resumen } = await doraProduccion({
+    token,
+    repo,
+    hoy,
+  });
 
   // Contexto de staging: 4 semanas y hasta 60 corridas, para no pasar el
   // límite de pedidos del GITHUB_TOKEN (el workflow también corre con cada
@@ -661,14 +708,10 @@ async function main() {
   // los PR desde una semana antes.
   const prs = await prsMergeados(gh, repo, new Date(desdeStaging.getTime() - 7 * DIA));
   const metricasStaging = analizarStaging(staging, prs, semanas);
-  const inc = await incidentes(gh, repo);
+  const inc = await porEtiqueta(gh, repo, "incidente");
+  // BL-601: bugs que llegaron a staging o producción en algo que ya andaba.
+  const reg = await porEtiqueta(gh, repo, "regresion");
 
-  const frecuencia = frecuenciaPorSprint(produccion.releases, sprints, hoy);
-  const resumen = resumenDora({
-    releases: produccion.releases,
-    frecuencia,
-    leadTimes,
-  });
   const fecha = new Intl.DateTimeFormat("es-UY", {
     dateStyle: "short",
     timeStyle: "short",
@@ -699,6 +742,8 @@ async function main() {
       rollbacksProduccion: produccion.rollbacks.length,
       incidentesAbiertos: inc.abiertos,
       incidentesCerrados: inc.cerrados,
+      regresionesAbiertas: reg.abiertos,
+      regresionesCerradas: reg.cerrados,
     }),
   );
   await fs.writeFile(DASHBOARD, md, "utf-8");
