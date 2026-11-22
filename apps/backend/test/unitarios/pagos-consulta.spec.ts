@@ -87,6 +87,7 @@ describe('PagosService.consultar (BL-311: estado del pago y comprobante para el 
     await expect(service.consultar(TENANT_ID, PEDIDO_ID)).resolves.toEqual({
       pedidoId: PEDIDO_ID,
       estadoPedido: 'RECIBIDO',
+      avisoPorWhatsapp: false,
       pago: {
         id: 'pago-1',
         estado: 'APROBADO',
@@ -158,6 +159,7 @@ describe('PagosService.consultar (BL-311: estado del pago y comprobante para el 
     await expect(service.consultar(TENANT_ID, PEDIDO_ID)).resolves.toEqual({
       pedidoId: PEDIDO_ID,
       estadoPedido: 'PENDIENTE_PAGO',
+      avisoPorWhatsapp: false,
       pago: null,
       totales: {
         consumo: '590.00',
@@ -589,5 +591,28 @@ describe('PagosService.consultar (BL-311: estado del pago y comprobante para el 
 
       expect(estado.rebajaIva).toBeNull();
     });
+  });
+
+  it('[TC-U-680] BL-603: avisoPorWhatsapp solo en los pedidos del bot de WhatsApp', async () => {
+    for (const [canal, esperado] of [
+      ['WHATSAPP', true],
+      ['WEB', false],
+      ['QR', false],
+      ['MOZO', false],
+    ] as const) {
+      findUnique.mockResolvedValue(
+        pedidoDe({
+          id: PEDIDO_ID,
+          estado: 'RECIBIDO',
+          canal,
+          codigoRetiro: canal === 'QR' ? null : 'R-007',
+          pagos: [pago()],
+        }),
+      );
+
+      const r = await service.consultar(TENANT_ID, PEDIDO_ID);
+
+      expect(r.avisoPorWhatsapp).toBe(esperado);
+    }
   });
 });

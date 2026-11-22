@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
+  avisoDelSeguimiento,
   permisoDeAviso,
   textoAvisoListo,
   type PermisoAviso,
@@ -12,6 +13,11 @@ interface Props {
   readonly listo: boolean;
   /** Código de retiro (R-042), si ya se conoce. */
   readonly codigo: string | null;
+  /**
+   * BL-603: el pedido es del bot de WhatsApp, que avisa por WhatsApp: no se
+   * ofrece la notificación del navegador. null mientras no se sabe.
+   */
+  readonly porWhatsapp?: boolean | null;
 }
 
 /**
@@ -21,8 +27,11 @@ interface Props {
  * aparece sin recargar. Si el comensal da permiso, además se muestra una
  * notificación del navegador (sirve con la pestaña abierta pero en segundo
  * plano; no es una notificación push con la pestaña cerrada).
+ *
+ * BL-603: los textos dicen eso mismo, y en un pedido de WhatsApp no se
+ * ofrece (el aviso llega por WhatsApp).
  */
-export function AvisoRetiro({ listo, codigo }: Props) {
+export function AvisoRetiro({ listo, codigo, porWhatsapp = false }: Props) {
   const [permiso, setPermiso] = useState<PermisoAviso>("no-soportado");
   const avisado = useRef(false);
 
@@ -35,6 +44,7 @@ export function AvisoRetiro({ listo, codigo }: Props) {
     if (!listo || avisado.current) return;
     avisado.current = true;
     globalThis.navigator?.vibrate?.([200, 100, 200]);
+    if (porWhatsapp !== false) return;
     if (permisoDeAviso(globalThis) !== "granted") return;
     const { titulo, cuerpo } = textoAvisoListo(codigo);
     try {
@@ -50,7 +60,7 @@ export function AvisoRetiro({ listo, codigo }: Props) {
       // Chrome en Android solo acepta notificaciones desde un service
       // worker: queda el cartel de la pantalla.
     }
-  }, [listo, codigo]);
+  }, [listo, codigo, porWhatsapp]);
 
   async function activarAviso() {
     try {
@@ -84,25 +94,32 @@ export function AvisoRetiro({ listo, codigo }: Props) {
     );
   }
 
-  if (permiso === "default") {
+  const aviso = avisoDelSeguimiento(porWhatsapp, permiso);
+
+  if (aviso.tipo === "boton") {
     return (
-      <div className="mt-4 flex justify-center">
+      <div className="mt-4 flex flex-col items-center gap-1.5">
         <button
           type="button"
           onClick={() => void activarAviso()}
+          aria-describedby="ayuda-aviso-retiro"
           className="inline-flex items-center gap-2 px-4 py-2.5 border border-marca text-marca font-semibold rounded-[0.5rem] hover:bg-marca/10 focus:outline-none focus:ring-4 focus:ring-marca/30 transition-colors"
         >
-          Avisarme cuando esté listo
+          {aviso.boton}
         </button>
+        <p
+          id="ayuda-aviso-retiro"
+          className="text-center text-xs text-[#5a575e]"
+        >
+          {aviso.ayuda}
+        </p>
       </div>
     );
   }
 
-  if (permiso === "granted") {
+  if (aviso.tipo === "activado") {
     return (
-      <p className="mt-4 text-center text-xs text-[#5a575e]">
-        Te avisamos cuando esté listo. Dejá esta pestaña abierta.
-      </p>
+      <p className="mt-4 text-center text-xs text-[#5a575e]">{aviso.texto}</p>
     );
   }
 

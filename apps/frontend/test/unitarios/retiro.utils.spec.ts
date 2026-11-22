@@ -1,4 +1,5 @@
 import {
+  avisoDelSeguimiento,
   avisoRetiroCerrado,
   contactoParaEnviar,
   CONTACTO_RETIRO_VACIO,
@@ -11,6 +12,9 @@ import {
   repartirErrorDelPedido,
   rutaEntregarRetiro,
   textoAvisoListo,
+  textoCuandoEsteListo,
+  TEXTO_AVISO_ACTIVADO,
+  TEXTO_AYUDA_AVISO,
 } from "@/components/retiro/retiro.utils";
 
 // HU-040 (BL-210): pedidos para retirar por el enlace web.
@@ -187,5 +191,53 @@ describe("repartirErrorDelPedido", () => {
       delContacto: null,
       delCarrito: null,
     });
+  });
+});
+
+// BL-603: los textos no prometen un aviso que no llega.
+describe("aviso del seguimiento según el canal", () => {
+  it("[TC-U-681] pedido de WhatsApp o canal todavía desconocido: no se ofrece la notificación del navegador", () => {
+    for (const permiso of [
+      "default",
+      "granted",
+      "denied",
+      "no-soportado",
+    ] as const) {
+      expect(avisoDelSeguimiento(true, permiso)).toEqual({ tipo: "nada" });
+      expect(avisoDelSeguimiento(null, permiso)).toEqual({ tipo: "nada" });
+    }
+  });
+
+  it("[TC-U-682] pedido web: el botón aclara que la notificación llega con la página abierta, sin pedir que no se cierre la pestaña", () => {
+    expect(avisoDelSeguimiento(false, "default")).toEqual({
+      tipo: "boton",
+      boton: "Avisarme cuando esté listo",
+      ayuda: TEXTO_AYUDA_AVISO,
+    });
+    expect(avisoDelSeguimiento(false, "granted")).toEqual({
+      tipo: "activado",
+      texto: TEXTO_AVISO_ACTIVADO,
+    });
+    expect(avisoDelSeguimiento(false, "denied")).toEqual({ tipo: "nada" });
+    expect(avisoDelSeguimiento(false, "no-soportado")).toEqual({
+      tipo: "nada",
+    });
+    expect(TEXTO_AYUDA_AVISO).toContain("mientras esta página siga abierta");
+    expect(TEXTO_AVISO_ACTIVADO).not.toMatch(/pestaña abierta/);
+  });
+
+  it("[TC-U-683] texto bajo «Tu pedido ya está en cocina»: mesa, WhatsApp, web y canal desconocido", () => {
+    expect(textoCuandoEsteListo(true, null)).toBe(
+      "Te lo llevamos a la mesa apenas esté listo.",
+    );
+    expect(textoCuandoEsteListo(false, true)).toBe(
+      "Te avisamos por WhatsApp cuando esté listo para retirar.",
+    );
+    expect(textoCuandoEsteListo(false, false)).toBe(
+      "Te avisamos en esta página cuando esté listo para retirar.",
+    );
+    expect(textoCuandoEsteListo(false, null)).toBe(
+      "Te avisamos cuando esté listo para retirar.",
+    );
   });
 });
