@@ -1393,8 +1393,11 @@ jobs:
   # BL-437: mismo comportamiento que los E2E (JOB 10): corre contra staging
   # después de cada deploy de develop (o a mano) y reporta a Kiwi TCMS, al
   # caso TC-P-003 del plan «Performance-k6-Lighthouse». El umbral
-  # (performance >= 0.8, lighthouserc.json) está en "warn": un puntaje bajo
-  # no hace fallar el job; queda como FAILED en Kiwi y con ❌ en el resumen.
+  # (performance >= 0.8, lighthouserc.json) está en "error" (BL-607): un
+  # puntaje bajo deja el job en rojo, queda como FAILED en Kiwi y con ❌ en
+  # el resumen. Igual que los E2E (BL-250), en develop es informativo: el
+  # job queda en rojo pero no hace fallar el workflow. Es criterio de salida
+  # del release (docs/RELEASE.md).
   #
   # URL (lighthouserc.json): el menú por el link web del local
   # (/m/<tenant>/restaurante/<restaurante>), público y con la misma carta
@@ -1406,6 +1409,7 @@ jobs:
     needs: [deploy-staging, version]
     if: github.ref == 'refs/heads/develop'
     runs-on: ubuntu-latest
+    continue-on-error: ${{ !startsWith(github.ref, 'refs/tags/v') && github.ref != 'refs/heads/main' }}
     steps:
       - uses: actions/checkout@v7
 

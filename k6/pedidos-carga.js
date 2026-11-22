@@ -1,5 +1,10 @@
-// k6/pedidos-carga.js — [TC-P-002] HU-003: 20 comensales simultáneos
-// confirmando pedido, sin timeouts ni 5xx.
+// k6/pedidos-carga.js — [TC-P-002] HU-003: 20 comensales confirman pedido en
+// simultáneo sin errores 5xx y p95 menor a 500 ms
+//
+// BL-607: el umbral de 500 ms es el objetivo de la Línea de Base y del
+// Anexo 9 §10.3 (endpoints críticos con 20 usuarios). Se mide solo sobre
+// POST /pedidos (tag name: crear-pedido): los pedidos del token en setup()
+// incluyen los reintentos mientras despierta Keycloak y no son la carga.
 //
 // HU-034 (BL-204): la mesa solo se puede usar con el token de su QR, que no
 // se puede armar desde acá. La carga va por el link web del local (pedido
@@ -19,9 +24,10 @@ export const options = {
   // Alcanza para los reintentos del token mientras despierta Keycloak
   // (12 intentos con 5 s de espera); el valor por defecto de k6 es 60 s.
   setupTimeout: "3m",
-  tags: { testid: "TC-P-002" }, 
+  tags: { testid: "TC-P-002" },
   thresholds: {
     http_req_failed: ["rate==0"],
+    "http_req_duration{name:crear-pedido}": ["p(95)<500"],
   },
 };
 
@@ -73,6 +79,7 @@ export default function (data) {
         "Content-Type": "application/json",
         Authorization: `Bearer ${data.token}`,
       },
+      tags: { name: "crear-pedido" },
     },
   );
 
