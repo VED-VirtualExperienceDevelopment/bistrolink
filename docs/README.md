@@ -32,6 +32,7 @@
 |---|---|
 | [Guía de commits](COMMITS.md) | Formato de los commits y uso de `npm run commit` |
 | [Release, hotfix y rollback](RELEASE.md) | Cómo se pasa una versión a producción con un tag, cómo se corrige un error urgente y cómo se vuelve a una versión anterior |
+| [Informes de regresión por capa](informes/README.md) | Cómo se arma el informe de H8 y del cierre: regresión en staging, evidencia marcada en Kiwi y la [plantilla](informes/regresion-HX.md) (BL-601) |
 
 ### Dashboards
 
@@ -39,7 +40,7 @@
 |---|---|
 | [Avance de la EDT](dashboard-avance-edt.md) · [sitio](https://ved-virtualexperiencedevelopment.github.io/bistrolink/avance-edt.html) | Avance por capa y sprint, generado desde Linear |
 | [Bugs](dashboard-bugs-github.md) · [sitio](https://ved-virtualexperiencedevelopment.github.io/bistrolink/bugs.html) | Bugs abiertos y resueltos, generado desde GitHub Issues |
-| [Calidad del proceso](dashboard-calidad-proceso.md) · [sitio](https://ved-virtualexperiencedevelopment.github.io/bistrolink/calidad-proceso.html) | Métricas DORA de producción (frecuencia, lead time, tasa de fallas y recuperación), generado desde los deploys de GitHub Actions (BL-221) |
+| [Calidad del proceso](dashboard-calidad-proceso.md) · [sitio](https://ved-virtualexperiencedevelopment.github.io/bistrolink/calidad-proceso.html) | Métricas DORA de producción y de staging, plan de pruebas en Kiwi TCMS y cobertura de código, generado desde GitHub, Kiwi y Codecov (BL-221, BL-601) |
 | Estado del servicio · desde el [sitio](https://ved-virtualexperiencedevelopment.github.io/bistrolink/) | Disponibilidad y tiempo de respuesta de la API y Keycloak (Grafana Synthetic Monitoring, BL-243). El link al dashboard público de Grafana está en la variable de Actions `GRAFANA_ESTADO_URL` |
 
 Los `.md` de los dashboards los regenera el workflow `publicar-dashboards.yml`. La versión actualizada está siempre en el sitio.
