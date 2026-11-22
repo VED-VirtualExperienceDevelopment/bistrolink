@@ -4,9 +4,10 @@
 // Cloud), si el workflow pasa GRAFANA_ESTADO_URL.
 // BL-487: suma el reporte Allure de los E2E en /allure/e2e/, si el workflow
 // pasa ALLURE_E2E_DIR (la carpeta del reporte ya generado y sanitizado).
+// BL-221: suma el dashboard «Calidad del proceso» (métricas DORA).
 //
-// Se corre DESPUÉS de update-dashboard-from-linear.mjs y
-// update-github-bugs-dashboard.mjs, que actualizan los bloques AUTO de los
+// Se corre DESPUÉS de update-dashboard-from-linear.mjs,
+// update-github-bugs-dashboard.mjs y metricas-dora.mjs, que actualizan los bloques AUTO de los
 // .md en la copia del repositorio del runner (no se commitean). Este script
 // convierte cada .md a HTML con marked, lo envuelve en una página con estilos
 // propios y genera un índice. Los diagramas ```mermaid se dibujan en el
@@ -71,6 +72,14 @@ const DASHBOARDS = [
     titulo: "Bugs (GitHub Issues)",
     descripcion:
       "Bugs abiertos y cerrados, por severidad y por semana, desde GitHub Issues.",
+  },
+  {
+    // BL-221: métricas DORA de producción (metricas-dora.mjs).
+    archivo: "docs/dashboard-calidad-proceso.md",
+    salida: "calidad-proceso.html",
+    titulo: "Calidad del proceso (DORA)",
+    descripcion:
+      "Frecuencia de despliegue, lead time, tasa de fallas y recuperación de producción, desde GitHub.",
   },
 ];
 
@@ -452,6 +461,7 @@ async function main() {
   const fuentes = listaEnEspanol([
     "Linear",
     "GitHub Issues",
+    "los deploys de GitHub Actions",
     ...(internos.length > 0 ? ["los E2E de Playwright"] : []),
     ...(externos.length > 0 ? ["Grafana"] : []),
   ]);

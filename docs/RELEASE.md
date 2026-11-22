@@ -6,6 +6,7 @@ Cómo se pasa una versión de `develop` a producción, cómo se corrige un error
 |---|---|---|
 | 1.0 | 07/11/2026 | Primera versión: release por tag, aprobación, smoke test, rollback y hotfix (BL-220). |
 | 1.1 | 21/11/2026 | «Después» del release: actualizar el tag de la contingencia en Render (BL-217). |
+| 1.2 | 22/11/2026 | Después de un release o un rollback de producción: publicar los dashboards para actualizar las métricas DORA (BL-221). |
 
 ---
 
@@ -72,6 +73,7 @@ Cómo se pasa una versión de `develop` a producción, cómo se corrige un error
 - [ ] Revisar los logs de la API en Railway (sin errores al arrancar).
 - [ ] Si hubo cambios solo en `main`, hacer el *back-merge* de `main` a `develop`.
 - [ ] Contingencia en Render: PR que cambia en `render.yaml` el tag de las imágenes de API y Auth y `NEXT_PUBLIC_APP_VERSION` al tag nuevo, para que la contingencia no levante una versión vieja (`runbooks/contingencia-render.md`, sección 7).
+- [ ] Actions → **Publicar dashboards** → **Run workflow** (rama `develop`), para que el release entre en las métricas DORA del dashboard «Calidad del proceso». El workflow no se dispara solo con un deploy a producción.
 - [ ] Registrar el release en el Anexo 12 (registro de verificaciones).
 
 ---
@@ -108,6 +110,7 @@ Igual que 3.1, con **Use workflow from:** `develop`, **rollback_environment:** `
 ### 3.3 Después de un rollback
 
 - Abrir un issue con el error que lo motivó.
+- Actions → **Publicar dashboards** → **Run workflow**: el rollback de producción cuenta como falla del release en las métricas DORA.
 - La corrección sale como hotfix (sección 2) o en la próxima versión.
 - Una migración que haya que deshacer se corrige con una migración nueva hacia adelante, nunca a mano en la base.
 
