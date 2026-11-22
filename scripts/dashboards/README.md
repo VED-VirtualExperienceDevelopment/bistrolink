@@ -1,6 +1,6 @@
-# Dashboards de avance y de bugs (GitHub Pages)
+# Dashboards de avance, bugs y calidad del proceso (GitHub Pages)
 
-BL-298, BL-493. Los scripts de esta carpeta generan los dos dashboards publicados en https://ved-virtualexperiencedevelopment.github.io/bistrolink/ y el email de estado del cierre de cada Sprint. Los corre el workflow [`publicar-dashboards.yml`](../../.github/workflows/publicar-dashboards.yml); no se commitea nada.
+BL-298, BL-493, BL-221. Los scripts de esta carpeta generan los tres dashboards publicados en https://ved-virtualexperiencedevelopment.github.io/bistrolink/ y el email de estado del cierre de cada Sprint. Los corre el workflow [`publicar-dashboards.yml`](../../.github/workflows/publicar-dashboards.yml); no se commitea nada.
 
 | Archivo                            | Qué hace                                                                                                                                      |
 | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -9,7 +9,8 @@ BL-298, BL-493. Los scripts de esta carpeta generan los dos dashboards publicado
 | `avance-mvp.mjs`                   | Cálculo del avance desde Linear, compartido por el dashboard y el email.                                                                      |
 | `update-dashboard-from-linear.mjs` | Llena los bloques `AUTO` de `docs/dashboard-avance-edt.md`.                                                                                   |
 | `update-github-bugs-dashboard.mjs` | Llena los bloques `AUTO` de `docs/dashboard-bugs-github.md` desde GitHub Issues (configuración en `github-bugs-config.json`).                 |
-| `publicar-dashboards.mjs`          | Convierte los dos `.md` a HTML con los colores de la app y arma el sitio.                                                                     |
+| `metricas-dora.mjs`                | Llena los bloques `AUTO` de `docs/dashboard-calidad-proceso.md` con las métricas DORA de producción (deployments, PR y corridas del CI).        |
+| `publicar-dashboards.mjs`          | Convierte los tres `.md` a HTML con los colores de la app y arma el sitio.                                                                     |
 | `send-status-email.mjs`            | Arma el email de estado (avance + bugs); el asunto sale de `email-config.json`.                                                               |
 | `*.test.mjs`                       | Tests sin dependencias: `npm run test:dashboards`.                                                                                            |
 
@@ -18,6 +19,15 @@ BL-298, BL-493. Los scripts de esta carpeta generan los dos dashboards publicado
 - **Avance del MVP:** solo las historias de `backlog-hu.json`, con los SP y la prioridad del backlog (no las etiquetas de Linear). Una HU está terminada cuando **todos** los issues de su lista `linear` están Done.
 - **Plan:** el de la Línea de Base (`sprint-config.json`). Lo cerrado en un fin de semana cuenta para el Sprint que terminó el viernes; las fechas van en hora de Uruguay.
 - **Trabajo técnico:** todo lo demás que se cierra en Linear (pipeline, seguridad, testing, defectos, documentación). Se muestra aparte, por Sprint. Los sub-issues de una HU cuentan como trabajo de la historia.
+
+## Cómo se miden las métricas DORA
+
+Se miden sobre **producción** (Anexo 9 §10.2, ADR 0004); staging se muestra solo como contexto. Las definiciones están al final de `docs/dashboard-calidad-proceso.md`:
+
+- **Release:** deploy exitoso del job «Deploy producción» con un tag `vX.Y.Z`. Los ensayos (`-rc.N`) no cuentan.
+- **Falla:** el release necesitó un rollback de producción (job «Rollback manual») o un hotfix (el release siguiente es un parche).
+- **Lead time:** por PR mergeado a `develop` que entró en el release, desde su primer commit hasta el deploy. El primer release (v0.5.0) es la línea base y no se mide.
+- El workflow no se dispara con un deploy a producción: después de un release o un rollback, correr **Publicar dashboards** a mano (`docs/RELEASE.md`).
 
 ## Cuándo hay que tocar `backlog-hu.json`
 
@@ -36,4 +46,8 @@ npm run test:dashboards
 $env:LINEAR_API_KEY="tu-api-key"; $env:LINEAR_TEAM_KEY="BL"
 node scripts/dashboards/update-dashboard-from-linear.mjs
 git restore docs/dashboard-avance-edt.md   # el script llena la plantilla: no se commitea
+
+$env:GITHUB_TOKEN="tu-token"; $env:GITHUB_REPOSITORY="VED-VirtualExperienceDevelopment/bistrolink"
+node scripts/dashboards/metricas-dora.mjs
+git restore docs/dashboard-calidad-proceso.md
 ```

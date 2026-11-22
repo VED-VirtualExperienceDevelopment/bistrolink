@@ -59,7 +59,13 @@ jobs:
       # Search API de GitHub para leer los bugs.
       issues: read
       # BL-487: listar y bajar el artifact «allure-e2e» del CI.
+      # BL-221: también leer las corridas del CI (deploys a staging y
+      # duración del pipeline).
       actions: read
+      # BL-221: deployments de production (métricas DORA) y PR de cada
+      # release (lead time). Solo lectura.
+      deployments: read
+      pull-requests: read
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -84,6 +90,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/dashboards/update-github-bugs-dashboard.mjs
+
+      # BL-221: métricas DORA de producción. Si falla (por ejemplo, por el
+      # límite de pedidos del GITHUB_TOKEN), el sitio se publica igual y esa
+      # página avisa que se completa en la próxima corrida.
+      - name: Dashboard de calidad del proceso (DORA)
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/dashboards/metricas-dora.mjs
 
       # BL-487: reporte Allure de los E2E, ya generado y sanitizado por el CI
       # (artifact «allure-e2e»). Se toma el más nuevo de una corrida de
