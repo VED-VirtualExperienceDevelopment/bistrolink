@@ -7,6 +7,7 @@
 | Versión | Fecha      | Cambio |
 | ------- | ---------- | ------ |
 | 1.0     | 21/11/2026 | Primera versión: preparación, activación con restauración desde S3 o R2, validación, vuelta a Railway, simulacro con RTO y RPO, y mantenimiento con cada release. |
+| 1.1     | 22/11/2026 | Correcciones de la primera prueba completa (3.6): carpeta de trabajo fuera de la carpeta del usuario; credenciales de solo lectura para bajar el respaldo; sufijo que Render agrega al nombre de la base; regla de IP solo en la base; SQL por la entrada estándar en PowerShell; verificación de la restauración sin pasar por el RLS; primer deploy de Keycloak; `-UseBasicParsing`; validación con un usuario temporal si producción no tiene usuarios; copia de `tiempos.txt` al Escritorio real; ajustes de la preparación (3.4 y 3.5) y problemas nuevos en la sección 8. Se quitan del documento la ubicación de las credenciales dentro del gestor de secretos, el tipo de cuenta y el gestor de contraseñas del equipo: el repositorio es público. |
 
 ## 1. Para qué sirve
 
@@ -28,7 +29,7 @@ Proyecto de Render **`bistrolink-contingencia`**, entorno `production`, región 
 | `bistrolink-web-contingencia` | Build en Render desde `main` (`apps/frontend/Dockerfile`), con las URLs de Render | Starter | `https://bistrolink-web-contingencia.onrender.com` | `/api/health` |
 | `bistrolink-contingencia-db` | **Se crea al activar.** PostgreSQL 18, con las bases `bistrolink` y `keycloak` | Basic 256 MB · 1 GB de disco | Sin acceso público en uso | — |
 
-- **Credenciales:** desde Infisical, entorno `prod`, carpetas `/api` y `/auth`, con una sincronización por servicio (3.4). El repositorio no tiene ningún secreto.
+- **Credenciales:** desde Infisical, las mismas de producción, con una sincronización por servicio (3.4). El repositorio no tiene ningún secreto.
 - **Variables de conexión a la base:** se cargan a mano en Render al activar, porque la base es nueva cada vez. No se guardan en ningún otro lado: la base se borra al terminar.
 - **Costo:** unos USD 45 por mes con la contingencia activa, prorrateado por segundo (USD 1,5 por día). En reposo, USD 0.
 
@@ -36,16 +37,16 @@ Proyecto de Render **`bistrolink-contingencia`**, entorno `production`, región 
 
 ### 3.1 Requisitos
 
-- Cuenta de Render del proyecto (cuenta Google del equipo; credenciales en KeePass), con una **tarjeta** cargada: las instancias gratuitas no sirven (Keycloak no arranca en 512 MB y los servicios gratuitos se duermen y cortan el WebSocket del KDS).
+- Cuenta de Render del proyecto (acceso en el gestor de contraseñas del equipo), con una **tarjeta** cargada: las instancias gratuitas no sirven (Keycloak no arranca en 512 MB y los servicios gratuitos se duermen y cortan el WebSocket del KDS).
 - En la PC de quien ejecuta: **Docker Desktop** (se usan las imágenes `postgres:18` y `amazon/aws-cli`, sin instalar nada más) y **PowerShell**.
-- Acceso a Infisical `prod` y a la consola de Railway `production` (solo para leer nombres y configuración no secreta).
+- Acceso a las credenciales de producción en Infisical y a la consola de Railway `production` (solo para leer nombres y configuración no secreta).
 
 ### 3.2 Credencial de GHCR
 
 Las imágenes de GHCR son privadas.
 
-1. En GitHub, con la cuenta del equipo: *Settings → Developer settings → Personal access tokens → Tokens (classic) → Generate new token*. Nombre **`render-ghcr-pull`**, solo **`read:packages`**, vencimiento a 90 días. Es un token aparte del de Railway, para poder revocar uno sin tocar el otro.
-2. Guardar el valor en Infisical `prod`, carpeta `/registry` (sin sincronización), o en KeePass.
+1. En GitHub, con la cuenta del equipo: *Settings → Developer settings → Personal access tokens → Tokens (classic) → Generate new token*. Nombre **`render-ghcr-pull`**, solo **`read:packages`**, con vencimiento. Es un token aparte del de Railway, para poder revocar uno sin tocar el otro.
+2. Guardar el valor en Infisical, junto a las credenciales de producción, sin sincronización.
 3. En Render: *Workspace Settings → Registry Credentials → Add Credential*.
    - **Registry:** GitHub.
    - **Name:** **`ghcr-bistrolink`** (el nombre que usa `render.yaml`).
@@ -63,18 +64,18 @@ Las imágenes de GHCR son privadas.
 
 ### 3.4 Credenciales desde Infisical
 
-1. En Render: *Account Settings → API Keys → Create API Key*, nombre `infisical-contingencia`. **La clave da acceso a toda la cuenta de Render:** no se guarda en ningún otro lugar que no sea la conexión del paso 2.
+1. En Render: *Account Settings → API Keys → Create API Key*, nombre `infisical-contingencia`, **limitada al workspace del proyecto** y con los permisos mínimos: *Services* en lectura y *Environment variables* en lectura y escritura. No se guarda en ningún otro lugar que no sea la conexión del paso 2.
 2. Infisical → *Organization → App Connections → Add Connection → Render*: nombre **`render-contingencia`**, con la clave del paso 1.
 3. Infisical → proyecto `bistrolink` → *Integrations → Secret Syncs → Add Sync → Render*. Crear dos:
 
    | Sync | Origen | Destino | Opciones |
    | ---- | ------ | ------- | -------- |
-   | `render-prod-api` | Entorno `prod`, carpeta `/api` | Servicio `bistrolink-api-contingencia` | *Overwrite destination*; **Disable Secret Deletion** activado; **Auto-sync desactivado**; sin redeploy automático |
-   | `render-prod-auth` | Entorno `prod`, carpeta `/auth` | Servicio `bistrolink-auth-contingencia` | Ídem |
+   | `render-prod-api` | Credenciales de la API de producción | Servicio `bistrolink-api-contingencia` | *Overwrite destination*; **Prevent secret deletion** activado; **Auto-sync desactivado**; sin redeploy automático |
+   | `render-prod-auth` | Credenciales de Keycloak de producción | Servicio `bistrolink-auth-contingencia` | Ídem |
 
    **Por qué sin Auto-sync:** si `prod` tuviera una variable de conexión a la base (por ejemplo, `RUNTIME_DATABASE_URL` con el host de Railway), cada sincronización pisaría el valor de Render. Con la sincronización manual, el orden lo fija el runbook: primero *Sync now* y después las variables de la base (4.5).
 
-4. *Sync now* en las dos. En Render, *Environment* de cada servicio: tienen que aparecer las credenciales (`KEYCLOAK_CLIENT_SECRET`, `MP_*`, `SURTEC_*`, `KC_BOOTSTRAP_ADMIN_*`, `KEYCLOAK_CLIENT_SECRET_RUNTIME`…), además de las de `render.yaml`.
+4. *Trigger Sync* en las dos. En Render, *Environment* de cada servicio: tienen que aparecer las credenciales sincronizadas, además de las de `render.yaml`. Las credenciales sincronizadas **no** incluyen las variables de conexión a la base: una sincronización nunca las pisa (4.5).
 
 ### 3.5 Configuración copiada de Railway
 
@@ -82,9 +83,9 @@ Hay configuración no secreta de Railway que no está en Infisical ni en `render
 
 1. En Railway `production`, abrir las variables de `bistrolink-api` y de `bistrolink-auth` y mirar **solo los nombres**.
 2. Para cada nombre que falte en el servicio de Render equivalente, decidir:
-   - **Agregar a mano** en Render: configuración que el código usa y no apunta a Railway. Como mínimo, `IMAGES_CDN_URL` y `MP_FORCE_PAYER_EMAIL` (este último solo mientras producción use el sandbox de Mercado Pago).
-   - **No agregar:** `DATABASE_URL`, `RUNTIME_DATABASE_URL` y `KC_DB_*` (se cargan al activar), variables que nombran servicios de Railway (`${{…}}`), `LOKI_*` y `DEV_NAME` (los logs quedan en Render), y las que el código no usa.
-3. En `bistrolink-web-contingencia`, agregar `NEXT_PUBLIC_MP_PUBLIC_KEY` con la Public Key de la aplicación de prueba de producción (la variable del repositorio `MP_PUBLIC_KEY_PRODUCTION`). No es secreta, pero se lee en el build: sin ella, el pago con tarjeta queda deshabilitado.
+   - **Agregar a mano** en Render: configuración que el código usa y no apunta a Railway. Como mínimo, `IMAGES_CDN_URL`. Lo que llega por la sincronización no se copia.
+   - **No agregar:** `DATABASE_URL`, `RUNTIME_DATABASE_URL` y `KC_DB_*` (se cargan al activar), variables que nombran servicios de Railway (`${{…}}`) y las que el código no usa. Las de los logs llegan por la sincronización: los logs de la API de Render van al mismo destino que los de producción.
+3. En `bistrolink-web-contingencia`, agregar `NEXT_PUBLIC_MP_PUBLIC_KEY` con la Public Key de la aplicación de prueba de producción (la variable del repositorio `MP_PUBLIC_KEY_PRODUCTION`). No es secreta, pero se lee en el build: sin ella, el pago con tarjeta queda deshabilitado. **Si la Public Key cambia, hay que actualizarla en los dos lugares:** la variable del repositorio y este servicio.
 
 ### 3.6 Primera prueba
 
@@ -102,10 +103,10 @@ Ejecutar la sección 4 completa, de punta a punta. Esta corrida **no** cuenta co
 
 ### 4.1 Arrancar
 
-En PowerShell, en una carpeta **fuera del repositorio** (los respaldos tienen datos de producción):
+En PowerShell, en una carpeta **fuera de cualquier repositorio de git** (los respaldos tienen datos de producción). Se usa `C:\contingencia` y no la carpeta del usuario, porque esa carpeta puede estar dentro de un repositorio (por ejemplo, uno de archivos de configuración): comprobar que el prompt **no** muestre una rama de git.
 
 ```powershell
-$dir = "$HOME\contingencia-$(Get-Date -Format yyyyMMdd-HHmm)"
+$dir = "C:\contingencia\contingencia-$(Get-Date -Format yyyyMMdd-HHmm)"
 New-Item -ItemType Directory -Force $dir | Out-Null
 Set-Location $dir
 
@@ -125,7 +126,7 @@ Marca "T0 - inicio de la activacion (caida declarada)"
 
 ### 4.2 Bajar y verificar el respaldo
 
-**Desde S3** (lo normal). Las credenciales son las de lectura del bucket de respaldos (`bistrolink-backup-ci`, Infisical `prod`, carpeta `/db-backup`):
+**Desde S3** (lo normal). Con las credenciales de AWS **de solo lectura** de los respaldos de producción (Infisical). Las del servicio que genera los respaldos no sirven para esto: no pueden listar el bucket.
 
 ```powershell
 Marca "4.2 bajar respaldo"
@@ -160,7 +161,7 @@ Remove-Item env:AWS_ACCESS_KEY_ID, env:AWS_SECRET_ACCESS_KEY
 Marca "4.2 respaldo verificado ($fecha)"
 ```
 
-**Desde R2** (si S3 no está disponible). Mismo procedimiento, con el token de lectura de R2 y el endpoint de Infisical (`respaldo-y-restauracion.md`, 9.6):
+**Desde R2** (si S3 no está disponible). Mismo procedimiento, con el token de lectura de R2 y su endpoint, de Infisical (`respaldo-y-restauracion.md`, 9.6):
 
 ```powershell
 Set-Secreto AWS_ACCESS_KEY_ID        # access key del token de R2
@@ -189,14 +190,25 @@ Render → proyecto `bistrolink-contingencia`, entorno `production` → **New �
 | PostgreSQL Version | **18** (la de Railway; la restauración necesita la misma versión mayor o una más nueva) |
 | Plan | Basic 256 MB, 1 GB de disco |
 
+Para que la base quede dentro del proyecto, crearla con el **+ New** que está debajo de la lista de servicios del entorno, no con el de la barra de arriba.
+
 Cuando quede *Available*:
 
-1. *Networking → Access Control*: dejar **solo la IP pública de quien restaura** (botón *Add your IP*). Se quita al terminar la restauración.
-2. *Connect → External*: copiar la **External Database URL**. *Connect → Internal*: anotar el **host interno** (`dpg-…-a`), que no es secreto.
+1. **Acceso solo desde la IP de quien restaura.** En *Info*, sección *Networking*, hay tres bloques de reglas: el del workspace, el del entorno y **PostgreSQL Inbound IP Rules**. **Solo se cambia el último**: los otros dos también afectan a la API, la Web y Keycloak, que tienen que ser públicos. Reemplazar `0.0.0.0/0` por la IP propia con `/32` (se obtiene con `Invoke-RestMethod "https://api.ipify.org"`) y guardar. Se quita al terminar la restauración (4.4).
+2. *Connect → External*: copiar la **External Database URL** completa. El **host interno** es el *Service ID* de la base (`dpg-…-a`), que no es secreto.
+3. **Render agrega un sufijo al nombre de la base** (`/bistrolink_xxxx`), aunque se escriba `bistrolink`. Se crea la base `bistrolink` en la misma instancia y se usa esa, para que los nombres del resto del runbook no cambien.
 
 ```powershell
 Set-Secreto RENDER_DB_URL            # la External Database URL
+$hostInterno = "dpg-XXXXXXXX-a"      # el Service ID de la base
+
+# Crear la base "bistrolink". El SQL va por la entrada estándar: PowerShell
+# quita las comillas internas de un psql -c "..." con espacios.
+"CREATE DATABASE bistrolink;" | docker run --rm -i -e RENDER_DB_URL postgres:18 sh -c 'psql $RENDER_DB_URL'
+
+$env:RENDER_DB_URL = $env:RENDER_DB_URL -replace '/[^/?]+$', '/bistrolink'
 $env:RENDER_KC_URL = $env:RENDER_DB_URL -replace '/bistrolink$', '/keycloak'
+$env:RENDER_DB_URL -match '/bistrolink$'   # tiene que dar True
 Marca "4.3 base disponible"
 ```
 
@@ -240,20 +252,23 @@ Marca "4.4 verificaciones OK"
 Resultado esperado:
 
 - `01`: `bistrolink_app` con `rolsuper = f` y `rolbypassrls = f`.
-- `03`: la última migración, filas en `tenant` y `pedido`, todas las tablas con RLS activo y forzado, y políticas.
-- `04`: `current_user = bistrolink_app` y **`pedidos_visibles = 0`**. Si da más de 0, **no seguir**: el RLS no se está aplicando (sección 8).
+- `03`: la última migración; el tamaño y las filas de cada tabla; las tablas con RLS activo y forzado (todas menos `_prisma_migrations` y alguna de configuración global); las políticas, y los dos roles sin superusuario ni bypass de RLS. Las filas salen de las estadísticas de PostgreSQL y no de un `count(*)`: en Render el dueño de las tablas (`bistrolink_user`) no es superusuario, y el RLS forzado también se le aplica.
+- `04`: `current_user = bistrolink_app` y **`pedidos_visibles = 0`**. Si da más de 0, **no seguir**: el RLS no se está aplicando (sección 8). **El resultado solo prueba el aislamiento si `03` mostró filas en `pedido`:** con la tabla vacía también da 0.
 
-Después, en Render, *Networking → Access Control* de la base: **borrar la IP**. La base queda accesible solo por la red privada.
+Después, en Render, *Info → Networking → PostgreSQL Inbound IP Rules* de la base: **borrar la IP**. El bloque queda vacío y la base, accesible solo por la red privada.
+
+```powershell
+Marca "4.4 acceso externo cerrado"
+```
 
 ### 4.5 Variables de conexión
 
 ```powershell
 Marca "4.5 variables de conexion"
-$hostInterno = "dpg-XXXXXXXX-a"      # el host interno de 4.3
-$pwRender = ([uri]$env:RENDER_DB_URL).UserInfo.Split(':')[1]
+$pwRender = ([uri]$env:RENDER_DB_URL).UserInfo.Split(':')[1]   # $hostInterno es el de 4.3
 ```
 
-1. Infisical: *Sync now* en `render-prod-api` y `render-prod-auth`. Va primero, para que no pise las variables de los pasos siguientes (3.4).
+1. Infisical: *Trigger Sync* en `render-prod-api` y `render-prod-auth`. Va primero, para que no pise las variables de los pasos siguientes (3.4).
 2. **`bistrolink-api-contingencia` → Environment.** Cada valor se copia al portapapeles con el comando y se pega en Render; no se muestra.
 
    | Variable | Comando para copiar el valor |
@@ -261,7 +276,7 @@ $pwRender = ([uri]$env:RENDER_DB_URL).UserInfo.Split(':')[1]
    | `DATABASE_URL` | `"postgresql://bistrolink_user:$pwRender@${hostInterno}:5432/bistrolink" \| Set-Clipboard` |
    | `RUNTIME_DATABASE_URL` | `"postgresql://bistrolink_app:$($env:APP_DB_PASSWORD)@${hostInterno}:5432/bistrolink" \| Set-Clipboard` |
 
-   Guardar con **Save** (sin desplegar todavía, si Render da la opción).
+   Guardar con **Save only**, sin desplegar: el servicio está suspendido y se reanuda en 4.7. No usar el ícono del ojo para «revisar» un valor: lo muestra en pantalla.
 
 3. **`bistrolink-auth-contingencia` → Environment:**
 
@@ -280,9 +295,15 @@ Marca "4.6 reanudar Keycloak"
 ```
 
 1. **Verificar el tag:** *Settings → Image* tiene que tener el tag que está en producción (el último GitHub Release). Si no coincide, cambiarlo (sección 7).
-2. **Resume Service.** Si en *Events* no aparece un deploy nuevo con las variables de 4.5, *Manual Deploy → Deploy latest reference*.
+2. **Resume Service.** Si en *Events* no aparece un deploy nuevo con las variables de 4.5, *Manual Deploy → Deploy latest reference*. En la primera activación Keycloak no tiene ningún deploy previo, así que este paso hace falta siempre.
 3. En *Logs*, esperar a que `set-client-secret.sh` termine. Tienen que aparecer la línea del client secret y la de «Protección contra fuerza bruta en bistrolink activa (BL-582)». El servicio queda *Live* cuando responde el health check.
-4. **URLs del cliente del frontend.** La base restaurada tiene las URLs de Railway: hay que sumar la de Render. En el servicio → **Shell**:
+4. **Comprobar el `issuer`** desde PowerShell: tiene que ser la URL de Render.
+
+   ```powershell
+   Invoke-RestMethod "https://bistrolink-auth-contingencia.onrender.com/realms/bistrolink/.well-known/openid-configuration" | Select-Object issuer
+   ```
+
+5. **URLs del cliente del frontend.** La base restaurada tiene las URLs de Railway: hay que sumar la de Render. En el servicio → **Shell**:
 
    ```bash
    cd /opt/keycloak/bin
@@ -298,7 +319,7 @@ Marca "4.6 reanudar Keycloak"
    rm -f /tmp/kcadm.config
    ```
 
-   El cambio queda solo en la base de Render: la de Railway no se toca.
+   El cambio queda solo en la base de Render: la de Railway no se toca. Al terminar, `ls /tmp/kcadm.config` tiene que dar *No such file or directory*.
 
 ```powershell
 Marca "4.6 Keycloak listo"
@@ -331,7 +352,7 @@ Marca "4.8 reanudar Web"
 2. Verificar:
 
    ```powershell
-   Invoke-WebRequest "https://bistrolink-web-contingencia.onrender.com/api/health" | Select-Object StatusCode
+   Invoke-WebRequest "https://bistrolink-web-contingencia.onrender.com/api/health" -UseBasicParsing | Select-Object StatusCode
    Marca "4.8 Web lista"
    ```
 
@@ -352,7 +373,27 @@ El `issuer` tiene que ser la URL de Keycloak en Render. Después, en el navegado
 - [ ] Ingreso de un Administrador con su usuario de producción y `/admin/usuarios`.
 - [ ] Ingreso de Cocina: el KDS muestra el indicador de conexión en verde (WebSocket).
 - [ ] Menú del comensal en incógnito, con el link de una mesa cambiando el dominio por el de Render: carga la carta con imágenes y obtiene el token del comensal.
+- [ ] En las herramientas del navegador (*Network*), las llamadas van a la API de Render y ninguna a Railway.
 - [ ] **Simulacro:** sin pagos ni cobros. Un pago emitiría un CFE de sandbox y guardaría su PDF en el bucket de CFE de producción, con Object Lock de 5 años.
+
+**Si producción no tiene usuarios todavía**, la validación del ingreso se hace con un usuario PLATAFORMA temporal, creado **solo en el Keycloak de Render** (desaparece al borrar la base en 5.1). En el servicio de Keycloak → **Shell**:
+
+```bash
+cd /opt/keycloak/bin
+./kcadm.sh config credentials --config /tmp/kcadm.config --server http://localhost:8080 \
+  --realm master --user "$KC_BOOTSTRAP_ADMIN_USERNAME" --password "$KC_BOOTSTRAP_ADMIN_PASSWORD"
+./kcadm.sh create users --config /tmp/kcadm.config -r bistrolink \
+  -s username=contingencia-prueba -s enabled=true -s emailVerified=true \
+  -s firstName=Prueba -s lastName=Contingencia -s email=contingencia-prueba@example.invalid \
+  -s 'requiredActions=["CONFIGURE_TOTP"]'
+./kcadm.sh add-roles --config /tmp/kcadm.config -r bistrolink --uusername contingencia-prueba --rolename PLATAFORMA
+read -s -p "Contraseña: " PW; echo
+./kcadm.sh set-password --config /tmp/kcadm.config -r bistrolink --username contingencia-prueba --new-password "$PW"
+unset PW
+rm -f /tmp/kcadm.config
+```
+
+El ingreso pide configurar el OTP (el rol PLATAFORMA lo exige). Tiene que llegar a `/plataforma`. Al terminar, borrar esa entrada de la app de autenticación.
 
 ```powershell
 Marca "T1 - fin de la validacion (servicio recuperado)"
@@ -368,10 +409,19 @@ Marca "T1 - fin de la validacion (servicio recuperado)"
 4. En la PC: guardar `tiempos.txt` con la evidencia y **borrar los respaldos**:
 
    ```powershell
-   Copy-Item "$dir\tiempos.txt" "$HOME\Desktop\tiempos-contingencia-$(Get-Date -Format yyyyMMdd).txt"
+   $destino = Join-Path ([Environment]::GetFolderPath('Desktop')) "tiempos-contingencia-$(Get-Date -Format yyyyMMdd).txt"
+   Copy-Item "$dir\tiempos.txt" $destino
+   Test-Path $destino                 # tiene que dar True antes de borrar la carpeta
    Remove-Item env:RENDER_DB_URL, env:RENDER_KC_URL, env:APP_DB_PASSWORD, env:APP_URL -ErrorAction SilentlyContinue
-   Set-Location $HOME
+   Remove-Variable pwRender -ErrorAction SilentlyContinue
+   Set-Location C:\
    Remove-Item -Recurse -Force $dir
+   ```
+
+   `GetFolderPath('Desktop')` da la ruta real del Escritorio, también cuando está en OneDrive. Si `tiempos.txt` se perdiera, los tiempos se recuperan de la misma ventana de PowerShell, antes de cerrarla:
+
+   ```powershell
+   Get-History | Where-Object CommandLine -like 'Marca*' | Select-Object @{n='Hora';e={$_.StartExecutionTime.ToString('HH:mm:ss')}}, CommandLine
    ```
 
 ### 5.2 Vuelta a Railway (después de una activación real)
@@ -423,13 +473,19 @@ Para que la contingencia no levante una versión vieja:
 
 | Síntoma | Causa probable | Qué hacer |
 | ------- | -------------- | --------- |
+| `AccessDenied` en `s3:ListBucket` al bajar el respaldo | Se usaron credenciales que no pueden listar el bucket | Usar las de solo lectura de los respaldos (4.2) |
+| `$env:RENDER_DB_URL -match '/bistrolink$'` da `False` | Render agregó un sufijo al nombre de la base | Crear la base `bistrolink` y reemplazar el nombre en la URL (4.3) |
+| `ERROR: syntax error at end of input` con `psql -c` | PowerShell quitó las comillas internas del comando | Pasar el SQL por la entrada estándar: `"…" \| docker run --rm -i … sh -c 'psql $RENDER_DB_URL'` |
+| `unrecognized configuration parameter "app.tenant_id"` al verificar | Una consulta sobre una tabla con RLS forzado, como dueño que no es superusuario | Es esperable: el RLS se aplica también al dueño. Usar `03-verificar-restauracion.sql`, que no lee las filas |
+| Keycloak suspendido sin ningún deploy | Nunca se desplegó (el primer deploy del Blueprint falló o no corrió) | *Manual Deploy → Deploy latest reference* (4.6) |
+| `Invoke-WebRequest` pregunta por *Script Execution Risk* | Windows PowerShell analiza el HTML de la respuesta | Responder `N` y agregar `-UseBasicParsing` |
 | *Image Pull Failed* en API o Auth | Token de GHCR vencido o revocado, o el tag no existe | Renovar `render-ghcr-pull` (3.2) o corregir el tag (sección 7) |
 | El Blueprint da error de `plan` | Render cambió los nombres de las instancias | Usar los nombres nuevos (por ejemplo `0.5c-512mb` por `starter` y `1c-2g` por `standard`) en un PR |
 | `pg_restore` se corta con *must be owner of …* | Un objeto del respaldo que solo un superusuario puede crear o comentar | Borrar la base, crearla de nuevo (4.3) y restaurar sin `--exit-on-error`. Revisar que los únicos errores sean de dueño o de comentarios, y anotarlo en el registro |
 | `04-verificar-rls.sql` da más de 0 pedidos | `bistrolink_app` tiene bypass de RLS, o se conectó con otro usuario | No seguir. Revisar `current_user` y `rolbypassrls`; si el rol está mal, borrar la base y empezar de nuevo |
 | El *pre-deploy* de la API falla | `DATABASE_URL` mal cargada o una migración que no aplica | *Logs* del deploy. Corregir la variable; si es una migración, ver `migraciones-y-seed.md` |
 | `/health/ready` da `postgres: unavailable` | `RUNTIME_DATABASE_URL` mal cargada, o base y API en regiones distintas | Revisar el host interno y la contraseña (4.5). Base y servicios en Ohio |
-| `set-client-secret.sh` falla al iniciar sesión | La contraseña del administrador en la base restaurada no coincide con `KC_BOOTSTRAP_ADMIN_PASSWORD` de Infisical | Usar la credencial de administrador vigente de producción (KeePass) para cargarla en Render, y corregir Infisical si quedó desactualizado |
+| `set-client-secret.sh` falla al iniciar sesión | La contraseña del administrador en la base restaurada no coincide con `KC_BOOTSTRAP_ADMIN_PASSWORD` de Infisical | Usar la credencial de administrador vigente de producción (gestor de contraseñas del equipo) para cargarla en Render, y corregir Infisical si quedó desactualizado |
 | Login: «Invalid redirect uri» | Falta la URL de Render en el cliente del frontend | Repetir el paso 4 de 4.6 |
 | Login: «Invalid token issuer» en la API | `KEYCLOAK_URL` de la API distinta de `KC_HOSTNAME` | Las dos tienen que ser la URL pública de Keycloak en Render |
 | Error de CORS en el navegador | `FRONTEND_URL` de la API distinta de la URL de la Web | Corregirla y redesplegar la API |
@@ -439,8 +495,9 @@ Para que la contingencia no levante una versión vieja:
 ## 9. Seguridad
 
 - **Sin secretos en el repositorio:** `render.yaml` y los scripts SQL no tienen credenciales. Las credenciales llegan desde Infisical; las de la base se generan al activar y viven solo en Render mientras existe la base.
-- **Base sin acceso público:** la IP de quien restaura se habilita solo durante la restauración (4.3 y 4.4).
+- **Base sin acceso público:** la IP de quien restaura (`/32`) se habilita solo durante la restauración y solo en las reglas de la base (4.3 y 4.4).
 - **RLS igual que en producción:** la API se conecta como `bistrolink_app`, sin bypass, y se verifica antes de reanudar los servicios (`04-verificar-rls.sql`).
 - **Respaldos en la PC:** se bajan a una carpeta fuera del repositorio y se borran al terminar (5.1). Tienen datos de producción en sandbox y los hashes de las contraseñas de Keycloak.
 - **Simulacro sin efectos en producción:** los procesos en segundo plano quedan apagados y no se hacen pagos, para no tocar Mercado Pago, Surtec ni el bucket de CFE de producción.
-- **Clave de la API de Render:** da acceso a toda la cuenta, así que se guarda solo en la conexión de Infisical. Si se filtra, se revoca en *Account Settings → API Keys* y se crea otra.
+- **Clave de la API de Render:** limitada al workspace y con permisos mínimos (3.4). Se guarda solo en la conexión de Infisical. Si se filtra, se revoca en *Account Settings → API Keys* y se crea otra.
+- **Usuario temporal de la validación:** existe solo en el Keycloak de Render y se borra con la base (4.9 y 5.1). Producción no se toca.
