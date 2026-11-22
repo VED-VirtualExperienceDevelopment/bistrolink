@@ -58,6 +58,7 @@
 | 1.51    | 19/11/2026 | Se borran los bloques de TC-I-034, 044, 050, 052, 090 y 238, ya cargados en Kiwi. TC-I-243 y 244: desbloquear una cuenta bloqueada por intentos fallidos (BL-371), para cargar con el script antes de mergear el PR.                      |
 | 1.52    | 20/11/2026 | TC-I-243: la precondición dice que el realm ya trae la fuerza bruta encendida (BL-582) y que el test la fija en 3 intentos.                                                                                                               |
 | 1.53    | 21/11/2026 | Se borran los bloques de TC-I-243 y 244, ya cargados en Kiwi. TC-I-245 y 246: bot de pedidos para retirar por WhatsApp (HU-010 / BL-112), para cargar con el script antes de mergear el PR.                                               |
+| 1.54    | 22/11/2026 | Se borran los bloques de TC-I-245 y 246, ya cargados en Kiwi. TC-I-247: avisos por WhatsApp de pago aprobado y pedido listo (BL-604), para cargar con el script antes de mergear el PR.                                                   |
 
 Texto del campo de descripción de cada caso TC-I en Kiwi. Lo carga
 `cargar-casos-integracion.mjs --descripciones`: cada bloque `## TC-I-NNN`
@@ -69,50 +70,20 @@ esperado`, igual que los casos cargados a mano desde TC-I-029.
 
 ## Casos para cargar
 
-## TC-I-245
+## TC-I-247
 
 ### Precondición
 
-API de integración con la base y el RLS reales. Evolution API simulado por un servidor HTTP local (el CI no usa WhatsApp). Variables del bot generadas en la corrida, con la instancia de prueba asignada al tenant A. El local del tenant A toma pedidos para retirar todo el día.
+La misma que TC-I-245: base y RLS reales, Evolution API simulado y la instancia de prueba asignada al tenant A, que toma pedidos para retirar todo el día. La pasarela de pago es la falsa de los tests (aprueba siempre). Un mozo activo del tenant A.
 
 ### Pasos
 
-1. Mandar «hola» al webhook sin el header del secreto y con un secreto equivocado.
-2. Mandar «Hola» con el secreto correcto.
-3. Mandar «1».
-4. Mandar el número del plato de prueba con «x2».
-5. Mandar «0».
-6. Mandar «1» (confirmar).
-7. Volver a mandar el mismo evento de confirmación (mismo id de mensaje).
-8. Leer la conversación del teléfono en la base.
+1. Por el bot: aceptar el aviso, pedir el primer plato de la carta, «0» y «1». Se recibe el link de pago.
+2. Abrir el link (`POST /auth/comensal/link-pago`) y pagar el pedido (`POST /pedidos/:id/pagos` con `X-Link-Pago`).
+3. Pasar el pedido a preparación y después a listo, con la misma transición que usa el KDS.
 
 ### Resultado esperado
 
-1. 401 las dos veces, y el bot no manda nada.
-2. 200. El bot manda el aviso de privacidad con el link a la política del local, a la instancia de prueba y con la API key.
-3. El bot manda la carta numerada.
-4. «Agregué 2 × …».
-5. El resumen con el plato, la cantidad y el total.
-6. El bot manda el link de pago (`/pagar/…`). Hay un pedido con canal `WHATSAPP`, en `PENDIENTE_PAGO`, en la mesa virtual, con el teléfono como contacto y la fecha del consentimiento, una línea con 2 unidades y un link de pago vigente. La auditoría del link tiene como actor `sistema:whatsapp`.
-7. 200, sin mensajes nuevos y sin otro pedido.
-8. Paso `ARMANDO`, carrito vacío y sin el número en claro (solo el HMAC).
-
-## TC-I-246
-
-### Precondición
-
-La misma que TC-I-245. Tenants de prueba A y B.
-
-### Pasos
-
-1. Mandar «hola» desde un teléfono nuevo.
-2. Contar la conversación de ese teléfono en el contexto del tenant A y en el del B.
-3. Desde el contexto del tenant B, intentar crear una conversación con el tenant A.
-4. Mandar «1» como mensaje propio del número del local (`fromMe`), «hola» desde una instancia que no está configurada y un evento que no es un mensaje (`connection.update`).
-
-### Resultado esperado
-
-1. 200 y el aviso de privacidad.
-2. 1 en el tenant A y 0 en el B.
-3. La base lo rechaza (RLS).
-4. 200 las tres veces, sin mensajes. La conversación sigue sin el aviso aceptado.
+1. El pedido queda en `PENDIENTE_PAGO` con canal `WHATSAPP`.
+2. El pedido toma un código de retiro (R-NNN) y al teléfono le llega «¡Pago aprobado!» con ese código en negrita.
+3. Al teléfono le llega «¡Tu pedido está listo!» con el mismo código. Son dos avisos en total, los dos por la instancia de prueba y con la API key.

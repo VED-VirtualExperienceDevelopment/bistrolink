@@ -7,11 +7,13 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 import request = require('supertest');
 import { AppModule } from '../../src/app.module';
+import { PedidosTransicionService } from '../../src/pedidos/pedidos-transicion.service';
 import { TenantPrismaService } from '../../src/prisma/tenant-prisma.service';
 import {
   HEADER_SECRETO_WEBHOOK,
   hashTelefono,
 } from '../../src/whatsapp/configuracion-whatsapp';
+import { conPagoFalso } from './support/pago-falso';
 
 // HU-010 (BL-112): bot de pedidos para retirar por WhatsApp.
 //
@@ -129,9 +131,11 @@ describe('HU-010 (BL-112): bot de pedidos por WhatsApp', () => {
       FRONTEND_URL: process.env.FRONTEND_URL ?? 'http://localhost:3000',
     });
 
-    const moduleRef: TestingModule = await Test.createTestingModule({
-      imports: [AppModule],
-    }).compile();
+    // BL-604: la pasarela falsa (aprueba siempre) para probar el aviso del
+    // pago aprobado; no cambia nada de los otros casos.
+    const moduleRef: TestingModule = await conPagoFalso(
+      Test.createTestingModule({ imports: [AppModule] }),
+    ).compile();
     app = moduleRef.createNestApplication();
     app.useGlobalPipes(
       new ValidationPipe({
@@ -180,6 +184,16 @@ describe('HU-010 (BL-112): bot de pedidos por WhatsApp', () => {
         tx.pedido.updateMany({
           where: { id: { in: pedidosCreados }, estado: 'PENDIENTE_PAGO' },
           data: { estado: 'CANCELADO' },
+        }),
+      ).catch(() => undefined);
+      // BL-604: el que se pagó y quedó listo no queda en el KDS.
+      await enTenant(TENANT_A, (tx) =>
+        tx.pedido.updateMany({
+          where: {
+            id: { in: pedidosCreados },
+            estado: { notIn: ['ENTREGADO', 'CANCELADO'] },
+          },
+          data: { estado: 'ENTREGADO' },
         }),
       ).catch(() => undefined);
       const hashes = telefonosUsados.map((t) =>
@@ -363,5 +377,101 @@ describe('HU-010 (BL-112): bot de pedidos por WhatsApp', () => {
         }),
     );
     expect(fila?.consentido).toBe(false);
+  }, 60000);
+
+  /** Lo que el bot le mandó a un teléfono, esperando hasta 5 s. */
+  const esperarMensaje = async (telefono: string, patron: RegExp) => {
+    for (let intento = 0; intento < 50; intento += 1) {
+      const encontrado = enviados.find(
+        (e) => e.number === telefono && patron.test(e.text),
+      );
+      if (encontrado) return encontrado.text;
+      await new Promise((ok) => setTimeout(ok, 100));
+    }
+    throw new Error(`No llegó el mensaje ${patron} al teléfono de prueba`);
+  };
+
+  it('[TC-I-247] WhatsApp: al aprobarse el pago del pedido del bot le llega el código de retiro, y cuando cocina lo marca listo le llega el aviso con el mismo código', async () => {
+    const telefono = telefonoNuevo();
+    await escribir(telefono, 'hola');
+    const carta = await escribir(telefono, '1');
+    const numero = /^(\d+)\. /m.exec(carta)?.[1];
+    expect(numero).toBeDefined();
+    await escribir(telefono, numero!);
+    await escribir(telefono, '0');
+    const conLink = await escribir(telefono, '1');
+    const token = /\/pagar\/([A-Za-z0-9_-]+)/.exec(conLink)?.[1];
+    expect(token).toBeDefined();
+
+    const pedido = await enTenant<{ id: string } | null>(TENANT_A, (tx) =>
+      tx.pedido.findFirst({
+        where: { canal: 'WHATSAPP', retiroContacto: `+${telefono}` },
+        select: { id: true },
+      }),
+    );
+    expect(pedido).not.toBeNull();
+    pedidosCreados.push(pedido!.id);
+
+    // El comensal paga por el link (pasarela falsa).
+    const abierto = await request(app.getHttpServer())
+      .post('/auth/comensal/link-pago')
+      .send({ linkToken: token })
+      .expect(201);
+    const { accessToken } = abierto.body as { accessToken: string };
+    await request(app.getHttpServer())
+      .post(`/pedidos/${pedido!.id}/pagos`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .set('X-Link-Pago', token!)
+      .send({
+        idempotencyKey: `it-bl604-${pedido!.id}`,
+        medioPago: 'MERCADOPAGO',
+        datosPasarela: {},
+      })
+      .expect(201);
+
+    const { codigoRetiro } = await enTenant<{ codigoRetiro: string | null }>(
+      TENANT_A,
+      (tx) =>
+        tx.pedido.findUniqueOrThrow({
+          where: { id: pedido!.id },
+          select: { codigoRetiro: true },
+        }),
+    );
+    expect(codigoRetiro).toMatch(/^R-\d{3}$/);
+    const aprobado = await esperarMensaje(telefono, /Pago aprobado/);
+    expect(aprobado).toContain(`*${codigoRetiro}*`);
+
+    // Cocina lo prepara y lo marca listo (la misma transición que el KDS).
+    const mozo = await enTenant<{ keycloakId: string }>(TENANT_A, (tx) =>
+      tx.usuario.findFirstOrThrow({
+        where: { rol: 'MOZO', activo: true },
+        select: { keycloakId: true },
+      }),
+    );
+    const transicion = await app.resolve(PedidosTransicionService);
+    for (const nuevoEstado of [
+      'EN_PREPARACION',
+      'LISTO_PARA_ENTREGAR',
+    ] as const) {
+      await transicion.transicionar({
+        tenantId: TENANT_A,
+        keycloakId: mozo.keycloakId,
+        pedidoId: pedido!.id,
+        nuevoEstado,
+      });
+    }
+    const listo = await esperarMensaje(telefono, /está listo/);
+    expect(listo).toContain(`*${codigoRetiro}*`);
+
+    // Un aviso de cada uno, por la instancia del tenant y con la API key.
+    const avisos = enviados.filter(
+      (e) => e.number === telefono && /Pago aprobado|está listo/.test(e.text),
+    );
+    expect(avisos).toHaveLength(2);
+    for (const aviso of avisos) {
+      expect(aviso).toEqual(
+        expect.objectContaining({ instancia: INSTANCIA, apikey: apiKey }),
+      );
+    }
   }, 60000);
 });
