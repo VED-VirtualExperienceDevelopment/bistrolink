@@ -31,6 +31,12 @@ export interface EstadoPagoDelPedido {
   estadoPedido: PedidoEstado;
   /** HU-040 (BL-210): código de retiro (R-042); null en mesa o sin pagar. */
   codigoRetiro: string | null;
+  /**
+   * BL-603: el pedido es del bot de WhatsApp (HU-010), que le avisa al
+   * comensal por WhatsApp cuando está listo. La pantalla no ofrece entonces
+   * la notificación del navegador.
+   */
+  avisoPorWhatsapp: boolean;
   pago: {
     id: string;
     estado: PagoEstado;
@@ -361,6 +367,7 @@ export class PagosService {
       estadoPedido: pedido.estado,
       // HU-040 (BL-210): el código que el comensal muestra al retirar.
       codigoRetiro: pedido.codigoRetiro,
+      avisoPorWhatsapp: pedido.canal === 'WHATSAPP',
       pago: pago && {
         id: pago.id,
         estado: pago.estado,

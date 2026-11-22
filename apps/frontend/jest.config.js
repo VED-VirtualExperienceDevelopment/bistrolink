@@ -15,10 +15,10 @@ const createJestConfig = nextJest({ dir: './' });
 
 /** @type {import('jest').Config} */
 const customJestConfig = {
-  // 'node' alcanza para lo que hay hoy: los primeros tests son de lógica
-  // pura (mapa-mesas.utils.ts), sin DOM. El día que se testeen componentes
-  // con React Testing Library, esto pasa a 'jest-environment-jsdom'
-  // (agregar esa dependencia en ese momento).
+  // 'node' para la lógica pura (la mayoría de los tests). Los tests de
+  // componentes (React Testing Library, BL-603) piden jsdom en su propio
+  // archivo con el docblock «@jest-environment jsdom», así el resto no paga
+  // el costo de levantar un DOM.
   testEnvironment: 'node',
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',

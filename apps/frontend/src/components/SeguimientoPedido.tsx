@@ -37,6 +37,8 @@ interface SeguimientoPedidoProps {
   readonly paraRetirar?: boolean;
   /** HU-040 (BL-210): código que muestra en el mostrador (R-042). */
   readonly codigoRetiro?: string | null;
+  /** BL-603: pedido del bot de WhatsApp (avisa el bot, no el navegador). */
+  readonly avisoPorWhatsapp?: boolean | null;
   /** BL-502: avisa cada cambio de estado (por ejemplo, para la pantalla de gracias). */
   readonly onCambioDeEstado?: (estado: EstadoPedido, actualizadoEn: string | null) => void;
 }
@@ -47,6 +49,7 @@ export function SeguimientoPedido({
   estadoInicial,
   paraRetirar = false,
   codigoRetiro = null,
+  avisoPorWhatsapp = false,
   onCambioDeEstado,
 }: SeguimientoPedidoProps) {
   const [estado, setEstado] = useState<EstadoPedido>(estadoInicial);
@@ -106,7 +109,7 @@ export function SeguimientoPedido({
       <div className="flex items-center justify-between mb-3">
         <IndicadorConexion estado={estadoConexion} textoConectado="En vivo" compacto />
         {actualizadoEn && (
-          <span className="text-xs text-culinary-neutral">
+          <span className="text-xs text-[#5a575e]">
             Actualizado {new Date(actualizadoEn).toLocaleTimeString('es-UY')}
           </span>
         )}
@@ -125,7 +128,7 @@ export function SeguimientoPedido({
                 className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
                   alcanzado
                     ? 'bg-marca text-white'
-                    : 'bg-marca/10 text-culinary-neutral'
+                    : 'bg-marca/10 text-[#5a575e]'
                 }`}
               >
                 {alcanzado ? '✓' : i + 1}
@@ -134,7 +137,7 @@ export function SeguimientoPedido({
                 className={`mt-1 text-xs ${
                   esActual
                     ? 'font-semibold text-culinary-on-surface'
-                    : 'text-culinary-neutral'
+                    : 'text-[#5a575e]'
                 }`}
               >
                 {ESTADO_LABEL[paso]}
@@ -161,6 +164,7 @@ export function SeguimientoPedido({
         <AvisoRetiro
           listo={estado === 'LISTO_PARA_ENTREGAR'}
           codigo={codigoRetiro}
+          porWhatsapp={avisoPorWhatsapp}
         />
       )}
     </div>
