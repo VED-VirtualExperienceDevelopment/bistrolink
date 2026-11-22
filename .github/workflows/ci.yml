@@ -681,6 +681,21 @@ jobs:
           exit-code: "1"
           trivyignores: .trivyignore
 
+      # BL-242: configuración de los Dockerfile (trivy config). Detecta, entre
+      # otras cosas, una imagen que corre como root (DS002) o un «apk add» sin
+      # --no-cache, para que no dependa de una revisión manual. Falla con
+      # hallazgos altos o críticos, igual que el escaneo de dependencias. Una
+      # excepción justificada se agrega en .trivyignore con su ID (AVD-DS-…)
+      # y el motivo.
+      - name: Configuración de los Dockerfile (Trivy config)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: config
+          scan-ref: .
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          trivyignores: .trivyignore
+
       # BL-300: en los PR, frena las dependencias nuevas o actualizadas que
       # traen vulnerabilidades altas o críticas (por defecto solo las de
       # producción), con la base de avisos de GitHub. Gratis en repositorios
