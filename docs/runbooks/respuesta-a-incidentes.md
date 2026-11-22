@@ -1,6 +1,6 @@
 # Runbook: respuesta a incidentes (primeros 30 minutos)
 
-> **Ticket:** BL-261 · **Relacionado:** BL-214 (alertas), BL-217 (contingencia Railway → Render), BL-227 (gestión de secretos) · **Documentación del proyecto:** Anexo 12; Línea de Base, Tabla 10 (riesgos R-03, R-10, R-14 y R-15).
+> **Ticket:** BL-261 · **Relacionado:** BL-214 (alertas), BL-217 (contingencia Railway → Render), BL-227 (gestión de secretos) · **Documentación del proyecto:** Línea de Base, Tabla 10 (riesgos R-03, R-10, R-14 y R-15).
 
 ## Control de versiones
 
@@ -132,8 +132,8 @@ Después del cierre:
 
 1. Análisis de causa raíz en la retrospectiva del sprint: qué pasó, por qué no se detectó antes y qué se cambia.
 2. Si el incidente lo permitió por una falla de proceso, actualizar este runbook (con una fila nueva en el control de versiones).
-3. Registrar el incidente y su resolución en el Anexo 12 (registro de verificaciones).
+3. Registrar el incidente y su resolución en el ticket de Linear del incidente.
 
 ## 8. Ensayo
 
-El procedimiento se ensaya como **ejercicio de mesa** junto con el simulacro de contingencia de BL-217: se elige un incidente tipo, se recorren los cuatro tramos con el reloj en marcha y se anota cuánto llevó cada uno. El resultado y los ajustes quedan en el Anexo 12.
+El procedimiento se ensaya como **ejercicio de mesa** junto con el simulacro de contingencia de BL-217: se elige un incidente tipo, se recorren los cuatro tramos con el reloj en marcha y se anota cuánto llevó cada uno. El resultado y los ajustes quedan en el ticket de Linear del simulacro.

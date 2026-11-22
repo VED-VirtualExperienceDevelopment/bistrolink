@@ -2,8 +2,8 @@
 --
 -- Se ejecuta conectado como bistrolink_app (el rol de la API) a la base
 -- "bistrolink". Comprueba que el aislamiento entre establecimientos se aplica:
--- con un tenant que no existe en la sesión, la API no ve ningún pedido
--- (Anexo 12, A11). No modifica nada. Runbook: contingencia-render.md, 4.4.
+-- con un tenant que no existe en la sesión, la API no ve ningún pedido.
+-- No modifica nada. Runbook: contingencia-render.md, 4.4.
 --
 -- Las políticas usan current_setting('app.tenant_id') sin valor por defecto:
 -- si la sesión no fija el tenant, la consulta da error en lugar de 0 filas.

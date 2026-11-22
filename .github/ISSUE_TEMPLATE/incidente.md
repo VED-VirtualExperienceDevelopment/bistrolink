@@ -55,4 +55,4 @@ nunca el valor.
 - [ ] Corrección de fondo en un PR o ticket:
 - [ ] Severidad final:
 - [ ] Análisis de causa raíz agendado para la retrospectiva
-- [ ] Registrado en el Anexo 12
+- [ ] Registrado en el ticket de Linear del incidente

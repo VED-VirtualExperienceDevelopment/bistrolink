@@ -6,7 +6,7 @@
 -- El respaldo se genera con --no-acl y se restaura con --no-owner --no-acl:
 -- las tablas quedan con dueño bistrolink_user y sin ningún permiso para
 -- bistrolink_app. Este script vuelve a dar los mismos permisos que tiene el
--- rol en Railway (Anexo 12, D9):
+-- rol en Railway:
 --   - USAGE en public; SELECT, INSERT, UPDATE y DELETE en todas las tablas;
 --   - USAGE y SELECT en las secuencias;
 --   - sin escritura en _prisma_migrations (las migraciones las aplica el

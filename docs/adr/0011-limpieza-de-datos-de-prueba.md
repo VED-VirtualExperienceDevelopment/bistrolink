@@ -4,7 +4,7 @@
 | --- | --- |
 | Estado | Aceptada |
 | Fecha | 06/11/2026 |
-| Referencias | BL-285 (BL-475 a BL-482); BL-197; BL-232; BL-253; BL-275; BL-418; BL-441; ADR 0002; ADR 0006; hallazgos D2 y D8 |
+| Referencias | BL-285 (BL-475 a BL-482); BL-197; BL-232; BL-253; BL-275; BL-418; BL-441; ADR 0002; ADR 0006 |
 | Autores | E. Arenas, V. Couto, D. Silvera |
 
 ## Contexto
@@ -14,7 +14,7 @@ Los E2E corren contra staging en CI y contra la base local en la PC de cada inte
 Restricciones:
 
 - Con prepago (ADR 0006), casi todos los pedidos de prueba quedan **pagados y con CFE**: son registros fiscales.
-- La base de staging no tiene acceso público (hallazgos D2 y D8): solo se entra con el túnel de la CLI de Railway.
+- La base de staging no tiene acceso público: solo se entra con el túnel de la CLI de Railway.
 - Los datos están aislados por tenant con RLS (ADR 0002, BL-275).
 - Los tenants de testing A y B los carga el seed (BL-197), que es idempotente.
 
@@ -46,7 +46,7 @@ Restricciones:
 | Alternativa | Por qué se descartó |
 | --- | --- |
 | Borrar los pedidos de prueba (versión inicial de BL-285) | Los pagados tienen CFE y no se borran. Si solo se borraran los no pagados, los pagados abiertos seguirían en el KDS y staging no quedaría limpio. |
-| Conexión directa a la base desde el runner o la PC (SQL) | Exige exponer la base de staging a internet (D2, D8), se saltea el RLS y la auditoría, y no limpia lo que no está en la base (alertas en memoria, usuarios de Keycloak). |
+| Conexión directa a la base desde el runner o la PC (SQL) | Exige exponer la base de staging a internet, se saltea el RLS y la auditoría, y no limpia lo que no está en la base (alertas en memoria, usuarios de Keycloak). |
 | Volver a correr el seed | Es idempotente, pero solo actualiza sus propias filas: no cierra pedidos, ni borra los datos «E2E», ni saca alertas. Además en staging necesita el túnel. |
 | `prisma migrate reset` | Borra toda la base. Nunca en staging (runbook de migraciones); en local pierde los datos cargados a mano y no limpia Keycloak. |
 | Un «test de limpieza» al final de la suite | Playwright no garantiza el orden entre archivos y corre en paralelo; si la corrida se corta, no se ejecuta; y aparece como caso en Kiwi sin verificar nada. |

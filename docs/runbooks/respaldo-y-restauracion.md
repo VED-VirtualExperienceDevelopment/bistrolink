@@ -1,6 +1,6 @@
 # Runbook: respaldo y restauración de bases de datos
 
-> **Historias:** HU-029 (BL-183) y HU-030 (BL-184, réplica en Cloudflare R2, sección 9) · **Relacionado:** BL-217 (contingencia Railway → Render) · **Documentación del proyecto:** Anexo 12, secciones 4, 5 y 6.
+> **Historias:** HU-029 (BL-183) y HU-030 (BL-184, réplica en Cloudflare R2, sección 9) · **Relacionado:** BL-217 (contingencia Railway → Render)
 > **Última revisión:** 21/11/2026.
 
 ## 1. Qué se respalda y por qué
@@ -112,13 +112,13 @@ Qué hace, sin tocar ninguna base real:
 4. **`keycloak-db`:** lista los realms con su cantidad de usuarios, exige que exista `bistrolink`, y arranca **Keycloak 26.7.2** (misma versión que `bistrolink-auth`) sobre la base restaurada hasta que publica la configuración OIDC del realm.
 5. Informa el **RPO** (antigüedad del respaldo) y el **RTO** (tiempo total de descarga, restauración y verificación) en el resumen de la corrida y como artifact `informe-restauracion-…` (se conserva 90 días).
 
-Después de cada verificación, registrar el resultado en la tabla del Anexo 12, sección 6.3.
+Después de cada verificación, registrar el resultado en el ticket de Linear.
 
 **Alcance de la prueba de login:** el cliente `bistrolink-backend` es confidencial y su secreto no está en la base (se inyecta por Vault SPI, BL-185). Por eso esta verificación comprueba que Keycloak levanta el realm y sus usuarios desde la base restaurada. El login completo de un usuario se prueba en el simulacro de contingencia (BL-217), sobre un entorno con todos los servicios.
 
 ## 6. Restauración real (incidente)
 
-> Procedimiento para recuperar una base de staging o producción. **Es destructivo sobre la base de destino:** requiere acuerdo del equipo y queda registrado en el Anexo 12 (sección 9).
+> Procedimiento para recuperar una base de staging o producción. **Es destructivo sobre la base de destino:** requiere acuerdo del equipo y queda registrado en el ticket de Linear.
 
 1. **Elegir el respaldo:** normalmente el último `daily/`. Para volver más atrás de 35 días, el `monthly/` correspondiente.
 2. **Descargarlo y verificarlo**, con credenciales que puedan leer el bucket:
@@ -134,7 +134,7 @@ Después de cada verificación, registrar el resultado en la tabla del Anexo 12,
    ```
    Para ejecutarlo sin exponer la base destino se puede usar el túnel de Railway: `railway connect <servicio>`.
 5. **Verificar:** `/health/ready` de la API, login en staging y carga del menú de un tenant.
-6. **Reanudar** los servicios y **registrar** en el Anexo 12: fecha, respaldo usado, RPO y RTO reales, causa y responsables.
+6. **Reanudar** los servicios y **registrar** en el ticket de Linear: fecha, respaldo usado, RPO y RTO reales, causa y responsables.
 
 ## 7. Qué hacer si algo falla
 
@@ -144,7 +144,7 @@ Después de cada verificación, registrar el resultado en la tabla del Anexo 12,
 | Log con `falta la variable de entorno …`     | Logs de `db-backup`              | Revisar las variables de la sección 4.2                                                                                                     |
 | Log con `no respondió después de 6 intentos` | Logs de `db-backup`              | Confirmar que las bases estén activas y que las variables de referencia apunten al nombre correcto del servicio                             |
 | `pg_dump: error: … server version mismatch`  | Logs de `db-backup`              | Railway actualizó PostgreSQL a una versión mayor: subir `PG_MAJOR` en `infra/backup/Dockerfile` y en `db-backup-restore-test.yml`           |
-| `AccessDenied` al subir a S3                 | Logs de `db-backup`              | Credenciales rotadas o política IAM modificada: revisar `bistrolink-backup-ci` (Anexo 12, sección 5.1)                                      |
+| `AccessDenied` al subir a S3                 | Logs de `db-backup`              | Credenciales rotadas o política IAM modificada: revisar los permisos del usuario de respaldo                                                       |
 | Falla **verificación de restauración**       | Pestaña Actions                  | **Incidente de severidad alta:** existe un respaldo que no se puede usar. Revisar el informe, corregir y volver a verificar antes de cerrar |
 
 ## 8. Seguridad
@@ -253,7 +253,7 @@ sha256sum 2026-11-21.dump   # comparar con el contenido del .sha256
 
 **CFE:** se baja igual desde `bistrolink-cfe-prod-replica` (necesita un token con lectura en ese bucket) y se verifica contra el SHA-256 guardado en `comprobante_fiscal.pdf_sha256`.
 
-**Simulacro:** la restauración desde R2 con S3 «caído» se ejecuta al menos una vez (BL-184) y en el simulacro de contingencia (BL-217). El resultado se registra en el Anexo 12, sección 6.3.
+**Simulacro:** la restauración desde R2 con S3 «caído» se ejecuta al menos una vez (BL-184) y en el simulacro de contingencia (BL-217). El resultado se registra en el ticket de Linear.
 
 ### 9.7 Qué hacer si algo falla
 

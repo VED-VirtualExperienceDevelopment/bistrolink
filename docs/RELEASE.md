@@ -74,7 +74,7 @@ Cómo se pasa una versión de `develop` a producción, cómo se corrige un error
 - [ ] Si hubo cambios solo en `main`, hacer el *back-merge* de `main` a `develop`.
 - [ ] Contingencia en Render: PR que cambia en `render.yaml` el tag de las imágenes de API y Auth y `NEXT_PUBLIC_APP_VERSION` al tag nuevo, para que la contingencia no levante una versión vieja (`runbooks/contingencia-render.md`, sección 7).
 - [ ] Actions → **Publicar dashboards** → **Run workflow** (rama `develop`), para que el release entre en las métricas DORA del dashboard «Calidad del proceso». El workflow no se dispara solo con un deploy a producción.
-- [ ] Registrar el release en el Anexo 12 (registro de verificaciones).
+- [ ] Registrar el release en el ticket de Linear del release.
 
 ---
 

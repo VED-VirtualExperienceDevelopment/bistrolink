@@ -2,8 +2,8 @@
 #
 # Corre como servicio programado (cron) dentro del proyecto de Railway, en la
 # misma red privada que bistrolink-db y keycloak-db. Así las bases NO se
-# exponen a internet para respaldarse (decisión documentada en el Anexo 12,
-# sección 6, y en docs/runbooks/respaldo-y-restauracion.md).
+# exponen a internet para respaldarse (decisión documentada en
+# docs/runbooks/respaldo-y-restauracion.md).
 #
 # Qué hace en cada ejecución: pg_dump de las dos bases → valida el archivo →
 # calcula SHA-256 → lo sube a S3 → verifica el objeto subido → termina.

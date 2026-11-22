@@ -5,7 +5,7 @@
 -- "bistrolink". Runbook: docs/runbooks/contingencia-render.md, sección 4.4.
 --
 -- 1. Crea el rol de runtime de la API (bistrolink_app), sin superusuario ni
---    bypass de RLS, igual que en Railway (Anexo 12, D9 y A11). Tiene que existir
+--    bypass de RLS, igual que en Railway. Tiene que existir
 --    antes de restaurar: las políticas de RLS del respaldo pueden nombrarlo.
 -- 2. Crea la base "keycloak" en la misma instancia (prueba de factibilidad del
 --    08/11/2026: el usuario de Render tiene CREATEDB y CREATEROLE).
