@@ -167,9 +167,12 @@ test.describe("BL-203: Pago por link", () => {
     const url = await dialogo.getByLabel("Link para copiar").inputValue();
     await dialogo.getByRole("button", { name: "Listo" }).click();
 
-    const pc = await browser.newPage({
+    // Un contexto propio: axe (AxeBuilder) no acepta páginas abiertas con
+    // browser.newPage().
+    const contextoPc = await browser.newContext({
       viewport: { width: 1366, height: 900 },
     });
+    const pc = await contextoPc.newPage();
     try {
       await pc.goto(url);
       const titulo = pc.getByRole("heading", { name: "Pagá tu pedido" });
@@ -218,7 +221,7 @@ test.describe("BL-203: Pago por link", () => {
           .map((v) => ({ id: v.id, nodos: v.nodes.map((n) => n.target) })),
       ).toEqual([]);
     } finally {
-      await pc.close();
+      await contextoPc.close();
     }
   });
 });
