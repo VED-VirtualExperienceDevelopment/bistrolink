@@ -5,21 +5,46 @@ codecov:
 
 coverage:
   status:
+    # «default» es el check que exige la protección de ramas (codecov/project
+    # y codecov/patch): se mide sobre el backend, donde está la lógica de
+    # negocio (meta del 80 %). El frontend tiene su propio check informativo
+    # (codecov/project/frontend y codecov/patch/frontend): se ve en cada PR,
+    # pero no frena el merge mientras su cobertura crece (BL-160).
     project:
       default:
         target: auto
         threshold: 1%
         informational: false
+        flags:
+          - backend
+      frontend:
+        target: auto
+        threshold: 1%
+        informational: true
+        flags:
+          - frontend
     patch:
       default:
         target: 80%
         threshold: 0%
         informational: false
+        flags:
+          - backend
+      frontend:
+        target: 80%
+        threshold: 0%
+        informational: true
+        flags:
+          - frontend
 
 flags:
   backend:
     paths:
       - apps/backend/
+    carryforward: false
+  frontend:
+    paths:
+      - apps/frontend/
     carryforward: false
 
 comment:
@@ -39,4 +64,10 @@ ignore:
   - "apps/backend/**/*.e2e-spec.ts"
   - "apps/backend/prisma/migrations/**"
   - "apps/backend/dist/**"
-  - "apps/frontend/**"
+  - "apps/frontend/test/**"
+  - "apps/frontend/**/*.test.ts"
+  - "apps/frontend/**/*.test.tsx"
+  - "apps/frontend/**/*.spec.ts"
+  - "apps/frontend/**/*.spec.tsx"
+  - "apps/frontend/**/*.d.ts"
+  - "apps/frontend/.next/**"

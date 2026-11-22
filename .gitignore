@@ -181,3 +181,6 @@ apps/backend/.aprovisionamiento/
 commit-msg.txt
 # Archivos que crea macOS en cada carpeta.
 .DS_Store
+
+# Caché de Python (scripts/dashboards/datos-kiwi.py)
+__pycache__/

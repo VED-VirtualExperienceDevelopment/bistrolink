@@ -6,6 +6,7 @@ import { describe, test } from "node:test";
 import {
   conteoRun,
   datosCodecov,
+  leerCodecov,
   fechaKiwi,
   renderCobertura,
   renderKiwi,
@@ -78,5 +79,39 @@ describe("Codecov", () => {
 
   test("sin datos, el bloque lo dice", () => {
     assert.match(renderCobertura(datosCodecov(null, null)), /Sin datos/);
+  });
+
+  test("lee los totales de develop, en total y por flag", async () => {
+    const pedidas = [];
+    const respuestas = { "": 70.5, backend: 99.7, frontend: 32.4 };
+    const fetchFalso = async (url) => {
+      pedidas.push(url);
+      const u = new URL(url);
+      return {
+        ok: true,
+        json: async () => ({ totals: { coverage: respuestas[u.searchParams.get("flag") ?? ""] } }),
+      };
+    };
+    const c = await leerCodecov(fetchFalso);
+    assert.ok(pedidas.every((u) => u.includes("/totals/?branch=develop")));
+    assert.equal(c.rama, "develop");
+    assert.equal(c.total, 70.5);
+    assert.deepEqual(c.flags, [
+      { nombre: "backend", cobertura: 99.7 },
+      { nombre: "frontend", cobertura: 32.4 },
+    ]);
+    const md = renderCobertura(c);
+    assert.match(md, /rama `develop`/);
+    assert.match(md, /\| frontend \| 32,4 % \| — \|/);
+  });
+
+  test("un flag que falla no corta los demás", async () => {
+    const fetchFalso = async (url) => ({
+      ok: !url.includes("flag=frontend"),
+      status: 404,
+      json: async () => ({ totals: { coverage: 90 } }),
+    });
+    const c = await leerCodecov(fetchFalso);
+    assert.deepEqual(c.flags.map((f) => f.nombre), ["backend"]);
   });
 });

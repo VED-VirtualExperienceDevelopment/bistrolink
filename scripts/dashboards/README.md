@@ -35,7 +35,7 @@ Se muestran dos vistas de las mismas cuatro métricas: **producción**, la medic
 
 ## Plan de pruebas y resumen por corrida
 
-- **Dashboard:** por cada Test Plan activo de Kiwi en la versión `develop`, los casos confirmados, el último Test Run (aprobación y tendencia de los últimos 5) y los casos que nunca se ejecutaron en los 10 runs que conserva `cleanup-test-runs.yml`. La cobertura sale de la API pública de Codecov.
+- **Dashboard:** por cada Test Plan activo de Kiwi en la versión `develop`, los casos confirmados, el último Test Run (aprobación y tendencia de los últimos 5) y los casos que nunca se ejecutaron en los 10 runs que conserva `cleanup-test-runs.yml`. La cobertura sale de la API pública de Codecov, del último commit de `develop` (total, backend y frontend; el semáforo de la meta del 80 % se aplica al backend).
 - **Resumen por corrida:** los jobs de Jest, contratos, integración, E2E y performance llaman a `resumen-pruebas.mjs` con `if: always()` y `continue-on-error`: el resumen nunca hace fallar un job. Solo muestra el nombre de los tests que fallaron, nunca el mensaje de error (el repositorio es público).
 - **Evidencia de las regresiones por capa:** los Test Runs con `[REGRESION-HX]` o `[CIERRE]` en el resumen no se borran (`docs/informes/README.md`).
 
