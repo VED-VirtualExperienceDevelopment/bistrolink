@@ -28,6 +28,7 @@ Cómo se pasa una versión de `develop` a producción, cómo se corrige un error
 1. Todo lo que entra en la versión está mergeado en `develop` y desplegado en staging.
 2. La última corrida de `develop` tiene los E2E (Playwright, 4 navegadores y `chromium-configuracion`) en verde.
 3. La regresión de la capa en staging está en verde (Anexo 11).
+4. La última corrida de `develop` tiene Lighthouse del menú en celular ≥ 80 (job «Lighthouse Performance»).
 
 ### 1.2 Ensayo (opcional, recomendado antes de una versión menor)
 

@@ -45,6 +45,7 @@ Comandos útiles para completarla (desde la raíz del repo, con origin actualiza
 - [ ] Regresión de la capa en verde en staging (Anexo 11). Test Runs de Kiwi TCMS del build: <!-- links a los Test Runs -e2e, -integration y -contract -->
 - [ ] E2E (Playwright, 4 navegadores y `chromium-configuracion`) en verde en la última corrida de `develop`. Corrida: <!-- link a la corrida de Actions -->
   - Reporte Allure: [última corrida de develop](https://ved-virtualexperiencedevelopment.github.io/bistrolink/allure/e2e/). Como evidencia del release, adjuntar también el artifact `allure-e2e` de esa corrida (el sitio siempre muestra la última).
+- [ ] Lighthouse del menú en celular ≥ 80 en la última corrida de `develop` (job «Lighthouse Performance»). Puntaje: <!-- mediana de las 3 corridas -->
 - [ ] Sin alertas críticas o altas abiertas en Security (Trivy, CodeQL, Dependabot) o justificadas abajo.
 
 ## Checklist del release
