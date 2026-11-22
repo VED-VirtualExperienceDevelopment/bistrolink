@@ -99,14 +99,17 @@ _Sin datos en esta publicación: se completa en la próxima corrida del workflow
 
 ## 🔐 Hallazgos de seguridad
 
-Se revisan en cada herramienta; el pipeline corta ante cualquier hallazgo crítico o alto (Anexo 9 §10.2, meta: 0):
+Meta del Anexo 9 §10.2: **0 hallazgos críticos o altos abiertos**. Cada herramienta actúa en un momento distinto:
 
-| Herramienta | Dónde |
-| --- | --- |
-| CodeQL y Trivy | [Security → Code scanning](https://github.com/VED-VirtualExperienceDevelopment/bistrolink/security/code-scanning) |
-| SonarCloud | [Proyecto en SonarCloud](https://sonarcloud.io/project/overview?id=VED-VirtualExperienceDevelopment_bistrolink) |
-| Dependencias | [Security → Dependabot](https://github.com/VED-VirtualExperienceDevelopment/bistrolink/security/dependabot) |
-| DAST (OWASP ZAP) | Corrida diaria del workflow `dast.yml` ([criterio de salida](https://github.com/VED-VirtualExperienceDevelopment/bistrolink/blob/develop/docs/security/dast.md)) |
+| Herramienta | Qué revisa | Ante un hallazgo crítico o alto | Dónde se ve |
+| --- | --- | --- | --- |
+| Trivy | Dependencias, Dockerfile e imágenes | El job falla: no se publica la imagen ni se despliega | Log de los jobs «Dependencias (Trivy)» y «Build + Escaneo» del CI |
+| Revisión de dependencias | Dependencias nuevas o actualizadas en un PR | El check del PR falla | En el PR |
+| Gitleaks | Secretos en el código | El job falla | Log del job y [Security → Code scanning](https://github.com/VED-VirtualExperienceDevelopment/bistrolink/security/code-scanning) |
+| CodeQL | Análisis estático del código | Alerta en el PR; se corrige antes del merge | [Security → Code scanning](https://github.com/VED-VirtualExperienceDevelopment/bistrolink/security/code-scanning) |
+| SonarCloud | Análisis estático y calidad | El *Quality Gate* del PR no pasa | [Proyecto en SonarCloud](https://sonarcloud.io/project/overview?id=VED-VirtualExperienceDevelopment_bistrolink) |
+| Dependabot | Avisos sobre las dependencias ya instaladas | Alerta y PR de actualización | [Security → Dependabot](https://github.com/VED-VirtualExperienceDevelopment/bistrolink/security/dependabot) |
+| DAST (OWASP ZAP) | La aplicación en staging, de noche | La corrida diaria de `dast.yml` falla y bloquea el release | [Criterio de salida](https://github.com/VED-VirtualExperienceDevelopment/bistrolink/blob/develop/docs/security/dast.md#criterio-de-salida) |
 
 ---
 
