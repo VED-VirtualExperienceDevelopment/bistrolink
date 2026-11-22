@@ -233,7 +233,7 @@ describe('HU-010 (BL-112): bot de pedidos por WhatsApp', () => {
       }),
     );
     const numero = new RegExp(
-      String.raw`^(\d+)\. ${item.nombre.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&')} — `,
+      String.raw`^(\d+)\. ${item.nombre.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&')} · `,
       'm',
     ).exec(carta)?.[1];
     expect(numero).toBeDefined();
@@ -416,7 +416,7 @@ describe('HU-010 (BL-112): bot de pedidos por WhatsApp', () => {
     const abierto = await request(app.getHttpServer())
       .post('/auth/comensal/link-pago')
       .send({ linkToken: token })
-      .expect(201);
+      .expect(200);
     const { accessToken } = abierto.body as { accessToken: string };
     await request(app.getHttpServer())
       .post(`/pedidos/${pedido!.id}/pagos`)
