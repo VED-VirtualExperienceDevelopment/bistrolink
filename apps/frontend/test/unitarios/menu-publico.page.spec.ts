@@ -174,7 +174,32 @@ describe("generateMetadata", () => {
     });
   });
 
-  it.each([404, 500])(
+  it.each([404, 400])(
+    "[TC-U-705] BL-304: si el local no existe (la API responde %i), el título es «Local no encontrado»",
+    async (status) => {
+      fetchMock.mockResolvedValue(respuesta(status));
+
+      await expect(generateMetadata({ params: params() })).resolves.toEqual({
+        title: "Local no encontrado",
+      });
+    },
+  );
+
+  it("[TC-U-705] BL-304: un local suspendido sigue con el título «Menú» (no es un 404)", async () => {
+    fetchMock.mockResolvedValue(
+      respuesta(403, {
+        statusCode: 403,
+        message: "Este restaurante no está disponible por el momento.",
+        codigo: "ESTABLECIMIENTO_SUSPENDIDO",
+      }),
+    );
+
+    await expect(generateMetadata({ params: params() })).resolves.toEqual({
+      title: "Menú",
+    });
+  });
+
+  it.each([500])(
     "si la API responde %i, el título es «Menú»",
     async (status) => {
       fetchMock.mockResolvedValue(respuesta(status));
