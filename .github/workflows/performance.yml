@@ -171,10 +171,14 @@ jobs:
               motivo = "umbral no cumplido" if codigo == 99 else f"k6 terminó con código {codigo}"
               return False, "; ".join([motivo] + umbrales)
 
-          # TC-P-001 — p95 < 1,5 s y menos de 1 % de errores con 70 sesiones
+          # TC-P-001 — p95 < 1,5 s y menos de 1 % de errores con 20 sesiones
+          # (BL-607: 20, como la Línea de Base; antes eran 70). El título
+          # cambió: el caso de Kiwi se renombra con
+          # scripts/kiwi/cargar-casos-integracion.mjs --performance antes de
+          # la primera corrida, para que el plugin no cree uno nuevo.
           passed, detail = resultado_k6("k6-load-test")
           add_case(
-              "[TC-P-001] HU-001: performance de /api/menu bajo carga (70 sesiones simultáneas, p95 menor a 1.5s)",
+              "[TC-P-001] HU-001: performance de /api/menu bajo carga (20 sesiones simultáneas, p95 menor a 1.5s)",
               "k6.load-test", passed, detail,
           )
 
