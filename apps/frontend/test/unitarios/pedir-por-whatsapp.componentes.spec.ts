@@ -74,6 +74,10 @@ describe("PedirPorWhatsapp (BL-613)", () => {
     );
     expect(enlace.getAttribute("target")).toBe("_blank");
     expect(enlace.getAttribute("rel")).toBe("noopener noreferrer");
+    // El glifo oficial, decorativo: el nombre del enlace lo da el texto.
+    const icono = enlace.querySelector("img");
+    expect(icono?.getAttribute("src")).toBe("/marcas/whatsapp/glifo-verde.svg");
+    expect(icono?.getAttribute("alt")).toBe("");
   });
 });
 
