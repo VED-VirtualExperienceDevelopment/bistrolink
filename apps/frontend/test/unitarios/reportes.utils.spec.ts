@@ -204,14 +204,16 @@ describe("reportes.utils", () => {
     jest.useRealTimers();
   });
 
-  it("[TC-U-323] montos en pesos, rotación con un decimal y WhatsApp como «Próximamente»", () => {
+  it("[TC-U-323] montos en pesos, rotación con un decimal y WhatsApp como un canal más (BL-612)", () => {
     expect(formatearMonto(48320)).toMatch(/48\.320/);
     expect(formatearMonto(590.5)).toMatch(/590,50/);
     expect(formatearRotacion(2.4)).toBe("2,4");
     expect(formatearRotacion(3)).toBe("3");
-    expect(CANALES.filter((c) => c.proximamente).map((c) => c.valor)).toEqual([
-      "WHATSAPP",
-    ]);
+    expect(CANALES.find((c) => c.valor === "WHATSAPP")).toEqual({
+      valor: "WHATSAPP",
+      etiqueta: "WhatsApp",
+      descripcion: "Pedidos hechos por el bot de WhatsApp, para retirar",
+    });
   });
 
   describe("HU-022 (BL-496): propinas", () => {

@@ -512,4 +512,29 @@ describe('WhatsApp: conversación del pedido para retirar (HU-010, BL-112)', () 
     expect(texto).toContain('https://bistrolink.test/pagar/abc');
     expect(texto).toContain('12:30');
   });
+
+  it('[TC-U-703] BL-613: un mensaje que empieza con un saludo muestra la carta, como «hola» solo; el primer mensaje sigue recibiendo el aviso', () => {
+    const textoDelEnlace = 'Hola, me gustaría hacer un pedido.';
+    for (const texto of [
+      textoDelEnlace,
+      '¡Buenas! ¿Qué tienen hoy?',
+      'buen día',
+      'Buenos días, quiero pedir',
+    ]) {
+      const r = responder(ACEPTADO, texto, carta());
+      expect(r.estado.paso).toBe('ARMANDO');
+      expect(r.mensajes.join('\n')).toContain(
+        '*La Cantina* · Pedido para retirar',
+      );
+    }
+    // Lo que no empieza con un saludo no cambia: ayuda para armar.
+    expect(
+      responder(ACEPTADO, 'quiero hacer un pedido', carta()).mensajes.join(
+        '\n',
+      ),
+    ).not.toContain('*La Cantina* · Pedido para retirar');
+    // Un comensal nuevo recibe primero el aviso de privacidad.
+    const nuevo = responder(ESTADO_INICIAL, textoDelEnlace, carta());
+    expect(nuevo.estado.paso).toBe('PRIVACIDAD');
+  });
 });

@@ -32,12 +32,12 @@ describe("número del bot de WhatsApp (BL-613)", () => {
     }
   });
 
-  it("[TC-U-694] el enlace abre el chat con el bot y «Hola» escrito", () => {
+  it("[TC-U-694] el enlace abre el chat con el bot y «Hola, me gustaría hacer un pedido.» escrito", () => {
     expect(enlacePedirPorWhatsapp("59899123456")).toBe(
-      "https://wa.me/59899123456?text=Hola",
+      "https://wa.me/59899123456?text=Hola%2C%20me%20gustar%C3%ADa%20hacer%20un%20pedido.",
     );
     expect(enlacePedirPorWhatsapp("+59899123456")).toBe(
-      "https://wa.me/59899123456?text=Hola",
+      "https://wa.me/59899123456?text=Hola%2C%20me%20gustar%C3%ADa%20hacer%20un%20pedido.",
     );
   });
 

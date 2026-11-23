@@ -70,7 +70,7 @@ describe("PedirPorWhatsapp (BL-613)", () => {
       name: "¿Preferís pedir por WhatsApp? (se abre WhatsApp)",
     });
     expect(enlace.getAttribute("href")).toBe(
-      "https://wa.me/59899123456?text=Hola",
+      "https://wa.me/59899123456?text=Hola%2C%20me%20gustar%C3%ADa%20hacer%20un%20pedido.",
     );
     expect(enlace.getAttribute("target")).toBe("_blank");
     expect(enlace.getAttribute("rel")).toBe("noopener noreferrer");

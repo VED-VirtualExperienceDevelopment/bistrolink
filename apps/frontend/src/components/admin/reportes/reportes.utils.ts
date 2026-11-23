@@ -23,14 +23,13 @@ export const PERIODOS: readonly { valor: Periodo; etiqueta: string }[] = [
 ];
 
 /**
- * Canales del filtro (D1). WhatsApp todavía no recibe pedidos: se muestra
- * deshabilitado, como «Próximamente».
+ * Canales del filtro (D1). HU-010 (BL-612): WhatsApp ya recibe pedidos (el
+ * bot, BL-112), así que se filtra como los demás.
  */
 export const CANALES: readonly {
   valor: Canal;
   etiqueta: string;
   descripcion: string;
-  proximamente?: boolean;
 }[] = [
   { valor: "TODOS", etiqueta: "Todos", descripcion: "Todos los canales" },
   {
@@ -46,8 +45,7 @@ export const CANALES: readonly {
   {
     valor: "WHATSAPP",
     etiqueta: "WhatsApp",
-    descripcion: "Todavía no recibe pedidos",
-    proximamente: true,
+    descripcion: "Pedidos hechos por el bot de WhatsApp, para retirar",
   },
   // HU-011 (BL-489): ventas traídas del POS del local.
   {

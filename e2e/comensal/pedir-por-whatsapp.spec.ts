@@ -105,7 +105,7 @@ test.describe("HU-010 (BL-613): pedir por WhatsApp desde el menú para retirar",
         await expect(enlace).toBeVisible();
         await expect(enlace).toHaveAttribute(
           "href",
-          `https://wa.me/${digitos}?text=Hola`,
+          `https://wa.me/${digitos}?text=${encodeURIComponent("Hola, me gustaría hacer un pedido.")}`,
         );
         await expect(enlace).toHaveAttribute("target", "_blank");
         await expect(enlace).toHaveAttribute("rel", "noopener noreferrer");

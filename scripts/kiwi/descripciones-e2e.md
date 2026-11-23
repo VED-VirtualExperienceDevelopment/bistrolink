@@ -50,6 +50,7 @@
 | 1.42 | 22/11/2026 | Se borran los bloques de TC-E-002, 012, 013, 127, 128 y 129, ya cargados en Kiwi. TC-E-130: el link de pago en una PC usa todo el ancho (BL-602). |
 | 1.43 | 23/11/2026 | TC-E-001 cambia: el menú se mide con la red limitada a 4G (perfil «Fast 4G» de Chrome DevTools) y sin caché, como pide HU-001 (BL-607). |
 | 1.44 | 23/11/2026 | Se borran los bloques de TC-E-001 y 130, ya cargados en Kiwi. TC-E-131: «¿Preferís pedir por WhatsApp?» en el menú para retirar (BL-613). |
+| 1.45 | 23/11/2026 | TC-E-066 cambia: el canal WhatsApp ya se puede elegir en Reportes (BL-612). TC-E-131 cambia: el enlace abre el chat con «Hola, me gustaría hacer un pedido.» escrito (BL-613). |
 
 Plantilla para cargar en Kiwi la descripción de casos TC-E (Playwright)
 nuevos o que cambiaron (BL-435). La usa
@@ -94,6 +95,28 @@ Reglas:
 
 ## Casos para cargar
 
+## TC-E-066
+
+### Precondición
+
+Administrador del establecimiento del seed logueado en el panel.
+
+### Pasos
+
+1. Desde el menú, abrir «Reportes».
+2. Elegir el período «Últimos 7 días».
+3. Elegir el canal «Web».
+4. Elegir el canal «WhatsApp».
+5. Revisar la pantalla con axe-core (WCAG 2.1 AA).
+
+### Resultado esperado
+
+1. Se abre «Reportes» con el período de hoy: la API responde 200, se ven las tarjetas (Total vendido, …) y las tablas equivalentes de los gráficos están en la página.
+2. La API responde 200 con los últimos 7 días y el chip queda elegido.
+3. La API responde 200 y la rotación de mesas dice «No aplica».
+4. La API responde 200 con las ventas del bot de WhatsApp, el chip queda elegido y la rotación de mesas no aplica. No aparece «Próximamente» en la pantalla.
+5. Sin errores graves ni críticos de accesibilidad.
+
 ## TC-E-131
 
 ### Precondición
@@ -111,5 +134,5 @@ El administrador de prueba, en /admin/configuracion. El local de prueba toma ped
 
 1. El campo y el aviso del bot se ven. Lo que se guarda queda en formato internacional («+59899123456»).
 2. La API manda el número (sin el +) solo si el bot atiende al local.
-3. Con número, bot conectado y el local tomando pedidos: «¿Preferís pedir por WhatsApp?» en la portada, que abre `https://wa.me/<número>?text=Hola` en otra pestaña. Si no, no aparece. Sin errores graves ni críticos de accesibilidad.
+3. Con número, bot conectado y el local tomando pedidos: «¿Preferís pedir por WhatsApp?» en la portada, con el ícono oficial de WhatsApp, que abre `https://wa.me/<número>` con «Hola, me gustaría hacer un pedido.» escrito, en otra pestaña. Si no, no aparece. Sin errores graves ni críticos de accesibilidad.
 4. En el menú de la mesa no aparece el enlace.

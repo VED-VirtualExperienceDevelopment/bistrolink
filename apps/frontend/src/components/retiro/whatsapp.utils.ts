@@ -14,7 +14,10 @@ const CELULAR_URUGUAYO = /^0?9\d{7}$/;
 const URUGUAYO_CON_PREFIJO = /^598\d{8}$/;
 
 /** Mensaje que queda escrito al abrir el chat (el bot arranca con cualquiera). */
-const MENSAJE_INICIAL_WHATSAPP = "Hola";
+// BL-613: el bot muestra la carta con cualquier mensaje que empiece con un
+// saludo (conversacion.ts), así que este texto sirve también para quien
+// vuelve a entrar por el enlace.
+const MENSAJE_INICIAL_WHATSAPP = "Hola, me gustaría hacer un pedido.";
 
 /**
  * «099 123 456» → «+59899123456». Vacío → null (quitarlo). Lo que no se
@@ -39,7 +42,7 @@ export function errorNumeroWhatsapp(texto: string): string | null {
   return "Escribí un celular uruguayo (099 123 456) o un número internacional que empiece con +.";
 }
 
-/** Enlace que abre el chat con el bot y «Hola» escrito. */
+/** Enlace que abre el chat con el bot y el saludo escrito. */
 export function enlacePedirPorWhatsapp(numero: string): string {
   const digitos = numero.replace(/^\+/, "");
   return `https://wa.me/${digitos}?text=${encodeURIComponent(MENSAJE_INICIAL_WHATSAPP)}`;
