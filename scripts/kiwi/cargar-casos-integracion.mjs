@@ -46,6 +46,16 @@
  *   node scripts/kiwi/cargar-casos-integracion.mjs --contrato --descripciones
  *   node scripts/kiwi/cargar-casos-integracion.mjs --contrato --aplicar --descripciones
  *
+ * BL-607: con --performance, lo mismo con los casos de performance (TC-P),
+ * contra el Test Plan «Performance-k6-Lighthouse» y con
+ * descripciones-performance.md. Los títulos salen de
+ * .github/workflows/performance.yml: k6 y Lighthouse no tienen un test() con
+ * título, y ese workflow arma el JUnit con el Summary exacto de cada caso
+ * (TC-P-001 a 003) y lee el de Playwright (TC-P-004):
+ *
+ *   node scripts/kiwi/cargar-casos-integracion.mjs --performance --descripciones
+ *   node scripts/kiwi/cargar-casos-integracion.mjs --performance --aplicar --descripciones
+ *
  * En todos los modos, con --aplicar también pasa a CONFIRMED los casos del
  * código que en Kiwi siguen en otro estado (PROPOSED): se corre después de
  * una corrida en verde.
@@ -73,8 +83,9 @@ const APLICAR = process.argv.includes("--aplicar");
 const DESCRIPCIONES = process.argv.includes("--descripciones");
 const E2E = process.argv.includes("--e2e");
 const CONTRATO = process.argv.includes("--contrato");
-if (E2E && CONTRATO) {
-  console.error("Usá --e2e o --contrato, no los dos.");
+const PERFORMANCE = process.argv.includes("--performance");
+if ([E2E, CONTRATO, PERFORMANCE].filter(Boolean).length > 1) {
+  console.error("Usá solo uno de --e2e, --contrato o --performance.");
   process.exit(1);
 }
 
@@ -96,33 +107,59 @@ const CONFIG_CONTRATO = {
   comando: (_archivo, titulo) =>
     `npm run test:pact --workspace=backend -- -t '${comoRegex(sinPrefijo(titulo))}'`,
 };
-const TIPO = CONTRATO
-  ? CONFIG_CONTRATO
-  : E2E
-    ? {
-        prefijo: "TC-E",
-        directorio: "e2e",
-        // Recursivo: los specs van por carpeta de dominio (e2e/comensal/...).
-        // support/ no tiene specs.
-        esSpec: (archivo) => archivo.endsWith(".spec.ts"),
-        plan: "E2E-Playwright",
-        descripciones: "descripciones-e2e.md",
-        // Mismo formato que TC-E-001 a 016: el comando que corre solo ese
-        // test, con la ruta sin la línea (cambia con cualquier edición) y -g
-        // con el título sin el prefijo (es una expresión regular: se escapan
-        // los signos).
-        comando: (archivo, titulo) =>
-          `npx playwright test e2e/${archivo.replace(/:\d+$/, "")} -g '${comoRegex(sinPrefijo(titulo))}'`,
-      }
-    : {
-        prefijo: "TC-I",
-        directorio: "apps/backend/test/integration",
-        esSpec: (archivo) =>
-          archivo.endsWith(".e2e-spec.ts") && !archivo.includes("/"),
-        plan: "Integration tests",
-        descripciones: "descripciones-integracion.md",
-        comando: (archivo) => archivo,
-      };
+// BL-607: comando que corre cada caso de performance por separado. El título
+// está en performance.yml, pero lo que se ejecuta es el script de k6, Lighthouse
+// CI o el proyecto «performance» de Playwright (contra staging, con BASE_URL o
+// API_URL apuntando a staging, como en el workflow).
+const COMANDOS_PERFORMANCE = {
+  1: "k6 run k6/load-test.js",
+  2: "k6 run k6/pedidos-carga.js",
+  3: "npx @lhci/cli@0.14.x autorun",
+  4: "npx playwright test --project=performance",
+};
+const CONFIG_PERFORMANCE = {
+  prefijo: "TC-P",
+  directorio: ".github/workflows",
+  esSpec: (archivo) => archivo === "performance.yml",
+  plan: "Performance-k6-Lighthouse",
+  descripciones: "descripciones-performance.md",
+  comando: (archivo, titulo) => {
+    const numero = Number(/^\[TC-P-(\d{3})\]/.exec(titulo)?.[1]);
+    return (
+      COMANDOS_PERFORMANCE[numero] ??
+      `.github/workflows/${archivo.replace(/:\d+$/, "")}`
+    );
+  },
+};
+const TIPO = PERFORMANCE
+  ? CONFIG_PERFORMANCE
+  : CONTRATO
+    ? CONFIG_CONTRATO
+    : E2E
+      ? {
+          prefijo: "TC-E",
+          directorio: "e2e",
+          // Recursivo: los specs van por carpeta de dominio (e2e/comensal/...).
+          // support/ no tiene specs.
+          esSpec: (archivo) => archivo.endsWith(".spec.ts"),
+          plan: "E2E-Playwright",
+          descripciones: "descripciones-e2e.md",
+          // Mismo formato que TC-E-001 a 016: el comando que corre solo ese
+          // test, con la ruta sin la línea (cambia con cualquier edición) y -g
+          // con el título sin el prefijo (es una expresión regular: se escapan
+          // los signos).
+          comando: (archivo, titulo) =>
+            `npx playwright test e2e/${archivo.replace(/:\d+$/, "")} -g '${comoRegex(sinPrefijo(titulo))}'`,
+        }
+      : {
+          prefijo: "TC-I",
+          directorio: "apps/backend/test/integration",
+          esSpec: (archivo) =>
+            archivo.endsWith(".e2e-spec.ts") && !archivo.includes("/"),
+          plan: "Integration tests",
+          descripciones: "descripciones-integracion.md",
+          comando: (archivo) => archivo,
+        };
 const DIRECTORIO_TESTS = TIPO.directorio;
 const NOMBRE_PLAN = TIPO.plan;
 const ARCHIVO_DESCRIPCIONES = join(
@@ -1921,7 +1958,34 @@ const DATOS_CONTRATO = {
   // HU-011 (BL-489): ventas hechas en el POS.
   27: contrato("HU-011", "pos", { priority: "P1", tags: ["BL-489"] }),
 };
-const DATOS = CONTRATO ? DATOS_CONTRATO : E2E ? DATOS_E2E : DATOS_INTEGRACION;
+/**
+ * BL-607: datos de los casos de performance (TC-P). Todos son Category
+ * Performance y P1: verifican un tiempo, un puntaje o FPS de la Línea de
+ * Base, con 20 usuarios o 20 mesas.
+ */
+const casoPerformance = (component, requirement, extra = {}) => ({
+  category: "Performance",
+  priority: "P1",
+  component,
+  requirement,
+  ...extra,
+  tags: [requirement, "performance", ...(extra.tags ?? [])],
+});
+const DATOS_PERFORMANCE = {
+  1: casoPerformance("comensal", "HU-001", {
+    tags: ["k6", "BL-492", "BL-607"],
+  }),
+  2: casoPerformance("pedidos", "HU-003", { tags: ["k6", "BL-492", "BL-607"] }),
+  3: casoPerformance("comensal", "HU-001", { tags: ["lighthouse", "BL-437"] }),
+  4: casoPerformance("mesas", "HU-016", { tags: ["RD.05", "BL-607"] }),
+};
+const DATOS = PERFORMANCE
+  ? DATOS_PERFORMANCE
+  : CONTRATO
+    ? DATOS_CONTRATO
+    : E2E
+      ? DATOS_E2E
+      : DATOS_INTEGRACION;
 
 const DATOS_POR_DEFECTO = {
   category: "Funcional",

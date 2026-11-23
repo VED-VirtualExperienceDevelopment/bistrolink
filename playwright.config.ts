@@ -62,7 +62,19 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
       // BL-452: los specs que cambian la configuración del establecimiento
       // corren aparte (proyecto de abajo). HU-043 (BL-535): también la marca.
-      testIgnore: /(pago-medios|marca)\.spec\.ts/,
+      // BL-607: la medición de FPS del mapa de mesas (TC-P-004) es de
+      // performance, no de la E2E: corre solo en el proyecto «performance».
+      testIgnore: /(pago-medios|marca|mapa-mesas-fps)\.spec\.ts/,
+    },
+    // BL-607: TC-P-004 (HU-016, RD.05). Lo corre el workflow manual
+    // performance.yml y su resultado va al Test Plan Performance-k6-Lighthouse
+    // de Kiwi, no al de E2E. El job de E2E de ci.yml no lo corre: su matriz
+    // nombra los proyectos uno por uno. En local, para correrlo solo:
+    //   npx playwright test --project=performance
+    {
+      name: "performance",
+      use: { ...devices["Desktop Chrome"] },
+      testMatch: /mapa-mesas-fps\.spec\.ts/,
     },
     // BL-452: specs que cambian la configuración del establecimiento del seed
     // (medios de pago y, HU-043, la marca). Mientras corren, un test de pago de otro spec vería
