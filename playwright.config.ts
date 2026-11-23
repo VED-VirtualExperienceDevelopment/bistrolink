@@ -62,7 +62,8 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
       // BL-452: los specs que cambian la configuración del establecimiento
       // corren aparte (proyecto de abajo). HU-043 (BL-535): también la marca.
-      testIgnore: /(pago-medios|marca)\.spec\.ts/,
+      // HU-010 (BL-613): y el número del bot de WhatsApp.
+      testIgnore: /(pago-medios|marca|pedir-por-whatsapp)\.spec\.ts/,
     },
     // BL-452: specs que cambian la configuración del establecimiento del seed
     // (medios de pago y, HU-043, la marca). Mientras corren, un test de pago de otro spec vería
@@ -72,7 +73,7 @@ export default defineConfig({
     {
       name: "chromium-configuracion",
       use: { ...devices["Desktop Chrome"] },
-      testMatch: /(pago-medios|marca)\.spec\.ts/,
+      testMatch: /(pago-medios|marca|pedir-por-whatsapp)\.spec\.ts/,
       // HU-043 (BL-535): marca.spec.ts cambia la plantilla, el logo y la
       // portada, que se ven en la carta: espera también a los proyectos que
       // sacan capturas de la carta (menu-publico.spec.ts).

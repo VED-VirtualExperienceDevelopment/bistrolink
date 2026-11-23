@@ -1210,6 +1210,12 @@ const DATOS_INTEGRACION = {
     priority: "P1",
     tags: ["BL-604", "avisos", "codigo-de-retiro"],
   }),
+  // BL-613: número del bot en Configuración y enlace del menú para retirar.
+  248: whatsapp({
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-613", "configuracion", "auditoria", "menu-publico"],
+  }),
 };
 /**
  * BL-435: datos de los E2E TC-E-017 en adelante, con los criterios de
@@ -1745,6 +1751,13 @@ const DATOS_E2E = {
     category: "Funcional",
     priority: "P2",
     tags: ["BL-602", "link-de-pago", "responsive", ...axe],
+  }),
+  // HU-010 (BL-613): «¿Preferís pedir por WhatsApp?» en el menú para
+  // retirar, en comensal/pedir-por-whatsapp.spec.ts.
+  131: e2e("comensal", "HU-010", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-613", "whatsapp", "retiro", "configuracion", ...axe],
   }),
   // HU-043 (BL-535): marca propia del local, en admin/marca.spec.ts
   // (114 y 115) y admin/configuracion-pantalla.spec.ts (116).

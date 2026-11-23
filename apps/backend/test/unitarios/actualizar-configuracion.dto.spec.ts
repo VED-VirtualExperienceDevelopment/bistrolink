@@ -300,4 +300,40 @@ describe('ActualizarConfiguracionDto (HU-020, BL-72)', () => {
       },
     );
   });
+
+  describe('HU-010 (BL-613): número del bot de WhatsApp', () => {
+    const transformado = (whatsappPedidos: unknown) =>
+      plainToInstance(ActualizarConfiguracionDto, { whatsappPedidos })
+        .whatsappPedidos;
+
+    it.each([
+      ['099 123 456', '+59899123456'],
+      ['99123456', '+59899123456'],
+      ['598 99 123 456', '+59899123456'],
+      ['+54 9 11 1234-5678', '+5491112345678'],
+      ['  ', null],
+      ['', null],
+    ])('[TC-U-690] acepta %p como %p', async (valor, esperado) => {
+      expect(transformado(valor)).toBe(esperado);
+      expect(await errores({ whatsappPedidos: valor })).toEqual([]);
+    });
+
+    it('[TC-U-690] acepta null para quitarlo', async () => {
+      expect(await errores({ whatsappPedidos: null })).toEqual([]);
+    });
+
+    it.each([
+      '12345678',
+      '2900 1234',
+      '+0598991234',
+      'hola',
+      '+5989912345678901',
+      5,
+    ])(
+      '[TC-U-690] rechaza %p (no es un celular uruguayo ni un número internacional)',
+      async (whatsappPedidos) => {
+        expect(await errores({ whatsappPedidos })).toEqual(['whatsappPedidos']);
+      },
+    );
+  });
 });

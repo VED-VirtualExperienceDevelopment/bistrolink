@@ -8,6 +8,9 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request = require('supertest');
 import { AppModule } from '../../src/app.module';
 import { PedidosTransicionService } from '../../src/pedidos/pedidos-transicion.service';
+import { ConfiguracionEstablecimientoService } from '../../src/configuracion/configuracion-establecimiento.service';
+import { ActualizarConfiguracionDto } from '../../src/configuracion/dto/actualizar-configuracion.dto';
+import { plainToInstance } from 'class-transformer';
 import { TenantPrismaService } from '../../src/prisma/tenant-prisma.service';
 import {
   HEADER_SECRETO_WEBHOOK,
@@ -50,6 +53,7 @@ describe('HU-010 (BL-112): bot de pedidos por WhatsApp', () => {
     retiroHabilitado: boolean;
     retiroHoraDesde: string | null;
     retiroHoraHasta: string | null;
+    whatsappPedidos: string | null;
   };
 
   const enTenant = <T>(
@@ -154,6 +158,8 @@ describe('HU-010 (BL-112): bot de pedidos por WhatsApp', () => {
           retiroHabilitado: true,
           retiroHoraDesde: true,
           retiroHoraHasta: true,
+          // BL-613: el número del bot, que TC-I-248 cambia y se restaura.
+          whatsappPedidos: true,
         },
       }),
     );
@@ -475,4 +481,65 @@ describe('HU-010 (BL-112): bot de pedidos por WhatsApp', () => {
       );
     }
   }, 60000);
+
+  it('[TC-I-248] WhatsApp: el administrador carga el número del bot, se guarda en formato internacional y se audita sin el valor; el menú para retirar lo ofrece solo si el bot atiende al local, y la base rechaza un número mal formado', async () => {
+    const actor = 'script:test-bl613';
+    const configuracion = await app.resolve(
+      ConfiguracionEstablecimientoService,
+    );
+    const menuDelLocal = () =>
+      request(app.getHttpServer())
+        .get(`/menu/tenant/${TENANT_A}/restaurante/${RESTAURANTE_A}`)
+        .expect(200);
+
+    const respuesta = await configuracion.actualizar(
+      TENANT_A,
+      plainToInstance(ActualizarConfiguracionDto, {
+        whatsappPedidos: '099 123 456',
+      }),
+      { id: actor },
+    );
+    expect(respuesta).toMatchObject({
+      whatsappPedidos: '+59899123456',
+      whatsappBotConectado: true,
+    });
+
+    // Auditado, sin el número (puede ser un celular).
+    const [registro] = await enTenant<
+      { detalle: unknown; valoresAntes: unknown; valoresDespues: unknown }[]
+    >(TENANT_A, (tx) =>
+      tx.registroAuditoria.findMany({
+        where: {
+          accion: 'ESTABLECIMIENTO_CONFIGURACION_MODIFICADA',
+          actorKeycloakId: actor,
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 1,
+        select: { detalle: true, valoresAntes: true, valoresDespues: true },
+      }),
+    );
+    expect(registro.detalle).toEqual({ campos: ['whatsappPedidos'] });
+    expect(JSON.stringify(registro)).not.toContain('99123456');
+
+    // El menú para retirar lo ofrece, como lo pide wa.me (sin el +).
+    expect((await menuDelLocal()).body.whatsapp).toBe('59899123456');
+
+    // Sin una instancia de este local, el bot no lo atiende: no se ofrece.
+    process.env.EVOLUTION_INSTANCIAS = `${INSTANCIA}=${TENANT_B}`;
+    try {
+      expect((await menuDelLocal()).body.whatsapp).toBeNull();
+    } finally {
+      process.env.EVOLUTION_INSTANCIAS = `${INSTANCIA}=${TENANT_A}`;
+    }
+
+    // La base no acepta un número sin el formato internacional (CHECK).
+    await expect(
+      enTenant(TENANT_A, (tx) =>
+        tx.restaurante.update({
+          where: { id: RESTAURANTE_A },
+          data: { whatsappPedidos: '099123456' },
+        }),
+      ),
+    ).rejects.toThrow(/restaurante_whatsapp_pedidos_formato/);
+  });
 });
