@@ -86,9 +86,29 @@ export const LARGO_MAXIMO_MENSAJE = 3500;
 const SI = new Set(['1', 'si', 'acepto', 'ok', 'dale']);
 const NO = new Set(['2', 'no', 'no acepto']);
 const MENU = new Set(['menu', 'carta', 'hola', 'buenas', 'inicio']);
+/**
+ * BL-613: un mensaje que empieza con un saludo también pide la carta. El
+ * enlace del menú para retirar abre el chat con «Hola, me gustaría hacer un
+ * pedido.»: quien ya aceptó el aviso y vuelve por el enlace ve la carta,
+ * igual que con «Hola» solo.
+ */
+const SALUDOS = new Set(['hola', 'buenas', 'buenos', 'buen']);
 const CANCELAR = new Set(['cancelar', 'vaciar', 'borrar']);
 
 const LETRA_O_NUMERO = /[\p{L}\p{N}]/u;
+const LETRA = /\p{L}/u;
+
+/** «hola, me gustaria…» → «hola» (el texto ya viene normalizado). */
+function primeraPalabra(comando: string): string {
+  const caracteres = [...comando];
+  const fin = caracteres.findIndex((c) => !LETRA.test(c));
+  return caracteres.slice(0, fin === -1 ? caracteres.length : fin).join('');
+}
+
+/** «menu», «carta», «hola»… o un mensaje que empieza con un saludo. */
+function pideLaCarta(comando: string): boolean {
+  return MENU.has(comando) || SALUDOS.has(primeraPalabra(comando));
+}
 
 /** Minúsculas, sin tildes ni signos alrededor: «¡Menú!» → «menu». */
 export function normalizarTexto(texto: string): string {
@@ -404,7 +424,7 @@ export function responder(
       carta.retiro.mensaje ?? 'Ahora no estamos tomando pedidos.',
     ]);
   }
-  if (MENU.has(comando)) {
+  if (pideLaCarta(comando)) {
     return respuesta({ ...estado, paso: 'ARMANDO' }, textoCarta(carta));
   }
   if (CANCELAR.has(comando)) {
