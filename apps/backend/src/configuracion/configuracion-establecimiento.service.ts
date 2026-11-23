@@ -24,6 +24,7 @@ import {
   PROVEEDORES_CFE_DISPONIBLES,
 } from './dto/actualizar-configuracion.dto';
 import { PLANTILLAS_MARCA, type PlantillaMarca } from './plantillas-marca';
+import { botConectadoParaTenant } from '../whatsapp/configuracion-whatsapp';
 
 /** HU-020 (BL-72): respuesta de GET y PATCH /admin/configuracion. */
 export interface ConfiguracionEstablecimiento {
@@ -78,6 +79,13 @@ export interface ConfiguracionEstablecimiento {
   /** HU-040 (BL-210): franja diaria HH:MM; las dos null = todo el día. */
   retiroHoraDesde: string | null;
   retiroHoraHasta: string | null;
+  /** HU-010 (BL-613): número del bot de WhatsApp («+59899123456») o null. */
+  whatsappPedidos: string | null;
+  /**
+   * HU-010 (BL-613): el bot de WhatsApp atiende a este local. Si no, el menú
+   * no ofrece el enlace aunque haya número (la pantalla lo avisa).
+   */
+  whatsappBotConectado: boolean;
   /**
    * HU-043 (BL-562): URL firmada de la portada del banner, para la vista
    * previa. null = la portada por defecto. La key no se devuelve.
@@ -117,6 +125,8 @@ const SELECT_RESTAURANTE = {
   retiroHabilitado: true,
   retiroHoraDesde: true,
   retiroHoraHasta: true,
+  // HU-010 (BL-613): número del bot de WhatsApp.
+  whatsappPedidos: true,
   // HU-043 (BL-562): portada del banner, igual que el logo.
   portadaKey: true,
 } satisfies Prisma.RestauranteSelect;
@@ -144,10 +154,12 @@ type CampoConfiguracion = keyof ActualizarConfiguracionDto;
 /**
  * Campos cuyo valor no va a la auditoría (solo que cambiaron): mismo criterio
  * que la razón social. El correo de privacidad (HU-036) puede ser el de una
- * persona.
+ * persona. Lo mismo el número de WhatsApp del bot (HU-010, BL-613): en un
+ * local chico puede ser el celular de alguien.
  */
 const SIN_VALOR_EN_AUDITORIA: ReadonlySet<CampoDelRestaurante> = new Set([
   'emailPrivacidad',
+  'whatsappPedidos',
 ]);
 
 const CAMPOS_DEL_RESTAURANTE = Object.keys(
@@ -231,7 +243,7 @@ export class ConfiguracionEstablecimientoService {
     const actual = await this.tenantPrisma.runInTenantContext(tenantId, (tx) =>
       this.leer(tx, tenantId),
     );
-    return this.armarRespuesta(actual);
+    return this.armarRespuesta(tenantId, actual);
   }
 
   async actualizar(
@@ -294,7 +306,7 @@ export class ConfiguracionEstablecimientoService {
     if (resultado.umbralesEspera) {
       this.kdsGateway.emitirUmbralesEspera(tenantId, resultado.umbralesEspera);
     }
-    return this.armarRespuesta(resultado.guardado);
+    return this.armarRespuesta(tenantId, resultado.guardado);
   }
 
   /**
@@ -336,6 +348,7 @@ export class ConfiguracionEstablecimientoService {
    * sin la key.
    */
   private async armarRespuesta(
+    tenantId: string,
     actual: Actual,
   ): Promise<ConfiguracionEstablecimiento> {
     const { logoKey, portadaKey, ...restaurante } = actual.restaurante;
@@ -352,6 +365,7 @@ export class ConfiguracionEstablecimientoService {
       mediosPagoDisponibles: [...MEDIOS_PAGO_DISPONIBLES],
       proveedoresCfeDisponibles: [...PROVEEDORES_CFE_DISPONIBLES],
       plantillasDisponibles: [...PLANTILLAS_MARCA],
+      whatsappBotConectado: botConectadoParaTenant(process.env, tenantId),
     };
   }
 

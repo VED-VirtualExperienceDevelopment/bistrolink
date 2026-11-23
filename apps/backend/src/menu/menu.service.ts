@@ -17,6 +17,8 @@ export interface MarcaPublica {
   plantilla: PlantillaMarca;
 }
 import { retiroPublico } from '../pedidos/retiro';
+import { botConectadoParaTenant } from '../whatsapp/configuracion-whatsapp';
+import { numeroParaWaMe } from '../whatsapp/numero-whatsapp';
 
 /**
  * BL-397 (decisión 2 de la propuesta de la carta): el comensal ve lo mismo
@@ -154,6 +156,14 @@ export class MenuService {
         // Si el local no los toma ahora, la carta se muestra igual pero sin
         // poder pedir (y POST /pedidos responde 409).
         retiro: retiroPublico(restaurante, new Date(), restaurante.timezone),
+        // HU-010 (BL-613): número para «¿Preferís pedir por WhatsApp?», solo
+        // si el bot atiende a este local. Solo en este menú (el de retirar):
+        // el de la mesa no lo ofrece, porque el bot no toma pedidos de mesa.
+        whatsapp:
+          restaurante.whatsappPedidos &&
+          botConectadoParaTenant(process.env, tenantId)
+            ? numeroParaWaMe(restaurante.whatsappPedidos)
+            : null,
         categorias: categoriasConUrls,
       };
     });

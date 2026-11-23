@@ -86,6 +86,20 @@ export function configuracionWhatsapp(
 }
 
 /**
+ * HU-010 (BL-613): el bot atiende a este tenant (la configuración está
+ * completa y alguna instancia de Evolution es suya).
+ */
+export function botConectadoParaTenant(
+  env: NodeJS.ProcessEnv,
+  tenantId: string,
+): boolean {
+  const config = configuracionWhatsapp(env);
+  if (!config) return false;
+  const buscado = tenantId.toLowerCase();
+  return [...config.instancias.values()].includes(buscado);
+}
+
+/**
  * Compara el secreto del header con el configurado en tiempo constante
  * (sobre los hashes, que tienen el mismo largo aunque los textos no).
  */
