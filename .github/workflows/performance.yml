@@ -2,7 +2,7 @@
 # .github/workflows/performance.yml
 #
 # Workflow aparte del ci.yml principal — job manual de Performance
-# (k6 + Lighthouse) con reporte a Kiwi TCMS.
+# (k6 + Lighthouse + Playwright) con reporte a Kiwi TCMS.
 #
 # Por qué separado: no se dispara nunca en push ni pull_request, así que no
 # tiene sentido que viva dentro de ci.yml (que sí corre en cada push/PR) ni
@@ -13,6 +13,8 @@
 # Requisitos:
 #   - Los secrets KIWI_TCMS_URL / KIWI_TCMS_USERNAME / KIWI_TCMS_PASSWORD ya
 #     existen en el repo (los usa ci.yml) — no hace falta crear nada nuevo.
+#   - BL-607: TC-P-004 (Playwright) usa TEST_ADMIN_USERNAME y
+#     TEST_ADMIN_PASSWORD, los mismos secrets del job de E2E de ci.yml.
 #   - Asume que staging ya está desplegado (no lo deploya ni lo redeploya):
 #     corre k6 contra bistrolink-api-staging y Lighthouse contra
 #     bistrolink-web-staging, igual que hace ci.yml.
@@ -92,6 +94,8 @@ jobs:
           # Fuerza la última 22.x publicada: la caché del runner puede ir atrasada
           # y quedarse con una versión sin los parches de seguridad.
           check-latest: true
+          # BL-607: TC-P-004 necesita las dependencias del repo (Playwright).
+          cache: npm
 
       # Se corre a mano, muchas veces con staging dormido (serverless de
       # Railway). Sin esto, los primeros pedidos de k6 y de Lighthouse miden
@@ -128,6 +132,31 @@ jobs:
       - name: Lighthouse CI — TC-P-003 (menú digital, HU-001)
         continue-on-error: true
         run: npx @lhci/cli@0.14.x autorun
+
+      # ── Playwright (BL-607) ─────────────────────────────────────────────
+      # TC-P-004: el editor del mapa de mesas con 20 mesas a ≥ 30 FPS
+      # (HU-016, RD.05). Es el spec e2e/performance/mapa-mesas-fps.spec.ts,
+      # en el proyecto «performance» de playwright.config.ts. Crea sus 20
+      # mesas en staging y las borra al terminar.
+      - name: Instalar dependencias (Playwright)
+        env:
+          # El postinstall del backend corre «prisma generate», que exige
+          # DATABASE_URL aunque no se conecte (mismo valor de prueba que
+          # ci.yml).
+          DATABASE_URL: "postgresql://dummy:dummy@localhost:5432/dummy"
+        run: npm ci
+
+      - name: Instalar Chromium de Playwright
+        run: npx playwright install --with-deps chromium
+
+      - name: Playwright — TC-P-004 (mapa de mesas, HU-016)
+        continue-on-error: true
+        env:
+          BASE_URL: https://bistrolink-web-staging.up.railway.app
+          API_URL: https://bistrolink-api-staging.up.railway.app
+          TEST_ADMIN_USERNAME: ${{ secrets.TEST_ADMIN_USERNAME }}
+          TEST_ADMIN_PASSWORD: ${{ secrets.TEST_ADMIN_PASSWORD }}
+        run: npx playwright test --project=performance
 
       # ── Traducción a JUnit XML ────────────────────────────────────────────
       # Un threshold/assert que dio false = <failure> en ese <testcase> (no
@@ -171,10 +200,14 @@ jobs:
               motivo = "umbral no cumplido" if codigo == 99 else f"k6 terminó con código {codigo}"
               return False, "; ".join([motivo] + umbrales)
 
-          # TC-P-001 — p95 < 1,5 s y menos de 1 % de errores con 70 sesiones
+          # TC-P-001 — p95 < 1,5 s y menos de 1 % de errores con 20 sesiones
+          # (BL-607: 20, como la Línea de Base; antes eran 70). El título
+          # cambió: el caso de Kiwi se renombra con
+          # scripts/kiwi/cargar-casos-integracion.mjs --performance antes de
+          # la primera corrida, para que el plugin no cree uno nuevo.
           passed, detail = resultado_k6("k6-load-test")
           add_case(
-              "[TC-P-001] HU-001: performance de /api/menu bajo carga (70 sesiones simultáneas, p95 menor a 1.5s)",
+              "[TC-P-001] HU-001: performance de /api/menu bajo carga (20 sesiones simultáneas, p95 menor a 1.5s)",
               "k6.load-test", passed, detail,
           )
 
@@ -204,6 +237,43 @@ jobs:
               # Mismo título que scripts/kiwi/lighthouse-a-junit.mjs (BL-437).
               "[TC-P-003] HU-001: performance Lighthouse del menú digital en celular (score ≥ 0.8)",
               "lighthouse", passed, detail,
+          )
+
+          # TC-P-004 — editor del mapa de mesas con 20 mesas a ≥ 30 FPS
+          # (BL-607), leído del JUnit de Playwright. Pasa si el test no falló
+          # ni se salteó; el detalle lleva los FPS medidos (anotación «fps»
+          # del test) o el motivo del fallo.
+          passed = False
+          detail = "no se encontró playwright-report/junit.xml"
+          try:
+              junit = ET.parse("playwright-report/junit.xml")
+              caso = next(
+                  (c for c in junit.iter("testcase") if "TC-P-004" in (c.get("name") or "")),
+                  None,
+              )
+              if caso is None:
+                  detail = "TC-P-004 no está en el JUnit de Playwright"
+              else:
+                  fallo = caso.find("failure")
+                  if fallo is None:
+                      fallo = caso.find("error")
+                  salteado = caso.find("skipped") is not None
+                  fps = next(
+                      (p.get("value") for p in caso.iter("property") if p.get("name") == "fps"),
+                      None,
+                  )
+                  passed = fallo is None and not salteado
+                  if salteado:
+                      detail = "el test se salteó"
+                  elif fallo is not None:
+                      detail = (fallo.get("message") or fallo.text or "falló")[:500]
+                  else:
+                      detail = fps or "aprobado"
+          except (FileNotFoundError, ET.ParseError) as error:
+              detail = f"no se pudo leer el JUnit de Playwright: {error}"
+          add_case(
+              "[TC-P-004] HU-016: el editor del mapa de mesas mantiene al menos 30 FPS al arrastrar una mesa con 20 mesas en el plano",
+              "playwright", passed, detail,
           )
 
           ET.ElementTree(testsuites).write("performance-junit.xml", encoding="utf-8", xml_declaration=True)
