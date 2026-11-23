@@ -76,9 +76,23 @@ test.describe("BL-108: reportes de ventas del administrador", () => {
     });
     await expect(page.getByText(/^No aplica\./)).toBeVisible();
 
-    // WhatsApp todavía no recibe pedidos.
-    await expect(page.getByRole("radio", { name: /WhatsApp/ })).toBeDisabled();
-    await expect(page.getByText("Próximamente").first()).toBeVisible();
+    // HU-010 (BL-612): WhatsApp se filtra como los demás canales (el bot ya
+    // vende); como en Web, la rotación de mesas no aplica.
+    const [whatsapp] = await Promise.all([
+      respuestaReportes(page, (url) => url.includes("canal=WHATSAPP")),
+      chip(page, "WhatsApp").click(),
+    ]);
+    expect(whatsapp.status()).toBe(200);
+    const reporteWhatsapp = (await whatsapp.json()) as {
+      rotacionMesas: unknown;
+      porLugar: { whatsapp: number };
+    };
+    expect(reporteWhatsapp.rotacionMesas).toEqual({ aplica: false });
+    expect(typeof reporteWhatsapp.porLugar.whatsapp).toBe("number");
+    await expect(
+      page.getByRole("radio", { name: "WhatsApp", exact: true }),
+    ).toBeChecked();
+    await expect(page.getByText("Próximamente")).toHaveCount(0);
 
     const resultados = await new AxeBuilder({ page })
       .include("main")
