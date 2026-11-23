@@ -1,3 +1,4 @@
+import AxeBuilder from "@axe-core/playwright";
 import { test, expect } from "../support/auth";
 import type { APIRequestContext } from "@playwright/test";
 import {
@@ -163,11 +164,29 @@ test.describe("HU-002: menú vía URL directa (verificado en mobile)", () => {
     page,
   }) => {
     // UUID cero: mismo patrón determinista que e2e/comensal/menu.spec.ts.
-    await page.goto(
+    const respuesta = await page.goto(
       `/m/${TENANT_ID}/restaurante/00000000-0000-0000-0000-000000000000`,
     );
 
-    await expect(page.getByText("This page could not be found")).toBeVisible();
+    // BL-304: la 404 propia, en español; la respuesta sigue siendo 404.
+    expect(respuesta?.status()).toBe(404);
+    await expect(page.getByText("No encontramos este local.")).toBeVisible();
+    await expect(
+      page.getByText(
+        "Revisá el enlace o pedile al local que te lo pase de nuevo.",
+      ),
+    ).toBeVisible();
+    await expect(page.getByText("This page could not be found")).toHaveCount(0);
+    await expect(page).toHaveTitle(/Local no encontrado/);
+
+    const resultados = await new AxeBuilder({ page })
+      .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
+      .analyze();
+    expect(
+      resultados.violations
+        .filter((v) => v.impact === "critical" || v.impact === "serious")
+        .map((v) => ({ id: v.id, nodos: v.nodes.map((n) => n.target) })),
+    ).toEqual([]);
   });
 });
 

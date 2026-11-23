@@ -6,7 +6,8 @@ interface AvisoMesaQrProps {
 
 /**
  * HU-034 (BL-204): aviso a pantalla completa cuando no se puede mostrar el
- * menú de una mesa (QR no válido, QR reemplazado o enlace viejo por ids).
+ * menú de una mesa (QR no válido, QR reemplazado o enlace viejo por ids),
+ * o el local del enlace web no existe (BL-304).
  * Sin estado ni efectos: sirve tanto en Server como en Client Components.
  */
 export default function AvisoMesaQr({ icono, titulo, detalle }: AvisoMesaQrProps) {
@@ -17,7 +18,8 @@ export default function AvisoMesaQr({ icono, titulo, detalle }: AvisoMesaQrProps
           {icono}
         </div>
         <p className="text-lg font-medium text-culinary-on-surface">{titulo}</p>
-        <p className="text-sm text-culinary-neutral mt-2">{detalle}</p>
+        {/* BL-304: #5a575e (7:1); culinary-neutral daba 4,46:1 sobre blanco. */}
+        <p className="text-sm text-[#5a575e] mt-2">{detalle}</p>
       </div>
     </main>
   );
