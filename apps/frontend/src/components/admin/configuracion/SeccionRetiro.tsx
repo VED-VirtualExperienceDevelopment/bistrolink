@@ -16,6 +16,10 @@ interface SeccionRetiroProps {
   formulario: FormularioConfiguracion;
   /** Error del horario (null hasta que el administrador intenta guardar). */
   error: string | null;
+  /** HU-010 (BL-613): error del número del bot de WhatsApp. */
+  errorWhatsapp?: string | null;
+  /** HU-010 (BL-613): el bot de WhatsApp atiende al local. */
+  botConectado?: boolean;
   onCambiar: CambiarCampo;
   className?: string;
 }
@@ -25,10 +29,16 @@ interface SeccionRetiroProps {
  * switch habilita los pedidos por el enlace web del local; las horas fijan
  * una franja diaria (vacías = todo el día; si la de cierre es menor, cruza
  * la medianoche). Se guarda con «Guardar cambios».
+ *
+ * HU-010 (BL-613): el número del bot de WhatsApp, para que el menú para
+ * retirar ofrezca «¿Preferís pedir por WhatsApp?». Solo se ofrece si el bot
+ * atiende al local; si no, la pantalla lo avisa.
  */
 export default function SeccionRetiro({
   formulario,
   error,
+  errorWhatsapp = null,
+  botConectado = false,
   onCambiar,
   className = "",
 }: Readonly<SeccionRetiroProps>) {
@@ -100,6 +110,14 @@ export default function SeccionRetiro({
               {error}
             </p>
           )}
+          {formulario.whatsappPedidos !== null && (
+            <CampoWhatsapp
+              valor={formulario.whatsappPedidos}
+              error={errorWhatsapp}
+              botConectado={botConectado}
+              onCambiar={(valor) => onCambiar("whatsappPedidos", valor)}
+            />
+          )}
         </>
       ) : (
         <p className={CLASE_AYUDA}>
@@ -107,5 +125,54 @@ export default function SeccionRetiro({
         </p>
       )}
     </section>
+  );
+}
+
+/** HU-010 (BL-613): número del bot de WhatsApp (opcional). */
+function CampoWhatsapp({
+  valor,
+  error,
+  botConectado,
+  onCambiar,
+}: Readonly<{
+  valor: string;
+  error: string | null;
+  botConectado: boolean;
+  onCambiar: (valor: string) => void;
+}>) {
+  const ayudas = ["retiro-whatsapp-ayuda", "retiro-whatsapp-estado"];
+  if (error) ayudas.push("retiro-whatsapp-error");
+  return (
+    <div>
+      <label htmlFor="retiro-whatsapp" className={CLASE_ETIQUETA}>
+        WhatsApp del bot (opcional)
+      </label>
+      <input
+        id="retiro-whatsapp"
+        type="tel"
+        inputMode="tel"
+        autoComplete="off"
+        placeholder="099 123 456"
+        value={valor}
+        onChange={(e) => onCambiar(e.target.value)}
+        aria-invalid={error !== null}
+        aria-describedby={ayudas.join(" ")}
+        className={CLASE_CONTROL}
+      />
+      <p id="retiro-whatsapp-ayuda" className={CLASE_AYUDA}>
+        El menú para retirar muestra «¿Preferís pedir por WhatsApp?» con este
+        número. Vacío: no se muestra.
+      </p>
+      <p id="retiro-whatsapp-estado" className={CLASE_AYUDA}>
+        {botConectado
+          ? "El bot de WhatsApp está conectado para este local."
+          : "El bot de WhatsApp todavía no está conectado para este local: el enlace no se va a mostrar hasta que lo esté."}
+      </p>
+      {error && (
+        <p id="retiro-whatsapp-error" className={CLASE_ERROR_CAMPO}>
+          {error}
+        </p>
+      )}
+    </div>
   );
 }

@@ -191,6 +191,8 @@ const NOMBRE_CAMPO: Record<string, string> = {
   retiroHabilitado: "Pedidos para retirar",
   retiroHoraDesde: "Retiro desde",
   retiroHoraHasta: "Retiro hasta",
+  // HU-010 (BL-613): sin el valor en la auditoría (puede ser un celular).
+  whatsappPedidos: "WhatsApp del bot",
   // BL-412: datos del establecimiento que cambia la plataforma.
   rut: "RUT",
   plan: "Plan",

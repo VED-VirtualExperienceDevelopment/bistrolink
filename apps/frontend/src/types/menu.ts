@@ -49,6 +49,9 @@ export interface MenuPublicoResponse {
   // HU-040 (BL-210): si el local toma pedidos para retirar ahora. Opcional:
   // un backend anterior no lo manda (y entonces se puede pedir, como antes).
   retiro?: RetiroPublico;
+  // HU-010 (BL-613): número del bot de WhatsApp («59899123456»), solo si el
+  // bot atiende al local. Opcional: un backend anterior no lo manda.
+  whatsapp?: string | null;
 }
 
 export interface ItemCarrito {

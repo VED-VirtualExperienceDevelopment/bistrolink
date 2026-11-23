@@ -55,6 +55,8 @@ import {
 } from "@/components/menu-digital.utils";
 import type { MarcaPublica, PedidoConfirmado } from "@/types/menu";
 import { variablesDeMarca } from "@/lib/plantillas-marca";
+import { PedirPorWhatsapp } from "./retiro/PedirPorWhatsapp";
+import { ofrecerPedirPorWhatsapp } from "./retiro/whatsapp.utils";
 import { ImagenDePortada, LogoDelLocal } from "@/components/MarcaDelLocal";
 import {
   firmaCarrito,
@@ -148,6 +150,11 @@ interface MenuDigitalProps {
   readonly marca?: MarcaPublica;
   /** HU-040 (BL-210): solo en el enlace web, si el local toma pedidos ahora. */
   readonly retiro?: RetiroPublico | null;
+  /**
+   * HU-010 (BL-613): número del bot de WhatsApp del local, solo en el menú
+   * para retirar y si el bot está conectado (lo decide el backend).
+   */
+  readonly whatsapp?: string | null;
 }
 
 const MAX_CHARS_GENERAL = 500;
@@ -273,6 +280,7 @@ export default function MenuDigital({
   numeroMesa,
   marca,
   retiro,
+  whatsapp,
 }: MenuDigitalProps) {
   const tipo = origen.tipo;
   // HU-040 (BL-210): datos del comensal del pedido para retirar y, si el
@@ -849,6 +857,11 @@ export default function MenuDigital({
                   <h1 className="text-3xl md:text-5xl font-bold text-white mb-2 tracking-tight">
                     {restaurante.nombre}
                   </h1>
+                  {/* HU-010 (BL-613): pedir por el bot, en el menú para
+                  retirar y con el local tomando pedidos. */}
+                  {ofrecerPedirPorWhatsapp(tipo, whatsapp, retiro) && (
+                    <PedirPorWhatsapp numero={whatsapp} />
+                  )}
                 </div>
               </div>
             </section>
