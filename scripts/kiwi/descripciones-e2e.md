@@ -49,6 +49,7 @@
 | 1.41 | 20/11/2026 | TC-E-002, 012 y 013 cambian: «Llamar al mozo» en la barra superior, con la confirmación en el botón y «En el local · Mesa N» en la portada. TC-E-128 y 129: el botón a 360 px y «Volver a llamar» pasado el minuto (BL-592). |
 | 1.42 | 22/11/2026 | Se borran los bloques de TC-E-002, 012, 013, 127, 128 y 129, ya cargados en Kiwi. TC-E-130: el link de pago en una PC usa todo el ancho (BL-602). |
 | 1.43 | 23/11/2026 | TC-E-001 cambia: el menú se mide con la red limitada a 4G (perfil «Fast 4G» de Chrome DevTools) y sin caché, como pide HU-001 (BL-607). |
+| 1.44 | 23/11/2026 | Se borran los bloques de TC-E-001 y 130, ya cargados en Kiwi. TC-E-131: «¿Preferís pedir por WhatsApp?» en el menú para retirar (BL-613). |
 
 Plantilla para cargar en Kiwi la descripción de casos TC-E (Playwright)
 nuevos o que cambiaron (BL-435). La usa
@@ -93,38 +94,22 @@ Reglas:
 
 ## Casos para cargar
 
-## TC-E-130
+## TC-E-131
 
 ### Precondición
 
-El comensal arma un pedido para retirar desde la carta y lo deja esperando el pago, como en TC-E-112. El mozo de prueba, en /admin/cobros. El link se abre en una PC con una ventana de 1366 × 900.
+El administrador de prueba, en /admin/configuracion. El local de prueba toma pedidos para retirar. Si ya tiene un número del bot (por ejemplo, el de la demo en staging), se usa ese; si no, el test carga uno de prueba y lo quita al terminar. El chat nunca se abre.
 
 ### Pasos
 
-1. El mozo genera el link de pago del pedido y copia la URL.
-2. Abrir la URL en la PC.
-3. Revisar la página con axe (WCAG 2.1 AA).
+1. En «Pedidos para retirar», revisar el campo «WhatsApp del bot (opcional)» y el aviso de si el bot está conectado. Si está vacío, escribir «099 123 456» y guardar.
+2. Pedir a la API el menú para retirar del local.
+3. Abrir el menú para retirar y, si aparece el enlace, revisar la página con axe (WCAG 2.1 AA).
+4. Abrir el menú de una mesa (QR).
 
 ### Resultado esperado
 
-1. Se genera el link.
-2. «Pagá tu pedido» se ve en una sola línea, en una columna de más de 500 px de ancho. El resumen «Tu pedido» queda a la derecha de esa columna. El nombre del local, en el encabezado, empieza alineado con el contenido. No hay scroll horizontal.
-3. Sin errores graves ni críticos de accesibilidad.
-
-## TC-E-001
-
-### Precondición
-
-Mesa del seed abierta, con su URL de QR (fixture `qrMesas`). El ítem «Milanesa a la napolitana» está disponible en la carta.
-
-### Pasos
-
-1. Abrir la carta de la mesa una vez, sin medir, para que los servicios estén despiertos.
-2. Limitar la red al perfil «Fast 4G» de Chrome DevTools (9 Mbps de bajada, 1,5 Mbps de subida, 165 ms de latencia) y desactivar la caché.
-3. Volver a abrir la carta y medir el tiempo hasta que se ve «Milanesa a la napolitana».
-
-### Resultado esperado
-
-1. La carta se abre y muestra los ítems del seed.
-2. La red queda limitada a 4G, sin caché.
-3. La carta se ve completa en menos de 3 s (criterio de HU-001: «el menú carga en menos de 3 segundos en red 4G»).
+1. El campo y el aviso del bot se ven. Lo que se guarda queda en formato internacional («+59899123456»).
+2. La API manda el número (sin el +) solo si el bot atiende al local.
+3. Con número, bot conectado y el local tomando pedidos: «¿Preferís pedir por WhatsApp?» en la portada, que abre `https://wa.me/<número>?text=Hola` en otra pestaña. Si no, no aparece. Sin errores graves ni críticos de accesibilidad.
+4. En el menú de la mesa no aparece el enlace.

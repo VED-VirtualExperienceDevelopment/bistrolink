@@ -118,6 +118,9 @@ describe("cambios para guardar", () => {
       retiroHabilitado: true,
       retiroHoraDesde: "",
       retiroHoraHasta: "",
+      // HU-010 (BL-613): un backend anterior no trae el número del bot: sin
+      // el campo.
+      whatsappPedidos: null,
       // HU-043 (BL-562): la portada, sin tocar.
       portada: { tipo: "guardado" },
     });
@@ -380,6 +383,7 @@ describe("primerCampoConError", () => {
     cola: {},
     email: null,
     retiro: null,
+    whatsapp: null,
   };
 
   it("[TC-U-422] devuelve el primer campo con error en el orden de la pantalla, o null", () => {
@@ -417,6 +421,7 @@ describe("erroresDelFormulario", () => {
       email: null,
       cola: {},
       retiro: null,
+      whatsapp: null,
     });
 
     expect(
@@ -437,6 +442,7 @@ describe("erroresDelFormulario", () => {
       email: expect.any(String),
       cola: { limitePreparacion: "Tiene que estar entre 1 y 50." },
       retiro: expect.any(String),
+      whatsapp: null,
     });
 
     expect(erroresDelFormulario(formularioDesde(GUARDADA))).toEqual({
@@ -447,6 +453,7 @@ describe("erroresDelFormulario", () => {
       email: null,
       cola: {},
       retiro: null,
+      whatsapp: null,
     });
   });
 });
@@ -584,6 +591,7 @@ describe("HU-038 (BL-506): umbrales de espera del KDS", () => {
         email: "mal",
         cola: { esperaDemorado: "mal" },
         retiro: null,
+        whatsapp: null,
       }),
     ).toBe("espera-demorado");
     expect(
@@ -595,6 +603,7 @@ describe("HU-038 (BL-506): umbrales de espera del KDS", () => {
         email: null,
         cola: { minutosPreparacion: "mal", esperaAtencion: "mal" },
         retiro: null,
+        whatsapp: null,
       }),
     ).toBe("cola-minutos");
   });
@@ -769,5 +778,63 @@ describe("HU-043 (BL-562): portada del banner", () => {
     ).toBe("https://firmada.example/n.webp");
     expect(urlDeLaPortada(CON_PORTADA, { tipo: "quitado" })).toBeNull();
     expect(urlDeLaPortada(GUARDADA, { tipo: "guardado" })).toBeNull();
+  });
+});
+
+describe("HU-010 (BL-613): número del bot de WhatsApp", () => {
+  const conWhatsapp = {
+    ...GUARDADA,
+    whatsappPedidos: "+59899123456",
+    whatsappBotConectado: true,
+  };
+
+  it("[TC-U-696] el formulario muestra el número guardado; sin número queda vacío y un backend anterior no muestra el campo", () => {
+    expect(formularioDesde(conWhatsapp).whatsappPedidos).toBe("+59899123456");
+    expect(
+      formularioDesde({ ...GUARDADA, whatsappPedidos: null }).whatsappPedidos,
+    ).toBe("");
+    expect(formularioDesde(GUARDADA).whatsappPedidos).toBeNull();
+  });
+
+  it("[TC-U-696] manda el número en formato internacional solo si cambió, y null para quitarlo", () => {
+    const formulario = formularioDesde(conWhatsapp);
+    // Escrito distinto pero es el mismo número: no hay cambio.
+    expect(
+      cambiosParaGuardar(conWhatsapp, {
+        ...formulario,
+        whatsappPedidos: "099 123 456",
+      }),
+    ).toEqual({});
+    expect(
+      cambiosParaGuardar(conWhatsapp, {
+        ...formulario,
+        whatsappPedidos: "098 765 432",
+      }),
+    ).toEqual({ whatsappPedidos: "+59898765432" });
+    expect(
+      cambiosParaGuardar(conWhatsapp, { ...formulario, whatsappPedidos: "" }),
+    ).toEqual({ whatsappPedidos: null });
+    // Sin número guardado, escribir uno lo manda.
+    const sinNumero = { ...GUARDADA, whatsappPedidos: null };
+    expect(
+      cambiosParaGuardar(sinNumero, {
+        ...formularioDesde(sinNumero),
+        whatsappPedidos: "099 123 456",
+      }),
+    ).toEqual({ whatsappPedidos: "+59899123456" });
+    // Un backend anterior: no se manda.
+    expect(
+      cambiosParaGuardar(GUARDADA, formularioDesde(GUARDADA)),
+    ).not.toHaveProperty("whatsappPedidos");
+  });
+
+  it("[TC-U-696] un número que no se puede leer es un error, y el foco va al campo", () => {
+    const errores = erroresDelFormulario({
+      ...formularioDesde(conWhatsapp),
+      whatsappPedidos: "2900 1234",
+    });
+    expect(errores.whatsapp).toMatch(/celular uruguayo/);
+    expect(primerCampoConError(errores)).toBe("retiro-whatsapp");
+    expect(erroresDelFormulario(formularioDesde(GUARDADA)).whatsapp).toBeNull();
   });
 });

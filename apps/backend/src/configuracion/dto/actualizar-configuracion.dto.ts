@@ -18,6 +18,10 @@ import {
 } from 'class-validator';
 import { CfeProveedor } from '@prisma/client';
 import { HORA_HH_MM } from '../../pedidos/retiro';
+import {
+  NUMERO_WHATSAPP,
+  normalizarNumeroWhatsapp,
+} from '../../whatsapp/numero-whatsapp';
 import { limpiarEspacios } from '../../usuarios/dto/create-usuario.dto';
 import {
   MINUTOS_ESPERA_MAXIMO,
@@ -105,6 +109,10 @@ const normalizarHora = ({ value }: { value: unknown }) => {
   const limpio = value.trim();
   return limpio === '' ? null : limpio;
 };
+
+/** HU-010 (BL-613): a formato internacional; «» o null lo quita. */
+const normalizarWhatsapp = ({ value }: { value: unknown }) =>
+  typeof value === 'string' ? normalizarNumeroWhatsapp(value) : value;
 
 const ordenarPropinas = ({ value }: { value: unknown }) =>
   Array.isArray(value) && value.every((v) => typeof v === 'number')
@@ -344,6 +352,18 @@ export class ActualizarConfiguracionDto {
     message: 'La hora de cierre del retiro tiene que tener la forma HH:MM',
   })
   retiroHoraHasta?: string | null;
+
+  // HU-010 (BL-613): número del bot de WhatsApp del local. El menú para
+  // retirar ofrece «¿Preferís pedir por WhatsApp?» con este número, solo si
+  // el bot está conectado para el tenant. Vacío o null lo quita.
+  @IsOptional()
+  @Transform(normalizarWhatsapp)
+  @ValidateIf((_dto, valor) => valor !== null)
+  @Matches(NUMERO_WHATSAPP, {
+    message:
+      'Escribí un celular uruguayo (099 123 456) o un número internacional que empiece con +',
+  })
+  whatsappPedidos?: string | null;
 
   // HU-043 (BL-562): foto de portada del banner de la carta. Es la key que
   // devuelve la confirmación con destino `portada`; la controla el servicio

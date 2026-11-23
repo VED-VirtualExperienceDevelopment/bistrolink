@@ -233,6 +233,8 @@ export default function ConfiguracionPage() {
             <SeccionRetiro
               formulario={formulario}
               error={errorVisible(errores.retiro)}
+              errorWhatsapp={errorVisible(errores.whatsapp)}
+              botConectado={guardada.whatsappBotConectado === true}
               onCambiar={cambiar}
               className="xl:col-span-2"
             />

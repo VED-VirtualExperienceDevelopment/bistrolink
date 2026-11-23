@@ -145,6 +145,8 @@ describe('MenuService - getMenuByRestaurante (HU-002)', () => {
         }),
         marca: { logoUrl: null, portadaUrl: null, plantilla: 'clasica' },
         // HU-040 (BL-210): el enlace web es el de los pedidos para retirar.
+        // HU-010 (BL-613): sin número ni bot, no ofrece WhatsApp.
+        whatsapp: null,
         retiro: {
           habilitado: true,
           abierto: true,
@@ -295,6 +297,41 @@ describe('MenuService - getMenuByRestaurante (HU-002)', () => {
     });
     // La key no viaja al comensal.
     expect(JSON.stringify(resultado.restaurante)).not.toContain('menu/marca');
+  });
+
+  describe('HU-010 (BL-613): «¿Preferís pedir por WhatsApp?»', () => {
+    const conBot = (tenantId: string) => ({
+      EVOLUTION_API_URL: 'http://evolution.test',
+      EVOLUTION_API_KEY: 'clave-de-prueba',
+      EVOLUTION_INSTANCIAS: `local=${tenantId}`,
+      WHATSAPP_WEBHOOK_SECRETO: 's'.repeat(32),
+      WHATSAPP_TELEFONO_CLAVE: 't'.repeat(32),
+    });
+
+    it.each([
+      ['número y bot conectado', '+59899123456', true, '59899123456'],
+      ['bot conectado sin número', null, true, null],
+      ['número sin bot', '+59899123456', false, null],
+    ])(
+      '[TC-U-691] %s',
+      async (_caso, whatsappPedidos, botConectado, esperado) => {
+        const tenantId = randomUUID();
+        const restaurante = buildRestaurante({ tenantId, whatsappPedidos });
+        mockTx.restaurante.findUnique.mockResolvedValue(restaurante);
+        mockTx.categoriaCarta.findMany.mockResolvedValue([]);
+        const antes = { ...process.env };
+        if (botConectado) Object.assign(process.env, conBot(tenantId));
+        try {
+          const resultado = await service.getMenuByRestaurante(
+            tenantId,
+            restaurante.id,
+          );
+          expect(resultado.whatsapp).toBe(esperado);
+        } finally {
+          process.env = antes;
+        }
+      },
+    );
   });
 
   describe('Casos de error', () => {

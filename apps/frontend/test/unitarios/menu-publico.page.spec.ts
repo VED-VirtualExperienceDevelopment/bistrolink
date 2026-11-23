@@ -96,6 +96,16 @@ describe("MenuPublicoPage", () => {
     );
   });
 
+  it("[TC-U-697] HU-010 (BL-613): pasa el número del bot de WhatsApp que manda la API", async () => {
+    fetchMock.mockResolvedValue(
+      respuesta(200, { ...MENU, whatsapp: "59899123456" }),
+    );
+
+    const elemento = await MenuPublicoPage({ params: params() });
+
+    expect(elemento.props.whatsapp).toBe("59899123456");
+  });
+
   it.each([404, 400])(
     "si la API responde %i, llama a notFound() y NO loguea ningún error",
     async (status) => {

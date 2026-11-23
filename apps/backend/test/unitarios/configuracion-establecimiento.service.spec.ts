@@ -149,6 +149,8 @@ describe('ConfiguracionEstablecimientoService (HU-020, BL-72)', () => {
         proveedoresCfeDisponibles: ['SURTEC'],
         // HU-043 (BL-531): la plantilla y las que se pueden elegir.
         plantillasDisponibles: ['clasica', 'gourmet', 'rapida', 'familiar'],
+        // HU-010 (BL-613): sin las variables del bot, no está conectado.
+        whatsappBotConectado: false,
       });
     });
 
@@ -279,6 +281,42 @@ describe('ConfiguracionEstablecimientoService (HU-020, BL-72)', () => {
       expect(entrada.detalle).toEqual({ campos: ['emailPrivacidad'] });
       expect(JSON.stringify(entrada)).not.toContain('privacidad@');
       expect(configuracion.emailPrivacidad).toBe('privacidad@uno.com.uy');
+    });
+
+    it('[TC-U-692] HU-010 (BL-613): número del bot de WhatsApp: lo guarda en formato internacional, lo audita sin el valor y avisa si el bot está conectado', async () => {
+      const antes = { ...process.env };
+      process.env.EVOLUTION_API_URL = 'http://evolution.test';
+      process.env.EVOLUTION_API_KEY = 'clave-de-prueba';
+      process.env.EVOLUTION_INSTANCIAS = `local-uno=${TENANT_ID}`;
+      process.env.WHATSAPP_WEBHOOK_SECRETO = 's'.repeat(32);
+      process.env.WHATSAPP_TELEFONO_CLAVE = 't'.repeat(32);
+      try {
+        const configuracion = await service.actualizar(
+          TENANT_ID,
+          { whatsappPedidos: '+59899123456' },
+          ACTOR,
+        );
+
+        expect(tx.restaurante.update).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: { whatsappPedidos: '+59899123456' },
+          }),
+        );
+        const [, entrada] = auditLog.registrarEnTx.mock.calls[0];
+        expect(entrada.detalle).toEqual({ campos: ['whatsappPedidos'] });
+        expect(JSON.stringify(entrada)).not.toContain('99123456');
+        expect(configuracion.whatsappPedidos).toBe('+59899123456');
+        expect(configuracion.whatsappBotConectado).toBe(true);
+
+        // Otra instancia, de otro tenant: para este local no está conectado.
+        process.env.EVOLUTION_INSTANCIAS =
+          'otro-local=b02579f2-2bb0-496b-abf2-33c494c93122';
+        expect((await service.obtener(TENANT_ID)).whatsappBotConectado).toBe(
+          false,
+        );
+      } finally {
+        process.env = antes;
+      }
     });
 
     it('el proveedor de CFE queda en el diff', async () => {

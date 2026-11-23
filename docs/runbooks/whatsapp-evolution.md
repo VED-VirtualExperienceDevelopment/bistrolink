@@ -134,6 +134,8 @@ CONFIG_SESSION_PHONE_CLIENT=BistroLink
 
 No desvincular el dispositivo desde el teléfono: eso desconecta el bot.
 
+**Enlace en el menú para retirar (BL-613).** Para que el menú para retirar muestre «¿Preferís pedir por WhatsApp?», el administrador del local carga el número del chip en Configuración → Pedidos para retirar → «WhatsApp del bot». El enlace aparece solo si, además, la instancia del local está en `EVOLUTION_INSTANCIAS` y el local está tomando pedidos para retirar. En el menú de la mesa nunca aparece. Los E2E no borran un número ya cargado (TC-E-131 usa el que haya).
+
 ## 6. Webhook de la instancia
 
 Evolution llama a la API por la **red privada** (sin egress y sin salir a internet). La URL es `http://<dominio privado de la API>:<PORT de la API>/webhooks/whatsapp`; en staging, `http://bistrolink-api.railway.internal:3001/webhooks/whatsapp`. La API escucha en todas las interfaces, así que la red privada funciona.

@@ -62,9 +62,11 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
       // BL-452: los specs que cambian la configuración del establecimiento
       // corren aparte (proyecto de abajo). HU-043 (BL-535): también la marca.
+      // HU-010 (BL-613): y el número del bot de WhatsApp.
       // BL-607: la medición de FPS del mapa de mesas (TC-P-004) es de
       // performance, no de la E2E: corre solo en el proyecto «performance».
-      testIgnore: /(pago-medios|marca|mapa-mesas-fps)\.spec\.ts/,
+      testIgnore:
+        /(pago-medios|marca|pedir-por-whatsapp|mapa-mesas-fps)\.spec\.ts/,
     },
     // BL-607: TC-P-004 (HU-016, RD.05). Lo corre el workflow manual
     // performance.yml y su resultado va al Test Plan Performance-k6-Lighthouse
@@ -84,7 +86,7 @@ export default defineConfig({
     {
       name: "chromium-configuracion",
       use: { ...devices["Desktop Chrome"] },
-      testMatch: /(pago-medios|marca)\.spec\.ts/,
+      testMatch: /(pago-medios|marca|pedir-por-whatsapp)\.spec\.ts/,
       // HU-043 (BL-535): marca.spec.ts cambia la plantilla, el logo y la
       // portada, que se ven en la carta: espera también a los proyectos que
       // sacan capturas de la carta (menu-publico.spec.ts).

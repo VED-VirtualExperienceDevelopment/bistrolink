@@ -59,6 +59,7 @@
 | 1.52    | 20/11/2026 | TC-I-243: la precondición dice que el realm ya trae la fuerza bruta encendida (BL-582) y que el test la fija en 3 intentos.                                                                                                               |
 | 1.53    | 21/11/2026 | Se borran los bloques de TC-I-243 y 244, ya cargados en Kiwi. TC-I-245 y 246: bot de pedidos para retirar por WhatsApp (HU-010 / BL-112), para cargar con el script antes de mergear el PR.                                               |
 | 1.54    | 22/11/2026 | Se borran los bloques de TC-I-245 y 246, ya cargados en Kiwi. TC-I-247: avisos por WhatsApp de pago aprobado y pedido listo (BL-604), para cargar con el script antes de mergear el PR.                                                   |
+| 1.55    | 22/11/2026 | Se borra el bloque de TC-I-247, ya cargado en Kiwi. TC-I-248: número del bot de WhatsApp en Configuración y enlace del menú para retirar (BL-613), para cargar con el script antes de mergear el PR.                                      |
 
 Texto del campo de descripción de cada caso TC-I en Kiwi. Lo carga
 `cargar-casos-integracion.mjs --descripciones`: cada bloque `## TC-I-NNN`
@@ -70,20 +71,24 @@ esperado`, igual que los casos cargados a mano desde TC-I-029.
 
 ## Casos para cargar
 
-## TC-I-247
+## TC-I-248
 
 ### Precondición
 
-La misma que TC-I-245: base y RLS reales, Evolution API simulado y la instancia de prueba asignada al tenant A, que toma pedidos para retirar todo el día. La pasarela de pago es la falsa de los tests (aprueba siempre). Un mozo activo del tenant A.
+Base y RLS reales. La configuración del bot de WhatsApp completa, con la instancia de prueba asignada al tenant A (secretos generados en la corrida). El tenant A toma pedidos para retirar.
 
 ### Pasos
 
-1. Por el bot: aceptar el aviso, pedir el primer plato de la carta, «0» y «1». Se recibe el link de pago.
-2. Abrir el link (`POST /auth/comensal/link-pago`) y pagar el pedido (`POST /pedidos/:id/pagos` con `X-Link-Pago`).
-3. Pasar el pedido a preparación y después a listo, con la misma transición que usa el KDS.
+1. Guardar el número del bot del tenant A con el servicio de Configuración, escrito «099 123 456».
+2. Leer la auditoría de ese cambio.
+3. Pedir el menú para retirar del tenant A (`GET /menu/tenant/:tenantId/restaurante/:restauranteId`).
+4. Asignar la instancia de prueba a otro tenant y volver a pedir el menú.
+5. Escribir en la base, sin pasar por la API, un número sin formato internacional («099123456»).
 
 ### Resultado esperado
 
-1. El pedido queda en `PENDIENTE_PAGO` con canal `WHATSAPP`.
-2. El pedido toma un código de retiro (R-NNN) y al teléfono le llega «¡Pago aprobado!» con ese código en negrita.
-3. Al teléfono le llega «¡Tu pedido está listo!» con el mismo código. Son dos avisos en total, los dos por la instancia de prueba y con la API key.
+1. Queda guardado «+59899123456» y la respuesta dice que el bot está conectado para el local.
+2. La auditoría registra el campo `whatsappPedidos`, sin el número.
+3. El menú trae `whatsapp: "59899123456"` (como lo pide wa.me).
+4. El menú trae `whatsapp: null`: el bot no atiende a ese local.
+5. La base lo rechaza (CHECK `restaurante_whatsapp_pedidos_formato`).

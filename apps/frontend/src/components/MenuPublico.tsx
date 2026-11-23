@@ -17,6 +17,8 @@ interface MenuPublicoProps {
   readonly marca?: MarcaPublica;
   /** HU-040 (BL-210): si el local toma pedidos para retirar ahora. */
   readonly retiro?: RetiroPublico;
+  /** HU-010 (BL-613): número del bot de WhatsApp, si atiende al local. */
+  readonly whatsapp?: string | null;
 }
 
 export default function MenuPublico({
@@ -26,6 +28,7 @@ export default function MenuPublico({
   restauranteId,
   marca,
   retiro,
+  whatsapp,
 }: MenuPublicoProps) {
   return (
     <MenuDigital
@@ -34,6 +37,7 @@ export default function MenuPublico({
       categorias={categorias as unknown as CategoriaMenu[]}
       marca={marca}
       retiro={retiro}
+      whatsapp={whatsapp}
     />
   );
 }

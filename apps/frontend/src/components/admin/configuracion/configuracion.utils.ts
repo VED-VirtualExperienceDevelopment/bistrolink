@@ -5,6 +5,10 @@
  */
 
 import type { PlantillaMarca } from "@/types/menu";
+import {
+  errorNumeroWhatsapp,
+  normalizarNumeroWhatsapp,
+} from "@/components/retiro/whatsapp.utils";
 import { PLANTILLA_POR_DEFECTO } from "@/lib/plantillas-marca";
 
 export type CfeProveedor = "SURTEC" | "BILLER";
@@ -77,6 +81,13 @@ export interface ConfiguracionEstablecimiento {
   retiroHabilitado?: boolean;
   retiroHoraDesde?: string | null;
   retiroHoraHasta?: string | null;
+  /**
+   * HU-010 (BL-613): número del bot de WhatsApp («+59899123456») y si el
+   * bot atiende al local. Opcionales: un backend anterior no los trae (y el
+   * campo no se muestra).
+   */
+  whatsappPedidos?: string | null;
+  whatsappBotConectado?: boolean;
   /** HU-043 (BL-562): URL firmada de la portada del banner (vista previa). */
   portadaUrl?: string | null;
 }
@@ -139,6 +150,12 @@ export interface FormularioConfiguracion {
   /** HU-040 (BL-210): «HH:MM» o vacío; las dos vacías = todo el día. */
   retiroHoraDesde: string;
   retiroHoraHasta: string;
+  /**
+   * HU-010 (BL-613): número del bot de WhatsApp, como lo escribe el
+   * administrador; vacío = sin número. null = el backend no lo trae (el
+   * campo no se muestra ni se valida).
+   */
+  whatsappPedidos: string | null;
   /** HU-043 (BL-562): foto de portada del banner. */
   portada: EstadoLogo;
 }
@@ -162,6 +179,7 @@ export type CambiosConfiguracion = Partial<
     | "direccionLocal"
     | "retiroHoraDesde"
     | "retiroHoraHasta"
+    | "whatsappPedidos"
   >
 > & {
   propinasSugeridas?: number[];
@@ -181,6 +199,8 @@ export type CambiosConfiguracion = Partial<
   direccion?: string;
   retiroHoraDesde?: string | null;
   retiroHoraHasta?: string | null;
+  /** HU-010 (BL-613): en formato internacional, o null para quitarlo. */
+  whatsappPedidos?: string | null;
 };
 
 /** Mismos límites que el backend (ActualizarConfiguracionDto). */
@@ -304,6 +324,11 @@ export function formularioDesde(
     retiroHabilitado: configuracion.retiroHabilitado ?? true,
     retiroHoraDesde: configuracion.retiroHoraDesde ?? "",
     retiroHoraHasta: configuracion.retiroHoraHasta ?? "",
+    // HU-010 (BL-613): un backend anterior no lo trae: el campo no se muestra.
+    whatsappPedidos:
+      configuracion.whatsappPedidos === undefined
+        ? null
+        : (configuracion.whatsappPedidos ?? ""),
     portada: { tipo: "guardado" },
   };
 }
@@ -488,6 +513,8 @@ export interface ErroresFormulario {
   cola: ErroresCola;
   /** HU-040 (BL-210). */
   retiro: string | null;
+  /** HU-010 (BL-613). */
+  whatsapp: string | null;
 }
 
 /**
@@ -506,6 +533,7 @@ export function erroresDelFormulario(
       email: null,
       cola: {},
       retiro: null,
+      whatsapp: null,
     };
   }
   const propinas = leerPropinas(formulario.propinas);
@@ -517,6 +545,10 @@ export function erroresDelFormulario(
     email: errorEmailPrivacidad(formulario.emailPrivacidad),
     cola: erroresCola(formulario),
     retiro: errorHorarioRetiro(formulario),
+    whatsapp:
+      formulario.whatsappPedidos === null
+        ? null
+        : errorNumeroWhatsapp(formulario.whatsappPedidos),
   };
 }
 
@@ -538,6 +570,7 @@ export function primerCampoConError(errores: ErroresFormulario): string | null {
     ["espera-demorado", errores.cola.esperaDemorado],
     ["espera-demora-alta", errores.cola.esperaDemoraAlta],
     ["retiro-desde", errores.retiro],
+    ["retiro-whatsapp", errores.whatsapp],
     ["email-privacidad", errores.email],
   ];
   return enOrden.find(([, error]) => Boolean(error))?.[0] ?? null;
@@ -626,6 +659,13 @@ function cambiosDelRetiro(
   ) {
     cambios.retiroHoraDesde = desde;
     cambios.retiroHoraHasta = hasta;
+  }
+  // HU-010 (BL-613): el número, en el formato en que lo guarda el backend.
+  if (formulario.whatsappPedidos !== null) {
+    const numero = normalizarNumeroWhatsapp(formulario.whatsappPedidos);
+    if (numero !== (guardada.whatsappPedidos ?? null)) {
+      cambios.whatsappPedidos = numero;
+    }
   }
   return cambios;
 }

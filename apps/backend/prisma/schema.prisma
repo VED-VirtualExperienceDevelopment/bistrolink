@@ -223,6 +223,10 @@ model Restaurante {
   retiroHabilitado            Boolean      @default(true) @map("retiro_habilitado")
   retiroHoraDesde             String?      @map("retiro_hora_desde") @db.VarChar(5)
   retiroHoraHasta             String?      @map("retiro_hora_hasta") @db.VarChar(5)
+  // HU-010 (BL-613): número del bot de WhatsApp del local, en formato
+  // internacional («+59899123456»). El menú para retirar lo ofrece solo si
+  // el bot está conectado para el tenant. null = no se ofrece.
+  whatsappPedidos             String?      @map("whatsapp_pedidos") @db.VarChar(16)
   // Último código de retiro entregado (R-001 a R-999, después vuelve a
   // empezar). Se incrementa con un UPDATE atómico al aprobarse el pago.
   ultimoCodigoRetiro          Int          @default(0) @map("ultimo_codigo_retiro")

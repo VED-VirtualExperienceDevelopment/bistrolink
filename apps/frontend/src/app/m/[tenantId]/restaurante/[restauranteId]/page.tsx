@@ -122,6 +122,7 @@ export default async function MenuPublicoPage({ params }: PageProps) {
       restauranteId={restauranteId}
       marca={data.marca}
       retiro={data.retiro}
+      whatsapp={data.whatsapp}
     />
   );
 }
