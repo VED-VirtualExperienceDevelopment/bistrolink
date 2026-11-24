@@ -25,4 +25,7 @@ export interface Pedido {
   createdAt: string; // ISO timestamp — hora de recepción
   lineas: LineaPedido[];
   observacionGeneral?: string; // HU-021
+  // HU-040 (BL-210): pedido para retirar (código y nombre del comensal, si
+  // lo dejó). null u omitido en los pedidos de mesa.
+  retiro?: { codigo: string; nombre: string | null } | null;
 }

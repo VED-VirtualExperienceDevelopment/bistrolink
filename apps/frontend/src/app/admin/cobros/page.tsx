@@ -1,10 +1,15 @@
 "use client";
 
+import { Suspense, useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useKeycloakAuth } from "@/components/providers/KeycloakProvider";
 import { PedidosPorCobrar } from "@/components/admin/cobros/PedidosPorCobrar";
 import {
+  PARAM_PEDIDO,
+  RUTA_PANTALLA_COBROS,
   pendientesEnMesas,
   pendientesParaRetirar,
+  resolverPedidoDestacado,
 } from "@/components/admin/cobros/cobros.utils";
 import { usePendientesDeCobro } from "@/components/admin/cobros/usePendientesDeCobro";
 
@@ -13,10 +18,46 @@ import { usePendientesDeCobro } from "@/components/admin/cobros/usePendientesDeC
  * el POS del local). Los pedidos para retirar no tienen
  * mesa en el mapa: se cobran acá. También se listan los de las mesas, que
  * se pueden cobrar desde acá o desde el panel de la mesa.
+ *
+ * BL-470: «Ir a cobrar», en un aviso de efectivo de las alertas, llega con
+ * `?pedido=<id>`. Cuando termina de cargar la lista, ese pedido se destaca
+ * y se anuncia; si ya no está pendiente, se avisa y se limpia el parámetro.
+ * `useSearchParams` va dentro de un <Suspense>: sin él, Next 15 no compila
+ * la ruta estática.
  */
 export default function CobrosPage() {
+  return (
+    <Suspense fallback={null}>
+      <Cobros />
+    </Suspense>
+  );
+}
+
+function Cobros() {
   const { token } = useKeycloakAuth();
   const { datos, cargando, error, recargar } = usePendientesDeCobro(token);
+  const router = useRouter();
+  const pedidoParam = useSearchParams().get(PARAM_PEDIDO);
+  const [destacadoId, setDestacadoId] = useState<string | null>(null);
+  const [anuncio, setAnuncio] = useState("");
+  // El parámetro se resuelve una sola vez por pedido: después de cobrarlo,
+  // la lista se recarga sin él y no tiene que aparecer «ya no está pendiente».
+  const resueltoRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!datos || cargando || !pedidoParam) return;
+    if (resueltoRef.current === pedidoParam) return;
+    resueltoRef.current = pedidoParam;
+    const resultado = resolverPedidoDestacado(datos.pedidos, pedidoParam);
+    if (resultado.tipo === "pendiente") {
+      setDestacadoId(resultado.pedidoId);
+      setAnuncio(resultado.anuncio);
+    } else if (resultado.tipo === "no-pendiente") {
+      setDestacadoId(null);
+      setAnuncio(resultado.anuncio);
+      router.replace(RUTA_PANTALLA_COBROS);
+    }
+  }, [datos, cargando, pedidoParam, router]);
 
   return (
     <div className="w-full space-y-6 p-4 md:p-6">
@@ -42,6 +83,23 @@ export default function CobrosPage() {
           <span>Actualizar</span>
         </button>
       </div>
+
+      {/* BL-470: existe siempre, así el lector de pantalla anuncia el texto
+          cuando aparece. <output> tiene el rol «status» implícito. */}
+      <output
+        className={
+          anuncio
+            ? "flex items-center gap-2 rounded-lg bg-secondary-container px-3 py-3 text-body-md text-on-secondary-container"
+            : "sr-only"
+        }
+      >
+        {anuncio && (
+          <span aria-hidden="true" className="material-symbols-outlined text-[20px]">
+            info
+          </span>
+        )}
+        <span>{anuncio}</span>
+      </output>
 
       {error && (
         <div
@@ -71,6 +129,7 @@ export default function CobrosPage() {
               token={token}
               vacio="No hay pedidos para retirar esperando el pago."
               onCobrado={() => void recargar()}
+              destacadoId={destacadoId}
             />
           </section>
           <section aria-labelledby="cobros-mesas" className="space-y-3">
@@ -85,6 +144,7 @@ export default function CobrosPage() {
               conMesa
               vacio="No hay pedidos de mesas esperando el pago."
               onCobrado={() => void recargar()}
+              destacadoId={destacadoId}
             />
           </section>
         </>

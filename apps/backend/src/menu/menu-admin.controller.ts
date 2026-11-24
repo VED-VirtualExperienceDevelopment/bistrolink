@@ -79,7 +79,11 @@ export class MenuAdminController {
     default: { limit: LIMITE_CONFIRMACIONES_POR_MINUTO, ttl: 60_000 },
   })
   async confirmarImagen(@Req() req: any, @Body() dto: ConfirmarImagenDto) {
-    return this.imagenesMenuService.confirmar(dto.key, req.user.tenantId);
+    return this.imagenesMenuService.confirmar(
+      dto.key,
+      req.user.tenantId,
+      dto.destino,
+    );
   }
 
   @Get('categoria')

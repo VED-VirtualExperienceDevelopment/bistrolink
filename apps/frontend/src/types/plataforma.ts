@@ -188,4 +188,13 @@ export interface FormularioAlta {
   adminApellido: string;
   cocinaUsername: string;
   cocinaEmail: string;
+  /**
+   * BL-472: cola automática del KDS. Arranca apagada; al encenderla se
+   * propone el límite recomendado, que se puede cambiar (1 a 50).
+   */
+  colaActiva: boolean;
+  colaLimite: string;
 }
+
+/** BL-472: campos de texto del alta (todos menos el interruptor de la cola). */
+export type CampoTextoAlta = Exclude<keyof FormularioAlta, "colaActiva">;

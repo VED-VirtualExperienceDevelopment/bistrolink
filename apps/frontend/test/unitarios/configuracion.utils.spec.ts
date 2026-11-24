@@ -1,4 +1,5 @@
 import {
+  avisoPreseleccion,
   cambiosParaGuardar,
   errorEmailPrivacidad,
   errorRazonSocial,
@@ -8,10 +9,16 @@ import {
   hayErroresCola,
   primerCampoConError,
   hayCambios,
+  urlDelLogo,
+  urlDeLaPortada,
+  errorDireccionLocal,
+  errorNombreLocal,
   leerPropinas,
   sinMediosDePago,
   type ConfiguracionEstablecimiento,
   mensajeAnonimizacion,
+  errorHorarioRetiro,
+  mensajeAnonimizacionRetiro,
 } from "@/components/admin/configuracion/configuracion.utils";
 
 // HU-020 (BL-72): pantalla de configuración del establecimiento.
@@ -77,6 +84,9 @@ describe("cambios para guardar", () => {
   it("el formulario arranca con lo guardado", () => {
     expect(formularioDesde(GUARDADA)).toEqual({
       razonSocial: "Uno SRL",
+      // HU-043 (BL-561): un backend anterior no los trae: sin los campos.
+      nombreLocal: null,
+      direccionLocal: null,
       efectivoHabilitado: true,
       mercadoPagoHabilitado: true,
       // HU-007b (BL-80): un backend anterior no lo trae: el default (true).
@@ -84,6 +94,8 @@ describe("cambios para guardar", () => {
       plexoHabilitado: false,
       handyHabilitado: false,
       propinas: "10, 15",
+      // HU-022 (BL-495): un backend anterior no lo trae: apagada.
+      propinaPreseleccionada: false,
       cfeProveedor: "SURTEC",
       emailPrivacidad: "",
       // HU-042 (BL-465): un backend anterior no trae la cola: desactivada,
@@ -92,6 +104,25 @@ describe("cambios para guardar", () => {
       limitePreparacion: "5",
       umbralAlertaCola: "10",
       minutosPreparacion: "15",
+      // HU-038 (BL-506): un backend anterior no trae los umbrales de espera:
+      // los de por defecto.
+      esperaAtencion: "30",
+      esperaDemorado: "60",
+      esperaDemoraAlta: "120",
+      // HU-043 (BL-533): un backend anterior no trae la marca: la Clásica,
+      // con el logo sin tocar.
+      plantilla: "clasica",
+      logo: { tipo: "guardado" },
+      // HU-040 (BL-210): un backend anterior no trae el retiro: habilitado,
+      // todo el día (el default de la columna).
+      retiroHabilitado: true,
+      retiroHoraDesde: "",
+      retiroHoraHasta: "",
+      // HU-010 (BL-613): un backend anterior no trae el número del bot: sin
+      // el campo.
+      whatsappPedidos: null,
+      // HU-043 (BL-562): la portada, sin tocar.
+      portada: { tipo: "guardado" },
     });
   });
 });
@@ -115,6 +146,72 @@ describe("HU-007b (BL-80): POS del local", () => {
         posHabilitado: false,
       }),
     ).toEqual({ posHabilitado: false });
+  });
+});
+
+describe("HU-022 (BL-495): preselección de la propina", () => {
+  it("el formulario la lee de lo guardado; un backend anterior (sin el campo) la deja apagada", () => {
+    expect(formularioDesde(GUARDADA).propinaPreseleccionada).toBe(false);
+    expect(
+      formularioDesde({ ...GUARDADA, propinaPreseleccionada: true })
+        .propinaPreseleccionada,
+    ).toBe(true);
+  });
+
+  it("activarla manda solo ese campo; apagarla de nuevo también", () => {
+    expect(
+      cambiosParaGuardar(GUARDADA, {
+        ...formularioDesde(GUARDADA),
+        propinaPreseleccionada: true,
+      }),
+    ).toEqual({ propinaPreseleccionada: true });
+
+    const activa = { ...GUARDADA, propinaPreseleccionada: true };
+    expect(
+      cambiosParaGuardar(activa, {
+        ...formularioDesde(activa),
+        propinaPreseleccionada: false,
+      }),
+    ).toEqual({ propinaPreseleccionada: false });
+  });
+
+  it("igual a lo guardado no se manda (con o sin el campo en el backend)", () => {
+    const activa = { ...GUARDADA, propinaPreseleccionada: true };
+    expect(cambiosParaGuardar(activa, formularioDesde(activa))).toEqual({});
+    expect(cambiosParaGuardar(GUARDADA, formularioDesde(GUARDADA))).toEqual({});
+  });
+
+  it("avisa solo si está activa y el 10 % no está en los porcentajes sugeridos", () => {
+    const activa = {
+      ...formularioDesde(GUARDADA),
+      propinaPreseleccionada: true,
+    };
+
+    // Con el 10 % en la lista: sin aviso.
+    expect(avisoPreseleccion({ ...activa, propinas: "5, 10, 15" })).toBeNull();
+    // Sin el 10 %, o con la lista vacía: aviso.
+    expect(avisoPreseleccion({ ...activa, propinas: "5, 15" })).toMatch(
+      /El 10 % no está en tus porcentajes sugeridos/,
+    );
+    expect(avisoPreseleccion({ ...activa, propinas: "" })).not.toBeNull();
+    // Apagada: nunca avisa.
+    expect(
+      avisoPreseleccion({
+        ...activa,
+        propinaPreseleccionada: false,
+        propinas: "5, 15",
+      }),
+    ).toBeNull();
+  });
+
+  it("si el campo de porcentajes tiene un error, no avisa (ya se ve el error del campo)", () => {
+    expect(
+      avisoPreseleccion({
+        ...formularioDesde(GUARDADA),
+        propinaPreseleccionada: true,
+        propinas: "diez",
+      }),
+    ).toBeNull();
   });
 });
 
@@ -280,9 +377,13 @@ describe("HU-042 (BL-465): cola del KDS", () => {
 describe("primerCampoConError", () => {
   const SIN_ERRORES = {
     razonSocial: null,
+    nombreLocal: null,
+    direccionLocal: null,
     propinas: null,
     cola: {},
     email: null,
+    retiro: null,
+    whatsapp: null,
   };
 
   it("[TC-U-422] devuelve el primer campo con error en el orden de la pantalla, o null", () => {
@@ -304,6 +405,9 @@ describe("primerCampoConError", () => {
     expect(primerCampoConError({ ...SIN_ERRORES, email: "mal" })).toBe(
       "email-privacidad",
     );
+    expect(
+      primerCampoConError({ ...SIN_ERRORES, email: "mal", retiro: "mal" }),
+    ).toBe("retiro-desde");
   });
 });
 
@@ -311,9 +415,13 @@ describe("erroresDelFormulario", () => {
   it("[TC-U-423] junta los errores de todos los campos; sin formulario no hay errores", () => {
     expect(erroresDelFormulario(null)).toEqual({
       razonSocial: null,
+      nombreLocal: null,
+      direccionLocal: null,
       propinas: null,
       email: null,
       cola: {},
+      retiro: null,
+      whatsapp: null,
     });
 
     expect(
@@ -324,19 +432,409 @@ describe("erroresDelFormulario", () => {
         emailPrivacidad: "no-es-un-correo",
         colaActiva: true,
         limitePreparacion: "0",
+        retiroHoraDesde: "11:00",
       }),
     ).toEqual({
       razonSocial: "La razón social es obligatoria.",
+      nombreLocal: null,
+      direccionLocal: null,
       propinas: expect.any(String),
       email: expect.any(String),
       cola: { limitePreparacion: "Tiene que estar entre 1 y 50." },
+      retiro: expect.any(String),
+      whatsapp: null,
     });
 
     expect(erroresDelFormulario(formularioDesde(GUARDADA))).toEqual({
       razonSocial: null,
+      nombreLocal: null,
+      direccionLocal: null,
       propinas: null,
       email: null,
       cola: {},
+      retiro: null,
+      whatsapp: null,
     });
+  });
+});
+
+describe("HU-040 (BL-210): pedidos para retirar", () => {
+  const horario = (retiroHoraDesde: string, retiroHoraHasta: string) => ({
+    retiroHoraDesde,
+    retiroHoraHasta,
+  });
+
+  it("el horario: las dos vacías (todo el día) o las dos, válidas y distintas", () => {
+    expect(errorHorarioRetiro(horario("", ""))).toBeNull();
+    expect(errorHorarioRetiro(horario("11:00", "15:30"))).toBeNull();
+    // Cruza la medianoche.
+    expect(errorHorarioRetiro(horario("19:00", "01:00"))).toBeNull();
+    expect(errorHorarioRetiro(horario("11:00", ""))).toBe(
+      "Completá las dos horas, o dejá las dos vacías para tomar pedidos todo el día.",
+    );
+    expect(errorHorarioRetiro(horario("", "15:00"))).not.toBeNull();
+    expect(errorHorarioRetiro(horario("24:00", "15:00"))).toBe(
+      "Escribí las horas como 11:00 o 23:30.",
+    );
+    expect(errorHorarioRetiro(horario("9:00", "15:00"))).not.toBeNull();
+    expect(errorHorarioRetiro(horario("12:00", "12:00"))).toBe(
+      "La hora de inicio y la de cierre tienen que ser distintas.",
+    );
+  });
+
+  it("se lee de lo guardado y solo se manda lo que cambió; las horas van juntas", () => {
+    const guardada: ConfiguracionEstablecimiento = {
+      ...GUARDADA,
+      retiroHabilitado: true,
+      retiroHoraDesde: "11:00",
+      retiroHoraHasta: "15:00",
+    };
+    const formulario = formularioDesde(guardada);
+    expect(formulario).toMatchObject({
+      retiroHabilitado: true,
+      retiroHoraDesde: "11:00",
+      retiroHoraHasta: "15:00",
+    });
+    expect(cambiosParaGuardar(guardada, formulario)).toEqual({});
+    expect(
+      cambiosParaGuardar(guardada, { ...formulario, retiroHabilitado: false }),
+    ).toEqual({ retiroHabilitado: false });
+    expect(
+      cambiosParaGuardar(guardada, { ...formulario, retiroHoraHasta: "16:00" }),
+    ).toEqual({ retiroHoraDesde: "11:00", retiroHoraHasta: "16:00" });
+    // Vaciar las dos = todo el día.
+    expect(
+      cambiosParaGuardar(guardada, {
+        ...formulario,
+        retiroHoraDesde: "",
+        retiroHoraHasta: " ",
+      }),
+    ).toEqual({ retiroHoraDesde: null, retiroHoraHasta: null });
+  });
+
+  it("mensaje después de anonimizar el contacto", () => {
+    expect(mensajeAnonimizacionRetiro({ pedidos: 0 })).toBe(
+      "No hay pedidos con ese contacto: no había datos para anonimizar.",
+    );
+    expect(mensajeAnonimizacionRetiro({ pedidos: 1 })).toBe(
+      "Listo: se anonimizó 1 pedido.",
+    );
+    expect(mensajeAnonimizacionRetiro({ pedidos: 4 })).toBe(
+      "Listo: se anonimizaron 4 pedidos.",
+    );
+  });
+});
+
+describe("HU-038 (BL-506): umbrales de espera del KDS", () => {
+  const CON_UMBRALES: ConfiguracionEstablecimiento = {
+    ...GUARDADA,
+    minutosEsperaAtencion: 20,
+    minutosEsperaDemorado: 40,
+    minutosEsperaDemoraAlta: 90,
+  };
+
+  it("[TC-U-479] el formulario arranca con los umbrales guardados, o con 30/60/120 si el backend no los trae", () => {
+    expect(formularioDesde(CON_UMBRALES)).toEqual(
+      expect.objectContaining({
+        esperaAtencion: "20",
+        esperaDemorado: "40",
+        esperaDemoraAlta: "90",
+      }),
+    );
+    expect(formularioDesde(GUARDADA)).toEqual(
+      expect.objectContaining({
+        esperaAtencion: "30",
+        esperaDemorado: "60",
+        esperaDemoraAlta: "120",
+      }),
+    );
+  });
+
+  it("[TC-U-480] manda solo los umbrales que cambiaron, con la cola activa o apagada", () => {
+    expect(
+      cambiosParaGuardar(CON_UMBRALES, {
+        ...formularioDesde(CON_UMBRALES),
+        esperaDemorado: " 45 ",
+      }),
+    ).toEqual({ minutosEsperaDemorado: 45 });
+    expect(cambiosParaGuardar(GUARDADA, formularioDesde(GUARDADA))).toEqual({});
+  });
+
+  it("[TC-U-481] valida enteros dentro de rango y de menor a mayor, aunque la cola esté apagada", () => {
+    const formulario = { ...formularioDesde(GUARDADA), colaActiva: false };
+    expect(erroresCola(formulario)).toEqual({});
+    expect(
+      erroresCola({
+        ...formulario,
+        esperaAtencion: "0",
+        esperaDemoraAlta: "x",
+      }),
+    ).toEqual({
+      esperaAtencion: "Tiene que estar entre 1 y 600.",
+      esperaDemoraAlta: "Escribí un número entero.",
+    });
+    expect(erroresCola({ ...formulario, esperaDemorado: "30" })).toEqual({
+      esperaDemorado: "Tiene que ser mayor que «Atención desde».",
+    });
+    expect(erroresCola({ ...formulario, esperaDemoraAlta: "60" })).toEqual({
+      esperaDemoraAlta: "Tiene que ser mayor que «Demorado desde».",
+    });
+  });
+
+  it("[TC-U-482] el foco va al primer umbral con error, después de los campos de la cola", () => {
+    expect(
+      primerCampoConError({
+        razonSocial: null,
+        nombreLocal: null,
+        direccionLocal: null,
+        propinas: null,
+        email: "mal",
+        cola: { esperaDemorado: "mal" },
+        retiro: null,
+        whatsapp: null,
+      }),
+    ).toBe("espera-demorado");
+    expect(
+      primerCampoConError({
+        razonSocial: null,
+        nombreLocal: null,
+        direccionLocal: null,
+        propinas: null,
+        email: null,
+        cola: { minutosPreparacion: "mal", esperaAtencion: "mal" },
+        retiro: null,
+        whatsapp: null,
+      }),
+    ).toBe("cola-minutos");
+  });
+});
+describe("HU-043 (BL-533): marca del local", () => {
+  const CON_MARCA: ConfiguracionEstablecimiento = {
+    ...GUARDADA,
+    plantilla: "gourmet",
+    plantillasDisponibles: ["clasica", "gourmet", "rapida", "familiar"],
+    logoUrl: "https://firmada.example/logo.webp",
+  };
+
+  it("[TC-U-524] el formulario arranca con la plantilla guardada y el logo sin tocar", () => {
+    const formulario = formularioDesde(CON_MARCA);
+
+    expect(formulario.plantilla).toBe("gourmet");
+    expect(formulario.logo).toEqual({ tipo: "guardado" });
+    expect(cambiosParaGuardar(CON_MARCA, formulario)).toEqual({});
+  });
+
+  it("[TC-U-525] cambiar la plantilla manda solo la plantilla", () => {
+    const formulario = {
+      ...formularioDesde(CON_MARCA),
+      plantilla: "rapida" as const,
+    };
+
+    expect(cambiosParaGuardar(CON_MARCA, formulario)).toEqual({
+      plantilla: "rapida",
+    });
+  });
+
+  it("[TC-U-526] un logo nuevo manda su key; quitarlo manda null solo si había uno guardado", () => {
+    const key =
+      "11111111-1111-1111-1111-111111111111/menu/marca/0b4f6a3e-1111-4c2d-9e8f-123456789abc.webp";
+    const nuevo = {
+      ...formularioDesde(CON_MARCA),
+      logo: {
+        tipo: "nuevo" as const,
+        key,
+        url: "https://firmada.example/nuevo.webp",
+      },
+    };
+    expect(cambiosParaGuardar(CON_MARCA, nuevo)).toEqual({ logoKey: key });
+
+    const quitado = {
+      ...formularioDesde(CON_MARCA),
+      logo: { tipo: "quitado" as const },
+    };
+    expect(cambiosParaGuardar(CON_MARCA, quitado)).toEqual({ logoKey: null });
+
+    const sinLogo = { ...CON_MARCA, logoUrl: null };
+    expect(
+      cambiosParaGuardar(sinLogo, {
+        ...formularioDesde(sinLogo),
+        logo: { tipo: "quitado" },
+      }),
+    ).toEqual({});
+  });
+
+  it("[TC-U-527] la vista previa muestra el logo nuevo, ninguno si se quitó, o el guardado", () => {
+    expect(urlDelLogo(CON_MARCA, { tipo: "guardado" })).toBe(
+      "https://firmada.example/logo.webp",
+    );
+    expect(
+      urlDelLogo(CON_MARCA, {
+        tipo: "nuevo",
+        key: "k",
+        url: "https://firmada.example/nuevo.webp",
+      }),
+    ).toBe("https://firmada.example/nuevo.webp");
+    expect(urlDelLogo(CON_MARCA, { tipo: "quitado" })).toBeNull();
+    expect(urlDelLogo(GUARDADA, { tipo: "guardado" })).toBeNull();
+  });
+});
+
+describe("HU-043 (BL-561): nombre y dirección del local", () => {
+  const CON_LOCAL: ConfiguracionEstablecimiento = {
+    ...GUARDADA,
+    nombre: "La Parrilla",
+    direccion: "Av. Italia 1234, Montevideo",
+  };
+
+  it("[TC-U-539] el formulario arranca con lo guardado y, sin cambios, no manda nada", () => {
+    const formulario = formularioDesde(CON_LOCAL);
+
+    expect(formulario.nombreLocal).toBe("La Parrilla");
+    expect(formulario.direccionLocal).toBe("Av. Italia 1234, Montevideo");
+    expect(
+      cambiosParaGuardar(CON_LOCAL, {
+        ...formulario,
+        nombreLocal: "  La   Parrilla ",
+      }),
+    ).toEqual({});
+  });
+
+  it("[TC-U-540] manda el nombre y la dirección limpios, solo si cambiaron", () => {
+    const formulario = {
+      ...formularioDesde(CON_LOCAL),
+      nombreLocal: " La Parrilla  de Juan ",
+      direccionLocal: "18 de Julio 1234",
+    };
+
+    expect(cambiosParaGuardar(CON_LOCAL, formulario)).toEqual({
+      nombre: "La Parrilla de Juan",
+      direccion: "18 de Julio 1234",
+    });
+  });
+
+  it("[TC-U-541] los dos son obligatorios y tienen largo máximo; sin backend que los traiga, no se validan", () => {
+    expect(errorNombreLocal("   ")).toBe("El nombre del local es obligatorio.");
+    expect(errorNombreLocal("x".repeat(121))).toMatch(/hasta 120/);
+    expect(errorNombreLocal("La Parrilla")).toBeNull();
+    expect(errorDireccionLocal("")).toBe(
+      "La dirección del local es obligatoria.",
+    );
+    expect(errorDireccionLocal("x".repeat(201))).toMatch(/hasta 200/);
+    expect(errorNombreLocal(null)).toBeNull();
+    expect(errorDireccionLocal(null)).toBeNull();
+  });
+
+  it("[TC-U-542] el foco va al nombre o a la dirección después de las propinas y antes de la cola", () => {
+    const errores = erroresDelFormulario({
+      ...formularioDesde(CON_LOCAL),
+      direccionLocal: "",
+      colaActiva: true,
+      limitePreparacion: "0",
+    });
+
+    expect(primerCampoConError(errores)).toBe("direccion-local");
+  });
+});
+
+describe("HU-043 (BL-562): portada del banner", () => {
+  const CON_PORTADA: ConfiguracionEstablecimiento = {
+    ...GUARDADA,
+    portadaUrl: "https://firmada.example/portada.webp",
+  };
+
+  it("[TC-U-550] una portada nueva manda su key; quitarla manda null solo si había una guardada", () => {
+    const key =
+      "11111111-1111-1111-1111-111111111111/menu/portada/0b4f6a3e-1111-4c2d-9e8f-123456789abc.webp";
+    expect(
+      cambiosParaGuardar(CON_PORTADA, {
+        ...formularioDesde(CON_PORTADA),
+        portada: { tipo: "nuevo", key, url: "https://firmada.example/n.webp" },
+      }),
+    ).toEqual({ portadaKey: key });
+    expect(
+      cambiosParaGuardar(CON_PORTADA, {
+        ...formularioDesde(CON_PORTADA),
+        portada: { tipo: "quitado" },
+      }),
+    ).toEqual({ portadaKey: null });
+    expect(
+      cambiosParaGuardar(GUARDADA, {
+        ...formularioDesde(GUARDADA),
+        portada: { tipo: "quitado" },
+      }),
+    ).toEqual({});
+  });
+
+  it("[TC-U-551] la vista previa muestra la portada nueva, la guardada, o ninguna (la de por defecto)", () => {
+    expect(urlDeLaPortada(CON_PORTADA, { tipo: "guardado" })).toBe(
+      "https://firmada.example/portada.webp",
+    );
+    expect(
+      urlDeLaPortada(CON_PORTADA, {
+        tipo: "nuevo",
+        key: "k",
+        url: "https://firmada.example/n.webp",
+      }),
+    ).toBe("https://firmada.example/n.webp");
+    expect(urlDeLaPortada(CON_PORTADA, { tipo: "quitado" })).toBeNull();
+    expect(urlDeLaPortada(GUARDADA, { tipo: "guardado" })).toBeNull();
+  });
+});
+
+describe("HU-010 (BL-613): número del bot de WhatsApp", () => {
+  const conWhatsapp = {
+    ...GUARDADA,
+    whatsappPedidos: "+59899123456",
+    whatsappBotConectado: true,
+  };
+
+  it("[TC-U-696] el formulario muestra el número guardado; sin número queda vacío y un backend anterior no muestra el campo", () => {
+    expect(formularioDesde(conWhatsapp).whatsappPedidos).toBe("+59899123456");
+    expect(
+      formularioDesde({ ...GUARDADA, whatsappPedidos: null }).whatsappPedidos,
+    ).toBe("");
+    expect(formularioDesde(GUARDADA).whatsappPedidos).toBeNull();
+  });
+
+  it("[TC-U-696] manda el número en formato internacional solo si cambió, y null para quitarlo", () => {
+    const formulario = formularioDesde(conWhatsapp);
+    // Escrito distinto pero es el mismo número: no hay cambio.
+    expect(
+      cambiosParaGuardar(conWhatsapp, {
+        ...formulario,
+        whatsappPedidos: "099 123 456",
+      }),
+    ).toEqual({});
+    expect(
+      cambiosParaGuardar(conWhatsapp, {
+        ...formulario,
+        whatsappPedidos: "098 765 432",
+      }),
+    ).toEqual({ whatsappPedidos: "+59898765432" });
+    expect(
+      cambiosParaGuardar(conWhatsapp, { ...formulario, whatsappPedidos: "" }),
+    ).toEqual({ whatsappPedidos: null });
+    // Sin número guardado, escribir uno lo manda.
+    const sinNumero = { ...GUARDADA, whatsappPedidos: null };
+    expect(
+      cambiosParaGuardar(sinNumero, {
+        ...formularioDesde(sinNumero),
+        whatsappPedidos: "099 123 456",
+      }),
+    ).toEqual({ whatsappPedidos: "+59899123456" });
+    // Un backend anterior: no se manda.
+    expect(
+      cambiosParaGuardar(GUARDADA, formularioDesde(GUARDADA)),
+    ).not.toHaveProperty("whatsappPedidos");
+  });
+
+  it("[TC-U-696] un número que no se puede leer es un error, y el foco va al campo", () => {
+    const errores = erroresDelFormulario({
+      ...formularioDesde(conWhatsapp),
+      whatsappPedidos: "2900 1234",
+    });
+    expect(errores.whatsapp).toMatch(/celular uruguayo/);
+    expect(primerCampoConError(errores)).toBe("retiro-whatsapp");
+    expect(erroresDelFormulario(formularioDesde(GUARDADA)).whatsapp).toBeNull();
   });
 });

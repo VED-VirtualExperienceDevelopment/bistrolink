@@ -434,6 +434,8 @@ describe('PedidosTransicionService', () => {
           estado: true,
           createdAt: true,
           observacionGeneral: true,
+          codigoRetiro: true,
+          retiroNombre: true,
           mesa: { select: { numero: true } },
           lineas: {
             select: {
@@ -453,6 +455,7 @@ describe('PedidosTransicionService', () => {
           mesaNumero: 4,
           estado: PedidoEstado.RECIBIDO,
           createdAt: '2026-08-30T12:00:00.000Z',
+          retiro: null,
           lineas: [
             {
               id: 'linea-1',
@@ -470,6 +473,30 @@ describe('PedidosTransicionService', () => {
       const resultado = await service.listarPendientes(TENANT_ID);
 
       expect(resultado).toEqual([]);
+    });
+  });
+
+  describe('accesoDelPedido (HU-052, BL-580)', () => {
+    it('[TC-U-632] devuelve mesa, restaurante y canal del pedido dentro del tenant, o null si no existe', async () => {
+      const acceso = {
+        mesaId: 'mesa-4',
+        restauranteId: 'rest-1',
+        canal: 'QR',
+      };
+      tx().pedido.findUnique.mockResolvedValueOnce(acceso);
+
+      await expect(
+        service.accesoDelPedido(TENANT_ID, PEDIDO_ID),
+      ).resolves.toEqual(acceso);
+      expect(tx().pedido.findUnique).toHaveBeenCalledWith({
+        where: { id: PEDIDO_ID },
+        select: { mesaId: true, restauranteId: true, canal: true },
+      });
+
+      tx().pedido.findUnique.mockResolvedValueOnce(null);
+      await expect(
+        service.accesoDelPedido(TENANT_ID, PEDIDO_ID),
+      ).resolves.toBeNull();
     });
   });
 
@@ -592,6 +619,37 @@ describe('PedidosTransicionService', () => {
       await expect(
         service.listarSolicitudesEfectivo(TENANT_ID),
       ).resolves.toEqual([]);
+    });
+  });
+
+  describe('HU-038 (BL-506): umbrales de espera', () => {
+    it('[TC-U-478] devuelve los umbrales del restaurante del tenant, o los de por defecto si no hay restaurante', async () => {
+      tx().restaurante.findUnique.mockResolvedValueOnce({
+        minutosEsperaAtencion: 20,
+        minutosEsperaDemorado: 40,
+        minutosEsperaDemoraAlta: 90,
+      });
+
+      await expect(service.umbralesEspera(TENANT_ID)).resolves.toEqual({
+        atencion: 20,
+        demorado: 40,
+        demoraAlta: 90,
+      });
+      expect(tx().restaurante.findUnique).toHaveBeenCalledWith({
+        where: { tenantId: TENANT_ID },
+        select: {
+          minutosEsperaAtencion: true,
+          minutosEsperaDemorado: true,
+          minutosEsperaDemoraAlta: true,
+        },
+      });
+
+      // Sin restaurante (mock por defecto: null).
+      await expect(service.umbralesEspera(TENANT_ID)).resolves.toEqual({
+        atencion: 30,
+        demorado: 60,
+        demoraAlta: 120,
+      });
     });
   });
 });

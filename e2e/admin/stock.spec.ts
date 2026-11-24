@@ -3,8 +3,9 @@ import type { APIRequestContext, Page } from "@playwright/test";
 import { test, expect } from "../support/auth";
 import { tokenAdminDesdePanel } from "../support/qr-mesas";
 
-// HU-015 (BL-120): stock de la jornada (/admin/stock) y campana de alertas
-// de stock en el header.
+// HU-015 (BL-120): stock de la jornada (/admin/stock) y alertas de stock.
+// BL-470: las alertas de stock están en la campana de Alertas, en la sección
+// «Stock» de la vista rápida (antes, una campana aparte).
 //
 // ⚠️ Staging es compartido: cada test que cambia datos crea su propia
 // categoría «E2E stock …» con un ítem por la API y la elimina en un
@@ -18,7 +19,15 @@ import { tokenAdminDesdePanel } from "../support/qr-mesas";
 
 const API_URL = process.env.API_URL ?? "http://localhost:3001";
 const STOCK_PATH = "/admin/stock";
-const CAMPANA = /^Notificaciones de stock/;
+const CAMPANA = /^Alertas, /;
+
+/** La campana del encabezado (dentro de <main>, sin rol «banner»). */
+const campanaDe = (page: Page) =>
+  page.locator("main > header").getByRole("button", { name: CAMPANA });
+const vistaRapidaDe = (page: Page) =>
+  page.getByRole("region", { name: "Alertas pendientes" });
+const tarjetaDe = (page: Page, nombre: string) =>
+  vistaRapidaDe(page).getByRole("listitem").filter({ hasText: nombre });
 
 interface ItemDePrueba {
   categoriaId: string;
@@ -88,15 +97,13 @@ async function eliminarItem(
 
 /** Espera que la campana muestre el ítem de prueba (llega por el socket). */
 async function abrirCampanaCon(page: Page, nombre: string) {
-  const campana = page.getByRole("button", { name: CAMPANA });
+  const campana = campanaDe(page);
   await expect(async () => {
     if ((await campana.getAttribute("aria-expanded")) === "true") {
       await campana.click();
     }
     await campana.click();
-    await expect(
-      page.getByRole("menuitem", { name: new RegExp(nombre) }),
-    ).toBeVisible({ timeout: 2000 });
+    await expect(tarjetaDe(page, nombre)).toBeVisible({ timeout: 2000 });
   }).toPass({ timeout: 15000 });
   return campana;
 }
@@ -169,8 +176,11 @@ test.describe("BL-120: stock de la jornada y alertas de stock bajo", () => {
 
       await abrirCampanaCon(page, nombre);
       await expect(
-        page.getByRole("menuitem", { name: new RegExp(nombre) }),
-      ).toContainText("Quedan 2 · aviso en 3");
+        vistaRapidaDe(page).getByRole("heading", { name: /^STOCK/ }),
+      ).toBeVisible();
+      await expect(tarjetaDe(page, nombre)).toContainText(
+        "Quedan 2 · aviso en 3",
+      );
       await page.keyboard.press("Escape");
 
       const resultados = await new AxeBuilder({ page })
@@ -187,7 +197,7 @@ test.describe("BL-120: stock de la jornada y alertas de stock bajo", () => {
     }
   });
 
-  test("[TC-E-070] HU-015: la campana se usa con el teclado y «Reponer stock» valida las unidades y saca el ítem de las alertas", async ({
+  test("[TC-E-070] HU-015: desde la campana de Alertas, «Reponer stock» valida las unidades y saca el ítem de las alertas (BL-470)", async ({
     kdsPageAdmin: page,
   }) => {
     const authorization = await tokenAdminDesdePanel(page);
@@ -198,32 +208,34 @@ test.describe("BL-120: stock de la jornada y alertas de stock bajo", () => {
       await fijarStock(page.request, authorization, itemId, 0);
       await page.goto("/admin/mesas");
 
-      const campana = await abrirCampanaCon(page, nombre);
+      // Una sola campana: no queda la de stock de antes.
       await expect(
-        page.getByRole("menuitem", { name: new RegExp(nombre) }),
-      ).toContainText("Agotado");
+        page.getByRole("button", { name: /^Notificaciones de stock/ }),
+      ).toHaveCount(0);
+
+      const campana = await abrirCampanaCon(page, nombre);
+      const tarjeta = tarjetaDe(page, nombre);
+      await expect(tarjeta).toContainText("Agotado");
+      // La alerta de stock no se desestima: se va sola al reponer.
+      await expect(
+        tarjeta.getByRole("button", { name: /Desestimar/ }),
+      ).toHaveCount(0);
+
+      // Esc cierra la vista rápida y el foco vuelve a la campana.
       await page.keyboard.press("Escape");
       await expect(campana).toHaveAttribute("aria-expanded", "false");
       await expect(campana).toBeFocused();
 
-      // Con el teclado: Enter abre y el foco va a la primera alerta; Fin
-      // lleva al enlace de la pantalla de stock; Inicio vuelve al principio.
-      await page.keyboard.press("Enter");
-      await expect(campana).toHaveAttribute("aria-expanded", "true");
-      await expect(page.getByRole("menuitem").first()).toBeFocused();
-      await page.keyboard.press("End");
-      await expect(
-        page.getByRole("menuitem", { name: "Ver el stock de la jornada" }),
-      ).toBeFocused();
-      await page.keyboard.press("Home");
-      await expect(page.getByRole("menuitem").first()).toBeFocused();
-
-      // Reponer desde la campana.
-      await page.getByRole("menuitem", { name: new RegExp(nombre) }).click();
+      // Reponer desde la campana: se abre el diálogo y la vista rápida se cierra.
+      await campana.click();
+      await tarjeta
+        .getByRole("button", { name: `Reponer stock de ${nombre}` })
+        .click();
       const dialogo = page.getByRole("dialog", {
         name: `Reponer stock: ${nombre}`,
       });
       await expect(dialogo).toBeVisible();
+      await expect(vistaRapidaDe(page)).toBeHidden();
       const campo = dialogo.getByLabel("Unidades disponibles ahora");
       await expect(campo).toBeFocused();
 
@@ -249,22 +261,31 @@ test.describe("BL-120: stock de la jornada y alertas de stock bajo", () => {
 
       // Con 20 unidades y aviso en 5, ya no está en las alertas.
       await campana.click();
-      await expect(
-        page.getByRole("menuitem", { name: new RegExp(nombre) }),
-      ).toHaveCount(0);
+      await expect(tarjetaDe(page, nombre)).toHaveCount(0);
     } finally {
       await eliminarItem(page.request, authorization, prueba);
     }
   });
 
-  test("[TC-E-071] HU-015: el mozo no ve la campana de stock ni Stock en el menú, y si entra a la ruta vuelve al mapa de mesas", async ({
+  test("[TC-E-071] HU-015: el mozo no ve la sección Stock en la campana de Alertas ni Stock en el menú, y si entra a la ruta vuelve al mapa de mesas (BL-470)", async ({
     kdsPageMozo: page,
   }) => {
     await page.goto("/admin/mesas");
     await expect(
       page.getByRole("link", { name: "Mapa de mesas" }).first(),
     ).toBeVisible();
-    await expect(page.getByRole("button", { name: CAMPANA })).toHaveCount(0);
+    // Una sola campana, sin sección ni enlace de stock.
+    await campanaDe(page).click();
+    await expect(vistaRapidaDe(page)).toBeVisible();
+    await expect(
+      vistaRapidaDe(page).getByRole("heading", { name: /^STOCK/ }),
+    ).toHaveCount(0);
+    await expect(
+      vistaRapidaDe(page).getByRole("link", {
+        name: "Ver el stock de la jornada",
+      }),
+    ).toHaveCount(0);
+    await page.keyboard.press("Escape");
     await expect(
       page.getByRole("link", { name: "Stock", exact: true }),
     ).toHaveCount(0);

@@ -1,0 +1,468 @@
+"use client";
+
+import type { ReactNode } from "react";
+import { alcanzoCantidadMaxima } from "@/components/menu-digital.utils";
+import { formatearPrecio } from "@/components/pago/pago.utils";
+import { etiquetasDeLinea, ID_TITULO_CARRITO } from "./carrito.utils";
+import {
+  SugerenciaComplementos,
+  type PropsComplementos,
+} from "./SugerenciaComplementos";
+
+export type LineaCarrito = {
+  readonly itemCartaId: string;
+  readonly nombre: string;
+  readonly precio: number;
+  readonly cantidad: number;
+  readonly observacion?: string;
+};
+
+interface Props<T extends LineaCarrito> {
+  /** «columna»: a la derecha desde lg. «hoja»: dentro de CarritoHoja. */
+  readonly variante: "columna" | "hoja";
+  readonly lineas: readonly T[];
+  readonly cantidadTotal: number;
+  readonly total: number;
+  readonly observacionGeneral: string;
+  readonly maxCaracteresGeneral: number;
+  readonly onCambiarObservacion: (texto: string) => void;
+  readonly onEditarNota: (linea: T) => void;
+  /** BL-378: cambiar la cantidad y quitar un plato desde el detalle. */
+  readonly onSumar: (linea: T) => void;
+  readonly onRestar: (linea: T) => void;
+  readonly onQuitar: (linea: T) => void;
+  readonly onVaciar: () => void;
+  readonly onContinuar: () => void;
+  readonly enviando: boolean;
+  readonly error: string | null;
+  /** Solo en la hoja: la X de arriba y «Seguir viendo la carta». */
+  readonly onCerrar?: () => void;
+  /** HU-040 (BL-210): «Continuar al pago» deshabilitado (retiro cerrado). */
+  readonly pagoBloqueado?: boolean;
+  /** HU-040 (BL-210): datos del comensal del retiro, después de las instrucciones. */
+  readonly contacto?: ReactNode;
+  /** HU-046 (BL-553): «¿Querés sumar algo?», una vez por pedido. */
+  readonly complementos?: PropsComplementos;
+}
+
+const UMBRAL_AVISO = 0.9;
+
+function clasesInstrucciones(
+  cantidad: number,
+  maximo: number,
+): {
+  borde: string;
+  contador: string;
+} {
+  if (cantidad > maximo) {
+    return {
+      borde:
+        "border-2 border-[#BA1A1A] bg-[#FFDAD6] focus:border-[#BA1A1A] focus:ring-2 focus:ring-[#BA1A1A]/20",
+      contador: "text-[#BA1A1A]",
+    };
+  }
+  if (cantidad >= maximo * UMBRAL_AVISO) {
+    return {
+      borde:
+        "border-2 border-[#755b00] bg-culinary-background focus:border-[#755b00] focus:ring-2 focus:ring-[#755b00]/20",
+      contador: "text-[#755b00]",
+    };
+  }
+  return {
+    borde:
+      "border-2 border-culinary-neutral/30 bg-culinary-background focus:border-marca focus:ring-2 focus:ring-marca/20",
+    contador: "text-[#5a575e]",
+  };
+}
+
+function IconoCerrar() {
+  return (
+    <svg
+      aria-hidden="true"
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+    >
+      <path d="M18 6 6 18M6 6l12 12" />
+    </svg>
+  );
+}
+
+function IconoMenos() {
+  return (
+    <svg
+      aria-hidden="true"
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+    >
+      <path d="M5 12h14" />
+    </svg>
+  );
+}
+
+function IconoMas() {
+  return (
+    <svg
+      aria-hidden="true"
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+    >
+      <path d="M12 5v14M5 12h14" />
+    </svg>
+  );
+}
+
+function IconoTacho() {
+  return (
+    <svg
+      aria-hidden="true"
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6" />
+    </svg>
+  );
+}
+
+/** Al quitar un plato, su botón desaparece: el foco pasa al título. */
+function enfocarTitulo() {
+  requestAnimationFrame(() => {
+    document.getElementById(ID_TITULO_CARRITO)?.focus();
+  });
+}
+
+function IconoLapiz() {
+  return (
+    <svg
+      aria-hidden="true"
+      xmlns="http://www.w3.org/2000/svg"
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+      <path d="m15 5 4 4" />
+    </svg>
+  );
+}
+
+/**
+ * BL-378: cantidad (− y +) y «Quitar» de un plato del detalle. Botones de
+ * 44 × 44 px con nombre accesible; con la última unidad, «−» saca el plato.
+ * «+» se deshabilita en el tope de BL-425 (99).
+ */
+function ControlesDeLinea({
+  linea,
+  deshabilitado,
+  onSumar,
+  onRestar,
+  onQuitar,
+}: {
+  readonly linea: LineaCarrito;
+  readonly deshabilitado: boolean;
+  readonly onSumar: () => void;
+  readonly onRestar: () => void;
+  readonly onQuitar: () => void;
+}) {
+  const etiquetas = etiquetasDeLinea(linea.nombre);
+  const enElTope = alcanzoCantidadMaxima(linea.cantidad);
+  const claseBoton =
+    "grid h-11 w-11 place-items-center rounded-full text-marca hover:bg-marca/10 focus:outline-none focus:ring-4 focus:ring-marca/30 disabled:cursor-not-allowed disabled:opacity-40";
+  return (
+    <div className="mt-2 flex items-center justify-between gap-2">
+      <fieldset className="inline-flex items-center rounded-full border border-culinary-neutral/30 bg-white">
+        <legend className="sr-only">Cantidad de {linea.nombre}</legend>
+        <button
+          type="button"
+          onClick={onRestar}
+          disabled={deshabilitado}
+          aria-label={etiquetas.restar}
+          className={claseBoton}
+        >
+          <IconoMenos />
+        </button>
+        <span
+          aria-hidden="true"
+          className="min-w-[2ch] text-center text-sm font-semibold text-foreground"
+        >
+          {linea.cantidad}
+        </span>
+        <button
+          type="button"
+          onClick={onSumar}
+          disabled={deshabilitado || enElTope}
+          aria-label={etiquetas.sumar}
+          className={claseBoton}
+        >
+          <IconoMas />
+        </button>
+      </fieldset>
+      <button
+        type="button"
+        onClick={onQuitar}
+        disabled={deshabilitado}
+        aria-label={etiquetas.quitar}
+        className="inline-flex h-11 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-red-700 hover:bg-red-50 focus:outline-none focus:ring-4 focus:ring-red-700/20 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        <IconoTacho />
+        Quitar
+      </button>
+    </div>
+  );
+}
+
+/**
+ * El contenido del carrito: platos con su nota, instrucciones generales,
+ * total y «Continuar al pago». BL-519: el mismo contenido va en la columna
+ * de la derecha (desde lg) o en la hoja del celular; se muestra uno solo a
+ * la vez, así los ids y los botones no se repiten.
+ */
+export function CarritoDetalle<T extends LineaCarrito>({
+  variante,
+  lineas,
+  cantidadTotal,
+  total,
+  observacionGeneral,
+  maxCaracteresGeneral,
+  onCambiarObservacion,
+  onEditarNota,
+  onSumar,
+  onRestar,
+  onQuitar,
+  onVaciar,
+  onContinuar,
+  enviando,
+  error,
+  onCerrar,
+  pagoBloqueado = false,
+  contacto = null,
+  complementos,
+}: Props<T>) {
+  const enHoja = variante === "hoja";
+  const caracteres = observacionGeneral.length;
+  const pasado = caracteres > maxCaracteresGeneral;
+  const clases = clasesInstrucciones(caracteres, maxCaracteresGeneral);
+  const Titulo = enHoja ? "h2" : "h3";
+
+  const encabezado = (
+    <div className="flex items-center justify-between gap-2">
+      <Titulo
+        id={ID_TITULO_CARRITO}
+        tabIndex={-1}
+        className="font-bold text-lg text-foreground flex items-center gap-2 focus:outline-none"
+      >
+        <span role="img" aria-label="Carrito">
+          🛒
+        </span>{" "}
+        Tu pedido ({cantidadTotal} {cantidadTotal === 1 ? "item" : "items"})
+      </Titulo>
+      <div className="flex items-center gap-1">
+        {/* WCAG 1.4.3: red-700 sobre red-50 da 5,9:1 (red-600 daba 4,41:1). */}
+        <button
+          type="button"
+          onClick={onVaciar}
+          className="text-sm text-red-700 hover:text-red-800 font-medium px-2 py-1 bg-red-50 rounded-md transition-colors"
+          disabled={enviando}
+        >
+          Vaciar
+        </button>
+        {onCerrar && (
+          <button
+            type="button"
+            onClick={onCerrar}
+            aria-label="Cerrar el pedido"
+            data-foco-inicial
+            className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-foreground hover:bg-culinary-neutral/10 focus:outline-none focus:ring-4 focus:ring-marca/30"
+          >
+            <IconoCerrar />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+
+  const platos = (
+    <ul
+      className={`space-y-3 ${enHoja ? "" : "max-h-80 overflow-y-auto pr-1"}`}
+    >
+      {lineas.map((linea) => (
+        <li
+          key={linea.itemCartaId}
+          className="flex flex-col bg-culinary-background p-3 rounded-lg"
+        >
+          <div className="flex items-start justify-between text-sm">
+            <div className="flex-1 pr-2">
+              <span className="font-semibold text-foreground">
+                {linea.cantidad}x {linea.nombre}
+              </span>
+              <button
+                type="button"
+                onClick={() => onEditarNota(linea)}
+                className="text-xs text-marca mt-1.5 flex items-center gap-1 hover:underline font-medium"
+              >
+                <IconoLapiz />
+                Editar nota
+              </button>
+              {linea.observacion && (
+                <p className="text-xs text-[#5a575e] mt-1 italic line-clamp-2">
+                  &quot;{linea.observacion}&quot;
+                </p>
+              )}
+            </div>
+            <span className="font-semibold text-foreground">
+              {formatearPrecio(linea.precio * linea.cantidad)}
+            </span>
+          </div>
+          <ControlesDeLinea
+            linea={linea}
+            deshabilitado={enviando}
+            onSumar={() => onSumar(linea)}
+            onRestar={() => {
+              if (linea.cantidad === 1) enfocarTitulo();
+              onRestar(linea);
+            }}
+            onQuitar={() => {
+              enfocarTitulo();
+              onQuitar(linea);
+            }}
+          />
+        </li>
+      ))}
+    </ul>
+  );
+
+  // HU-046 (BL-553): al agregar o rechazar, el bloque desaparece; el foco
+  // pasa al título del pedido (como al quitar un plato).
+  const sugerencia = complementos ? (
+    <SugerenciaComplementos
+      {...complementos}
+      nivelTitulo={enHoja ? "h3" : "h4"}
+      deshabilitado={enviando}
+      onAgregar={(plato) => {
+        enfocarTitulo();
+        complementos.onAgregar(plato);
+      }}
+      onRechazar={() => {
+        enfocarTitulo();
+        complementos.onRechazar();
+      }}
+    />
+  ) : null;
+
+  const instrucciones = (
+    <div className="border-t border-culinary-neutral/15 pt-4">
+      <label
+        htmlFor="observacion-general"
+        className="text-sm font-semibold text-foreground mb-2 block"
+      >
+        Instrucciones generales
+      </label>
+      <textarea
+        id="observacion-general"
+        value={observacionGeneral}
+        onChange={(e) => onCambiarObservacion(e.target.value)}
+        placeholder="Ej: Ningún plato debe llevar maní."
+        className={`w-full p-3 rounded-lg text-sm resize-none outline-none transition-all duration-200 placeholder:text-[#5a575e]/70 ${clases.borde}`}
+        maxLength={maxCaracteresGeneral + 20}
+        rows={2}
+      />
+      <div className="flex justify-end mt-1">
+        <span className={`text-xs font-semibold ${clases.contador}`}>
+          {caracteres}/{maxCaracteresGeneral}
+        </span>
+      </div>
+    </div>
+  );
+
+  const pie = (
+    <>
+      {error && (
+        <div className="p-3 bg-red-50 text-red-700 rounded-lg text-sm font-medium mb-4 flex items-start gap-2">
+          <span>⚠️</span> {error}
+        </div>
+      )}
+      <div className="flex items-center justify-between mb-4">
+        <span className="font-bold text-foreground text-lg">Total:</span>
+        <span className="text-2xl font-bold text-marca">
+          {formatearPrecio(total)}
+        </span>
+      </div>
+      <button
+        type="button"
+        onClick={onContinuar}
+        disabled={enviando || pasado || pagoBloqueado}
+        className="w-full px-4 py-3.5 bg-marca text-white font-bold rounded-[0.5rem] hover:bg-marca-hover focus:outline-none focus:ring-4 focus:ring-marca/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed text-lg shadow-[0px_4px_20px_rgba(121,118,125,0.15)]"
+      >
+        {enviando ? "Preparando tu pedido…" : "Continuar al pago"}
+      </button>
+    </>
+  );
+
+  if (!enHoja) {
+    return (
+      <>
+        <div className="mb-4">{encabezado}</div>
+        <div className="mb-4">{platos}</div>
+        {sugerencia && <div className="mb-4">{sugerencia}</div>}
+        <div className="mb-4">{instrucciones}</div>
+        {contacto}
+        <div className="pt-2">{pie}</div>
+      </>
+    );
+  }
+
+  // En la hoja: el encabezado y el pie quedan fijos y lo del medio se
+  // desplaza (también con el teclado abierto en las instrucciones).
+  return (
+    <>
+      <div className="border-b border-culinary-neutral/15 px-5 pb-3 pt-2">
+        <div
+          aria-hidden="true"
+          className="mx-auto mb-2 h-1 w-10 rounded-full bg-culinary-neutral/30"
+        />
+        {encabezado}
+      </div>
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-5 py-4">
+        {platos}
+        {sugerencia}
+        {instrucciones}
+        {contacto}
+      </div>
+      <div className="border-t border-culinary-neutral/15 px-5 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+        {pie}
+        <button
+          type="button"
+          onClick={onCerrar}
+          className="mt-2 w-full rounded-[0.5rem] py-2.5 text-sm font-semibold text-marca hover:bg-marca/10 focus:outline-none focus:ring-4 focus:ring-marca/30"
+        >
+          Seguir viendo la carta
+        </button>
+      </div>
+    </>
+  );
+}

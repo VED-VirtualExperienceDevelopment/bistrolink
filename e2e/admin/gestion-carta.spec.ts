@@ -1,7 +1,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import type { APIRequestContext, Locator, Page } from "@playwright/test";
 import { test, expect } from "../support/auth";
-import { ITEM_DISPONIBLE, RESTAURANTE_ID } from "../support/ids";
+import { ITEM_DISPONIBLE, MENU_URL_PATH, RESTAURANTE_ID } from "../support/ids";
 
 // E2E de BL-402 (BL-392): Gestión de Carta en /admin/menu.
 //
@@ -267,6 +267,197 @@ test.describe("BL-392 · Gestión de Carta", () => {
     }
   });
 
+  test("[TC-E-117] HU-044: el admin marca un plato como «Sugerencia del local» con la estrella, queda guardado y el comensal ve la insignia (sin errores graves de accesibilidad)", async ({
+    kdsPageAdmin: page,
+    browser,
+  }) => {
+    const authorization = await abrirCarta(page);
+    let categoria: CategoriaDePrueba | undefined;
+    const plato = `Flan del chef E2E ${Date.now()}`;
+    try {
+      categoria = await crearCategoria(page.request, authorization, [plato]);
+      await abrirCarta(page);
+      const estrella = seccion(page, categoria).getByRole("button", {
+        name: `Sugerencia del local: ${plato}`,
+      });
+      await expect(estrella).toHaveAttribute("aria-pressed", "false");
+
+      // Se espera el PATCH antes de recargar (como en TC-E-052).
+      const [guardado] = await Promise.all([
+        page.waitForResponse(
+          (r) =>
+            r.url().endsWith(`/admin/menu/item/${categoria?.items[0].id}`) &&
+            r.request().method() === "PATCH",
+          { timeout: 10_000 },
+        ),
+        estrella.click(),
+      ]);
+      expect(guardado.status(), "la API no guardó la sugerencia").toBe(200);
+      await expect(estrella).toHaveAttribute("aria-pressed", "true");
+      await expect(
+        tarjeta(page, categoria, plato).getByText("Sugerencia del local", {
+          exact: true,
+        }),
+      ).toBeVisible();
+
+      // Queda guardado y el filtro «Sugerencias» lo encuentra.
+      await abrirCarta(page);
+      await expect(estrella).toHaveAttribute("aria-pressed", "true");
+      await page.getByLabel("Estado").selectOption("SUGERENCIAS");
+      await expect(tarjeta(page, categoria, plato)).toBeVisible();
+      expect(await violacionesGraves(page)).toEqual([]);
+
+      // Que el mozo no ve la estrella lo prueba TC-E-054. Acá no se puede:
+      // kdsPageMozo comparte el contexto con kdsPageAdmin, Keycloak reusa la
+      // sesión del admin y el login del mozo nunca llega a /login.
+
+      // El comensal ve la insignia en el menú, en el celular.
+      // BL-575: en un contexto propio. AxeBuilder abre una página auxiliar
+      // en el contexto de la que analiza, y con browser.newPage() no puede
+      // («Please use browser.newContext()»).
+      const contextoCelular = await browser.newContext({
+        viewport: { width: 390, height: 844 },
+      });
+      const celular = await contextoCelular.newPage();
+      try {
+        // Página nueva sin el baseURL del config: la URL sale de la del admin.
+        await celular.goto(new URL(MENU_URL_PATH, page.url()).toString());
+        const tarjetaMenu = celular
+          .getByRole("article")
+          .filter({ hasText: plato });
+        await expect(
+          tarjetaMenu.getByText("Sugerencia del local", { exact: true }),
+        ).toBeVisible({ timeout: 15_000 });
+        expect(await violacionesGraves(celular)).toEqual([]);
+      } finally {
+        await contextoCelular.close();
+      }
+    } finally {
+      await eliminarCategoria(page.request, authorization, categoria);
+    }
+  });
+
+  test("[TC-E-125] BL-570: el comensal con la carta abierta ve «No disponible» al volver a la pestaña después de que el admin agota el plato", async ({
+    kdsPageAdmin: page,
+    browser,
+  }) => {
+    const authorization = await abrirCarta(page);
+    let categoria: CategoriaDePrueba | undefined;
+    const plato = `Budín E2E ${Date.now()}`;
+    try {
+      categoria = await crearCategoria(page.request, authorization, [plato]);
+
+      const celular = await browser.newPage({
+        viewport: { width: 390, height: 844 },
+      });
+      try {
+        // Reloj controlado: la carta se vuelve a pedir solo si pasaron 30 s
+        // desde la última carga, y el test no espera ese tiempo de verdad.
+        await celular.clock.install();
+        await celular.goto(new URL(MENU_URL_PATH, page.url()).toString());
+        const tarjetaMenu = celular
+          .getByRole("article")
+          .filter({ hasText: plato });
+        await expect(tarjetaMenu).toBeVisible({ timeout: 15_000 });
+        await expect(tarjetaMenu.getByText("No disponible")).toHaveCount(0);
+
+        // El admin agota el plato mientras el comensal tiene la carta abierta.
+        const agotar = await page.request.patch(
+          `${API_URL}/admin/menu/item/${categoria.items[0].id}/disponibilidad`,
+          { headers: { authorization }, data: { disponible: false } },
+        );
+        expect(agotar.status()).toBe(200);
+
+        // El comensal vuelve a la pestaña un rato después.
+        await celular.clock.fastForward(31_000);
+        await celular.evaluate(() =>
+          document.dispatchEvent(new Event("visibilitychange")),
+        );
+        await expect(tarjetaMenu.getByText("No disponible")).toBeVisible({
+          timeout: 10_000,
+        });
+      } finally {
+        await celular.close();
+      }
+    } finally {
+      await eliminarCategoria(page.request, authorization, categoria);
+    }
+  });
+
+  test("[TC-E-122] HU-046: el admin marca un plato como sugerible; con alcohol el switch queda apagado y deshabilitado, y la API lo rechaza (sin errores graves de accesibilidad)", async ({
+    kdsPageAdmin: page,
+  }) => {
+    const authorization = await abrirCarta(page);
+    let categoria: CategoriaDePrueba | undefined;
+    const plato = `Flan complemento E2E ${Date.now()}`;
+    try {
+      categoria = await crearCategoria(page.request, authorization, [plato]);
+      await abrirCarta(page);
+
+      const abrirEdicion = async () => {
+        await seccion(page, categoria as CategoriaDePrueba)
+          .getByRole("button", { name: `Editar ${plato}` })
+          .click();
+        return page.getByRole("dialog", { name: "Editar ítem" });
+      };
+      let dialogo = await abrirEdicion();
+      const sugerible = () =>
+        dialogo.getByRole("switch", {
+          name: "Se puede sugerir como complemento",
+        });
+      const alcohol = () =>
+        dialogo.getByRole("switch", { name: "Contiene alcohol" });
+      await expect(sugerible()).toHaveAttribute("aria-checked", "false");
+
+      // Con alcohol, la sugerencia se apaga y no se puede prender.
+      await sugerible().click();
+      await alcohol().click();
+      await expect(sugerible()).toHaveAttribute("aria-checked", "false");
+      await expect(sugerible()).toBeDisabled();
+      await expect(
+        dialogo.getByText("Los platos con alcohol nunca se sugieren."),
+      ).toBeVisible();
+      expect(await violacionesGraves(page)).toEqual([]);
+
+      // Sin alcohol, se marca y se guarda.
+      await alcohol().click();
+      await expect(sugerible()).toBeEnabled();
+      await sugerible().click();
+      const [guardado] = await Promise.all([
+        page.waitForResponse(
+          (r) =>
+            r.url().endsWith(`/admin/menu/item/${categoria?.items[0].id}`) &&
+            r.request().method() === "PATCH",
+          { timeout: 10_000 },
+        ),
+        dialogo.getByRole("button", { name: "Guardar" }).click(),
+      ]);
+      expect(guardado.status(), "la API no guardó el plato").toBe(200);
+      await expect(dialogo).toBeHidden();
+      await expect(
+        tarjeta(page, categoria, plato).getByText("Sugerible", { exact: true }),
+      ).toBeVisible();
+
+      // Queda guardado.
+      await abrirCarta(page);
+      dialogo = await abrirEdicion();
+      await expect(sugerible()).toHaveAttribute("aria-checked", "true");
+      await dialogo.getByRole("button", { name: "Cancelar" }).click();
+
+      // La API no acepta un plato con alcohol sugerible.
+      const rechazo = await page.request.patch(
+        `${API_URL}/admin/menu/item/${categoria.items[0].id}`,
+        {
+          headers: { authorization },
+          data: { sugerible: true, contieneAlcohol: true },
+        },
+      );
+      expect(rechazo.status()).toBe(400);
+    } finally {
+      await eliminarCategoria(page.request, authorization, categoria);
+    }
+  });
+
   test("[TC-E-053] Carta: el orden se cambia con «Subir» y arrastrando con el teclado, y queda guardado", async ({
     kdsPageAdmin: page,
   }) => {
@@ -382,6 +573,10 @@ test.describe("BL-392 · Gestión de Carta", () => {
     await expect(
       page.getByRole("button", { name: "Agregar ítem" }),
     ).toHaveCount(0);
+    // HU-044 (BL-537): la estrella de «Sugerencia del local» es solo del admin.
+    await expect(
+      page.getByRole("button", { name: /^Sugerencia del local: / }),
+    ).toHaveCount(0);
     // Los filtros de lo oculto y lo archivado son solo del admin.
     const estados = await page
       .getByLabel("Estado", { exact: true })
@@ -394,6 +589,12 @@ test.describe("BL-392 · Gestión de Carta", () => {
   test("[TC-E-055] Carta: la vista, el menú «⋯» y los diálogos no tienen errores graves de accesibilidad en celular, tablet y PC (axe-core)", async ({
     kdsPageAdmin: page,
   }) => {
+    // BL-574: tres anchos de pantalla, cada uno con varios diálogos y un
+    // análisis de axe-core por diálogo. Con los 30 s por defecto se cortaba
+    // en la limpieza del final y la categoría «E2E carta …» quedaba en
+    // staging: en cada reintento, otra «Milhojas E2E» más, y TC-E-007
+    // fallaba por encontrar el plato repetido. Mismo criterio que TC-E-053.
+    test.setTimeout(90_000);
     const authorization = await abrirCarta(page);
     let categoria: CategoriaDePrueba | undefined;
     try {

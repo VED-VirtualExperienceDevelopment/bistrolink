@@ -15,12 +15,16 @@
 |---|---|
 | [Migraciones y seed](runbooks/migraciones-y-seed.md) | Cómo llegan las migraciones a cada entorno, cómo correr el seed y qué hacer si falla el *pre-deploy* |
 | [Respaldo y restauración](runbooks/respaldo-y-restauracion.md) | Configuración, operación y restauración de los respaldos de las bases |
+| [Contingencia en Render](runbooks/contingencia-render.md) | Cómo se levanta producción en Render si Railway no está disponible: preparación, restauración desde S3 o R2, validación, vuelta a Railway y simulacro con RTO y RPO (BL-217) |
+| [Respuesta a incidentes](runbooks/respuesta-a-incidentes.md) | Quién hace qué en los primeros 30 minutos de un incidente: severidad, bitácora, contención y revocación de credenciales |
+| [Bot de WhatsApp con Evolution API](runbooks/whatsapp-evolution.md) | Variables, Evolution en Railway, webhook de la instancia, prueba local y datos personales del bot de pedidos (HU-010) |
 
 ### Seguridad
 
 | Documento | Para qué |
 |---|---|
 | [Endpoints públicos](security/public-endpoints.md) | Modelo de amenazas y capas de defensa de los endpoints sin autenticación (menú del comensal) |
+| [Análisis dinámico (DAST)](security/dast.md) | Escaneo de staging con OWASP ZAP: alcance, cómo correrlo, criterio de salida y cómo registrar los hallazgos |
 
 ### Proceso
 
@@ -28,6 +32,7 @@
 |---|---|
 | [Guía de commits](COMMITS.md) | Formato de los commits y uso de `npm run commit` |
 | [Release, hotfix y rollback](RELEASE.md) | Cómo se pasa una versión a producción con un tag, cómo se corrige un error urgente y cómo se vuelve a una versión anterior |
+| [Informes de regresión por capa](informes/README.md) | Cómo se arma el informe de H8 y del cierre: regresión en staging, evidencia marcada en Kiwi y la [plantilla](informes/regresion-HX.md) (BL-601) |
 
 ### Dashboards
 
@@ -35,6 +40,8 @@
 |---|---|
 | [Avance de la EDT](dashboard-avance-edt.md) · [sitio](https://ved-virtualexperiencedevelopment.github.io/bistrolink/avance-edt.html) | Avance por capa y sprint, generado desde Linear |
 | [Bugs](dashboard-bugs-github.md) · [sitio](https://ved-virtualexperiencedevelopment.github.io/bistrolink/bugs.html) | Bugs abiertos y resueltos, generado desde GitHub Issues |
+| [Calidad del proceso](dashboard-calidad-proceso.md) · [sitio](https://ved-virtualexperiencedevelopment.github.io/bistrolink/calidad-proceso.html) | Métricas DORA de producción y de staging, plan de pruebas en Kiwi TCMS y cobertura de código, generado desde GitHub, Kiwi y Codecov (BL-221, BL-601) |
+| Estado del servicio · desde el [sitio](https://ved-virtualexperiencedevelopment.github.io/bistrolink/) | Disponibilidad y tiempo de respuesta de la API y Keycloak (Grafana Synthetic Monitoring, BL-243). El link al dashboard público de Grafana está en la variable de Actions `GRAFANA_ESTADO_URL` |
 
 Los `.md` de los dashboards los regenera el workflow `publicar-dashboards.yml`. La versión actualizada está siempre en el sitio.
 

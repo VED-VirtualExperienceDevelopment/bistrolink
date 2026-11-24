@@ -78,28 +78,29 @@ Cada test es un caso del Test Plan «E2E-Playwright» de Kiwi, y el pipeline reg
 
 ### Proyectos configurados
 
-| Proyecto                 | Dispositivo    | Qué specs corre                                   |
-| ------------------------ | -------------- | ------------------------------------------------- |
-| `chromium`               | Desktop Chrome | Todos                                             |
-| `mobile-chrome`          | Pixel 5        | Solo `menu-publico.spec.ts`                       |
-| `mobile-safari`          | iPhone 12      | Solo `menu-publico.spec.ts`                       |
-| `desktop-safari`         | Desktop Safari | Solo `menu-publico.spec.ts`                       |
-| `chromium-configuracion` | Desktop Chrome | Solo `pago-medios.spec.ts`, después de `chromium` |
+| Proyecto                 | Dispositivo    | Qué specs corre                                                                       |
+| ------------------------ | -------------- | ------------------------------------------------------------------------------------- |
+| `chromium`               | Desktop Chrome | Todos                                                                                 |
+| `mobile-chrome`          | Pixel 5        | Solo `menu-publico.spec.ts`                                                           |
+| `mobile-safari`          | iPhone 12      | Solo `menu-publico.spec.ts`                                                           |
+| `desktop-safari`         | Desktop Safari | Solo `menu-publico.spec.ts`                                                           |
+| `chromium-configuracion` | Desktop Chrome | Solo `pago-medios.spec.ts` y `marca.spec.ts` (HU-043), después de los demás proyectos |
 
 Si tu spec también debe correr en mobile/Safari, agregalo al `testMatch` de esos proyectos en `playwright.config.ts`.
 
-**Specs que cambian la configuración del establecimiento (BL-452).** Un spec que cambia la configuración del establecimiento del seed (por ejemplo, apaga un medio de pago) afecta a todos los tests que corren al mismo tiempo. Por eso va en el proyecto `chromium-configuracion`, que `chromium` ignora y que arranca recién cuando `chromium` termina; dentro del spec, los tests corren en serie y cada uno deja la configuración como estaba en un `finally`. Para correrlo solo en local: `npm run test:e2e -- --project=chromium-configuracion --no-deps`.
+**Specs que cambian la configuración del establecimiento (BL-452).** Un spec que cambia la configuración del establecimiento del seed (por ejemplo, apaga un medio de pago) afecta a todos los tests que corren al mismo tiempo. Por eso va en el proyecto `chromium-configuracion`, que `chromium` ignora y que arranca recién cuando `chromium` termina; dentro del spec, los tests corren en serie y cada uno deja la configuración como estaba en un `finally`. Para correrlo solo en local: `npm run test:e2e -- --project=chromium-configuracion --no-deps`. En el CI tiene su propio job, «Tests E2E (Playwright, chromium-configuracion)», que arranca cuando terminan los 4 navegadores y corre con `--no-deps` (BL-606).
 
 ### `e2e/support/`
 
-| Archivo            | Qué exporta                                                                                                                                                    | Para qué                                                                                                                                                           |
-| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `ids.ts`           | `TENANT_ID`, `RESTAURANTE_ID`, `MESA_ID`, `MESA_ID_RATE_LIMIT`, `ITEM_DISPONIBLE`, `ITEM_NO_DISPONIBLE`, `ENLACE_VIEJO_MESA_PATH`, `MENU_URL_PATH`, `KDS_PATH` | UUIDs y paths fijos que carga `apps/backend/prisma/seed.ts`. Si el seed cambia un UUID o un nombre de ítem, se actualiza acá una sola vez.                         |
-| `auth.ts`          | `test`/`expect` (extiende los de `@playwright/test`), fixtures `kdsPageMozo`, `kdsPageAdmin`, `qrMesas` y `pedidosDeTest`                                      | Loguea contra Keycloak en una pestaña nueva del `context` y la deja en `/kds` ya autenticada. Usalo en vez de escribir el login a mano en cada spec de `e2e/kds/`. |
-| `qr-mesas.ts`      | `QrMesas` y los helpers del fixture `qrMesas`                                                                                                                  | HU-034 (BL-204): URLs de los QR de las mesas del seed. Ver abajo.                                                                                                  |
-| `plataforma.ts`    | `ingresarPlataforma`, `codigoOtp`, `crearEstablecimiento`, `eliminarEstablecimiento`, `hayCredencialesPlataforma`                                              | BL-416: ingreso a `/plataforma` con usuario, contraseña y OTP, y alta y baja de un establecimiento de prueba por la API. Ver abajo.                                |
-| `limpieza.ts`      | Helpers del fixture `pedidosDeTest`                                                                                                                            | BL-477: junta los pedidos que crea el test y los cierra al terminar con `POST /testing/limpieza`. Ver abajo.                                                       |
-| `configuracion.ts` | `abrirConfiguracion`, `cambiarMediosDePago`                                                                                                                    | BL-452: lee y cambia los medios de pago del establecimiento por la API, con la pestaña de `kdsPageAdmin`. Solo para specs del proyecto `chromium-configuracion`.   |
+| Archivo            | Qué exporta                                                                                                                                                    | Para qué                                                                                                                                                                                                                                              |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ids.ts`           | `TENANT_ID`, `RESTAURANTE_ID`, `MESA_ID`, `MESA_ID_RATE_LIMIT`, `ITEM_DISPONIBLE`, `ITEM_NO_DISPONIBLE`, `ENLACE_VIEJO_MESA_PATH`, `MENU_URL_PATH`, `KDS_PATH` | UUIDs y paths fijos que carga `apps/backend/prisma/seed.ts`. Si el seed cambia un UUID o un nombre de ítem, se actualiza acá una sola vez.                                                                                                            |
+| `auth.ts`          | `test`/`expect` (extiende los de `@playwright/test`), fixtures `kdsPageMozo`, `kdsPageAdmin`, `qrMesas` y `pedidosDeTest`                                      | Loguea contra Keycloak en una pestaña nueva del `context` y la deja en `/kds` ya autenticada. Usalo en vez de escribir el login a mano en cada spec de `e2e/kds/`.                                                                                    |
+| `qr-mesas.ts`      | `QrMesas` y los helpers del fixture `qrMesas`                                                                                                                  | HU-034 (BL-204): URLs de los QR de las mesas del seed. Ver abajo.                                                                                                                                                                                     |
+| `plataforma.ts`    | `ingresarPlataforma`, `codigoOtp`, `crearEstablecimiento`, `eliminarEstablecimiento`, `hayCredencialesPlataforma`                                              | BL-416: ingreso a `/plataforma` con usuario, contraseña y OTP, y alta y baja de un establecimiento de prueba por la API. Ver abajo.                                                                                                                   |
+| `limpieza.ts`      | Helpers del fixture `pedidosDeTest`                                                                                                                            | BL-477: junta los pedidos que crea el test y los cierra al terminar con `POST /testing/limpieza`. Ver abajo.                                                                                                                                          |
+| `configuracion.ts` | `abrirConfiguracion`, `cambiarMediosDePago`                                                                                                                    | BL-452: lee y cambia los medios de pago del establecimiento por la API, con la pestaña de `kdsPageAdmin`. Solo para specs del proyecto `chromium-configuracion`.                                                                                      |
+| `marca.ts`         | `abrirConfiguracionDeMarca`, `restaurarMarca`, `guardarCambios`, `LOGO_PNG`, `PORTADA_PNG`                                                                     | HU-043 (BL-535): abre Configuración con la pestaña de `kdsPageAdmin`, deja la marca como estaba (nombre, dirección, plantilla, sin logo ni portada) y trae dos PNG chicos para la carga segura. Solo para `marca.spec.ts` (`chromium-configuracion`). |
 
 **Menú de mesa (QR).** Desde HU-034 (BL-204) el menú de una mesa se abre solo desde la URL de su QR (`/q/<token>`). El token no se puede armar en el test (lo cifra el backend con `QR_TOKEN_KEY`, un secreto de cada entorno), así que lo da el fixture `qrMesas`: `await page.goto(qrMesas.ruta(MESA_ID))`, o `qrMesas.token(MESA_ID)` para la API (`/menu/qr/<token>`). Una vez por worker, loguea un ADMIN en un contexto aparte y pide `GET /mesas/qr`, así que necesita `TEST_ADMIN_USERNAME`/`TEST_ADMIN_PASSWORD`. Los tests **solo leen** los QR: nunca los regeneran, porque regenerar invalida el QR anterior y rompe a los tests que corren en paralelo.
 
@@ -111,7 +112,9 @@ Si tu spec también debe correr en mobile/Safari, agregalo al `testMatch` de eso
 
 **Usuario de plataforma (BL-416).** `e2e/plataforma/` entra a `/plataforma` con un usuario PLATAFORMA propio de E2E. Como toda cuenta PLATAFORMA, tiene OTP: el test genera el código de 6 dígitos con la clave de su app de autenticación (TOTP, RFC 6238, la política por defecto del realm). Necesita `TEST_PLATAFORMA_USERNAME`, `TEST_PLATAFORMA_PASSWORD` y `TEST_PLATAFORMA_OTP_SECRET` (la clave en Base32 que muestra Keycloak en «¿No podés escanearlo?» al configurar el OTP); sin las tres, el spec se saltea. Keycloak no acepta dos veces el mismo código: si el de esta ventana de 30 s ya se usó, el ingreso prueba con el de la siguiente. El spec da de alta su propio establecimiento por la API, corre en orden sobre él y lo elimina al final: nunca toca los demás. Un solo ingreso y una sola alta por corrida (la plataforma limita las altas a 10 por hora por usuario).
 
-Para usar `kdsPageMozo`/`kdsPageAdmin` localmente necesitás las credenciales de los usuarios de prueba de **tu Keycloak local** en variables de entorno de la sesión (`TEST_MOZO_USERNAME`, `TEST_MOZO_PASSWORD`, `TEST_ADMIN_USERNAME`, `TEST_ADMIN_PASSWORD`). Los valores son los de tu `apps/backend/.env`. Nunca se escriben en un spec, en un README ni en un commit, y las de staging no se usan en local.
+**Monitor de Cocina (HU-038, BL-510).** `kdsPageCocina` abre `/kds` como COCINA en **su propio contexto del navegador**: si compartiera el contexto de `kdsPageMozo`, Keycloak reusaría la sesión del mozo y no mostraría el formulario de ingreso. Necesita `TEST_COCINA_USERNAME`/`TEST_COCINA_PASSWORD` (un usuario COCINA del tenant de testing); sin las dos, el test se saltea.
+
+Para usar `kdsPageMozo`/`kdsPageAdmin`/`kdsPageCocina` localmente necesitás las credenciales de los usuarios de prueba de **tu Keycloak local** en variables de entorno de la sesión (`TEST_MOZO_USERNAME`, `TEST_MOZO_PASSWORD`, `TEST_ADMIN_USERNAME`, `TEST_ADMIN_PASSWORD`, y para Cocina `TEST_COCINA_USERNAME`, `TEST_COCINA_PASSWORD`). Los valores son los de tu `apps/backend/.env`. Nunca se escriben en un spec, en un README ni en un commit, y las de staging no se usan en local.
 
 ```powershell
 # PowerShell: la contraseña se pide sin mostrarla
@@ -245,6 +248,73 @@ Las URL son las que usa el job de Playwright en `ci.yml`. Los usuarios de prueba
 | Screenshots | Comentados en el spec | Comentados hasta reactivar; luego se comparan contra `*-linux.png` |
 | Retries     | 0                     | 2                                                                  |
 | Reporter    | `list`                | `github`                                                           |
+
+En los dos casos también se generan `junit`, `html` y los resultados de Allure (`playwright-report/`).
+
+### Reporte Allure (BL-487)
+
+Cada corrida de `develop` publica un reporte Allure con los 5 proyectos juntos: **[reporte E2E en GitHub Pages](https://ved-virtualexperiencedevelopment.github.io/bistrolink/allure/e2e/)**. Tiene, por test, el navegador, la duración, los pasos, los reintentos y la captura de pantalla de los que fallan.
+
+- **Es solo una vista.** Kiwi TCMS sigue siendo la fuente de verdad de los casos y el criterio de pase o falla del pipeline no cambia.
+- **Cómo se arma.** `allure-playwright` (en `playwright.config.ts`) deja los resultados en `playwright-report/allure-results`. El job «Merge + reporte E2E» de `ci.yml` junta los 5 proyectos, los prepara para publicar con `scripts/dashboards/sanitizar-allure.mjs` y genera el HTML (artifact `allure-e2e`). Cuando termina el CI, el workflow «Publicar dashboards» lo publica en `/allure/e2e/` junto a los dashboards.
+- **Qué no se publica.** El sitio es público: el texto que los tests escriben en los campos se reemplaza por `•••`, y solo quedan las imágenes. Las trazas (`trace.zip`) y el resto del detalle están en el reporte completo de cada proyecto, cifrado (ver abajo).
+- **Qué agrega el CI (BL-597).** Antes de generar el reporte, `scripts/dashboards/datos-allure.mjs` completa:
+  - **Ambiente:** entorno, URLs públicas de staging, navegadores, versión, commit, rama y corrida.
+  - **Ejecutor:** el enlace a la corrida de GitHub Actions.
+  - **Categorías:** los fallos agrupados por causa probable (inestables, regresión visual, 401/403, error 5xx, tiempo de espera, fallo de producto y fallo del test).
+  - **Funcionalidades:** el área sale de la carpeta del spec (`admin`, `comensal`, `kds`, `plataforma`, `sesion`) y la historia, del primer `test.describe()`. Un spec puede poner sus propias etiquetas `feature` y `story` con la API de Allure, y se respetan.
+
+  Después, `scripts/dashboards/marca-allure.mjs` aplica la marca de BistroLink (`scripts/dashboards/allure-marca.css`, el ícono de la app y la fuente Plus Jakarta Sans). Una carpeta nueva en `e2e/` aparece con su nombre; para darle un nombre propio, agregarla en `AREAS` de `datos-allure.mjs`.
+
+- **Para un release** se adjunta el artifact `allure-e2e` de la corrida que se usa como evidencia, porque el sitio siempre muestra la última.
+- Si falla la generación o la publicación del reporte, el pipeline no falla (como el reporte a Kiwi).
+
+Para verlo en local después de una corrida (en PowerShell; `allure-playwright` no borra los resultados viejos, por eso el primer comando):
+
+```powershell
+Remove-Item -Recurse -Force playwright-report/allure-results -ErrorAction SilentlyContinue
+npx playwright test --project=chromium --ignore-snapshots
+npx allure generate playwright-report/allure-results -c scripts/dashboards/allurerc.mjs -o allure-report --open
+```
+
+El reporte local no pasa por `sanitizar-allure.mjs`: tiene los pasos completos y no se comparte.
+
+### Aviso de E2E que empiezan a fallar (BL-599)
+
+En `develop` los E2E no frenan el pipeline (BL-250). Para que un test roto por un cambio no pase desapercibido, el job «📧 Aviso de E2E que empiezan a fallar» de `ci.yml` compara cada corrida con la corrida anterior de `develop`:
+
+- **Fallo nuevo:** un test que, en un navegador, falla después de los reintentos y en la corrida anterior pasaba, estaba salteado o no existía. Los que ya fallaban antes no se avisan.
+- Si hay fallos nuevos, manda **un correo a los autores de los PR** mergeados entre las dos corridas, **con el resto del equipo en copia**, y les pide verificar los tests. Lleva la lista de tests y navegadores, los PR y los enlaces a la corrida y al reporte Allure; **no** lleva mensajes de error. Tiene la marca del correo de estado y un enlace para **reportar el bug** con la plantilla de bug, con el entorno (Staging), el PR y las etiquetas `bug` y `regresion` ya completos.
+- Usa la misma cuenta y el mismo equipo que el correo de estado (environment `notificaciones` y secret `DASHBOARD_EMAIL_RECIPIENTS`, BL-326). El correo de cada autor sale del secret `EQUIPO_GITHUB_CORREOS`, con el formato `usuario-de-github=correo` separados por coma (fuente: el gestor de secretos del equipo). Si falta o el autor no está, el correo va a todo el equipo. Los correos se enmascaran en el log.
+- Sin corrida anterior con resultados (se guardan 14 días), no se avisa. Solo corre en un push a `develop`, y nunca hace fallar el pipeline.
+
+**Si te llega el aviso:** abrí el reporte Allure, buscá el test en **Categorías** o **Funcionalidades** y, si hace falta, el reporte completo cifrado (abajo). Si es un defecto del producto, registralo como GitHub Issue con el enlace del correo; si el test quedó desactualizado por tu cambio, ajustalo en un PR.
+
+### Artifacts de la corrida en CI
+
+Cada proyecto sube dos artifacts:
+
+| Artifact                           | Contenido                                                                                                                                | Para qué                                |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| `playwright-resultados-<proyecto>` | `junit.xml` y resultados de Allure, sin el texto escrito en los campos ni credenciales en los mensajes de error (`sanitizar-allure.mjs`) | Kiwi TCMS y el reporte Allure           |
+| `playwright-report-<proyecto>`     | Reporte HTML completo de Playwright, con trazas, **cifrado**                                                                             | Investigar un fallo con todo el detalle |
+
+El repositorio es público y cualquier cuenta de GitHub puede bajar sus artifacts, por eso el reporte completo se sube cifrado (AES-256 con `gpg`, como el informe del DAST). La clave está en el secret de Actions `E2E_REPORTE_CLAVE` (fuente: el gestor de secretos del equipo; copia para descifrar: KeePass del equipo). Si falta, el reporte completo no se sube: nunca se sube sin cifrar.
+
+**Leer el reporte completo:**
+
+1. En la corrida: **Summary** → **Artifacts** → `playwright-report-<proyecto>`. Se descarga un `.zip` con `playwright-report-<proyecto>.tar.gz.gpg` adentro.
+2. Descomprimir el `.zip` y, en Git Bash (trae `gpg`), desde esa carpeta:
+
+   ```bash
+   gpg --decrypt -o reporte.tar.gz playwright-report-<proyecto>.tar.gz.gpg
+   tar -xzf reporte.tar.gz
+   npx playwright show-report html
+   ```
+
+   `gpg` pide la clave (la de KeePass). Para una traza: `npx playwright show-trace <ruta al trace.zip dentro de html/data>`.
+
+3. Revisarlo en la máquina propia, **sin subirlo** al repositorio, a un issue ni a un PR. Al terminar, borrar los archivos descargados.
 
 ## Regresión visual (baselines)
 

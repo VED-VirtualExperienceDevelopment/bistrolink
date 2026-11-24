@@ -62,7 +62,10 @@ export function VersionInfo() {
       <button
         type="button"
         onClick={handleOpen}
-        aria-label="Ver información de versión"
+        // WCAG 2.5.3 (nombre en la etiqueta): el nombre accesible tiene que
+        // incluir el texto visible («v0.5.0»), así quien usa control por voz
+        // puede decir lo que ve.
+        aria-label={`v${FRONTEND_VERSION_SHORT}: ver información de versión`}
         className="fixed bottom-3 right-3 z-40 rounded-full border border-outline-variant bg-surface-container-lowest px-3 py-1 text-label-sm text-on-surface-variant shadow-sm hover:bg-surface-container-high"
       >
         v{FRONTEND_VERSION_SHORT}

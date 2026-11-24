@@ -1,10 +1,16 @@
 import {
+  AVISO_PEDIDO_NO_PENDIENTE,
+  anuncioPedidoDestacado,
   codigoDelPedido,
+  desglosePropina,
+  esTotalCambiado,
   evaluarMontoRecibido,
   formatearMonto,
   horaDelPedido,
   mensajeCobroPosRegistrado,
   mensajeCobroRegistrado,
+  mensajePendienteCancelado,
+  motivoSinCancelar,
   motivoSinEfectivo,
   motivoSinPos,
   normalizarAutorizacion,
@@ -14,8 +20,19 @@ import {
   pendientesDeLaMesa,
   pendientesEnMesas,
   pendientesParaRetirar,
+  resolverPedidoDestacado,
   resumenDeLineas,
+  rutaCancelarPendiente,
+  rutaCobrarPedido,
+  textoPropinaEnLista,
   type PedidoPendienteDeCobro,
+  motivoSinLink,
+  AVISO_OTRO_LINK,
+  CODIGO_LINK_ACTIVO,
+  cuerpoLinkPago,
+  rutaLinkPago,
+  textoLinkActivo,
+  textoVencimientoLink,
 } from "@/components/admin/cobros/cobros.utils";
 
 // HU-031 (BL-201): cobro en efectivo (panel de la mesa y /admin/cobros).
@@ -36,6 +53,19 @@ function pedido(
     pagoEnCurso: false,
     ...overrides,
   };
+}
+
+/** Un pedido de 590 con 10 % de propina: total 649. */
+function pedidoConPropina(
+  overrides: Partial<PedidoPendienteDeCobro> = {},
+): PedidoPendienteDeCobro {
+  return pedido({
+    total: "649.00",
+    consumo: "590.00",
+    propina: "59.00",
+    propinaPorcentaje: 10,
+    ...overrides,
+  });
 }
 
 describe("cobros.utils (HU-031, BL-201)", () => {
@@ -125,6 +155,18 @@ describe("cobros.utils (HU-031, BL-201)", () => {
         vuelto: "0.00",
       });
     });
+
+    it("con propina el vuelto se calcula sobre el total (consumo + propina)", () => {
+      expect(evaluarMontoRecibido("1000", "649.00")).toEqual({
+        tipo: "ok",
+        recibido: "1000",
+        vuelto: "351.00",
+      });
+      expect(evaluarMontoRecibido("600", "649.00")).toEqual({
+        tipo: "insuficiente",
+        falta: "49.00",
+      });
+    });
   });
 
   describe("motivoSinEfectivo", () => {
@@ -155,7 +197,11 @@ describe("cobros.utils (HU-031, BL-201)", () => {
       /^Cobro registrado: pedido #3F2A9C\. Vuelto: .*410\. Ya está en cocina\.$/,
     );
     expect(
-      mensajeCobroRegistrado({ ...cobro, montoRecibido: "590.00", vuelto: "0.00" }),
+      mensajeCobroRegistrado({
+        ...cobro,
+        montoRecibido: "590.00",
+        vuelto: "0.00",
+      }),
     ).toBe("Cobro registrado: pedido #3F2A9C, sin vuelto. Ya está en cocina.");
   });
 
@@ -214,5 +260,264 @@ describe("cobros.utils: POS del local (HU-007b, BL-80)", () => {
     expect(a).toMatch(/^pos-/);
     expect(a.length).toBeLessThanOrEqual(64);
     expect(nuevaClaveDeCobroPos()).not.toBe(a);
+  });
+});
+
+// BL-501: cancelar un pedido que todavía no se cobró.
+describe("cancelar un pedido sin cobrar (BL-501)", () => {
+  it("la ruta lleva el id del pedido", () => {
+    expect(rutaCancelarPendiente("3f2a9c1e-0000-4000-8000-000000000001")).toBe(
+      "/cobros/pendientes/3f2a9c1e-0000-4000-8000-000000000001/cancelar",
+    );
+  });
+
+  it("con un pago con tarjeta en curso no se cancela, con el mismo motivo que el efectivo", () => {
+    expect(motivoSinCancelar(pedido())).toBeNull();
+    const enCurso = pedido({ pagoEnCurso: true });
+    expect(motivoSinCancelar(enCurso)).toBe(motivoSinEfectivo(enCurso, true));
+    expect(motivoSinCancelar(enCurso)).toMatch(/pagando con tarjeta/);
+  });
+
+  it("aviso con el código del pedido", () => {
+    expect(
+      mensajePendienteCancelado({
+        pedidoId: "3f2a9c1e-0000-4000-8000-000000000001",
+        estado: "CANCELADO",
+        total: "590.00",
+      }),
+    ).toBe(
+      `Pedido ${codigoDelPedido("3f2a9c1e-0000-4000-8000-000000000001")} cancelado. No se cobró y no pasa a cocina.`,
+    );
+  });
+});
+
+// HU-022 (BL-495): el mozo ve la propina que eligió el comensal.
+describe("la propina en el cobro (HU-022, BL-495)", () => {
+  const pedidoId = "3f2a9c1e-0000-4000-8000-000000000001";
+
+  describe("desglosePropina", () => {
+    it("con porcentaje: consumo, propina y etiqueta con el porcentaje", () => {
+      expect(desglosePropina(pedidoConPropina())).toEqual({
+        consumo: "590.00",
+        propina: "59.00",
+        etiqueta: "Propina (10 %)",
+      });
+    });
+
+    it("con monto libre (sin porcentaje): etiqueta sin porcentaje", () => {
+      expect(
+        desglosePropina(pedidoConPropina({ propinaPorcentaje: null })),
+      ).toMatchObject({ propina: "59.00", etiqueta: "Propina" });
+    });
+
+    it("sin propina: no hay desglose", () => {
+      expect(desglosePropina(pedido())).toBeNull();
+      expect(
+        desglosePropina(
+          pedido({ consumo: "590.00", propina: "0.00", total: "590.00" }),
+        ),
+      ).toBeNull();
+    });
+
+    it("un backend anterior no informa el consumo: no hay desglose", () => {
+      expect(desglosePropina(pedido({ propina: "59.00" }))).toBeNull();
+    });
+  });
+
+  describe("textoPropinaEnLista", () => {
+    it("con porcentaje", () => {
+      expect(textoPropinaEnLista(pedidoConPropina())).toBe(
+        `Incluye propina de ${formatearMonto("59.00")} (10 %)`,
+      );
+    });
+
+    it("con monto libre: sin porcentaje", () => {
+      expect(
+        textoPropinaEnLista(pedidoConPropina({ propinaPorcentaje: null })),
+      ).toBe(`Incluye propina de ${formatearMonto("59.00")}`);
+    });
+
+    it("sin propina: nada", () => {
+      expect(textoPropinaEnLista(pedido())).toBeNull();
+    });
+  });
+
+  describe("esTotalCambiado", () => {
+    it("reconoce el 409 del backend por cambio de propina", () => {
+      expect(
+        esTotalCambiado(
+          "El total del pedido cambió: ahora es $ 679.00. Actualizá la lista antes de cobrar.",
+        ),
+      ).toBe(true);
+    });
+
+    it("no confunde otros errores", () => {
+      expect(esTotalCambiado("Este pedido ya fue pagado")).toBe(false);
+      expect(esTotalCambiado("")).toBe(false);
+    });
+  });
+
+  describe("mensajeCobroRegistrado con propina", () => {
+    const cobro = {
+      pagoId: "p",
+      pedidoId,
+      monto: "649.00",
+      consumo: "590.00",
+      propina: "59.00",
+      montoRecibido: "1000.00",
+      vuelto: "351.00",
+    };
+
+    it("dice la propina y el vuelto", () => {
+      expect(mensajeCobroRegistrado(cobro)).toBe(
+        `Cobro registrado: pedido #3F2A9C. Propina: ${formatearMonto("59.00")}. Vuelto: ${formatearMonto("351.00")}. Ya está en cocina.`,
+      );
+    });
+
+    it("con el monto justo: dice la propina y que no hay vuelto", () => {
+      expect(
+        mensajeCobroRegistrado({
+          ...cobro,
+          montoRecibido: "649.00",
+          vuelto: "0.00",
+        }),
+      ).toBe(
+        `Cobro registrado: pedido #3F2A9C. Propina: ${formatearMonto("59.00")}. Sin vuelto. Ya está en cocina.`,
+      );
+    });
+
+    it("con propina en cero se avisa igual que sin propina", () => {
+      expect(
+        mensajeCobroRegistrado({
+          ...cobro,
+          monto: "590.00",
+          propina: "0.00",
+          vuelto: "0.00",
+        }),
+      ).toBe("Cobro registrado: pedido #3F2A9C, sin vuelto. Ya está en cocina.");
+    });
+  });
+
+  describe("mensajeCobroPosRegistrado con propina", () => {
+    it("aclara que el total incluye la propina", () => {
+      expect(
+        mensajeCobroPosRegistrado({
+          pagoId: "p-1",
+          pedidoId,
+          monto: "649.00",
+          consumo: "590.00",
+          propina: "59.00",
+          tarjeta: "DEBITO",
+          autorizacion: "A1B2C3",
+        }),
+      ).toBe(
+        `Cobro registrado: pedido #3F2A9C, ${formatearMonto("649.00")} (incluye propina de ${formatearMonto("59.00")}) con débito (autorización A1B2C3). Ya está en cocina.`,
+      );
+    });
+  });
+});
+
+// BL-470: «Ir a cobrar» en el aviso de efectivo de las alertas.
+describe("«Ir a cobrar» desde las alertas (BL-470)", () => {
+  const enMesa = pedido();
+  const retiro = pedido({
+    id: "aa11bb22-0000-4000-8000-000000000002",
+    mesa: { id: "virtual", numero: 0, esVirtual: true },
+  });
+
+  it("rutaCobrarPedido: con el pedido en el parámetro, o sin parámetro", () => {
+    expect(rutaCobrarPedido("p-1")).toBe("/admin/cobros?pedido=p-1");
+    expect(rutaCobrarPedido(undefined)).toBe("/admin/cobros");
+  });
+
+  it("anuncia el pedido destacado con su mesa, o para retirar", () => {
+    expect(anuncioPedidoDestacado(enMesa)).toBe(
+      "Pedido #3F2A9C de la mesa 3, esperando cobro.",
+    );
+    expect(anuncioPedidoDestacado(retiro)).toBe(
+      "Pedido #AA11BB para retirar, esperando cobro.",
+    );
+  });
+
+  it("sin parámetro no destaca nada", () => {
+    expect(resolverPedidoDestacado([enMesa], null)).toEqual({
+      tipo: "ninguno",
+    });
+  });
+
+  it("destaca el pedido si sigue pendiente", () => {
+    expect(resolverPedidoDestacado([retiro, enMesa], enMesa.id)).toEqual({
+      tipo: "pendiente",
+      pedidoId: enMesa.id,
+      anuncio: "Pedido #3F2A9C de la mesa 3, esperando cobro.",
+    });
+  });
+
+  it("avisa si el pedido ya no está pendiente", () => {
+    expect(resolverPedidoDestacado([retiro], enMesa.id)).toEqual({
+      tipo: "no-pendiente",
+      anuncio: AVISO_PEDIDO_NO_PENDIENTE,
+    });
+  });
+});
+
+describe("link de pago (HU-033, BL-203)", () => {
+  const AHORA = Date.parse("2026-11-14T23:00:00.000Z");
+
+  it("ruta del POST que genera el link", () => {
+    expect(rutaLinkPago("3f2a9c1e-0000-4000-8000-000000000001")).toBe(
+      "/cobros/pendientes/3f2a9c1e-0000-4000-8000-000000000001/link-pago",
+    );
+  });
+
+  it("el POST dice si reemplaza el link activo (solo si el colaborador confirmó)", () => {
+    expect(JSON.parse(cuerpoLinkPago(false))).toEqual({ reemplazar: false });
+    expect(JSON.parse(cuerpoLinkPago(true))).toEqual({ reemplazar: true });
+  });
+
+  it("si otro colaborador ya generó el link, el aviso lo dice (código del 409)", () => {
+    expect(CODIGO_LINK_ACTIVO).toBe("LINK_PAGO_ACTIVO");
+    expect(AVISO_OTRO_LINK).toContain("Otro colaborador");
+  });
+
+  it("con un pago con tarjeta en curso no se genera", () => {
+    expect(motivoSinLink(pedido())).toBeNull();
+    expect(motivoSinLink(pedido({ pagoEnCurso: true }))).toBe(
+      motivoSinCancelar(pedido({ pagoEnCurso: true })),
+    );
+  });
+
+  it("muestra el link activo solo si no venció (hora de Uruguay)", () => {
+    expect(
+      textoLinkActivo(
+        pedido({ linkPagoVenceEn: "2026-11-14T23:15:00.000Z" }),
+        AHORA,
+      ),
+    ).toBe("Link de pago activo hasta las 20:15");
+    expect(
+      textoLinkActivo(
+        pedido({ linkPagoVenceEn: "2026-11-14T22:59:00.000Z" }),
+        AHORA,
+      ),
+    ).toBeNull();
+    expect(
+      textoLinkActivo(pedido({ linkPagoVenceEn: null }), AHORA),
+    ).toBeNull();
+    expect(textoLinkActivo(pedido(), AHORA)).toBeNull();
+  });
+
+  it("vencimiento con los minutos que faltan, o que venció", () => {
+    expect(textoVencimientoLink("2026-11-14T23:15:00.000Z", AHORA)).toBe(
+      "Vence a las 20:15 (en 15 min)",
+    );
+    expect(textoVencimientoLink("2026-11-14T23:00:30.000Z", AHORA)).toBe(
+      "Vence a las 20:00 (en 1 min)",
+    );
+    expect(textoVencimientoLink("2026-11-14T23:00:00.000Z", AHORA)).toBe(
+      "Este link venció. Generá otro.",
+    );    // Una fecha que no se puede leer cuenta como vencido.
+    expect(textoVencimientoLink("no-es-fecha", AHORA)).toBe(
+      "Este link venció. Generá otro.",
+    );
   });
 });

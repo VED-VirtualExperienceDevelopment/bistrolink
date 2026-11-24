@@ -41,6 +41,9 @@ describe('Pedidos Observaciones - Integración (BL-41)', () => {
       // cola del KDS. Sin límite (null) la cola está desactivada y el pedido
       // queda en RECIBIDO, como antes.
       restaurante: { findUnique: jest.fn().mockResolvedValue(null) },
+      // HU-046 (BL-554): al confirmar el pago se suman las sugerencias de
+      // complementos aceptadas (una consulta cruda; acá no hay ninguna).
+      $executeRaw: jest.fn().mockResolvedValue(0),
     };
 
     const moduleFixture: TestingModule = await Test.createTestingModule({

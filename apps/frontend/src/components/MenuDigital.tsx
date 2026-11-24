@@ -12,6 +12,32 @@ import dynamic from "next/dynamic";
 import ItemImagen from "@/components/menu/ItemImagen";
 import { rutaPrivacidad } from "@/components/privacidad/privacidad.utils";
 import { LlamarMozoButton } from "@/components/LlamarMozoButton";
+import { MisPedidosBoton } from "@/components/mis-pedidos/MisPedidosBoton";
+import { MisPedidosPanel } from "@/components/mis-pedidos/MisPedidosPanel";
+import { pedidosEnCamino } from "@/components/mis-pedidos/mis-pedidos.utils";
+import { useMisPedidos } from "@/components/mis-pedidos/useMisPedidos";
+import { MesaCerradaAviso } from "@/components/mesa-cerrada/MesaCerradaAviso";
+import { CarritoBarra } from "@/components/carrito/CarritoBarra";
+import { CarritoDetalle } from "@/components/carrito/CarritoDetalle";
+import { useSugerenciaComplementos } from "@/components/carrito/useSugerenciaComplementos";
+import type { PlatoSugerido } from "@/components/carrito/complementos.utils";
+import { CarritoHoja } from "@/components/carrito/CarritoHoja";
+import {
+  anuncioDelCarrito,
+  cantidadEnCarrito,
+  conUnaMas,
+  conUnaMenos,
+  ID_TITULO_CARRITO,
+  sinLinea,
+  type CambioCarrito,
+} from "@/components/carrito/carrito.utils";
+import { useEsPantallaAncha } from "@/components/carrito/useEsPantallaAncha";
+import { useSesionMesaCerrada } from "@/components/mesa-cerrada/useSesionMesaCerrada";
+import { useCartaVigente } from "@/components/menu-digital/useCartaVigente";
+import {
+  conAvisoDeCartaActualizada,
+  esRechazoPorLaCarta,
+} from "@/components/menu-digital/carta-vigente.utils";
 import { apiFetch, ApiError } from "@/lib/api-client";
 import {
   alcanzoCantidadMaxima,
@@ -27,7 +53,11 @@ import {
   sumarUnidad,
   type OrigenMenu,
 } from "@/components/menu-digital.utils";
-import type { PedidoConfirmado } from "@/types/menu";
+import type { MarcaPublica, PedidoConfirmado } from "@/types/menu";
+import { variablesDeMarca } from "@/lib/plantillas-marca";
+import { PedirPorWhatsapp } from "./retiro/PedirPorWhatsapp";
+import { ofrecerPedirPorWhatsapp } from "./retiro/whatsapp.utils";
+import { ImagenDePortada, LogoDelLocal } from "@/components/MarcaDelLocal";
 import {
   firmaCarrito,
   formatearPrecio,
@@ -46,6 +76,15 @@ import {
   type PedidoEnCurso,
   type Retoma,
 } from "@/components/pago/pedido-en-curso.utils";
+import { ContactoDelRetiro } from "@/components/retiro/ContactoDelRetiro";
+import { repartirErrorDelPedido } from "@/components/retiro/retiro.utils";
+import type {
+  ContactoRetiro,
+  RetiroPublico,
+} from "@/components/retiro/retiro.utils";
+import { useRetiroEnCarta } from "@/components/retiro/useRetiroEnCarta";
+import { InsigniaPlato } from "@/components/menu-digital/InsigniaPlato";
+import { insigniasDelPlato } from "@/components/menu-digital/insignias.utils";
 
 const ItemNotaModal = dynamic(() => import("@/components/ItemNotaModal"), {
   ssr: false,
@@ -74,6 +113,10 @@ export type ItemMenu = {
   precio: string | number;
   disponible: boolean;
   imagenUrl: string | null;
+  /** HU-044 (BL-537): «Sugerencia del local». Opcional para un backend anterior. */
+  destacado?: boolean;
+  /** HU-045 (BL-548): entre los 3 más pedidos (lo calcula la API). */
+  masPedido?: boolean;
 };
 
 export type CategoriaMenu = {
@@ -89,6 +132,8 @@ type ItemCarrito = {
   cantidad: number;
   imagenUrl: string | null;
   observacion?: string;
+  /** HU-046 (BL-554): lo agregó desde la sugerencia de complementos. */
+  desdeSugerencia?: boolean;
 };
 
 interface MenuDigitalProps {
@@ -98,11 +143,22 @@ interface MenuDigitalProps {
   readonly categorias: readonly CategoriaMenu[];
   /** Solo en la mesa: el número que se muestra en el encabezado. */
   readonly numeroMesa?: number;
+  /**
+   * HU-043 (BL-534): logo y plantilla del local. Sin marca (o con una API
+   * anterior), el menú se ve como siempre: «BistroLink» y la Clásica.
+   */
+  readonly marca?: MarcaPublica;
+  /** HU-040 (BL-210): solo en el enlace web, si el local toma pedidos ahora. */
+  readonly retiro?: RetiroPublico | null;
+  /**
+   * HU-010 (BL-613): número del bot de WhatsApp del local, solo en el menú
+   * para retirar y si el bot está conectado (lo decide el backend).
+   */
+  readonly whatsapp?: string | null;
 }
 
 const MAX_CHARS_GENERAL = 500;
 const MAX_CHARS_ITEM = 300;
-const WARNING_THRESHOLD = 0.9;
 
 /**
  * Error de las notas del carrito antes de crear el pedido, o null si están
@@ -184,6 +240,7 @@ async function crearPedidoComensal(
   origen: OrigenMenu,
   carrito: readonly ItemCarrito[],
   observacionGeneral: string,
+  contactoRetiro?: ContactoRetiro,
 ): Promise<{ pedido: PedidoConfirmado; accessToken: string }> {
   const accessToken = await identificarComensal(origen);
   const pedidoBody = {
@@ -194,7 +251,11 @@ async function crearPedidoComensal(
       itemCartaId: item.itemCartaId,
       cantidad: item.cantidad,
       observacion: item.observacion?.trim() || undefined,
+      // HU-046 (BL-554): para contar las sugerencias aceptadas al pagar.
+      desdeSugerencia: item.desdeSugerencia || undefined,
     })),
+    // HU-040 (BL-210): solo si lo completó y aceptó que se guarde.
+    contactoRetiro,
   };
   const pedido = await apiFetch<PedidoConfirmado>("/pedidos", accessToken, {
     method: "POST",
@@ -215,10 +276,17 @@ function mensajeErrorAlPedir(origen: OrigenMenu, err: unknown): string {
 export default function MenuDigital({
   origen,
   restaurante,
-  categorias,
+  categorias: categoriasDeLaPagina,
   numeroMesa,
+  marca,
+  retiro,
+  whatsapp,
 }: MenuDigitalProps) {
   const tipo = origen.tipo;
+  // HU-040 (BL-210): datos del comensal del pedido para retirar y, si el
+  // local no toma pedidos ahora, por qué.
+  const retiroEnCarta = useRetiroEnCarta(origen, retiro);
+  const { avisoCerrado, errorContacto } = retiroEnCarta;
   const [carrito, setCarrito] = useState<ItemCarrito[]>([]);
   const [observacionGeneral, setObservacionGeneral] = useState("");
   const [itemNotaAbierto, setItemNotaAbierto] = useState<ItemCarrito | null>(
@@ -230,6 +298,9 @@ export default function MenuDigital({
     "idle" | "enviando" | "error"
   >("idle");
   const [errorPedido, setErrorPedido] = useState<string | null>(null);
+  // HU-040 (BL-210): el error del contacto va junto al formulario, y recién
+  // después de intentar pagar.
+  const erroresDelPedido = repartirErrorDelPedido(errorPedido, errorContacto);
 
   // BL-311 (prepago, RD.03): el pedido creado espera el pago en la pantalla
   // «Pagar». Si el comensal vuelve a la carta y no cambia nada, se reusa el
@@ -254,10 +325,27 @@ export default function MenuDigital({
   const [avisoRetoma, setAvisoRetoma] = useState<string | null>(null);
   const clave = clavePedidoEnCurso(origen);
 
+  // BL-570: la disponibilidad se vuelve a pedir al volver a la pestaña
+  // (solo mientras se ve la carta) y cuando el pedido se rechaza por un
+  // plato que ya no se puede pedir. El carrito no se toca.
+  const { categorias, recargar: recargarCarta } = useCartaVigente(
+    origen,
+    categoriasDeLaPagina,
+    vista === "carta",
+  );
+
+  // BL-502: «Mis pedidos» en la mesa (los que pagó desde este teléfono en
+  // la sesión abierta), con su estado en vivo.
+  const misPedidos = useMisPedidos(origen, identificarComensal);
+  // BL-518: si el mozo cierra la mesa, la carta se entera sin recargar.
+  const mesaCerrada = useSesionMesaCerrada(origen, identificarComensal);
+  const { recordar: recordarEnMisPedidos } = misPedidos;
+  const [misPedidosAbierto, setMisPedidosAbierto] = useState(false);
+
   // BL-448: al abrir la carta (por ejemplo, después de recargar), si había
   // un pedido en curso en esta pestaña, se vuelve a donde estaba.
   useEffect(() => {
-    const almacen = almacenDelNavegador();
+    const almacen = almacenDelNavegador(origen);
     const guardado = leerPedidoEnCurso(almacen, clave);
     if (!guardado) return;
     let cancelado = false;
@@ -284,6 +372,7 @@ export default function MenuDigital({
           setVista("pago");
         } else if (retoma.accion === "aprobado" && accessToken) {
           guardarPedidoEnCurso(almacen, clave, { ...guardado, aprobado: true });
+          recordarEnMisPedidos(guardado.pedidoId);
           setPagoAprobado({
             pedido,
             accessToken,
@@ -304,40 +393,37 @@ export default function MenuDigital({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clave]);
 
-  // BL-320: el panel "Tu pedido" es fijo y tapaba los botones "Agregar" de
-  // los platos que quedaban debajo. Se mide su alto para reservar ese espacio
-  // al final de la página y en el scroll (ver el efecto de abajo).
-  const panelPedidoRef = useRef<HTMLDivElement>(null);
-  const [altoPanelPedido, setAltoPanelPedido] = useState(0);
+  // BL-320: lo fijo de abajo tapaba los botones "Agregar" de los platos que
+  // quedaban debajo. Se mide su alto para reservar ese espacio al final de la
+  // página y en el scroll (ver el efecto de abajo). BL-519: en el celular lo
+  // fijo es solo la barra del carrito; desde lg el carrito va a la derecha.
+  const barraCarritoRef = useRef<HTMLDivElement>(null);
+  const [altoBarraCarrito, setAltoBarraCarrito] = useState(0);
   const hayCarrito = carrito.length > 0 && vista === "carta";
 
-  const generalCharCount = observacionGeneral.length;
-  const isGeneralOverLimit = generalCharCount > MAX_CHARS_GENERAL;
-  const isGeneralNearLimit =
-    generalCharCount >= MAX_CHARS_GENERAL * WARNING_THRESHOLD &&
-    !isGeneralOverLimit;
+  // BL-519: en el celular el carrito es una barra de una línea y el detalle
+  // se abre en una hoja; desde lg sigue siendo la columna de la derecha.
+  const esPantallaAncha = useEsPantallaAncha();
+  const [hojaCarritoAbierta, setHojaCarritoAbierta] = useState(false);
+  const barraCarritoVisible = hayCarrito && !esPantallaAncha;
+  // BL-519 y BL-378: el último cambio del carrito (agregar, restar o quitar
+  // un plato), para anunciarlo al lector de pantalla.
+  const [ultimoCambio, setUltimoCambio] = useState<CambioCarrito | null>(null);
 
-  const getGeneralBorderClasses = () => {
-    if (isGeneralOverLimit)
-      return "border-2 border-[#BA1A1A] bg-[#FFDAD6] focus:border-[#BA1A1A] focus:ring-2 focus:ring-[#BA1A1A]/20";
-    if (isGeneralNearLimit)
-      return "border-2 border-[#755b00] bg-culinary-background focus:border-[#755b00] focus:ring-2 focus:ring-[#755b00]/20";
-    return "border-2 border-culinary-neutral/30 bg-culinary-background focus:border-[#6e54ad] focus:ring-2 focus:ring-[#6e54ad]/20";
-  };
-
-  const getGeneralCounterColor = () => {
-    if (isGeneralOverLimit) return "text-[#BA1A1A]";
-    if (isGeneralNearLimit) return "text-[#755b00]";
-    return "text-[#5a575e]";
-  };
+  // HU-046 (BL-553): sugerencia de complementos, una vez por pedido, cuando
+  // el detalle está a la vista (columna en escritorio u hoja abierta).
+  const sugerencia = useSugerenciaComplementos({
+    origen,
+    lineas: carrito,
+    detalleVisible: hayCarrito && (esPantallaAncha || hojaCarritoAbierta),
+  });
 
   // BL-425: true si el ítem ya tiene en el carrito el máximo de unidades.
   const llegoAlTope = (itemId: string) =>
-    alcanzoCantidadMaxima(
-      carrito.find((i) => i.itemCartaId === itemId)?.cantidad ?? 0,
-    );
+    alcanzoCantidadMaxima(cantidadEnCarrito(carrito, itemId));
 
-  const agregarAlCarrito = (item: ItemMenu) => {
+  const agregarAlCarrito = (item: ItemMenu, desdeSugerencia = false) => {
+    setUltimoCambio({ tipo: "agregado", nombre: item.nombre });
     setCarrito((prevCarrito) => {
       const itemExistente = prevCarrito.some((i) => i.itemCartaId === item.id);
       if (itemExistente) {
@@ -357,6 +443,7 @@ export default function MenuDigital({
           cantidad: 1,
           imagenUrl: item.imagenUrl,
           observacion: "",
+          ...(desdeSugerencia && { desdeSugerencia }),
         },
       ];
     });
@@ -391,6 +478,39 @@ export default function MenuDigital({
     }
   };
 
+  const vaciarCarrito = () => {
+    setCarrito([]);
+    setHojaCarritoAbierta(false);
+  };
+
+  // BL-378: cambiar la cantidad y quitar un plato desde el detalle. Si el
+  // carrito queda vacío, la hoja se cierra (la barra desaparece).
+  const cambiarCarrito = (
+    cambio: CambioCarrito,
+    operar: (lineas: ItemCarrito[]) => ItemCarrito[],
+  ) => {
+    setUltimoCambio(cambio);
+    const nuevo = operar(carrito);
+    setCarrito(nuevo);
+    if (nuevo.length === 0) setHojaCarritoAbierta(false);
+  };
+  const sumarDelDetalle = (linea: ItemCarrito) =>
+    cambiarCarrito({ tipo: "agregado", nombre: linea.nombre }, (l) =>
+      conUnaMas(l, linea.itemCartaId),
+    );
+  const restarDelDetalle = (linea: ItemCarrito) =>
+    cambiarCarrito(
+      {
+        tipo: linea.cantidad > 1 ? "restado" : "quitado",
+        nombre: linea.nombre,
+      },
+      (l) => conUnaMenos(l, linea.itemCartaId),
+    );
+  const quitarDelDetalle = (linea: ItemCarrito) =>
+    cambiarCarrito({ tipo: "quitado", nombre: linea.nombre }, (l) =>
+      sinLinea(l, linea.itemCartaId),
+    );
+
   const totalCarrito = useMemo(
     () =>
       carrito.reduce((total, item) => total + item.precio * item.cantidad, 0),
@@ -403,14 +523,16 @@ export default function MenuDigital({
   );
 
   const continuarAlPago = async () => {
-    const error = errorNotas(carrito, observacionGeneral);
+    const error = errorNotas(carrito, observacionGeneral) ?? errorContacto;
     if (error) {
       setErrorPedido(error);
       return;
     }
 
-    const firma = firmaCarrito(carrito, observacionGeneral);
+    const { contacto, firma: firmaContacto } = retiroEnCarta.contactoYFirma();
+    const firma = firmaCarrito(carrito, observacionGeneral) + firmaContacto;
     if (pedidoPorPagar?.firma === firma) {
+      setHojaCarritoAbierta(false);
       setVista("pago");
       window.scrollTo({ top: 0 });
       return;
@@ -423,13 +545,14 @@ export default function MenuDigital({
         origen,
         carrito,
         observacionGeneral,
+        contacto,
       );
       // BL-311: el pedido queda en PENDIENTE_PAGO; el carrito se conserva
       // hasta que el pago se apruebe.
       setPedidoPorPagar({ pedido, accessToken, firma });
       // BL-448: para retomarlo si se recarga la página. Reemplaza al pedido
       // anterior guardado (el carrito cambió).
-      guardarPedidoEnCurso(almacenDelNavegador(), clave, {
+      guardarPedidoEnCurso(almacenDelNavegador(origen), clave, {
         pedidoId: pedido.id,
         tokenAcceso: pedido.tokenAcceso,
         firma,
@@ -438,10 +561,25 @@ export default function MenuDigital({
       });
       setAvisoRetoma(null);
       setEstadoPedido("idle");
+      // BL-519: al volver del pago, la carta se ve con la barra, no con la
+      // hoja abierta.
+      setHojaCarritoAbierta(false);
       setVista("pago");
       window.scrollTo({ top: 0 });
     } catch (err) {
-      setErrorPedido(mensajeErrorAlPedir(origen, err));
+      let mensaje = mensajeErrorAlPedir(origen, err);
+      // BL-570: un plato se agotó o salió de la carta mientras el comensal
+      // la miraba: se actualiza la carta y se le dice qué hacer.
+      if (
+        err instanceof ApiError &&
+        esRechazoPorLaCarta(err.status, err.message, err.codigo)
+      ) {
+        mensaje = conAvisoDeCartaActualizada(err.message);
+        void recargarCarta();
+      }
+      // HU-040 (BL-210): el local dejó de tomar pedidos para retirar.
+      retiroEnCarta.registrarError(err, mensaje);
+      setErrorPedido(mensaje);
       setEstadoPedido("error");
     }
   };
@@ -451,8 +589,10 @@ export default function MenuDigital({
   // aprobado (código, estado en vivo y comprobante).
   const alAprobarPago = useCallback(() => {
     if (!pedidoPorPagar) return;
+    // BL-502: queda en «Mis pedidos» aunque después haga otro pedido.
+    recordarEnMisPedidos(pedidoPorPagar.pedido.id);
     // BL-448: si recarga en la confirmación, vuelve a la confirmación.
-    guardarPedidoEnCurso(almacenDelNavegador(), clave, {
+    guardarPedidoEnCurso(almacenDelNavegador(origen), clave, {
       pedidoId: pedidoPorPagar.pedido.id,
       tokenAcceso: pedidoPorPagar.pedido.tokenAcceso,
       firma: pedidoPorPagar.firma,
@@ -471,46 +611,63 @@ export default function MenuDigital({
     setObservacionGeneral("");
     setVista("aprobado");
     window.scrollTo({ top: 0 });
-  }, [pedidoPorPagar, carrito, totalCarrito, clave, observacionGeneral]);
+  }, [
+    pedidoPorPagar,
+    carrito,
+    totalCarrito,
+    clave,
+    observacionGeneral,
+    origen,
+    recordarEnMisPedidos,
+  ]);
 
   const hacerOtroPedido = useCallback(() => {
     // BL-448: el pedido terminó; no queda nada guardado (ni el token de
     // acceso de un pedido para retirar).
-    borrarPedidoEnCurso(almacenDelNavegador(), clave);
+    // BL-502: el pedido sigue en «Mis pedidos».
+    borrarPedidoEnCurso(almacenDelNavegador(origen), clave);
     setPagoAprobado(null);
     setVista("carta");
     window.scrollTo({ top: 0 });
-  }, [clave]);
+  }, [clave, origen]);
 
-  // BL-320: mide el panel "Tu pedido" mientras está visible.
+  // BL-502: «Pedir algo más» desde «Mis pedidos»: a la carta.
+  const pedirAlgoMas = useCallback(() => {
+    setMisPedidosAbierto(false);
+    if (vista === "aprobado") hacerOtroPedido();
+    else setVista("carta");
+  }, [vista, hacerOtroPedido]);
+  const hayMisPedidos = misPedidos.pedidos.length > 0;
+
+  // BL-320 / BL-519: mide la barra del carrito mientras está visible.
   useEffect(() => {
-    const panel = panelPedidoRef.current;
-    if (!hayCarrito || !panel) {
-      setAltoPanelPedido(0);
+    const barra = barraCarritoRef.current;
+    if (!barraCarritoVisible || !barra) {
+      setAltoBarraCarrito(0);
       return;
     }
     const observer = new ResizeObserver(() =>
-      setAltoPanelPedido(Math.ceil(panel.getBoundingClientRect().height)),
+      setAltoBarraCarrito(Math.ceil(barra.getBoundingClientRect().height)),
     );
-    observer.observe(panel);
+    observer.observe(barra);
     return () => observer.disconnect();
-  }, [hayCarrito]);
+  }, [barraCarritoVisible]);
 
   // BL-320: scroll-padding hace que el navegador, al llevar un elemento a la
   // vista (scroll, foco con teclado, scrollIntoView), lo deje entre la barra
-  // superior fija y el panel del pedido, en vez de debajo de alguno de los
+  // superior fija y la barra del carrito, en vez de debajo de alguna de las
   // dos. También cubre WCAG 2.4.11 (el foco no queda tapado).
   useEffect(() => {
     const html = document.documentElement;
     html.style.scrollPaddingTop = "5rem";
-    html.style.scrollPaddingBottom = altoPanelPedido
-      ? `${altoPanelPedido + 32}px`
+    html.style.scrollPaddingBottom = altoBarraCarrito
+      ? `${altoBarraCarrito + 32}px`
       : "";
     return () => {
       html.style.scrollPaddingTop = "";
       html.style.scrollPaddingBottom = "";
     };
-  }, [altoPanelPedido]);
+  }, [altoBarraCarrito]);
 
   // BL-311: pantallas del pago (pagar / pago aprobado); si no corresponde
   // ninguna, se muestra la carta.
@@ -526,6 +683,11 @@ export default function MenuDigital({
         total={pagoAprobado.total}
         numeroMesa={numeroMesa}
         onOtroPedido={hacerOtroPedido}
+        nombreLocal={restaurante.nombre}
+        pedidosEnCamino={pedidosEnCamino(
+          misPedidos.pedidos.filter((p) => p.id !== pagoAprobado.pedido.id),
+        )}
+        onVerMisPedidos={() => setMisPedidosAbierto(true)}
       />
     );
   } else if (vista === "pago" && pedidoPorPagar) {
@@ -544,29 +706,108 @@ export default function MenuDigital({
     );
   }
 
+  // HU-046 (BL-553): «Agregar» suma el plato con cantidad 1 (si ya estaba,
+  // no se muestra) y la sugerencia queda resuelta; «No, gracias» no cambia
+  // nada del pedido.
+  const complementos = {
+    origen: sugerencia.origen,
+    platos: sugerencia.platos,
+    onAgregar: (plato: PlatoSugerido) => {
+      agregarAlCarrito({ ...plato, disponible: true }, true);
+      sugerencia.resolver();
+    },
+    onRechazar: sugerencia.resolver,
+  };
+
+  // BL-519: lo mismo para la columna (lg) y para la hoja (celular).
+  const propsDetalleCarrito = {
+    lineas: carrito,
+    cantidadTotal: cantidadTotalItems,
+    total: totalCarrito,
+    observacionGeneral,
+    maxCaracteresGeneral: MAX_CHARS_GENERAL,
+    onCambiarObservacion: setObservacionGeneral,
+    onEditarNota: handleAbrirNotaItem,
+    onSumar: sumarDelDetalle,
+    onRestar: restarDelDetalle,
+    onQuitar: quitarDelDetalle,
+    onVaciar: vaciarCarrito,
+    onContinuar: continuarAlPago,
+    enviando: estadoPedido === "enviando",
+    // HU-040 (BL-210): el error del contacto se muestra junto al formulario.
+    error: erroresDelPedido.delCarrito,
+    // HU-040 (BL-210): fuera de horario no se puede pagar el retiro.
+    pagoBloqueado: avisoCerrado !== null,
+    complementos,
+    // HU-040 (BL-210): nombre y contacto del pedido para retirar.
+    contacto: (
+      <ContactoDelRetiro
+        retiro={retiroEnCarta}
+        error={erroresDelPedido.delContacto}
+        onCorregir={() => setErrorPedido(null)}
+        rutaPrivacidad={rutaPrivacidad(origen)}
+        deshabilitado={estadoPedido === "enviando"}
+      />
+    ),
+  };
+
+  if (mesaCerrada) {
+    return (
+      <MesaCerradaAviso
+        nombreLocal={restaurante.nombre}
+        numeroMesa={numeroMesa}
+      />
+    );
+  }
+
   return (
     <div
       className="min-h-screen bg-culinary-background pb-28"
       // BL-320: espacio al final para que el último plato pueda quedar por
-      // encima del panel del pedido (pb-28 solo alcanzaba sin el panel).
-      style={
-        altoPanelPedido ? { paddingBottom: altoPanelPedido + 32 } : undefined
-      }
+      // encima de la barra del carrito.
+      // HU-043 (BL-534): las variables de la marca valen para todo lo que
+      // está adentro (carta, carrito, mis pedidos, llamar al mozo y pago).
+      style={{
+        ...variablesDeMarca(marca?.plantilla),
+        ...(altoBarraCarrito
+          ? { paddingBottom: altoBarraCarrito + 32 }
+          : undefined),
+      }}
     >
       <nav className="fixed top-0 w-full z-50 flex justify-between items-center px-4 md:px-8 h-16 bg-white border-b border-culinary-neutral/15">
-        <div className="flex items-center gap-4">
-          <span className="text-xl md:text-2xl font-bold text-[#6e54ad]">
-            BistroLink
-          </span>
+        <div className="flex min-w-0 items-center gap-4">
+          {/* HU-043 (BL-534): el logo del local, o «BistroLink». */}
+          <LogoDelLocal logoUrl={marca?.logoUrl} nombre={restaurante.nombre} />
         </div>
-        <div className="flex items-center gap-4 text-[#6e54ad]">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-[#6e54ad]/10 rounded-full">
-            <span className="text-sm font-medium">
-              {tipo === "mesa"
-                ? "📍 En el local"
-                : "Pedido desde fuera del local"}
-            </span>
-          </div>
+        <div className="flex items-center gap-2 md:gap-4 text-marca">
+          {/* BL-502: en el celular, solo el ícono y la cantidad. */}
+          {hayMisPedidos && (
+            <MisPedidosBoton
+              variante="nav"
+              pedidos={misPedidos.pedidos}
+              onAbrir={() => setMisPedidosAbierto(true)}
+            />
+          )}
+          {/* BL-592: en el pedido desde la mesa, «Llamar al mozo» va en la
+          barra superior, siempre a la vista. En la pantalla de pago no se
+          muestra acá: ahí el botón va dentro del contenido (PagoPedido), y
+          así nunca hay dos botones iguales a la vez. «En el local» pasó a
+          la portada, junto al número de mesa. */}
+          {origen.tipo === "mesa" ? (
+            !pantallaPago && (
+              <LlamarMozoButton
+                qrToken={origen.qrToken}
+                sesionMesa={origen.sesionMesa}
+                variante="nav"
+              />
+            )
+          ) : (
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-marca/10 rounded-full">
+              <span className="text-sm font-medium">
+                Pedido desde fuera del local
+              </span>
+            </div>
+          )}
         </div>
       </nav>
 
@@ -578,6 +819,14 @@ export default function MenuDigital({
           <main
             className={`pt-20 px-4 md:px-8 max-w-[1440px] mx-auto flex flex-col gap-10 ${hayCarrito ? "lg:pr-[448px]" : ""}`}
           >
+            {avisoCerrado && (
+              <output
+                data-testid="aviso-retiro-cerrado"
+                className="p-3 bg-amber-50 text-amber-900 rounded-lg text-sm font-medium"
+              >
+                {avisoCerrado}
+              </output>
+            )}
             {avisoRetoma && (
               <output className="p-3 bg-amber-50 text-amber-900 rounded-lg text-sm font-medium flex items-start justify-between gap-3">
                 <span>{avisoRetoma}</span>
@@ -593,37 +842,26 @@ export default function MenuDigital({
             <section className="w-full">
               <div className="relative w-full h-[250px] md:h-[350px] rounded-[1rem] overflow-hidden group bg-foreground">
                 {/* LCP de la página: <img> en vez de background-image para que el
-                navegador la descubra temprano, le dé prioridad alta y elija un
-                tamaño acorde a la pantalla (Unsplash redimensiona por URL).
-                Antes bajaba siempre 1974 px (~580 KB) y el LCP en mobile
-                quedaba en ~6,5 s. Decorativa: el nombre ya está en el <h1>. */}
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src="https://images.unsplash.com/photo-1514933651103-005eec06c04b?q=60&w=828&auto=format&fit=crop"
-                  srcSet={[640, 828, 1200, 1600]
-                    .map(
-                      (ancho) =>
-                        `https://images.unsplash.com/photo-1514933651103-005eec06c04b?q=60&w=${ancho}&auto=format&fit=crop ${ancho}w`,
-                    )
-                    .join(", ")}
-                  sizes="(min-width: 1440px) 1376px, calc(100vw - 2rem)"
-                  alt=""
-                  fetchPriority="high"
-                  loading="eager"
-                  decoding="async"
-                  className="absolute inset-0 w-full h-full object-cover object-center transition-transform duration-700 group-hover:scale-105"
-                />
+                navegador la descubra temprano y le dé prioridad alta (BL-450).
+                HU-043 (BL-562): la portada del local o la de por defecto. */}
+                <ImagenDePortada portadaUrl={marca?.portadaUrl} />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-black/10"></div>
 
                 <div className="absolute bottom-0 left-0 p-6 md:p-8 w-full flex flex-col justify-end">
                   <span className="inline-flex items-center px-3 py-1 rounded-full bg-white/20 backdrop-blur-sm text-white font-medium text-xs md:text-sm mb-3 w-max">
+                    {/* BL-592: «En el local» sale de la barra superior y va acá. */}
                     {tipo === "mesa"
-                      ? etiquetaMesa(numeroMesa)
+                      ? `En el local · ${etiquetaMesa(numeroMesa)}`
                       : `📍 ${restaurante.direccion || "Local"}`}
                   </span>
                   <h1 className="text-3xl md:text-5xl font-bold text-white mb-2 tracking-tight">
                     {restaurante.nombre}
                   </h1>
+                  {/* HU-010 (BL-613): pedir por el bot, en el menú para
+                  retirar y con el local tomando pedidos. */}
+                  {ofrecerPedirPorWhatsapp(tipo, whatsapp, retiro) && (
+                    <PedirPorWhatsapp numero={whatsapp} />
+                  )}
                 </div>
               </div>
             </section>
@@ -688,10 +926,23 @@ export default function MenuDigital({
                                 <h3 className="font-semibold text-lg text-foreground leading-tight">
                                   {item.nombre}
                                 </h3>
-                                <span className="font-bold text-lg text-[#6e54ad] shrink-0">
+                                <span className="font-bold text-lg text-marca shrink-0">
                                   {formatearPrecio(item.precio)}
                                 </span>
                               </div>
+                              {/* HU-044 (BL-537): después del nombre (el lector
+                                  oye primero el plato). Agotado: solo «No
+                                  disponible». */}
+                              {insigniasDelPlato(item).length > 0 && (
+                                <div className="mb-2 flex flex-wrap gap-2">
+                                  {insigniasDelPlato(item).map((variante) => (
+                                    <InsigniaPlato
+                                      key={variante}
+                                      variante={variante}
+                                    />
+                                  ))}
+                                </div>
+                              )}
                               {item.descripcion && (
                                 <p className="text-sm text-[#5a575e] mb-4 line-clamp-2">
                                   {item.descripcion}
@@ -714,14 +965,17 @@ export default function MenuDigital({
                                     onClick={() => agregarAlCarrito(item)}
                                     // BL-425: al llegar al tope el botón se deshabilita
                                     // y el aviso queda asociado con aria-describedby.
-                                    disabled={llegoAlTope(item.id)}
+                                    disabled={
+                                      llegoAlTope(item.id) ||
+                                      avisoCerrado !== null
+                                    }
                                     aria-describedby={
                                       llegoAlTope(item.id)
                                         ? `tope-${item.id}`
                                         : undefined
                                     }
                                     aria-label={`Agregar ${item.nombre} al carrito`}
-                                    className="w-full bg-[#6e54ad]/10 text-[#6e54ad] font-semibold py-2.5 rounded-[0.5rem] hover:bg-[#6e54ad] hover:text-white transition-colors flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-[#6e54ad]/10 disabled:hover:text-[#6e54ad]"
+                                    className="w-full bg-marca/10 text-marca font-semibold py-2.5 rounded-[0.5rem] hover:bg-marca hover:text-white transition-colors flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-marca/10 disabled:hover:text-marca"
                                   >
                                     <svg
                                       aria-hidden="true"
@@ -749,6 +1003,20 @@ export default function MenuDigital({
                                       ></line>
                                     </svg>
                                     Agregar
+                                    {/* BL-519: en el celular el detalle del
+                                    carrito no se ve; el botón muestra cuántos
+                                    hay (el lector de pantalla lo oye en el
+                                    anuncio de abajo). */}
+                                    {cantidadEnCarrito(carrito, item.id) >
+                                      0 && (
+                                      <span
+                                        aria-hidden="true"
+                                        className="ml-1 rounded-full bg-white px-2 py-0.5 text-xs font-bold text-marca"
+                                      >
+                                        {cantidadEnCarrito(carrito, item.id)} en
+                                        el pedido
+                                      </span>
+                                    )}
                                   </button>
                                   {llegoAlTope(item.id) && (
                                     <p
@@ -771,154 +1039,94 @@ export default function MenuDigital({
               </div>
             )}
 
-            {origen.tipo === "mesa" && (
-              <div className="mt-8 flex justify-center w-full">
-                <LlamarMozoButton
-                  qrToken={origen.qrToken}
-                  sesionMesa={origen.sesionMesa}
-                />
-              </div>
-            )}
-
             {/* HU-036 (BL-206): política de privacidad del local. */}
             <footer className="pb-4 text-center text-sm text-[#5a575e]">
               <a
                 href={rutaPrivacidad(origen)}
-                className="underline hover:text-[#6e54ad]"
+                className="underline hover:text-marca"
               >
                 Política de privacidad
               </a>
             </footer>
           </main>
 
-          {hayCarrito && (
-            <div
-              ref={panelPedidoRef}
-              // BL-320: hasta lg ocupa todo el ancho abajo, con un alto máximo
-              // para que siempre quede menú visible arriba; desde lg va a la
-              // derecha, en el espacio que se le reserva al <main>.
-              className="fixed bottom-4 left-4 right-4 max-h-[60vh] overflow-y-auto lg:left-auto lg:right-4 lg:w-[400px] lg:max-h-[calc(100vh-6rem)] bg-white rounded-[1rem] shadow-[0px_4px_20px_rgba(121,118,125,0.15)] border border-culinary-neutral/15 p-5 z-20"
+          {/* BL-519: el carrito se muestra en un solo lugar a la vez: la
+          columna de la derecha desde lg, o la barra con la hoja en el
+          celular. */}
+          {hayCarrito && esPantallaAncha && (
+            <aside
+              aria-labelledby={ID_TITULO_CARRITO}
+              // BL-320: desde lg va a la derecha, en el espacio que se le
+              // reserva al <main>.
+              className="fixed bottom-4 right-4 w-[400px] max-h-[calc(100vh-6rem)] overflow-y-auto bg-white rounded-[1rem] shadow-[0px_4px_20px_rgba(121,118,125,0.15)] border border-culinary-neutral/15 p-5 z-20"
             >
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-bold text-lg text-foreground flex items-center gap-2">
-                  <span role="img" aria-label="Carrito">
-                    🛒
-                  </span>{" "}
-                  Tu pedido ({cantidadTotalItems}{" "}
-                  {cantidadTotalItems === 1 ? "item" : "items"})
-                </h3>
-                <button
-                  type="button"
-                  onClick={() => setCarrito([])}
-                  className="text-sm text-red-600 hover:text-red-700 font-medium px-2 py-1 bg-red-50 rounded-md transition-colors"
-                  disabled={estadoPedido === "enviando"}
-                >
-                  Vaciar
-                </button>
-              </div>
+              <CarritoDetalle {...propsDetalleCarrito} variante="columna" />
+            </aside>
+          )}
 
-              <div className="max-h-60 overflow-y-auto mb-4 space-y-3 pr-1">
-                {carrito.map((item) => (
-                  <div
-                    key={item.itemCartaId}
-                    className="flex flex-col bg-culinary-background p-3 rounded-lg"
-                  >
-                    <div className="flex items-start justify-between text-sm">
-                      <div className="flex-1 pr-2">
-                        <span className="font-semibold text-foreground">
-                          {item.cantidad}x {item.nombre}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => handleAbrirNotaItem(item)}
-                          className="text-xs text-[#6e54ad] mt-1.5 flex items-center gap-1 hover:underline font-medium"
-                        >
-                          <svg
-                            aria-hidden="true"
-                            xmlns="http://www.w3.org/2000/svg"
-                            width="12"
-                            height="12"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          >
-                            <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
-                            <path d="m15 5 4 4" />
-                          </svg>
-                          Editar nota
-                        </button>
-                        {item.observacion && (
-                          <p className="text-xs text-[#5a575e] mt-1 italic line-clamp-2">
-                            &quot;{item.observacion}&quot;
-                          </p>
-                        )}
-                      </div>
-                      <span className="font-semibold text-foreground">
-                        {formatearPrecio(item.precio * item.cantidad)}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="border-t border-culinary-neutral/15 pt-4 mb-4">
-                <label
-                  htmlFor="observacion-general"
-                  className="text-sm font-semibold text-foreground mb-2 block"
-                >
-                  Instrucciones generales
-                </label>
-                <textarea
-                  id="observacion-general"
-                  value={observacionGeneral}
-                  onChange={(e) => setObservacionGeneral(e.target.value)}
-                  placeholder="Ej: Ningún plato debe llevar maní."
-                  className={`w-full p-3 rounded-lg text-sm resize-none outline-none transition-all duration-200 placeholder:text-[#5a575e]/70 ${getGeneralBorderClasses()}`}
-                  maxLength={MAX_CHARS_GENERAL + 20}
-                  rows={2}
+          {barraCarritoVisible && (
+            <>
+              <div
+                ref={barraCarritoRef}
+                className="fixed bottom-4 left-4 right-4 z-20 lg:hidden"
+              >
+                <CarritoBarra
+                  cantidad={cantidadTotalItems}
+                  total={totalCarrito}
+                  onAbrir={() => setHojaCarritoAbierta(true)}
                 />
-                <div className="flex justify-end mt-1">
-                  <span
-                    className={`text-xs font-semibold ${getGeneralCounterColor()}`}
-                  >
-                    {generalCharCount}/{MAX_CHARS_GENERAL}
-                  </span>
-                </div>
               </div>
+              <CarritoHoja
+                abierto={hojaCarritoAbierta}
+                onCerrar={() => setHojaCarritoAbierta(false)}
+              >
+                <CarritoDetalle
+                  {...propsDetalleCarrito}
+                  variante="hoja"
+                  onCerrar={() => setHojaCarritoAbierta(false)}
+                />
+              </CarritoHoja>
+            </>
+          )}
 
-              {errorPedido && (
-                <div className="p-3 bg-red-50 text-red-700 rounded-lg text-sm font-medium mb-4 flex items-start gap-2">
-                  <span>⚠️</span> {errorPedido}
-                </div>
-              )}
+          {/* BL-519 y BL-378: aviso para el lector de pantalla al agregar,
+          restar o quitar un plato (también si el pedido queda vacío). */}
+          <output aria-live="polite" className="sr-only">
+            {ultimoCambio
+              ? anuncioDelCarrito(
+                  ultimoCambio,
+                  cantidadTotalItems,
+                  totalCarrito,
+                )
+              : ""}
+          </output>
 
-              <div className="pt-2">
-                <div className="flex items-center justify-between mb-4">
-                  <span className="font-bold text-foreground text-lg">
-                    Total:
-                  </span>
-                  <span className="text-2xl font-bold text-[#6e54ad]">
-                    {formatearPrecio(totalCarrito)}
-                  </span>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={continuarAlPago}
-                  disabled={estadoPedido === "enviando" || isGeneralOverLimit}
-                  className="w-full px-4 py-3.5 bg-[#6e54ad] text-white font-bold rounded-[0.5rem] hover:bg-[#5b468f] focus:outline-none focus:ring-4 focus:ring-[#6e54ad]/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed text-lg shadow-[0px_4px_20px_rgba(121,118,125,0.15)]"
-                >
-                  {estadoPedido === "enviando"
-                    ? "Preparando tu pedido…"
-                    : "Continuar al pago"}
-                </button>
-              </div>
+          {/* BL-502: en el celular, «Mis pedidos» abajo mientras no hay
+          carrito (con carrito, la barra del carrito ocupa ese lugar y queda
+          el botón de la barra superior). Desde lg, solo el de la barra. */}
+          {hayMisPedidos && !hayCarrito && (
+            <div className="fixed bottom-4 left-4 right-4 z-20 lg:hidden">
+              <MisPedidosBoton
+                variante="barra"
+                pedidos={misPedidos.pedidos}
+                onAbrir={() => setMisPedidosAbierto(true)}
+              />
             </div>
           )}
         </>
+      )}
+
+      {origen.tipo === "mesa" && (
+        <MisPedidosPanel
+          abierto={misPedidosAbierto}
+          onCerrar={() => setMisPedidosAbierto(false)}
+          onPedirAlgoMas={pedirAlgoMas}
+          origen={origen}
+          numeroMesa={numeroMesa}
+          pedidos={misPedidos.pedidos}
+          lugares={misPedidos.lugares}
+          accessToken={misPedidos.accessToken}
+        />
       )}
 
       <ItemNotaModal

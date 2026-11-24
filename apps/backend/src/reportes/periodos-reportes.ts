@@ -10,7 +10,7 @@ const DIA_MS = 24 * 60 * 60 * 1000;
 /**
  * HU-012 (BL-108): qué canales del pedido entran en cada filtro (D1).
  * En el local: los pedidos del QR de la mesa y los que carga el mozo. Fuera
- * del local: Web (pedidos para retirar) y WhatsApp (todavía sin pedidos).
+ * del local: Web (pedidos para retirar) y WhatsApp (el bot de HU-010).
  * TODOS no filtra: también suma VOZ, que hoy no se usa.
  */
 export const CANALES_DEL_FILTRO: Record<
@@ -20,6 +20,8 @@ export const CANALES_DEL_FILTRO: Record<
   LOCAL: [PedidoCanal.QR, PedidoCanal.MOZO],
   WEB: [PedidoCanal.WEB],
   WHATSAPP: [PedidoCanal.WHATSAPP],
+  // HU-011 (BL-489): ventas importadas del POS del local.
+  POS: [PedidoCanal.POS],
 };
 
 /** Los canales del pedido de un filtro, o null si no filtra (TODOS). */

@@ -7,13 +7,14 @@ import UsuarioSesion from '@/components/sesion/UsuarioSesion';
 import { AlertasProvider } from '@/components/alertas/AlertasProvider';
 import { CampanaAlertas } from '@/components/alertas/CampanaAlertas';
 import { ContadorMenuAlertas } from '@/components/alertas/ContadorMenuAlertas';
-import CampanaStock from '@/components/admin/stock/CampanaStock';
 
 // BL-441: la pantalla de alertas.
 const HREF_ALERTAS = '/admin/alertas';
 
 const NAV_ITEMS = [
   // `roles: undefined` = visible para cualquier staff (ADMIN o MOZO).
+  // BL-520: Inicio, adonde llegan el administrador y el mozo al entrar.
+  { href: '/admin/inicio', label: 'Inicio', icon: 'home' },
   { href: '/admin/usuarios', label: 'Usuarios', icon: 'group', roles: ['ADMIN'] },
   { href: '/admin/mesas', label: 'Mapa de mesas', icon: 'table_restaurant' },
   // Apunta a /admin/kds (embebido, con sidebar), no a /kds standalone.
@@ -39,6 +40,10 @@ const NAV_ITEMS = [
   { href: '/admin/comprobantes', label: 'Comprobantes', icon: 'receipt_long', roles: ['ADMIN'] },
   // HU-012 (BL-108): reportes de ventas y métricas; solo Administrador.
   { href: '/admin/reportes', label: 'Reportes', icon: 'monitoring', roles: ['ADMIN'] },
+  // HU-050 (BL-558): valoraciones privadas de los clientes; solo Administrador.
+  { href: '/admin/valoraciones', label: 'Valoraciones', icon: 'reviews', roles: ['ADMIN'] },
+  // HU-011 (BL-488): ventas mandadas al POS del local; solo Administrador.
+  { href: '/admin/pos', label: 'POS del local', icon: 'point_of_sale', roles: ['ADMIN'] },
   // HU-020 (BL-72): datos fiscales, CFE, medios de pago y propinas; solo Administrador.
   { href: '/admin/configuracion', label: 'Configuración', icon: 'settings', roles: ['ADMIN'] },
   // Próximos módulos (HU-001, HU-003, etc.) se suman acá a medida que
@@ -157,7 +162,12 @@ export default function AdminShell({
 
   return (
     <AlertasProvider>
-      <div className="flex h-screen overflow-hidden">
+      {/* BL-500: `relative` acá, en el <nav> y en el contenedor del contenido
+          hace que los elementos `sr-only` (position: absolute) queden
+          contenidos y recortados ahí. Sin eso se ubican respecto de la
+          página, la estiran más que la ventana y todo el panel se desplaza
+          al hacer scroll. */}
+      <div className="relative flex h-screen overflow-hidden">
         {/* Velo del panel en pantallas angostas. Es un <button> y no un <div>
             con onClick por la misma regla de accesibilidad que Dialog.tsx;
             tabIndex -1 porque con teclado alcanza con Esc. */}
@@ -193,7 +203,7 @@ export default function AdminShell({
             </div>
           </div>
 
-          <nav className="mt-4 flex-1 overflow-y-auto">
+          <nav className="relative mt-4 flex-1 overflow-y-auto">
             {NAV_ITEMS.filter(
               (item) => !item.roles || item.roles.some((rol) => hasRole(rol)),
             ).map((item) => {
@@ -279,15 +289,21 @@ export default function AdminShell({
               </div>
             </div>
             <div className="flex items-center gap-2">
-              {/* HU-015 (BL-120): alertas de stock, solo el Administrador. */}
-              {hasRole('ADMIN') && <CampanaStock />}
+              {/* BL-470: una sola campana. El Administrador ve ahí también las
+                  alertas de stock (antes tenía una campana aparte). */}
               <CampanaAlertas />
               {/* BL-350: quién inició sesión. «Cerrar sesión» del menú lateral
                   se mantiene; este también lo ofrece. */}
               <UsuarioSesion />
             </div>
           </header>
-          <div className="flex-1 overflow-y-auto">{children}</div>
+          {/* BL-507 (#472): sin overflow-x-hidden, el overflow-y-auto deja el
+              horizontal en auto y este contenedor scrolleaba toda la página
+              cuando algo adentro se pasaba de ancho (el KDS con muchos
+              tickets). Cada pantalla scrollea en horizontal adentro suyo. */}
+          <div className="relative flex-1 overflow-y-auto overflow-x-hidden">
+            {children}
+          </div>
         </main>
       </div>
     </AlertasProvider>

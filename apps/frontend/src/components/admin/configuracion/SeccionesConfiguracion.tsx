@@ -19,6 +19,7 @@ import {
   MAXIMO_PROPINAS,
   MEDIOS_PAGO,
   PROVEEDORES_CFE,
+  avisoPreseleccion,
   type CampoMedioPago,
   type ConfiguracionEstablecimiento,
   type FormularioConfiguracion,
@@ -214,6 +215,7 @@ export function SeccionPropinas({
   onCambiar,
   error,
 }: Readonly<SeccionProps & { error: string | null }>) {
+  const aviso = avisoPreseleccion(formulario);
   return (
     <section aria-labelledby="titulo-propinas" className={CLASE_TARJETA}>
       <h2 id="titulo-propinas" className={CLASE_TITULO_TARJETA}>
@@ -227,7 +229,7 @@ export function SeccionPropinas({
           id="propinas"
           type="text"
           inputMode="numeric"
-          placeholder="10, 15, 20"
+          placeholder="5, 10, 15"
           value={formulario.propinas}
           onChange={(e) => onCambiar("propinas", e.target.value)}
           aria-invalid={error !== null}
@@ -244,6 +246,29 @@ export function SeccionPropinas({
           </p>
         )}
       </div>
+      {/* HU-022 (BL-495): marcar el 10 % para el comensal. Apagada por defecto. */}
+      <div className="flex items-center justify-between gap-4 border-t border-outline-variant pt-3">
+        <div className="min-w-0">
+          <p className="text-body-md text-on-surface">
+            Preseleccionar el 10 % en la pantalla de pago
+          </p>
+          <p id="propina-preseleccionada-ayuda" className={CLASE_AYUDA}>
+            Apagada por defecto. Solo se marca si el 10 % está entre los
+            porcentajes sugeridos. El comensal la puede quitar con «Sin
+            propina» y la propina se guarda recién cuando paga.
+          </p>
+        </div>
+        <Switch
+          checked={formulario.propinaPreseleccionada}
+          onChange={(valor) => onCambiar("propinaPreseleccionada", valor)}
+          label="Preseleccionar el 10 % en la pantalla de pago"
+          describedBy="propina-preseleccionada-ayuda"
+        />
+      </div>
+      {aviso && (
+        // <output>: rol «status» implícito, el lector de pantalla lo anuncia.
+        <output className="block text-body-sm text-error">{aviso}</output>
+      )}
     </section>
   );
 }

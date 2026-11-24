@@ -61,6 +61,9 @@ enum PedidoCanal {
   VOZ
   // HU-039 (BL-209): lo cargó el mozo para un comensal sin celular.
   MOZO
+  // HU-011 (BL-489): venta hecha directamente en el POS del local. Ningún
+  // pedido tiene este canal: solo lo usa el resumen del dashboard.
+  POS
 }
 
 enum PagoEstado {
@@ -175,10 +178,18 @@ model Restaurante {
   // (Ley 19.210 de inclusión financiera); el administrador lo apaga en
   // Configuración si no lo usa.
   posHabilitado               Boolean      @default(true) @map("pos_habilitado")
+  // HU-011 (BL-488): las ventas cobradas se mandan al POS del local
+  // (sincronizacion_pos). Default false: el administrador la activa cuando
+  // el local tiene un POS conectado.
+  posSincronizacionHabilitada Boolean      @default(false) @map("pos_sincronizacion_habilitada")
   // Porcentajes de propina sugeridos, enteros (ej. [10, 15, 20]). Vacío =
   // sin sugerencias. Entre 1 y 100 y hasta 5 valores: CHECK en la migración
   // (Prisma no los declara); el DTO valida lo mismo con mensajes claros.
   propinasSugeridas           Int[]        @default([]) @map("propinas_sugeridas")
+  // HU-022 (BL-495): true = la pantalla de pago del comensal abre con el 10 %
+  // marcado como «Sugerida» (solo si el 10 % está en propinasSugeridas).
+  // Default false: la propina se elige sin nada marcado de antemano.
+  propinaPreseleccionada      Boolean      @default(false) @map("propina_preseleccionada")
   // Default SURTEC: es el proveedor que emite hoy (CfeService).
   cfeProveedor                CfeProveedor @default(SURTEC) @map("cfe_proveedor")
   // HU-036 (BL-206): contacto para los derechos de los titulares de datos
@@ -192,6 +203,36 @@ model Restaurante {
   umbralAlertaCola            Int          @default(10) @map("umbral_alerta_cola")
   // Referencia para el tiempo estimado de espera del comensal.
   minutosPreparacionEstimados Int          @default(15) @map("minutos_preparacion_estimados")
+  // HU-038 (BL-506): desde cuántos minutos una comanda del KDS pasa a
+  // «Atención», «Demorado» y «Demora alta». Rango 1..600 y orden
+  // (atención < demorado < demora alta) con CHECK en la migración.
+  minutosEsperaAtencion       Int          @default(30) @map("minutos_espera_atencion")
+  minutosEsperaDemorado       Int          @default(60) @map("minutos_espera_demorado")
+  minutosEsperaDemoraAlta     Int          @default(120) @map("minutos_espera_demora_alta")
+  // HU-043 (BL-531): marca propia, fase 1. Clave del logo en el
+  // almacenamiento de imágenes (la sube y la valida BL-532). Null = sin logo.
+  logoKey                     String?      @map("logo_key")
+  // Plantilla de colores de la carta: clasica, gourmet, rapida o familiar
+  // (CHECK en la migración). Los colores viven en el frontend.
+  plantilla                   String       @default("clasica") @db.VarChar(20)
+  // HU-040 (BL-210): pedidos para retirar por el enlace web. Default true:
+  // los locales existentes siguen recibiéndolos. La franja (HH:MM, en la
+  // zona horaria del local) es la misma todos los días; las dos nulas =
+  // todo el día. Si «desde» es mayor que «hasta», cruza la medianoche.
+  // Formato y «las dos o ninguna» con CHECK en la migración.
+  retiroHabilitado            Boolean      @default(true) @map("retiro_habilitado")
+  retiroHoraDesde             String?      @map("retiro_hora_desde") @db.VarChar(5)
+  retiroHoraHasta             String?      @map("retiro_hora_hasta") @db.VarChar(5)
+  // HU-010 (BL-613): número del bot de WhatsApp del local, en formato
+  // internacional («+59899123456»). El menú para retirar lo ofrece solo si
+  // el bot está conectado para el tenant. null = no se ofrece.
+  whatsappPedidos             String?      @map("whatsapp_pedidos") @db.VarChar(16)
+  // Último código de retiro entregado (R-001 a R-999, después vuelve a
+  // empezar). Se incrementa con un UPDATE atómico al aprobarse el pago.
+  ultimoCodigoRetiro          Int          @default(0) @map("ultimo_codigo_retiro")
+  // HU-043 (BL-562): foto de portada del banner de la carta. Clave en el
+  // almacenamiento de imágenes. Null = la portada por defecto.
+  portadaKey                  String?      @map("portada_key")
   createdAt                   DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt                   DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -305,35 +346,47 @@ model CategoriaCarta {
 }
 
 model ItemCarta {
-  id            String    @id @default(uuid()) @db.Uuid
-  tenantId      String    @map("tenant_id") @db.Uuid
-  categoriaId   String    @map("categoria_id") @db.Uuid
-  nombre        String
-  descripcion   String?
-  precio        Decimal   @db.Decimal(10, 2)
-  disponible    Boolean   @default(true)
-  imagenKey     String?   @map("imagen_key")
+  id              String    @id @default(uuid()) @db.Uuid
+  tenantId        String    @map("tenant_id") @db.Uuid
+  categoriaId     String    @map("categoria_id") @db.Uuid
+  nombre          String
+  descripcion     String?
+  precio          Decimal   @db.Decimal(10, 2)
+  disponible      Boolean   @default(true)
+  imagenKey       String?   @map("imagen_key")
   // BL-393: orden manual dentro de la categoría. La migración lo completa con
   // el orden alfabético que había, así la carta se ve igual.
   // BL-399: sin valor por defecto (ver CategoriaCarta.orden).
-  orden         Int
+  orden           Int
   // BL-393: baja lógica. Nulo = activo. Nombre único entre los no archivados
   // de la categoría: índice parcial creado con SQL en la migración. El precio
   // tiene CHECK (precio >= 0) en la base.
-  archivadoEn   DateTime? @map("archivado_en") @db.Timestamptz(3)
+  archivadoEn     DateTime? @map("archivado_en") @db.Timestamptz(3)
   // HU-015 (BL-120): stock de la jornada. Solo cuenta si controlaStock: el
   // stock se descuenta al confirmarse el pago (RF.04, RD.09) y en 0 el ítem
   // queda no disponible. umbralAlerta: con stockActual en o debajo, el
   // administrador recibe la alerta «Por agotarse». CHECK (>= 0) de las dos
   // cantidades en la migración.
-  controlaStock Boolean   @default(false) @map("controla_stock")
-  stockActual   Int       @default(0) @map("stock_actual")
-  umbralAlerta  Int       @default(5) @map("umbral_alerta")
-  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  controlaStock   Boolean   @default(false) @map("controla_stock")
+  stockActual     Int       @default(0) @map("stock_actual")
+  umbralAlerta    Int       @default(5) @map("umbral_alerta")
+  // HU-044 (BL-537): «Sugerencia del local». Lo marca el ADMIN; el comensal
+  // ve la insignia, sin cambiar el orden de la carta.
+  destacado       Boolean   @default(false)
+  // HU-046 (BL-551): el ADMIN elige qué platos se pueden sugerir como
+  // complemento antes de pagar, y cuáles tienen alcohol. Un plato con
+  // alcohol nunca se sugiere: CHECK en la migración.
+  sugerible       Boolean   @default(false)
+  contieneAlcohol Boolean   @default(false) @map("contiene_alcohol")
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  categoria    CategoriaCarta @relation(fields: [categoriaId], references: [id])
-  lineasPedido LineaPedido[]
+  categoria             CategoriaCarta     @relation(fields: [categoriaId], references: [id])
+  lineasPedido          LineaPedido[]
+  // HU-046 (BL-552): reglas de complemento donde el plato es antecedente o
+  // consecuente.
+  reglasComoAntecedente ReglaComplemento[] @relation("ReglaAntecedente")
+  reglasComoConsecuente ReglaComplemento[] @relation("ReglaConsecuente")
 
   @@index([tenantId])
   @@index([tenantId, categoriaId, orden])
@@ -356,11 +409,23 @@ model Pedido {
   // (canal WEB, sin QR). El token en claro se devuelve una sola vez, al
   // crear el pedido; acá nunca se guarda. Null en los pedidos de mesa.
   accesoTokenHash       String?      @map("acceso_token_hash") @db.Char(64)
+  // HU-033 (BL-203): link de pago que genera el mozo para que el comensal
+  // pague desde su celular. Solo el SHA-256 del nonce del link vigente: uno
+  // solo por pedido (generar otro lo reemplaza) y vence en
+  // `linkPagoVenceEn` (el mismo plazo que un pago pendiente, HU-032).
+  linkPagoHash          String?      @map("link_pago_hash") @db.Char(64)
+  linkPagoVenceEn       DateTime?    @map("link_pago_vence_en") @db.Timestamptz(3)
   // HU-031b (BL-442): el comensal de una mesa pidió pagar en efectivo
   // (cuándo, y con cuánto va a pagar si lo dijo). No es un pago: el pedido
   // sigue en PENDIENTE_PAGO hasta que el mozo registra el cobro (BL-201).
   efectivoSolicitadoEn  DateTime?    @map("efectivo_solicitado_en") @db.Timestamptz(3)
   efectivoPagaCon       Decimal?     @map("efectivo_paga_con") @db.Decimal(10, 2)
+  // HU-022 (BL-494): la propina que eligió el comensal, antes de pagar. Se
+  // guarda la ELECCIÓN y no el monto: el backend calcula el monto sobre las
+  // líneas al cobrar (BL-90). Como mucho uno de los dos tiene valor
+  // (porcentaje, o monto libre en pesos enteros); ninguno = sin propina.
+  propinaPorcentaje     Int?         @map("propina_porcentaje")
+  propinaMonto          Int?         @map("propina_monto")
   // HU-009 (BL-453): el comensal pidió e-Factura (tipo 111) en lugar del
   // e-Ticket. Solo se guardan si aceptó el aviso de privacidad (HU-036):
   // sin aceptar, quedan nulos y se emite un e-Ticket. El administrador los
@@ -373,16 +438,27 @@ model Pedido {
   // RECIBIDO). Orden FIFO de la cola; null en pedidos anteriores (se
   // ordenan primero, por createdAt).
   encoladoEn            DateTime?    @map("encolado_en") @db.Timestamptz(3)
+  // HU-040 (BL-210): pedido para retirar. El código (R-042) se asigna al
+  // aprobarse el pago y es el que se verifica al entregar. El nombre y el
+  // contacto son opcionales y solo se guardan si el comensal aceptó el
+  // aviso de privacidad (HU-036); el administrador los puede anonimizar.
+  codigoRetiro          String?      @map("codigo_retiro") @db.VarChar(5)
+  retiroNombre          String?      @map("retiro_nombre") @db.VarChar(60)
+  retiroContacto        String?      @map("retiro_contacto") @db.VarChar(100)
+  retiroConsentidoEn    DateTime?    @map("retiro_consentido_en") @db.Timestamptz(3)
+  retiroAnonimizadoEn   DateTime?    @map("retiro_anonimizado_en") @db.Timestamptz(3)
   createdAt             DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt             DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  restaurante      Restaurante             @relation(fields: [restauranteId], references: [id])
-  mesa             Mesa                    @relation(fields: [mesaId], references: [id])
-  usuario          Usuario?                @relation("PedidoUsuario", fields: [usuarioId], references: [id])
-  lineas           LineaPedido[]
-  pagos            Pago[]
-  comprobantes     ComprobanteFiscal[]
-  historialEstados PedidoEstadoHistorial[]
+  restaurante         Restaurante             @relation(fields: [restauranteId], references: [id])
+  mesa                Mesa                    @relation(fields: [mesaId], references: [id])
+  usuario             Usuario?                @relation("PedidoUsuario", fields: [usuarioId], references: [id])
+  lineas              LineaPedido[]
+  pagos               Pago[]
+  comprobantes        ComprobanteFiscal[]
+  historialEstados    PedidoEstadoHistorial[]
+  sincronizacionesPos SincronizacionPos[]
+  valoracion          ValoracionPedido?
 
   @@index([tenantId])
   // BL-213: KDS y listado de pedidos (por fecha y por estado), dentro
@@ -393,6 +469,8 @@ model Pedido {
   @@index([tenantId, estado, encoladoEn])
   // BL-453: buscar los pedidos de un RUT para anonimizarlos.
   @@index([tenantId, receptorRut])
+  // HU-040 (BL-210): buscar los pedidos de un contacto para anonimizarlos.
+  @@index([tenantId, retiroContacto])
   @@map("pedido")
 }
 
@@ -408,6 +486,9 @@ model LineaPedido {
   cantidad               Int
   subtotal               Decimal  @db.Decimal(10, 2)
   observacion            String?  @map("observacion") @db.VarChar(300) // <-- NUEVO
+  // HU-046 (BL-554): el comensal lo agregó desde la sugerencia de
+  // complementos. Solo para contar las aceptadas al aprobarse el pago.
+  desdeSugerencia        Boolean  @default(false) @map("desde_sugerencia")
   createdAt              DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt              DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -427,7 +508,11 @@ model Pago {
   tenantId           String     @map("tenant_id") @db.Uuid
   pedidoId           String     @map("pedido_id") @db.Uuid
   idempotencyKey     String     @unique @map("idempotency_key") @db.VarChar(64)
+  // Consumo (lo que se factura). La propina va aparte (HU-022): lo cobrado
+  // es monto + propina; el CFE, la rebaja de IVA y las ventas usan `monto`.
   monto              Decimal    @db.Decimal(10, 2)
+  // HU-022 (BL-494): propina cobrada con este pago, en pesos. 0 = sin propina.
+  propina            Decimal    @default(0) @db.Decimal(10, 2)
   medioPago          String     @map("medio_pago") // sin enum: no está cerrado en el Anexo 6
   estado             PagoEstado
   pasarelaReferencia String?    @map("pasarela_referencia")
@@ -606,13 +691,21 @@ model SesionMesa {
 // materializadas. Sin claves foráneas: son datos derivados. Con RLS.
 
 model ResumenVentasHora {
-  tenantId      String      @map("tenant_id") @db.Uuid
-  hora          DateTime    @db.Timestamptz(3)
-  canal         PedidoCanal
-  medioPago     String      @map("medio_pago")
-  pedidos       Int
-  monto         Decimal     @db.Decimal(12, 2)
-  actualizadoEn DateTime    @default(now()) @map("actualizado_en") @db.Timestamptz(3)
+  tenantId          String      @map("tenant_id") @db.Uuid
+  hora              DateTime    @db.Timestamptz(3)
+  canal             PedidoCanal
+  medioPago         String      @map("medio_pago")
+  pedidos           Int
+  // Consumo (lo que se factura): la propina no suma acá.
+  monto             Decimal     @db.Decimal(12, 2)
+  // HU-022 (BL-496): propina cobrada en la hora, aparte de las ventas. 0 en
+  // las ventas importadas del POS, que no la informan.
+  propina           Decimal     @default(0) @db.Decimal(12, 2)
+  // Pedidos de la fila con propina mayor que cero. Igual que `pedidos`, se
+  // cuenta por medio de pago: un pedido con dos pagos aprobados de medios
+  // distintos aparece una vez en cada fila.
+  pedidosConPropina Int         @default(0) @map("pedidos_con_propina")
+  actualizadoEn     DateTime    @default(now()) @map("actualizado_en") @db.Timestamptz(3)
 
   @@id([tenantId, hora, canal, medioPago])
   @@map("resumen_ventas_hora")
@@ -631,4 +724,174 @@ model ResumenPlatosHora {
 
   @@id([tenantId, hora, canal, itemCartaId])
   @@map("resumen_platos_hora")
+}
+
+// ── HU-046 (BL-552) Reglas de complemento ─────────────────────────────────────
+// Análisis de canasta por local: «quien pide A suele pedir B». Las recalcula
+// un job nocturno con los pedidos pagados de los últimos 90 días (borra y
+// vuelve a insertar las del local). El consecuente es siempre un plato
+// sugerible y sin alcohol. Con RLS. Sin datos de comensales ni de pedidos:
+// solo conteos agregados.
+
+model ReglaComplemento {
+  tenantId        String   @map("tenant_id") @db.Uuid
+  antecedenteId   String   @map("antecedente_id") @db.Uuid
+  consecuenteId   String   @map("consecuente_id") @db.Uuid
+  // Pedidos con los dos platos (el soporte en número).
+  pedidosConAmbos Int      @map("pedidos_con_ambos")
+  // Pedidos con A y B / pedidos del local.
+  soporte         Float
+  // Pedidos con A y B / pedidos con A.
+  confianza       Float
+  // Confianza / (pedidos con B / pedidos del local).
+  lift            Float
+  calculadaEn     DateTime @map("calculada_en") @db.Timestamptz(3)
+
+  antecedente ItemCarta @relation("ReglaAntecedente", fields: [antecedenteId], references: [id], onDelete: Cascade)
+  consecuente ItemCarta @relation("ReglaConsecuente", fields: [consecuenteId], references: [id], onDelete: Cascade)
+
+  @@id([tenantId, antecedenteId, consecuenteId])
+  @@map("regla_complemento")
+}
+
+// HU-046 (BL-554): medición de la sugerencia de complementos. Contadores por
+// local, día (del calendario del local) y canal: cuántas veces se mostró y
+// cuántos platos sugeridos se pagaron. Nada del comensal ni del pedido. Con
+// RLS.
+
+model MetricaSugerenciaDia {
+  tenantId      String      @map("tenant_id") @db.Uuid
+  dia           DateTime    @db.Date
+  canal         PedidoCanal
+  mostradas     Int         @default(0)
+  aceptadas     Int         @default(0)
+  actualizadoEn DateTime    @default(now()) @map("actualizado_en") @db.Timestamptz(3)
+
+  @@id([tenantId, dia, canal])
+  @@map("metrica_sugerencia_dia")
+}
+
+// ── HU-050 (BL-558) Valoración privada del pedido ─────────────────────────────
+// El comensal valora su pedido después de la entrega: de 1 a 5 y un
+// comentario opcional. Solo la ve el Administrador; no se publica.
+// Anónima (E1): no guarda nada del comensal. El pedido es la clave solo para
+// que no se valore dos veces; la pantalla del Administrador no lo muestra (ni
+// la mesa). Del momento se guarda el día del calendario del local, no la
+// hora, para no poder cruzarla con la entrega. Con RLS.
+
+model ValoracionPedido {
+  pedidoId   String   @id @map("pedido_id") @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  dia        DateTime @db.Date
+  estrellas  Int      @db.SmallInt
+  comentario String?  @db.VarChar(500)
+
+  pedido Pedido @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+
+  // Pantalla del Administrador: por período.
+  @@index([tenantId, dia])
+  @@map("valoracion_pedido")
+}
+
+// ── HU-011 (BL-488) Sincronización con el POS del local ───────────────────────
+// Bandeja de salida: cada venta (y su anulación) que hay que mandar al POS.
+// La fila de la VENTA se escribe en la misma transacción que confirma el
+// pago, así no se pierde si el POS no responde; un envío inmediato y un job
+// de reintentos la mandan. Con RLS.
+
+enum PosSincronizacionTipo {
+  VENTA
+  ANULACION
+}
+
+enum PosSincronizacionEstado {
+  // Falta mandarla (o falló y se reintenta sola).
+  PENDIENTE
+  ENVIADA
+  // El POS la rechazó (4xx) o se agotaron los intentos: no se reintenta
+  // sola; el administrador puede reintentarla.
+  ERROR
+  // Venta que no llegó a mandarse porque el pedido se canceló antes: ya no
+  // hay nada que registrar ni anular.
+  DESCARTADA
+}
+
+model SincronizacionPos {
+  id              String                  @id @default(uuid()) @db.Uuid
+  tenantId        String                  @map("tenant_id") @db.Uuid
+  pedidoId        String                  @map("pedido_id") @db.Uuid
+  tipo            PosSincronizacionTipo
+  estado          PosSincronizacionEstado @default(PENDIENTE)
+  // Id de la venta en el POS (lo devuelve al registrarla).
+  posRef          String?                 @map("pos_ref") @db.VarChar(64)
+  intentos        Int                     @default(0)
+  ultimoIntentoEn DateTime?               @map("ultimo_intento_en") @db.Timestamptz(3)
+  // Motivo del último fallo, sin datos personales.
+  ultimoError     String?                 @map("ultimo_error") @db.VarChar(200)
+  enviadaEn       DateTime?               @map("enviada_en") @db.Timestamptz(3)
+  createdAt       DateTime                @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime                @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  pedido Pedido @relation(fields: [pedidoId], references: [id])
+
+  // Una venta y a lo sumo una anulación por pedido.
+  @@unique([pedidoId, tipo])
+  // Pendientes del job y listado del panel, dentro del tenant.
+  @@index([tenantId, estado, createdAt])
+  @@index([tenantId, createdAt])
+  @@map("sincronizacion_pos")
+}
+
+// HU-011 (BL-489): ventas hechas directamente en el POS del local (no en
+// BistroLink), importadas para el dashboard (canal POS). Las que mandó
+// BistroLink no se importan: ya están como pagos. Idempotente por el id del
+// POS dentro del tenant.
+model VentaPosImportada {
+  id               String   @id @default(uuid()) @db.Uuid
+  tenantId         String   @map("tenant_id") @db.Uuid
+  // Id de la venta en el POS.
+  idPos            String   @map("id_pos") @db.VarChar(64)
+  // Cuándo se hizo la venta en el POS: la hora del dashboard.
+  vendidaEn        DateTime @map("vendida_en") @db.Timestamptz(3)
+  total            Decimal  @db.Decimal(12, 2)
+  // Como lo informa el POS (EFECTIVO, CREDITO, DEBITO…).
+  medioPago        String   @map("medio_pago") @db.VarChar(30)
+  // Anulada en el POS: deja de contar en el dashboard.
+  anulada          Boolean  @default(false)
+  // Último cambio de la venta en el POS: de acá sigue la próxima importación.
+  actualizadaEnPos DateTime @map("actualizada_en_pos") @db.Timestamptz(3)
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([tenantId, idPos])
+  // Resumen por hora y próxima importación, dentro del tenant.
+  @@index([tenantId, vendidaEn])
+  @@index([tenantId, actualizadaEnPos])
+  @@map("venta_pos_importada")
+}
+
+// ── HU-010 (BL-112) Conversación del bot de WhatsApp ──────────────────────────
+// Lo que el bot de pedidos para retirar necesita recordar entre un mensaje y
+// el siguiente: en qué paso está, si aceptó el aviso de privacidad y el
+// pedido que va armando. No guarda el teléfono: la clave es un HMAC del
+// tenant y el número (WHATSAPP_TELEFONO_CLAVE). Vence a los 30 minutos sin
+// mensajes; las vencidas se borran al llegar el próximo mensaje del local.
+// Con RLS.
+
+model ConversacionWhatsapp {
+  tenantId        String   @map("tenant_id") @db.Uuid
+  telefonoHash    String   @map("telefono_hash") @db.Char(64)
+  // INICIO | PRIVACIDAD | ARMANDO | CONFIRMAR (CHECK en la migración).
+  paso            String   @db.VarChar(12)
+  consentido      Boolean  @default(false)
+  // [{ itemCartaId, cantidad }]
+  carrito         Json     @default("[]")
+  // Para descartar el mismo mensaje si Evolution lo manda dos veces.
+  ultimoMensajeId String?  @map("ultimo_mensaje_id") @db.VarChar(128)
+  venceEn         DateTime @map("vence_en") @db.Timestamptz(3)
+  actualizadaEn   DateTime @default(now()) @updatedAt @map("actualizada_en") @db.Timestamptz(3)
+
+  @@id([tenantId, telefonoHash])
+  @@index([tenantId, venceEn])
+  @@map("conversacion_whatsapp")
 }

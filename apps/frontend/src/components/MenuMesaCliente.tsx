@@ -1,6 +1,7 @@
 'use client';
 
 import MenuDigital, { type CategoriaMenu } from './MenuDigital';
+import type { MarcaPublica } from '@/types/menu';
 
 interface MenuMesaClienteProps {
   readonly restaurante: { nombre: string };
@@ -10,6 +11,8 @@ interface MenuMesaClienteProps {
   /** HU-017 (BL-60): sesión de la mesa que vino con el menú. */
   readonly sesionMesa: string;
   readonly numeroMesa: number;
+  /** HU-043 (BL-534): logo y plantilla del local. */
+  readonly marca?: MarcaPublica;
 }
 
 export default function MenuMesaCliente({
@@ -18,6 +21,7 @@ export default function MenuMesaCliente({
   qrToken,
   sesionMesa,
   numeroMesa,
+  marca,
 }: MenuMesaClienteProps) {
   return (
     <MenuDigital
@@ -25,6 +29,7 @@ export default function MenuMesaCliente({
       restaurante={restaurante}
       categorias={categorias}
       numeroMesa={numeroMesa}
+      marca={marca}
     />
   );
 }

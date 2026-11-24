@@ -1,5 +1,6 @@
 import { MesaEstado, PedidoEstado } from '@prisma/client';
 import { KdsGateway } from '../../src/pedidos/kds.gateway';
+import { QrMesaAccesoService } from '../../src/qr-mesa/qr-mesa-acceso.service';
 import { WsAuthError } from '../../src/pedidos/ws-auth.service';
 
 const TENANT_ID = '11111111-1111-1111-1111-111111111111';
@@ -16,6 +17,9 @@ const COLA_DESACTIVADA = {
   minutosEstimados: 15,
   orden: [],
 };
+// HU-038 (BL-506): umbrales de espera del local.
+const UMBRALES_LOCAL = { atencion: 20, demorado: 40, demoraAlta: 90 };
+
 const COLA_ACTIVA = {
   activa: true,
   limite: 5,
@@ -35,6 +39,7 @@ function mockClient(overrides: Record<string, unknown> = {}) {
     id: 'socket-123',
     handshake: { auth: { token: 'token-valido' }, headers: {} },
     join: jest.fn(),
+    leave: jest.fn(),
     emit: jest.fn(),
     disconnect: jest.fn(),
     ...overrides,
@@ -50,7 +55,9 @@ describe('KdsGateway', () => {
     listarSolicitudesEfectivo: jest.Mock;
     transicionar: jest.Mock;
     obtenerResumen: jest.Mock;
+    accesoDelPedido: jest.Mock;
     estadoCola: jest.Mock;
+    umbralesEspera: jest.Mock;
   };
   let mockModuleRef: { resolve: jest.Mock };
 
@@ -60,9 +67,12 @@ describe('KdsGateway', () => {
       listarSolicitudesEfectivo: jest.fn().mockResolvedValue([]),
       transicionar: jest.fn(),
       obtenerResumen: jest.fn(),
+      accesoDelPedido: jest.fn(),
       // HU-042 (BL-464): cola desactivada por defecto, así los tests
       // anteriores no reciben eventos de cola.
       estadoCola: jest.fn().mockResolvedValue(COLA_DESACTIVADA),
+      // HU-038 (BL-506): umbrales que el KDS recibe al conectar.
+      umbralesEspera: jest.fn().mockResolvedValue(UMBRALES_LOCAL),
     };
     mockModuleRef = {
       resolve: jest.fn().mockResolvedValue(mockPedidosTransicion),
@@ -429,6 +439,185 @@ describe('KdsGateway', () => {
     });
   });
 
+  // BL-518: el comensal sigue la sesión de su mesa.
+  describe('onSeguirMesa', () => {
+    const SESION = '99999999-9999-4999-8999-999999999999';
+    let acceso: { resolver: jest.Mock };
+    const comensal = (tenantId = TENANT_ID, roles = ['COMENSAL']) =>
+      mockWsAuth.verify.mockResolvedValue({ sub: 'c-1', tenantId, roles });
+    const mesa = (extra: Record<string, unknown> = {}) => ({
+      tenantId: TENANT_ID,
+      mesaId: 'mesa-4',
+      restauranteId: 'rest-1',
+      numero: 4,
+      sesionId: SESION,
+      ...extra,
+    });
+
+    beforeEach(() => {
+      acceso = { resolver: jest.fn().mockResolvedValue(mesa()) };
+      mockModuleRef.resolve.mockImplementation((clase: unknown) =>
+        Promise.resolve(
+          clase === QrMesaAccesoService ? acceso : mockPedidosTransicion,
+        ),
+      );
+    });
+
+    it('con el QR y la sesión abierta: se une a la sala de esa sesión, sin avisar nada', async () => {
+      comensal();
+      const client = mockClient();
+
+      await expect(
+        gateway.onSeguirMesa(client as any, {
+          qrToken: 'qr-4',
+          sesionMesa: SESION,
+        }),
+      ).resolves.toEqual({ siguiendo: true });
+
+      expect(acceso.resolver).toHaveBeenCalledWith('qr-4');
+      expect(client.join).toHaveBeenCalledWith(`sesion-mesa:${SESION}`);
+      expect(client.emit).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['la mesa ya está cerrada', { sesionId: null }, SESION],
+      ['la sesión es de un grupo anterior', {}, 'otra-sesion'],
+    ])(
+      'si %s: avisa enseguida que la sesión terminó y no se une',
+      async (_caso, extra, sesionMesa) => {
+        comensal();
+        acceso.resolver.mockResolvedValue(mesa(extra));
+        const client = mockClient();
+
+        await expect(
+          gateway.onSeguirMesa(client as any, {
+            qrToken: 'qr-4',
+            sesionMesa,
+          }),
+        ).resolves.toEqual({ siguiendo: false });
+
+        expect(client.emit).toHaveBeenCalledWith('mesa:sesion_cerrada', {
+          sesionMesa,
+        });
+        expect(client.join).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([
+      ['se cierra', { sesionId: null }],
+      ['se cierra y se abre para otro grupo', { sesionId: 'otra-sesion' }],
+    ])(
+      '[TC-U-633] BL-589: si la mesa %s mientras el comensal se suscribe, igual se entera (no se pierde el aviso)',
+      async (_caso, despues) => {
+        comensal();
+        // Primera lectura: abierta. La segunda, ya dentro de la sala: el
+        // mozo la cerró en el medio, y el aviso de la sala ya había salido.
+        acceso.resolver
+          .mockResolvedValueOnce(mesa())
+          .mockResolvedValueOnce(mesa(despues));
+        const client = mockClient();
+
+        await expect(
+          gateway.onSeguirMesa(client as any, {
+            qrToken: 'qr-4',
+            sesionMesa: SESION,
+          }),
+        ).resolves.toEqual({ siguiendo: false });
+
+        expect(client.join).toHaveBeenCalledWith(`sesion-mesa:${SESION}`);
+        expect(client.leave).toHaveBeenCalledWith(`sesion-mesa:${SESION}`);
+        expect(client.emit).toHaveBeenCalledWith('mesa:sesion_cerrada', {
+          sesionMesa: SESION,
+        });
+      },
+    );
+
+    it('[TC-U-634] BL-589: si el QR deja de valer mientras se suscribe (se regeneró), también avisa que la sesión terminó', async () => {
+      comensal();
+      acceso.resolver
+        .mockResolvedValueOnce(mesa())
+        .mockRejectedValueOnce(new Error('QR reemplazado'));
+      const client = mockClient();
+
+      await expect(
+        gateway.onSeguirMesa(client as any, {
+          qrToken: 'qr-4',
+          sesionMesa: SESION,
+        }),
+      ).resolves.toEqual({ siguiendo: false });
+
+      expect(client.leave).toHaveBeenCalledWith(`sesion-mesa:${SESION}`);
+      expect(client.emit).toHaveBeenCalledWith('mesa:sesion_cerrada', {
+        sesionMesa: SESION,
+      });
+    });
+
+    it('QR inválido o reemplazado: avisa que la sesión terminó', async () => {
+      comensal();
+      acceso.resolver.mockRejectedValue(new Error('QR reemplazado'));
+      const client = mockClient();
+
+      await gateway.onSeguirMesa(client as any, {
+        qrToken: 'viejo',
+        sesionMesa: SESION,
+      });
+
+      expect(client.emit).toHaveBeenCalledWith('mesa:sesion_cerrada', {
+        sesionMesa: SESION,
+      });
+      expect(client.join).not.toHaveBeenCalled();
+    });
+
+    it('[RD.07] QR de una mesa de otro local: no se une ni le dice nada de esa mesa', async () => {
+      comensal('otro-tenant');
+      const client = mockClient();
+
+      await gateway.onSeguirMesa(client as any, {
+        qrToken: 'qr-4',
+        sesionMesa: SESION,
+      });
+
+      expect(client.join).not.toHaveBeenCalled();
+      expect(client.emit).toHaveBeenCalledWith('error', {
+        message: 'Mesa no encontrada',
+      });
+    });
+
+    it('sin rol Comensal, sin datos o con el token vencido: no se une', async () => {
+      comensal(TENANT_ID, ['MOZO']);
+      const staff = mockClient();
+      await gateway.onSeguirMesa(staff as any, {
+        qrToken: 'qr-4',
+        sesionMesa: SESION,
+      });
+      expect(staff.join).not.toHaveBeenCalled();
+
+      comensal();
+      const sinDatos = mockClient();
+      await gateway.onSeguirMesa(sinDatos as any, { qrToken: 4 });
+      expect(sinDatos.join).not.toHaveBeenCalled();
+      expect(acceso.resolver).not.toHaveBeenCalled();
+
+      mockWsAuth.verify.mockRejectedValue(new Error('vencido'));
+      const vencido = mockClient();
+      await gateway.onSeguirMesa(vencido as any, {
+        qrToken: 'qr-4',
+        sesionMesa: SESION,
+      });
+      expect(vencido.disconnect).toHaveBeenCalledWith(true);
+      expect(vencido.join).not.toHaveBeenCalled();
+    });
+
+    it('emitirSesionCerrada avisa solo en la sala de esa sesión', () => {
+      gateway.emitirSesionCerrada(SESION);
+
+      expect(mockServer.to).toHaveBeenCalledWith(`sesion-mesa:${SESION}`);
+      expect(mockServer.emit).toHaveBeenCalledWith('mesa:sesion_cerrada', {
+        sesionMesa: SESION,
+      });
+    });
+  });
+
   describe('onSeguirPedido', () => {
     const PEDIDO_ID = 'pedido-1';
 
@@ -607,6 +796,7 @@ describe('KdsGateway', () => {
       ).toHaveBeenCalledWith(TENANT_ID);
       expect(client.emit.mock.calls.map(([evento]) => evento)).toEqual([
         'pedidos:snapshot',
+        'kds:umbrales-espera',
         'llamados:snapshot',
       ]);
       expect(client.emit).toHaveBeenCalledWith('llamados:snapshot', [
@@ -651,6 +841,7 @@ describe('KdsGateway', () => {
       ).not.toHaveBeenCalled();
       expect(client.emit.mock.calls.map(([evento]) => evento)).toEqual([
         'pedidos:snapshot',
+        'kds:umbrales-espera',
       ]);
     });
 
@@ -1093,6 +1284,7 @@ describe('KdsGateway', () => {
 
       expect(client.emit.mock.calls.map(([evento]) => evento)).toEqual([
         'pedidos:snapshot',
+        'kds:umbrales-espera',
         'cola:actualizada',
       ]);
       expect(client.emit).toHaveBeenCalledWith('cola:actualizada', COLA_ACTIVA);
@@ -1257,6 +1449,170 @@ describe('KdsGateway', () => {
       });
 
       expect(mockPedidosTransicion.estadoCola).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('HU-038 (BL-506): umbrales de espera', () => {
+    it('[TC-U-475] al conectarse, el KDS (también Cocina) recibe los umbrales de su local después del snapshot', async () => {
+      mockWsAuth.verify.mockResolvedValue({
+        sub: 'cocina-1',
+        tenantId: TENANT_ID,
+        roles: ['COCINA'],
+      });
+      const client = mockClient();
+
+      await gateway.handleConnection(client as any);
+
+      expect(mockPedidosTransicion.umbralesEspera).toHaveBeenCalledWith(
+        TENANT_ID,
+      );
+      expect(client.emit).toHaveBeenCalledWith(
+        'kds:umbrales-espera',
+        UMBRALES_LOCAL,
+      );
+    });
+
+    it('[TC-U-476] si fallan los umbrales, la conexión sigue y el snapshot de pedidos ya salió', async () => {
+      mockWsAuth.verify.mockResolvedValue({
+        sub: 'mozo-1',
+        tenantId: TENANT_ID,
+        roles: ['MOZO'],
+      });
+      mockPedidosTransicion.umbralesEspera.mockRejectedValue(
+        new Error('timeout'),
+      );
+      const client = mockClient();
+
+      await gateway.handleConnection(client as any);
+
+      expect(client.emit).toHaveBeenCalledWith('pedidos:snapshot', []);
+      expect(client.emit).not.toHaveBeenCalledWith(
+        'kds:umbrales-espera',
+        expect.anything(),
+      );
+      expect(client.disconnect).not.toHaveBeenCalled();
+    });
+
+    it('[TC-U-477] emitirUmbralesEspera avisa a todo el staff del tenant, no a los comensales', () => {
+      gateway.emitirUmbralesEspera(TENANT_ID, UMBRALES_LOCAL);
+
+      expect(mockServer.to).toHaveBeenCalledTimes(1);
+      expect(mockServer.to).toHaveBeenCalledWith(`tenant:${TENANT_ID}`);
+      expect(mockServer.emit).toHaveBeenCalledWith(
+        'kds:umbrales-espera',
+        UMBRALES_LOCAL,
+      );
+    });
+  });
+
+  // HU-052 (BL-580): con el token de invitado, el socket solo sigue el
+  // pedido y la mesa de su canal. Con el de Keycloak, como arriba.
+  describe('token de invitado atado a su canal (HU-052, BL-580)', () => {
+    const PEDIDO_ID = 'pedido-1';
+    const SESION = '99999999-9999-4999-8999-999999999999';
+    const invitado = (canal: unknown) =>
+      mockWsAuth.verify.mockResolvedValue({
+        sub: 'invitado',
+        tenantId: TENANT_ID,
+        roles: ['COMENSAL'],
+        canal,
+      });
+
+    it('[TC-U-630] pedido:seguir: con un pedido de su canal se une; con uno ajeno, «no encontrado» sin leer el pedido', async () => {
+      mockPedidosTransicion.accesoDelPedido.mockResolvedValue({
+        mesaId: 'mesa-4',
+        restauranteId: 'rest-1',
+        canal: 'QR',
+      });
+      mockPedidosTransicion.obtenerResumen.mockResolvedValue({
+        id: PEDIDO_ID,
+        estado: PedidoEstado.EN_PREPARACION,
+      });
+
+      invitado({ tipo: 'mesa', mesaId: 'mesa-4', sesionId: SESION });
+      const suyo = mockClient();
+      await gateway.onSeguirPedido(suyo as any, { pedidoId: PEDIDO_ID });
+      expect(mockPedidosTransicion.accesoDelPedido).toHaveBeenCalledWith(
+        TENANT_ID,
+        PEDIDO_ID,
+      );
+      expect(suyo.join).toHaveBeenCalledWith(`pedido:${PEDIDO_ID}`);
+
+      for (const canal of [
+        { tipo: 'mesa', mesaId: 'otra-mesa', sesionId: SESION },
+        { tipo: 'link', pedidoId: 'otro-pedido' },
+        { tipo: 'retiro', restauranteId: 'rest-1' },
+      ]) {
+        mockPedidosTransicion.obtenerResumen.mockClear();
+        invitado(canal);
+        const ajeno = mockClient();
+        await gateway.onSeguirPedido(ajeno as any, { pedidoId: PEDIDO_ID });
+        expect(ajeno.join).not.toHaveBeenCalled();
+        expect(ajeno.emit).toHaveBeenCalledWith('error', {
+          message: 'Pedido no encontrado',
+        });
+        expect(mockPedidosTransicion.obtenerResumen).not.toHaveBeenCalled();
+      }
+
+      // Si no se puede leer el pedido (no existe, no es UUID), lo mismo.
+      mockPedidosTransicion.accesoDelPedido.mockRejectedValue(new Error('x'));
+      invitado({ tipo: 'link', pedidoId: PEDIDO_ID });
+      const roto = mockClient();
+      await gateway.onSeguirPedido(roto as any, { pedidoId: PEDIDO_ID });
+      expect(roto.join).not.toHaveBeenCalled();
+    });
+
+    it('[TC-U-631] mesa:seguir: solo su mesa y su sesión; el token del retiro o del link no sigue ninguna mesa', async () => {
+      const acceso = {
+        resolver: jest.fn().mockResolvedValue({
+          tenantId: TENANT_ID,
+          mesaId: 'mesa-4',
+          restauranteId: 'rest-1',
+          numero: 4,
+          sesionId: SESION,
+        }),
+      };
+      mockModuleRef.resolve.mockImplementation((clase: unknown) =>
+        Promise.resolve(
+          clase === QrMesaAccesoService ? acceso : mockPedidosTransicion,
+        ),
+      );
+      const seguir = (client: ReturnType<typeof mockClient>) =>
+        gateway.onSeguirMesa(client as any, {
+          qrToken: 'qr-4',
+          sesionMesa: SESION,
+        });
+
+      invitado({ tipo: 'mesa', mesaId: 'mesa-4', sesionId: SESION });
+      const suyo = mockClient();
+      await expect(seguir(suyo)).resolves.toEqual({ siguiendo: true });
+
+      for (const canal of [
+        { tipo: 'mesa', mesaId: 'otra-mesa', sesionId: SESION },
+        { tipo: 'retiro', restauranteId: 'rest-1' },
+        { tipo: 'link', pedidoId: PEDIDO_ID },
+      ]) {
+        invitado(canal);
+        const ajeno = mockClient();
+        await expect(seguir(ajeno)).resolves.toEqual({ siguiendo: false });
+        expect(ajeno.join).not.toHaveBeenCalled();
+        expect(ajeno.emit).toHaveBeenCalledWith('error', {
+          message: 'Mesa no encontrada',
+        });
+      }
+
+      // Token de una sesión anterior de la misma mesa: para el comensal, la
+      // sesión terminó.
+      invitado({
+        tipo: 'mesa',
+        mesaId: 'mesa-4',
+        sesionId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      });
+      const viejo = mockClient();
+      await expect(seguir(viejo)).resolves.toEqual({ siguiendo: false });
+      expect(viejo.emit).toHaveBeenCalledWith('mesa:sesion_cerrada', {
+        sesionMesa: SESION,
+      });
     });
   });
 });

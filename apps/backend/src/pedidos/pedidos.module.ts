@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { PedidosController } from './pedidos.controller';
 import { PedidosService } from './pedidos.service';
+import { PedidosDeLaMesaService } from './pedidos-de-la-mesa.service';
 import { KdsGateway } from './kds.gateway';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AuthModule } from '../auth/auth.module';
@@ -12,6 +13,8 @@ import { ResumenVentasModule } from '../reportes/resumen-ventas.module';
 import { MenuModule } from '../menu/menu.module';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { DescuentoStockService } from '../stock/descuento-stock.service';
+import { PosModule } from '../pos/pos.module';
+import { AvisosWhatsappModule } from '../whatsapp/avisos-whatsapp.module';
 
 @Module({
   // BL-413: TenantEstadoModule, para WsAuthService.
@@ -26,6 +29,10 @@ import { DescuentoStockService } from '../stock/descuento-stock.service';
     TenantEstadoModule,
     ResumenVentasModule,
     MenuModule,
+    // HU-011 (BL-488): la venta va al POS del local al confirmarse el pago.
+    PosModule,
+    // HU-010 (BL-604): avisos por WhatsApp (pago aprobado, pedido listo).
+    AvisosWhatsappModule,
   ],
   controllers: [PedidosController],
   providers: [
@@ -33,6 +40,8 @@ import { DescuentoStockService } from '../stock/descuento-stock.service';
     KdsGateway,
     WsAuthService,
     PedidosTransicionService,
+    // BL-502: «Mis pedidos» del comensal en la mesa.
+    PedidosDeLaMesaService,
     // HU-015 (BL-120): descuento de stock al confirmarse el pago.
     DescuentoStockService,
     AuditLogService,

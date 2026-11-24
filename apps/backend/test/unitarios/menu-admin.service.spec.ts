@@ -8,6 +8,7 @@ import {
 import { Prisma } from '@prisma/client';
 import {
   cambiosDeCategoria,
+  MENSAJE_ALCOHOL_NO_SUGERIBLE,
   MENSAJE_CATEGORIA_ARCHIVADA,
   MENSAJE_CATEGORIA_CON_ITEMS,
   MENSAJE_CATEGORIA_CON_ITEMS_ACTIVOS,
@@ -421,6 +422,85 @@ describe('MenuAdminService', () => {
             despues: { disponible: false },
           }),
         );
+      });
+
+      it('HU-044 (BL-537): marcar la «Sugerencia del local» queda con antes y después', async () => {
+        mockTx.itemCarta.findFirst.mockResolvedValue({
+          ...anterior,
+          destacado: false,
+        });
+        mockTx.itemCarta.update.mockResolvedValue({
+          ...anterior,
+          destacado: true,
+        });
+
+        await service.updateItem(
+          tenantId,
+          itemId,
+          { destacado: true } as UpdateItemDto,
+          'sub-del-admin',
+        );
+
+        expect(mockTx.itemCarta.update).toHaveBeenCalledWith(
+          expect.objectContaining({ data: { destacado: true } }),
+        );
+        expect(mockAuditLog.registrarEnTx).toHaveBeenCalledWith(mockTx, {
+          action: 'CARTA_ITEM_MODIFICADO',
+          tenantId,
+          actorKeycloakId: 'sub-del-admin',
+          entidadId: itemId,
+          antes: { destacado: false },
+          despues: { destacado: true },
+          detalle: { nombre: 'Pizza' },
+        });
+      });
+
+      it('HU-046 (BL-551): marcar «contiene alcohol» saca el plato de las sugerencias y queda auditado', async () => {
+        mockTx.itemCarta.findFirst.mockResolvedValue({
+          ...anterior,
+          sugerible: true,
+          contieneAlcohol: false,
+        });
+        mockTx.itemCarta.update.mockResolvedValue({
+          ...anterior,
+          sugerible: false,
+          contieneAlcohol: true,
+        });
+
+        await service.updateItem(
+          tenantId,
+          itemId,
+          { contieneAlcohol: true } as UpdateItemDto,
+          'sub-del-admin',
+        );
+
+        expect(mockTx.itemCarta.update).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: { contieneAlcohol: true, sugerible: false },
+          }),
+        );
+        expect(mockAuditLog.registrarEnTx).toHaveBeenCalledWith(
+          mockTx,
+          expect.objectContaining({
+            antes: { sugerible: true, contieneAlcohol: false },
+            despues: { sugerible: false, contieneAlcohol: true },
+          }),
+        );
+      });
+
+      it('HU-046 (BL-551): sugerir un plato con alcohol responde 400 y no guarda', async () => {
+        mockTx.itemCarta.findFirst.mockResolvedValue({
+          ...anterior,
+          sugerible: false,
+          contieneAlcohol: true,
+        });
+
+        await expect(
+          service.updateItem(tenantId, itemId, {
+            sugerible: true,
+          } as UpdateItemDto),
+        ).rejects.toThrow(MENSAJE_ALCOHOL_NO_SUGERIBLE);
+        expect(mockTx.itemCarta.update).not.toHaveBeenCalled();
       });
 
       it('sin cambio de precio ni disponibilidad (por ejemplo, solo el nombre) no audita', async () => {

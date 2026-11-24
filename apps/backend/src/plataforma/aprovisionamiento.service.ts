@@ -32,7 +32,7 @@ export interface ActorAlta {
   nombre?: string;
 }
 
-export type RolAprovisionado = 'ADMIN' | 'COCINA' | 'COMENSAL';
+export type RolAprovisionado = 'ADMIN' | 'COCINA';
 
 export interface UsuarioAprovisionado {
   rol: RolAprovisionado;
@@ -69,12 +69,12 @@ interface DatosEstablecimiento {
   mesaVirtualId: string;
 }
 
+/** Dominio ficticio de las cuentas técnicas: nunca se usa para enviar nada. */
+export const DOMINIO_EMAIL_TECNICO = 'tecnico.bistrolink.local';
+
 const PLAN_POR_DEFECTO = 'BASICO';
 const TIMEZONE_POR_DEFECTO = 'America/Montevideo';
-// Dominio ficticio, nunca se usa para enviar nada (mismo que
-// scripts/provision-comensal-tecnico.ts).
-const DOMINIO_EMAIL_TECNICO = 'tecnico.bistrolink.local';
-// Las cuentas Cocina y comensal no son personas, pero el perfil del realm
+// La cuenta Cocina no es una persona, pero el perfil del realm
 // exige nombre y apellido. Valores fijos y sin símbolos: el validador de
 // nombres de Keycloak rechaza caracteres como & o /, que un nombre de
 // restaurante puede tener.
@@ -83,8 +83,9 @@ const APELLIDO_CUENTA_TECNICA = 'BistroLink';
 /**
  * BL-163 (HU-027): alta de un establecimiento con el kit mínimo de un
  * restaurante activo: Tenant, su único Restaurante, mesa virtual, cuenta
- * Administrador (Keycloak + fila en `usuario`), cuenta Cocina (solo Keycloak)
- * y usuario técnico del comensal (`comensal-<tenantId>`).
+ * Administrador (Keycloak + fila en `usuario`) y cuenta Cocina (solo
+ * Keycloak). Desde BL-581 no se crea el usuario técnico del comensal: la
+ * API le emite al comensal su propio token de invitado (HU-052, ADR 0014).
  *
  * Idempotente: correrlo de nuevo con los mismos datos no duplica nada ni
  * cambia contraseñas de usuarios que ya existen. Por eso, si algo falla a
@@ -101,6 +102,10 @@ const APELLIDO_CUENTA_TECNICA = 'BistroLink';
  *
  * Lo usa el script `scripts/aprovisionar-establecimiento.ts` y, en la
  * entrega 2, el endpoint de plataforma.
+ *
+ * BL-472: el restaurante nuevo puede nacer con la cola automática del KDS
+ * (`restaurante.limitePedidosEnPreparacion`). Si no viene, queda null
+ * (desactivada). En un alta repetida el restaurante ya existe y no se toca.
  */
 @Injectable()
 export class AprovisionamientoService {
@@ -112,24 +117,12 @@ export class AprovisionamientoService {
     private readonly auditLog: AuditLogService,
   ) {}
 
-  private get comensalPassword(): string {
-    const password = process.env.KEYCLOAK_COMENSAL_PASSWORD;
-    if (!password) {
-      throw new Error(
-        'Falta KEYCLOAK_COMENSAL_PASSWORD: es la contraseña del usuario técnico del comensal, la misma para todos los tenants.',
-      );
-    }
-    return password;
-  }
-
   async aprovisionar(
     dto: AprovisionarEstablecimientoDto,
     credenciales: CredencialesIniciales,
     actor: ActorAlta,
   ): Promise<ResultadoAprovisionamiento> {
     this.validarUsernames(dto);
-    // Falla antes de escribir nada si falta la contraseña del comensal.
-    const comensalPassword = this.comensalPassword;
     const creadoPor = await this.nombreDelActor(actor);
 
     const tenantId =
@@ -166,17 +159,6 @@ export class AprovisionamientoService {
       tenantId,
       password: credenciales.cocina,
     });
-    const comensal = await this.asegurarUsuario({
-      rol: 'COMENSAL',
-      username: `comensal-${tenantId}`,
-      perfil: {
-        email: `comensal-${tenantId}@${DOMINIO_EMAIL_TECNICO}`,
-        firstName: 'Comensal',
-        lastName: APELLIDO_CUENTA_TECNICA,
-      },
-      tenantId,
-      password: comensalPassword,
-    });
 
     const filaAdmin = await this.tenantPrisma
       .runInTenantContext(tenantId, async (tx) => {
@@ -207,7 +189,7 @@ export class AprovisionamientoService {
       })
       .catch((err) => this.traducirConflicto(err));
 
-    const usuarios = [admin, cocina, comensal];
+    const usuarios = [admin, cocina];
 
     // [S] Sin usernames ni contraseñas en el registro (mismo criterio que
     // HU-013): alcanza con los ids y qué se creó en esta corrida.
@@ -256,7 +238,7 @@ export class AprovisionamientoService {
     for (const { username } of [dto.admin, dto.cocina]) {
       if (username.startsWith('comensal-')) {
         throw new BadRequestException(
-          'Los usernames que empiezan con "comensal-" están reservados para el usuario técnico del comensal',
+          'Los usernames que empiezan con "comensal-" están reservados (eran los del usuario técnico del comensal, BL-581)',
         );
       }
     }
@@ -337,6 +319,11 @@ export class AprovisionamientoService {
           nombre: dto.restaurante.nombre,
           direccion: dto.restaurante.direccion,
           timezone: dto.restaurante.timezone ?? TIMEZONE_POR_DEFECTO,
+          // BL-472: cola del KDS elegida en el alta; null = desactivada. El
+          // umbral de alerta y los minutos de referencia quedan con los
+          // valores por defecto de la base (10 y 15).
+          limitePedidosEnPreparacion:
+            dto.restaurante.limitePedidosEnPreparacion ?? null,
         },
         select: { id: true },
       });

@@ -41,6 +41,8 @@ function pagoGuardado(overrides: Record<string, unknown> = {}) {
     id: 'pago-1',
     pedidoId: PEDIDO,
     monto: new Prisma.Decimal('590.00'),
+    // HU-022 (BL-494): sin propina salvo que el test diga lo contrario.
+    propina: new Prisma.Decimal('0.00'),
     medioPago: 'EFECTIVO',
     estado: 'APROBADO',
     ...overrides,
@@ -119,6 +121,7 @@ describe('CobroEfectivoService (HU-031, BL-201)', () => {
           pedidoId: PEDIDO,
           idempotencyKey: 'efectivo-1',
           monto: new Prisma.Decimal('590.00'),
+          propina: new Prisma.Decimal(0),
           medioPago: 'EFECTIVO',
           estado: 'APROBADO',
         },
@@ -171,6 +174,8 @@ describe('CobroEfectivoService (HU-031, BL-201)', () => {
         pagoId: 'pago-1',
         pedidoId: PEDIDO,
         monto: '590.00',
+        consumo: '590.00',
+        propina: '0.00',
         montoRecibido: '1000.00',
         vuelto: '410.00',
       });
@@ -192,6 +197,8 @@ describe('CobroEfectivoService (HU-031, BL-201)', () => {
         entidadId: 'pago-1',
         despues: {
           monto: '590.00',
+          consumo: '590.00',
+          propina: '0.00',
           montoRecibido: '1000.00',
           vuelto: '410.00',
         },
@@ -297,6 +304,8 @@ describe('CobroEfectivoService (HU-031, BL-201)', () => {
           pagoId: 'pago-1',
           pedidoId: PEDIDO,
           monto: '590.00',
+          consumo: '590.00',
+          propina: '0.00',
           montoRecibido: '1000.00',
           vuelto: '410.00',
         });
@@ -409,6 +418,7 @@ describe('CobroEfectivoService (HU-031, BL-201)', () => {
             pedidoId: PEDIDO,
             idempotencyKey: 'pos-1',
             monto: new Prisma.Decimal('590.00'),
+            propina: new Prisma.Decimal(0),
             medioPago,
             estado: 'APROBADO',
             pasarelaReferencia: 'A1B2C3',
@@ -422,6 +432,8 @@ describe('CobroEfectivoService (HU-031, BL-201)', () => {
         pagoId: 'pago-1',
         pedidoId: PEDIDO,
         monto: '590.00',
+        consumo: '590.00',
+        propina: '0.00',
         tarjeta: 'DEBITO',
         autorizacion: 'A1B2C3',
       });
@@ -430,7 +442,13 @@ describe('CobroEfectivoService (HU-031, BL-201)', () => {
         tenantId: TENANT,
         actorKeycloakId: ACTOR,
         entidadId: 'pago-1',
-        despues: { monto: '590.00', medio: 'Débito', autorizacion: 'A1B2C3' },
+        despues: {
+          monto: '590.00',
+          consumo: '590.00',
+          propina: '0.00',
+          medio: 'Débito',
+          autorizacion: 'A1B2C3',
+        },
         detalle: { pedidoId: PEDIDO },
       });
     });
@@ -602,6 +620,9 @@ describe('CobroEfectivoService (HU-031, BL-201)', () => {
             createdAt: AHORA,
             mesa: { id: 'mesa-3', numero: 3, esVirtual: false },
             total: '590.00',
+            consumo: '590.00',
+            propina: '0.00',
+            propinaPorcentaje: null,
             lineas: [
               {
                 id: 'l-1',
@@ -612,9 +633,40 @@ describe('CobroEfectivoService (HU-031, BL-201)', () => {
               { id: 'l-2', nombre: 'Agua', cantidad: 2, subtotal: '200.00' },
             ],
             pagoEnCurso: true,
+            linkPagoVenceEn: null,
             efectivoSolicitado: null,
           },
         ],
+      });
+    });
+
+    it('HU-033 (BL-203): informa hasta cuándo sirve el link de pago, solo si no venció', async () => {
+      const vigente = new Date(AHORA.getTime() + 10 * 60 * 1000);
+      const vencido = new Date(AHORA.getTime() - 60 * 1000);
+      const pedido = (id: string, linkPagoVenceEn: Date | null) => ({
+        id,
+        canal: 'MOZO',
+        createdAt: AHORA,
+        linkPagoVenceEn,
+        mesa: { id: 'mesa-3', numero: 3, esVirtual: false },
+        lineas: [],
+        pagos: [],
+      });
+      tx.pedido.findMany.mockResolvedValue([
+        pedido('p-vigente', vigente),
+        pedido('p-vencido', vencido),
+        pedido('p-sin-link', null),
+      ]);
+
+      const { pedidos } = await service.pendientes(TENANT, AHORA);
+
+      const vence = Object.fromEntries(
+        pedidos.map((p) => [p.id, p.linkPagoVenceEn]),
+      );
+      expect(vence).toEqual({
+        'p-vigente': vigente,
+        'p-vencido': null,
+        'p-sin-link': null,
       });
     });
 
@@ -658,7 +710,8 @@ describe('CobrosController (HU-031, BL-201)', () => {
       registrarPos: jest.fn(),
       pendientes: jest.fn(),
     };
-    const controller = new CobrosController(cobro as any);
+    const cancelacion = { cancelar: jest.fn() };
+    const controller = new CobrosController(cobro as any, cancelacion as any);
     const req = { user: { tenantId: TENANT, sub: ACTOR, roles: ['MOZO'] } };
     const pos = {
       pedidoId: PEDIDO,
@@ -670,10 +723,13 @@ describe('CobrosController (HU-031, BL-201)', () => {
     await controller.registrarEfectivo(req as any, dto());
     await controller.registrarPos(req as any, pos);
     await controller.pendientes(req as any);
+    await controller.cancelarPendiente(req as any, PEDIDO);
 
     expect(cobro.registrar).toHaveBeenCalledWith(TENANT, ACTOR, dto());
     expect(cobro.registrarPos).toHaveBeenCalledWith(TENANT, ACTOR, pos);
     expect(cobro.pendientes).toHaveBeenCalledWith(TENANT);
+    // BL-501
+    expect(cancelacion.cancelar).toHaveBeenCalledWith(TENANT, ACTOR, PEDIDO);
   });
 
   const guard = new RolesGuard(new Reflector());
@@ -689,6 +745,7 @@ describe('CobrosController (HU-031, BL-201)', () => {
       CobrosController.prototype.registrarEfectivo,
       CobrosController.prototype.registrarPos,
       CobrosController.prototype.pendientes,
+      CobrosController.prototype.cancelarPendiente,
     ]) {
       expect(guard.canActivate(contexto(handler, [rol]))).toBe(true);
     }
@@ -711,6 +768,12 @@ describe('CobrosController (HU-031, BL-201)', () => {
       expect(() =>
         guard.canActivate(
           contexto(CobrosController.prototype.registrarPos, [rol]),
+        ),
+      ).toThrow(ForbiddenException);
+      // BL-501: ni cancelan pedidos sin pagar.
+      expect(() =>
+        guard.canActivate(
+          contexto(CobrosController.prototype.cancelarPendiente, [rol]),
         ),
       ).toThrow(ForbiddenException);
     },

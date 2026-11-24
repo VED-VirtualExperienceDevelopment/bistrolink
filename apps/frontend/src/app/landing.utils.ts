@@ -18,8 +18,8 @@ export type RolStaff = "ADMIN" | "MOZO" | "COCINA" | "PLATAFORMA";
  * Decide a qué ruta redirige "/" para un usuario ya autenticado.
  *
  * Prioridad PLATAFORMA > ADMIN > MOZO > COCINA cuando el usuario tiene más
- * de un rol (ej. un ADMIN que también es MOZO) — cada uno va a su pantalla
- * operativa principal ya existente. PLATAFORMA va primero porque su token no
+ * de un rol (ej. un ADMIN que también es MOZO). BL-520: ADMIN y MOZO llegan
+ * a Inicio (el resumen del día); COCINA, al KDS. PLATAFORMA va primero porque su token no
  * sirve en ninguna pantalla de un restaurante (BL-163): mandarlo a
  * /admin/usuarios terminaría en 401. Devuelve null si no tiene ninguno de
  * los roles reconocidos, caso en el que page.tsx muestra el mensaje de "sin
@@ -29,8 +29,7 @@ export function resolverDestinoLanding(
   hasRole: (rol: RolStaff) => boolean,
 ): string | null {
   if (hasRole("PLATAFORMA")) return "/plataforma";
-  if (hasRole("ADMIN")) return "/admin/usuarios";
-  if (hasRole("MOZO")) return "/admin/mesas";
+  if (hasRole("ADMIN") || hasRole("MOZO")) return "/admin/inicio";
   if (hasRole("COCINA")) return "/kds";
   return null;
 }

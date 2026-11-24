@@ -6,6 +6,7 @@ import {
   ResultadoWebhook,
 } from '../webhooks/pagos-webhook.service';
 import { MOTIVO_VENCIDO, registrarCambioPago } from '../historial-pago';
+import { liberarMesaDelCobro } from '../mesa-en-cobro';
 import { ConfiguracionConciliacion } from './configuracion-conciliacion';
 
 export interface ResumenConciliacion {
@@ -157,24 +158,16 @@ export class ConciliacionPagosService {
         });
 
         // La mesa sale de EN_PROCESO_DE_PAGO, salvo que otro comensal de la
-        // misma mesa tenga un cobro en curso.
+        // misma mesa tenga un cobro en curso (misma regla que el cobro y los
+        // webhooks, ver liberarMesaDelCobro).
         const { pedido } = await tx.pago.findUniqueOrThrow({
           where: { id: pagoId },
           select: { pedido: { select: { mesaId: true } } },
         });
-        const otrosEnCurso = await tx.pago.count({
-          where: { estado: 'PENDIENTE', pedido: { mesaId: pedido.mesaId } },
-        });
-        if (otrosEnCurso > 0) {
-          return { vencido: true, mesaOcupada: null };
-        }
-        const mesa = await tx.mesa.updateMany({
-          where: { id: pedido.mesaId, estado: 'EN_PROCESO_DE_PAGO' },
-          data: { estado: 'OCUPADA' },
-        });
+        const liberada = await liberarMesaDelCobro(tx, pedido.mesaId);
         return {
           vencido: true,
-          mesaOcupada: mesa.count > 0 ? pedido.mesaId : null,
+          mesaOcupada: liberada ? pedido.mesaId : null,
         };
       },
     );

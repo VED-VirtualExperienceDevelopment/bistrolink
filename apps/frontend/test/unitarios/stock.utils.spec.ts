@@ -1,18 +1,14 @@
 import {
   acumularSinStock,
   anuncioAlerta,
-  colorBadge,
-  etiquetaCampana,
   leerUnidades,
-  siguienteIndice,
   sinStockVigentes,
-  textoBadge,
   textoSinStock,
   textoUnidades,
   type AlertaStock,
 } from "@/components/admin/stock/stock.utils";
 
-// HU-015 (BL-120): campana de alertas de stock del administrador.
+// HU-015 (BL-120): alertas de stock del administrador (BL-470: en la campana de Alertas).
 
 const porAgotarse: AlertaStock = {
   itemId: "a",
@@ -30,26 +26,6 @@ const agotado: AlertaStock = {
 };
 
 describe("stock.utils", () => {
-  it("[TC-U-354] el nombre accesible de la campana dice cuántos ítems críticos hay", () => {
-    expect(etiquetaCampana([])).toBe(
-      "Notificaciones de stock: sin ítems críticos",
-    );
-    expect(etiquetaCampana([porAgotarse])).toBe(
-      "Notificaciones de stock: 1 ítem crítico",
-    );
-    expect(etiquetaCampana([porAgotarse, agotado])).toBe(
-      "Notificaciones de stock: 2 ítems críticos",
-    );
-  });
-
-  it("[TC-U-355] badge: ámbar si solo hay por agotarse, rojo si hay algún agotado, nada sin alertas; 9+ a partir de 10", () => {
-    expect(colorBadge([])).toBeNull();
-    expect(colorBadge([porAgotarse])).toBe("ambar");
-    expect(colorBadge([porAgotarse, agotado])).toBe("rojo");
-    expect(textoBadge(3)).toBe("3");
-    expect(textoBadge(12)).toBe("9+");
-  });
-
   it("[TC-U-356] unidades frente al umbral y ventas sin stock", () => {
     expect(textoUnidades(porAgotarse)).toBe("Quedan 3 · aviso en 5");
     expect(textoUnidades(agotado)).toBe("Sin unidades · aviso en 5");
@@ -79,16 +55,6 @@ describe("stock.utils", () => {
     expect(acumularSinStock(dos, porAgotarse)).toEqual({ b: 3 });
     expect(sinStockVigentes(dos, [agotado])).toEqual({ b: 3 });
     expect(sinStockVigentes(dos, [porAgotarse])).toEqual({});
-  });
-
-  it("[TC-U-359] el menú se recorre con flechas (circular), Inicio y Fin", () => {
-    expect(siguienteIndice(0, 3, "ArrowDown")).toBe(1);
-    expect(siguienteIndice(2, 3, "ArrowDown")).toBe(0);
-    expect(siguienteIndice(0, 3, "ArrowUp")).toBe(2);
-    expect(siguienteIndice(1, 3, "Home")).toBe(0);
-    expect(siguienteIndice(1, 3, "End")).toBe(2);
-    expect(siguienteIndice(1, 3, "a")).toBeNull();
-    expect(siguienteIndice(0, 0, "ArrowDown")).toBeNull();
   });
 
   it("[TC-U-360] reponer: un entero de 0 al tope; vacío, decimales, negativos o de más se rechazan", () => {

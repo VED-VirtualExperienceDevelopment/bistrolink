@@ -5,6 +5,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { PedidoEstado, Prisma, PrismaClient } from '@prisma/client';
 import { TenantPrismaService } from '../../prisma/tenant-prisma.service';
@@ -15,7 +16,9 @@ import { AuditLogService } from '../../audit-log/audit-log.service';
 import { AuditAction } from '../../audit-log/audit-action.enum';
 import { MercadoPagoGateway } from '../gateways/mercadopago.gateway';
 import { MEDIO_EFECTIVO } from '../efectivo/cobro-efectivo.service';
+import { totalCobrado } from '../totales-pedido';
 import { CancelarPedidoDto, MOTIVOS_CANCELACION } from './cancelar-pedido.dto';
+import { SincronizacionPosService } from '../../pos/sincronizacion-pos.service';
 
 /** HU-024 (BL-104): estados en los que el personal puede cancelar. */
 export const ESTADOS_CANCELABLES: readonly PedidoEstado[] = [
@@ -46,6 +49,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export interface DevolucionDelPago {
   pagoId: string;
   medio: string;
+  /** Lo que se devuelve de este pago: consumo más propina (HU-022). */
   monto: string;
   /** true: la hace BistroLink (Mercado Pago); false: el mozo, a mano. */
   automatica: boolean;
@@ -55,7 +59,7 @@ export interface DevolucionDelPago {
 export interface VistaPreviaCancelacion {
   pedidoId: string;
   estado: PedidoEstado;
-  /** Total que se devuelve, con 2 decimales. */
+  /** Total que se devuelve (con la propina), con 2 decimales. */
   monto: string;
   /** Null si se puede cancelar; si no, por qué. */
   motivoNoCancelable: string | null;
@@ -67,6 +71,7 @@ export interface VistaPreviaCancelacion {
 export interface PedidoCancelado {
   pedidoId: string;
   estado: 'CANCELADO';
+  /** Total devuelto (con la propina), con 2 decimales. */
   monto: string;
   devoluciones: DevolucionDelPago[];
   stockRepuesto: boolean;
@@ -75,7 +80,9 @@ export interface PedidoCancelado {
 type PagoParaDevolver = {
   id: string;
   medioPago: string;
+  /** Consumo: lo que se facturó. La propina va aparte (HU-022, BL-494). */
   monto: Prisma.Decimal;
+  propina?: Prisma.Decimal | null;
   pasarelaReferencia: string | null;
 };
 
@@ -83,7 +90,8 @@ function devolucion(pago: PagoParaDevolver): DevolucionDelPago {
   return {
     pagoId: pago.id,
     medio: pago.medioPago,
-    monto: pago.monto.toFixed(2),
+    // Se devuelve todo lo que se cobró: el consumo y la propina.
+    monto: totalCobrado(pago).toFixed(2),
     automatica: MEDIOS_CON_REEMBOLSO_AUTOMATICO.has(pago.medioPago),
   };
 }
@@ -122,6 +130,12 @@ function motivoNoCancelable(
  * 4. Después del commit: el pedido sale del KDS, se avisa a la cola, a los
  *    reportes y a la carta, y se emite la nota de crédito en segundo plano
  *    (si falla, la reintenta la conciliación de CFE).
+ *
+ * Propina (HU-022, BL-494): se devuelve todo lo cobrado, consumo y propina.
+ * El reembolso de Mercado Pago es de la order completa, así que ya la
+ * incluye; el monto que se informa y el que devuelve el mozo a mano suman
+ * la propina. La nota de crédito sigue siendo por el consumo, igual que la
+ * factura que anula.
  */
 @Injectable()
 export class CancelacionPedidoService {
@@ -133,6 +147,8 @@ export class CancelacionPedidoService {
     private readonly cfe: CfeService,
     private readonly auditLog: AuditLogService,
     private readonly mercadoPago: MercadoPagoGateway,
+    // HU-011 (BL-488): opcional, para los tests que arman el servicio a mano.
+    @Optional() private readonly pos?: SincronizacionPosService,
   ) {}
 
   async vistaPrevia(
@@ -194,6 +210,7 @@ export class CancelacionPedidoService {
     const devueltos = [...aprobados, ...yaReembolsados];
     const devoluciones = devueltos.map(devolucion);
     const monto = sumar(devueltos);
+    const propina = sumarPropina(devueltos);
     const resultado = await this.tenantPrisma.runInTenantContext(
       tenantId,
       (tx) =>
@@ -206,6 +223,7 @@ export class CancelacionPedidoService {
           manuales,
           dto,
           monto,
+          propina,
           devoluciones,
           pagos: devueltos.map((p) => p.id),
         }),
@@ -228,6 +246,8 @@ export class CancelacionPedidoService {
     for (const pago of devueltos) {
       this.cfe.emitirNotaDeCreditoEnSegundoPlano(tenantId, pago.id);
     }
+    // HU-011 (BL-488): la anulación de la venta en el POS del local.
+    this.pos?.enviarEnSegundoPlano(tenantId, pedidoId);
     return cancelado;
   }
 
@@ -245,6 +265,7 @@ export class CancelacionPedidoService {
               estado: true,
               medioPago: true,
               monto: true,
+              propina: true,
               pasarelaReferencia: true,
             },
           },
@@ -265,6 +286,7 @@ export class CancelacionPedidoService {
       );
     }
     try {
+      // Reembolso total de la order: devuelve el consumo y la propina.
       await this.mercadoPago.reembolsarOrden(
         pago.pasarelaReferencia,
         tenantId,
@@ -325,6 +347,7 @@ export class CancelacionPedidoService {
       manuales: PagoParaDevolver[];
       dto: CancelarPedidoDto;
       monto: string;
+      propina: Prisma.Decimal;
       devoluciones: DevolucionDelPago[];
       pagos: string[];
     },
@@ -380,6 +403,10 @@ export class CancelacionPedidoService {
     // HU-042 (BL-463): si estaba en preparación, liberó un lugar.
     const promovidos = await completarCapacidad(tx, tenantId);
 
+    // HU-011 (BL-488): si la venta ya está en el POS del local, su anulación
+    // queda en la bandeja de salida; si no se había mandado, se descarta.
+    await this.pos?.encolarAnulacionEnTx(tx, tenantId, pedidoId);
+
     // HU-035: con el motivo, lo devuelto y por qué medio. En la misma
     // transacción: sin auditoría no hay cancelación.
     await this.auditLog.registrarEnTx(tx, {
@@ -389,7 +416,11 @@ export class CancelacionPedidoService {
       entidadId: pedidoId,
       despues: {
         motivo: MOTIVOS_CANCELACION[datos.dto.motivo],
+        // Total devuelto; si hubo propina, cuánto de eso fue propina.
         monto: datos.monto,
+        ...(datos.propina.greaterThan(0)
+          ? { propina: datos.propina.toFixed(2) }
+          : {}),
         devolucion: datos.devoluciones
           .map(
             (d) =>
@@ -412,8 +443,17 @@ export class CancelacionPedidoService {
   }
 }
 
+/** Total devuelto: lo cobrado de cada pago, consumo y propina. */
 function sumar(pagos: PagoParaDevolver[]): string {
   return pagos
-    .reduce((total, p) => total.plus(p.monto), new Prisma.Decimal(0))
+    .reduce((total, p) => total.plus(totalCobrado(p)), new Prisma.Decimal(0))
     .toFixed(2);
+}
+
+/** La parte de lo devuelto que fue propina (HU-022). */
+function sumarPropina(pagos: PagoParaDevolver[]): Prisma.Decimal {
+  return pagos.reduce(
+    (total, p) => total.plus(p.propina ?? 0),
+    new Prisma.Decimal(0),
+  );
 }

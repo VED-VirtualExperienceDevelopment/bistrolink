@@ -17,6 +17,7 @@ const BODY = {
 describe('PagosController (BL-311)', () => {
   let pagosService: { crear: jest.Mock; consultar: jest.Mock };
   let solicitudEfectivo: { solicitar: jest.Mock };
+  let propina: { elegir: jest.Mock };
   let controller: PagosController;
   let cfe: { pdfDelPedido: jest.Mock };
   const req = { user: { sub: 'c', tenantId: TENANT_ID, roles: ['COMENSAL'] } };
@@ -27,6 +28,7 @@ describe('PagosController (BL-311)', () => {
       consultar: jest.fn().mockResolvedValue({ pedidoId: PEDIDO_ID }),
     };
     solicitudEfectivo = { solicitar: jest.fn().mockResolvedValue({}) };
+    propina = { elegir: jest.fn().mockResolvedValue({}) };
     cfe = {
       pdfDelPedido: jest.fn().mockResolvedValue({ nombreArchivo: 'x.pdf' }),
     };
@@ -34,6 +36,7 @@ describe('PagosController (BL-311)', () => {
       pagosService as any,
       solicitudEfectivo as any,
       cfe as any,
+      propina as any,
     );
   });
 
@@ -108,6 +111,24 @@ describe('PagosController (BL-311)', () => {
         PEDIDO_ID,
         { pagaCon: '1000' },
       );
+    });
+  });
+
+  describe('propina (HU-022, BL-494)', () => {
+    it('PUT pasa por los mismos guards que el pago (QR y sesión de la mesa, RD.05)', () => {
+      const guards = Reflect.getMetadata(
+        GUARDS_METADATA,
+        controller.elegirPropina,
+      );
+      expect(guards).toEqual([MesaQrGuard, PedidoAccesoGuard]);
+    });
+
+    it('elige la propina del pedido de la ruta en el tenant del JWT', async () => {
+      await controller.elegirPropina(req, PEDIDO_ID, { porcentaje: 15 });
+
+      expect(propina.elegir).toHaveBeenCalledWith(TENANT_ID, PEDIDO_ID, {
+        porcentaje: 15,
+      });
     });
   });
 });

@@ -27,20 +27,18 @@ const ADMIN_PASS = process.env.TEST_ADMIN_PASSWORD;
 const MOZO_USER = process.env.TEST_MOZO_USERNAME ?? 'mozo-test';
 const MOZO_PASS = process.env.TEST_MOZO_PASSWORD;
 
-// Comensal del tenant A: usuario técnico del realm (keycloak/test-users.json),
-// el mismo que usa AuthComensalService (`comensal-${tenantId}`).
-const COMENSAL_PASS = process.env.KEYCLOAK_COMENSAL_PASSWORD;
+// Comensal del tenant A: token de invitado de la mesa, que firma la API
+// (HU-052; desde BL-581 ya no hay usuario técnico en Keycloak).
 
 // ── Fixtures del seed (prisma/seed.ts) ──────────────────────────────────────
 // Tenant de testing A («Restaurante Testing A»): ahí viven admin-test,
-// mozo-test y el comensal técnico (BL-197; antes admin-test estaba en el
+// mozo-test (BL-197; antes admin-test estaba en el
 // tenant Ejemplo, que se retiró). Ojo: sus IDs (1111…, 2222…, 3333…) no son
 // UUID RFC 4122 válidos (el 4to grupo no empieza con 8, 9, a ni b), así que
 // un @IsUUID() estricto los rechaza con 400 — ver TC-I-032.
 const TENANT_A_ID = '11111111-1111-1111-1111-111111111111';
 const RESTAURANTE_A_ID = '22222222-2222-2222-2222-222222222222';
 const MESA_A1_ID = '33333333-3333-3333-3333-333333333333';
-const COMENSAL_USER = `comensal-${TENANT_A_ID}`;
 
 // Tenant B: el "otro tenant" para los casos de aislamiento (TC-I-031/033).
 // Sus IDs sí son UUID v4 válidos, así que el rechazo que se mida es por
@@ -97,7 +95,6 @@ describe('Mapa de mesas (HU-016) - e2e', () => {
 
   const itConAdmin = ADMIN_PASS ? it : it.skip;
   const itConMozo = MOZO_PASS ? it : it.skip;
-  const itConComensal = COMENSAL_PASS ? it : it.skip;
 
   // Mesa del tenant B creada por la suite (el seed no le carga mesas).
   const NUMERO_MESA_AJENA = NUMERO_BASE + 19;
@@ -459,64 +456,66 @@ describe('Mapa de mesas (HU-016) - e2e', () => {
   // los métodos del mapa. Este caso protege que el rol del método REEMPLACE
   // al de la clase (RolesGuard usa getAllAndOverride): si se sumaran, un
   // comensal podría modificar el layout.
-  itConComensal(
-    '[TC-I-034] HU-016: un comensal no puede ver ni modificar el layout de mesas (403)',
-    async () => {
-      const token = await getToken(COMENSAL_USER, COMENSAL_PASS as string);
-      const antes = await enTenant(TENANT_A_ID, (tx) =>
-        tx.mesa.findUnique({ where: { id: MESA_A1_ID } }),
-      );
-
-      // Control positivo: el token es válido y tiene el rol COMENSAL (la ruta
-      // de la clase lo acepta). Así un 403 más abajo solo puede deberse al
-      // @Roles del método, no a un token inválido o sin rol.
-      // BL-204: el llamado va con el QR de la mesa.
-      const qrToken = await tokenQrDeMesa(app, TENANT_A_ID, MESA_A1_ID);
-      const sesionMesa = await sesionDeMesa(app, TENANT_A_ID, MESA_A1_ID);
+  it('[TC-I-034] HU-016: un comensal no puede ver ni modificar el layout de mesas (403)', async () => {
+    const qrToken = await tokenQrDeMesa(app, TENANT_A_ID, MESA_A1_ID);
+    const sesionMesa = await sesionDeMesa(app, TENANT_A_ID, MESA_A1_ID);
+    const token = (
       await request(app.getHttpServer())
-        .post('/mesas/llamar')
-        .set('Authorization', `Bearer ${token}`)
-        .set('X-Mesa-Token', qrToken)
-        .set('X-Mesa-Sesion', sesionMesa)
-        .expect(201);
+        .post('/auth/comensal/mesa')
+        .send({ qrToken, sesionMesa })
+        .expect(200)
+    ).body.accessToken as string;
+    const antes = await enTenant(TENANT_A_ID, (tx) =>
+      tx.mesa.findUnique({ where: { id: MESA_A1_ID } }),
+    );
 
+    // Control positivo: el token es válido y tiene el rol COMENSAL (la ruta
+    // de la clase lo acepta). Así un 403 más abajo solo puede deberse al
+    // @Roles del método, no a un token inválido o sin rol.
+    // BL-204: el llamado va con el QR de la mesa.
+    await request(app.getHttpServer())
+      .post('/mesas/llamar')
+      .set('Authorization', `Bearer ${token}`)
+      .set('X-Mesa-Token', qrToken)
+      .set('X-Mesa-Sesion', sesionMesa)
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .get('/mesas/layout')
+      .query({ restauranteId: RESTAURANTE_A_ID })
+      .set('Authorization', `Bearer ${token}`)
+      .expect(403);
+
+    await request(app.getHttpServer())
+      .post('/mesas/layout')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        restauranteId: RESTAURANTE_A_ID,
+        mesas: [{ id: MESA_A1_ID, numero: 1, ...LAYOUT_VALIDO }],
+      })
+      .expect(403);
+
+    await request(app.getHttpServer())
+      .put(`/mesas/${MESA_A1_ID}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send(LAYOUT_VALIDO)
+      .expect(403);
+
+    // HU-017 (BL-60): el comensal no abre ni cierra mesas (BL-62).
+    for (const accion of ['abrir', 'cerrar', 'limpia']) {
       await request(app.getHttpServer())
-        .get('/mesas/layout')
-        .query({ restauranteId: RESTAURANTE_A_ID })
+        .post(`/mesas/${MESA_A1_ID}/${accion}`)
         .set('Authorization', `Bearer ${token}`)
         .expect(403);
+    }
 
-      await request(app.getHttpServer())
-        .post('/mesas/layout')
-        .set('Authorization', `Bearer ${token}`)
-        .send({
-          restauranteId: RESTAURANTE_A_ID,
-          mesas: [{ id: MESA_A1_ID, numero: 1, ...LAYOUT_VALIDO }],
-        })
-        .expect(403);
-
-      await request(app.getHttpServer())
-        .put(`/mesas/${MESA_A1_ID}`)
-        .set('Authorization', `Bearer ${token}`)
-        .send(LAYOUT_VALIDO)
-        .expect(403);
-
-      // HU-017 (BL-60): el comensal no abre ni cierra mesas (BL-62).
-      for (const accion of ['abrir', 'cerrar', 'limpia']) {
-        await request(app.getHttpServer())
-          .post(`/mesas/${MESA_A1_ID}/${accion}`)
-          .set('Authorization', `Bearer ${token}`)
-          .expect(403);
-      }
-
-      // Nada cambió en la mesa: ni layout ni estado.
-      const despues = await enTenant(TENANT_A_ID, (tx) =>
-        tx.mesa.findUnique({ where: { id: MESA_A1_ID } }),
-      );
-      expect(despues?.layout).toStrictEqual(antes?.layout);
-      expect(despues?.estado).toBe(antes?.estado);
-    },
-  );
+    // Nada cambió en la mesa: ni layout ni estado.
+    const despues = await enTenant(TENANT_A_ID, (tx) =>
+      tx.mesa.findUnique({ where: { id: MESA_A1_ID } }),
+    );
+    expect(despues?.layout).toStrictEqual(antes?.layout);
+    expect(despues?.estado).toBe(antes?.estado);
+  });
 
   // BL-58: "Eliminar mesa" del editor. Las mesas se mandan en `eliminar`
   // dentro del mismo POST /mesas/layout y se borran en la misma transacción.

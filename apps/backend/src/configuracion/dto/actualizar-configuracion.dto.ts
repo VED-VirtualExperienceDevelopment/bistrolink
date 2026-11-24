@@ -10,13 +10,24 @@ import {
   IsOptional,
   IsString,
   Length,
+  Matches,
   Max,
   MaxLength,
   Min,
   ValidateIf,
 } from 'class-validator';
 import { CfeProveedor } from '@prisma/client';
+import { HORA_HH_MM } from '../../pedidos/retiro';
+import {
+  NUMERO_WHATSAPP,
+  normalizarNumeroWhatsapp,
+} from '../../whatsapp/numero-whatsapp';
 import { limpiarEspacios } from '../../usuarios/dto/create-usuario.dto';
+import {
+  MINUTOS_ESPERA_MAXIMO,
+  MINUTOS_ESPERA_MINIMO,
+} from '../../pedidos/umbrales-espera';
+import { PLANTILLAS_MARCA, type PlantillaMarca } from '../plantillas-marca';
 
 /** HU-020 (BL-72): hasta cuántos porcentajes de propina se sugieren. */
 export const MAXIMO_PROPINAS_SUGERIDAS = 5;
@@ -74,6 +85,16 @@ export const MINUTOS_PREPARACION_MAXIMO = 180;
 /** HU-036 (BL-206): largo máximo de un correo (RFC 5321) y de la columna. */
 export const LARGO_MAXIMO_EMAIL = 254;
 
+/**
+ * HU-043 (BL-561): largos del nombre y la dirección del local, los mismos
+ * que usa Plataforma (EditarEstablecimientoDto, BL-412).
+ */
+export const LARGO_MAXIMO_NOMBRE_LOCAL = 120;
+export const LARGO_MAXIMO_DIRECCION_LOCAL = 200;
+
+/** HU-043 (BL-532): el mismo largo máximo que la key de una imagen confirmada. */
+export const LARGO_MAXIMO_KEY_LOGO = 200;
+
 /** Sin espacios y en minúsculas; vacío = quitarlo (null). */
 const normalizarEmail = ({ value }: { value: unknown }) => {
   if (typeof value !== 'string') return value;
@@ -82,6 +103,17 @@ const normalizarEmail = ({ value }: { value: unknown }) => {
 };
 
 /** Ordena de menor a mayor (si es una lista de números), para guardar siempre igual. */
+/** HU-040 (BL-210): «» o null quita la franja (todo el día). */
+const normalizarHora = ({ value }: { value: unknown }) => {
+  if (typeof value !== 'string') return value;
+  const limpio = value.trim();
+  return limpio === '' ? null : limpio;
+};
+
+/** HU-010 (BL-613): a formato internacional; «» o null lo quita. */
+const normalizarWhatsapp = ({ value }: { value: unknown }) =>
+  typeof value === 'string' ? normalizarNumeroWhatsapp(value) : value;
+
 const ordenarPropinas = ({ value }: { value: unknown }) =>
   Array.isArray(value) && value.every((v) => typeof v === 'number')
     ? [...value].sort((a: number, b: number) => a - b)
@@ -104,6 +136,25 @@ export class ActualizarConfiguracionDto {
     message: 'La razón social debe tener entre 1 y 200 caracteres',
   })
   razonSocial?: string;
+
+  // HU-043 (BL-561): nombre y dirección del local, los que ven los
+  // comensales en la carta y en la política de privacidad. Mismas reglas
+  // que Plataforma (BL-412). Opcionales, pero nunca null (NOT NULL).
+  @ValidateIf((_dto, valor) => valor !== undefined)
+  @Transform(limpiarEspacios)
+  @IsString({ message: 'El nombre del local debe ser texto' })
+  @Length(1, LARGO_MAXIMO_NOMBRE_LOCAL, {
+    message: `El nombre del local debe tener entre 1 y ${LARGO_MAXIMO_NOMBRE_LOCAL} caracteres`,
+  })
+  nombre?: string;
+
+  @ValidateIf((_dto, valor) => valor !== undefined)
+  @Transform(limpiarEspacios)
+  @IsString({ message: 'La dirección del local debe ser texto' })
+  @Length(1, LARGO_MAXIMO_DIRECCION_LOCAL, {
+    message: `La dirección del local debe tener entre 1 y ${LARGO_MAXIMO_DIRECCION_LOCAL} caracteres`,
+  })
+  direccion?: string;
 
   // Medios de pago. efectivoHabilitado es la columna de HU-031 (BL-201).
   @IsOptional()
@@ -157,6 +208,13 @@ export class ActualizarConfiguracionDto {
     message: `Cada porcentaje de propina debe ser como máximo ${PROPINA_MAXIMA}`,
   })
   propinasSugeridas?: number[];
+
+  // HU-022 (BL-495): la pantalla de pago del comensal abre con el 10 % marcado
+  // como «Sugerida». Solo surte efecto si el 10 % está en propinasSugeridas;
+  // si no está, la opción queda activa y no se marca nada.
+  @IsOptional()
+  @IsBoolean({ message: 'propinaPreseleccionada debe ser verdadero o falso' })
+  propinaPreseleccionada?: boolean;
 
   @IsOptional()
   @IsIn(PROVEEDORES_CFE_DISPONIBLES, {
@@ -217,4 +275,105 @@ export class ActualizarConfiguracionDto {
     message: `Los minutos de preparación estimados pueden ser como máximo ${MINUTOS_PREPARACION_MAXIMO}`,
   })
   minutosPreparacionEstimados?: number;
+
+  // HU-038 (BL-506): umbrales de espera de las comandas del KDS. Opcionales,
+  // pero nunca null (columnas NOT NULL). Que queden de menor a mayor lo
+  // controla el servicio, con lo que ya está guardado: el PATCH es parcial.
+  @ValidateIf((_dto, valor) => valor !== undefined)
+  @IsInt({ message: '«Atención desde» debe ser un número entero de minutos' })
+  @Min(MINUTOS_ESPERA_MINIMO, {
+    message: `«Atención desde» debe ser al menos ${MINUTOS_ESPERA_MINIMO} minuto`,
+  })
+  @Max(MINUTOS_ESPERA_MAXIMO, {
+    message: `«Atención desde» puede ser como máximo ${MINUTOS_ESPERA_MAXIMO} minutos`,
+  })
+  minutosEsperaAtencion?: number;
+
+  @ValidateIf((_dto, valor) => valor !== undefined)
+  @IsInt({ message: '«Demorado desde» debe ser un número entero de minutos' })
+  @Min(MINUTOS_ESPERA_MINIMO, {
+    message: `«Demorado desde» debe ser al menos ${MINUTOS_ESPERA_MINIMO} minuto`,
+  })
+  @Max(MINUTOS_ESPERA_MAXIMO, {
+    message: `«Demorado desde» puede ser como máximo ${MINUTOS_ESPERA_MAXIMO} minutos`,
+  })
+  minutosEsperaDemorado?: number;
+
+  @ValidateIf((_dto, valor) => valor !== undefined)
+  @IsInt({
+    message: '«Demora alta desde» debe ser un número entero de minutos',
+  })
+  @Min(MINUTOS_ESPERA_MINIMO, {
+    message: `«Demora alta desde» debe ser al menos ${MINUTOS_ESPERA_MINIMO} minuto`,
+  })
+  @Max(MINUTOS_ESPERA_MAXIMO, {
+    message: `«Demora alta desde» puede ser como máximo ${MINUTOS_ESPERA_MAXIMO} minutos`,
+  })
+  minutosEsperaDemoraAlta?: number;
+
+  // HU-043 (BL-531): plantilla de colores de la carta. Opcional, pero nunca
+  // null (columna NOT NULL). La base tiene el mismo control (CHECK).
+  @ValidateIf((_dto, valor) => valor !== undefined)
+  @IsIn(PLANTILLAS_MARCA, {
+    message: `Plantilla no disponible. Se puede elegir: ${PLANTILLAS_MARCA.join(', ')}`,
+  })
+  plantilla?: PlantillaMarca;
+
+  // HU-043 (BL-532): logo del local. Es la key que devuelve
+  // POST /admin/menu/imagenes/confirmar con destino `marca`. Que sea un logo
+  // publicado de este establecimiento lo controla el servicio (400 si no).
+  // null quita el logo.
+  @IsOptional()
+  @ValidateIf((_dto, valor) => valor !== null)
+  @IsString({ message: 'El logo debe ser la key de una imagen confirmada' })
+  @MaxLength(LARGO_MAXIMO_KEY_LOGO, {
+    message: `La key del logo puede tener hasta ${LARGO_MAXIMO_KEY_LOGO} caracteres`,
+  })
+  logoKey?: string | null;
+  // HU-040 (BL-210): pedidos para retirar por el enlace web.
+  @IsOptional()
+  @IsBoolean({ message: 'retiroHabilitado debe ser verdadero o falso' })
+  retiroHabilitado?: boolean;
+
+  // Franja diaria HH:MM en la zona horaria del local. Las dos o ninguna
+  // (lo controla el servicio, que ve también lo guardado).
+  @IsOptional()
+  @Transform(normalizarHora)
+  @ValidateIf((_dto, valor) => valor !== null)
+  @Matches(HORA_HH_MM, {
+    message: 'La hora de inicio del retiro tiene que tener la forma HH:MM',
+  })
+  retiroHoraDesde?: string | null;
+
+  @IsOptional()
+  @Transform(normalizarHora)
+  @ValidateIf((_dto, valor) => valor !== null)
+  @Matches(HORA_HH_MM, {
+    message: 'La hora de cierre del retiro tiene que tener la forma HH:MM',
+  })
+  retiroHoraHasta?: string | null;
+
+  // HU-010 (BL-613): número del bot de WhatsApp del local. El menú para
+  // retirar ofrece «¿Preferís pedir por WhatsApp?» con este número, solo si
+  // el bot está conectado para el tenant. Vacío o null lo quita.
+  @IsOptional()
+  @Transform(normalizarWhatsapp)
+  @ValidateIf((_dto, valor) => valor !== null)
+  @Matches(NUMERO_WHATSAPP, {
+    message:
+      'Escribí un celular uruguayo (099 123 456) o un número internacional que empiece con +',
+  })
+  whatsappPedidos?: string | null;
+
+  // HU-043 (BL-562): foto de portada del banner de la carta. Es la key que
+  // devuelve la confirmación con destino `portada`; la controla el servicio
+  // (400 si no es una portada publicada de este establecimiento). null la
+  // quita (vuelve la portada por defecto).
+  @IsOptional()
+  @ValidateIf((_dto, valor) => valor !== null)
+  @IsString({ message: 'La portada debe ser la key de una imagen confirmada' })
+  @MaxLength(LARGO_MAXIMO_KEY_LOGO, {
+    message: `La key de la portada puede tener hasta ${LARGO_MAXIMO_KEY_LOGO} caracteres`,
+  })
+  portadaKey?: string | null;
 }

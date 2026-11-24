@@ -2,28 +2,56 @@
 
 ## Control de versiones
 
-| Versión | Fecha      | Modificación                                                                                                                                         |
-| ------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1.0     | 27/10/2026 | Plantilla (BL-435).                                                                                                                                  |
-| 1.1     | 28/10/2026 | TC-E-046 a 049: cobro en efectivo (BL-201), solicitud de efectivo (BL-442) y pedido del mozo (BL-209).                                               |
-| 1.2     | 31/10/2026 | TC-E-007 y 008 cambian: la carta por URL muestra los agotados bloqueados, igual que el QR (BL-397).                                                  |
-| 1.3     | 31/10/2026 | TC-E-050 a 055: Gestión de Carta (BL-392 / BL-402).                                                                                                  |
-| 1.4     | 01/11/2026 | TC-E-056 a 058: medios de pago del comensal según la configuración del local (BL-452).                                                               |
-| 1.5     | 01/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-059 a 061: retomar el pago al recargar y aviso de efectivo en el KDS (BL-448).          |
-| 1.6     | 01/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-062: política de privacidad desde la carta y el pago (BL-206).                          |
-| 1.7     | 02/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-063 y 064: e-Factura con RUT y razón social desde la pantalla de pago (HU-009, BL-453). |
-| 1.8     | 02/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-063 cambia: sin aceptar el aviso no se avisa al mozo (BL-453, ajuste de staging).       |
-| 1.9     | 03/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-065: comprobantes del administrador y su estado ante la DGI (HU-009, BL-455).           |
-| 1.10    | 03/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-066 a 068: dashboard de reportes del administrador (HU-012, BL-108).                    |
-| 1.11    | 03/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-069 a 071: stock de la jornada y campana de alertas de stock (HU-015, BL-120).          |
-| 1.12    | 04/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-072: pendientes de emisión de comprobantes (HU-023, BL-96).                             |
-| 1.13    | 04/11/2026 | TC-E-073 y 074: alertas del mozo (campana, pantalla Alertas y recarga con alertas pendientes) (BL-441).                                              |
-| 1.14    | 06/11/2026 | TC-E-075 y 076: pantalla de Configuración accesible, responsive y con «Guardar cambios» al final (BL-473).                                           |
-| 1.15    | 06/11/2026 | TC-E-077 y 078: pantalla de Stock de la jornada accesible, responsive y con «Guardar cambios» al final (BL-474).                                     |
-| 1.16    | 07/11/2026 | TC-E-080: el mozo registra el cobro con el POS del local (HU-007b, BL-80).                                                                           |
-| 1.17    | 07/11/2026 | TC-E-081: el mozo cancela desde el KDS un pedido pagado en efectivo (HU-024, BL-104).                                                                |
-| 1.18    | 07/11/2026 | Se borran los bloques de TC-E-072, 080 y 081, ya cargados en Kiwi. TC-E-079: PDF del comprobante desde Comprobantes (HU-009, BL-454).                |
-| 1.19    | 07/11/2026 | TC-E-082: el mozo cobra con el POS del local al confirmar el pedido de una mesa (HU-007b, BL-485).                                                   |
+| Versión | Fecha      | Modificación                                                                                                                                                                         |
+| ------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1.0     | 27/10/2026 | Plantilla (BL-435).                                                                                                                                                                  |
+| 1.1     | 28/10/2026 | TC-E-046 a 049: cobro en efectivo (BL-201), solicitud de efectivo (BL-442) y pedido del mozo (BL-209).                                                                               |
+| 1.2     | 31/10/2026 | TC-E-007 y 008 cambian: la carta por URL muestra los agotados bloqueados, igual que el QR (BL-397).                                                                                  |
+| 1.3     | 31/10/2026 | TC-E-050 a 055: Gestión de Carta (BL-392 / BL-402).                                                                                                                                  |
+| 1.4     | 01/11/2026 | TC-E-056 a 058: medios de pago del comensal según la configuración del local (BL-452).                                                                                               |
+| 1.5     | 01/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-059 a 061: retomar el pago al recargar y aviso de efectivo en el KDS (BL-448).                                          |
+| 1.6     | 01/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-062: política de privacidad desde la carta y el pago (BL-206).                                                          |
+| 1.7     | 02/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-063 y 064: e-Factura con RUT y razón social desde la pantalla de pago (HU-009, BL-453).                                 |
+| 1.8     | 02/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-063 cambia: sin aceptar el aviso no se avisa al mozo (BL-453, ajuste de staging).                                       |
+| 1.9     | 03/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-065: comprobantes del administrador y su estado ante la DGI (HU-009, BL-455).                                           |
+| 1.10    | 03/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-066 a 068: dashboard de reportes del administrador (HU-012, BL-108).                                                    |
+| 1.11    | 03/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-069 a 071: stock de la jornada y campana de alertas de stock (HU-015, BL-120).                                          |
+| 1.12    | 04/11/2026 | Se borran los bloques de los casos ya cargados en Kiwi. TC-E-072: pendientes de emisión de comprobantes (HU-023, BL-96).                                                             |
+| 1.13    | 04/11/2026 | TC-E-073 y 074: alertas del mozo (campana, pantalla Alertas y recarga con alertas pendientes) (BL-441).                                                                              |
+| 1.14    | 06/11/2026 | TC-E-075 y 076: pantalla de Configuración accesible, responsive y con «Guardar cambios» al final (BL-473).                                                                           |
+| 1.15    | 06/11/2026 | TC-E-077 y 078: pantalla de Stock de la jornada accesible, responsive y con «Guardar cambios» al final (BL-474).                                                                     |
+| 1.16    | 07/11/2026 | TC-E-080: el mozo registra el cobro con el POS del local (HU-007b, BL-80).                                                                                                           |
+| 1.17    | 07/11/2026 | TC-E-081: el mozo cancela desde el KDS un pedido pagado en efectivo (HU-024, BL-104).                                                                                                |
+| 1.18    | 07/11/2026 | Se borran los bloques de TC-E-072, 080 y 081, ya cargados en Kiwi. TC-E-079: PDF del comprobante desde Comprobantes (HU-009, BL-454).                                                |
+| 1.19    | 07/11/2026 | TC-E-082: el mozo cobra con el POS del local al confirmar el pedido de una mesa (HU-007b, BL-485).                                                                                   |
+| 1.20    | 08/11/2026 | Se borran los bloques de TC-E-073 a 079 y 082, ya cargados en Kiwi. TC-E-083: ventas al POS del local desde «POS del local» (HU-011, BL-488).                                        |
+| 1.21    | 09/11/2026 | Se borra el bloque de TC-E-083, ya cargado en Kiwi. TC-E-084: al hacer scroll en Reportes solo se desplaza el contenido (bug BL-500).                                                |
+| 1.22    | 09/11/2026 | Se borra el bloque de TC-E-084, ya cargado en Kiwi. TC-E-085 y 086: el mozo cancela un pedido antes de cobrarlo, en la pantalla del pedido y desde «Cobros pendientes» (bug BL-501). |
+| 1.23    | 10/11/2026 | TC-E-087 a 090: tiempo de espera de las comandas, indicador de conexión y accesibilidad del KDS (HU-038, BL-505).                                                                    |
+| 1.24    | 10/11/2026 | TC-E-091 y 092: monitor de Cocina de solo lectura, sin scroll, con resumen grande y accesible (HU-038, BL-510).                                                                      |
+| 1.25    | 10/11/2026 | TC-E-093 a 097: propina en el pago del comensal, en los cobros del mozo y en Reportes (HU-022, BL-496). Renumerados desde TC-E-087 a 091, que ya eran de KDS (BL-512).               |
+
+| 1.26 | 10/11/2026 | TC-E-069 a 071 cambian: las alertas de stock están en la campana de Alertas. TC-E-100 y 101: «Ir a cobrar» desde el aviso de efectivo (BL-470). TC-E-098 y 099 ya son de HU-040. |
+| 1.27 | 10/11/2026 | Se borran los bloques de TC-E-071 y de TC-E-085 a 101, ya cargados en Kiwi. TC-E-102 y 103: «Mis pedidos» en la mesa y «Gracias por tu compra» (bug BL-502). |
+| 1.28 | 10/11/2026 | Se borran los bloques de TC-E-102 y 103, ya cargados en Kiwi. TC-E-104: la carta pasa a «Tu mesa se cerró» cuando el mozo cierra la mesa (bug BL-518). |
+| 1.29 | 10/11/2026 | Se borra el bloque de TC-E-104, ya cargado en Kiwi. TC-E-008 cambia: en el celular el detalle del carrito se abre desde la barra. TC-E-105 a 107: en el celular el carrito es una barra y el detalle se abre en una hoja; en escritorio sigue la columna (bug BL-519). |
+| 1.30 | 11/11/2026 | Se borran los bloques de TC-E-008 y TC-E-105 a 107, ya cargados en Kiwi. TC-E-108 a 111: pantalla de Inicio del administrador y del mozo (mejora BL-520). |
+| 1.31 | 12/11/2026 | Se borran los bloques de TC-E-108 a 111, ya cargados en Kiwi. TC-E-098 y 099: pedido para retirar con código, aviso de listo y entrega con código (HU-040, BL-210). |
+| 1.32 | 14/11/2026 | Se borran los bloques de TC-E-098 y 099, ya cargados en Kiwi. TC-E-112 y 113: pago por link (HU-033 / BL-203). |
+| 1.33 | 14/11/2026 | TC-E-114 a 116: marca propia del local, de Configuración a la carta, y la sección «Marca del local» en un celular de 360 px (HU-043 / BL-535). |
+| 1.34 | 14/11/2026 | Se borran los bloques de TC-E-114 a 116, ya cargados en Kiwi. TC-E-117: «Sugerencia del local» (HU-044 / BL-537). |
+| 1.35 | 14/11/2026 | Se borra el bloque de TC-E-117, ya cargado en Kiwi. TC-E-118: insignia «Más pedido» (HU-045 / BL-543). |
+| 1.36 | 15/11/2026 | Se borra el bloque de TC-E-118, ya cargado en Kiwi. TC-E-119 a 121: revisar el pedido antes de confirmar (BL-378). |
+| 1.37 | 14/11/2026 | Se borran los bloques de TC-E-119 a 121, ya cargados en Kiwi. TC-E-122 a 124: complementos antes de pagar (HU-046 / BL-551 y BL-553). |
+| 1.38 | 15/11/2026 | TC-E-125: la carta del comensal abierta muestra «No disponible» al volver a la pestaña después de que el administrador agota el plato (BL-570). |
+| 1.39 | 15/11/2026 | Se borran los bloques de TC-E-122 a 125, ya cargados en Kiwi. TC-E-126: sello de pago seguro (HU-051 / BL-563). |
+| 1.40 | 15/11/2026 | Se borra el bloque de TC-E-126, ya cargado en Kiwi. TC-E-127: valoración privada del pedido (HU-050 / BL-558). |
+| 1.41 | 20/11/2026 | TC-E-002, 012 y 013 cambian: «Llamar al mozo» en la barra superior, con la confirmación en el botón y «En el local · Mesa N» en la portada. TC-E-128 y 129: el botón a 360 px y «Volver a llamar» pasado el minuto (BL-592). |
+| 1.42 | 22/11/2026 | Se borran los bloques de TC-E-002, 012, 013, 127, 128 y 129, ya cargados en Kiwi. TC-E-130: el link de pago en una PC usa todo el ancho (BL-602). |
+| 1.43 | 23/11/2026 | TC-E-001 cambia: el menú se mide con la red limitada a 4G (perfil «Fast 4G» de Chrome DevTools) y sin caché, como pide HU-001 (BL-607). |
+| 1.44 | 23/11/2026 | Se borran los bloques de TC-E-001 y 130, ya cargados en Kiwi. TC-E-131: «¿Preferís pedir por WhatsApp?» en el menú para retirar (BL-613). |
+| 1.45 | 23/11/2026 | TC-E-066 cambia: el canal WhatsApp ya se puede elegir en Reportes (BL-612). TC-E-131 cambia: el enlace abre el chat con «Hola, me gustaría hacer un pedido.» escrito (BL-613). |
+| 1.46 | 23/11/2026 | Se borran los bloques de TC-E-066 y 131, ya cargados en Kiwi. TC-E-009 cambia: la 404 del menú público, en español (BL-304). |
 
 Plantilla para cargar en Kiwi la descripción de casos TC-E (Playwright)
 nuevos o que cambiaron (BL-435). La usa
@@ -68,159 +96,18 @@ Reglas:
 
 ## Casos para cargar
 
-## TC-E-073
+## TC-E-009
 
 ### Precondición
 
-Administrador del establecimiento del seed logueado en el panel. El test crea una mesa propia y la borra al terminar.
+Ninguna: el comensal abre el enlace web de un local que no existe (UUID cero).
 
 ### Pasos
 
-1. Abrir «Pedidos activos» del panel de administración.
-2. Desde el QR de la mesa de prueba, presionar «Llamar al mozo».
-3. En el encabezado, abrir la campana y revisar la vista rápida con axe-core (WCAG 2.1 AA).
-4. Presionar Esc.
-5. Desde el menú, abrir «Alertas» y revisar la pantalla con axe-core (WCAG 2.1 AA).
-6. Aceptar la alerta de la mesa de prueba.
+1. Abrir `/m/<tenant>/restaurante/00000000-0000-0000-0000-000000000000`.
+2. Revisar la página con axe-core (WCAG 2.1 AA).
 
 ### Resultado esperado
 
-1. Se ve el tablero y la campana del encabezado.
-2. El comensal ve «Avisamos al mozo». La campana muestra el contador y el tablero no muestra el aviso de la mesa: los llamados se atienden desde la campana y la pantalla «Alertas».
-3. Se abre la vista rápida con «Mesa N solicita atención» (N es el número de la mesa de prueba), sin errores graves ni críticos de accesibilidad.
-4. La vista rápida se cierra y el foco vuelve a la campana.
-5. Se abre la pantalla «Alertas», marcada como la página actual del menú, con la alerta de la mesa y los botones «Aceptar» y «Desestimar», sin errores graves ni críticos de accesibilidad.
-6. La alerta sale de la lista.
-
-## TC-E-074
-
-### Precondición
-
-Administrador del establecimiento del seed logueado en el panel. El test crea dos mesas propias y las borra al terminar.
-
-### Pasos
-
-1. Abrir «Alertas» desde el menú.
-2. Desde el QR de cada una de las dos mesas de prueba (A y B), presionar «Llamar al mozo».
-3. Recargar la página.
-4. Aceptar la alerta de la mesa A.
-5. Recargar la página otra vez.
-
-### Resultado esperado
-
-1. Se abre la pantalla «Alertas».
-2. Las dos mesas aparecen en la lista como «Mesa N solicita atención».
-3. Las dos alertas siguen en la lista, aunque nadie las atendió.
-4. La alerta de la mesa A sale de la lista.
-5. La alerta de la mesa B sigue en la lista y la de la mesa A no vuelve.
-
-## TC-E-075
-
-### Precondición
-
-Administrador del establecimiento del seed logueado en el panel. Ventana de escritorio (1440 × 900). El test no cambia la configuración.
-
-### Pasos
-
-1. Abrir «Configuración».
-2. Revisar la pantalla con axe-core (WCAG 2.1 AA).
-3. Mirar los botones del panel.
-4. Bajar hasta la sección «Privacidad».
-
-### Resultado esperado
-
-1. Se ve el formulario de configuración.
-2. No hay errores de accesibilidad graves ni críticos.
-3. «Guardar cambios» es el último botón y se ve en pantalla.
-4. «Guardar cambios» sigue siendo el último botón y sigue a la vista (barra fija abajo).
-
-## TC-E-076
-
-### Precondición
-
-Administrador del establecimiento del seed logueado en el panel. Ventana de celular (375 × 812). El test no cambia la configuración.
-
-### Pasos
-
-1. Abrir «Configuración».
-2. Revisar si la página o el panel tienen scroll horizontal.
-3. Bajar hasta «Anonimizar datos de facturación».
-
-### Resultado esperado
-
-1. Se ve el formulario en una sola columna.
-2. No hay scroll horizontal y «Guardar cambios» se ve en pantalla.
-3. Sigue sin haber scroll horizontal y «Guardar cambios» sigue a la vista, como último botón.
-
-## TC-E-077
-
-### Precondición
-
-Administrador del establecimiento del seed logueado en el panel. Ventana de escritorio (1440 × 900). El test no cambia el stock.
-
-### Pasos
-
-1. Abrir «Stock».
-2. Revisar la pantalla con axe-core (WCAG 2.1 AA).
-3. Mirar los botones del panel.
-4. Bajar hasta la última categoría.
-
-### Resultado esperado
-
-1. Se ven las tablas de stock por categoría.
-2. No hay errores de accesibilidad graves ni críticos.
-3. «Guardar cambios» es el último botón y se ve en pantalla.
-4. «Guardar cambios» sigue siendo el último botón y sigue a la vista (barra fija abajo).
-
-## TC-E-078
-
-### Precondición
-
-Administrador del establecimiento del seed logueado en el panel. Ventana de celular (375 × 812). El test no cambia el stock.
-
-### Pasos
-
-1. Abrir «Stock».
-2. Revisar si la página, el panel o las tablas tienen scroll horizontal.
-3. Bajar hasta la última categoría.
-
-### Resultado esperado
-
-1. Se ven las tablas de stock por categoría, una debajo de la otra.
-2. No hay scroll horizontal y «Guardar cambios» se ve en pantalla.
-3. Sigue sin haber scroll horizontal y «Guardar cambios» sigue a la vista, como último botón.
-
-## TC-E-079
-
-### Precondición
-
-Administrador del establecimiento del seed logueado en el panel. Al menos un comprobante emitido en la última semana (si no hay, el test se saltea).
-
-### Pasos
-
-1. Abrir «Comprobantes» y poner «Desde» una semana atrás.
-2. Tocar «PDF» en el primer comprobante.
-
-### Resultado esperado
-
-Se descarga un archivo «e-Ticket-<serie>-<número>.pdf» o «e-Factura-<serie>-<número>.pdf».
-
-## TC-E-082
-
-### Precondición
-
-Mozo del establecimiento del seed logueado. Mesa del seed abierta. Efectivo y POS del local habilitados en Configuración.
-
-### Pasos
-
-1. Abrir «Cargar pedido» de la mesa, agregar un ítem y tocar «Confirmar pedido».
-2. Tocar «Cobrar con el POS», elegir «Crédito» y cargar la autorización «e2e082».
-3. Tocar «Registrar cobro».
-4. Abrir el KDS.
-
-### Resultado esperado
-
-1. El pedido queda cargado y se ofrecen «Cobrar en efectivo» y «Cobrar con el POS».
-2. Se abre el diálogo con el total del pedido. Sin errores graves de accesibilidad (axe).
-3. Se registra el cobro (crédito, autorización E2E082) y aparece «Cobro registrado: pedido …».
-4. El pedido está en el KDS.
+1. La respuesta es HTTP 404 y se ve el aviso en español «No encontramos este local.» con «Revisá el enlace o pedile al local que te lo pase de nuevo.». La pestaña dice «Local no encontrado». No aparece la página por defecto de Next en inglés.
+2. Sin errores graves ni críticos de accesibilidad.

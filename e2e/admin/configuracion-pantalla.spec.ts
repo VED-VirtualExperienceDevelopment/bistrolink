@@ -84,4 +84,38 @@ test.describe("Configuración: pantalla (BL-473)", () => {
     await sinScrollHorizontal(page);
     await guardarAlFinalYVisible(page);
   });
+
+  test("[TC-E-116] HU-043: «Marca del local» en un celular de 360 px: sin scroll horizontal, plantillas como botones de opción y fáciles de tocar", async ({
+    kdsPageAdmin: page,
+  }) => {
+    await page.setViewportSize({ width: 360, height: 800 });
+    await abrirConfiguracion(page);
+
+    const marca = page.getByRole("region", { name: "Marca del local" });
+    await marca.scrollIntoViewIfNeeded();
+    await sinScrollHorizontal(page);
+
+    // Un grupo con nombre y 4 opciones, una elegida.
+    const grupo = marca.getByRole("group", { name: "Estilo del menú" });
+    await expect(grupo.getByRole("radio")).toHaveCount(4);
+    await expect(grupo.getByRole("radio", { checked: true })).toHaveCount(1);
+
+    // Cada tarjeta mide al menos 44 × 44 px (WCAG 2.5.5).
+    const tarjetas = grupo.locator("label");
+    for (let i = 0; i < (await tarjetas.count()); i++) {
+      const caja = await tarjetas.nth(i).boundingBox();
+      expect(caja?.width).toBeGreaterThanOrEqual(44);
+      expect(caja?.height).toBeGreaterThanOrEqual(44);
+    }
+
+    // Sin errores graves de accesibilidad en la sección.
+    const resultados = await new AxeBuilder({ page })
+      .include("section[aria-labelledby='titulo-marca']")
+      .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
+      .analyze();
+    const graves = resultados.violations
+      .filter((v) => v.impact === "critical" || v.impact === "serious")
+      .map((v) => ({ id: v.id, nodos: v.nodes.map((n) => n.target) }));
+    expect(graves).toEqual([]);
+  });
 });

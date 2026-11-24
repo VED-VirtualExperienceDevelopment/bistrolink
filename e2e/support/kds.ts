@@ -1,4 +1,4 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 
 /** Pantalla Alertas del panel (BL-441). */
 export const ALERTAS_PATH = "/admin/alertas";
@@ -59,4 +59,26 @@ export async function intentarDesestimarLlamado(
   } catch {
     // Si quedó pendiente, vence sola a las 12 h o al cerrar la mesa.
   }
+}
+
+/**
+ * HU-040 (BL-210): entrega un pedido para retirar (los del enlace web) con su
+ * código, como el mozo en el mostrador: lo lee de la comanda («Para retirar ·
+ * R-042»), toca «Entregar con código» y lo escribe. Esos pedidos no tienen
+ * «Marcar como entregado».
+ */
+export async function entregarRetiroConCodigo(
+  kdsPage: Page,
+  comanda: Locator,
+): Promise<void> {
+  const texto = (await comanda.textContent()) ?? "";
+  const codigo = /Para retirar · (R-\d{3})/.exec(texto)?.[1];
+  if (!codigo) {
+    throw new Error("La comanda no es de un pedido para retirar");
+  }
+  await comanda.getByRole("button", { name: "Entregar con código" }).click();
+  const dialogo = kdsPage.getByRole("dialog");
+  await dialogo.getByLabel("Código de retiro").fill(codigo);
+  await dialogo.getByRole("button", { name: "Entregar" }).click();
+  await expect(dialogo).toHaveCount(0, { timeout: 10000 });
 }

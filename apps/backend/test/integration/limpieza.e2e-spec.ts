@@ -26,9 +26,7 @@ import {
 // seed), que es como lo esperan las demás suites. Corre con --runInBand:
 // ninguna otra suite toca la base a la vez.
 //
-// Setup: TEST_ADMIN_PASSWORD y TEST_MOZO_PASSWORD (como usuarios.e2e-spec);
-// el caso de establecimientos necesita además KEYCLOAK_COMENSAL_PASSWORD
-// (como plataforma-gestion.e2e-spec).
+// Setup: TEST_ADMIN_PASSWORD y TEST_MOZO_PASSWORD (como usuarios.e2e-spec).
 
 const TENANT_A = '11111111-1111-1111-1111-111111111111';
 const RESTAURANTE_A = '22222222-2222-2222-2222-222222222222';
@@ -41,11 +39,12 @@ const ADMIN_USER = process.env.TEST_ADMIN_USERNAME ?? 'admin-test';
 const ADMIN_PASS = process.env.TEST_ADMIN_PASSWORD;
 const MOZO_USER = process.env.TEST_MOZO_USERNAME ?? 'mozo-test';
 const MOZO_PASS = process.env.TEST_MOZO_PASSWORD;
-const COMENSAL_PASS = process.env.KEYCLOAK_COMENSAL_PASSWORD;
 
 const itConAdmin = ADMIN_PASS ? it : it.skip;
 const itConAdminYMozo = ADMIN_PASS && MOZO_PASS ? it : it.skip;
-const itConPlataforma = COMENSAL_PASS && ADMIN_PASS ? it : it.skip;
+// El alta de establecimientos ya no necesita la contraseña del comensal
+// técnico (BL-581): alcanza con la del Admin.
+const itConPlataforma = ADMIN_PASS ? it : it.skip;
 
 const SUFIJO = Date.now().toString().slice(-8);
 const RUTA = '/testing/limpieza';
@@ -361,7 +360,7 @@ describe('BL-285: limpieza de los datos de prueba (base real)', () => {
   );
 
   itConAdmin(
-    '[TC-I-171] BL-481: la configuración vuelve al seed sin tocar el correo de privacidad, y el usuario «e2e-…» se borra de la base y de Keycloak',
+    '[TC-I-171] BL-481: la configuración vuelve al seed sin tocar el correo de privacidad, y el usuario «e2e-...» se borra de la base y de Keycloak',
     async () => {
       const correoAntes = await enTenant(TENANT_A, async (tx) => {
         const { emailPrivacidad } = await tx.restaurante.findUniqueOrThrow({

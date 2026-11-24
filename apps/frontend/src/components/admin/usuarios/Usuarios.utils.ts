@@ -195,6 +195,14 @@ export function puedeEliminarse(
   );
 }
 
+/**
+ * BL-371: se ofrece «Desbloquear» solo si el backend dice que Keycloak la
+ * bloqueó por intentos fallidos. Si el dato no vino, no se ofrece.
+ */
+export function estaBloqueada(usuario: Pick<Usuario, "bloqueada">): boolean {
+  return usuario.bloqueada === true;
+}
+
 // ── BL-363: búsqueda y filtros del listado ──────────────────────────────────
 // Se filtra en el navegador: un restaurante tiene pocos usuarios.
 

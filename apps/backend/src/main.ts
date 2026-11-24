@@ -1,10 +1,13 @@
 import 'dotenv/config';
-import helmet from 'helmet';
 import { NestFactory } from '@nestjs/core';
 import { Logger } from 'nestjs-pino';
 import { AppModule } from './app.module';
 import { checkRequiredEnvVars } from './startup-env-check';
-import { origenesPermitidos, redireccionHttps } from './seguridad-http';
+import {
+  headersDeSeguridad,
+  origenesPermitidos,
+  redireccionHttps,
+} from './seguridad-http';
 import { ValidationPipe } from '@nestjs/common';
 import { configurarOpenApi, RUTA_DOCS } from './openapi';
 
@@ -17,10 +20,11 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
   app.useLogger(app.get(Logger));
 
-  // SEGURIDAD (subtask BL-30): headers de seguridad HTTP estándar.
-  // helmet() agrega de una: HSTS (Strict-Transport-Security),
-  // X-Frame-Options, X-Content-Type-Options, Referrer-Policy y CSP básica.
-  app.use(helmet());
+  // SEGURIDAD (subtask BL-30): headers de seguridad HTTP estándar con
+  // helmet: HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy,
+  // CORP y COOP. BL-526: CSP para JSON (y otra para Swagger UI), COEP y
+  // Permissions-Policy (ver seguridad-http.ts).
+  app.use(headersDeSeguridad());
 
   // SEGURIDAD (subtask BL-30): redirección automática HTTP → HTTPS.
   // Railway termina TLS en su proxy y reenvía a la app por HTTP interno,

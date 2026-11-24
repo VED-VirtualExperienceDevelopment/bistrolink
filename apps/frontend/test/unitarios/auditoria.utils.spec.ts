@@ -80,6 +80,24 @@ describe("cómo se muestra cada registro", () => {
     ).toEqual(["Visible: sí → no", "Nombre: Picadas → Tablas"]);
   });
 
+  it("HU-044 (BL-537): marcar la «Sugerencia del local» se lee con su nombre", () => {
+    expect(
+      cambiosDelRegistro({
+        valoresAntes: { destacado: false },
+        valoresDespues: { destacado: true },
+      }),
+    ).toEqual(["Sugerencia del local: no → sí"]);
+  });
+
+  it("HU-046 (BL-551): marcar un plato con alcohol se lee con el nombre de cada campo", () => {
+    expect(
+      cambiosDelRegistro({
+        valoresAntes: { sugerible: true, contieneAlcohol: false },
+        valoresDespues: { sugerible: false, contieneAlcohol: true },
+      }),
+    ).toEqual(["Se puede sugerir: sí → no", "Contiene alcohol: no → sí"]);
+  });
+
   it("[TC-U-224] BL-396: muestra sobre qué ítem o categoría fue la acción", () => {
     expect(objetoDelRegistro({ detalle: { nombre: "Picada Completa" } })).toBe(
       "«Picada Completa»",
@@ -92,6 +110,12 @@ describe("cómo se muestra cada registro", () => {
   it("la fecha en hora de Uruguay", () => {
     expect(fechaParaMostrar("2026-10-28T00:05:00.000Z")).toMatch(
       /27\/10\/2026.*21:05/,
+    );
+  });
+
+  it("HU-033 (BL-203): el link de pago generado por el mozo", () => {
+    expect(etiquetaAccion("PEDIDO_LINK_PAGO_GENERADO")).toBe(
+      "Link de pago generado",
     );
   });
 
@@ -174,6 +198,38 @@ describe("cómo se muestra cada registro", () => {
         detalle: { campos: ["razonSocial", "rut"], origen: "PLATAFORMA" },
       }),
     ).toEqual(["Razón social: modificado", "RUT: modificado"]);
+  });
+
+  it("HU-022 (BL-495): la preselección de la propina se ve con su texto, no con el nombre del campo", () => {
+    expect(
+      cambiosDelRegistro({
+        valoresAntes: { propinaPreseleccionada: false },
+        valoresDespues: { propinaPreseleccionada: true },
+        detalle: { campos: ["propinaPreseleccionada"] },
+      }),
+    ).toEqual(["Preseleccionar el 10 % de propina: no → sí"]);
+  });
+
+  it("HU-022 (BL-495): el cobro en efectivo con propina muestra total, consumo, propina, recibido y vuelto", () => {
+    expect(etiquetaAccion("PAGO_EFECTIVO_REGISTRADO")).toBe("Cobro en efectivo");
+    expect(
+      cambiosDelRegistro({
+        valoresAntes: null,
+        valoresDespues: {
+          monto: "649.00",
+          consumo: "590.00",
+          propina: "59.00",
+          montoRecibido: "1000.00",
+          vuelto: "351.00",
+        },
+      }),
+    ).toEqual([
+      "Total: — → 649.00",
+      "Consumo: — → 590.00",
+      "Propina: — → 59.00",
+      "Recibido: — → 1000.00",
+      "Vuelto: — → 351.00",
+    ]);
   });
 
   it("el autor: el usuario del local, un proceso automático o la plataforma", () => {

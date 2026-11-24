@@ -11,6 +11,7 @@ export type ItemCartaRaw = {
   precio: Decimal;
   disponible: boolean;
   imagenKey: string | null;
+  destacado: boolean;
 };
 
 export type ItemMenuDto = {
@@ -20,6 +21,12 @@ export type ItemMenuDto = {
   precio: Decimal;
   disponible: boolean;
   imagenUrl: string | null;
+  // HU-044 (BL-537): «Sugerencia del local». Solo marca la insignia: el
+  // orden de la carta no cambia.
+  destacado: boolean;
+  // HU-045 (BL-547): entre los más pedidos del local (mas-pedidos.ts). Solo
+  // de lectura: no hay columna ni DTO que lo fije.
+  masPedido: boolean;
 };
 
 // El criterio de aceptación de HU-001 es explícito: los ítems no disponibles
@@ -31,6 +38,7 @@ export type ItemMenuDto = {
 export function mapItemToDto(
   item: ItemCartaRaw,
   imagenUrl: string | null,
+  masPedido = false,
 ): ItemMenuDto {
   return {
     id: item.id,
@@ -39,5 +47,7 @@ export function mapItemToDto(
     precio: item.precio,
     disponible: item.disponible,
     imagenUrl,
+    destacado: item.destacado,
+    masPedido,
   };
 }

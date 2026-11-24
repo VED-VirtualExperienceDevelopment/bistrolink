@@ -1,0 +1,26 @@
+{
+  "_comentario": [
+    "Calendario y plan de la Línea de Base (28/09/2026): Tabla 17 y Gantt v2.0 (Anexo 8).",
+    "spPlan son los SP de historias del MVP que la Tabla 17 asigna a cada Sprint (S1–S4 reales, S5–S8 planificados). Suman 159: el MVP de la Línea de Base.",
+    "Es la línea base fija: no se recalcula. El alcance vigente (backlog v2.3 más solicitudes de cambio) sale de backlog-hu.json.",
+    "Cada Sprint va de su 'inicio' hasta el día anterior al 'inicio' del siguiente: lo cerrado en el fin de semana cuenta para el Sprint que terminó.",
+    "Fechas en hora de Uruguay (UTC-3)."
+  ],
+  "lineaDeBase": {
+    "documento": "Línea de Base (28/09/2026), Tabla 17 · Gantt v2.0 (Anexo 8)",
+    "inicio": "2026-08-03",
+    "entrega": "2026-11-27",
+    "zonaHorariaHoras": -3
+  },
+  "sprints": [
+    { "nombre": "S1", "inicio": "2026-08-03", "fin": "2026-08-14", "hito": "H1", "spPlan": 5, "foco": "Entorno, pipeline CI/CD, Linear y GitHub · HU-013" },
+    { "nombre": "S2", "inicio": "2026-08-17", "fin": "2026-08-28", "hito": "H2", "spPlan": 26, "foco": "Menú QR y web, carrito · deploy en Railway · Kiwi TCMS" },
+    { "nombre": "S3", "inicio": "2026-08-31", "fin": "2026-09-11", "hito": "H3", "spPlan": 16, "foco": "KDS y seguimiento · Línea de Base y validación ética" },
+    { "nombre": "S4", "inicio": "2026-09-14", "fin": "2026-09-25", "hito": "H4", "spPlan": 8, "foco": "Notificaciones y llamado al mozo · rollback, Playwright en CI" },
+    { "nombre": "S5", "inicio": "2026-09-28", "fin": "2026-10-09", "hito": "H5", "spPlan": 27, "foco": "Carta, mapa de mesas, sesión de mesa, respaldo S3 · prototipo" },
+    { "nombre": "S6", "inicio": "2026-10-12", "fin": "2026-10-23", "hito": "H6", "spPlan": 24, "foco": "Configuración, pagos, réplica R2 · PactJS" },
+    { "nombre": "S7", "inicio": "2026-10-26", "fin": "2026-11-06", "hito": "H7", "spPlan": 29, "foco": "CFE, POS, cancelaciones · portafolio preliminar" },
+    { "nombre": "S8", "inicio": "2026-11-09", "fin": "2026-11-20", "hito": "H8", "spPlan": 24, "foco": "Reportes, propina, reconciliación · E2E, k6, DAST · predefensa" },
+    { "nombre": "Cierre", "inicio": "2026-11-23", "fin": "2026-11-27", "hito": "Entrega", "spPlan": 0, "foco": "Estabilización, regresión final, informe y entrega" }
+  ]
+}

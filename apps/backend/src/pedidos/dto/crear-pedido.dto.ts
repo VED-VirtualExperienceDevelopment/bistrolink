@@ -2,6 +2,7 @@ import { Type, Transform } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsInt,
   IsOptional,
   IsString,
@@ -12,6 +13,7 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
+import { ContactoRetiroDto } from '../retiro';
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -57,6 +59,12 @@ export class CrearPedidoItemDto {
     typeof value === 'string' ? stripHtmlTagsSafely(value) : value,
   )
   observacion?: string;
+
+  // HU-046 (BL-554): el comensal lo agregó desde la sugerencia de
+  // complementos. Solo se usa para contar las aceptadas al pagarse.
+  @IsOptional()
+  @IsBoolean({ message: 'desdeSugerencia debe ser verdadero o falso' })
+  desdeSugerencia?: boolean;
 }
 
 export class CrearPedidoDto {
@@ -98,4 +106,14 @@ export class CrearPedidoDto {
     typeof value === 'string' ? stripHtmlTagsSafely(value) : value,
   )
   observacionGeneral?: string;
+
+  /**
+   * HU-040 (BL-210): nombre y contacto del pedido para retirar, opcionales.
+   * Solo se guardan si `consentimiento` es true (HU-036). En un pedido de
+   * mesa no van: PedidosService.crear responde 400.
+   */
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ContactoRetiroDto)
+  contactoRetiro?: ContactoRetiroDto;
 }

@@ -5,6 +5,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { PrismaClient, MesaEstado, Prisma } from '@prisma/client';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
@@ -13,6 +14,14 @@ import { CrearPedidoMozoDto } from './dto/crear-pedido-mozo.dto';
 import { MesaDelQr } from '../qr-mesa/qr-mesa-acceso.service';
 import { KdsGateway, LlamadoPagoEfectivo } from './kds.gateway';
 import { aPedidoKds, PedidoParaKds } from './pedido-kds.mapper';
+import {
+  CODIGO_RETIRO_NO_DISPONIBLE,
+  CODIGOS_DE_RETIRO,
+  contactoRetiroParaGuardar,
+  formatearCodigoRetiro,
+  mensajeRetiroNoDisponible,
+  retiroAbierto,
+} from './retiro';
 import { generarTokenAcceso } from './token-acceso-pedido';
 import { ResumenVentasService } from '../reportes/resumen-ventas.service';
 import {
@@ -21,6 +30,9 @@ import {
 } from '../stock/descuento-stock.service';
 import { cantidadesPorItem, faltaStock } from '../stock/estado-stock';
 import { completarCapacidad, type PedidoPromovido } from './cola-kds';
+import { SincronizacionPosService } from '../pos/sincronizacion-pos.service';
+import { AvisosWhatsappService } from '../whatsapp/avisos-whatsapp.service';
+import { sumarAceptadasEnTx } from '../complementos/metricas-sugerencia';
 
 // BL-311 (RD.03, prepago): el pedido espera el pago aprobado antes de ir a
 // cocina. La transición a RECIBIDO la hace la confirmación del pago.
@@ -103,13 +115,25 @@ export class PedidosService {
     private readonly kdsGateway: KdsGateway,
     private readonly resumenVentas: ResumenVentasService,
     private readonly descuentoStock: DescuentoStockService,
+    // HU-011 (BL-488): opcional, para los tests que arman el servicio a mano.
+    @Optional() private readonly pos?: SincronizacionPosService,
+    // HU-010 (BL-604): aviso por WhatsApp a los pedidos del bot. Opcional
+    // por lo mismo.
+    @Optional() private readonly avisosWhatsapp?: AvisosWhatsappService,
   ) {}
 
   /**
    * @param mesaQr mesa del QR validada por MesaQrGuard (BL-204). Si viene,
    *   el pedido es de esa mesa y de ninguna otra.
+   * @param canalSinMesa canal de un pedido para retirar: WEB (el enlace web)
+   *   o WHATSAPP (el bot, HU-010). Lo decide el servidor, nunca el cliente.
    */
-  async crear(tenantId: string, dto: CrearPedidoDto, mesaQr?: MesaDelQr) {
+  async crear(
+    tenantId: string,
+    dto: CrearPedidoDto,
+    mesaQr?: MesaDelQr,
+    canalSinMesa: 'WEB' | 'WHATSAPP' = 'WEB',
+  ) {
     // BL-311 (RD.05): token de acceso, solo para pedidos para retirar (WEB).
     // Los de mesa se autorizan con el QR. Se genera afuera de la transacción
     // para devolverlo en claro: en la base queda solo el hash.
@@ -135,8 +159,22 @@ export class PedidosService {
           return { pedido: existente, esNuevo: false, mesaNumero: null };
         }
 
-        const { mesa, restauranteId, esPedidoDeMesa } =
+        const { mesa, restauranteId, esPedidoDeMesa, retiro } =
           await this.resolverMesaYRestaurante(tx, tenantId, dto, mesaQr);
+        if (esPedidoDeMesa && dto.contactoRetiro) {
+          throw new BadRequestException(
+            'contactoRetiro solo va en un pedido para retirar',
+          );
+        }
+        // HU-040 (BL-210): el local tiene que estar tomando pedidos para
+        // retirar (habilitado y dentro de la franja). Si no, 409.
+        if (retiro && !retiroAbierto(retiro, new Date(), retiro.timezone)) {
+          throw new ConflictException({
+            statusCode: 409,
+            codigo: CODIGO_RETIRO_NO_DISPONIBLE,
+            message: mensajeRetiroNoDisponible(retiro),
+          });
+        }
 
         const lineas = await this.lineasDelPedido(tx, tenantId, dto.items);
 
@@ -149,9 +187,13 @@ export class PedidosService {
             estado: ESTADO_INICIAL_PEDIDO,
             // BL-204: el canal lo decide el servidor según cómo se resolvió
             // la mesa, no lo que diga el cliente.
-            canal: esPedidoDeMesa ? 'QR' : 'WEB',
+            canal: esPedidoDeMesa ? 'QR' : canalSinMesa,
             accesoTokenHash: esPedidoDeMesa ? null : acceso.hash,
             observacionGeneral: dto.observacionGeneral,
+            // HU-040 (BL-210): solo con el consentimiento del comensal.
+            ...(esPedidoDeMesa
+              ? {}
+              : contactoRetiroParaGuardar(dto.contactoRetiro, new Date())),
             lineas: { create: lineas },
           },
           include: { lineas: true },
@@ -217,6 +259,9 @@ export class PedidosService {
       },
     });
 
+    // HU-040 (BL-210): el código de retiro sale con el pago aprobado.
+    await this.asignarCodigoRetiroEnTx(tx, tenantId, pedidoId);
+
     // HU-015 (BL-120): el stock se descuenta al confirmarse el pago (RF.04,
     // RD.09, ADR 0009), en esta misma transacción.
     const avisosStock = await this.descuentoStock.descontarEnTx(
@@ -224,6 +269,15 @@ export class PedidosService {
       tenantId,
       pedidoId,
     );
+
+    // HU-046 (BL-554): los platos que el comensal agregó desde la sugerencia
+    // de complementos cuentan como aceptadas, en esta misma transacción.
+    await sumarAceptadasEnTx(tx, tenantId, pedidoId);
+
+    // HU-011 (BL-488): la venta queda en la bandeja de salida hacia el POS
+    // del local, en esta misma transacción: si el POS no responde, no se
+    // pierde. Se manda después del commit (notificarPedidoConfirmado).
+    await this.pos?.encolarVentaEnTx(tx, tenantId, pedidoId);
 
     // HU-042 (BL-463, ADR 0010): con la cola activa y lugar en cocina, el
     // pedido pasa a EN_PREPARACION en esta misma transacción; si no, queda
@@ -239,6 +293,8 @@ export class PedidosService {
         createdAt: true,
         updatedAt: true,
         observacionGeneral: true,
+        codigoRetiro: true,
+        retiroNombre: true,
         mesa: { select: { numero: true } },
         lineas: {
           select: {
@@ -313,6 +369,14 @@ export class PedidosService {
     if (pedido.avisosStock) {
       this.descuentoStock.avisar(tenantId, pedido.avisosStock);
     }
+    // HU-011 (BL-488): la venta al POS del local, en segundo plano.
+    this.pos?.enviarEnSegundoPlano(tenantId, pedido.id);
+    // HU-010 (BL-604): si el pedido vino por el bot, el código de retiro
+    // por WhatsApp. En segundo plano: el pago ya está confirmado.
+    this.avisosWhatsapp?.enSegundoPlano(
+      this.avisosWhatsapp.pagoAprobado(tenantId, pedido.id),
+      pedido.id,
+    );
   }
 
   /**
@@ -325,6 +389,20 @@ export class PedidosService {
     pedidoId: string,
   ): Promise<string[]> {
     return this.descuentoStock.reponerEnTx(tx, tenantId, pedidoId);
+  }
+
+  /**
+   * BL-501: el personal canceló un pedido que todavía no se había cobrado.
+   * Nunca llegó a cocina ni descontó stock: solo hay que avisarle al
+   * comensal que lo sigue y a las pantallas del personal.
+   */
+  notificarPendienteCancelado(tenantId: string, pedidoId: string) {
+    const cancelado = {
+      id: pedidoId,
+      estado: 'CANCELADO',
+      actualizadoEn: new Date().toISOString(),
+    };
+    this.kdsGateway.emitirPedidoActualizado(tenantId, cancelado);
   }
 
   /**
@@ -519,6 +597,8 @@ export class PedidosService {
         cantidad: linea.cantidad,
         subtotal: item.precio.mul(linea.cantidad),
         observacion: linea.observacion,
+        // HU-046 (BL-554): para contar las sugerencias aceptadas.
+        ...(linea.desdeSugerencia === true && { desdeSugerencia: true }),
       };
     });
   }
@@ -548,6 +628,7 @@ export class PedidosService {
         mesa,
         restauranteId: mesa.restauranteId,
         esPedidoDeMesa: true,
+        retiro: null,
       };
     }
 
@@ -557,9 +638,16 @@ export class PedidosService {
       );
     }
 
+    // HU-040 (BL-210): con la configuración del retiro, para el 409.
     const restaurante = await tx.restaurante.findUnique({
       where: { id: dto.restauranteId },
-      select: { tenantId: true },
+      select: {
+        tenantId: true,
+        timezone: true,
+        retiroHabilitado: true,
+        retiroHoraDesde: true,
+        retiroHoraHasta: true,
+      },
     });
     if (restaurante?.tenantId !== tenantId) {
       throw new ForbiddenException(
@@ -572,7 +660,39 @@ export class PedidosService {
       tenantId,
       dto.restauranteId,
     );
-    return { mesa, restauranteId: dto.restauranteId, esPedidoDeMesa: false };
+    return {
+      mesa,
+      restauranteId: dto.restauranteId,
+      esPedidoDeMesa: false,
+      retiro: restaurante,
+    };
+  }
+
+  /**
+   * HU-040 (BL-210): al aprobarse el pago de un pedido para retirar, le da
+   * el próximo código (R-001 a R-999, después vuelve a empezar). El UPDATE
+   * atómico del contador evita que dos pagos simultáneos reciban el mismo.
+   * Los pedidos de mesa no tienen código.
+   */
+  private async asignarCodigoRetiroEnTx(
+    tx: PrismaClient,
+    tenantId: string,
+    pedidoId: string,
+  ): Promise<void> {
+    const pedido = await tx.pedido.findUniqueOrThrow({
+      where: { id: pedidoId },
+      select: { codigoRetiro: true, mesa: { select: { esVirtual: true } } },
+    });
+    if (!pedido.mesa.esVirtual || pedido.codigoRetiro) return;
+    const [{ numero }] = await tx.$queryRaw<{ numero: number }[]>`
+      UPDATE restaurante
+         SET ultimo_codigo_retiro = (ultimo_codigo_retiro % ${CODIGOS_DE_RETIRO}) + 1
+       WHERE tenant_id = ${tenantId}::uuid
+      RETURNING ultimo_codigo_retiro AS numero`;
+    await tx.pedido.update({
+      where: { id: pedidoId },
+      data: { codigoRetiro: formatearCodigoRetiro(Number(numero)) },
+    });
   }
 
   private async obtenerOCrearMesaVirtual(

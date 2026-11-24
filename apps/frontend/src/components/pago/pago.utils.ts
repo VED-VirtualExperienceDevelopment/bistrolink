@@ -9,9 +9,12 @@
 import type { OrigenMenu } from "@/components/menu-digital.utils";
 import { headersMesaQr } from "@/components/menu-digital.utils";
 import { nombreDelComprobante } from "./factura.utils";
+import type { PropinaDelLocal, TotalesDelPedido } from "./propina.utils";
 
 /** Header con el token de acceso de un pedido para retirar (backend: HEADER_PEDIDO_TOKEN). */
 export const HEADER_PEDIDO_TOKEN = "X-Pedido-Token";
+/** HU-033 (BL-203): header con el token del link de pago (backend: HEADER_LINK_PAGO). */
+export const HEADER_LINK_PAGO = "X-Link-Pago";
 
 /** POST (pagar) y GET (estado y comprobante) del pago de un pedido. */
 export function rutaPagos(pedidoId: string): string {
@@ -23,10 +26,16 @@ export function rutaPdfComprobante(pedidoId: string): string {
   return `${rutaPagos(pedidoId)}/comprobante/pdf`;
 }
 
+/** HU-022 (BL-495): PUT con la propina que elige el comensal antes de pagar. */
+export function rutaPropina(pedidoId: string): string {
+  return `${rutaPagos(pedidoId)}/propina`;
+}
+
 /**
  * BL-311 (RD.05): credencial que prueba que el pedido es de quien paga.
  * - Mesa: el token del QR (la mesa del QR tiene que ser la del pedido).
  * - Pedido para retirar: el token que devolvió POST /pedidos.
+ * - HU-033 (BL-203): link de pago: el token del link.
  */
 export function headersAccesoPedido(
   origen: OrigenMenu,
@@ -36,6 +45,7 @@ export function headersAccesoPedido(
     // HU-017 (BL-60): el QR y la sesión de la mesa.
     return headersMesaQr(origen);
   }
+  if (origen.tipo === "link") return { [HEADER_LINK_PAGO]: origen.linkToken };
   return tokenAcceso ? { [HEADER_PEDIDO_TOKEN]: tokenAcceso } : {};
 }
 
@@ -135,6 +145,10 @@ export function errorDocumento(
   if (digitos.length < 7 || digitos.length > 8) {
     return "La cédula tiene 7 u 8 dígitos (con el verificador).";
   }
+  // BL-445: 0.000.000-0 cumple la fórmula, pero no es una cédula.
+  if (/^0+$/.test(digitos)) {
+    return "Ingresá una cédula válida.";
+  }
   const cuerpo = digitos.slice(0, -1);
   const verificador = Number(digitos.slice(-1));
   return digitoVerificadorCi(cuerpo) === verificador
@@ -153,6 +167,42 @@ export function documentoParaMercadoPago(
         identificationNumber: normalizarDocumento(valor),
       }
     : { identificationType: "OTRO", identificationNumber: valor.trim() };
+}
+
+/** BL-445: largo máximo de la cédula con formato («1.234.567-8»). */
+export const LARGO_MAXIMO_CI = 11;
+
+/**
+ * BL-445: lo que se deja escribir (o pegar) en el campo con «Cédula»:
+ * solo dígitos, puntos y guion, hasta 11 caracteres.
+ */
+export function filtrarEntradaCi(valor: string): string {
+  return valor.replace(/[^\d.-]/g, "").slice(0, LARGO_MAXIMO_CI);
+}
+
+export const MENSAJE_DOCUMENTO_RECHAZADO_MP =
+  "Mercado Pago no aceptó el documento. Revisalo.";
+
+/**
+ * Códigos con los que Mercado Pago rechaza el documento al generar el token
+ * (errores de carga de datos): 212 y 214 (tipo o número vacío), 322 (tipo
+ * inválido), 323 (subtipo) y 324 (número inválido).
+ */
+const CODIGOS_DOCUMENTO_MP = new Set(["212", "214", "322", "323", "324"]);
+
+/**
+ * BL-445: true si el error de createCardToken es por el documento. El SDK
+ * puede rechazar con una lista de causas o con un objeto que la trae en
+ * `cause`; se aceptan las dos formas.
+ */
+export function esErrorDeDocumentoMp(error: unknown): boolean {
+  const causa = Array.isArray(error)
+    ? error
+    : (error as { cause?: unknown } | null)?.cause;
+  const lista: unknown[] = Array.isArray(causa) ? causa : [causa ?? error];
+  return lista.some((e) =>
+    CODIGOS_DOCUMENTO_MP.has(String((e as { code?: unknown } | null)?.code)),
+  );
 }
 
 /**
@@ -190,6 +240,10 @@ export type EstadoPago = "PENDIENTE" | "APROBADO" | "RECHAZADO" | "REEMBOLSADO";
 export interface EstadoPagoDelPedido {
   pedidoId: string;
   estadoPedido: string;
+  /** HU-040 (BL-210): código de retiro (R-042); null en mesa o sin pagar. Opcional: un backend anterior no lo trae. */
+  codigoRetiro?: string | null;
+  /** BL-603: pedido del bot de WhatsApp. Opcional: un backend anterior no lo trae. */
+  avisoPorWhatsapp?: boolean;
   pago: {
     id: string;
     estado: EstadoPago;
@@ -198,6 +252,17 @@ export interface EstadoPagoDelPedido {
     // HU-032 (BL-202): «VENCIDO» si el pago no se confirmó a tiempo.
     motivoRechazo?: string | null;
   } | null;
+  /**
+   * HU-022 (BL-495): consumo, propina y total del pedido, con la elección
+   * guardada (porcentaje o monto). `monto` del pago es el consumo; lo que se
+   * cobra es `total`. Opcional: un backend anterior no lo trae.
+   */
+  totales?: TotalesDelPedido;
+  /**
+   * HU-022 (BL-495): lo que el local ofrece (porcentajes sugeridos de HU-020
+   * y si preselecciona el 10 %). Opcional: un backend anterior no lo trae.
+   */
+  propina?: PropinaDelLocal;
   comprobante: {
     /** HU-009 (BL-453): '101' e-Ticket o '111' e-Factura. Opcional: un backend anterior no lo trae. */
     tipoCfe?: string;
@@ -445,6 +510,17 @@ export function mediosDisponibles(
   };
 }
 
+/**
+ * HU-033 (BL-203): por el link de pago se paga solo con tarjeta: el
+ * comensal puede no estar en el local, y para el efectivo ya está el mozo.
+ */
+export function mediosSegunOrigen(
+  medios: MediosDisponibles,
+  tipoOrigen: OrigenMenu["tipo"],
+): MediosDisponibles {
+  return tipoOrigen === "link" ? { ...medios, efectivo: false } : medios;
+}
+
 /** Sin la consulta (error de red): solo la tarjeta, como antes de BL-452. */
 export const MEDIOS_SIN_CONSULTA: MediosDisponibles = {
   tarjeta: true,
@@ -481,9 +557,13 @@ export function metodoSegunMedios(
 
 /** BL-452: aviso cuando el local no ofrece ningún medio para este pedido. */
 export function mensajeSinMedios(tipoOrigen: OrigenMenu["tipo"]): string {
-  return tipoOrigen === "mesa"
-    ? "Este local no tiene pagos desde el celular habilitados. Llamá al mozo para que te cobre."
-    : "Este local no tiene pagos en línea habilitados para pedidos para retirar. Acercate al local para pagar.";
+  if (tipoOrigen === "mesa") {
+    return "Este local no tiene pagos desde el celular habilitados. Llamá al mozo para que te cobre.";
+  }
+  if (tipoOrigen === "link") {
+    return "Este local no tiene pagos en línea habilitados. Pedile al mozo que te cobre.";
+  }
+  return "Este local no tiene pagos en línea habilitados para pedidos para retirar. Acercate al local para pagar.";
 }
 
 /** Mientras se espera al mozo, se consulta cada 5 segundos... */

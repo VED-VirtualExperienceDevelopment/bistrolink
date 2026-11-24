@@ -34,34 +34,68 @@ export default defineConfig({
   // 'github' solo en CI: en local también imprime cada error como una
   // anotación «::error …» en una sola línea, que duplica el detalle del
   // 'list' y ensucia la terminal.
+  //
+  // BL-487: 'allure-playwright' deja los resultados en
+  // playwright-report/allure-results, así viajan en el mismo artifact de cada
+  // proyecto. El job «Merge + reporte E2E» de ci.yml junta los 4 navegadores
+  // y genera el reporte Allure que se publica en GitHub Pages. Allure es solo
+  // una vista: Kiwi TCMS sigue siendo la fuente de verdad de los casos.
+  // Cada resultado lleva el proyecto (parámetro «Project» y suite padre), así
+  // que un mismo test en 4 navegadores se ve 4 veces, no como reintentos.
   reporter: [
     ["list"],
     ...(process.env.CI ? [["github"] as const] : []),
     ["junit", { outputFile: "playwright-report/junit.xml" }],
     ["html", { outputFolder: "playwright-report/html", open: "never" }],
+    ["allure-playwright", { resultsDir: "playwright-report/allure-results" }],
   ],
   use: {
     baseURL: process.env.BASE_URL ?? "http://localhost:3000",
     trace: "on-first-retry",
+    // BL-487: captura de pantalla de los tests que fallan, para el reporte
+    // HTML y el de Allure.
+    screenshot: "only-on-failure",
   },
   projects: [
     {
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
       // BL-452: los specs que cambian la configuración del establecimiento
-      // corren aparte (proyecto de abajo).
-      testIgnore: /pago-medios\.spec\.ts/,
+      // corren aparte (proyecto de abajo). HU-043 (BL-535): también la marca.
+      // HU-010 (BL-613): y el número del bot de WhatsApp.
+      // BL-607: la medición de FPS del mapa de mesas (TC-P-004) es de
+      // performance, no de la E2E: corre solo en el proyecto «performance».
+      testIgnore:
+        /(pago-medios|marca|pedir-por-whatsapp|mapa-mesas-fps)\.spec\.ts/,
+    },
+    // BL-607: TC-P-004 (HU-016, RD.05). Lo corre el workflow manual
+    // performance.yml y su resultado va al Test Plan Performance-k6-Lighthouse
+    // de Kiwi, no al de E2E. El job de E2E de ci.yml no lo corre: su matriz
+    // nombra los proyectos uno por uno. En local, para correrlo solo:
+    //   npx playwright test --project=performance
+    {
+      name: "performance",
+      use: { ...devices["Desktop Chrome"] },
+      testMatch: /mapa-mesas-fps\.spec\.ts/,
     },
     // BL-452: specs que cambian la configuración del establecimiento del seed
-    // (medios de pago). Mientras corren, un test de pago de otro spec vería
+    // (medios de pago y, HU-043, la marca). Mientras corren, un test de pago de otro spec vería
     // esos medios apagados; por eso van en su propio proyecto, que arranca
     // cuando termina `chromium`. En local, para correrlo solo:
     //   npm run test:e2e -- --project=chromium-configuracion --no-deps
     {
       name: "chromium-configuracion",
       use: { ...devices["Desktop Chrome"] },
-      testMatch: /pago-medios\.spec\.ts/,
-      dependencies: ["chromium"],
+      testMatch: /(pago-medios|marca|pedir-por-whatsapp)\.spec\.ts/,
+      // HU-043 (BL-535): marca.spec.ts cambia la plantilla, el logo y la
+      // portada, que se ven en la carta: espera también a los proyectos que
+      // sacan capturas de la carta (menu-publico.spec.ts).
+      dependencies: [
+        "chromium",
+        "mobile-chrome",
+        "mobile-safari",
+        "desktop-safari",
+      ],
     },
     // HU-002 (subtask Testing): el criterio del ticket pide verificar el
     // acceso por URL directa en Chrome y Safari mobile; se suma Safari de

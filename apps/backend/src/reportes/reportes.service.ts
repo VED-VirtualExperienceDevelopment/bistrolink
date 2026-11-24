@@ -19,11 +19,25 @@ export interface TotalesVentas {
   pedidos: number;
 }
 
+/**
+ * HU-022 (BL-496): propinas del período. No suman en `totalVendido`: las
+ * ventas son el consumo (lo que se factura) y la propina va aparte.
+ */
+export interface TotalesPropinas {
+  total: number;
+  /** Pedidos que dejaron propina (se cuenta por medio de pago, ver resumen). */
+  pedidosConPropina: number;
+  /** Propinas ÷ ventas (consumo), en %, con un decimal. 0 si no hubo ventas. */
+  porcentajeDeVentas: number;
+}
+
 export interface VentaPorHora {
   /** Hora del día en la zona del local (0 a 23). */
   hora: number;
   monto: number;
   pedidos: number;
+  /** HU-022 (BL-496): propinas de la hora, aparte de `monto`. */
+  propina: number;
 }
 
 export interface PlatoVendido {
@@ -47,21 +61,37 @@ export type RotacionMesas =
       ocupacionPromedioMin: number;
     };
 
+/**
+ * HU-046 (BL-554): la sugerencia de complementos en el período y el canal.
+ * Contadores agregados: nada del comensal ni del pedido.
+ */
+export interface SugerenciasDelPeriodo {
+  mostradas: number;
+  aceptadas: number;
+  /** Aceptadas ÷ mostradas, en %, con un decimal. 0 si no se mostró. */
+  tasaAceptacion: number;
+}
+
 export interface ReporteVentas {
   rango: RangoDias & { timezone: string };
   canal: CanalReporte;
   resumen: TotalesVentas & {
     ticketPromedio: number;
     anterior: TotalesVentas;
+    propinas: TotalesPropinas;
   };
-  /** Ventas dentro y fuera del local, siempre de todos los canales. */
-  porLugar: { local: number; web: number; whatsapp: number };
+  /**
+   * Ventas dentro y fuera del local, siempre de todos los canales. `pos`
+   * (BL-489): las hechas directamente en el POS del local.
+   */
+  porLugar: { local: number; web: number; whatsapp: number; pos: number };
   ventasPorHora: VentaPorHora[];
   platosMasPedidos: {
     porCantidad: PlatoVendido[];
     porRecaudado: PlatoVendido[];
   };
   rotacionMesas: RotacionMesas;
+  sugerencias: SugerenciasDelPeriodo;
 }
 
 /** Un número que viene de la base: SUM y AVG llegan como Decimal (o null). */
@@ -75,12 +105,15 @@ interface FilaCanal {
   canal: PedidoCanal;
   monto: NumeroDeLaBase;
   pedidos: number | null;
+  propina?: NumeroDeLaBase;
+  pedidos_con_propina?: number | null;
 }
 
 interface FilaHora {
   hora: number;
   monto: NumeroDeLaBase;
   pedidos: number | null;
+  propina?: NumeroDeLaBase;
 }
 
 interface FilaPlato {
@@ -119,6 +152,30 @@ function totales(
 }
 
 /**
+ * HU-022 (BL-496): propinas de los canales que entran en el filtro, y cuánto
+ * representan sobre las ventas (consumo) de esos mismos canales.
+ */
+function propinas(
+  filas: FilaCanal[],
+  canales: readonly PedidoCanal[] | null,
+  totalVendido: number,
+): TotalesPropinas {
+  const incluidas = filas.filter((f) => !canales || canales.includes(f.canal));
+  const total = pesos(
+    incluidas.reduce((suma, f) => suma + Number(f.propina ?? 0), 0),
+  );
+  return {
+    total,
+    pedidosConPropina: incluidas.reduce(
+      (suma, f) => suma + Number(f.pedidos_con_propina ?? 0),
+      0,
+    ),
+    porcentajeDeVentas:
+      totalVendido > 0 ? unDecimal((total / totalVendido) * 100) : 0,
+  };
+}
+
+/**
  * HU-012 (BL-108): métricas del dashboard de reportes.
  *
  * - Ventas y platos salen SOLO de las tablas de resumen (BL-219), nunca de
@@ -129,6 +186,9 @@ function totales(
  * - Dentro del contexto del tenant (RLS) y además con tenant_id en cada
  *   consulta (BL-110). Todo con parámetros (Prisma.sql), nunca concatenando
  *   texto.
+ * - HU-022 (BL-496): las propinas salen de la columna `propina` del resumen y
+ *   no entran en las ventas. `pedidos_con_propina` se cuenta por medio de
+ *   pago: un pedido pagado con dos medios distintos cuenta dos veces.
  */
 @Injectable()
 export class ReportesService {
@@ -172,11 +232,13 @@ export class ReportesService {
               ? pesos(actual.totalVendido / actual.pedidos)
               : 0,
           anterior: totales(porCanalAnterior, canales),
+          propinas: propinas(porCanal, canales, actual.totalVendido),
         },
         porLugar: {
           local: totales(porCanal, CANALES_DEL_FILTRO.LOCAL).totalVendido,
           web: totales(porCanal, CANALES_DEL_FILTRO.WEB).totalVendido,
           whatsapp: totales(porCanal, CANALES_DEL_FILTRO.WHATSAPP).totalVendido,
+          pos: totales(porCanal, CANALES_DEL_FILTRO.POS).totalVendido,
         },
         ventasPorHora: await consulta.ventasPorHora(rango, canales),
         platosMasPedidos: {
@@ -194,6 +256,7 @@ export class ReportesService {
         rotacionMesas: aplicaRotacion(filtros.canal)
           ? await consulta.rotacion(rango)
           : { aplica: false },
+        sugerencias: await consulta.sugerencias(rango, canales),
       };
     });
   }
@@ -221,7 +284,11 @@ class ConsultaReportes {
 
   ventasPorCanal(rango: RangoDias): Promise<FilaCanal[]> {
     return this.tx.$queryRaw<FilaCanal[]>(Prisma.sql`
-      SELECT canal, SUM(monto) AS monto, SUM(pedidos)::int AS pedidos
+      SELECT canal,
+             SUM(monto) AS monto,
+             SUM(pedidos)::int AS pedidos,
+             SUM(propina) AS propina,
+             SUM(pedidos_con_propina)::int AS pedidos_con_propina
       FROM resumen_ventas_hora
       WHERE tenant_id = ${this.tenantId}::uuid
         AND ${this.enRango(COLUMNA_HORA, rango)}
@@ -235,7 +302,8 @@ class ConsultaReportes {
     const filas = await this.tx.$queryRaw<FilaHora[]>(Prisma.sql`
       SELECT EXTRACT(HOUR FROM hora AT TIME ZONE ${this.timezone})::int AS hora,
              SUM(monto) AS monto,
-             SUM(pedidos)::int AS pedidos
+             SUM(pedidos)::int AS pedidos,
+             SUM(propina) AS propina
       FROM resumen_ventas_hora
       WHERE tenant_id = ${this.tenantId}::uuid
         AND ${this.enRango(COLUMNA_HORA, rango)}
@@ -246,6 +314,7 @@ class ConsultaReportes {
       hora: Number(f.hora),
       monto: pesos(f.monto),
       pedidos: Number(f.pedidos ?? 0),
+      propina: pesos(f.propina ?? null),
     }));
   }
 
@@ -269,6 +338,34 @@ class ConsultaReportes {
       cantidad: Number(f.cantidad),
       recaudado: pesos(f.recaudado),
     }));
+  }
+
+  /**
+   * HU-046 (BL-554): sugerencias mostradas y aceptadas. `dia` ya es el día
+   * del calendario del local, así que se compara directo con el rango.
+   */
+  async sugerencias(
+    { desde, hasta }: RangoDias,
+    canales: readonly PedidoCanal[] | null,
+  ): Promise<SugerenciasDelPeriodo> {
+    const [fila] = await this.tx.$queryRaw<
+      { mostradas: number | null; aceptadas: number | null }[]
+    >(Prisma.sql`
+      SELECT SUM(mostradas)::int AS mostradas,
+             SUM(aceptadas)::int AS aceptadas
+      FROM metrica_sugerencia_dia
+      WHERE tenant_id = ${this.tenantId}::uuid
+        AND dia >= ${desde}::date
+        AND dia <= ${hasta}::date
+        ${this.delCanal(canales)}`);
+    const mostradas = Number(fila?.mostradas ?? 0);
+    const aceptadas = Number(fila?.aceptadas ?? 0);
+    return {
+      mostradas,
+      aceptadas,
+      tasaAceptacion:
+        mostradas > 0 ? unDecimal((aceptadas / mostradas) * 100) : 0,
+    };
   }
 
   /** Sesiones de mesa cerradas en el período (D3). */

@@ -1,7 +1,14 @@
 import type { NextFunction, Request, Response } from 'express';
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+import express = require('express');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+import request = require('supertest');
 import {
   decidirRedireccionHttps,
+  esRutaDocs,
+  headersDeSeguridad,
   origenesPermitidos,
+  PERMISSIONS_POLICY,
   redireccionHttps,
 } from '../../src/seguridad-http';
 
@@ -229,5 +236,74 @@ describe('valores por defecto: process.env (BL-426)', () => {
       next,
     );
     expect(next).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * BL-526: headers de seguridad de la API según el baseline de OWASP ZAP.
+ * Se prueban sobre una app de Express mínima, con las mismas rutas que
+ * importan: una respuesta JSON y la documentación interactiva.
+ */
+describe('headersDeSeguridad (BL-526)', () => {
+  const app = express();
+  app.use(headersDeSeguridad());
+  app.get('/', (_req, res) => {
+    res.json({ servicio: 'bistrolink-api', estado: 'ok' });
+  });
+  app.get('/api/docs', (_req, res) => {
+    res.type('html').send('<html></html>');
+  });
+  app.get('/api/docs-json', (_req, res) => {
+    res.json({});
+  });
+
+  it('[TC-U-479] la API responde con una CSP para JSON, sin comodín ni unsafe-inline', async () => {
+    const respuesta = await request(app).get('/').expect(200);
+    const csp = respuesta.headers['content-security-policy'];
+    expect(csp).toContain("default-src 'none'");
+    expect(csp).toContain("frame-ancestors 'none'");
+    expect(csp).not.toContain('https:');
+    expect(csp).not.toContain('unsafe-inline');
+  });
+
+  it('[TC-U-480] manda Permissions-Policy y COEP, y mantiene los headers de helmet', async () => {
+    const respuesta = await request(app).get('/').expect(200);
+    expect(respuesta.headers['permissions-policy']).toBe(PERMISSIONS_POLICY);
+    expect(respuesta.headers['cross-origin-embedder-policy']).toBe(
+      'require-corp',
+    );
+    expect(respuesta.headers['strict-transport-security']).toBeDefined();
+    expect(respuesta.headers['x-content-type-options']).toBe('nosniff');
+    expect(respuesta.headers['cross-origin-resource-policy']).toBe(
+      'same-origin',
+    );
+    expect(respuesta.headers['cross-origin-opener-policy']).toBe('same-origin');
+    expect(respuesta.headers['x-powered-by']).toBeUndefined();
+  });
+
+  it('[TC-U-481] Swagger UI tiene su propia CSP, del mismo origen y sin comodín', async () => {
+    const respuesta = await request(app).get('/api/docs').expect(200);
+    const csp = respuesta.headers['content-security-policy'];
+    expect(csp).toContain("default-src 'self'");
+    expect(csp).toContain("script-src 'self'");
+    expect(csp).toContain("frame-ancestors 'none'");
+    expect(csp).not.toContain('https:');
+    expect(csp).not.toMatch(/script-src[^;]*unsafe-inline/);
+    expect(respuesta.headers['permissions-policy']).toBe(PERMISSIONS_POLICY);
+  });
+
+  it('[TC-U-482] el contrato en JSON (/api/docs-json) lleva la CSP de la API', async () => {
+    const respuesta = await request(app).get('/api/docs-json').expect(200);
+    expect(respuesta.headers['content-security-policy']).toContain(
+      "default-src 'none'",
+    );
+  });
+
+  it('[TC-U-482] esRutaDocs reconoce la documentación y lo que cuelga de ella', () => {
+    expect(esRutaDocs('/api/docs')).toBe(true);
+    expect(esRutaDocs('/api/docs/swagger-ui.css')).toBe(true);
+    expect(esRutaDocs('/api/docs-json')).toBe(false);
+    expect(esRutaDocs('/api/documentos')).toBe(false);
+    expect(esRutaDocs('/')).toBe(false);
   });
 });

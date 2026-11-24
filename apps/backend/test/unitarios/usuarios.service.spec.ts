@@ -59,6 +59,8 @@ describe('UsuariosService', () => {
       listarUsuariosDelTenant: jest.fn().mockResolvedValue([]),
       rolesDeRealm: jest.fn().mockResolvedValue([]),
       ultimosIngresos: jest.fn().mockResolvedValue(new Map()),
+      estadoDeBloqueo: jest.fn(),
+      desbloquear: jest.fn(),
     };
 
     const auditLogMock = {
@@ -1635,6 +1637,155 @@ describe('UsuariosService', () => {
         tieneHistorial: true,
       });
       expect(resultado[0]).not.toHaveProperty('_count');
+    });
+  });
+
+  describe('desbloquear (BL-371)', () => {
+    const COCINA_KC_ID = 'aaaaaaaa-1111-4111-8111-111111111111';
+    const mozo = {
+      id: 'usuario-mozo',
+      rol: 'MOZO',
+      keycloakId: 'kc-mozo',
+      activo: true,
+    };
+
+    it('[TC-U-641] UsuariosService.desbloquear levanta el bloqueo en Keycloak y lo audita con los fallos, sin la IP', async () => {
+      tx().usuario.findUnique.mockResolvedValue(mozo);
+      keycloakAdmin.estadoDeBloqueo.mockResolvedValue({
+        bloqueada: true,
+        fallos: 5,
+      });
+
+      const resultado = await service.desbloquear(
+        TENANT_ID,
+        ACTOR_KEYCLOAK_ID,
+        'usuario-mozo',
+      );
+
+      expect(resultado).toEqual({ id: 'usuario-mozo', bloqueada: false });
+      expect(keycloakAdmin.desbloquear).toHaveBeenCalledWith('kc-mozo');
+      // No cambia la contraseña ni el estado de la cuenta.
+      expect(keycloakAdmin.resetPassword).not.toHaveBeenCalled();
+      expect(keycloakAdmin.setEnabled).not.toHaveBeenCalled();
+      expect(auditLog.registrar).toHaveBeenCalledWith({
+        action: AuditAction.USUARIO_DESBLOQUEADO,
+        tenantId: TENANT_ID,
+        actorKeycloakId: ACTOR_KEYCLOAK_ID,
+        targetUsuarioId: 'usuario-mozo',
+        detalle: { rol: 'MOZO', fallos: 5 },
+      });
+    });
+
+    it('[TC-U-642] UsuariosService.desbloquear no toca Keycloak ni audita si la cuenta no estaba bloqueada', async () => {
+      tx().usuario.findUnique.mockResolvedValue(mozo);
+      keycloakAdmin.estadoDeBloqueo.mockResolvedValue({
+        bloqueada: false,
+        fallos: 2,
+      });
+
+      await expect(
+        service.desbloquear(TENANT_ID, ACTOR_KEYCLOAK_ID, 'usuario-mozo'),
+      ).resolves.toEqual({ id: 'usuario-mozo', bloqueada: false });
+      expect(keycloakAdmin.desbloquear).not.toHaveBeenCalled();
+      expect(auditLog.registrar).not.toHaveBeenCalled();
+    });
+
+    it('[TC-U-643] UsuariosService.desbloquear devuelve 404 si el usuario no es del tenant, sin consultar Keycloak', async () => {
+      tx().usuario.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.desbloquear(TENANT_ID, ACTOR_KEYCLOAK_ID, 'de-otro-tenant'),
+      ).rejects.toThrow(NotFoundException);
+      expect(keycloakAdmin.estadoDeBloqueo).not.toHaveBeenCalled();
+      expect(keycloakAdmin.desbloquear).not.toHaveBeenCalled();
+    });
+
+    it('[TC-U-644] UsuariosService.desbloquear responde 503 y no audita si Keycloak falla', async () => {
+      tx().usuario.findUnique.mockResolvedValue(mozo);
+      keycloakAdmin.estadoDeBloqueo.mockResolvedValue({
+        bloqueada: true,
+        fallos: 5,
+      });
+      keycloakAdmin.desbloquear.mockRejectedValue(new Error('caído'));
+      jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+
+      await expect(
+        service.desbloquear(TENANT_ID, ACTOR_KEYCLOAK_ID, 'usuario-mozo'),
+      ).rejects.toThrow(ServiceUnavailableException);
+      expect(auditLog.registrar).not.toHaveBeenCalled();
+    });
+
+    it('[TC-U-645] UsuariosService.desbloquearCocina desbloquea la cuenta de cocina del tenant y lo audita', async () => {
+      keycloakAdmin.findUserById.mockResolvedValue({
+        id: COCINA_KC_ID,
+        username: 'cocina',
+        enabled: true,
+        attributes: { tenant_id: [TENANT_ID] },
+      } as any);
+      keycloakAdmin.rolesDeRealm.mockResolvedValue(['COCINA']);
+      keycloakAdmin.estadoDeBloqueo.mockResolvedValue({
+        bloqueada: true,
+        fallos: 3,
+      });
+
+      await expect(
+        service.desbloquearCocina(TENANT_ID, ACTOR_KEYCLOAK_ID, COCINA_KC_ID),
+      ).resolves.toEqual({ id: COCINA_KC_ID, bloqueada: false });
+      expect(keycloakAdmin.desbloquear).toHaveBeenCalledWith(COCINA_KC_ID);
+      expect(auditLog.registrar).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: AuditAction.USUARIO_DESBLOQUEADO,
+          detalle: { rol: 'COCINA', cuentaCompartida: true, fallos: 3 },
+        }),
+      );
+    });
+
+    it('UsuariosService.desbloquearCocina devuelve 404 con una cuenta de otro tenant', async () => {
+      keycloakAdmin.findUserById.mockResolvedValue({
+        id: COCINA_KC_ID,
+        username: 'cocina',
+        enabled: true,
+        attributes: { tenant_id: ['otro-tenant'] },
+      } as any);
+
+      await expect(
+        service.desbloquearCocina(TENANT_ID, ACTOR_KEYCLOAK_ID, COCINA_KC_ID),
+      ).rejects.toThrow(NotFoundException);
+      expect(keycloakAdmin.desbloquear).not.toHaveBeenCalled();
+    });
+
+    it('[TC-U-646] UsuariosService.listar marca las cuentas bloqueadas; si Keycloak no responde, sale sin el dato', async () => {
+      tx().usuario.findMany.mockResolvedValue([
+        {
+          id: 'a',
+          keycloakId: 'kc-a',
+          rol: 'MOZO',
+          activo: true,
+          _count: { pedidosComoMozo: 0, historial: 0 },
+        },
+        {
+          id: 'b',
+          keycloakId: 'kc-b',
+          rol: 'ADMIN',
+          activo: true,
+          _count: { pedidosComoMozo: 0, historial: 0 },
+        },
+      ]);
+      keycloakAdmin.estadoDeBloqueo.mockImplementation(async (id: string) => ({
+        bloqueada: id === 'kc-a',
+        fallos: id === 'kc-a' ? 5 : 0,
+      }));
+
+      const lista = await service.listar(TENANT_ID);
+      expect(lista.map((u: any) => [u.id, u.bloqueada])).toEqual([
+        ['a', true],
+        ['b', false],
+      ]);
+
+      jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      keycloakAdmin.estadoDeBloqueo.mockRejectedValue(new Error('caído'));
+      const sinDato = await service.listar(TENANT_ID);
+      expect(sinDato[0]).not.toHaveProperty('bloqueada');
     });
   });
 });

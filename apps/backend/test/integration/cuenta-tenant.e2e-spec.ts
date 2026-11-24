@@ -10,6 +10,7 @@ import {
   sesionDeMesa,
   tokenQrDeMesa,
 } from './support/qr-mesa';
+import { ISSUER_TOKEN_INVITADO } from '../../src/auth-comensal/token-invitado';
 
 // BL-265 (BL-262, hallazgo R1): un usuario no puede cambiarse de tenant.
 //
@@ -338,9 +339,8 @@ describe('Token de comensal contra la API de cuenta (BL-265, R1)', () => {
       .expect(200);
     const token = res.body.accessToken as string;
 
-    // El token de comensal sale de bistrolink-backend: la Account API lo
-    // rechaza (sin audiencia `account`), así que ni siquiera puede leer la
-    // cuenta, y menos modificarla.
+    // El token de comensal lo firma la API, no Keycloak: la Account API lo
+    // rechaza, así que ni siquiera puede leer la cuenta, y menos modificarla.
     const lectura = await fetch(ACCOUNT_URL, {
       headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
     });
@@ -357,9 +357,11 @@ describe('Token de comensal contra la API de cuenta (BL-265, R1)', () => {
     });
     expect([401, 403]).toContain(intento.status);
 
-    // El usuario técnico del comensal sigue en su tenant.
-    expect(await tenantIdEnKeycloak(claims(token).sub as string)).toEqual([
-      TENANT_A,
-    ]);
+    // El comensal sigue en su tenant. HU-052: el token lo firma la API y no
+    // hay usuario de Keycloak detrás (BL-581): el tenant es el del token,
+    // que nadie puede cambiar sin la clave de la API.
+    const { iss, tenant_id } = claims(token);
+    expect(iss).toBe(ISSUER_TOKEN_INVITADO);
+    expect(tenant_id).toBe(TENANT_A);
   });
 });

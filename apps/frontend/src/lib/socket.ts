@@ -13,8 +13,14 @@ let socketInstance: Socket | null = null;
  * reutiliza. Antes se cerraba y se creaba otro cuando todavía estaba
  * conectándose (por ejemplo, con el doble montaje de React en desarrollo),
  * y eso daba «websocket error» de a ratos.
+ *
+ * BL-515: el servidor verifica el token en cada conexión y toma el tenant del
+ * token, así que ya no se manda el tenantId. `auth` es una función: Socket.io
+ * la llama en cada intento de conexión, y así una reconexión usa el token
+ * vigente (Keycloak lo renueva) y no el del momento en que se abrió el
+ * socket.
  */
-export function getMenuSocket(tenantId: string, token?: string): Socket {
+export function getMenuSocket(obtenerToken: () => string | undefined): Socket {
   if (socketInstance?.connected || socketInstance?.active) {
     return socketInstance;
   }
@@ -24,8 +30,7 @@ export function getMenuSocket(tenantId: string, token?: string): Socket {
   }
 
   socketInstance = io(`${SOCKET_URL}/menu`, {
-    auth: token ? { token } : undefined,
-    query: { tenantId },
+    auth: (cb) => cb({ token: obtenerToken() }),
     transports: ["websocket", "polling"],
     // BL-398: reintenta sin límite (antes paraba a los 5 intentos y el aviso
     // «Reconectando…» de la pantalla quedaba mintiendo), con espera
@@ -48,6 +53,15 @@ export function getMenuSocket(tenantId: string, token?: string): Socket {
   // Next.js abría su ventana de error en desarrollo en cada reintento.
   socketInstance.on("connect_error", (error) => {
     console.warn("[Socket] Error de conexión:", error.message);
+    // BL-515: si el servidor rechazó el handshake (token vencido o sin
+    // permiso), Socket.io no reintenta solo (`active` en false). Se vuelve a
+    // intentar a los 10 segundos, con el token que haya en ese momento.
+    const socket = socketInstance;
+    if (socket && !socket.active) {
+      setTimeout(() => {
+        if (socketInstance === socket && !socket.connected) socket.connect();
+      }, 10000);
+    }
   });
 
   return socketInstance;

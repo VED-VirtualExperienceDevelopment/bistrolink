@@ -72,6 +72,13 @@ export default {
           600: "#7c3aed",
           700: "#6d28d9",
         },
+        // HU-043 (BL-534): marca del local en las pantallas del comensal.
+        // Variables de globals.css; el menú las cambia según la plantilla.
+        marca: {
+          DEFAULT: "rgb(var(--brand-primary) / <alpha-value>)",
+          hover: "rgb(var(--brand-primary-hover) / <alpha-value>)",
+          acento: "rgb(var(--brand-accent) / <alpha-value>)",
+        },
         culinary: {
           primary: "#8069BF",
           "primary-container": "#F1ECF4",

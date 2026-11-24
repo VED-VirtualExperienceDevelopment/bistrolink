@@ -68,8 +68,14 @@ describe('HU-031 (BL-201): cobro en efectivo', () => {
     fn: Parameters<TenantPrismaService['runInTenantContext']>[1],
   ) => tenantPrisma.runInTenantContext(TENANT_ID, fn) as Promise<T>;
 
-  /** Un pedido de la mesa de prueba esperando el pago, de $ 590. */
-  const pedidoPendiente = () =>
+  /**
+   * Un pedido de la mesa de prueba esperando el pago, de $ 590. HU-022
+   * (BL-494): opcionalmente con la propina que eligió el comensal (un
+   * porcentaje o un monto, nunca los dos).
+   */
+  const pedidoPendiente = (
+    propina: { propinaPorcentaje?: number; propinaMonto?: number } = {},
+  ) =>
     enTenant<string>(async (tx) => {
       const pedido = await tx.pedido.create({
         data: {
@@ -79,6 +85,7 @@ describe('HU-031 (BL-201): cobro en efectivo', () => {
           idempotencyKey: `bl-201-${randomUUID()}`,
           estado: 'PENDIENTE_PAGO',
           canal: 'QR',
+          ...propina,
           lineas: {
             create: {
               tenantId: TENANT_ID,
@@ -98,7 +105,12 @@ describe('HU-031 (BL-201): cobro en efectivo', () => {
   const leer = (pedidoId: string) =>
     enTenant<{
       pedido: { estado: string };
-      pagos: { medioPago: string; estado: string; monto: Prisma.Decimal }[];
+      pagos: {
+        medioPago: string;
+        estado: string;
+        monto: Prisma.Decimal;
+        propina: Prisma.Decimal;
+      }[];
       historial: { estadoNuevo: string }[];
       auditoria: {
         valoresDespues: unknown;
@@ -108,7 +120,13 @@ describe('HU-031 (BL-201): cobro en efectivo', () => {
     }>(async (tx) => {
       const pagos = await tx.pago.findMany({
         where: { pedidoId },
-        select: { id: true, medioPago: true, estado: true, monto: true },
+        select: {
+          id: true,
+          medioPago: true,
+          estado: true,
+          monto: true,
+          propina: true,
+        },
       });
       return {
         pedido: await tx.pedido.findUniqueOrThrow({
@@ -222,18 +240,78 @@ describe('HU-031 (BL-201): cobro en efectivo', () => {
       estado: 'APROBADO',
     });
     expect(estado.pagos[0].monto.toFixed(2)).toBe('590.00');
+    // HU-022 (BL-494): sin propina elegida, el pago guarda propina 0.
+    expect(estado.pagos[0].propina.toFixed(2)).toBe('0.00');
     expect(estado.historial).toEqual([{ estadoNuevo: 'RECIBIDO' }]);
     expect(estado.auditoria).toEqual([
       {
         actorKeycloakId: ACTOR_PRUEBA,
         valoresDespues: {
           monto: '590.00',
+          consumo: '590.00',
+          propina: '0.00',
           montoRecibido: '1000.00',
           vuelto: '410.00',
         },
         detalle: { pedidoId },
       },
     ]);
+  });
+
+  it('HU-022 (BL-494): con propina elegida, el pago guarda el consumo en monto y la propina aparte, y el vuelto se calcula sobre el total', async () => {
+    // $ 590 + 15 % (88,50 → 89) = $ 679.
+    const pedidoId = await pedidoPendiente({ propinaPorcentaje: 15 });
+
+    const cobro = await cobros.registrar(TENANT_ID, ACTOR_PRUEBA, {
+      pedidoId,
+      idempotencyKey: `bl-494-${randomUUID()}`,
+      montoRecibido: '700',
+    });
+
+    expect(cobro).toMatchObject({
+      pedidoId,
+      monto: '679.00',
+      consumo: '590.00',
+      propina: '89.00',
+      montoRecibido: '700.00',
+      vuelto: '21.00',
+    });
+    const estado = await leer(pedidoId);
+    expect(estado.pedido.estado).toBe('RECIBIDO');
+    expect(estado.pagos).toHaveLength(1);
+    expect(estado.pagos[0].monto.toFixed(2)).toBe('590.00');
+    expect(estado.pagos[0].propina.toFixed(2)).toBe('89.00');
+    expect(estado.auditoria).toEqual([
+      {
+        actorKeycloakId: ACTOR_PRUEBA,
+        valoresDespues: {
+          monto: '679.00',
+          consumo: '590.00',
+          propina: '89.00',
+          montoRecibido: '700.00',
+          vuelto: '21.00',
+        },
+        detalle: { pedidoId },
+      },
+    ]);
+  });
+
+  it('HU-022 (BL-494): si el total que vio el mozo ya no coincide (el comensal cambió la propina), 409 y el pedido sigue esperando el pago', async () => {
+    const pedidoId = await pedidoPendiente({ propinaPorcentaje: 15 });
+
+    await expect(
+      cobros.registrar(TENANT_ID, ACTOR_PRUEBA, {
+        pedidoId,
+        idempotencyKey: `bl-494-${randomUUID()}`,
+        montoRecibido: '1000',
+        totalEsperado: '590.00',
+      }),
+    ).rejects.toThrow('El total del pedido cambió: ahora es $ 679.00');
+
+    const estado = await leer(pedidoId);
+    expect(estado.pedido.estado).toBe('PENDIENTE_PAGO');
+    expect(estado.pagos).toHaveLength(0);
+    expect(estado.auditoria).toHaveLength(0);
   });
 
   it('[TC-I-114] HU-031: el mismo idempotency key dos veces registra un único cobro', async () => {

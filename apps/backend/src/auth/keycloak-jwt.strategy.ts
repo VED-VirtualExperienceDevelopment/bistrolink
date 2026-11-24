@@ -3,6 +3,7 @@ import { PassportStrategy } from '@nestjs/passport';
 import { Strategy, StrategyOptionsWithoutRequest } from 'passport-jwt';
 import { passportJwtSecret } from 'jwks-rsa';
 import { ROL_PLATAFORMA } from './rol-plataforma';
+import type { CanalInvitado } from '../auth-comensal/token-invitado';
 import {
   mensajeSuspendidoPara,
   TenantEstadoService,
@@ -12,7 +13,13 @@ export interface AuthenticatedUser {
   sub: string; // ID de usuario en Keycloak (mapea a Usuario.keycloak_id)
   tenantId: string; // claim custom "tenant_id"
   restauranteId?: string; // <-- AGREGADO: claim custom "restaurante_id"
-  roles: string[]; // realm_access.roles: ADMIN | MOZO | COCINA | COMENSAL
+  roles: string[]; // ADMIN | MOZO | COCINA (Keycloak) o COMENSAL (token de invitado)
+  /**
+   * HU-052 (BL-578): solo en el token de invitado del comensal (emitido por
+   * la API): el canal por el que se emitió. Los tokens de Keycloak no lo
+   * tienen.
+   */
+  canal?: CanalInvitado;
 }
 
 // Derivadas de KEYCLOAK_URL + KEYCLOAK_REALM (ya existen en el .env real del
@@ -47,6 +54,10 @@ export function opcionesJwtKeycloak(): StrategyOptionsWithoutRequest {
   };
 }
 
+export const ROL_COMENSAL = 'COMENSAL';
+export const MENSAJE_COMENSAL_DE_KEYCLOAK =
+  'El token del comensal lo emite la API, no Keycloak';
+
 @Injectable()
 export class KeycloakJwtStrategy extends PassportStrategy(Strategy, 'jwt') {
   constructor(private readonly tenantEstado: TenantEstadoService) {
@@ -62,6 +73,13 @@ export class KeycloakJwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       throw new UnauthorizedException(
         'Un token de plataforma no es válido en los endpoints de un establecimiento',
       );
+    }
+
+    // BL-581: el comensal ya no tiene usuario en Keycloak; su token lo firma
+    // la API (estrategia 'jwt-invitado'). Un token de Keycloak con el rol
+    // COMENSAL es de un comensal técnico que quedó sin borrar: no se acepta.
+    if (roles.includes(ROL_COMENSAL)) {
+      throw new UnauthorizedException(MENSAJE_COMENSAL_DE_KEYCLOAK);
     }
 
     const tenantId = payload.tenant_id;

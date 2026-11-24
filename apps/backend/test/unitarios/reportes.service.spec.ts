@@ -34,6 +34,7 @@ describe('ReportesService', () => {
   let porHora: unknown[];
   let platos: unknown[];
   let rotacion: unknown[];
+  let sugerencias: unknown[];
 
   /** El SQL (normalizado) de cada consulta que se hizo. */
   function consultas(): { sql: string; values: unknown[] }[] {
@@ -44,15 +45,34 @@ describe('ReportesService', () => {
   }
 
   beforeEach(() => {
+    // HU-022 (BL-496): la propina va aparte de las ventas (monto = consumo).
     porCanal = [
-      { canal: 'QR', monto: decimal(1000), pedidos: 2 },
-      { canal: 'MOZO', monto: decimal(500.5), pedidos: 1 },
-      { canal: 'WEB', monto: decimal(800), pedidos: 1 },
+      {
+        canal: 'QR',
+        monto: decimal(1000),
+        pedidos: 2,
+        propina: decimal(100),
+        pedidos_con_propina: 2,
+      },
+      {
+        canal: 'MOZO',
+        monto: decimal(500.5),
+        pedidos: 1,
+        propina: decimal(50.5),
+        pedidos_con_propina: 1,
+      },
+      {
+        canal: 'WEB',
+        monto: decimal(800),
+        pedidos: 1,
+        propina: decimal(0),
+        pedidos_con_propina: 0,
+      },
     ];
     porCanalAnterior = [{ canal: 'QR', monto: decimal(900), pedidos: 3 }];
     porHora = [
-      { hora: 12, monto: decimal(1300), pedidos: 3 },
-      { hora: 21, monto: decimal(1000.5), pedidos: 1 },
+      { hora: 12, monto: decimal(1300), pedidos: 3, propina: decimal(100) },
+      { hora: 21, monto: decimal(1000.5), pedidos: 1, propina: decimal(50.5) },
     ];
     platos = [
       {
@@ -75,12 +95,15 @@ describe('ReportesService', () => {
       },
     ];
     rotacion = [{ sesiones: 25, minutos: decimal(47.6) }];
+    sugerencias = [{ mostradas: 40, aceptadas: 9 }];
 
     tx = {
       $queryRaw: jest.fn((sql: Prisma.Sql) => {
         const texto = sql.sql;
         if (texto.includes('FROM sesion_mesa'))
           return Promise.resolve(rotacion);
+        if (texto.includes('FROM metrica_sugerencia_dia'))
+          return Promise.resolve(sugerencias);
         if (texto.includes('FROM resumen_platos_hora'))
           return Promise.resolve(platos);
         if (texto.includes('EXTRACT(HOUR')) return Promise.resolve(porHora);
@@ -120,11 +143,17 @@ describe('ReportesService', () => {
       pedidos: 4,
       ticketPromedio: 575.13,
       anterior: { totalVendido: 900, pedidos: 3 },
+      propinas: { total: 150.5, pedidosConPropina: 3, porcentajeDeVentas: 6.5 },
     });
-    expect(reporte.porLugar).toEqual({ local: 1500.5, web: 800, whatsapp: 0 });
+    expect(reporte.porLugar).toEqual({
+      local: 1500.5,
+      web: 800,
+      whatsapp: 0,
+      pos: 0,
+    });
     expect(reporte.ventasPorHora).toEqual([
-      { hora: 12, monto: 1300, pedidos: 3 },
-      { hora: 21, monto: 1000.5, pedidos: 1 },
+      { hora: 12, monto: 1300, pedidos: 3, propina: 100 },
+      { hora: 21, monto: 1000.5, pedidos: 1, propina: 50.5 },
     ]);
   });
 
@@ -219,7 +248,7 @@ describe('ReportesService', () => {
     });
   });
 
-  it.each(['WEB', 'WHATSAPP'] as const)(
+  it.each(['WEB', 'WHATSAPP', 'POS'] as const)(
     '[TC-U-304] con %s la rotación no aplica y no se consulta',
     async (canal) => {
       const reporte = await service.obtener(
@@ -236,6 +265,62 @@ describe('ReportesService', () => {
     },
   );
 
+  it('[TC-U-464] HU-011 (BL-489): canal POS del local en totales y en dentro y fuera del local', async () => {
+    porCanal.push({ canal: 'POS', monto: decimal(350), pedidos: 2 });
+
+    const todos = await service.obtener(TENANT_ID, filtros(), AHORA);
+    expect(todos.resumen.totalVendido).toBe(2650.5);
+    expect(todos.porLugar.pos).toBe(350);
+
+    tx.$queryRaw.mockClear();
+    const pos = await service.obtener(
+      TENANT_ID,
+      filtros({ canal: 'POS' }),
+      AHORA,
+    );
+    expect(pos.resumen).toMatchObject({ totalVendido: 350, pedidos: 2 });
+    const filtradas = consultas().filter(
+      (c) =>
+        c.sql.includes('canal::text IN') &&
+        c.values.includes('POS') &&
+        !c.values.includes('QR'),
+    );
+    // Platos, ventas por hora y (HU-046, BL-554) sugerencias.
+    expect(filtradas).toHaveLength(3);
+  });
+
+  it('HU-046 (BL-554): sugerencias mostradas, aceptadas y tasa de aceptación del período y el canal', async () => {
+    const reporte = await service.obtener(
+      TENANT_ID,
+      filtros({ canal: 'LOCAL' }),
+      AHORA,
+    );
+    expect(reporte.sugerencias).toEqual({
+      mostradas: 40,
+      aceptadas: 9,
+      tasaAceptacion: 22.5,
+    });
+    const consulta = consultas().find((c) =>
+      c.sql.includes('FROM metrica_sugerencia_dia'),
+    );
+    expect(consulta?.values).toEqual([
+      TENANT_ID,
+      '2026-11-02',
+      '2026-11-02',
+      'QR',
+      'MOZO',
+    ]);
+
+    // Sin sugerencias mostradas: 0 %, sin dividir por cero.
+    sugerencias = [{ mostradas: null, aceptadas: null }];
+    const vacio = await service.obtener(TENANT_ID, filtros(), AHORA);
+    expect(vacio.sugerencias).toEqual({
+      mostradas: 0,
+      aceptadas: 0,
+      tasaAceptacion: 0,
+    });
+  });
+
   it('[TC-U-305] sin ventas: todo en cero, sin dividir por cero', async () => {
     porCanal = [];
     porCanalAnterior = [];
@@ -251,6 +336,7 @@ describe('ReportesService', () => {
       pedidos: 0,
       ticketPromedio: 0,
       anterior: { totalVendido: 0, pedidos: 0 },
+      propinas: { total: 0, pedidosConPropina: 0, porcentajeDeVentas: 0 },
     });
     expect(reporte.rotacionMesas).toEqual({
       aplica: true,
@@ -279,5 +365,63 @@ describe('ReportesService', () => {
     await expect(service.obtener(TENANT_ID, filtros(), AHORA)).rejects.toThrow(
       NotFoundException,
     );
+  });
+
+  describe('HU-022 (BL-496): propinas', () => {
+    it('las propinas salen de la columna propina del resumen y no se suman a las ventas', async () => {
+      await service.obtener(TENANT_ID, filtros(), AHORA);
+
+      const delResumen = consultas().filter((c) =>
+        c.sql.includes('FROM resumen_ventas_hora'),
+      );
+      // Por canal (período y anterior) y por hora.
+      expect(delResumen).toHaveLength(3);
+      for (const c of delResumen) {
+        expect(c.sql).toContain('SUM(propina) AS propina');
+        expect(c.sql).not.toContain('monto + propina');
+      }
+      const porCanalSql = delResumen.filter((c) =>
+        c.sql.includes('GROUP BY canal'),
+      );
+      for (const c of porCanalSql) {
+        expect(c.sql).toContain(
+          'SUM(pedidos_con_propina)::int AS pedidos_con_propina',
+        );
+      }
+    });
+
+    it('con el filtro En el local, las propinas y el porcentaje son solo de QR y mozo', async () => {
+      const reporte = await service.obtener(
+        TENANT_ID,
+        filtros({ canal: 'LOCAL' }),
+        AHORA,
+      );
+
+      expect(reporte.resumen.propinas).toEqual({
+        total: 150.5,
+        pedidosConPropina: 3,
+        porcentajeDeVentas: 10,
+      });
+    });
+
+    it('si no hay ventas pero sí propina, el porcentaje queda en cero (sin dividir por cero)', async () => {
+      porCanal = [
+        {
+          canal: 'QR',
+          monto: decimal(0),
+          pedidos: 0,
+          propina: decimal(10),
+          pedidos_con_propina: 1,
+        },
+      ];
+
+      const reporte = await service.obtener(TENANT_ID, filtros(), AHORA);
+
+      expect(reporte.resumen.propinas).toEqual({
+        total: 10,
+        pedidosConPropina: 1,
+        porcentajeDeVentas: 0,
+      });
+    });
   });
 });

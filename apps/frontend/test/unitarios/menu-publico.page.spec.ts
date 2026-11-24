@@ -96,6 +96,16 @@ describe("MenuPublicoPage", () => {
     );
   });
 
+  it("[TC-U-697] HU-010 (BL-613): pasa el número del bot de WhatsApp que manda la API", async () => {
+    fetchMock.mockResolvedValue(
+      respuesta(200, { ...MENU, whatsapp: "59899123456" }),
+    );
+
+    const elemento = await MenuPublicoPage({ params: params() });
+
+    expect(elemento.props.whatsapp).toBe("59899123456");
+  });
+
   it.each([404, 400])(
     "si la API responde %i, llama a notFound() y NO loguea ningún error",
     async (status) => {
@@ -164,7 +174,32 @@ describe("generateMetadata", () => {
     });
   });
 
-  it.each([404, 500])(
+  it.each([404, 400])(
+    "[TC-U-705] BL-304: si el local no existe (la API responde %i), el título es «Local no encontrado»",
+    async (status) => {
+      fetchMock.mockResolvedValue(respuesta(status));
+
+      await expect(generateMetadata({ params: params() })).resolves.toEqual({
+        title: "Local no encontrado",
+      });
+    },
+  );
+
+  it("[TC-U-705] BL-304: un local suspendido sigue con el título «Menú» (no es un 404)", async () => {
+    fetchMock.mockResolvedValue(
+      respuesta(403, {
+        statusCode: 403,
+        message: "Este restaurante no está disponible por el momento.",
+        codigo: "ESTABLECIMIENTO_SUSPENDIDO",
+      }),
+    );
+
+    await expect(generateMetadata({ params: params() })).resolves.toEqual({
+      title: "Menú",
+    });
+  });
+
+  it.each([500])(
     "si la API responde %i, el título es «Menú»",
     async (status) => {
       fetchMock.mockResolvedValue(respuesta(status));

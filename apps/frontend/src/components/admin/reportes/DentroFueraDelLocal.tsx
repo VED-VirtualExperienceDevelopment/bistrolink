@@ -13,7 +13,9 @@ import TablaAccesible from "./TablaAccesible";
 const COLOR: Record<string, string> = {
   local: "bg-primary",
   web: "bg-tertiary-container",
-  whatsapp: "bg-outline",
+  // HU-010 (BL-612): un color propio (el gris parecía deshabilitado).
+  whatsapp: "bg-primary-fixed-dim",
+  pos: "bg-secondary",
 };
 
 /**
@@ -62,9 +64,7 @@ export default function DentroFueraDelLocal({
               {p.etiqueta}
             </span>
             <span className="text-on-surface-variant">
-              {p.clave === "whatsapp" && p.monto === 0
-                ? "Próximamente"
-                : `${formatearMonto(p.monto)} · ${p.porcentaje} %`}
+              {`${formatearMonto(p.monto)} · ${p.porcentaje} %`}
             </span>
           </li>
         ))}

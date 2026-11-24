@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
   codigoDeError,
   headersMesaQr,
@@ -9,6 +9,15 @@ import {
   solicitudAuthComensal,
   type OrigenMenu,
 } from '@/components/menu-digital.utils';
+import {
+  anuncioDelEstado,
+  anuncioVisible,
+  botonDeshabilitado,
+  hastaDespuesDe429,
+  LIMITE_LLAMADO_MS,
+  textoBoton,
+  type EstadoLlamado,
+} from '@/components/llamar-mozo.utils';
 
 interface LlamarMozoButtonProps {
   /**
@@ -18,46 +27,86 @@ interface LlamarMozoButtonProps {
   readonly qrToken: string;
   /** HU-017 (BL-60): sesión de la mesa que vino con el menú. */
   readonly sesionMesa: string;
+  /**
+   * BL-592: «nav», en la barra superior del menú (compacto en pantallas
+   * chicas; un error se muestra en una franja debajo de la barra);
+   * «inline», dentro del contenido (pantalla de pago), con el error debajo
+   * del botón.
+   */
+  readonly variante?: 'nav' | 'inline';
 }
 
-const MENSAJE_ERROR_GENERICO = 'No pudimos avisarle al mozo. Probá de nuevo.';
+/** Vibración corta en el celular; sin soporte, no pasa nada. */
+function vibrar(patron: number | number[]) {
+  try {
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      navigator.vibrate(patron);
+    }
+  } catch {
+    // Sin soporte de vibración.
+  }
+}
 
-type Estado = 'idle' | 'enviando' | 'enviado' | 'error';
+// Colores por estado. Ninguno depende solo del color: cada estado cambia
+// también el ícono y el texto (BL-592, CA 9). «esperando» (429) se ve igual
+// que «avisado»: para el comensal es lo mismo, el mozo ya sabe.
+const CLASES_NAV: Record<EstadoLlamado, string> = {
+  listo: 'bg-marca text-white border-2 border-marca hover:bg-marca-hover',
+  enviando: 'bg-marca/10 text-marca border-2 border-transparent',
+  avisado: 'bg-[#e3f4e7] text-[#1b5e2c] border-2 border-[#1b5e2c]',
+  esperando: 'bg-[#e3f4e7] text-[#1b5e2c] border-2 border-[#1b5e2c]',
+  error: 'bg-white text-[#93000a] border-2 border-[#ba1a1a] hover:bg-[#ffdad6]/40',
+};
+
+const CLASES_INLINE: Record<EstadoLlamado, string> = {
+  listo: 'bg-white text-marca border border-marca/30 hover:border-marca hover:bg-marca/5',
+  enviando: 'bg-marca/10 text-marca border border-transparent',
+  avisado: 'bg-[#e3f4e7] text-[#1b5e2c] border border-[#1b5e2c]',
+  esperando: 'bg-[#e3f4e7] text-[#1b5e2c] border border-[#1b5e2c]',
+  error: 'bg-white text-[#93000a] border border-[#ba1a1a] hover:bg-[#ffdad6]/40',
+};
 
 export function LlamarMozoButton({
   qrToken,
   sesionMesa,
+  variante = 'inline',
 }: LlamarMozoButtonProps) {
   const origen: OrigenMenu = { tipo: 'mesa', qrToken, sesionMesa };
-  const [estado, setEstado] = useState<Estado>('idle');
-  const [mensaje, setMensaje] = useState<string | null>(null);
+  const [estado, setEstado] = useState<EstadoLlamado>('listo');
+  // Fin del límite de 1 llamado por minuto (avisado o 429); null sin límite.
+  // Es interno: no se muestra ningún tiempo al comensal.
+  const [hasta, setHasta] = useState<number | null>(null);
+  // Ya llamó una vez: pasado el límite, el botón dice «Volver a llamar».
+  const [yaLlamo, setYaLlamo] = useState(false);
+  // Lo que se anuncia al lector al entrar a cada estado (ver anuncioDelEstado).
+  const [anuncio, setAnuncio] = useState<string | null>(null);
 
-  const triggerFeedback = (tipo: 'click' | 'success' | 'error') => {
-    if (typeof window === 'undefined') return;
-    try {
-      if (tipo === 'click') {
-        if (navigator.vibrate) navigator.vibrate(50);
-      } else if (tipo === 'success') {
-        if (navigator.vibrate) navigator.vibrate([50, 100, 50]);
-      } else if (tipo === 'error') {
-        if (navigator.vibrate) navigator.vibrate([200]);
-      }
-    } catch {
-      // Ignorar si no hay soporte
-    }
-  };
+  // Al vencer el límite, el botón vuelve a estar activo («Volver a llamar»).
+  // Un solo temporizador hasta el vencimiento: no hay nada que mostrar
+  // segundo a segundo.
+  useEffect(() => {
+    if (hasta === null) return;
+    const temporizador = setTimeout(() => {
+      setEstado('listo');
+      setHasta(null);
+      setAnuncio(null);
+    }, Math.max(0, hasta - Date.now()));
+    return () => clearTimeout(temporizador);
+  }, [hasta]);
 
-  function mostrarError(texto: string | null) {
-    setEstado('error');
-    setMensaje(texto ?? MENSAJE_ERROR_GENERICO);
-    triggerFeedback('error');
-    setTimeout(() => setEstado('idle'), 5000);
+  function entrar(nuevo: EstadoLlamado, fin: number | null, mensajeError?: string | null) {
+    setEstado(nuevo);
+    setHasta(fin);
+    setAnuncio(anuncioDelEstado(nuevo, mensajeError));
+    if (nuevo === 'avisado' || nuevo === 'esperando') setYaLlamo(true);
   }
 
   async function llamar() {
-    triggerFeedback('click');
-    setEstado('enviando');
-    setMensaje(null);
+    // aria-disabled en lugar de disabled: el botón no pierde el foco
+    // mientras se envía o corre el límite, pero no hace nada.
+    if (botonDeshabilitado(estado)) return;
+    vibrar(50);
+    entrar('enviando', null);
 
     try {
       const auth = solicitudAuthComensal(origen);
@@ -71,9 +120,8 @@ export function LlamarMozoButton({
       );
       if (!authRes.ok) {
         const cuerpo = await authRes.json().catch(() => null);
-        mostrarError(
-          mensajeErrorQr(origen, authRes.status, codigoDeError(cuerpo)),
-        );
+        vibrar(200);
+        entrar('error', null, mensajeErrorQr(origen, authRes.status, codigoDeError(cuerpo)));
         return;
       }
       const { accessToken } = await authRes.json();
@@ -90,104 +138,168 @@ export function LlamarMozoButton({
       );
 
       if (res.status === 429) {
-        setEstado('error');
-        setMensaje('Ya llamaste al mozo. Esperá un minuto.');
-        triggerFeedback('error');
-        setTimeout(() => setEstado('idle'), 5000);
+        // Ya se avisó hace menos de un minuto (por ejemplo, antes de
+        // recargar): no es un error, el mozo ya sabe.
+        entrar('esperando', hastaDespuesDe429(res.headers.get('Retry-After'), Date.now()));
         return;
       }
       if (!res.ok) {
         const cuerpo = await res.json().catch(() => null);
-        mostrarError(mensajeErrorQr(origen, res.status, codigoDeError(cuerpo)));
+        vibrar(200);
+        entrar('error', null, mensajeErrorQr(origen, res.status, codigoDeError(cuerpo)));
         return;
       }
 
-      setEstado('enviado');
-      setMensaje('¡Listo! Avisamos al mozo.');
-      triggerFeedback('success');
-      
-      setTimeout(() => {
-        setEstado('idle');
-        setMensaje(null);
-      }, 60_000);
+      vibrar([50, 100, 50]);
+      entrar('avisado', Date.now() + LIMITE_LLAMADO_MS);
     } catch {
-      mostrarError(null);
+      vibrar(200);
+      entrar('error', null);
     }
   }
 
-  // Se extrajo la lógica para evitar los operadores ternarios anidados
-  const getEstadoClasses = (currentState: Estado) => {
-    switch (currentState) {
-      case 'idle':
-        return 'bg-white border border-[#6e54ad]/30 text-[#6e54ad] hover:border-[#6e54ad] hover:bg-[#6e54ad]/5 active:scale-[0.95]';
-      case 'enviando':
-        return 'bg-[#6e54ad]/10 border border-transparent text-[#6e54ad] cursor-not-allowed';
-      case 'enviado':
-        return 'bg-[#1e8e3e]/10 border border-[#1e8e3e]/30 text-[#1e8e3e] cursor-not-allowed scale-105';
-      case 'error':
-        return 'bg-red-800/10 border border-red-800/30 text-red-800 active:scale-[0.95] animate-shake';
-      default:
-        return '';
-    }
-  };
+  const esNav = variante === 'nav';
+  const texto = textoBoton(estado, yaLlamo, esNav);
+  const textoCompleto = textoBoton(estado, yaLlamo);
+  const deshabilitado = botonDeshabilitado(estado);
+
+  const boton = (
+    <button
+      type="button"
+      onClick={() => void llamar()}
+      // El nombre accesible acompaña al estado (no es fijo) y contiene el
+      // texto visible (WCAG 2.5.3).
+      aria-label={texto.etiqueta}
+      aria-disabled={deshabilitado}
+      aria-busy={estado === 'enviando'}
+      className={`flex shrink-0 items-center justify-center gap-2 rounded-full font-semibold transition-colors duration-200 focus:outline-none focus-visible:ring-4 focus-visible:ring-marca/30 ${
+        esNav ? 'min-h-11 px-4 text-sm' : 'min-h-12 px-8 text-sm md:text-base'
+      } ${deshabilitado ? 'cursor-not-allowed' : ''} ${
+        esNav ? CLASES_NAV[estado] : CLASES_INLINE[estado]
+      }`}
+    >
+      <IconoEstado estado={estado} />
+      {esNav ? (
+        // BL-592 (CA 3): por debajo de 380 px, el texto corto («Mozo»,
+        // «Avisado»); desde 380 px, el completo.
+        <>
+          <span className="min-[380px]:hidden">{texto.visible}</span>
+          <span className="hidden min-[380px]:inline">{textoCompleto.visible}</span>
+        </>
+      ) : (
+        <span>{texto.visible}</span>
+      )}
+    </button>
+  );
+
+  // Una sola región en vivo (<output>, rol «status»), siempre presente para
+  // que el lector anuncie cada cambio. En «avisado» va oculta (sr-only): la
+  // confirmación ya se ve en el botón. Solo el error se ve en pantalla.
+  const visible = anuncio !== null && anuncioVisible(estado);
+
+  if (esNav) {
+    return (
+      <>
+        {boton}
+        {/* El error va debajo de la barra superior (h-16), con la X fuera
+            del <output> para que el lector no anuncie también «Cerrar». */}
+        <div
+          className={
+            visible
+              ? 'fixed inset-x-0 top-16 z-40 flex items-start justify-between gap-3 bg-[#ffdad6] px-4 py-2.5 text-sm font-semibold text-[#93000a] shadow-sm md:px-8'
+              : 'sr-only'
+          }
+        >
+          <output className="block">{anuncio}</output>
+          {visible && (
+            <button
+              type="button"
+              onClick={() => setAnuncio(null)}
+              aria-label="Cerrar el aviso"
+              className="-my-1 grid h-8 w-8 shrink-0 place-items-center rounded-full hover:bg-black/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-current"
+            >
+              <IconoCerrar />
+            </button>
+          )}
+        </div>
+      </>
+    );
+  }
 
   return (
     <div className="flex flex-col items-center gap-2">
-      <button
-        type="button"
-        onClick={llamar}
-        disabled={estado === 'enviando' || estado === 'enviado'}
-        className={`group relative overflow-hidden flex items-center justify-center gap-2.5 px-8 py-3 rounded-full font-semibold text-sm md:text-base transition-all duration-300 ease-out shadow-sm ${getEstadoClasses(estado)}`}
-        aria-label="Llamar al mozo"
+      {boton}
+      <output
+        className={
+          visible
+            ? 'block text-center text-xs font-medium text-[#93000a]'
+            : 'sr-only'
+        }
       >
-        {estado === 'idle' && (
-          <>
-            <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="transition-transform group-hover:rotate-12 group-active:-rotate-12">
-              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
-              <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
-            </svg>
-            Llamar al mozo
-          </>
-        )}
-
-        {estado === 'enviando' && (
-          <>
-               <svg aria-hidden="true" className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-            Avisando...
-          </>
-        )}
-
-        {estado === 'enviado' && (
-          <>
-            <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="animate-bounce">
-              <path d="M20 6L9 17l-5-5"></path>
-            </svg>
-            ¡Mozo en camino!
-          </>
-        )}
-
-        {estado === 'error' && (
-          <>
-            <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="10"></circle>
-              <line x1="12" y1="8" x2="12" y2="12"></line>
-              <line x1="12" y1="16" x2="12.01" y2="16"></line>
-            </svg>
-            Reintentar
-          </>
-        )}
-      </button>
-
-      <div className="h-5 mt-1">
-        {mensaje && (
-          <output className={`block text-xs font-medium text-center transition-opacity ${estado === 'error' ? 'text-red-800' : 'text-[#1e8e3e]'}`}>
-            {mensaje}
-          </output>
-        )}
-      </div>
+        {anuncio}
+      </output>
     </div>
+  );
+}
+
+function Svg({ children, className }: { readonly children: ReactNode; readonly className?: string }) {
+  return (
+    <svg
+      aria-hidden="true"
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      {children}
+    </svg>
+  );
+}
+
+function IconoEstado({ estado }: { readonly estado: EstadoLlamado }) {
+  switch (estado) {
+    case 'listo':
+      return (
+        <Svg>
+          <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+          <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+        </Svg>
+      );
+    case 'enviando':
+      // BL-592 (CA 10): gira solo si el usuario no pidió reducir el movimiento.
+      return (
+        <Svg className="motion-safe:animate-spin">
+          <path d="M21 12a9 9 0 1 1-6.22-8.56" />
+        </Svg>
+      );
+    case 'avisado':
+    case 'esperando':
+      return (
+        <Svg>
+          <path d="M20 6 9 17l-5-5" />
+        </Svg>
+      );
+    case 'error':
+      return (
+        <Svg>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 8v4" />
+          <path d="M12 16h.01" />
+        </Svg>
+      );
+  }
+}
+
+function IconoCerrar() {
+  return (
+    <Svg>
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
+    </Svg>
   );
 }

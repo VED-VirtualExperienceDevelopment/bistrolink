@@ -15,21 +15,26 @@ const CLASE_FECHA =
 /**
  * HU-012 (BL-108): filtros del dashboard. Cada grupo es un fieldset con su
  * leyenda; las opciones son radios (se eligen con las flechas del teclado)
- * con forma de chip.
+ * con forma de chip. HU-050 (BL-558): las valoraciones usan solo el período
+ * (`conCanal={false}`), con su propia etiqueta.
  */
 export default function FiltrosReportes({
   filtros,
   invalido,
   onCambiar,
+  etiqueta = "Filtrar los reportes",
+  conCanal = true,
 }: Readonly<{
   filtros: Filtros;
   invalido: boolean;
   onCambiar: (filtros: Filtros) => void;
+  etiqueta?: string;
+  conCanal?: boolean;
 }>) {
   return (
     <form
       role="search"
-      aria-label="Filtrar los reportes"
+      aria-label={etiqueta}
       onSubmit={(e) => e.preventDefault()}
       className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between"
     >
@@ -103,44 +108,41 @@ export default function FiltrosReportes({
         )}
       </fieldset>
 
-      <fieldset>
-        <legend className={CLASE_LEYENDA}>Canal de venta</legend>
-        <div className="flex flex-wrap gap-2">
-          {CANALES.map(({ valor, etiqueta, descripcion, proximamente }) => (
-            // La descripción va afuera del label: así el nombre accesible del
-            // radio es solo el canal («Web») y la descripción se lee aparte.
-            <Fragment key={valor}>
-              <label
-                title={descripcion}
-                className={claseChip(filtros.canal === valor, proximamente)}
-              >
-                <input
-                  type="radio"
-                  name="canal"
-                  value={valor}
-                  checked={filtros.canal === valor}
-                  disabled={proximamente}
-                  aria-describedby={`canal-${valor}-ayuda`}
-                  onChange={() => onCambiar({ ...filtros, canal: valor })}
-                  className="sr-only"
-                />
-                {etiqueta}
-                {proximamente && (
-                  <span className="rounded-full bg-surface-container-high px-2 py-0.5 text-label-sm text-on-surface-variant">
-                    Próximamente
-                  </span>
-                )}
-              </label>
-              <span id={`canal-${valor}-ayuda`} className="sr-only">
-                {descripcion}
-              </span>
-            </Fragment>
-          ))}
-        </div>
-        <p className={`mt-2 ${CLASE_AYUDA}`}>
-          En el local: QR de la mesa y mozo. Web: pedidos para retirar.
-        </p>
-      </fieldset>
+      {conCanal && (
+        <fieldset>
+          <legend className={CLASE_LEYENDA}>Canal de venta</legend>
+          <div className="flex flex-wrap gap-2">
+            {CANALES.map(({ valor, etiqueta, descripcion }) => (
+              // La descripción va afuera del label: así el nombre accesible del
+              // radio es solo el canal («Web») y la descripción se lee aparte.
+              <Fragment key={valor}>
+                <label
+                  title={descripcion}
+                  className={claseChip(filtros.canal === valor)}
+                >
+                  <input
+                    type="radio"
+                    name="canal"
+                    value={valor}
+                    checked={filtros.canal === valor}
+                    aria-describedby={`canal-${valor}-ayuda`}
+                    onChange={() => onCambiar({ ...filtros, canal: valor })}
+                    className="sr-only"
+                  />
+                  {etiqueta}
+                </label>
+                <span id={`canal-${valor}-ayuda`} className="sr-only">
+                  {descripcion}
+                </span>
+              </Fragment>
+            ))}
+          </div>
+          <p className={`mt-2 ${CLASE_AYUDA}`}>
+            En el local: QR de la mesa y mozo. Web: pedidos para retirar.
+            WhatsApp: pedidos para retirar hechos por el bot.
+          </p>
+        </fieldset>
+      )}
     </form>
   );
 }

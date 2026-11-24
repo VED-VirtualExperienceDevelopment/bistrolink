@@ -19,6 +19,7 @@ export enum AuditAction {
   USUARIO_DATOS_MODIFICADOS = 'USUARIO_DATOS_MODIFICADOS', // BL-366 (qué campos, sin los valores)
   USUARIO_SESIONES_CERRADAS = 'USUARIO_SESIONES_CERRADAS', // BL-367
   USUARIO_ELIMINADO = 'USUARIO_ELIMINADO', // BL-382 (solo usuarios sin historial)
+  USUARIO_DESBLOQUEADO = 'USUARIO_DESBLOQUEADO', // BL-371 (bloqueo por intentos fallidos; con la cantidad de fallos, sin IP)
   ESTABLECIMIENTO_APROVISIONADO = 'ESTABLECIMIENTO_APROVISIONADO', // BL-163 (HU-027)
   ESTABLECIMIENTO_DATOS_MODIFICADOS = 'ESTABLECIMIENTO_DATOS_MODIFICADOS', // BL-412 (qué campos, sin los valores)
   ESTABLECIMIENTO_SUSPENDIDO = 'ESTABLECIMIENTO_SUSPENDIDO', // BL-413 (con motivo, pedidos abiertos y sesiones cerradas)
@@ -46,9 +47,12 @@ export enum AuditAction {
   MESA_PEDIDOS_CANCELADOS = 'MESA_PEDIDOS_CANCELADOS', // BL-205 (al cerrar la mesa se cancelan los pedidos sin pagar, HU-017)
   MESA_LIMPIEZA_PRUEBAS = 'MESA_LIMPIEZA_PRUEBAS', // BL-479 (BL-285: limpieza de datos de prueba; mesas reabiertas, liberadas y eliminadas y zonas «Zona E2E» quitadas)
   PAGO_EFECTIVO_REGISTRADO = 'PAGO_EFECTIVO_REGISTRADO', // BL-201 (HU-031: cobro en efectivo, con monto recibido y vuelto)
+  PEDIDO_LINK_PAGO_GENERADO = 'PEDIDO_LINK_PAGO_GENERADO', // BL-203 (HU-033: link de pago de un pedido pendiente, con el vencimiento y si reemplazó a otro; nunca el link)
   PAGO_POS_REGISTRADO = 'PAGO_POS_REGISTRADO', // BL-80 (HU-007b: cobro con el POS del local, con total, tipo de tarjeta y n.° de autorización; nunca datos de la tarjeta)
+  PEDIDO_PENDIENTE_CANCELADO = 'PEDIDO_PENDIENTE_CANCELADO', // BL-501 (pedido sin pagar cancelado por el mozo o el administrador antes de cobrarlo: nunca pasó a cocina ni se cobró; con el total y la mesa)
   PEDIDO_CANCELADO = 'PEDIDO_CANCELADO', // BL-104 (HU-024: pedido pagado cancelado por el personal, con motivo, monto devuelto y medio; reembolso automático o devolución manual)
   PEDIDO_RECEPTOR_ANONIMIZADO = 'PEDIDO_RECEPTOR_ANONIMIZADO', // BL-453 (HU-009: RUT y razón social de la e-Factura anonimizados; con la cantidad de pedidos, nunca el RUT)
+  PEDIDO_RETIRO_ANONIMIZADO = 'PEDIDO_RETIRO_ANONIMIZADO', // BL-210 (HU-040: nombre y contacto de pedidos para retirar anonimizados; con la cantidad de pedidos, nunca el contacto)
   PAGO_CFE_REINTENTADO = 'PAGO_CFE_REINTENTADO', // BL-96 (HU-023: el administrador reintentó la emisión del CFE de un pago, con el resultado)
   PEDIDO_LIMPIEZA_PRUEBAS = 'PEDIDO_LIMPIEZA_PRUEBAS', // BL-475 (BL-285: limpieza de datos de prueba, solo con E2E_CLEANUP_ENABLED; con cuántos pedidos se cancelaron y entregaron y sus ids)
 }

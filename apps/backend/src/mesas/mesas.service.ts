@@ -452,6 +452,8 @@ export class MesasService {
     mesaId: string,
     usuarioKeycloakId: string,
   ) {
+    // BL-518: la sesión que se cierra, para avisarles a sus comensales.
+    let sesionCerrada: string | null = null;
     const resultado = await this.tenantPrisma.runInTenantContext(
       tenantId,
       async (tx) => {
@@ -459,7 +461,19 @@ export class MesasService {
         if (!actual.sesionId) {
           throw new ConflictException('La mesa no está abierta');
         }
-        if (actual.estado === MesaEstado.EN_PROCESO_DE_PAGO) {
+        sesionCerrada = actual.sesionId;
+        // HU-017 (BL-509): además del estado de la mesa, se miran los pagos.
+        // Cerrar cancela los pedidos sin pagar: con un cobro todavía
+        // PENDIENTE se cancelaría un pedido que se está cobrando (aunque la
+        // mesa no esté EN_PROCESO_DE_PAGO, por ejemplo por datos anteriores a
+        // BL-509).
+        const pagosEnCurso =
+          actual.estado === MesaEstado.EN_PROCESO_DE_PAGO
+            ? 1
+            : await tx.pago.count({
+                where: { estado: 'PENDIENTE', pedido: { mesaId } },
+              });
+        if (pagosEnCurso > 0) {
           throw new ConflictException(
             'Hay un pago en curso en esta mesa: esperá a que termine',
           );
@@ -524,6 +538,8 @@ export class MesasService {
     // BL-448: con la mesa cerrada no queda nada que atender (los pedidos sin
     // pagar se cancelaron): se saca su aviso de todos los KDS.
     this.kdsGateway.emitirLlamadoResuelto(tenantId, resultado.mesa.id);
+    // BL-518: la pantalla del comensal se entera sin recargar.
+    if (sesionCerrada) this.kdsGateway.emitirSesionCerrada(sesionCerrada);
     return resultado;
   }
 

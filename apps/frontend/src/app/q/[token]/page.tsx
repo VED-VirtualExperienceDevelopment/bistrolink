@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import AvisoMesaQr from '@/components/AvisoMesaQr';
 import MenuMesaCliente from '@/components/MenuMesaCliente';
 import type { CategoriaMenu } from '@/components/MenuDigital';
+import type { MarcaPublica } from '@/types/menu';
 import {
   CODIGO_MESA_CERRADA,
   codigoDeError,
@@ -21,6 +22,8 @@ interface MenuQrResponse {
   mesa: { numero: number };
   /** HU-017 (BL-60): sesión abierta de la mesa. */
   sesionMesa: string;
+  /** HU-043 (BL-534): logo y plantilla. Una API anterior no la manda. */
+  marca?: MarcaPublica;
 }
 
 type ResultadoMenuQr =
@@ -146,6 +149,7 @@ export default async function MenuQrPage({ params }: PageProps) {
       qrToken={token}
       sesionMesa={menu.sesionMesa}
       numeroMesa={menu.mesa.numero}
+      marca={menu.marca}
     />
   );
 }

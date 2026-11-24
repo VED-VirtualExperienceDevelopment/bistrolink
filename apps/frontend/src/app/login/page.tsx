@@ -1,21 +1,15 @@
-'use client';
+"use client";
 
-import { Suspense, useEffect } from 'react';
-import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { useKeycloakAuth } from '@/components/providers/KeycloakProvider';
-import { getKeycloak } from '@/lib/keycloak';
-
-// Antes hardcodeaba '/admin/usuarios' (ADMIN-only) — un MOZO/COCINA que
-// logueaba sin ?redirect= (ej. entrando directo a la URL del sitio) caía
-// ahí, ese layout lo rebotaba por no tener el rol, y terminaba en el
-// placeholder de Next.js. Ahora apunta a '/', que decide el destino según
-// el rol del usuario (ver page.tsx) en vez de asumir ADMIN.
-const DEFAULT_REDIRECT = '/';
+import { Suspense, useEffect } from "react";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useKeycloakAuth } from "@/components/providers/KeycloakProvider";
+import { getKeycloak } from "@/lib/keycloak";
+import { destinoDespuesDelLogin } from "./destino-login";
 
 /** Anillo de foco visible, igual que en el tema de Keycloak. */
 const FOCO =
-  'focus-visible:outline focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-primary-container';
+  "focus-visible:outline focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-primary-container";
 
 /**
  * BL-348: beneficios del panel de marca. Mismos textos e íconos que el tema
@@ -25,19 +19,19 @@ const FOCO =
  */
 const BENEFICIOS = [
   {
-    texto: 'Los pedidos de cada mesa llegan al instante a la cocina.',
+    texto: "Los pedidos de cada mesa llegan al instante a la cocina.",
     icono:
-      'M2 17h20v2H2zm11.84-9.21c.1-.24.16-.51.16-.79 0-1.1-.9-2-2-2s-2 .9-2 2c0 .28.06.55.16.79C6.25 8.6 3.27 11.93 3 16h18c-.27-4.07-3.25-7.4-7.16-8.21z',
+      "M2 17h20v2H2zm11.84-9.21c.1-.24.16-.51.16-.79 0-1.1-.9-2-2-2s-2 .9-2 2c0 .28.06.55.16.79C6.25 8.6 3.27 11.93 3 16h18c-.27-4.07-3.25-7.4-7.16-8.21z",
   },
   {
-    texto: 'El mapa del salón muestra el estado de cada mesa.',
+    texto: "El mapa del salón muestra el estado de cada mesa.",
     icono:
-      'M3 3v8h8V3H3zm6 6H5V5h4v4zm-6 4v8h8v-8H3zm6 6H5v-4h4v4zm4-16v8h8V3h-8zm6 6h-4V5h4v4zm-6 4v8h8v-8h-8zm6 6h-4v-4h4v4z',
+      "M3 3v8h8V3H3zm6 6H5V5h4v4zm-6 4v8h8v-8H3zm6 6H5v-4h4v4zm4-16v8h8V3h-8zm6 6h-4V5h4v4zm-6 4v8h8v-8h-8zm6 6h-4v-4h4v4z",
   },
   {
-    texto: 'Los comensales pagan desde la mesa, sin esperar la cuenta.',
+    texto: "Los comensales pagan desde la mesa, sin esperar la cuenta.",
     icono:
-      'M20 4H4c-1.11 0-1.99.89-1.99 2L2 18c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z',
+      "M20 4H4c-1.11 0-1.99.89-1.99 2L2 18c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z",
   },
 ];
 
@@ -124,7 +118,8 @@ function LoginRedirect() {
   const { initializing, authenticated } = useKeycloakAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirectTarget = searchParams.get('redirect') || DEFAULT_REDIRECT;
+  // BL-598: solo rutas internas de la aplicación (ver destino-login.ts).
+  const redirectTarget = destinoDespuesDelLogin(searchParams.get("redirect"));
 
   useEffect(() => {
     if (initializing || !authenticated) return;
@@ -143,7 +138,7 @@ function LoginRedirect() {
   if (initializing || authenticated) {
     return (
       <main className="flex h-screen items-center justify-center bg-background px-4">
-              {/* <output> ya tiene el rol «status»: el lector de pantalla anuncia
+        {/* <output> ya tiene el rol «status»: el lector de pantalla anuncia
             «Cargando…» sin necesidad de role="status" (regla de Sonar). */}
         <output className="block h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent">
           <span className="sr-only">Cargando…</span>

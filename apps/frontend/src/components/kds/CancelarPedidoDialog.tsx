@@ -5,6 +5,7 @@ import { Dialog } from "@/components/ui/Dialog";
 import { apiFetch, ApiError } from "@/lib/api-client";
 import { formatearPrecio } from "@/components/pago/pago.utils";
 import type { Pedido } from "@/types/pedido";
+import { lugarDelPedido } from "@/components/retiro/retiro.utils";
 import {
   cuerpoDeCancelacion,
   errorDelFormulario,
@@ -114,7 +115,7 @@ export function CancelarPedidoDialog({
     <Dialog
       open={Boolean(pedido)}
       onClose={onClose}
-      title={`Cancelar el pedido de la mesa ${pedido.mesaNumero}`}
+      title={`Cancelar el pedido (${lugarDelPedido(pedido)})`}
     >
       <form
         className="space-y-4"

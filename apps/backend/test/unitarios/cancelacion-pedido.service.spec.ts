@@ -354,6 +354,29 @@ describe('CancelacionPedidoService (HU-024, BL-104)', () => {
       ]);
     });
 
+    it('HU-011 (BL-488): encola la anulación en el POS dentro de la transacción y la manda después', async () => {
+      const pos = {
+        encolarAnulacionEnTx: jest.fn().mockResolvedValue(true),
+        enviarEnSegundoPlano: jest.fn(),
+      };
+      const conPos = new CancelacionPedidoService(
+        tenantPrisma as any,
+        pedidos as any,
+        cfe as any,
+        auditLog as any,
+        mercadoPago as any,
+        pos as any,
+      );
+
+      await conPos.cancelar(TENANT, ACTOR, PEDIDO, {
+        motivo: 'RECLAMO_CLIENTE',
+        devolucionManualConfirmada: true,
+      } as CancelarPedidoDto);
+
+      expect(pos.encolarAnulacionEnTx).toHaveBeenCalledWith(tx, TENANT, PEDIDO);
+      expect(pos.enviarEnSegundoPlano).toHaveBeenCalledWith(TENANT, PEDIDO);
+    });
+
     it('sin la confirmación de la devolución: 400 y no cambia nada', async () => {
       await expect(cancelar()).rejects.toBeInstanceOf(BadRequestException);
       expect(tx.pedido.updateMany).not.toHaveBeenCalled();

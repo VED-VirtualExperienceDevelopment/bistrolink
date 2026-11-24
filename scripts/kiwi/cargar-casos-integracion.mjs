@@ -46,9 +46,30 @@
  *   node scripts/kiwi/cargar-casos-integracion.mjs --contrato --descripciones
  *   node scripts/kiwi/cargar-casos-integracion.mjs --contrato --aplicar --descripciones
  *
+ * BL-607: con --performance, lo mismo con los casos de performance (TC-P),
+ * contra el Test Plan «Performance-k6-Lighthouse» y con
+ * descripciones-performance.md. Los títulos salen de
+ * .github/workflows/performance.yml: k6 y Lighthouse no tienen un test() con
+ * título, y ese workflow arma el JUnit con el Summary exacto de cada caso
+ * (TC-P-001 a 003) y lee el de Playwright (TC-P-004):
+ *
+ *   node scripts/kiwi/cargar-casos-integracion.mjs --performance --descripciones
+ *   node scripts/kiwi/cargar-casos-integracion.mjs --performance --aplicar --descripciones
+ *
  * En todos los modos, con --aplicar también pasa a CONFIRMED los casos del
  * código que en Kiwi siguen en otro estado (PROPOSED): se corre después de
  * una corrida en verde.
+ *
+ * Duplicados y renumerados: si en el plan hay más de un caso para el mismo
+ * número (el plugin de JUnit crea uno nuevo cuando no encuentra el título
+ * exacto), queda el de título exacto más completo. Los demás, y los de
+ * números que ya no existen en el código, se listan y, con --aplicar, se
+ * sacan del plan, pasan a DISABLED y su título empieza con «[RETIRADO]»,
+ * para que el plugin no les vuelva a registrar resultados.
+ *
+ * Campos vacíos: en los casos que quedan, completa la categoría, el
+ * requirement, el script, la descripción, los tags y el componente que
+ * falten, con los datos de la tabla. No pisa lo que ya está cargado.
  *
  * Se puede correr las veces que haga falta: lo que ya está igual no se toca.
  * Las credenciales salen de variables de entorno, nunca del repositorio.
@@ -62,8 +83,9 @@ const APLICAR = process.argv.includes("--aplicar");
 const DESCRIPCIONES = process.argv.includes("--descripciones");
 const E2E = process.argv.includes("--e2e");
 const CONTRATO = process.argv.includes("--contrato");
-if (E2E && CONTRATO) {
-  console.error("Usá --e2e o --contrato, no los dos.");
+const PERFORMANCE = process.argv.includes("--performance");
+if ([E2E, CONTRATO, PERFORMANCE].filter(Boolean).length > 1) {
+  console.error("Usá solo uno de --e2e, --contrato o --performance.");
   process.exit(1);
 }
 
@@ -85,33 +107,59 @@ const CONFIG_CONTRATO = {
   comando: (_archivo, titulo) =>
     `npm run test:pact --workspace=backend -- -t '${comoRegex(sinPrefijo(titulo))}'`,
 };
-const TIPO = CONTRATO
-  ? CONFIG_CONTRATO
-  : E2E
-    ? {
-        prefijo: "TC-E",
-        directorio: "e2e",
-        // Recursivo: los specs van por carpeta de dominio (e2e/comensal/...).
-        // support/ no tiene specs.
-        esSpec: (archivo) => archivo.endsWith(".spec.ts"),
-        plan: "E2E-Playwright",
-        descripciones: "descripciones-e2e.md",
-        // Mismo formato que TC-E-001 a 016: el comando que corre solo ese
-        // test, con la ruta sin la línea (cambia con cualquier edición) y -g
-        // con el título sin el prefijo (es una expresión regular: se escapan
-        // los signos).
-        comando: (archivo, titulo) =>
-          `npx playwright test e2e/${archivo.replace(/:\d+$/, "")} -g '${comoRegex(sinPrefijo(titulo))}'`,
-      }
-    : {
-        prefijo: "TC-I",
-        directorio: "apps/backend/test/integration",
-        esSpec: (archivo) =>
-          archivo.endsWith(".e2e-spec.ts") && !archivo.includes("/"),
-        plan: "Integration tests",
-        descripciones: "descripciones-integracion.md",
-        comando: (archivo) => archivo,
-      };
+// BL-607: comando que corre cada caso de performance por separado. El título
+// está en performance.yml, pero lo que se ejecuta es el script de k6, Lighthouse
+// CI o el proyecto «performance» de Playwright (contra staging, con BASE_URL o
+// API_URL apuntando a staging, como en el workflow).
+const COMANDOS_PERFORMANCE = {
+  1: "k6 run k6/load-test.js",
+  2: "k6 run k6/pedidos-carga.js",
+  3: "npx @lhci/cli@0.14.x autorun",
+  4: "npx playwright test --project=performance",
+};
+const CONFIG_PERFORMANCE = {
+  prefijo: "TC-P",
+  directorio: ".github/workflows",
+  esSpec: (archivo) => archivo === "performance.yml",
+  plan: "Performance-k6-Lighthouse",
+  descripciones: "descripciones-performance.md",
+  comando: (archivo, titulo) => {
+    const numero = Number(/^\[TC-P-(\d{3})\]/.exec(titulo)?.[1]);
+    return (
+      COMANDOS_PERFORMANCE[numero] ??
+      `.github/workflows/${archivo.replace(/:\d+$/, "")}`
+    );
+  },
+};
+const TIPO = PERFORMANCE
+  ? CONFIG_PERFORMANCE
+  : CONTRATO
+    ? CONFIG_CONTRATO
+    : E2E
+      ? {
+          prefijo: "TC-E",
+          directorio: "e2e",
+          // Recursivo: los specs van por carpeta de dominio (e2e/comensal/...).
+          // support/ no tiene specs.
+          esSpec: (archivo) => archivo.endsWith(".spec.ts"),
+          plan: "E2E-Playwright",
+          descripciones: "descripciones-e2e.md",
+          // Mismo formato que TC-E-001 a 016: el comando que corre solo ese
+          // test, con la ruta sin la línea (cambia con cualquier edición) y -g
+          // con el título sin el prefijo (es una expresión regular: se escapan
+          // los signos).
+          comando: (archivo, titulo) =>
+            `npx playwright test e2e/${archivo.replace(/:\d+$/, "")} -g '${comoRegex(sinPrefijo(titulo))}'`,
+        }
+      : {
+          prefijo: "TC-I",
+          directorio: "apps/backend/test/integration",
+          esSpec: (archivo) =>
+            archivo.endsWith(".e2e-spec.ts") && !archivo.includes("/"),
+          plan: "Integration tests",
+          descripciones: "descripciones-integracion.md",
+          comando: (archivo) => archivo,
+        };
 const DIRECTORIO_TESTS = TIPO.directorio;
 const NOMBRE_PLAN = TIPO.plan;
 const ARCHIVO_DESCRIPCIONES = join(
@@ -179,12 +227,40 @@ const cancelacion = (extra = {}) => ({
   ...extra,
   tags: ["HU-024", "BL-104", "pagos", ...(extra.tags ?? [])],
 });
+// HU-011 (BL-488): ventas de BistroLink al POS del local.
+const sincronizacionPos = (extra = {}) => ({
+  component: "api",
+  requirement: "HU-011",
+  ...extra,
+  tags: ["HU-011", "BL-488", "BL-100", "pos", ...(extra.tags ?? [])],
+});
 // HU-031b (BL-442): el comensal de una mesa pide pagar en efectivo.
 const solicitudEfectivo = (extra = {}) => ({
   component: "api",
   requirement: "HU-031b",
   ...extra,
   tags: ["HU-031b", "BL-442", "pagos", ...(extra.tags ?? [])],
+});
+// HU-040 (BL-210): pedidos para retirar por el enlace web del local.
+const retiro = (extra = {}) => ({
+  component: "api",
+  requirement: "HU-040",
+  ...extra,
+  tags: ["HU-040", "BL-210", "pedidos", "retiro", ...(extra.tags ?? [])],
+});
+// HU-033 (BL-203): link de pago que genera el mozo.
+const linkPago = (extra = {}) => ({
+  component: "api",
+  requirement: "HU-033",
+  ...extra,
+  tags: ["HU-033", "BL-203", "pagos", "link-de-pago", ...(extra.tags ?? [])],
+});
+// HU-010 (BL-112): bot de pedidos para retirar por WhatsApp (Evolution API).
+const whatsapp = (extra = {}) => ({
+  component: "api",
+  requirement: "HU-010",
+  ...extra,
+  tags: ["HU-010", "BL-112", "whatsapp", "retiro", ...(extra.tags ?? [])],
 });
 // HU-039 (BL-209): pedido cargado por el mozo.
 const pedidoMozo = (extra = {}) => ({
@@ -207,8 +283,45 @@ const gestionCarta = (ticket, extra = {}) => ({
   ...extra,
   tags: ["HU-005", "BL-392", ticket, ...(extra.tags ?? [])],
 });
+// HU-044 (BL-537): «Sugerencia del local», en gestion-carta.e2e-spec.ts.
+const sugerenciaLocal = (extra = {}) => ({
+  component: "api",
+  requirement: "HU-044",
+  ...extra,
+  tags: ["HU-044", "BL-537", "carta", ...(extra.tags ?? [])],
+});
+// HU-045 (BL-543): insignia «Más pedido», en mas-pedido.e2e-spec.ts.
+const masPedido = (extra = {}) => ({
+  component: "api",
+  requirement: "HU-045",
+  ...extra,
+  tags: ["HU-045", "BL-543", "BL-547", "menu-publico", ...(extra.tags ?? [])],
+});
+// HU-046 (BL-544): complementos antes de pagar. Platos sugeribles en
+// gestion-carta.e2e-spec.ts (BL-551); reglas y endpoint en
+// complementos.e2e-spec.ts (BL-552).
+const complementos = (ticket, extra = {}) => ({
+  component: "api",
+  requirement: "HU-046",
+  ...extra,
+  tags: ["HU-046", "BL-544", ticket, ...(extra.tags ?? [])],
+});
 // HU-020 (BL-72): configuración del establecimiento, en
 // configuracion-establecimiento.e2e-spec.ts.
+// HU-052 (BL-576): token de invitado del comensal, firmado por la API.
+const tokenInvitado = (extra = {}) => ({
+  component: "api",
+  requirement: "HU-052",
+  ...extra,
+  tags: [
+    "HU-052",
+    "BL-576",
+    "BL-578",
+    "seguridad",
+    "autenticacion",
+    ...(extra.tags ?? []),
+  ],
+});
 // BL-448: avisos de efectivo que no se pierden en el KDS (HU-031b).
 const avisoEfectivo = (extra = {}) => ({
   component: "api",
@@ -775,6 +888,371 @@ const DATOS_INTEGRACION = {
     priority: "P1",
     tags: ["seguridad"],
   }),
+  183: sincronizacionPos({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["outbox", "multi-tenant", "RD.07"],
+  }),
+  184: sincronizacionPos({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["resiliencia", "reintentos"],
+  }),
+  185: sincronizacionPos({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["HU-024", "cancelacion"],
+  }),
+  186: sincronizacionPos({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["seguridad", "auditoria"],
+  }),
+  // HU-011 (BL-489): ventas hechas en el POS, traídas al dashboard.
+  187: sincronizacionPos({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-489", "HU-012", "dashboard", "multi-tenant"],
+  }),
+  188: sincronizacionPos({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-489", "resiliencia"],
+  }),
+  189: sincronizacionPos({
+    category: "Seguridad",
+    priority: "P2",
+    tags: ["BL-489", "seguridad"],
+  }),
+  // BL-501 (bug): cancelar un pedido que todavía no se cobró.
+  190: pedidoMozo({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-501", "bug", "cancelacion", "auditoria"],
+  }),
+  191: pedidoMozo({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["BL-501", "bug", "seguridad"],
+  }),
+  // HU-038 (BL-506): umbrales de espera del KDS configurables por local, en
+  // configuracion-establecimiento.e2e-spec.ts.
+  192: configuracionEstablecimiento({
+    category: "Funcional",
+    priority: "P2",
+    requirement: "HU-038",
+    tags: ["HU-038", "BL-506", "kds", "auditoria"],
+  }),
+  193: configuracionEstablecimiento({
+    category: "Funcional",
+    priority: "P2",
+    requirement: "HU-038",
+    tags: ["HU-038", "BL-506", "kds", "validacion"],
+  }),
+  // HU-022 (BL-496): propinas del reporte de ventas, en
+  // reportes.e2e-spec.ts.
+  194: {
+    component: "api",
+    requirement: "HU-022",
+    category: "Funcional",
+    priority: "P1",
+    tags: ["HU-022", "BL-496", "reportes", "propina"],
+  },
+  // HU-017 (bug BL-509): estado de la mesa con varios cobros, en
+  // sesion-mesa.e2e-spec.ts.
+  195: sesionMesa({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-509", "bug", "pagos", "integridad-datos"],
+  }),
+  196: sesionMesa({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-509", "bug", "pagos", "integridad-datos"],
+  }),
+  197: sesionMesa({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-509", "bug", "pagos"],
+  }),
+  198: sesionMesa({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-509", "bug", "pagos", "concurrencia"],
+  }),
+  // HU-040 (BL-210): pedidos para retirar.
+  199: retiro({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["kds", "privacidad", "multi-tenant"],
+  }),
+  200: retiro({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["configuracion", "horario"],
+  }),
+  201: retiro({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["privacidad", "ley-18331", "auditoria"],
+  }),
+  202: retiro({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["kds", "seguridad", "RD.06"],
+  }),
+  // BL-502: «Mis pedidos» en la mesa y acceso solo en la sesión abierta.
+  203: sesionMesa({
+    requirement: "HU-006",
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-502", "bug", "mis-pedidos", "RD.05"],
+  }),
+  204: sesionMesa({
+    requirement: "HU-006",
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["BL-502", "bug", "mis-pedidos", "RD.05"],
+  }),
+  205: sesionMesa({
+    requirement: "HU-006",
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["BL-502", "bug", "RD.05"],
+  }),
+  // BL-518: aviso al comensal cuando el mozo cierra la mesa.
+  206: sesionMesa({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-518", "bug", "websocket"],
+  }),
+  207: sesionMesa({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["BL-518", "bug", "websocket", "RD.05"],
+  }),
+  // BL-472 (HU-042): cola del KDS sugerida en el alta de un establecimiento,
+  // en plataforma.e2e-spec.ts.
+  208: {
+    component: "plataforma",
+    requirement: "HU-042",
+    category: "Funcional",
+    priority: "P3",
+    tags: ["HU-042", "BL-472", "plataforma", "kds", "cola"],
+  },
+  209: {
+    component: "plataforma",
+    requirement: "HU-042",
+    category: "Funcional",
+    priority: "P3",
+    tags: ["HU-042", "BL-472", "plataforma", "kds", "cola", "validacion"],
+  },
+  // HU-043 (BL-531): plantilla de marca del local, en
+  // configuracion-establecimiento.e2e-spec.ts.
+  217: configuracionEstablecimiento({
+    category: "Funcional",
+    priority: "P3",
+    requirement: "HU-043",
+    tags: ["HU-043", "BL-531", "marca", "auditoria", "validacion"],
+  }),
+  // HU-043 (BL-532): el logo tiene que ser un logo publicado del tenant.
+  218: configuracionEstablecimiento({
+    category: "Seguridad",
+    priority: "P2",
+    requirement: "HU-043",
+    tags: ["HU-043", "BL-532", "marca", "imagenes", "validacion"],
+  }),
+  // HU-043 (BL-561): nombre y dirección del local desde Configuración.
+  219: configuracionEstablecimiento({
+    category: "Funcional",
+    priority: "P2",
+    requirement: "HU-043",
+    tags: ["HU-043", "BL-561", "marca", "auditoria", "menu"],
+  }),
+  // HU-043 (BL-562): la portada tiene que ser una portada publicada del tenant.
+  220: configuracionEstablecimiento({
+    category: "Seguridad",
+    priority: "P2",
+    requirement: "HU-043",
+    tags: ["HU-043", "BL-562", "marca", "imagenes", "validacion"],
+  }),
+  // HU-033 (BL-203): pago por link.
+  210: linkPago({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["mercadopago", "webhook"],
+  }),
+  211: linkPago({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["seguridad", "vencimiento"],
+  }),
+  212: linkPago({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["seguridad", "vencimiento", "HU-032"],
+  }),
+  213: linkPago({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["seguridad", "auditoria", "RD.05"],
+  }),
+  214: linkPago({
+    category: "Seguridad",
+    priority: "P2",
+    tags: ["seguridad", "roles"],
+  }),
+  215: linkPago({
+    category: "Funcional",
+    priority: "P2",
+    tags: ["concurrencia", "varios-colaboradores"],
+  }),
+  216: linkPago({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["seguridad", "privacidad", "rate-limiting", "Ley-18331"],
+  }),
+  // HU-044 (BL-537): «Sugerencia del local».
+  221: sugerenciaLocal({
+    category: "Funcional",
+    priority: "P2",
+    tags: ["auditoria", "menu-publico"],
+  }),
+  222: sugerenciaLocal({
+    category: "Seguridad",
+    priority: "P2",
+    tags: ["seguridad", "roles"],
+  }),
+  // HU-045 (BL-543): insignia «Más pedido».
+  223: masPedido({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["ranking", "resumen-platos", "RLS"],
+  }),
+  224: masPedido({
+    category: "Funcional",
+    priority: "P2",
+    tags: ["validacion"],
+  }),
+  // HU-046 (BL-544): complementos antes de pagar.
+  225: complementos("BL-551", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["carta", "auditoria", "validacion"],
+  }),
+  226: complementos("BL-551", {
+    category: "Seguridad",
+    priority: "P2",
+    tags: ["seguridad", "roles"],
+  }),
+  227: complementos("BL-552", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["reglas-de-asociacion", "job", "RLS"],
+  }),
+  228: complementos("BL-552", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["menu-publico", "privacidad", "rate-limiting"],
+  }),
+  229: complementos("BL-554", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["reportes", "privacidad", "RLS"],
+  }),
+  // HU-051 (BL-563): sello de pago seguro, en tarjetas-aceptadas.e2e-spec.ts.
+  233: {
+    component: "api",
+    requirement: "HU-051",
+    category: "Funcional",
+    priority: "P3",
+    tags: ["HU-051", "BL-563", "pago", "mercado-pago", "cache"],
+  },
+  // HU-050 (BL-558): valoración privada del pedido, en valoraciones.e2e-spec.ts.
+  234: {
+    component: "api",
+    requirement: "HU-050",
+    category: "Funcional",
+    priority: "P3",
+    tags: ["HU-050", "BL-558", "valoracion", "privacidad", "RLS"],
+  },
+  // HU-052 (BL-578): token de invitado del comensal, en
+  // token-invitado.e2e-spec.ts.
+  235: tokenInvitado({ category: "Seguridad", priority: "P1" }),
+  236: tokenInvitado({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["roles"],
+  }),
+  237: tokenInvitado({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["jwt", "validacion"],
+  }),
+  // HU-052 (BL-579): /auth/comensal con el emisor api, en
+  // auth-comensal-api.e2e-spec.ts.
+  238: tokenInvitado({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["BL-579", "emision"],
+  }),
+  // HU-052 (BL-580): el token de invitado atado a su canal, en
+  // token-invitado-canal.e2e-spec.ts.
+  239: tokenInvitado({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["BL-580", "canal", "mesa"],
+  }),
+  240: tokenInvitado({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["BL-580", "canal", "mesa", "revocacion"],
+  }),
+  241: tokenInvitado({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["BL-580", "canal", "link-pago"],
+  }),
+  242: tokenInvitado({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["BL-580", "canal", "retiro"],
+  }),
+  // BL-371: desbloquear una cuenta bloqueada por intentos fallidos, en
+  // usuarios.e2e-spec.ts.
+  243: usuarios("BL-371", {
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["seguridad", "fuerza-bruta"],
+  }),
+  244: usuarios("BL-371", {
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["seguridad", "multi-tenant"],
+  }),
+  // HU-010 (BL-112): bot de WhatsApp, en whatsapp.e2e-spec.ts.
+  245: whatsapp({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["pedidos", "link-de-pago", "idempotencia"],
+  }),
+  246: whatsapp({
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["multi-tenant", "rls", "webhook"],
+  }),
+  // BL-604: avisos por WhatsApp de pago aprobado y pedido listo.
+  247: whatsapp({
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-604", "avisos", "codigo-de-retiro"],
+  }),
+  // BL-613: número del bot en Configuración y enlace del menú para retirar.
+  248: whatsapp({
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-613", "configuracion", "auditoria", "menu-publico"],
+  }),
 };
 /**
  * BL-435: datos de los E2E TC-E-017 en adelante, con los criterios de
@@ -1076,6 +1554,18 @@ const DATOS_E2E = {
     priority: "P2",
     tags: ["BL-96", "cfe", ...axe],
   }),
+  // HU-019 (BL-441): alertas del mozo en la campana y en la pantalla
+  // Alertas. Antes eran TC-E-069 y 070 (BL-512 los renumeró).
+  73: e2e("admin", "HU-019", {
+    category: "Accesibilidad",
+    priority: "P1",
+    tags: ["BL-441", "alertas", ...axe],
+  }),
+  74: e2e("admin", "HU-019", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-441", "alertas"],
+  }),
   // BL-473: pantalla de Configuración responsive y accesible.
   75: e2e("admin", "HU-020", {
     category: "Accesibilidad",
@@ -1121,6 +1611,282 @@ const DATOS_E2E = {
     category: "Funcional",
     priority: "P2",
     tags: ["BL-485", "BL-209", "pagos", "pos", ...axe],
+  }),
+  // HU-011 (BL-488): ventas al POS del local desde /admin/pos.
+  83: e2e("admin", "HU-011", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-488", "BL-100", "pos", ...axe],
+  }),
+  // BL-500 (bug): el panel del administrador no se desplaza entero.
+  84: e2e("admin", "HU-012", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-500", "bug", "regresion"],
+  }),
+  // BL-501 (bug): el mozo cancela un pedido antes de cobrarlo.
+  85: e2e("mozo", "HU-039", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-501", "BL-209", "bug", "cancelacion", ...axe],
+  }),
+  86: e2e("mozo", "HU-039", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-501", "BL-201", "bug", "cancelacion"],
+  }),
+  // HU-038 (BL-505): tiempo de espera e indicador de conexión del KDS, en
+  // kds/espera-conexion-kds.spec.ts.
+  87: e2e("kds", "HU-038", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-208", "BL-503", "kds", "tiempo-espera"],
+  }),
+  88: e2e("kds", "HU-038", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-208", "BL-504", "kds", "conexion", "tiempo-real"],
+  }),
+  89: e2e("kds", "HU-038", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-208", "BL-504", "kds", "conexion"],
+  }),
+  90: e2e("kds", "HU-038", {
+    category: "Accesibilidad",
+    priority: "P2",
+    tags: ["BL-208", "BL-503", "BL-504", "kds", ...axe],
+  }),
+  // HU-038 (BL-510): monitor de Cocina, en kds/monitor-cocina.spec.ts.
+  91: e2e("kds", "HU-038", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-208", "BL-510", "kds", "monitor", "tiempo-real"],
+  }),
+  92: e2e("kds", "HU-038", {
+    category: "Accesibilidad",
+    priority: "P2",
+    tags: ["BL-208", "BL-510", "kds", "monitor", ...axe],
+  }),
+  // HU-022 (BL-496): propina en el pago, en los cobros del mozo y en los
+  // reportes, en admin/propina.spec.ts.
+  93: e2e("mozo", "HU-022", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-496", "BL-495", "pagos", "propina", "efectivo"],
+  }),
+  94: e2e("mozo", "HU-022", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-496", "BL-495", "pagos", "propina", "pos"],
+  }),
+  95: e2e("admin", "HU-022", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-496", "reportes", "propina"],
+  }),
+  96: e2e("comensal", "HU-022", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-496", "BL-495", "pagos", "propina", "tarjeta"],
+  }),
+  97: e2e("comensal", "HU-022", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-496", "BL-495", "propina"],
+  }),
+  // HU-040 (BL-210): pedido para retirar con código.
+  98: e2e("comensal", "HU-040", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-210", "kds", "websocket"],
+  }),
+  99: e2e("kds", "HU-040", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-210", "efectivo", ...axe],
+  }),
+  // BL-470: «Ir a cobrar» desde el aviso de efectivo de las alertas, en
+  // admin/ir-a-cobrar.spec.ts. TC-E-098 y 099 ya son de HU-040.
+  100: e2e("mozo", "HU-031b", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-470", "BL-441", "alertas", "pagos", "efectivo", ...axe],
+  }),
+  101: e2e("mozo", "HU-031b", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-470", "alertas", "pagos"],
+  }),
+  // BL-502: «Mis pedidos» en la mesa y «Gracias por tu compra».
+  102: e2e("comensal", "HU-006", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-502", "bug", "mis-pedidos", "websocket", ...axe],
+  }),
+  103: e2e("comensal", "HU-006", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-502", "bug", "gracias", ...axe],
+  }),
+  // BL-518: la carta se entera de que el mozo cerró la mesa.
+  104: e2e("comensal", "HU-017", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-518", "bug", "websocket", ...axe],
+  }),
+  // BL-519: en el celular el carrito es una barra y el detalle, una hoja.
+  105: e2e("comensal", "HU-003", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-519", "bug", "carrito", "responsive"],
+  }),
+  106: e2e("comensal", "HU-003", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-519", "bug", "carrito", "responsive", ...axe],
+  }),
+  107: e2e("comensal", "HU-003", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-519", "bug", "carrito", "responsive"],
+  }),
+  // BL-520: pantalla de Inicio del administrador y del mozo.
+  108: e2e("admin", "HU-012", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-520", "inicio", ...axe],
+  }),
+  109: e2e("mozo", "HU-028", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-520", "inicio", "roles", ...axe],
+  }),
+  110: e2e("mozo", "HU-028", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-520", "inicio", "resiliencia"],
+  }),
+  111: e2e("mozo", "HU-028", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-520", "inicio", "responsive"],
+  }),
+  // HU-033 (BL-203): pago por link, en admin/link-pago.spec.ts.
+  112: e2e("mozo", "HU-033", {
+    category: "Funcional",
+    priority: "P1",
+    tags: ["BL-203", "link-de-pago", "responsive", ...axe],
+  }),
+  113: e2e("mozo", "HU-033", {
+    category: "Seguridad",
+    priority: "P2",
+    tags: ["BL-203", "link-de-pago"],
+  }),
+  // BL-602: el link de pago en una PC (dos columnas a todo el ancho).
+  130: e2e("comensal", "HU-033", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-602", "link-de-pago", "responsive", ...axe],
+  }),
+  // HU-010 (BL-613): «¿Preferís pedir por WhatsApp?» en el menú para
+  // retirar, en comensal/pedir-por-whatsapp.spec.ts.
+  131: e2e("comensal", "HU-010", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-613", "whatsapp", "retiro", "configuracion", ...axe],
+  }),
+  // HU-043 (BL-535): marca propia del local, en admin/marca.spec.ts
+  // (114 y 115) y admin/configuracion-pantalla.spec.ts (116).
+  114: e2e("admin", "HU-043", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-533", "BL-534", "marca", "teclado", "imagenes"],
+  }),
+  115: e2e("admin", "HU-043", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-561", "BL-562", "marca", "imagenes"],
+  }),
+  116: e2e("admin", "HU-043", {
+    category: "Accesibilidad",
+    priority: "P2",
+    tags: ["BL-533", "marca", "responsive", ...axe],
+  }),
+  // HU-044 (BL-537): «Sugerencia del local», en admin/gestion-carta.spec.ts.
+  117: e2e("carta", "HU-044", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-537", "roles", "responsive", ...axe],
+  }),
+  // HU-045 (BL-543): insignia «Más pedido», en comensal/mas-pedido.spec.ts.
+  118: e2e("comensal", "HU-045", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-549", "pago", "responsive", ...axe],
+  }),
+  // BL-378: revisar el pedido antes de confirmar, en
+  // comensal/revisar-pedido.spec.ts.
+  119: e2e("comensal", "HU-003", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-378", "carrito", "pago", "responsive", ...axe],
+  }),
+  120: e2e("comensal", "HU-003", {
+    category: "Funcional",
+    priority: "P3",
+    tags: ["BL-378", "carrito", "responsive"],
+  }),
+  121: e2e("comensal", "HU-003", {
+    category: "Funcional",
+    priority: "P3",
+    tags: ["BL-378", "carrito", ...axe],
+  }),
+  // HU-046 (BL-544): complementos antes de pagar.
+  122: e2e("admin", "HU-046", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-551", "carta", "validacion", ...axe],
+  }),
+  123: e2e("comensal", "HU-046", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-553", "carrito", "responsive", ...axe],
+  }),
+  124: e2e("comensal", "HU-046", {
+    category: "Funcional",
+    priority: "P3",
+    tags: ["BL-553", "carrito", ...axe],
+  }),
+  // BL-570: la carta abierta se entera de un plato agotado al volver a la
+  // pestaña.
+  125: e2e("comensal", "HU-001", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-570", "stock", "tiempo-real"],
+  }),
+  // HU-051 (BL-563): sello de pago seguro.
+  126: e2e("comensal", "HU-051", {
+    category: "Funcional",
+    priority: "P3",
+    tags: ["BL-563", "pago", "responsive", ...axe],
+  }),
+  // HU-050 (BL-558): valoración privada del pedido.
+  127: e2e("comensal", "HU-050", {
+    category: "Funcional",
+    priority: "P3",
+    tags: ["BL-558", "valoracion", "privacidad", "teclado"],
+  }),
+  // BL-592: «Llamar al mozo» en la barra superior del menú.
+  128: e2e("comensal", "HU-019", {
+    category: "Accesibilidad",
+    priority: "P2",
+    tags: ["BL-592", "responsive", "llamado-mozo"],
+  }),
+  129: e2e("comensal", "HU-019", {
+    category: "Funcional",
+    priority: "P2",
+    tags: ["BL-592", "llamado-mozo"],
   }),
 };
 /**
@@ -1191,8 +1957,48 @@ const DATOS_CONTRATO = {
   // HU-024 (BL-104): nota de crédito en Surtec y reembolso en Mercado Pago.
   21: contrato("HU-024", "surtec", { priority: "P1", tags: ["BL-104"] }),
   22: contrato("HU-024", "mercadopago", { priority: "P1", tags: ["BL-104"] }),
+  // HU-011 (BL-488): API de POS (venta, duplicado, no disponible, anulación).
+  23: contrato("HU-011", "pos", { priority: "P1", tags: ["BL-488"] }),
+  24: contrato("HU-011", "pos", {
+    priority: "P1",
+    tags: ["BL-488", "idempotencia"],
+  }),
+  25: contrato("HU-011", "pos", {
+    priority: "P2",
+    tags: ["BL-488", "resiliencia"],
+  }),
+  26: contrato("HU-011", "pos", { priority: "P1", tags: ["BL-488"] }),
+  // HU-011 (BL-489): ventas hechas en el POS.
+  27: contrato("HU-011", "pos", { priority: "P1", tags: ["BL-489"] }),
 };
-const DATOS = CONTRATO ? DATOS_CONTRATO : E2E ? DATOS_E2E : DATOS_INTEGRACION;
+/**
+ * BL-607: datos de los casos de performance (TC-P). Todos son Category
+ * Performance y P1: verifican un tiempo, un puntaje o FPS de la Línea de
+ * Base, con 20 usuarios o 20 mesas.
+ */
+const casoPerformance = (component, requirement, extra = {}) => ({
+  category: "Performance",
+  priority: "P1",
+  component,
+  requirement,
+  ...extra,
+  tags: [requirement, "performance", ...(extra.tags ?? [])],
+});
+const DATOS_PERFORMANCE = {
+  1: casoPerformance("comensal", "HU-001", {
+    tags: ["k6", "BL-492", "BL-607"],
+  }),
+  2: casoPerformance("pedidos", "HU-003", { tags: ["k6", "BL-492", "BL-607"] }),
+  3: casoPerformance("comensal", "HU-001", { tags: ["lighthouse", "BL-437"] }),
+  4: casoPerformance("mesas", "HU-016", { tags: ["RD.05", "BL-607"] }),
+};
+const DATOS = PERFORMANCE
+  ? DATOS_PERFORMANCE
+  : CONTRATO
+    ? DATOS_CONTRATO
+    : E2E
+      ? DATOS_E2E
+      : DATOS_INTEGRACION;
 
 const DATOS_POR_DEFECTO = {
   category: "Funcional",
@@ -1370,25 +2176,65 @@ async function main() {
   // Se busca por el TC-I del principio del título y, si en Kiwi está sin ese
   // prefijo, por el texto. Así un caso cargado sin «[TC-I-NNN] » aparece
   // como «otro título» (se corrige) y no como faltante (se duplicaría).
+  // Puede haber más de un caso con el mismo número: el plugin de JUnit crea
+  // uno nuevo cuando no encuentra el título exacto (por ejemplo, después de
+  // un cambio de título o de una renumeración). Se agrupan todos.
   const porNumero = new Map();
   const porTexto = new Map();
   for (const caso of enPlan) {
     const numero = numeroDe(caso.summary);
     if (numero === null)
       porTexto.set(sinPrefijo(sinEscapar(caso.summary)), caso);
-    else porNumero.set(numero, caso);
+    else porNumero.set(numero, [...(porNumero.get(numero) ?? []), caso]);
   }
 
   const iguales = [];
   const titulosDistintos = [];
   const faltantes = [];
+  // Casos de Kiwi que sobran: duplicados del mismo test y casos con un
+  // número que en el código es de otro test (renumerados).
+  const sobrantes = [];
+  const elegidos = [];
   for (const caso of casos) {
-    const enKiwi =
-      porNumero.get(caso.numero) ?? porTexto.get(sinPrefijo(caso.titulo));
-    if (!enKiwi) faltantes.push(caso);
-    else if (sinEscapar(enKiwi.summary) === caso.titulo) iguales.push(caso);
-    else titulosDistintos.push({ ...caso, enKiwi });
+    const candidatos = porNumero.get(caso.numero) ?? [];
+    const porTitulo = porTexto.get(sinPrefijo(caso.titulo));
+    if (porTitulo) candidatos.push(porTitulo);
+    if (candidatos.length === 0) {
+      faltantes.push(caso);
+      continue;
+    }
+    const exactos = candidatos.filter(
+      (k) => sinEscapar(k.summary) === caso.titulo,
+    );
+    // Se queda el de título exacto más completo (el cargado por este script
+    // antes que el que creó el plugin solo con el título); a igualdad, el
+    // más viejo.
+    const elegido = (exactos.length ? exactos : candidatos)
+      .slice()
+      .sort((a, b) => completitud(b) - completitud(a) || a.id - b.id)[0];
+    for (const k of candidatos) {
+      if (k !== elegido) sobrantes.push({ caso: k, queda: elegido, del: caso });
+    }
+    elegidos.push({ caso, enKiwi: elegido });
+    if (sinEscapar(elegido.summary) === caso.titulo) iguales.push(caso);
+    else titulosDistintos.push({ ...caso, enKiwi: elegido });
   }
+  // Números que ya no existen en el código.
+  const enCodigo = new Set(casos.map((c) => c.numero));
+  for (const [numero, grupo] of porNumero) {
+    if (enCodigo.has(numero)) continue;
+    for (const k of grupo) sobrantes.push({ caso: k, queda: null, del: null });
+  }
+
+  // Campos que faltan en los casos que quedan (los que creó el plugin solo
+  // con el título): se completan con DATOS, sin pisar lo que ya tienen.
+  const incompletos = elegidos
+    .map(({ caso, enKiwi }) => ({
+      caso,
+      enKiwi,
+      cambios: camposQueFaltan(caso, enKiwi),
+    }))
+    .filter((x) => Object.keys(x.cambios).length > 0);
 
   console.log(`\nYa están igual: ${iguales.length}.`);
 
@@ -1399,6 +2245,23 @@ async function main() {
     console.log(`    Código: ${c.titulo}`);
   }
 
+  console.log(
+    `\nSobran en Kiwi (duplicados o renumerados): ${sobrantes.length}.`,
+  );
+  for (const { caso, queda, del } of sobrantes) {
+    const motivo = queda
+      ? `queda TC-${queda.id} para ${TIPO.prefijo}-${String(del.numero).padStart(3, "0")}`
+      : "el número ya no existe en el código";
+    console.log(`  TC-${caso.id} ${caso.summary}  (${motivo})`);
+  }
+
+  console.log(`\nCon campos sin completar: ${incompletos.length}.`);
+  for (const { enKiwi, cambios } of incompletos) {
+    console.log(
+      `  TC-${enKiwi.id} ${enKiwi.summary}  (${Object.keys(cambios).join(", ")})`,
+    );
+  }
+
   // Casos del código que en Kiwi no están en CONFIRMED (los E2E cargados a
   // mano quedaron en PROPOSED hasta su primera corrida en verde).
   const confirmado = await unico(
@@ -1406,13 +2269,8 @@ async function main() {
     { name: "CONFIRMED" },
     "estado CONFIRMED",
   );
-  const sinConfirmar = [...iguales, ...titulosDistintos]
-    .map(
-      (c) =>
-        c.enKiwi ??
-        porNumero.get(c.numero) ??
-        porTexto.get(sinPrefijo(c.titulo)),
-    )
+  const sinConfirmar = elegidos
+    .map((e) => e.enKiwi)
     .filter((caso) => caso.case_status !== confirmado.id);
   console.log(`\nSin CONFIRMED en Kiwi: ${sinConfirmar.length}.`);
   for (const caso of sinConfirmar) {
@@ -1448,10 +2306,139 @@ async function main() {
     console.log(`Confirmado: TC-${caso.id}`);
   }
 
+  if (sobrantes.length > 0) {
+    await retirarSobrantes(sobrantes, plan.id);
+  }
+  if (incompletos.length > 0) {
+    await completarCampos(incompletos, plan.product);
+  }
+
   if (faltantes.length > 0) {
     await crearFaltantes(faltantes, plan.id, plan.product);
   }
   if (DESCRIPCIONES) await sincronizarDescripciones(plan.id, true);
+}
+
+/**
+ * Qué tan completo está un caso de Kiwi: los que creó el plugin de JUnit
+ * solo tienen el título (categoría por defecto, sin requirement, script ni
+ * descripción).
+ */
+function completitud(caso) {
+  return (
+    (caso.category__name && caso.category__name !== "--default--" ? 1 : 0) +
+    (caso.requirement ? 1 : 0) +
+    (caso.script ? 1 : 0) +
+    (textoNormalizado(caso.text) ? 1 : 0)
+  );
+}
+
+/** Descripción que se carga cuando el caso no tiene ninguna. */
+const textoPorDefecto = (script) =>
+  [
+    "### Precondición",
+    "Ver el test automatizado.",
+    "",
+    "### Pasos",
+    `Automatizado en \`${DIRECTORIO_TESTS}/${script}\`.`,
+    "",
+    "### Resultado esperado",
+    "El test pasa.",
+  ].join("\n");
+
+/**
+ * Campos vacíos de un caso que quedó en Kiwi, con el valor que les
+ * corresponde según DATOS. No pisa lo que ya tiene cargado.
+ */
+function camposQueFaltan(caso, enKiwi) {
+  const datos = DATOS[caso.numero];
+  const cambios = {};
+  if (
+    datos &&
+    (!enKiwi.category__name || enKiwi.category__name === "--default--")
+  )
+    cambios.category = datos.category ?? DATOS_POR_DEFECTO.category;
+  if (datos?.requirement && !enKiwi.requirement)
+    cambios.requirement = datos.requirement;
+  if (!enKiwi.script) cambios.script = TIPO.comando(caso.script, caso.titulo);
+  if (!enKiwi.is_automated) cambios.is_automated = true;
+  if (!textoNormalizado(enKiwi.text))
+    cambios.text = textoPorDefecto(caso.script);
+  // Tags y componente: solo en los casos que creó el plugin (sin categoría),
+  // que no tienen ninguno.
+  if (datos && cambios.category) {
+    if (datos.tags?.length) cambios.tags = datos.tags;
+    if (datos.component) cambios.component = datos.component;
+  }
+  return cambios;
+}
+
+/**
+ * Saca del plan los casos que sobran, los pasa a DISABLED y les cambia el
+ * título a «[RETIRADO] …». El plugin de JUnit busca por título exacto en
+ * todo el producto: con el título original seguiría registrando
+ * resultados en el caso equivocado.
+ */
+async function retirarSobrantes(sobrantes, idPlan) {
+  const deshabilitado = await unico(
+    "TestCaseStatus.filter",
+    { name: "DISABLED" },
+    "estado DISABLED",
+  );
+  for (const { caso, queda } of sobrantes) {
+    const titulo = sinEscapar(caso.summary);
+    await rpc("TestCase.update", [
+      caso.id,
+      {
+        summary: titulo.startsWith("[RETIRADO]")
+          ? titulo
+          : `[RETIRADO] ${titulo}`.slice(0, 255),
+        case_status: deshabilitado.id,
+      },
+    ]);
+    await rpc("TestPlan.remove_case", [idPlan, caso.id]);
+    console.log(
+      `Retirado: TC-${caso.id}${queda ? ` (queda TC-${queda.id})` : ""}`,
+    );
+  }
+}
+
+/** Completa los campos vacíos de los casos que quedan. */
+async function completarCampos(incompletos, producto) {
+  const categorias = new Map();
+  for (const { enKiwi, cambios } of incompletos) {
+    const { tags, component, category, ...resto } = cambios;
+    const actualizacion = { ...resto };
+    if (category) {
+      if (!categorias.has(category)) {
+        const c = await unico(
+          "Category.filter",
+          { name: category, product: producto },
+          `Category ${category}`,
+        );
+        categorias.set(category, c.id);
+      }
+      actualizacion.category = categorias.get(category);
+    }
+    if (Object.keys(actualizacion).length > 0) {
+      await rpc("TestCase.update", [enKiwi.id, actualizacion]);
+    }
+    for (const tag of tags ?? []) {
+      await rpc("TestCase.add_tag", [enKiwi.id, tag]);
+    }
+    if (component) {
+      try {
+        await rpc("TestCase.add_component", [enKiwi.id, component]);
+      } catch (error) {
+        console.warn(
+          `  Aviso: no se pudo asignar el componente ${component} a TC-${enKiwi.id}: ${error.message}`,
+        );
+      }
+    }
+    console.log(
+      `Completado: TC-${enKiwi.id} (${Object.keys(cambios).join(", ")})`,
+    );
+  }
 }
 
 /** Crea los casos que faltan y los agrega al plan. */
@@ -1497,16 +2484,7 @@ async function crearFaltantes(faltantes, idPlan, producto) {
         is_automated: true,
         script: TIPO.comando(c.script, c.titulo),
         requirement: datos.requirement,
-        text: [
-          "### Precondición",
-          "Ver el test automatizado.",
-          "",
-          "### Pasos",
-          `Automatizado en \`${DIRECTORIO_TESTS}/${c.script}\`.`,
-          "",
-          "### Resultado esperado",
-          "El test pasa.",
-        ].join("\n"),
+        text: textoPorDefecto(c.script),
       },
     ]);
     await rpc("TestPlan.add_case", [idPlan, creado.id]);

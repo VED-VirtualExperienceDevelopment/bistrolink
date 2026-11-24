@@ -77,8 +77,14 @@ describe('HU-007b (BL-80): cobro con el POS del local', () => {
       }),
     );
 
-  /** Un pedido de la mesa de prueba esperando el pago, de $ 590. */
-  const pedidoPendiente = () =>
+  /**
+   * Un pedido de la mesa de prueba esperando el pago, de $ 590. HU-022
+   * (BL-494): opcionalmente con la propina que eligió el comensal (un
+   * porcentaje o un monto, nunca los dos).
+   */
+  const pedidoPendiente = (
+    propina: { propinaPorcentaje?: number; propinaMonto?: number } = {},
+  ) =>
     enTenant<string>(async (tx) => {
       const pedido = await tx.pedido.create({
         data: {
@@ -88,6 +94,7 @@ describe('HU-007b (BL-80): cobro con el POS del local', () => {
           idempotencyKey: `bl-80-${randomUUID()}`,
           estado: 'PENDIENTE_PAGO',
           canal: 'QR',
+          ...propina,
           lineas: {
             create: {
               tenantId: TENANT_ID,
@@ -111,6 +118,7 @@ describe('HU-007b (BL-80): cobro con el POS del local', () => {
         medioPago: string;
         estado: string;
         monto: Prisma.Decimal;
+        propina: Prisma.Decimal;
         pasarelaReferencia: string | null;
       }[];
       historial: { estadoNuevo: string }[];
@@ -127,6 +135,7 @@ describe('HU-007b (BL-80): cobro con el POS del local', () => {
           medioPago: true,
           estado: true,
           monto: true,
+          propina: true,
           pasarelaReferencia: true,
         },
       });
@@ -264,12 +273,16 @@ describe('HU-007b (BL-80): cobro con el POS del local', () => {
       pasarelaReferencia: 'A1B2C3',
     });
     expect(estado.pagos[0].monto.toFixed(2)).toBe('590.00');
+    // HU-022 (BL-494): sin propina elegida, el pago guarda propina 0.
+    expect(estado.pagos[0].propina.toFixed(2)).toBe('0.00');
     expect(estado.historial).toEqual([{ estadoNuevo: 'RECIBIDO' }]);
     expect(estado.auditoria).toEqual([
       {
         actorKeycloakId: ACTOR_PRUEBA,
         valoresDespues: {
           monto: '590.00',
+          consumo: '590.00',
+          propina: '0.00',
           medio: 'Débito',
           autorizacion: 'A1B2C3',
         },
@@ -294,6 +307,63 @@ describe('HU-007b (BL-80): cobro con el POS del local', () => {
       await posHabilitado(true);
     }
     expect((await leer(otro)).pedido.estado).toBe('PENDIENTE_PAGO');
+  });
+
+  it('HU-022 (BL-494): con una propina de monto libre, el pago guarda el consumo en monto y la propina aparte, y la respuesta informa el total', async () => {
+    // $ 590 + $ 100 de propina = $ 690.
+    const pedidoId = await pedidoPendiente({ propinaMonto: 100 });
+
+    const cobro = await cobros.registrarPos(TENANT_ID, ACTOR_PRUEBA, {
+      pedidoId,
+      idempotencyKey: `bl-494-${randomUUID()}`,
+      tarjeta: 'DEBITO',
+      autorizacion: 'A1B2C3',
+    });
+
+    expect(cobro).toMatchObject({
+      pedidoId,
+      monto: '690.00',
+      consumo: '590.00',
+      propina: '100.00',
+      tarjeta: 'DEBITO',
+    });
+    const estado = await leer(pedidoId);
+    expect(estado.pedido.estado).toBe('RECIBIDO');
+    expect(estado.pagos).toHaveLength(1);
+    expect(estado.pagos[0].monto.toFixed(2)).toBe('590.00');
+    expect(estado.pagos[0].propina.toFixed(2)).toBe('100.00');
+    expect(estado.auditoria).toEqual([
+      {
+        actorKeycloakId: ACTOR_PRUEBA,
+        valoresDespues: {
+          monto: '690.00',
+          consumo: '590.00',
+          propina: '100.00',
+          medio: 'Débito',
+          autorizacion: 'A1B2C3',
+        },
+        detalle: { pedidoId },
+      },
+    ]);
+  });
+
+  it('HU-022 (BL-494): si el total que vio el mozo ya no coincide con el del pedido, 409 y el pedido sigue esperando el pago', async () => {
+    const pedidoId = await pedidoPendiente({ propinaMonto: 100 });
+
+    await expect(
+      cobros.registrarPos(TENANT_ID, ACTOR_PRUEBA, {
+        pedidoId,
+        idempotencyKey: `bl-494-${randomUUID()}`,
+        tarjeta: 'CREDITO',
+        autorizacion: 'A1B2C3',
+        totalEsperado: '590.00',
+      }),
+    ).rejects.toThrow('El total del pedido cambió: ahora es $ 690.00');
+
+    const estado = await leer(pedidoId);
+    expect(estado.pedido.estado).toBe('PENDIENTE_PAGO');
+    expect(estado.pagos).toHaveLength(0);
+    expect(estado.auditoria).toHaveLength(0);
   });
 
   itConMozoYCocina(

@@ -69,10 +69,12 @@ describe('periodos del dashboard de reportes', () => {
     expect(canalesDelFiltro('LOCAL')).toEqual(['QR', 'MOZO']);
     expect(canalesDelFiltro('WEB')).toEqual(['WEB']);
     expect(canalesDelFiltro('WHATSAPP')).toEqual(['WHATSAPP']);
+    expect(canalesDelFiltro('POS')).toEqual(['POS']);
     expect(canalesDelFiltro('TODOS')).toBeNull();
     expect(aplicaRotacion('TODOS')).toBe(true);
     expect(aplicaRotacion('LOCAL')).toBe(true);
     expect(aplicaRotacion('WEB')).toBe(false);
     expect(aplicaRotacion('WHATSAPP')).toBe(false);
+    expect(aplicaRotacion('POS')).toBe(false);
   });
 });

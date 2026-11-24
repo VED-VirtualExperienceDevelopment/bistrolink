@@ -5,7 +5,8 @@
 Si encontrás una vulnerabilidad en BistroLink:
 
 - **No abras un issue público** en GitHub ni la menciones en un PR o un comentario.
-- Mandá los detalles al equipo por correo: **bistrolink.equipoved@gmail.com**.
+- Reportala de forma privada desde la pestaña **Security** del repositorio → **Report a vulnerability** (aviso de seguridad privado: solo lo ve el equipo).
+- Si no tenés cuenta de GitHub, mandá los detalles al equipo por correo: **bistrolink.equipoved@gmail.com**.
 - Incluí qué componente afecta (API, Web, Auth o infraestructura), los pasos para reproducirla y el impacto que estimás.
 - Respondemos en un plazo de **48 horas hábiles**.
 
@@ -33,6 +34,8 @@ Reportar una vulnerabilidad no otorga ninguna licencia ni derecho sobre el códi
 - El repositorio y la organización son **públicos**: todo el código, los commits y los comentarios son visibles.
 - Ninguna credencial se guarda en el repositorio. Los secretos de la aplicación se gestionan en el gestor de secretos del equipo, y los del pipeline en los secretos de GitHub Actions.
 - Cada PR pasa por detección de secretos (Gitleaks), análisis estático (CodeQL y SonarCloud) y análisis de dependencias e imágenes (Trivy y `dependency-review`).
+- Staging se analiza con OWASP ZAP ([docs/security/dast.md](docs/security/dast.md)). El detalle del escaneo activo no se publica: se guarda cifrado y solo lo lee el equipo.
+- Las vulnerabilidades explotables que encuentra el equipo se gestionan con avisos de seguridad privados, no con issues públicos.
 
 ## Organización
 

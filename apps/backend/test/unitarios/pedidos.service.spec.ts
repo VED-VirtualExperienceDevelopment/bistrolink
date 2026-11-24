@@ -13,6 +13,14 @@ import { hashTokenAcceso } from '../../src/pedidos/token-acceso-pedido';
 import { CrearPedidoDto } from '../../src/pedidos/dto/crear-pedido.dto';
 
 const TENANT_ID = '11111111-1111-1111-1111-111111111111';
+
+// HU-040 (BL-210): un local que toma pedidos para retirar todo el día.
+const RETIRO_ABIERTO = {
+  timezone: 'America/Montevideo',
+  retiroHabilitado: true,
+  retiroHoraDesde: null,
+  retiroHoraHasta: null,
+};
 // HU-012 (BL-219): al confirmar un pago se recalcula el resumen de ventas.
 // Solo lo usa notificarPedidoConfirmado; el resto de los tests no lo toca.
 const mockResumenVentas = {
@@ -229,7 +237,10 @@ describe('PedidosService.crear — validaciones y mesa virtual', () => {
 
     mockTx.pedido.findUnique.mockResolvedValue(null);
     // BL-308: el restaurante del pedido para retirar es de este tenant.
-    mockTx.restaurante.findUnique.mockResolvedValue({ tenantId: TENANT_ID });
+    mockTx.restaurante.findUnique.mockResolvedValue({
+      tenantId: TENANT_ID,
+      ...RETIRO_ABIERTO,
+    });
   });
 
   it('rechaza con 404 si la mesa no existe', async () => {
@@ -402,7 +413,10 @@ describe('PedidosService.crear — mesa y restaurante (BL-309)', () => {
 
     mockTx.pedido.findUnique.mockResolvedValue(null);
     // BL-308: el restaurante del pedido para retirar es de este tenant.
-    mockTx.restaurante.findUnique.mockResolvedValue({ tenantId: TENANT_ID });
+    mockTx.restaurante.findUnique.mockResolvedValue({
+      tenantId: TENANT_ID,
+      ...RETIRO_ABIERTO,
+    });
     mockTx.itemCarta.findMany.mockResolvedValue([ITEM_DISPONIBLE]);
     mockTx.pedido.create.mockResolvedValue(pedidoPrisma());
   });
@@ -560,7 +574,10 @@ describe('PedidosService.crear — QR de mesa y restaurante del tenant (BL-204)'
   });
 
   it('pedido para retirar: el canal es WEB, aunque no venga mesa', async () => {
-    mockTx.restaurante.findUnique.mockResolvedValue({ tenantId: TENANT_ID });
+    mockTx.restaurante.findUnique.mockResolvedValue({
+      tenantId: TENANT_ID,
+      ...RETIRO_ABIERTO,
+    });
     mockTx.mesa.upsert.mockResolvedValue({
       id: 'mesa-virtual-id',
       numero: 0,
@@ -571,7 +588,13 @@ describe('PedidosService.crear — QR de mesa y restaurante del tenant (BL-204)'
 
     expect(mockTx.restaurante.findUnique).toHaveBeenCalledWith({
       where: { id: RESTAURANTE_ID },
-      select: { tenantId: true },
+      select: {
+        tenantId: true,
+        timezone: true,
+        retiroHabilitado: true,
+        retiroHoraDesde: true,
+        retiroHoraHasta: true,
+      },
     });
     expect(mockTx.pedido.create).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -583,7 +606,10 @@ describe('PedidosService.crear — QR de mesa y restaurante del tenant (BL-204)'
   describe('BL-311 (RD.05): token de acceso del pedido para retirar', () => {
     beforeEach(() => {
       mockTx.pedido.update = jest.fn();
-      mockTx.restaurante.findUnique.mockResolvedValue({ tenantId: TENANT_ID });
+      mockTx.restaurante.findUnique.mockResolvedValue({
+        tenantId: TENANT_ID,
+        ...RETIRO_ABIERTO,
+      });
       mockTx.mesa.upsert.mockResolvedValue({
         id: 'mesa-virtual-id',
         numero: 0,
@@ -737,6 +763,38 @@ describe('PedidosService.confirmarPagoEnTx / notificarPedidoConfirmado (BL-311, 
     );
   });
 
+  it('HU-011 (BL-488): encola la venta al POS en la misma transacción y la manda después del commit', async () => {
+    const pos = {
+      encolarVentaEnTx: jest.fn().mockResolvedValue(true),
+      enviarEnSegundoPlano: jest.fn(),
+    };
+    const conPos = new PedidosService(
+      {} as any,
+      mockKdsGateway,
+      mockResumenVentas,
+      mockDescuentoStock,
+      pos as any,
+    );
+
+    const confirmado = await conPos.confirmarPagoEnTx(
+      mockTx,
+      TENANT_ID,
+      'pedido-nuevo',
+    );
+    expect(pos.encolarVentaEnTx).toHaveBeenCalledWith(
+      mockTx,
+      TENANT_ID,
+      'pedido-nuevo',
+    );
+    expect(pos.enviarEnSegundoPlano).not.toHaveBeenCalled();
+
+    conPos.notificarPedidoConfirmado(TENANT_ID, confirmado!);
+    expect(pos.enviarEnSegundoPlano).toHaveBeenCalledWith(
+      TENANT_ID,
+      'pedido-nuevo',
+    );
+  });
+
   it('pasa el pedido de PENDIENTE_PAGO a RECIBIDO solo si sigue en PENDIENTE_PAGO', async () => {
     await service.confirmarPagoEnTx(mockTx, TENANT_ID, 'pedido-nuevo');
 
@@ -845,6 +903,24 @@ describe('PedidosService.confirmarPagoEnTx / notificarPedidoConfirmado (BL-311, 
     expect(mockDescuentoStock.avisarReposicion).not.toHaveBeenCalled();
   });
 
+  it('BL-501: notificarPendienteCancelado solo avisa el pedido cancelado (no estaba en la cola ni en los reportes)', () => {
+    mockKdsGateway.emitirPedidoActualizado.mockClear();
+    mockKdsGateway.avisarEstadoCola.mockClear();
+
+    service.notificarPendienteCancelado(TENANT_ID, 'pedido-1');
+
+    expect(mockKdsGateway.emitirPedidoActualizado).toHaveBeenCalledTimes(1);
+    expect(mockKdsGateway.emitirPedidoActualizado).toHaveBeenCalledWith(
+      TENANT_ID,
+      {
+        id: 'pedido-1',
+        estado: 'CANCELADO',
+        actualizadoEn: expect.any(String),
+      },
+    );
+    expect(mockKdsGateway.avisarEstadoCola).not.toHaveBeenCalled();
+  });
+
   it('notificarPedidoConfirmado: al KDS va con la forma del snapshot, con mesaNumero (BL-244)', () => {
     service.notificarPedidoConfirmado(TENANT_ID, pedidoConfirmado as any);
 
@@ -854,6 +930,8 @@ describe('PedidosService.confirmarPagoEnTx / notificarPedidoConfirmado (BL-311, 
       estado: 'RECIBIDO',
       createdAt: '2026-10-10T23:41:00.000Z',
       observacionGeneral: null,
+      // HU-040 (BL-210): pedido de mesa, sin retiro.
+      retiro: null,
       lineas: [
         {
           id: 'linea-1',
@@ -901,8 +979,30 @@ describe('PedidosService.confirmarPagoEnTx / notificarPedidoConfirmado (BL-311, 
   it('[TC-U-380] HU-042: con la cola desactivada no toma el lock ni cuenta pedidos (como antes)', async () => {
     await service.confirmarPagoEnTx(mockTx, TENANT_ID, 'pedido-nuevo');
 
-    expect(mockTx.$executeRaw).not.toHaveBeenCalled();
+    // HU-046 (BL-554): la única consulta cruda es la de las sugerencias
+    // aceptadas; la del candado de la cola, no.
+    const consultas = mockTx.$executeRaw.mock.calls.map(
+      ([consulta]: [{ sql: string }]) => consulta.sql,
+    );
+    expect(consultas.some((sql: string) => sql.includes('pg_advisory'))).toBe(
+      false,
+    );
     expect(mockTx.pedido.count).not.toHaveBeenCalled();
+  });
+
+  it('HU-046 (BL-554): al confirmar el pago suma las sugerencias aceptadas del pedido, en la misma transacción', async () => {
+    await service.confirmarPagoEnTx(mockTx, TENANT_ID, 'pedido-nuevo');
+
+    const aceptadas = mockTx.$executeRaw.mock.calls
+      .map(([consulta]: [{ sql: string; values: unknown[] }]) => consulta)
+      .find((c: { sql: string }) => c.sql.includes('metrica_sugerencia_dia'));
+    expect(aceptadas?.values).toEqual([TENANT_ID, 'pedido-nuevo']);
+  });
+
+  it('HU-046 (BL-554): si el pedido ya estaba confirmado, no vuelve a sumar', async () => {
+    mockTx.pedido.updateMany.mockResolvedValueOnce({ count: 0 });
+    await service.confirmarPagoEnTx(mockTx, TENANT_ID, 'pedido-nuevo');
+    expect(mockTx.$executeRaw).not.toHaveBeenCalled();
   });
 
   it('[TC-U-381] HU-042: con lugar en cocina, el pedido pasa a EN_PREPARACION en la misma transacción', async () => {

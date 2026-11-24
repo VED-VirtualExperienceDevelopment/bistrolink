@@ -31,6 +31,7 @@ if [ -z "$KEYCLOAK_CLIENT_SECRET_RUNTIME" ]; then
 fi
 
 KC_REALM="${KC_REALM:-bistrolink}"
+KCADM_BIN=/opt/keycloak/bin/kcadm.sh
 KC_BACKEND_CLIENT_ID="${KC_BACKEND_CLIENT_ID:-bistrolink-backend}"
 
 # Admin para kcadm: prioriza KC_BOOTSTRAP_ADMIN_* (Railway/producción,
@@ -38,6 +39,14 @@ KC_BACKEND_CLIENT_ID="${KC_BACKEND_CLIENT_ID:-bistrolink-backend}"
 # KEYCLOAK_ADMIN/KEYCLOAK_ADMIN_PASSWORD si no está (local, admin/admin).
 KC_ADMIN_USER="${KC_BOOTSTRAP_ADMIN_USERNAME:-${KEYCLOAK_ADMIN:-admin}}"
 KC_ADMIN_PASS="${KC_BOOTSTRAP_ADMIN_PASSWORD:-${KEYCLOAK_ADMIN_PASSWORD:-admin}}"
+
+# BL-429 (revisión OWASP ASVS nivel 1, docs/security/asvs-nivel-1.md):
+# política de contraseñas del realm. Tiene que ser igual a la de
+# realm-export.json. Mínimo de 12 caracteres (ASVS 2.1.1), tope de 128
+# (2.1.2) y sin historial (2.1.10). Solo se valida al fijar una contraseña:
+# las que ya existen siguen sirviendo. Las de prueba (TEST_*) tienen que
+# tener 12 o más: si no, load-test-users.sh no puede crear esos usuarios.
+POLITICA_CONTRASENAS='length(12) and maxLength(128) and notUsername(undefined) and notEmail(undefined)'
 
 # 1. Arranca Keycloak en background. "$@" son los args reales que definía
 #    CMD/command antes (start-dev --import-realm, o start --http-port=8080
@@ -74,9 +83,29 @@ if [ -z "$ready" ]; then
 else
   echo "[set-client-secret] Keycloak listo. Seteando client secret real de ${KC_BACKEND_CLIENT_ID}..."
 
-  /opt/keycloak/bin/kcadm.sh config credentials \
-    --server http://localhost:8080 --realm master \
-    --user "$KC_ADMIN_USER" --password "$KC_ADMIN_PASS"
+  # BL-529: con la protección contra fuerza bruta activa en master, un
+  # bloqueo temporal (hasta 15 minutos) también rechaza la contraseña
+  # correcta. En lugar de cortar el arranque al primer rechazo, se reintenta
+  # cada 60 s durante 16 minutos. Si Keycloak se apagó mientras tanto, se
+  # deja de intentar.
+  iniciar_sesion_kcadm() {
+    local intento
+    for intento in $(seq 1 16); do
+      if /opt/keycloak/bin/kcadm.sh config credentials \
+          --server http://localhost:8080 --realm master \
+          --user "$KC_ADMIN_USER" --password "$KC_ADMIN_PASS"; then
+        return 0
+      fi
+      kill -0 "$KC_PID" 2>/dev/null || return 1
+      echo "[set-client-secret] AVISO: no se pudo iniciar sesión en master (intento ${intento} de 16). Reintento en 60 s." >&2
+      sleep 60
+    done
+    return 1
+  }
+  if ! iniciar_sesion_kcadm; then
+    echo "[set-client-secret] ERROR: no se pudo iniciar sesión en master con el administrador de arranque." >&2
+    exit 1
+  fi
 
   CLIENT_UUID=$(/opt/keycloak/bin/kcadm.sh get clients -r "$KC_REALM" -q "clientId=$KC_BACKEND_CLIENT_ID" --fields id --format csv --noquotes | tail -n1)
 
@@ -255,6 +284,54 @@ JSON
   aplicar_cambios_realm \
     && echo "[set-client-secret] Realm al día: español, scope 'profile' (BL-345) y lectura de eventos (BL-368)." \
     || echo "[set-client-secret] AVISO: no se pudieron aplicar los cambios del realm de BL-345." >&2
+
+  # Controles de la revisión OWASP ASVS nivel 1 (BL-499,
+  # docs/security/asvs-nivel-1.md). Van aparte de aplicar_cambios_realm para
+  # que un error en uno no deje sin aplicar el otro. Son idempotentes.
+  #
+  # 1. Política de contraseñas del realm (BL-429). Solo se valida al fijar
+  #    una contraseña: las que ya existen siguen sirviendo. Va antes de
+  #    load-test-users.sh, que fija las contraseñas de prueba con esta
+  #    política.
+  "$KCADM_BIN" update "realms/${KC_REALM}" \
+      -s "passwordPolicy=${POLITICA_CONTRASENAS}" \
+    && echo "[set-client-secret] Política de contraseñas al día (BL-429)." \
+    || echo "[set-client-secret] AVISO: no se pudo aplicar la política de contraseñas (BL-429)." >&2
+
+  # 2. Protección contra fuerza bruta en master (BL-529, fase 1). Con la
+  #    consola apagada (BL-230), el login de master sigue disponible por la
+  #    Admin API. Bloqueo temporal, nunca permanente: después de 5 fallos,
+  #    espera de 1 minuto que crece hasta 15 minutos. Los fallos se olvidan a
+  #    las 12 horas. El realm master no está en realm-export.json, así que
+  #    este es el único lugar donde se configura.
+  "$KCADM_BIN" update realms/master \
+      -s bruteForceProtected=true \
+      -s permanentLockout=false \
+      -s failureFactor=5 \
+      -s waitIncrementSeconds=60 \
+      -s maxFailureWaitSeconds=900 \
+      -s maxDeltaTimeSeconds=43200 \
+    && echo "[set-client-secret] Protección contra fuerza bruta en master activa (BL-529)." \
+    || echo "[set-client-secret] AVISO: no se pudo activar la protección contra fuerza bruta en master (BL-529)." >&2
+
+  # 3. Protección contra fuerza bruta en el realm de la aplicación (BL-582).
+  #    Misma configuración que master: bloqueo temporal, nunca permanente.
+  #    Estuvo apagada desde el 15/11/2026 porque bloqueaba al usuario técnico
+  #    del comensal. Desde HU-052 el comensal usa el token de invitado de la
+  #    API y ese usuario ya no existe (BL-581): solo cuentan los fallos del
+  #    personal. Se aplica acá porque el import no cambia un realm existente;
+  #    los mismos valores están en realm-export.json.
+  "$KCADM_BIN" update "realms/${KC_REALM}" \
+      -s bruteForceProtected=true \
+      -s permanentLockout=false \
+      -s failureFactor=5 \
+      -s waitIncrementSeconds=60 \
+      -s maxFailureWaitSeconds=900 \
+      -s maxDeltaTimeSeconds=43200 \
+      -s quickLoginCheckMilliSeconds=1000 \
+      -s minimumQuickLoginWaitSeconds=60 \
+    && echo "[set-client-secret] Protección contra fuerza bruta en ${KC_REALM} activa (BL-582)." \
+    || echo "[set-client-secret] AVISO: no se pudo activar la protección contra fuerza bruta en ${KC_REALM} (BL-582)." >&2
 
   # BL-264: usuarios de prueba, solo donde el entorno lo pide (local y
   # staging con KC_LOAD_TEST_USERS=true; nunca en producción). Reusa la

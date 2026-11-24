@@ -25,6 +25,7 @@ function pendiente(minutos: number, overrides: Record<string, unknown> = {}) {
 
 describe('ConciliacionPagosService (HU-032, BL-202)', () => {
   let tx: {
+    $queryRaw: jest.Mock;
     pago: {
       findMany: jest.Mock;
       updateMany: jest.Mock;
@@ -43,6 +44,8 @@ describe('ConciliacionPagosService (HU-032, BL-202)', () => {
     jest.spyOn(Logger, 'warn').mockImplementation();
     jest.spyOn(Logger, 'log').mockImplementation();
     tx = {
+      // HU-017 (BL-60): bloqueo de la fila de la mesa en liberarMesaDelCobro.
+      $queryRaw: jest.fn().mockResolvedValue([]),
       pago: {
         findMany: jest.fn().mockResolvedValue([]),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),

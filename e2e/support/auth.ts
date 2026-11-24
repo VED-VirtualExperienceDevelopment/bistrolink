@@ -35,7 +35,9 @@ interface Credenciales {
 // (el repositorio es público) y termina siendo la contraseña real del entorno.
 // En CI las pasa el job de Playwright desde los secrets; en local se cargan en
 // la sesión con los valores del Keycloak local (ver e2e/README.md).
-function credenciales(prefijo: "TEST_MOZO" | "TEST_ADMIN"): Credenciales {
+function credenciales(
+  prefijo: "TEST_MOZO" | "TEST_ADMIN" | "TEST_COCINA",
+): Credenciales {
   const username = process.env[`${prefijo}_USERNAME`];
   const password = process.env[`${prefijo}_PASSWORD`];
   if (!username || !password) {
@@ -90,6 +92,13 @@ type Fixtures = {
   kdsPageMozo: Page;
   /** Idem, pero logueada como ADMIN. */
   kdsPageAdmin: Page;
+  /**
+   * HU-038 (BL-510): /kds logueado como COCINA (monitor de solo lectura), en
+   * su PROPIO contexto del navegador: si compartiera el de kdsPageMozo,
+   * Keycloak reusaría la sesión del mozo. Sin TEST_COCINA_USERNAME y
+   * TEST_COCINA_PASSWORD en el entorno, el test se saltea.
+   */
+  kdsPageCocina: Page;
   /**
    * BL-477 (BL-285): automático en todos los tests. Junta los pedidos que
    * crean las páginas del test y al terminar, pase o falle, los cierra con
@@ -193,6 +202,22 @@ export const test = base.extend<Fixtures, WorkerFixtures>({
   kdsPageAdmin: async ({ context }, use) => {
     const kdsPage = await loginKds(context, credenciales("TEST_ADMIN"));
     await use(kdsPage);
+  },
+  kdsPageCocina: async ({ browser }, use, testInfo) => {
+    testInfo.skip(
+      !process.env.TEST_COCINA_USERNAME || !process.env.TEST_COCINA_PASSWORD,
+      "Faltan TEST_COCINA_USERNAME o TEST_COCINA_PASSWORD (ver e2e/README.md).",
+    );
+    const contextoCocina = await browser.newContext({ baseURL: BASE_URL });
+    try {
+      const kdsPage = await loginKds(
+        contextoCocina,
+        credenciales("TEST_COCINA"),
+      );
+      await use(kdsPage);
+    } finally {
+      await contextoCocina.close();
+    }
   },
 });
 

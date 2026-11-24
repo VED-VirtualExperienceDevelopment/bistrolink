@@ -22,6 +22,8 @@ const OPCIONES_ESTADO: { valor: FiltroEstadoCarta; texto: string }[] = [
   { valor: 'TODOS', texto: 'Todos' },
   { valor: 'DISPONIBLES', texto: 'Disponibles' },
   { valor: 'AGOTADOS', texto: 'Agotados' },
+  // HU-044 (BL-537): los platos que el local sugiere.
+  { valor: 'SUGERENCIAS', texto: 'Sugerencias' },
 ];
 
 const OPCIONES_DEL_ADMIN: { valor: FiltroEstadoCarta; texto: string }[] = [

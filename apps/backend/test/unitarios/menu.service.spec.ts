@@ -17,6 +17,14 @@ function buildRestaurante(overrides: Partial<any> = {}) {
     nombre: 'Restaurante Test',
     direccion: 'Av. Test 1234',
     timezone: 'America/Montevideo',
+    // HU-043 (BL-532): marca por defecto (sin logo, plantilla Clásica).
+    logoKey: null,
+    portadaKey: null,
+    plantilla: 'clasica',
+    // HU-040 (BL-210): toma pedidos para retirar todo el día.
+    retiroHabilitado: true,
+    retiroHoraDesde: null,
+    retiroHoraHasta: null,
     ...overrides,
   };
 }
@@ -55,6 +63,8 @@ describe('MenuService - getMenuByRestaurante (HU-002)', () => {
 
   beforeEach(async () => {
     mockTx = {
+      // HU-045 (BL-547): sin ventas, ningún plato es «Más pedido».
+      $queryRaw: jest.fn().mockResolvedValue([]),
       restaurante: {
         findUnique: jest.fn(),
       },
@@ -133,6 +143,16 @@ describe('MenuService - getMenuByRestaurante (HU-002)', () => {
           nombre: restaurante.nombre,
           direccion: restaurante.direccion,
         }),
+        marca: { logoUrl: null, portadaUrl: null, plantilla: 'clasica' },
+        // HU-040 (BL-210): el enlace web es el de los pedidos para retirar.
+        // HU-010 (BL-613): sin número ni bot, no ofrece WhatsApp.
+        whatsapp: null,
+        retiro: {
+          habilitado: true,
+          abierto: true,
+          horaDesde: null,
+          horaHasta: null,
+        },
         categorias: [
           expect.objectContaining({
             id: categoria.id,
@@ -250,6 +270,70 @@ describe('MenuService - getMenuByRestaurante (HU-002)', () => {
     });
   });
 
+  it('[TC-U-523] HU-043 (BL-532): devuelve la marca con la URL pública del logo y la plantilla', async () => {
+    const tenantId = randomUUID();
+    const logoKey = `${tenantId}/menu/marca/0b4f6a3e-1111-4c2d-9e8f-123456789abc.webp`;
+    const restaurante = buildRestaurante({
+      tenantId,
+      logoKey,
+      plantilla: 'gourmet',
+    });
+    mockTx.restaurante.findUnique.mockResolvedValue(restaurante);
+    mockCategoriaCartaFindMany([]);
+    mockStorage.urlImagenPublica.mockResolvedValue(
+      `https://cdn.example/${logoKey}`,
+    );
+
+    const resultado = await service.getMenuByRestaurante(
+      tenantId,
+      restaurante.id,
+    );
+
+    expect(mockStorage.urlImagenPublica).toHaveBeenCalledWith(logoKey);
+    expect(resultado.marca).toEqual({
+      logoUrl: `https://cdn.example/${logoKey}`,
+      portadaUrl: null,
+      plantilla: 'gourmet',
+    });
+    // La key no viaja al comensal.
+    expect(JSON.stringify(resultado.restaurante)).not.toContain('menu/marca');
+  });
+
+  describe('HU-010 (BL-613): «¿Preferís pedir por WhatsApp?»', () => {
+    const conBot = (tenantId: string) => ({
+      EVOLUTION_API_URL: 'http://evolution.test',
+      EVOLUTION_API_KEY: 'clave-de-prueba',
+      EVOLUTION_INSTANCIAS: `local=${tenantId}`,
+      WHATSAPP_WEBHOOK_SECRETO: 's'.repeat(32),
+      WHATSAPP_TELEFONO_CLAVE: 't'.repeat(32),
+    });
+
+    it.each([
+      ['número y bot conectado', '+59899123456', true, '59899123456'],
+      ['bot conectado sin número', null, true, null],
+      ['número sin bot', '+59899123456', false, null],
+    ])(
+      '[TC-U-691] %s',
+      async (_caso, whatsappPedidos, botConectado, esperado) => {
+        const tenantId = randomUUID();
+        const restaurante = buildRestaurante({ tenantId, whatsappPedidos });
+        mockTx.restaurante.findUnique.mockResolvedValue(restaurante);
+        mockTx.categoriaCarta.findMany.mockResolvedValue([]);
+        const antes = { ...process.env };
+        if (botConectado) Object.assign(process.env, conBot(tenantId));
+        try {
+          const resultado = await service.getMenuByRestaurante(
+            tenantId,
+            restaurante.id,
+          );
+          expect(resultado.whatsapp).toBe(esperado);
+        } finally {
+          process.env = antes;
+        }
+      },
+    );
+  });
+
   describe('Casos de error', () => {
     it('debe lanzar NotFoundException si el restaurante no existe', async () => {
       const tenantId = randomUUID();
@@ -336,6 +420,7 @@ describe('MenuService - getMenuByMesa (HU-001)', () => {
 
   beforeEach(async () => {
     mockTx = {
+      $queryRaw: jest.fn().mockResolvedValue([]),
       mesa: {
         findUnique: jest.fn(),
       },
@@ -393,6 +478,7 @@ describe('MenuService - getMenuByMesa (HU-001)', () => {
 
       expect(resultado).toEqual({
         restaurante: { nombre: restaurante.nombre },
+        marca: { logoUrl: null, portadaUrl: null, plantilla: 'clasica' },
         categorias: expect.arrayContaining([
           expect.objectContaining({
             id: categoria.id,
@@ -402,6 +488,61 @@ describe('MenuService - getMenuByMesa (HU-001)', () => {
             ]),
           }),
         ]),
+      });
+    });
+
+    it('[TC-U-523] HU-043 (BL-532): el menú por QR también devuelve la marca', async () => {
+      const tenantId = randomUUID();
+      const mesaId = randomUUID();
+      const logoKey = `${tenantId}/menu/marca/0b4f6a3e-1111-4c2d-9e8f-123456789abc.webp`;
+      const restaurante = buildRestaurante({
+        tenantId,
+        logoKey,
+        plantilla: 'familiar',
+      });
+      mockTx.mesa.findUnique.mockResolvedValue({
+        id: mesaId,
+        numero: 1,
+        restauranteId: restaurante.id,
+        restaurante,
+      });
+      mockTx.categoriaCarta.findMany.mockResolvedValue([]);
+      mockStorage.urlImagenPublica.mockResolvedValue(
+        `https://cdn.example/${logoKey}`,
+      );
+
+      const resultado = await service.getMenuByMesa(tenantId, mesaId);
+
+      expect(resultado.marca).toEqual({
+        logoUrl: `https://cdn.example/${logoKey}`,
+        portadaUrl: null,
+        plantilla: 'familiar',
+      });
+    });
+
+    it('[TC-U-549] HU-043 (BL-562): la marca trae la URL pública de la portada del banner', async () => {
+      const tenantId = randomUUID();
+      const mesaId = randomUUID();
+      const portadaKey = `${tenantId}/menu/portada/0b4f6a3e-1111-4c2d-9e8f-123456789abc.webp`;
+      const restaurante = buildRestaurante({ tenantId, portadaKey });
+      mockTx.mesa.findUnique.mockResolvedValue({
+        id: mesaId,
+        numero: 1,
+        restauranteId: restaurante.id,
+        restaurante,
+      });
+      mockTx.categoriaCarta.findMany.mockResolvedValue([]);
+      mockStorage.urlImagenPublica.mockResolvedValue(
+        `https://cdn.example/${portadaKey}`,
+      );
+
+      const resultado = await service.getMenuByMesa(tenantId, mesaId);
+
+      expect(mockStorage.urlImagenPublica).toHaveBeenCalledWith(portadaKey);
+      expect(resultado.marca).toEqual({
+        logoUrl: null,
+        portadaUrl: `https://cdn.example/${portadaKey}`,
+        plantilla: 'clasica',
       });
     });
 
@@ -519,5 +660,98 @@ describe('MenuService - getPrivacidad (HU-036, BL-206)', () => {
     await expect(service.getPrivacidad(TENANT_ID)).rejects.toThrow(
       NotFoundException,
     );
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// HU-045 (BL-547): «Más pedido» en el menú del comensal
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('MenuService - «Más pedido» (HU-045)', () => {
+  let service: MenuService;
+  let mockTx: any;
+
+  const restaurante = buildRestaurante();
+  const flan = buildItem({ nombre: 'Flan' });
+  const milanesa = buildItem({ nombre: 'Milanesa' });
+  const archivado = buildItem({ nombre: 'Archivado' });
+
+  beforeEach(async () => {
+    mockTx = {
+      $queryRaw: jest.fn().mockResolvedValue([{ item_carta_id: milanesa.id }]),
+      restaurante: { findUnique: jest.fn().mockResolvedValue(restaurante) },
+      mesa: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: randomUUID(),
+          restauranteId: restaurante.id,
+          restaurante,
+        }),
+      },
+      categoriaCarta: {
+        findMany: jest
+          .fn()
+          .mockResolvedValue([buildCategoria({ items: [flan, milanesa] })]),
+      },
+    };
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        MenuService,
+        {
+          provide: TenantPrismaService,
+          useValue: {
+            runInTenantContext: jest.fn(async (_t: string, cb: any) =>
+              cb(mockTx),
+            ),
+          },
+        },
+        {
+          provide: StorageService,
+          useValue: { urlImagenPublica: jest.fn() },
+        },
+      ],
+    }).compile();
+    service = module.get(MenuService);
+  });
+
+  const marcados = (menu: any) =>
+    menu.categorias
+      .flatMap((c: any) => c.items)
+      .filter((i: any) => i.masPedido)
+      .map((i: any) => i.nombre);
+
+  it('por enlace web y por QR, marca solo los platos que devuelve el ranking', async () => {
+    expect(
+      marcados(
+        await service.getMenuByRestaurante(
+          restaurante.tenantId,
+          restaurante.id,
+        ),
+      ),
+    ).toEqual(['Milanesa']);
+    expect(
+      marcados(await service.getMenuByMesa(restaurante.tenantId, randomUUID())),
+    ).toEqual(['Milanesa']);
+  });
+
+  it('el ranking se pide con el tenant y solo con los platos de esta carta', async () => {
+    await service.getMenuByRestaurante(restaurante.tenantId, restaurante.id);
+
+    const sql = mockTx.$queryRaw.mock.calls[0][0];
+    expect(sql.values).toEqual(
+      expect.arrayContaining([restaurante.tenantId, flan.id, milanesa.id]),
+    );
+    expect(sql.values).not.toContain(archivado.id);
+  });
+
+  it('si el ranking falla, la carta se muestra igual, sin la insignia', async () => {
+    mockTx.$queryRaw.mockRejectedValue(new Error('timeout'));
+
+    const menu = await service.getMenuByRestaurante(
+      restaurante.tenantId,
+      restaurante.id,
+    );
+
+    expect(marcados(menu)).toEqual([]);
+    expect(menu.categorias[0].items).toHaveLength(2);
   });
 });

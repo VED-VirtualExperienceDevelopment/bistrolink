@@ -36,7 +36,20 @@ describe('aPedidoKds', () => {
           observacion: 'sin sal',
         },
       ],
+      retiro: null,
     });
+  });
+
+  // BL-210: el pedido para retirar lleva el código y el nombre del comensal.
+  it('con código de retiro arma el bloque retiro', () => {
+    expect(
+      aPedidoKds({ ...pedido, codigoRetiro: 'R-042', retiroNombre: 'Ana' })
+        .retiro,
+    ).toEqual({ codigo: 'R-042', nombre: 'Ana' });
+    expect(
+      aPedidoKds({ ...pedido, codigoRetiro: 'R-042', retiroNombre: null })
+        .retiro,
+    ).toEqual({ codigo: 'R-042', nombre: null });
   });
 
   it('descarta campos que no son del KDS aunque vengan en el objeto de Prisma', () => {
@@ -68,5 +81,52 @@ describe('aPedidoKds', () => {
 
     expect(resultado.observacionGeneral).toBeNull();
     expect(resultado.lineas[0].observacion).toBeNull();
+  });
+
+  // HU-022 (BL-496): la pantalla de cocina no muestra propina. La propina es
+  // del cobro (mozo, comensal, reportes): a cocina solo le importa qué
+  // preparar. Si algún día hay que mostrarla, que sea una decisión explícita
+  // y no un campo que se cuela del objeto de Prisma.
+  describe('HU-022 (BL-496): la propina no llega a cocina', () => {
+    it('no incluye la propina aunque el pedido de Prisma la traiga, en ningún nivel', () => {
+      const conPropina = {
+        ...pedido,
+        propinaPorcentaje: 10,
+        propinaMonto: 59,
+        pagos: [{ monto: 590, propina: 59 }],
+        lineas: [{ ...pedido.lineas[0], propina: 5 }],
+      };
+
+      const resultado = aPedidoKds(conPropina);
+
+      expect(resultado).not.toHaveProperty('propinaPorcentaje');
+      expect(resultado).not.toHaveProperty('propinaMonto');
+      expect(resultado).not.toHaveProperty('pagos');
+      expect(resultado.lineas[0]).not.toHaveProperty('propina');
+      // Ni anidada en cualquier otro lugar.
+      expect(JSON.stringify(resultado)).not.toMatch(/propina/i);
+    });
+
+    it('la forma del pedido de cocina son exactamente estos campos: sumar uno obliga a revisar este test', () => {
+      const resultado = aPedidoKds(pedido);
+
+      expect(Object.keys(resultado).sort()).toEqual([
+        'createdAt',
+        'estado',
+        'id',
+        'lineas',
+        'mesaNumero',
+        'observacionGeneral',
+        // HU-040 (BL-210): código de retiro y nombre del comensal (sin
+        // montos ni datos de pago).
+        'retiro',
+      ]);
+      expect(Object.keys(resultado.lineas[0]).sort()).toEqual([
+        'cantidad',
+        'id',
+        'nombreSnapshot',
+        'observacion',
+      ]);
+    });
   });
 });

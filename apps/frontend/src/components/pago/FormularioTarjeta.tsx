@@ -14,12 +14,19 @@ import {
   errorDocumento,
   errorEmail,
   errorTitular,
+  esErrorDeDocumentoMp,
   etiquetaMarca,
+  filtrarEntradaCi,
   formatearPrecio,
+  LARGO_MAXIMO_CI,
+  MENSAJE_DOCUMENTO_RECHAZADO_MP,
   tipoTarjeta,
   type TipoDocumento,
 } from './pago.utils';
 import { cargarSdkMercadoPago } from './cargar-sdk-mercadopago';
+import { SelloPagoSeguro } from './SelloPagoSeguro';
+import { marcaDelMedio } from './tarjetas-aceptadas.utils';
+import { useTarjetasAceptadas } from './useTarjetasAceptadas';
 
 /** Lo que necesita POST /pedidos/:id/pagos en `datosPasarela` (MercadoPagoGateway). */
 export interface DatosTarjeta {
@@ -85,7 +92,7 @@ const CLASE_CAJA_SEGURA = 'overflow-hidden !px-0';
 const CLASE_INPUT_BASE =
   'w-full h-12 px-4 rounded-[0.75rem] text-base outline-none transition-all duration-200 placeholder:text-culinary-neutral bg-culinary-background';
 const CLASE_BORDE_OK =
-  'border-2 border-culinary-neutral/30 focus-within:border-[#6e54ad] focus-within:ring-2 focus-within:ring-[#6e54ad]/20';
+  'border-2 border-culinary-neutral/30 focus-within:border-marca focus-within:ring-2 focus-within:ring-marca/20';
 const CLASE_BORDE_ERROR = 'border-2 border-[#BA1A1A] bg-[#FFDAD6]/40';
 
 /**
@@ -113,12 +120,18 @@ export function FormularioTarjeta({
   const [intentoSdk, setIntentoSdk] = useState(0);
   const [marca, setMarca] = useState<string | null>(null);
   const [metodo, setMetodo] = useState<{ id: string; tipo: string } | null>(null);
+  // HU-051 (BL-563): tarjetas que acepta la cuenta, para el sello de pago seguro.
+  const tarjetasAceptadas = useTarjetasAceptadas();
   const [foco, setFoco] = useState<CampoSeguro | null>(null);
   const [invalidos, setInvalidos] = useState<Partial<Record<CampoSeguro, boolean>>>({});
 
   const [titular, setTitular] = useState('');
   const [tipoDocumento, setTipoDocumento] = useState<TipoDocumento>('CI');
   const [documento, setDocumento] = useState('');
+  // BL-445: el error del documento se muestra al salir del campo, no solo al pagar.
+  const [documentoTocado, setDocumentoTocado] = useState(false);
+  // BL-445: Mercado Pago rechazó el documento al generar el token.
+  const [documentoRechazadoMp, setDocumentoRechazadoMp] = useState(false);
   const [email, setEmail] = useState('');
   const [intentoEnviar, setIntentoEnviar] = useState(false);
   const [errorTarjeta, setErrorTarjeta] = useState<string | null>(null);
@@ -151,11 +164,15 @@ export function FormularioTarjeta({
 
   const errores = {
     titular: errorTitular(titular),
-    documento: errorDocumento(tipoDocumento, documento),
+    documento:
+      errorDocumento(tipoDocumento, documento) ??
+      (documentoRechazadoMp ? MENSAJE_DOCUMENTO_RECHAZADO_MP : null),
     email: errorEmail(email),
   };
   const mostrar = (campo: keyof typeof errores) =>
-    intentoEnviar ? errores[campo] : null;
+    intentoEnviar || (campo === 'documento' && documentoTocado)
+      ? errores[campo]
+      : null;
 
   // Los campos de Mercado Pago se crean UNA sola vez (ver más abajo): sus
   // handlers solo usan setters de estado, que React garantiza estables.
@@ -225,11 +242,62 @@ export function FormularioTarjeta({
     };
   }, []);
 
+  // BL-575 (WCAG 4.1.2): Mercado Pago inyecta cada campo seguro en un iframe
+  // sin title, y el lector de pantalla lo anuncia como «marco» sin nombre
+  // (axe: frame-title). El SDK no deja pasarle un título, así que se le pone
+  // cuando aparece. Solo se observan nodos nuevos (childList): cambiar el
+  // atributo no vuelve a disparar el observador.
+  useEffect(() => {
+    if (sdk !== 'listo') return;
+    const campos: readonly (readonly [string, string])[] = [
+      [`${id}-numero`, 'Número de tarjeta'],
+      [`${id}-vence`, 'Vencimiento de la tarjeta'],
+      [`${id}-cvv`, 'Código de seguridad de la tarjeta'],
+    ];
+    const ponerTitulos = () => {
+      for (const [idCampo, titulo] of campos) {
+        const iframe = document.getElementById(idCampo)?.querySelector('iframe');
+        if (iframe && iframe.title !== titulo) iframe.title = titulo;
+      }
+    };
+    ponerTitulos();
+    const raiz = document.getElementById(`${id}-numero`)?.closest('form');
+    if (!raiz) return;
+    const observador = new MutationObserver(ponerTitulos);
+    observador.observe(raiz, { childList: true, subtree: true });
+    return () => observador.disconnect();
+  }, [sdk, id]);
+
+  function alCambiarDocumento(valor: string) {
+    setDocumento(tipoDocumento === 'CI' ? filtrarEntradaCi(valor) : valor);
+    setDocumentoRechazadoMp(false);
+  }
+
+  // BL-445: al cambiar el tipo, el valor anterior no sirve (un pasaporte
+  // nunca es una cédula válida): se limpia y el error se oculta.
+  function alCambiarTipoDocumento(tipo: TipoDocumento) {
+    setTipoDocumento(tipo);
+    setDocumento('');
+    setDocumentoTocado(false);
+    setDocumentoRechazadoMp(false);
+  }
+
+  function enfocar(campo: 'titular' | 'documento' | 'email') {
+    document.getElementById(`${id}-${campo}`)?.focus();
+  }
+
   async function enviar(evento: FormEvent) {
     evento.preventDefault();
     setIntentoEnviar(true);
     setErrorTarjeta(null);
-    if (errores.titular || errores.documento || errores.email) return;
+    // BL-445: no se llama a Mercado Pago con errores; el foco va al primero.
+    const primerError = (['titular', 'documento', 'email'] as const).find(
+      (campo) => errores[campo],
+    );
+    if (primerError) {
+      enfocar(primerError);
+      return;
+    }
     if (puedePagar && !puedePagar()) return;
     if (!metodo) {
       setErrorTarjeta('Revisá el número de la tarjeta.');
@@ -250,10 +318,17 @@ export function FormularioTarjeta({
         payerEmail: email.trim(),
         installments: 1,
       });
-    } catch {
-      setErrorTarjeta(
-        'Revisá los datos de la tarjeta (número, vencimiento y código de seguridad).',
-      );
+    } catch (error) {
+      // BL-445: si Mercado Pago rechazó el documento, el error va a ese
+      // campo y no a la tarjeta.
+      if (esErrorDeDocumentoMp(error)) {
+        setDocumentoRechazadoMp(true);
+        enfocar('documento');
+      } else {
+        setErrorTarjeta(
+          'Revisá los datos de la tarjeta (número, vencimiento y código de seguridad).',
+        );
+      }
     } finally {
       setTokenizando(false);
     }
@@ -273,10 +348,16 @@ export function FormularioTarjeta({
   const claseCampoSeguro = (campo: CampoSeguro) =>
     `${CLASE_INPUT_BASE} ${CLASE_CAJA_SEGURA} flex items-stretch ${
       invalidos[campo] ? CLASE_BORDE_ERROR : CLASE_BORDE_OK
-    } ${foco === campo ? 'border-[#6e54ad] ring-2 ring-[#6e54ad]/20' : ''}`;
+    } ${foco === campo ? 'border-marca ring-2 ring-marca/20' : ''}`;
 
   return (
     <form onSubmit={enviar} noValidate className="flex flex-col gap-5" aria-busy={ocupado}>
+      {/* HU-051 (BL-563): logo de Mercado Pago y tarjetas aceptadas, con la
+          marca que se detecta al escribir el número. */}
+      <SelloPagoSeguro
+        tarjetas={tarjetasAceptadas}
+        marcaDetectada={marcaDelMedio(metodo?.id)}
+      />
       {(sdk === 'error' || (camposDemorados && !camposListos)) && (
         <div role="alert" className="p-3 rounded-lg bg-[#FFDAD6]/60 text-[#93000a] text-sm font-medium flex flex-col gap-2">
           <p>
@@ -288,7 +369,7 @@ export function FormularioTarjeta({
             <button
               type="button"
               onClick={() => setIntentoSdk((n) => n + 1)}
-              className="self-start px-3 py-1.5 rounded-md bg-white text-[#6e54ad] font-semibold border border-[#6e54ad]/30 hover:bg-[#6e54ad] hover:text-white transition-colors"
+              className="self-start px-3 py-1.5 rounded-md bg-white text-marca font-semibold border border-marca/30 hover:bg-marca hover:text-white transition-colors"
             >
               Reintentar
             </button>
@@ -301,7 +382,7 @@ export function FormularioTarjeta({
             {sdk === 'listo' && camposSeguros.numero}
           </div>
           {marca && (
-            <span className="self-center shrink-0 px-2 py-0.5 rounded-md bg-[#6e54ad]/10 text-[#6e54ad] text-xs font-bold tracking-wide">
+            <span className="self-center shrink-0 px-2 py-0.5 rounded-md bg-marca/10 text-marca text-xs font-bold tracking-wide">
               {marca}
             </span>
           )}
@@ -343,7 +424,7 @@ export function FormularioTarjeta({
           <select
             aria-label="Tipo de documento"
             value={tipoDocumento}
-            onChange={(e) => setTipoDocumento(e.target.value as TipoDocumento)}
+            onChange={(e) => alCambiarTipoDocumento(e.target.value as TipoDocumento)}
             className={`${CLASE_INPUT_BASE} ${CLASE_BORDE_OK} !w-auto shrink-0 pr-8`}
           >
             <option value="CI">Cédula</option>
@@ -352,10 +433,13 @@ export function FormularioTarjeta({
           <input
             id={`${id}-documento`}
             value={documento}
-            onChange={(e) => setDocumento(e.target.value)}
+            onChange={(e) => alCambiarDocumento(e.target.value)}
+            onBlur={() => setDocumentoTocado(true)}
             inputMode={tipoDocumento === 'CI' ? 'numeric' : 'text'}
+            maxLength={tipoDocumento === 'CI' ? LARGO_MAXIMO_CI : undefined}
             placeholder={tipoDocumento === 'CI' ? '1.234.567-2' : 'Pasaporte u otro'}
             aria-invalid={!!mostrar('documento')}
+            aria-describedby={mostrar('documento') ? `${id}-documento-error` : undefined}
             className={`${CLASE_INPUT_BASE} ${mostrar('documento') ? CLASE_BORDE_ERROR : CLASE_BORDE_OK}`}
           />
         </div>
@@ -379,7 +463,7 @@ export function FormularioTarjeta({
         />
       </Campo>
 
-      <div className="flex items-center justify-between rounded-[0.75rem] bg-culinary-primary-container px-4 py-3 text-sm">
+      <div className="flex items-center justify-between rounded-[0.75rem] bg-marca/10 px-4 py-3 text-sm">
         <span className="text-[#5a575e]">Plan de pago</span>
         <span className="font-semibold text-foreground">
           1 pago de {formatearPrecio(monto)}
@@ -395,7 +479,7 @@ export function FormularioTarjeta({
       <button
         type="submit"
         disabled={ocupado || sdk !== 'listo'}
-        className="w-full flex items-center justify-center gap-2 px-4 py-3.5 bg-[#6e54ad] text-white font-bold rounded-[0.75rem] hover:bg-[#5b468f] focus:outline-none focus:ring-4 focus:ring-[#6e54ad]/30 transition-all disabled:opacity-60 disabled:cursor-not-allowed text-lg shadow-[0px_4px_20px_rgba(121,118,125,0.15)]"
+        className="w-full flex items-center justify-center gap-2 px-4 py-3.5 bg-marca text-white font-bold rounded-[0.75rem] hover:bg-marca-hover focus:outline-none focus:ring-4 focus:ring-marca/30 transition-all disabled:opacity-60 disabled:cursor-not-allowed text-lg shadow-[0px_4px_20px_rgba(121,118,125,0.15)]"
       >
         {ocupado ? (
           <>
@@ -408,12 +492,11 @@ export function FormularioTarjeta({
         )}
       </button>
 
-      <ul className="flex flex-wrap justify-center gap-x-5 gap-y-1 text-xs text-[#5a575e]">
-        <li className="flex items-center gap-1">
-          <IconoEscudo /> Pago procesado por Mercado Pago
-        </li>
-        <li>Tus datos de tarjeta no pasan por BistroLink</li>
-      </ul>
+      {/* HU-051 (BL-563): «Pago seguro con Mercado Pago» ya está arriba, en
+          el sello; acá queda solo lo que agrega. */}
+      <p className="flex items-center justify-center gap-1 text-xs text-[#5a575e]">
+        <IconoEscudo /> Tus datos de tarjeta no pasan por BistroLink
+      </p>
     </form>
   );
 }
@@ -436,7 +519,7 @@ function Campo({
       </label>
       {children}
       {error && (
-        <p className="text-xs font-semibold text-[#BA1A1A]" role="alert">
+        <p id={`${htmlFor}-error`} className="text-xs font-semibold text-[#BA1A1A]" role="alert">
           {error}
         </p>
       )}

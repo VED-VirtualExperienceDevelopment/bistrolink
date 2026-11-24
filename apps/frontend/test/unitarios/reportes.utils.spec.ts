@@ -1,9 +1,12 @@
 import {
+  ayudaSugerencias,
   CANALES,
+  MENSAJE_PLATOS_POS,
   crearRefrescoDiferido,
   filtrosIniciales,
   formatearHora,
   formatearMonto,
+  formatearPorcentaje,
   formatearRotacion,
   haceCuanto,
   horaPico,
@@ -13,6 +16,7 @@ import {
   platosSegun,
   rangoInvalido,
   rutaReportes,
+  textoPropinas,
   variacion,
   type FiltrosReportes,
   type ReporteVentas,
@@ -93,25 +97,27 @@ describe("reportes.utils", () => {
     expect(horasDelGrafico([])).toEqual([]);
     expect(
       horasDelGrafico([
-        { hora: 21, monto: 900, pedidos: 3 },
-        { hora: 19, monto: 400, pedidos: 1 },
+        { hora: 21, monto: 900, pedidos: 3, propina: 90 },
+        { hora: 19, monto: 400, pedidos: 1, propina: 0 },
       ]),
     ).toEqual([
-      { hora: 19, monto: 400, pedidos: 1 },
-      { hora: 20, monto: 0, pedidos: 0 },
-      { hora: 21, monto: 900, pedidos: 3 },
+      { hora: 19, monto: 400, pedidos: 1, propina: 0 },
+      { hora: 20, monto: 0, pedidos: 0, propina: 0 },
+      { hora: 21, monto: 900, pedidos: 3, propina: 90 },
     ]);
     expect(formatearHora(21)).toBe("21 h");
   });
 
   it("[TC-U-317] la hora pico según la métrica elegida; sin ventas, ninguna", () => {
     const horas = [
-      { hora: 12, monto: 3000, pedidos: 2 },
-      { hora: 21, monto: 2000, pedidos: 5 },
+      { hora: 12, monto: 3000, pedidos: 2, propina: 300 },
+      { hora: 21, monto: 2000, pedidos: 5, propina: 0 },
     ];
     expect(horaPico(horas, "monto")?.hora).toBe(12);
     expect(horaPico(horas, "pedidos")?.hora).toBe(21);
-    expect(horaPico([{ hora: 9, monto: 0, pedidos: 0 }], "monto")).toBeNull();
+    expect(
+      horaPico([{ hora: 9, monto: 0, pedidos: 0, propina: 0 }], "monto"),
+    ).toBeNull();
   });
 
   it("[TC-U-318] largo de las barras: proporcional, con un mínimo visible", () => {
@@ -126,12 +132,31 @@ describe("reportes.utils", () => {
       { clave: "local", etiqueta: "En el local", monto: 750, porcentaje: 75 },
       { clave: "web", etiqueta: "Web", monto: 250, porcentaje: 25 },
       { clave: "whatsapp", etiqueta: "WhatsApp", monto: 0, porcentaje: 0 },
+      // Un backend anterior a BL-489 no trae `pos`: cuenta como 0.
+      { clave: "pos", etiqueta: "POS del local", monto: 0, porcentaje: 0 },
     ]);
     expect(
-      partesPorLugar({ local: 0, web: 0, whatsapp: 0 }).map(
+      partesPorLugar({ local: 0, web: 0, whatsapp: 0, pos: 0 }).map(
         (p) => p.porcentaje,
       ),
-    ).toEqual([0, 0, 0]);
+    ).toEqual([0, 0, 0, 0]);
+  });
+
+  it("[TC-U-465] HU-011 (BL-489): el POS del local suma al total y es un canal del filtro", () => {
+    expect(
+      partesPorLugar({ local: 500, web: 250, whatsapp: 0, pos: 250 }).map(
+        (p) => [p.clave, p.porcentaje],
+      ),
+    ).toEqual([
+      ["local", 50],
+      ["web", 25],
+      ["whatsapp", 0],
+      ["pos", 25],
+    ]);
+    expect(CANALES.find((c) => c.valor === "POS")).toMatchObject({
+      etiqueta: "POS del local",
+    });
+    expect(MENSAJE_PLATOS_POS).toMatch(/no informa los platos/);
   });
 
   it("[TC-U-320] el ranking de platos según cantidad o recaudado", () => {
@@ -179,13 +204,89 @@ describe("reportes.utils", () => {
     jest.useRealTimers();
   });
 
-  it("[TC-U-323] montos en pesos, rotación con un decimal y WhatsApp como «Próximamente»", () => {
+  it("[TC-U-323] montos en pesos, rotación con un decimal y WhatsApp como un canal más (BL-612)", () => {
     expect(formatearMonto(48320)).toMatch(/48\.320/);
     expect(formatearMonto(590.5)).toMatch(/590,50/);
     expect(formatearRotacion(2.4)).toBe("2,4");
     expect(formatearRotacion(3)).toBe("3");
-    expect(CANALES.filter((c) => c.proximamente).map((c) => c.valor)).toEqual([
-      "WHATSAPP",
-    ]);
+    expect(CANALES.find((c) => c.valor === "WHATSAPP")).toEqual({
+      valor: "WHATSAPP",
+      etiqueta: "WhatsApp",
+      descripcion: "Pedidos hechos por el bot de WhatsApp, para retirar",
+    });
+  });
+
+  describe("HU-022 (BL-496): propinas", () => {
+    it("el porcentaje va con coma y un decimal solo si hace falta", () => {
+      expect(formatearPorcentaje(8.1)).toBe("8,1");
+      expect(formatearPorcentaje(10)).toBe("10");
+      expect(formatearPorcentaje(0)).toBe("0");
+    });
+
+    it("cuántos pedidos dejaron propina y a cuánto equivale sobre las ventas", () => {
+      expect(
+        textoPropinas(
+          { total: 3890, pedidosConPropina: 41, porcentajeDeVentas: 8.1 },
+          74,
+        ),
+      ).toEqual({
+        detalle: "41 de 74 pedidos dejaron propina",
+        equivalencia: "equivale al 8,1 % de las ventas",
+      });
+    });
+
+    it("con un solo pedido, el texto va en singular", () => {
+      expect(
+        textoPropinas(
+          { total: 100, pedidosConPropina: 1, porcentajeDeVentas: 10 },
+          1,
+        ),
+      ).toEqual({
+        detalle: "1 de 1 pedido dejó propina",
+        equivalencia: "equivale al 10 % de las ventas",
+      });
+    });
+
+    it("sin propinas: lo dice y no muestra equivalencia", () => {
+      expect(
+        textoPropinas(
+          { total: 0, pedidosConPropina: 0, porcentajeDeVentas: 0 },
+          12,
+        ),
+      ).toEqual({
+        detalle: "Nadie dejó propina en este período",
+        equivalencia: null,
+      });
+    });
+
+    it("los pedidos con propina se acotan a los pedidos del período (se cuentan por medio de pago)", () => {
+      expect(
+        textoPropinas(
+          { total: 500, pedidosConPropina: 5, porcentajeDeVentas: 12.5 },
+          4,
+        ).detalle,
+      ).toBe("4 de 4 pedidos dejaron propina");
+    });
+  });
+});
+
+describe("HU-046 (BL-554): ayudaSugerencias", () => {
+  const DATOS = { mostradas: 40, aceptadas: 9, tasaAceptacion: 22.5 };
+
+  it("con sugerencias mostradas no hay ayuda", () => {
+    expect(ayudaSugerencias(DATOS, "TODOS")).toBeNull();
+  });
+
+  it("sin sugerencias en el período lo dice", () => {
+    expect(
+      ayudaSugerencias(
+        { mostradas: 0, aceptadas: 0, tasaAceptacion: 0 },
+        "LOCAL",
+      ),
+    ).toBe("Todavía no se mostraron sugerencias en este período.");
+  });
+
+  it("el POS del local no tiene sugerencias", () => {
+    expect(ayudaSugerencias(DATOS, "POS")).toMatch(/POS del local/);
   });
 });

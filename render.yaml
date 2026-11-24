@@ -1,0 +1,174 @@
+# render.yaml — Contingencia de producción en Render (BL-217, EDT 1.2.11, riesgo R-03)
+#
+# Blueprint de los servicios que reemplazan a producción si Railway no está
+# disponible. Runbook: docs/runbooks/contingencia-render.md.
+#
+# Modelo: contingencia pasiva. Los tres servicios quedan creados, probados y
+# SUSPENDIDOS (Render no cobra un servicio suspendido). La base de PostgreSQL
+# NO se declara acá: se crea al activar la contingencia y se restaura el último
+# respaldo de producción (S3, o su réplica en R2). Por eso las variables de
+# conexión a la base no están en este archivo (ver «Variables que se cargan en
+# Render» más abajo).
+#
+# Este archivo NO lleva secretos. Las credenciales llegan desde Infisical
+# (entorno prod, carpetas /api y /auth) con una sincronización a Render.
+#
+# Con cada release: actualizar el tag de imagen de API y Auth y
+# NEXT_PUBLIC_APP_VERSION al tag nuevo (docs/RELEASE.md, «Después»).
+#
+# URLs: Render arma la URL pública con el nombre del servicio
+# (https://<nombre>.onrender.com). Si al crear el Blueprint el nombre estaba
+# tomado, Render agrega un sufijo: en ese caso hay que corregir las URLs de
+# este archivo (KEYCLOAK_URL, FRONTEND_URL, API_PUBLIC_HOST, KC_HOSTNAME y las
+# NEXT_PUBLIC_*) con un PR antes de seguir (runbook, sección 3.3).
+#
+# Variables que se cargan en Render (no van en este archivo):
+#   bistrolink-api-contingencia
+#     - DATABASE_URL y RUNTIME_DATABASE_URL: al activar, con la base nueva.
+#     - IMAGES_CDN_URL y MP_FORCE_PAYER_EMAIL: configuración (no secreta) que
+#       se copia de Railway production en la preparación.
+#     - Las credenciales: Infisical prod /api (sincronización).
+#   bistrolink-auth-contingencia
+#     - KC_DB_URL, KC_DB_USERNAME y KC_DB_PASSWORD: al activar, con la base nueva.
+#     - Las credenciales: Infisical prod /auth (sincronización).
+#   bistrolink-web-contingencia
+#     - NEXT_PUBLIC_MP_PUBLIC_KEY: la Public Key de la aplicación de prueba de
+#       producción (variable del repo MP_PUBLIC_KEY_PRODUCTION). Sin ella el
+#       pago con tarjeta queda deshabilitado.
+
+projects:
+  - name: bistrolink-contingencia
+    environments:
+      - name: production
+        services:
+          # API (NestJS). Misma imagen que producción, por tag semántico.
+          - type: web
+            name: bistrolink-api-contingencia
+            runtime: image
+            image:
+              url: ghcr.io/ved-virtualexperiencedevelopment/bistrolink-api:v0.5.0
+              creds:
+                fromRegistryCreds:
+                  name: ghcr-bistrolink
+            region: ohio
+            plan: starter
+            # Migraciones pendientes antes de poner la versión en línea, igual
+            # que el pre-deploy de Railway (BL-231). Usa DATABASE_URL.
+            preDeployCommand: /app/migrate/predeploy-migrate.sh
+            healthCheckPath: /health/ready
+            envVars:
+              - key: NODE_ENV
+                value: production
+              - key: PORT
+                value: "3001"
+              - key: AWS_REGION
+                value: us-east-2
+              - key: S3_BUCKET_IMAGES
+                value: bistrolink-images-prod
+              - key: S3_BUCKET_CFE
+                value: bistrolink-cfe-prod
+              # El emisor (iss) de los tokens es la URL pública de Keycloak:
+              # la API lo valida contra esta misma URL.
+              - key: KEYCLOAK_URL
+                value: https://bistrolink-auth-contingencia.onrender.com
+              - key: KEYCLOAK_REALM
+                value: bistrolink
+              - key: KEYCLOAK_CLIENT_ID
+                value: bistrolink-backend
+              # CORS, QR de mesa y links de pago (BL-426).
+              - key: FRONTEND_URL
+                value: https://bistrolink-web-contingencia.onrender.com
+              # Redirección HTTP → HTTPS solo hacia el dominio propio (BL-426).
+              - key: API_PUBLIC_HOST
+                value: bistrolink-api-contingencia.onrender.com
+              # Procesos en segundo plano APAGADOS por defecto. En el simulacro
+              # tienen que quedar así: Railway sigue atendiendo producción y
+              # estos procesos llaman a Mercado Pago y a Surtec, y escriben en
+              # el bucket de CFE de producción (Object Lock, 5 años).
+              # En una activación real se pasan a "true" (runbook, 4.8).
+              - key: PAGOS_CONCILIACION_HABILITADA
+                value: "false"
+              - key: CFE_CONCILIACION_HABILITADA
+                value: "false"
+              - key: CFE_ESTADO_DGI_HABILITADA
+                value: "false"
+              - key: CFE_RESPALDO_PDF_HABILITADO
+                value: "false"
+              - key: POS_SINCRONIZACION_HABILITADA
+                value: "false"
+              - key: REPORTES_RESUMEN_HABILITADO
+                value: "false"
+              - key: COMPLEMENTOS_REGLAS_HABILITADO
+                value: "false"
+
+          # Keycloak 26.7.2 con el realm, el tema y set-client-secret.sh.
+          - type: web
+            name: bistrolink-auth-contingencia
+            runtime: image
+            image:
+              url: ghcr.io/ved-virtualexperiencedevelopment/bistrolink-auth:v0.5.0
+              creds:
+                fromRegistryCreds:
+                  name: ghcr-bistrolink
+            region: ohio
+            plan: standard
+            # Keycloak expone /health en el puerto de gestión (9000), que Render
+            # no consulta: se usa la configuración OIDC del realm, en el 8080.
+            healthCheckPath: /realms/bistrolink/.well-known/openid-configuration
+            envVars:
+              # Puerto al que Render envía el tráfico (Keycloak escucha en 8080
+              # por el CMD de la imagen; también abre el 9000 de gestión).
+              - key: PORT
+                value: "8080"
+              - key: KC_DB
+                value: postgres
+              - key: KC_HOSTNAME
+                value: https://bistrolink-auth-contingencia.onrender.com
+              - key: KC_HTTP_ENABLED
+                value: "true"
+              - key: KC_PROXY_HEADERS
+                value: xforwarded
+              - key: KC_HEALTH_ENABLED
+                value: "true"
+              - key: KC_CACHE
+                value: local
+              - key: JAVA_OPTS_KC_HEAP
+                value: -Xms128m -Xmx512m
+              # Mitigación de CVE-2026-114938 (BL-590). Si se agregan opciones
+              # de memoria, esta tiene que seguir en la lista.
+              - key: JAVA_OPTS_APPEND
+                value: -XX:-UseBASE64Intrinsics
+
+          # Web (Next.js). Se compila en Render, porque las URLs NEXT_PUBLIC_*
+          # quedan fijas en el build. Render pasa las variables del servicio
+          # como build-args con el mismo nombre (ARG del Dockerfile).
+          - type: web
+            name: bistrolink-web-contingencia
+            runtime: docker
+            repo: https://github.com/VED-VirtualExperienceDevelopment/bistrolink
+            branch: main
+            dockerfilePath: ./apps/frontend/Dockerfile
+            dockerContext: .
+            # Sin deploy automático: un servicio en reposo no se recompila con
+            # cada push. Al activar se despliega a mano el último commit de main.
+            autoDeployTrigger: "off"
+            region: ohio
+            plan: starter
+            healthCheckPath: /api/health
+            envVars:
+              - key: PORT
+                value: "3000"
+              - key: NEXT_PUBLIC_API_URL
+                value: https://bistrolink-api-contingencia.onrender.com
+              - key: NEXT_PUBLIC_WS_URL
+                value: wss://bistrolink-api-contingencia.onrender.com
+              - key: NEXT_PUBLIC_KEYCLOAK_URL
+                value: https://bistrolink-auth-contingencia.onrender.com
+              - key: NEXT_PUBLIC_KEYCLOAK_REALM
+                value: bistrolink
+              - key: NEXT_PUBLIC_KEYCLOAK_CLIENT_ID
+                value: bistrolink-frontend
+              - key: NEXT_PUBLIC_APP_VERSION
+                value: v0.5.0
+              - key: NEXT_PUBLIC_APP_ENV
+                value: contingencia

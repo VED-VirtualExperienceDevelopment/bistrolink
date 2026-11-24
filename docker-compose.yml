@@ -23,7 +23,6 @@ services:
       retries: 5
       start_period: 10s
 
-
   # ── Keycloak ────────────────────────────────────────────────────────────
   bistrolink-auth:
     # 26.7.0 -> 26.7.2: alineado con la versión que usa keycloak/Dockerfile.auth
@@ -46,7 +45,7 @@ services:
     entrypoint: ["/bin/bash", "/opt/keycloak/bin/set-client-secret.sh"]
     command: ["start-dev", "--import-realm"]
     # Carga KEYCLOAK_CLIENT_SECRET y las variables de los usuarios de prueba
-    # (TEST_*_USERNAME/PASSWORD y KEYCLOAK_COMENSAL_PASSWORD) directo del
+    # (TEST_*_USERNAME/PASSWORD) directo del
     # .env del backend — así cualquiera del equipo levanta lo mismo con solo
     # correr 'docker compose up -d'. BL-264: los usuarios de prueba ya no
     # están en realm-export.json; los carga keycloak/load-test-users.sh al
@@ -62,8 +61,9 @@ services:
       # no como fix garantizado de ese incidente puntual.
       DATABASE_URL: ""
       RUNTIME_DATABASE_URL: ""
-      KEYCLOAK_ADMIN: admin
-      KEYCLOAK_ADMIN_PASSWORD: admin # solo desarrollo local
+      # BL-230: nombres de Keycloak 26 (KEYCLOAK_ADMIN* están deprecadas).
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin # solo desarrollo local
       KC_DB: dev-file
       KC_HOSTNAME_STRICT: "false"
       KC_HTTP_ENABLED: "true"
@@ -83,12 +83,11 @@ services:
       test:
         - CMD-SHELL
         - |-
-            bash -c 'exec 3<>/dev/tcp/127.0.0.1/9000 && printf "GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n" >&3 && read -r line <&3 && [[ $$line == *200* ]]'
+          bash -c 'exec 3<>/dev/tcp/127.0.0.1/9000 && printf "GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n" >&3 && read -r line <&3 && [[ $$line == *200* ]]'
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 60s
-
 
   # ── Portainer ───────────────────────────────────────────────────────────
   bistrolink-portainer:
@@ -102,23 +101,68 @@ services:
       - bistrolink-portainer-data:/data
 
   # ── Evolution API (WhatsApp) ─────────────────────────────────────────────
+  # HU-010 (BL-112): 2.3.7, la misma versión fija que staging (las 2.4 piden
+  # activar una licencia). La v2 necesita su propio Postgres y Redis: no usa
+  # bistrolink-db. Guía completa: docs/runbooks/whatsapp-evolution.md.
   bistrolink-evo:
-    image: evoapicloud/evolution-api:v2.1.1
+    image: evoapicloud/evolution-api:v2.3.7
     container_name: bistrolink-evo
     restart: unless-stopped
+    depends_on:
+      bistrolink-evo-db:
+        condition: service_healthy
+      bistrolink-evo-redis:
+        condition: service_started
     ports:
       - "8081:8080" # 8081 externo para no colisionar con Keycloak en 8080
     environment:
       SERVER_TYPE: http
       SERVER_PORT: 8080
+      SERVER_URL: http://localhost:8081
       AUTHENTICATION_TYPE: apikey
+      # Solo para desarrollo local; en staging va en Infisical.
       AUTHENTICATION_API_KEY: dev_key_local
+      DATABASE_ENABLED: "true"
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://evolution:evolution_dev@bistrolink-evo-db:5432/evolution?schema=evolution_api
+      DATABASE_CONNECTION_CLIENT_NAME: evolution_local
+      CACHE_REDIS_ENABLED: "true"
+      CACHE_REDIS_URI: redis://bistrolink-evo-redis:6379/6
+      CACHE_REDIS_PREFIX_KEY: evolution
+      CACHE_LOCAL_ENABLED: "false"
+    # La API corre fuera de Docker: el webhook la llama por host.docker.internal.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - bistrolink-evo-data:/evolution/instances
+
+  bistrolink-evo-db:
+    image: postgres:16.4-alpine
+    container_name: bistrolink-evo-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: evolution
+      POSTGRES_PASSWORD: evolution_dev
+      POSTGRES_DB: evolution
+    volumes:
+      - bistrolink-evo-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U evolution -d evolution"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  bistrolink-evo-redis:
+    image: redis:7.4-alpine
+    container_name: bistrolink-evo-redis
+    restart: unless-stopped
+    volumes:
+      - bistrolink-evo-redis-data:/data
 
 volumes:
   bistrolink-db-data:
   bistrolink-auth-data:
   bistrolink-portainer-data:
   bistrolink-evo-data:
-  
+  bistrolink-evo-db-data:
+  bistrolink-evo-redis-data:

@@ -5,6 +5,8 @@ import { Dialog } from "@/components/ui/Dialog";
 import { apiFetch, ApiError } from "@/lib/api-client";
 import {
   codigoDelPedido,
+  desglosePropina,
+  esTotalCambiado,
   formatearMonto,
   normalizarAutorizacion,
   nuevaClaveDeCobroPos,
@@ -20,6 +22,11 @@ interface Props {
   readonly token: string | undefined;
   readonly onClose: () => void;
   readonly onCobrado: (cobro: CobroPosRegistrado) => void;
+  /**
+   * HU-022 (BL-495): el comensal cambió la propina mientras el mozo tenía el
+   * pedido abierto. Cierra el diálogo y vuelve a pedir la lista.
+   */
+  readonly onActualizar: () => void;
 }
 
 /**
@@ -27,13 +34,23 @@ interface Props {
  * cobro acá: tipo de tarjeta y número de autorización del voucher. El total
  * lo calcula el backend; acá solo se muestra. Nunca se piden datos de la
  * tarjeta.
+ * HU-022 (BL-495): el total incluye la propina que eligió el comensal. El
+ * mozo la ve desglosada pero no la puede cambiar; se manda el total que vio
+ * para que el backend rechace el cobro si cambió.
  */
-export function CobrarPosDialog({ pedido, token, onClose, onCobrado }: Props) {
+export function CobrarPosDialog({
+  pedido,
+  token,
+  onClose,
+  onCobrado,
+  onActualizar,
+}: Props) {
   const [tarjeta, setTarjeta] = useState<TarjetaPos>("DEBITO");
   const [texto, setTexto] = useState("");
   const [tocado, setTocado] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [totalCambiado, setTotalCambiado] = useState(false);
   // Una clave por diálogo abierto: un doble clic o un reintento manda la
   // misma y el backend no registra dos cobros.
   const claveRef = useRef<string>("");
@@ -48,6 +65,7 @@ export function CobrarPosDialog({ pedido, token, onClose, onCobrado }: Props) {
       setTexto("");
       setTocado(false);
       setError(null);
+      setTotalCambiado(false);
     }
   }, [pedido]);
 
@@ -55,10 +73,11 @@ export function CobrarPosDialog({ pedido, token, onClose, onCobrado }: Props) {
 
   const autorizacion = normalizarAutorizacion(texto);
   const conError = tocado && texto.trim() !== "" && autorizacion === null;
+  const desglose = desglosePropina(pedido);
 
   async function confirmar() {
     setTocado(true);
-    if (!pedido || autorizacion === null || enviando) return;
+    if (!pedido || autorizacion === null || enviando || totalCambiado) return;
     setEnviando(true);
     setError(null);
     try {
@@ -69,17 +88,20 @@ export function CobrarPosDialog({ pedido, token, onClose, onCobrado }: Props) {
           idempotencyKey: claveRef.current,
           tarjeta,
           autorizacion,
+          // HU-022 (BL-495): el total que el mozo está viendo.
+          totalEsperado: pedido.total,
         }),
       });
       onCobrado(cobro);
     } catch (e) {
-      // 409 (ya pagado, pago con Mercado Pago en curso, POS deshabilitado) y
-      // 400 llegan con el mensaje redactado por el backend.
-      setError(
+      // 409 (ya pagado, pago con Mercado Pago en curso, POS deshabilitado,
+      // total cambiado) y 400 llegan con el mensaje redactado por el backend.
+      const mensaje =
         e instanceof ApiError
           ? e.message
-          : "No se pudo registrar el cobro. Probá de nuevo.",
-      );
+          : "No se pudo registrar el cobro. Probá de nuevo.";
+      setError(mensaje);
+      setTotalCambiado(esTotalCambiado(mensaje));
     } finally {
       setEnviando(false);
     }
@@ -98,10 +120,24 @@ export function CobrarPosDialog({ pedido, token, onClose, onCobrado }: Props) {
           void confirmar();
         }}
       >
-        <p className="flex justify-between border-b border-outline-variant pb-2 text-body-lg font-medium text-on-surface">
-          <span>Total a cobrar en el POS</span>
-          <span>{formatearMonto(pedido.total)}</span>
-        </p>
+        <div className="space-y-1 border-b border-outline-variant pb-2">
+          {desglose && (
+            <>
+              <p className="flex justify-between text-body-md text-on-surface-variant">
+                <span>Consumo</span>
+                <span>{formatearMonto(desglose.consumo)}</span>
+              </p>
+              <p className="flex justify-between text-body-md text-on-surface-variant">
+                <span>{desglose.etiqueta}</span>
+                <span>{formatearMonto(desglose.propina)}</span>
+              </p>
+            </>
+          )}
+          <p className="flex justify-between text-body-lg font-medium text-on-surface">
+            <span>Total a cobrar en el POS</span>
+            <span>{formatearMonto(pedido.total)}</span>
+          </p>
+        </div>
 
         <fieldset>
           <legend className="mb-1 text-label-md text-on-surface-variant">
@@ -176,14 +212,24 @@ export function CobrarPosDialog({ pedido, token, onClose, onCobrado }: Props) {
           >
             Cancelar
           </button>
-          <button
-            type="submit"
-            disabled={autorizacion === null || enviando}
-            aria-busy={enviando}
-            className="min-h-12 rounded-lg bg-primary px-4 text-body-md font-medium text-on-primary hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {enviando ? "Registrando…" : "Registrar cobro"}
-          </button>
+          {totalCambiado ? (
+            <button
+              type="button"
+              onClick={onActualizar}
+              className="min-h-12 rounded-lg bg-primary px-4 text-body-md font-medium text-on-primary hover:opacity-90"
+            >
+              Actualizar lista
+            </button>
+          ) : (
+            <button
+              type="submit"
+              disabled={autorizacion === null || enviando}
+              aria-busy={enviando}
+              className="min-h-12 rounded-lg bg-primary px-4 text-body-md font-medium text-on-primary hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {enviando ? "Registrando…" : "Registrar cobro"}
+            </button>
+          )}
         </div>
       </form>
     </Dialog>

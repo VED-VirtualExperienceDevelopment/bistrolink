@@ -5,7 +5,9 @@ import {
   errorDocumento,
   errorEmail,
   errorTitular,
+  esErrorDeDocumentoMp,
   estadoComprobante,
+  filtrarEntradaCi,
   etiquetaMarca,
   numeroComprobante,
   urlConsultaSegura,
@@ -19,10 +21,14 @@ import {
   resultadoDeError,
   resultadoDeEstado,
   rutaPagos,
+  rutaPropina,
   seguirConsultando,
   tipoTarjeta,
   TOPE_CONSULTA_MS,
   filasRebajaIva,
+  HEADER_LINK_PAGO,
+  mediosSegunOrigen,
+  mensajeSinMedios,
 } from "@/components/pago/pago.utils";
 import {
   HEADER_MESA_SESION,
@@ -53,6 +59,13 @@ describe("rutas y headers del pago", () => {
 
   it("un id raro no puede cambiar la ruta", () => {
     expect(rutaPagos("../admin")).toBe("/pedidos/..%2Fadmin/pagos");
+  });
+
+  it("HU-022 (BL-495): la propina se guarda con PUT en /pedidos/:id/pagos/propina", () => {
+    expect(rutaPropina("3cdf1dad-31d6-43c9-9739-11485e0e23f8")).toBe(
+      "/pedidos/3cdf1dad-31d6-43c9-9739-11485e0e23f8/pagos/propina",
+    );
+    expect(rutaPropina("../admin")).toBe("/pedidos/..%2Fadmin/pagos/propina");
   });
 
   it("mesa: se autoriza con el QR y la sesión de la mesa", () => {
@@ -145,6 +158,40 @@ describe("documento del titular", () => {
   it("cédula con pocos o demasiados dígitos: error", () => {
     expect(errorDocumento("CI", "12345")).toMatch(/7 u 8 dígitos/);
     expect(errorDocumento("CI", "123456789")).toMatch(/7 u 8 dígitos/);
+  });
+
+  it("cédula todo ceros: cumple la fórmula pero no es válida (BL-445)", () => {
+    expect(errorDocumento("CI", "0.000.000-0")).toBe("Ingresá una cédula válida.");
+    expect(errorDocumento("CI", "00000000")).toBe("Ingresá una cédula válida.");
+  });
+
+  it("6 dígitos más el verificador sigue siendo válida (cédulas viejas)", () => {
+    const cuerpo = "987654";
+    expect(errorDocumento("CI", `${cuerpo}${digitoVerificadorCi(cuerpo)}`)).toBeNull();
+  });
+
+  it("filtrarEntradaCi: deja dígitos, puntos y guion, hasta 11 (BL-445)", () => {
+    expect(filtrarEntradaCi("4123abc456")).toBe("4123456");
+    expect(filtrarEntradaCi("4 123 456 3")).toBe("41234563");
+    expect(filtrarEntradaCi("1.234.567-2")).toBe("1.234.567-2");
+    expect(filtrarEntradaCi("1.234.567-23456")).toHaveLength(11);
+  });
+
+  it.each([
+    [[{ code: "324", message: "invalid parameter docNumber" }]],
+    [{ cause: [{ code: "322" }] }],
+    [{ code: 214 }],
+  ])("esErrorDeDocumentoMp reconoce el rechazo del documento: %j", (error) => {
+    expect(esErrorDeDocumentoMp(error)).toBe(true);
+  });
+
+  it.each([
+    [[{ code: "E301" }]],
+    [{ cause: [{ code: "325" }] }],
+    [new Error("sin token")],
+    [null],
+  ])("esErrorDeDocumentoMp ignora otros errores: %j", (error) => {
+    expect(esErrorDeDocumentoMp(error)).toBe(false);
   });
 
   it("otro documento (turistas): alcanza con que no esté vacío", () => {
@@ -387,5 +434,31 @@ describe("comprobante en la pantalla de pago aprobado", () => {
     [""],
   ])("enlace inseguro o inválido (%s): no se muestra", (url) => {
     expect(urlConsultaSegura(url)).toBeNull();
+  });
+});
+
+describe("link de pago (HU-033, BL-203)", () => {
+  const link = { tipo: "link" as const, linkToken: "tokenDelLinkDePagoXYZ" };
+
+  it("la credencial es el link, en X-Link-Pago (ni QR ni token del retiro)", () => {
+    expect(headersAccesoPedido(link, "token-retiro")).toEqual({
+      [HEADER_LINK_PAGO]: "tokenDelLinkDePagoXYZ",
+    });
+    expect(HEADER_LINK_PAGO).toBe("X-Link-Pago");
+  });
+
+  it("por el link solo se ofrece la tarjeta", () => {
+    expect(
+      mediosSegunOrigen({ tarjeta: true, efectivo: true }, "link"),
+    ).toEqual({ tarjeta: true, efectivo: false });
+    expect(
+      mediosSegunOrigen({ tarjeta: true, efectivo: true }, "mesa"),
+    ).toEqual({ tarjeta: true, efectivo: true });
+  });
+
+  it("sin medios en línea, se le dice que le cobre el mozo", () => {
+    expect(mensajeSinMedios("link")).toBe(
+      "Este local no tiene pagos en línea habilitados. Pedile al mozo que te cobre.",
+    );
   });
 });

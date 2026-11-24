@@ -9,6 +9,7 @@ import { TenantPrismaService } from '../../src/prisma/tenant-prisma.service';
 import { ConfiguracionEstablecimientoService } from '../../src/configuracion/configuracion-establecimiento.service';
 import { CobroEfectivoService } from '../../src/pagos/efectivo/cobro-efectivo.service';
 import { PagosService } from '../../src/pagos/pagos.service';
+import { MenuService } from '../../src/menu/menu.service';
 import { conPagoFalso } from './support/pago-falso';
 
 // HU-020 (BL-72): configuración del establecimiento.
@@ -58,12 +59,21 @@ async function getToken(username: string, password: string): Promise<string> {
 /** Valores de la configuración que se guardan antes y se restauran después. */
 interface Configuracion {
   razonSocial: string;
+  // HU-043 (BL-561): también se restauran al terminar cada test.
+  nombre: string;
+  direccion: string;
   efectivoHabilitado: boolean;
   mercadoPagoHabilitado: boolean;
   plexoHabilitado: boolean;
   handyHabilitado: boolean;
   propinasSugeridas: number[];
   cfeProveedor: 'SURTEC' | 'BILLER';
+  // HU-038 (BL-506): también se restauran al terminar cada test.
+  minutosEsperaAtencion: number;
+  minutosEsperaDemorado: number;
+  minutosEsperaDemoraAlta: number;
+  // HU-043 (BL-531): también se restaura al terminar cada test.
+  plantilla: string;
 }
 
 describe('HU-020 (BL-72): configuración del establecimiento', () => {
@@ -90,12 +100,18 @@ describe('HU-020 (BL-72): configuración del establecimiento', () => {
       const restaurante = await tx.restaurante.findUniqueOrThrow({
         where: { tenantId: TENANT_ID },
         select: {
+          nombre: true,
+          direccion: true,
           efectivoHabilitado: true,
           mercadoPagoHabilitado: true,
           plexoHabilitado: true,
           handyHabilitado: true,
           propinasSugeridas: true,
           cfeProveedor: true,
+          minutosEsperaAtencion: true,
+          minutosEsperaDemorado: true,
+          minutosEsperaDemoraAlta: true,
+          plantilla: true,
         },
       });
       return { ...tenant, ...restaurante };
@@ -338,4 +354,216 @@ describe('HU-020 (BL-72): configuración del establecimiento', () => {
       );
     },
   );
+
+  it('[TC-I-192] HU-038 (BL-506): los umbrales de espera se guardan, se auditan y se avisan al KDS', async () => {
+    // El KdsGateway que usa el servicio de configuración.
+    const kdsGateway = (configuracion as any).kdsGateway;
+    const aviso = jest.spyOn(kdsGateway, 'emitirUmbralesEspera');
+
+    const respuesta = await configuracion.actualizar(
+      TENANT_ID,
+      {
+        minutosEsperaAtencion: 15,
+        minutosEsperaDemorado: 45,
+        minutosEsperaDemoraAlta: 90,
+      },
+      { id: ACTOR_PRUEBA },
+    );
+
+    expect(respuesta).toMatchObject({
+      minutosEsperaAtencion: 15,
+      minutosEsperaDemorado: 45,
+      minutosEsperaDemoraAlta: 90,
+    });
+    expect(await leerConfiguracion()).toMatchObject({
+      minutosEsperaAtencion: 15,
+      minutosEsperaDemorado: 45,
+      minutosEsperaDemoraAlta: 90,
+    });
+    const registros = await auditoria();
+    expect(registros).toHaveLength(1);
+    expect(registros[0]).toMatchObject({
+      valoresAntes: {
+        minutosEsperaAtencion: original.minutosEsperaAtencion,
+        minutosEsperaDemorado: original.minutosEsperaDemorado,
+        minutosEsperaDemoraAlta: original.minutosEsperaDemoraAlta,
+      },
+      valoresDespues: {
+        minutosEsperaAtencion: 15,
+        minutosEsperaDemorado: 45,
+        minutosEsperaDemoraAlta: 90,
+      },
+    });
+    expect(aviso).toHaveBeenCalledWith(TENANT_ID, {
+      atencion: 15,
+      demorado: 45,
+      demoraAlta: 90,
+    });
+  });
+
+  it('[TC-I-193] HU-038 (BL-506): umbrales fuera de orden: la API da 400 y la base los rechaza aunque no pasen por la API (CHECK)', async () => {
+    // Por el servicio: 400 con lo guardado (el PATCH es parcial).
+    await expect(
+      configuracion.actualizar(
+        TENANT_ID,
+        { minutosEsperaDemoraAlta: original.minutosEsperaDemorado },
+        { id: ACTOR_PRUEBA },
+      ),
+    ).rejects.toThrow(
+      '«Demora alta desde» tiene que ser mayor que «Demorado desde»',
+    );
+    expect(await auditoria()).toHaveLength(0);
+
+    // Directo a la base: el CHECK de la migración (23514 de Postgres).
+    await expect(
+      enTenant((tx) =>
+        tx.restaurante.update({
+          where: { tenantId: TENANT_ID },
+          data: { minutosEsperaAtencion: 90, minutosEsperaDemorado: 60 },
+        }),
+      ),
+    ).rejects.toThrow(/restaurante_minutos_espera_orden|23514/);
+    await expect(
+      enTenant((tx) =>
+        tx.restaurante.update({
+          where: { tenantId: TENANT_ID },
+          data: { minutosEsperaDemoraAlta: 601 },
+        }),
+      ),
+    ).rejects.toThrow(/restaurante_minutos_espera_rango|23514/);
+
+    expect(await leerConfiguracion()).toEqual(original);
+  });
+
+  it('[TC-I-217] HU-043 (BL-531): la plantilla de marca se guarda y se audita; la base rechaza una que no está en la lista (CHECK)', async () => {
+    const otra = original.plantilla === 'gourmet' ? 'familiar' : 'gourmet';
+
+    const respuesta = await configuracion.actualizar(
+      TENANT_ID,
+      { plantilla: otra },
+      { id: ACTOR_PRUEBA },
+    );
+
+    expect(respuesta).toMatchObject({
+      plantilla: otra,
+      plantillasDisponibles: ['clasica', 'gourmet', 'rapida', 'familiar'],
+    });
+    expect((await leerConfiguracion()).plantilla).toBe(otra);
+    const registros = await auditoria();
+    expect(registros).toHaveLength(1);
+    expect(registros[0]).toMatchObject({
+      detalle: { campos: ['plantilla'] },
+      valoresAntes: { plantilla: original.plantilla },
+      valoresDespues: { plantilla: otra },
+    });
+
+    // Directo a la base: el CHECK de la migración (23514 de Postgres).
+    await expect(
+      enTenant((tx) =>
+        tx.restaurante.update({
+          where: { tenantId: TENANT_ID },
+          data: { plantilla: 'azul' },
+        }),
+      ),
+    ).rejects.toThrow(/restaurante_plantilla_valida|23514/);
+    expect((await leerConfiguracion()).plantilla).toBe(otra);
+  });
+
+  it('[TC-I-219] HU-043 (BL-561): el Administrador cambia el nombre y la dirección del local; se auditan y la carta los muestra', async () => {
+    const nombre = `${original.nombre} (cambiado)`;
+    const direccion = `${original.direccion} bis`;
+
+    const respuesta = await configuracion.actualizar(
+      TENANT_ID,
+      { nombre, direccion },
+      { id: ACTOR_PRUEBA },
+    );
+
+    expect(respuesta).toMatchObject({ nombre, direccion });
+    expect(await leerConfiguracion()).toMatchObject({ nombre, direccion });
+    const registros = await auditoria();
+    expect(registros).toHaveLength(1);
+    expect(registros[0]).toMatchObject({
+      detalle: { campos: ['nombre', 'direccion'] },
+      valoresAntes: { nombre: original.nombre, direccion: original.direccion },
+      valoresDespues: { nombre, direccion },
+    });
+
+    // La carta pública (HU-002) toma el nombre y la dirección nuevos.
+    const restauranteId = await enTenant<string>(async (tx) => {
+      const restaurante = await tx.restaurante.findUniqueOrThrow({
+        where: { tenantId: TENANT_ID },
+        select: { id: true },
+      });
+      return restaurante.id;
+    });
+    const menuService = await app.resolve(MenuService);
+    const menu = await menuService.getMenuByRestaurante(
+      TENANT_ID,
+      restauranteId,
+    );
+    expect(menu.restaurante).toMatchObject({ nombre, direccion });
+  });
+
+  it('[TC-I-218] HU-043 (BL-532): una key de otro tenant, de la cuarentena o de un ítem no se guarda como logo (400, sin auditoría)', async () => {
+    const uuid = randomUUID();
+    const logoAntes = await enTenant<string | null>(async (tx) => {
+      const restaurante = await tx.restaurante.findUniqueOrThrow({
+        where: { tenantId: TENANT_ID },
+        select: { logoKey: true },
+      });
+      return restaurante.logoKey;
+    });
+
+    for (const logoKey of [
+      `b02579f2-2bb0-496b-abf2-33c494c93122/menu/marca/${uuid}.webp`,
+      `incoming/${TENANT_ID}/${uuid}`,
+      `${TENANT_ID}/menu/${uuid}.webp`,
+    ]) {
+      await expect(
+        configuracion.actualizar(TENANT_ID, { logoKey }, { id: ACTOR_PRUEBA }),
+      ).rejects.toThrow('El logo no es válido para este establecimiento');
+    }
+
+    expect(await auditoria()).toHaveLength(0);
+    const logoDespues = await enTenant<string | null>(async (tx) => {
+      const restaurante = await tx.restaurante.findUniqueOrThrow({
+        where: { tenantId: TENANT_ID },
+        select: { logoKey: true },
+      });
+      return restaurante.logoKey;
+    });
+    expect(logoDespues).toBe(logoAntes);
+  });
+
+  it('[TC-I-220] HU-043 (BL-562): el logo, la foto de un ítem o una portada de otro tenant no se guardan como portada (400, sin auditoría)', async () => {
+    const uuid = randomUUID();
+    const leerPortada = () =>
+      enTenant<string | null>(async (tx) => {
+        const restaurante = await tx.restaurante.findUniqueOrThrow({
+          where: { tenantId: TENANT_ID },
+          select: { portadaKey: true },
+        });
+        return restaurante.portadaKey;
+      });
+    const portadaAntes = await leerPortada();
+
+    for (const portadaKey of [
+      `b02579f2-2bb0-496b-abf2-33c494c93122/menu/portada/${uuid}.webp`,
+      `${TENANT_ID}/menu/marca/${uuid}.webp`,
+      `${TENANT_ID}/menu/${uuid}.webp`,
+      `incoming/${TENANT_ID}/${uuid}`,
+    ]) {
+      await expect(
+        configuracion.actualizar(
+          TENANT_ID,
+          { portadaKey },
+          { id: ACTOR_PRUEBA },
+        ),
+      ).rejects.toThrow('La portada no es válida para este establecimiento');
+    }
+
+    expect(await auditoria()).toHaveLength(0);
+    expect(await leerPortada()).toBe(portadaAntes);
+  });
 });

@@ -1,5 +1,6 @@
 // HU-002 / HU-003 / BL-155: Tipos compartidos del menú público y carrito
-import type { EstadoPedido } from './pedido';
+import type { EstadoPedido } from "./pedido";
+import type { RetiroPublico } from "@/components/retiro/retiro.utils";
 
 export interface ItemCarta {
   id: string;
@@ -8,6 +9,10 @@ export interface ItemCarta {
   precio: number;
   disponible: boolean;
   imagenUrl?: string;
+  /** HU-044 (BL-537): «Sugerencia del local». */
+  destacado?: boolean;
+  /** HU-045 (BL-548): entre los 3 más pedidos (lo calcula la API). */
+  masPedido?: boolean;
 }
 
 export interface CategoriaCarta {
@@ -22,10 +27,31 @@ export interface RestaurantePublico {
   direccion: string;
 }
 
+// HU-043 (BL-532): plantillas de marca, las mismas que valida la API.
+export type PlantillaMarca = "clasica" | "gourmet" | "rapida" | "familiar";
+
+// HU-043 (BL-532): marca del local en la carta. logoUrl null = sin logo
+// (se muestra el nombre del local).
+export interface MarcaPublica {
+  logoUrl: string | null;
+  // HU-043 (BL-562): foto de portada del banner. null = la de por defecto.
+  // Opcional: una API anterior no la manda.
+  portadaUrl?: string | null;
+  plantilla: PlantillaMarca;
+}
+
 // Es la forma del JSON que devuelve tu backend
 export interface MenuPublicoResponse {
   restaurante: RestaurantePublico;
+  // Opcional: una API anterior a HU-043 no la manda (la carta usa la Clásica).
+  marca?: MarcaPublica;
   categorias: CategoriaCarta[];
+  // HU-040 (BL-210): si el local toma pedidos para retirar ahora. Opcional:
+  // un backend anterior no lo manda (y entonces se puede pedir, como antes).
+  retiro?: RetiroPublico;
+  // HU-010 (BL-613): número del bot de WhatsApp («59899123456»), solo si el
+  // bot atiende al local. Opcional: un backend anterior no lo manda.
+  whatsapp?: string | null;
 }
 
 export interface ItemCarrito {

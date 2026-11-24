@@ -18,6 +18,7 @@ import {
   rutDePrueba,
   tenantIdEnKeycloak,
 } from './support/plataforma';
+import { esRutValido } from '../../src/plataforma/rut';
 
 /**
  * BL-416 (BL-404): gestión de establecimientos por la plataforma, contra la
@@ -41,13 +42,12 @@ import {
  * quedado (usuarios de Keycloak y filas), aunque algún test falle.
  *
  * Setup: igual que plataforma.e2e-spec.ts (rol PLATAFORMA en el realm y
- * KEYCLOAK_COMENSAL_PASSWORD). Los permisos cruzados usan además el Admin
- * del seed (TEST_ADMIN_PASSWORD).
+ * los usuarios de prueba de Keycloak, TEST_ADMIN_PASSWORD). Los permisos
+ * cruzados usan además el Admin del seed.
  */
 
 const ADMIN_SEED = process.env.TEST_ADMIN_USERNAME ?? 'admin-test';
 const ADMIN_SEED_PASS = process.env.TEST_ADMIN_PASSWORD;
-const COMENSAL_PASS = process.env.KEYCLOAK_COMENSAL_PASSWORD;
 
 // Datos únicos por corrida. El RUT sale de otra semilla que el de
 // plataforma.e2e-spec.ts: los dos archivos pueden correr a la vez.
@@ -89,8 +89,11 @@ describe('Gestión de establecimientos por la plataforma (BL-404) - e2e', () => 
   let restauranteId: string;
   let mesaVirtualId: string;
 
-  const itConPlataforma = COMENSAL_PASS ? it : it.skip;
-  const itConAdminSeed = COMENSAL_PASS && ADMIN_SEED_PASS ? it : it.skip;
+  // Con los usuarios de prueba cargados en Keycloak (en el CI, siempre).
+  // Antes de BL-581 la señal era KEYCLOAK_COMENSAL_PASSWORD, que el alta
+  // necesitaba para el comensal técnico.
+  const itConPlataforma = ADMIN_SEED_PASS ? it : it.skip;
+  const itConAdminSeed = itConPlataforma;
 
   // Filas de un tenant, leídas o escritas con su contexto (RLS).
   async function enTenant<T>(
@@ -118,7 +121,7 @@ describe('Gestión de establecimientos por la plataforma (BL-404) - e2e', () => 
     await app.init();
     prisma = new PrismaClient();
 
-    if (!COMENSAL_PASS) return;
+    if (!ADMIN_SEED_PASS) return;
 
     tokenPlataforma = await crearUsuarioPlataforma(
       USUARIO_PLATAFORMA,
@@ -144,7 +147,6 @@ describe('Gestión de establecimientos por la plataforma (BL-404) - e2e', () => 
         .then((t) => t?.id)
         .catch(() => undefined));
     const usernames = [USUARIO_PLATAFORMA, ADMIN, COCINA, ADMIN_AGREGADO];
-    if (id) usernames.push(`comensal-${id}`);
     for (const username of usernames) {
       await borrarUsuarioKeycloak(username).catch(() => undefined);
     }
@@ -211,12 +213,16 @@ describe('Gestión de establecimientos por la plataforma (BL-404) - e2e', () => 
         .send({ rut: rutConVerificadorIncorrecto(RUT) })
         .expect(400);
 
-      // El RUT de cualquier otro establecimiento (el del seed, por ejemplo).
-      const otro = await prisma.tenant.findFirst({
+      // El RUT de otro establecimiento, con RUT válido: si no, la API responde
+      // 400 por el formato y no llega a comprobar que está repetido. Sin
+      // filtrar, depende del orden de las filas (el tenant B del seed tiene
+      // un RUT de prueba inválido).
+      const otros = await prisma.tenant.findMany({
         where: { id: { not: tenantId } },
         select: { rut: true },
       });
-      expect(otro).not.toBeNull();
+      const otro = otros.find((t) => esRutValido(t.rut));
+      expect(otro).toBeDefined();
       await comoPlataforma(api().patch(`${RUTA}/${tenantId}`))
         .send({ rut: otro?.rut })
         .expect(409);
@@ -265,11 +271,21 @@ describe('Gestión de establecimientos por la plataforma (BL-404) - e2e', () => 
       const tokens = {
         ADMIN: await pedirToken(ADMIN, CLAVE_TEST),
         COCINA: await pedirToken(COCINA, CLAVE_TEST),
-        COMENSAL: await pedirToken(
-          `comensal-${tenantId}`,
-          COMENSAL_PASS as string,
-        ),
       };
+      // HU-052: el comensal entra con el token de invitado de la API, que
+      // solo sirve en los endpoints del comensal. POST /pedidos sin body
+      // responde 400 de validación: el token pasó la autenticación.
+      const tokenComensal = (
+        await api()
+          .post('/auth/comensal')
+          .send({ tenantId, restauranteId })
+          .expect(200)
+      ).body.accessToken as string;
+      const pedirComoComensal = () =>
+        api()
+          .post('/pedidos')
+          .set('Authorization', `Bearer ${tokenComensal}`)
+          .send({});
       const menu = `/menu/tenant/${tenantId}/restaurante/${restauranteId}`;
       for (const token of Object.values(tokens)) {
         await api()
@@ -277,6 +293,7 @@ describe('Gestión de establecimientos por la plataforma (BL-404) - e2e', () => 
           .set('Authorization', `Bearer ${token}`)
           .expect(200);
       }
+      await pedirComoComensal().expect(400);
       await api().get(menu).expect(200);
 
       const suspension = await comoPlataforma(
@@ -304,6 +321,8 @@ describe('Gestión de establecimientos por la plataforma (BL-404) - e2e', () => 
           codigo: 'ESTABLECIMIENTO_SUSPENDIDO',
         });
       }
+      const comensalSuspendido = await pedirComoComensal().expect(403);
+      expect(comensalSuspendido.body.codigo).toBe('ESTABLECIMIENTO_SUSPENDIDO');
       const menuSuspendido = await api().get(menu).expect(403);
       expect(menuSuspendido.body.codigo).toBe('ESTABLECIMIENTO_SUSPENDIDO');
       // El comensal no ve el motivo ni la palabra «suspendido».
@@ -462,7 +481,8 @@ describe('Gestión de establecimientos por la plataforma (BL-404) - e2e', () => 
         cuentas: { eliminadas: expect.any(Number), pendientes: [] },
       });
       // Admin, Admin agregado, Cocina y comensal.
-      expect(res.body.cuentas.eliminadas).toBeGreaterThanOrEqual(4);
+      // Admin, Cocina y el Admin agregado (sin comensal técnico desde BL-581).
+      expect(res.body.cuentas.eliminadas).toBeGreaterThanOrEqual(3);
 
       expect(await prisma.tenant.count({ where: { id: tenantId } })).toBe(0);
       const filas = await enTenant(tenantId, async (tx) => ({
@@ -472,18 +492,9 @@ describe('Gestión de establecimientos por la plataforma (BL-404) - e2e', () => 
       }));
       expect(filas).toEqual({ restaurantes: 0, usuarios: 0, mesas: 0 });
 
-      for (const username of [
-        ADMIN,
-        COCINA,
-        ADMIN_AGREGADO,
-        `comensal-${tenantId}`,
-      ]) {
+      for (const username of [ADMIN, COCINA, ADMIN_AGREGADO]) {
         expect(await buscarUsuarioKeycloak(username)).toBeUndefined();
       }
-      expect(
-        (await intentarToken(`comensal-${tenantId}`, COMENSAL_PASS as string))
-          .ok,
-      ).toBe(false);
 
       // La ficha ya no existe y un reintento no encuentra nada que borrar.
       await comoPlataforma(api().get(`${RUTA}/${tenantId}`)).expect(404);

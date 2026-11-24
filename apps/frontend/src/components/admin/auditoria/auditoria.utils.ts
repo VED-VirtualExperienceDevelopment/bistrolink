@@ -51,6 +51,7 @@ export const ETIQUETAS_ACCION: Record<string, string> = {
   USUARIO_DATOS_MODIFICADOS: "Datos de usuario modificados",
   USUARIO_SESIONES_CERRADAS: "Sesiones cerradas",
   USUARIO_ELIMINADO: "Usuario eliminado",
+  USUARIO_DESBLOQUEADO: "Cuenta desbloqueada", // BL-371
   ESTABLECIMIENTO_APROVISIONADO: "Alta del establecimiento",
   ESTABLECIMIENTO_DATOS_MODIFICADOS: "Datos del establecimiento modificados",
   ESTABLECIMIENTO_SUSPENDIDO: "Establecimiento suspendido",
@@ -79,13 +80,19 @@ export const ETIQUETAS_ACCION: Record<string, string> = {
   PAGO_EFECTIVO_REGISTRADO: "Cobro en efectivo",
   // HU-007b (BL-80): cobro con el POS del local.
   PAGO_POS_REGISTRADO: "Cobro con el POS del local",
+  // HU-033 (BL-203): link de pago que genera el mozo (sin el token).
+  PEDIDO_LINK_PAGO_GENERADO: "Link de pago generado",
   // HU-015 (BL-120): stock de la jornada.
   CARTA_ITEM_STOCK_AJUSTADO: "Stock de un ítem ajustado",
   CARTA_ITEM_VENDIDO_SIN_STOCK: "Venta sin stock",
   // HU-009 (BL-453): supresión de los datos de la e-Factura de un comensal.
   PEDIDO_RECEPTOR_ANONIMIZADO: "Datos de facturación anonimizados",
+  // HU-040 (BL-210): supresión del nombre y el contacto de un pedido para retirar.
+  PEDIDO_RETIRO_ANONIMIZADO: "Datos de un pedido para retirar anonimizados",
   // HU-024 (BL-104): cancelación de un pedido pagado, con la devolución.
   PEDIDO_CANCELADO: "Pedido cancelado y pago devuelto",
+  // BL-501: pedido cancelado antes de cobrarlo (no hubo devolución).
+  PEDIDO_PENDIENTE_CANCELADO: "Pedido sin cobrar cancelado",
   // HU-023 (BL-96): reintento manual de la emisión de un CFE.
   PAGO_CFE_REINTENTADO: "Reintento de emisión de comprobante",
   // BL-475 (BL-285): solo en staging y local (E2E_CLEANUP_ENABLED).
@@ -149,6 +156,9 @@ const NOMBRE_CAMPO: Record<string, string> = {
   monto: "Total",
   montoRecibido: "Recibido",
   vuelto: "Vuelto",
+  // HU-022 (BL-495): lo que se factura y la propina, que se cobra aparte.
+  consumo: "Consumo",
+  propina: "Propina",
   // HU-007b (BL-80): cobro con el POS del local.
   medio: "Tarjeta",
   autorizacion: "N.° de autorización",
@@ -165,14 +175,24 @@ const NOMBRE_CAMPO: Record<string, string> = {
   efectivoHabilitado: "Efectivo",
   mercadoPagoHabilitado: "Mercado Pago",
   posHabilitado: "POS del local",
+  // HU-011 (BL-488): envío de las ventas al POS del local.
+  posSincronizacionHabilitada: "Envío de ventas al POS",
   plexoHabilitado: "Plexo",
   handyHabilitado: "Handy",
   propinasSugeridas: "Propinas sugeridas (%)",
+  // HU-022 (BL-495): preselección del 10 % en la pantalla de pago.
+  propinaPreseleccionada: "Preseleccionar el 10 % de propina",
   cfeProveedor: "Proveedor de CFE",
   // HU-042 (BL-465): cola del KDS. Sin límite (—) = cola desactivada.
   limitePedidosEnPreparacion: "Límite de pedidos en preparación",
   umbralAlertaCola: "Alerta de alta demanda con",
   minutosPreparacionEstimados: "Minutos de preparación estimados",
+  // HU-040 (BL-210): pedidos para retirar. Sin horario (—) = todo el día.
+  retiroHabilitado: "Pedidos para retirar",
+  retiroHoraDesde: "Retiro desde",
+  retiroHoraHasta: "Retiro hasta",
+  // HU-010 (BL-613): sin el valor en la auditoría (puede ser un celular).
+  whatsappPedidos: "WhatsApp del bot",
   // BL-412: datos del establecimiento que cambia la plataforma.
   rut: "RUT",
   plan: "Plan",
@@ -182,6 +202,11 @@ const NOMBRE_CAMPO: Record<string, string> = {
   controlaStock: "Controla stock",
   stockActual: "Unidades",
   umbralAlerta: "Aviso con",
+  // HU-044 (BL-537): «Sugerencia del local».
+  destacado: "Sugerencia del local",
+  // HU-046 (BL-551): complemento antes de pagar.
+  sugerible: "Se puede sugerir",
+  contieneAlcohol: "Contiene alcohol",
 };
 
 /** HU-020 (BL-72): valores de un campo que se muestran con otro texto. */

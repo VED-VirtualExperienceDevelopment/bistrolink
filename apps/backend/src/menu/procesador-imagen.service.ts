@@ -15,6 +15,12 @@ import {
   MAXIMO_PIXELES_ENTRADA,
 } from './upload.constants';
 
+/** HU-043 (BL-532): opciones del procesamiento según el destino. */
+export interface OpcionesProcesamiento {
+  /** Lado máximo de la imagen publicada. Por defecto, el de los ítems. */
+  ladoMaximo?: number;
+}
+
 // La API no guarda imágenes en memoria entre pedidos: sin caché de libvips.
 sharp.cache(false);
 
@@ -27,7 +33,8 @@ const MENSAJE_NO_ES_IMAGEN = 'El archivo no es una imagen válida';
  * - el formato lo determina el CONTENIDO del archivo;
  * - la imagen se decodifica entera; si está rota o no es una imagen, 400;
  * - se rechazan las de más de 25 megapíxeles y las animadas;
- * - se genera una imagen NUEVA en WebP, orientada y de hasta 1600 px.
+ * - se genera una imagen NUEVA en WebP, orientada y de hasta 1600 px (512
+ *   px para el logo, HU-043). La transparencia de un PNG se conserva.
  *
  * sharp no copia los metadatos al archivo nuevo (EXIF, GPS, modelo del
  * teléfono, perfiles): se van solos. Tampoco viaja nada que estuviera
@@ -36,7 +43,10 @@ const MENSAJE_NO_ES_IMAGEN = 'El archivo no es una imagen válida';
  */
 @Injectable()
 export class ProcesadorImagenService {
-  async procesar(original: Buffer): Promise<Buffer> {
+  async procesar(
+    original: Buffer,
+    { ladoMaximo = LADO_MAXIMO_IMAGEN_PX }: OpcionesProcesamiento = {},
+  ): Promise<Buffer> {
     let metadatos: Metadata;
     try {
       metadatos = await sharp(original).metadata();
@@ -79,8 +89,8 @@ export class ProcesadorImagenService {
       })
         .rotate() // orienta según el EXIF antes de descartarlo
         .resize({
-          width: LADO_MAXIMO_IMAGEN_PX,
-          height: LADO_MAXIMO_IMAGEN_PX,
+          width: ladoMaximo,
+          height: ladoMaximo,
           fit: 'inside',
           withoutEnlargement: true,
         })

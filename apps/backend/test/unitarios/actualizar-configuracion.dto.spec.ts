@@ -24,6 +24,7 @@ describe('ActualizarConfiguracionDto (HU-020, BL-72)', () => {
         plexoHabilitado: false,
         handyHabilitado: false,
         propinasSugeridas: [10, 15, 20],
+        propinaPreseleccionada: true,
         cfeProveedor: 'SURTEC',
       }),
     ).toEqual([]);
@@ -88,6 +89,31 @@ describe('ActualizarConfiguracionDto (HU-020, BL-72)', () => {
       expect(await errores({ propinasSugeridas })).toEqual([
         'propinasSugeridas',
       ]);
+    });
+  });
+
+  describe('HU-022 (BL-495): preselección de la propina', () => {
+    it('se puede activar y desactivar', async () => {
+      expect(await errores({ propinaPreseleccionada: true })).toEqual([]);
+      expect(await errores({ propinaPreseleccionada: false })).toEqual([]);
+    });
+
+    it.each([['si'], [1], ['true']])(
+      'rechaza %p: tiene que ser verdadero o falso',
+      async (valor) => {
+        expect(await errores({ propinaPreseleccionada: valor })).toEqual([
+          'propinaPreseleccionada',
+        ]);
+      },
+    );
+
+    it('se puede mandar junto con los porcentajes sugeridos', async () => {
+      expect(
+        await errores({
+          propinasSugeridas: [5, 10, 15],
+          propinaPreseleccionada: true,
+        }),
+      ).toEqual([]);
     });
   });
 
@@ -159,6 +185,154 @@ describe('ActualizarConfiguracionDto (HU-020, BL-72)', () => {
       '[TC-U-400] rechaza %s = %p (fuera de rango o no entero)',
       async (campo, valor) => {
         expect(await errores({ [campo]: valor })).toEqual([campo]);
+      },
+    );
+  });
+
+  describe('HU-038 (BL-506): umbrales de espera del KDS', () => {
+    it('[TC-U-469] acepta los tres umbrales enteros dentro del rango', async () => {
+      expect(
+        await errores({
+          minutosEsperaAtencion: 30,
+          minutosEsperaDemorado: 60,
+          minutosEsperaDemoraAlta: 120,
+        }),
+      ).toEqual([]);
+      expect(await errores({ minutosEsperaAtencion: 1 })).toEqual([]);
+      expect(await errores({ minutosEsperaDemoraAlta: 600 })).toEqual([]);
+    });
+
+    it.each([
+      ['minutosEsperaAtencion', 0],
+      ['minutosEsperaAtencion', 601],
+      ['minutosEsperaAtencion', null],
+      ['minutosEsperaDemorado', 12.5],
+      ['minutosEsperaDemorado', '60'],
+      ['minutosEsperaDemoraAlta', -5],
+      ['minutosEsperaDemoraAlta', null],
+    ])(
+      '[TC-U-470] rechaza %s = %p (fuera de rango, no entero o null)',
+      async (campo, valor) => {
+        expect(await errores({ [campo]: valor })).toEqual([campo]);
+      },
+    );
+  });
+
+  describe('HU-043 (BL-531): plantilla de marca', () => {
+    it.each(['clasica', 'gourmet', 'rapida', 'familiar'])(
+      '[TC-U-509] acepta la plantilla %p',
+      async (plantilla) => {
+        expect(await errores({ plantilla })).toEqual([]);
+      },
+    );
+
+    it.each(['azul', 'Gourmet', '', null, 1])(
+      '[TC-U-510] rechaza la plantilla %p (fuera de la lista o null)',
+      async (plantilla) => {
+        expect(await errores({ plantilla })).toEqual(['plantilla']);
+      },
+    );
+  });
+
+  describe('HU-043 (BL-561): nombre y dirección del local', () => {
+    it('[TC-U-535] acepta el nombre y la dirección, sin los espacios de los extremos', async () => {
+      const dto = plainToInstance(ActualizarConfiguracionDto, {
+        nombre: '  La Parrilla de Juan ',
+        direccion: ' 18 de Julio 1234, Montevideo ',
+      });
+
+      expect(await validate(dto)).toEqual([]);
+      expect(dto.nombre).toBe('La Parrilla de Juan');
+      expect(dto.direccion).toBe('18 de Julio 1234, Montevideo');
+    });
+
+    it.each([
+      ['nombre', ''],
+      ['nombre', '   '],
+      ['nombre', null],
+      ['nombre', 'x'.repeat(121)],
+      ['direccion', ''],
+      ['direccion', null],
+      ['direccion', 'x'.repeat(201)],
+      ['direccion', 1234],
+    ])(
+      '[TC-U-536] rechaza %s = %p (vacío, null, demasiado largo o no es texto)',
+      async (campo, valor) => {
+        expect(await errores({ [campo]: valor })).toEqual([campo]);
+      },
+    );
+  });
+
+  describe('HU-043 (BL-562): portada del banner', () => {
+    it('[TC-U-546] acepta una key (la controla el servicio) y null para quitarla', async () => {
+      expect(
+        await errores({
+          portadaKey:
+            '11111111-1111-1111-1111-111111111111/menu/portada/0b4f6a3e-1111-4c2d-9e8f-123456789abc.webp',
+        }),
+      ).toEqual([]);
+      expect(await errores({ portadaKey: null })).toEqual([]);
+    });
+
+    it.each([1, false, 'x'.repeat(201)])(
+      '[TC-U-546] rechaza portadaKey = %p (no es texto o es demasiado larga)',
+      async (portadaKey) => {
+        expect(await errores({ portadaKey })).toEqual(['portadaKey']);
+      },
+    );
+  });
+
+  describe('HU-043 (BL-532): logo del local', () => {
+    it('[TC-U-519] acepta una key (la controla el servicio) y null para quitarlo', async () => {
+      expect(
+        await errores({
+          logoKey:
+            '11111111-1111-1111-1111-111111111111/menu/marca/0b4f6a3e-1111-4c2d-9e8f-123456789abc.webp',
+        }),
+      ).toEqual([]);
+      expect(await errores({ logoKey: null })).toEqual([]);
+    });
+
+    it.each([1, true, { key: 'x' }, 'x'.repeat(201)])(
+      '[TC-U-519] rechaza logoKey = %p (no es texto o es demasiado larga)',
+      async (logoKey) => {
+        expect(await errores({ logoKey })).toEqual(['logoKey']);
+      },
+    );
+  });
+
+  describe('HU-010 (BL-613): número del bot de WhatsApp', () => {
+    const transformado = (whatsappPedidos: unknown) =>
+      plainToInstance(ActualizarConfiguracionDto, { whatsappPedidos })
+        .whatsappPedidos;
+
+    it.each([
+      ['099 123 456', '+59899123456'],
+      ['99123456', '+59899123456'],
+      ['598 99 123 456', '+59899123456'],
+      ['+54 9 11 1234-5678', '+5491112345678'],
+      ['  ', null],
+      ['', null],
+    ])('[TC-U-690] acepta %p como %p', async (valor, esperado) => {
+      expect(transformado(valor)).toBe(esperado);
+      expect(await errores({ whatsappPedidos: valor })).toEqual([]);
+    });
+
+    it('[TC-U-690] acepta null para quitarlo', async () => {
+      expect(await errores({ whatsappPedidos: null })).toEqual([]);
+    });
+
+    it.each([
+      '12345678',
+      '2900 1234',
+      '+0598991234',
+      'hola',
+      '+5989912345678901',
+      5,
+    ])(
+      '[TC-U-690] rechaza %p (no es un celular uruguayo ni un número internacional)',
+      async (whatsappPedidos) => {
+        expect(await errores({ whatsappPedidos })).toEqual(['whatsappPedidos']);
       },
     );
   });

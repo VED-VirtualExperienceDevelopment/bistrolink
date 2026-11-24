@@ -17,6 +17,7 @@ import {
   rutaSuspender,
   solicitudCambioEstado,
   errorDeRut,
+  errorDeLimiteCola,
   normalizarRut,
   construirPedidoAlta,
   contrasenasSinCopiar,
@@ -72,6 +73,8 @@ const VALIDO: FormularioAlta = {
   adminApellido: "Pérez",
   cocinaUsername: "prueba-cocina",
   cocinaEmail: "",
+  colaActiva: false,
+  colaLimite: "5",
 };
 
 function resultado(parcial: Partial<ResultadoAlta> = {}): ResultadoAlta {
@@ -925,5 +928,52 @@ describe("eliminar un establecimiento creado por error (BL-418)", () => {
     expect(mensajeErrorEliminacion(429, "Too Many Requests")).toMatch(/límite/);
     expect(mensajeErrorEliminacion(401, "Unauthorized")).toMatch(/sesión/);
     expect(mensajeErrorEliminacion(403, "Forbidden")).toMatch(/permiso/);
+  });
+});
+
+describe("cola del KDS en el alta (BL-472)", () => {
+  it("[TC-U-505] el formulario arranca con la cola apagada y propone 5 al encenderla", () => {
+    expect(FORMULARIO_VACIO.colaActiva).toBe(false);
+    expect(FORMULARIO_VACIO.colaLimite).toBe("5");
+  });
+
+  it("[TC-U-506] con la cola encendida, el límite tiene que ser un entero de 1 a 50", () => {
+    for (const valido of ["1", "5", "50", " 7 "]) {
+      expect(
+        validarFormulario({ ...VALIDO, colaActiva: true, colaLimite: valido })
+          .colaLimite,
+      ).toBeUndefined();
+    }
+    for (const invalido of ["", "0", "51", "2.5", "abc", "-3"]) {
+      expect(errorDeLimiteCola(invalido)).toBeDefined();
+      expect(
+        validarFormulario({
+          ...VALIDO,
+          colaActiva: true,
+          colaLimite: invalido,
+        }).colaLimite,
+      ).toBeDefined();
+    }
+  });
+
+  it("[TC-U-507] con la cola apagada, el límite no se valida ni se envía (el local queda sin cola)", () => {
+    const apagada = { ...VALIDO, colaActiva: false, colaLimite: "999" };
+
+    expect(validarFormulario(apagada)).toEqual({});
+    expect(construirPedidoAlta(apagada).restaurante).toEqual({
+      nombre: "Restaurante de Prueba",
+      direccion: "Calle 123",
+    });
+  });
+
+  it("[TC-U-508] con la cola encendida, envía el límite como número", () => {
+    expect(
+      construirPedidoAlta({ ...VALIDO, colaActiva: true, colaLimite: " 8 " })
+        .restaurante,
+    ).toEqual({
+      nombre: "Restaurante de Prueba",
+      direccion: "Calle 123",
+      limitePedidosEnPreparacion: 8,
+    });
   });
 });

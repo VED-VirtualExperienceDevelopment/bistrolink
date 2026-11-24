@@ -17,14 +17,28 @@ import { ConciliacionPagosService } from './conciliacion/conciliacion-pagos.serv
 import { ConciliacionPagosJob } from './conciliacion/conciliacion-pagos.job';
 import { CobrosController } from './efectivo/cobros.controller';
 import { CobroEfectivoService } from './efectivo/cobro-efectivo.service';
+import { CancelacionPendienteService } from './efectivo/cancelacion-pendiente.service';
 import { SolicitudEfectivoService } from './efectivo/solicitud-efectivo.service';
+import { PropinaPedidoService } from './propina/propina-pedido.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { CancelacionPedidoController } from './cancelacion/cancelacion-pedido.controller';
 import { CancelacionPedidoService } from './cancelacion/cancelacion-pedido.service';
+import { PosModule } from '../pos/pos.module';
+
+import { TarjetasAceptadasController } from './tarjetas/tarjetas-aceptadas.controller';
+import { TarjetasAceptadasService } from './tarjetas/tarjetas-aceptadas.service';
 
 @Module({
   // BL-311: QrMesaModule para MesaQrGuard en el pago (RD.05).
-  imports: [PrismaModule, AuthModule, CfeModule, PedidosModule, QrMesaModule],
+  // HU-011 (BL-488): PosModule, para anular la venta en el POS al cancelar.
+  imports: [
+    PrismaModule,
+    AuthModule,
+    CfeModule,
+    PedidosModule,
+    QrMesaModule,
+    PosModule,
+  ],
   controllers: [
     PagosController,
     PagosWebhookController,
@@ -33,9 +47,12 @@ import { CancelacionPedidoService } from './cancelacion/cancelacion-pedido.servi
     CobrosController,
     // HU-024 (BL-104): cancelación de pedidos pagados y devolución.
     CancelacionPedidoController,
+    // HU-051 (BL-563): tarjetas aceptadas para el sello de pago seguro.
+    TarjetasAceptadasController,
   ],
   providers: [
     PagosService,
+    TarjetasAceptadasService,
     PagosWebhookService,
     MercadoPagoGateway,
     PlexoGateway,
@@ -45,8 +62,11 @@ import { CancelacionPedidoService } from './cancelacion/cancelacion-pedido.servi
     ConciliacionPagosService,
     ConciliacionPagosJob,
     CobroEfectivoService,
+    CancelacionPendienteService,
     // HU-031b (BL-442): el comensal pide pagar en efectivo.
     SolicitudEfectivoService,
+    // HU-022 (BL-494): el comensal elige la propina antes de pagar.
+    PropinaPedidoService,
     CancelacionPedidoService,
     AuditLogService,
   ],

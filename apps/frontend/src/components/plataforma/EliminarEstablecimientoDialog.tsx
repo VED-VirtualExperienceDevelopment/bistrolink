@@ -63,9 +63,7 @@ export function EliminarEstablecimientoDialog({
   const [rut, setRut] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [resultado, setResultado] = useState<ResultadoEliminacion | null>(
-    null,
-  );
+  const [resultado, setResultado] = useState<ResultadoEliminacion | null>(null);
   const botonResultado = useRef<HTMLButtonElement>(null);
 
   const coincide = rutCoincide(rut, establecimiento.rut);
@@ -177,8 +175,8 @@ export function EliminarEstablecimientoDialog({
               carta.
             </li>
             <li>
-              Se borran todos sus usuarios: Administradores, mozos, la cuenta
-              de Cocina y la del comensal. Ya no van a poder ingresar.
+              Se borran todos sus usuarios: Administradores, mozos, la cuenta de
+              Cocina y la del comensal. Ya no van a poder ingresar.
             </li>
             <li>
               Si el establecimiento tiene algún pedido, no se puede eliminar:
@@ -207,8 +205,8 @@ export function EliminarEstablecimientoDialog({
               id={`${ID_RUT}-ayuda`}
               className="mt-1 text-body-sm text-on-surface-variant"
             >
-              El RUT es {establecimiento.rut}. El botón «Eliminar definitivamente»
-              se habilita cuando coincide.
+              El RUT es {establecimiento.rut}. El botón «Eliminar
+              definitivamente» se habilita cuando coincide.
             </p>
           </div>
 

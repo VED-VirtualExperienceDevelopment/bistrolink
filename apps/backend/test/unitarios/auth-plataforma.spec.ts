@@ -43,7 +43,8 @@ const token = (roles: string[], tenantId?: string) => ({
 });
 
 describe('KeycloakJwtStrategy: endpoints de tenant (BL-163)', () => {
-  it.each(['ADMIN', 'MOZO', 'COCINA', 'COMENSAL'])(
+  // COMENSAL ya no: desde BL-581 ese token lo emite la API (TC-U-638).
+  it.each(['ADMIN', 'MOZO', 'COCINA'])(
     'acepta un token %s con tenant_id',
     async (rol) => {
       await expect(

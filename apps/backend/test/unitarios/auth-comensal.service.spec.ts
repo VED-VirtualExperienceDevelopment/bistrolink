@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { AuthComensalService } from '../../src/auth-comensal/auth-comensal.service';
+import { TokenInvitado } from '../../src/auth-comensal/token-invitado';
 import {
   errorEstablecimientoSuspendido,
   MENSAJE_SUSPENDIDO_COMENSAL,
@@ -13,24 +14,29 @@ import {
 const TENANT_ID = '11111111-1111-1111-1111-111111111111';
 const MESA_ID = '33333333-3333-3333-3333-333333333333';
 const RESTAURANTE_ID = '22222222-2222-2222-2222-222222222222';
+const CLAVE = 'clave-de-prueba-del-token-de-invitado-0001';
 
+// HU-052 (BL-581): el token del comensal lo firma siempre la API (token de
+// invitado). Estos tests cubren las validaciones de cada canal: si alguna
+// falla, no se emite nada. El contenido del token se prueba en
+// auth-comensal-invitado.spec.ts. Ningún caso va a Keycloak.
 describe('AuthComensalService.emitirToken', () => {
   let mockTenantPrisma: any;
   let mockQrMesaAcceso: any;
   let mockTenantEstado: { asegurarActivo: jest.Mock };
+  let mockLinkPago: { resolver: jest.Mock };
   let service: AuthComensalService;
   const envOriginal = process.env;
   let fetchMock: jest.Mock;
+  let emitir: jest.SpyInstance;
 
   beforeEach(() => {
     process.env = {
       ...envOriginal,
-      KEYCLOAK_CLIENT_SECRET: 'secreto-de-prueba',
-      KEYCLOAK_COMENSAL_PASSWORD: 'password-de-prueba',
-      KEYCLOAK_URL: 'http://keycloak-test:8080',
-      KEYCLOAK_REALM: 'bistrolink-test',
-      KEYCLOAK_CLIENT_ID: 'bistrolink-backend-test',
+      COMENSAL_TOKEN_CLAVE: CLAVE,
+      COMENSAL_TOKEN_CLAVE_ANTERIOR: undefined,
     };
+    emitir = jest.spyOn(TokenInvitado.prototype, 'emitir');
 
     mockTenantPrisma = { runInTenantContext: jest.fn() };
     mockQrMesaAcceso = { resolver: jest.fn() };
@@ -38,12 +44,15 @@ describe('AuthComensalService.emitirToken', () => {
     mockTenantEstado = {
       asegurarActivo: jest.fn().mockResolvedValue(undefined),
     };
+    mockLinkPago = { resolver: jest.fn() };
     service = new AuthComensalService(
       mockTenantPrisma,
       mockQrMesaAcceso,
       mockTenantEstado as any,
+      mockLinkPago as any,
     );
 
+    // Si algo intentara ir a Keycloak, el test lo vería.
     fetchMock = jest.fn();
     global.fetch = fetchMock as any;
   });
@@ -61,32 +70,23 @@ describe('AuthComensalService.emitirToken', () => {
     await expect(
       service.emitirToken(TENANT_ID, RESTAURANTE_ID),
     ).rejects.toThrow(NotFoundException);
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(emitir).not.toHaveBeenCalled();
   });
 
-  it('emite el token con el username derivado del tenant, cuando el restaurante existe', async () => {
+  it('emite el token de invitado del retiro cuando el restaurante existe, sin ir a Keycloak', async () => {
     mockTenantPrisma.runInTenantContext.mockResolvedValue({
       id: RESTAURANTE_ID,
-    });
-    fetchMock.mockResolvedValue({
-      ok: true,
-      json: async () => ({ access_token: 'jwt-de-prueba', expires_in: 3600 }),
     });
 
     const resultado = await service.emitirToken(TENANT_ID, RESTAURANTE_ID);
 
-    expect(resultado).toEqual({
-      accessToken: 'jwt-de-prueba',
-      expiresIn: 3600,
+    expect(Object.keys(resultado).sort()).toEqual(['accessToken', 'expiresIn']);
+    expect(emitir).toHaveBeenCalledWith({
+      tenantId: TENANT_ID,
+      restauranteId: RESTAURANTE_ID,
+      canal: { tipo: 'retiro', restauranteId: RESTAURANTE_ID },
     });
-
-    const [url, opciones] = fetchMock.mock.calls[0];
-    expect(url).toBe(
-      'http://keycloak-test:8080/realms/bistrolink-test/protocol/openid-connect/token',
-    );
-    const body = opciones.body as URLSearchParams;
-    expect(body.get('username')).toBe(`comensal-${TENANT_ID}`);
-    expect(body.get('grant_type')).toBe('password');
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('busca el restaurante dentro del contexto del tenant (RLS)', async () => {
@@ -95,10 +95,6 @@ describe('AuthComensalService.emitirToken', () => {
       (_tenantId: string, fn: (tx: any) => unknown) =>
         fn({ restaurante: { findUnique } }),
     );
-    fetchMock.mockResolvedValue({
-      ok: true,
-      json: async () => ({ access_token: 'jwt-de-prueba', expires_in: 3600 }),
-    });
 
     await service.emitirToken(TENANT_ID, RESTAURANTE_ID);
 
@@ -112,44 +108,27 @@ describe('AuthComensalService.emitirToken', () => {
     });
   });
 
-  it('lanza un error de servidor si Keycloak responde con error', async () => {
+  it('sin COMENSAL_TOKEN_CLAVE responde 500 y no emite nada', async () => {
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    delete process.env.COMENSAL_TOKEN_CLAVE;
+    const sinClave = new AuthComensalService(
+      mockTenantPrisma,
+      mockQrMesaAcceso,
+      mockTenantEstado as any,
+      mockLinkPago as any,
+    );
     mockTenantPrisma.runInTenantContext.mockResolvedValue({
       id: RESTAURANTE_ID,
     });
-    fetchMock.mockResolvedValue({
-      ok: false,
-      status: 400,
-      text: async () => 'invalid_grant',
-    });
 
     await expect(
-      service.emitirToken(TENANT_ID, RESTAURANTE_ID),
+      sinClave.emitirToken(TENANT_ID, RESTAURANTE_ID),
     ).rejects.toThrow(InternalServerErrorException);
+    expect(emitir).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('lanza un error si falta KEYCLOAK_CLIENT_SECRET en el entorno', async () => {
-    delete process.env.KEYCLOAK_CLIENT_SECRET;
-    mockTenantPrisma.runInTenantContext.mockResolvedValue({
-      id: RESTAURANTE_ID,
-    });
-
-    await expect(
-      service.emitirToken(TENANT_ID, RESTAURANTE_ID),
-    ).rejects.toThrow('Falta KEYCLOAK_CLIENT_SECRET en el .env');
-  });
-
-  it('lanza un error si falta KEYCLOAK_COMENSAL_PASSWORD en el entorno', async () => {
-    delete process.env.KEYCLOAK_COMENSAL_PASSWORD;
-    mockTenantPrisma.runInTenantContext.mockResolvedValue({
-      id: RESTAURANTE_ID,
-    });
-
-    await expect(
-      service.emitirToken(TENANT_ID, RESTAURANTE_ID),
-    ).rejects.toThrow('Falta KEYCLOAK_COMENSAL_PASSWORD en el .env');
-  });
-
-  it('[TC-U-123] no emite el token si el establecimiento está suspendido (403, sin llamar a Keycloak)', async () => {
+  it('[TC-U-123] no emite el token si el establecimiento está suspendido (403)', async () => {
     mockTenantPrisma.runInTenantContext.mockResolvedValue({
       id: RESTAURANTE_ID,
     });
@@ -164,10 +143,54 @@ describe('AuthComensalService.emitirToken', () => {
       TENANT_ID,
       MENSAJE_SUSPENDIDO_COMENSAL,
     );
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(emitir).not.toHaveBeenCalled();
   });
 
   // HU-034 (BL-204): token del comensal a partir del QR de la mesa.
+  describe('emitirTokenPorLink (HU-033, BL-203)', () => {
+    const LINK = {
+      tenantId: TENANT_ID,
+      restauranteId: RESTAURANTE_ID,
+      pedidoId: '55555555-5555-4555-8555-555555555555',
+    };
+
+    it('emite el token de invitado del link con el tenant y el pedido que salen del link', async () => {
+      mockLinkPago.resolver.mockResolvedValue(LINK);
+
+      await service.emitirTokenPorLink('token-del-link');
+
+      expect(mockLinkPago.resolver).toHaveBeenCalledWith('token-del-link');
+      expect(emitir).toHaveBeenCalledWith({
+        tenantId: TENANT_ID,
+        restauranteId: RESTAURANTE_ID,
+        canal: { tipo: 'link', pedidoId: LINK.pedidoId },
+      });
+    });
+
+    it('si el link no sirve (404 / 410), no pide el token', async () => {
+      mockLinkPago.resolver.mockRejectedValue(
+        new Error('Link de pago no válido'),
+      );
+
+      await expect(service.emitirTokenPorLink('otro')).rejects.toThrow(
+        'Link de pago no válido',
+      );
+      expect(emitir).not.toHaveBeenCalled();
+    });
+
+    it('con el establecimiento suspendido responde 403 sin pedir el token', async () => {
+      mockLinkPago.resolver.mockResolvedValue(LINK);
+      mockTenantEstado.asegurarActivo.mockRejectedValue(
+        errorEstablecimientoSuspendido(MENSAJE_SUSPENDIDO_COMENSAL),
+      );
+
+      await expect(service.emitirTokenPorLink('token')).rejects.toThrow(
+        MENSAJE_SUSPENDIDO_COMENSAL,
+      );
+      expect(emitir).not.toHaveBeenCalled();
+    });
+  });
+
   describe('emitirTokenPorQr', () => {
     it('[TC-U-124] con un QR válido de un establecimiento suspendido responde 403 sin pedir el token', async () => {
       mockQrMesaAcceso.resolver.mockResolvedValue({
@@ -183,7 +206,7 @@ describe('AuthComensalService.emitirToken', () => {
       await expect(service.emitirTokenPorQr('qr-valido')).rejects.toThrow(
         MENSAJE_SUSPENDIDO_COMENSAL,
       );
-      expect(fetchMock).not.toHaveBeenCalled();
+      expect(emitir).not.toHaveBeenCalled();
     });
 
     const SESION = '99999999-9999-4999-8999-999999999999';
@@ -195,22 +218,17 @@ describe('AuthComensalService.emitirToken', () => {
       sesionId: SESION,
     };
 
-    it('emite el token del comensal técnico del tenant que viene en el QR', async () => {
+    it('emite el token de invitado de la mesa con el tenant, la mesa y la sesión que vienen del QR', async () => {
       mockQrMesaAcceso.resolver.mockResolvedValue(MESA_ABIERTA);
-      fetchMock.mockResolvedValue({
-        ok: true,
-        json: async () => ({ access_token: 'jwt-de-prueba', expires_in: 3600 }),
-      });
 
-      const resultado = await service.emitirTokenPorQr('token-del-qr', SESION);
+      await service.emitirTokenPorQr('token-del-qr', SESION);
 
       expect(mockQrMesaAcceso.resolver).toHaveBeenCalledWith('token-del-qr');
-      expect(resultado).toEqual({
-        accessToken: 'jwt-de-prueba',
-        expiresIn: 3600,
+      expect(emitir).toHaveBeenCalledWith({
+        tenantId: TENANT_ID,
+        restauranteId: RESTAURANTE_ID,
+        canal: { tipo: 'mesa', mesaId: MESA_ID, sesionId: SESION },
       });
-      const body = fetchMock.mock.calls[0][1].body as URLSearchParams;
-      expect(body.get('username')).toBe(`comensal-${TENANT_ID}`);
     });
 
     it.each([
@@ -239,20 +257,20 @@ describe('AuthComensalService.emitirToken', () => {
         expect((error as GoneException).getResponse()).toMatchObject({
           codigo,
         });
-        expect(fetchMock).not.toHaveBeenCalled();
+        expect(emitir).not.toHaveBeenCalled();
       },
     );
 
     it.each([
       ['inválido (404)', new NotFoundException('QR no válido')],
       ['reemplazado (410)', new GoneException('Este QR fue reemplazado.')],
-    ])('no pide token a Keycloak si el QR es %s', async (_caso, error) => {
+    ])('no emite el token si el QR es %s', async (_caso, error) => {
       mockQrMesaAcceso.resolver.mockRejectedValue(error);
 
       await expect(service.emitirTokenPorQr('token-del-qr')).rejects.toBe(
         error,
       );
-      expect(fetchMock).not.toHaveBeenCalled();
+      expect(emitir).not.toHaveBeenCalled();
     });
   });
 });

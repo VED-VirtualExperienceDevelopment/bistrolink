@@ -23,7 +23,6 @@ import { AprovisionarEstablecimientoDto } from '../src/plataforma/dto/aprovision
  * - RUNTIME_DATABASE_URL: la base, con el rol de la aplicación (RLS).
  * - KEYCLOAK_URL, KEYCLOAK_REALM, KEYCLOAK_CLIENT_ID, KEYCLOAK_CLIENT_SECRET:
  *   la cuenta de servicio de bistrolink-backend.
- * - KEYCLOAK_COMENSAL_PASSWORD: contraseña del comensal técnico.
  * - Las que nombre el archivo en `admin.passwordEnv` y `cocina.passwordEnv`
  *   (por ejemplo DEV_DAIANA_ADMIN_PASSWORD): se cargan en la terminal antes
  *   de correr el script, desde KeePass. Si una no está, se genera una

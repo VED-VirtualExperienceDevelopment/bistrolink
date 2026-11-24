@@ -6,6 +6,11 @@ import { apiFetch } from '@/lib/api-client';
 import { descargarArchivo, type ArchivoBase64 } from '@/lib/descarga';
 import { etiquetaMesa, type OrigenMenu } from '@/components/menu-digital.utils';
 import type { LineaResumen } from './PagoPedido';
+import { GraciasPorTuCompra } from './GraciasPorTuCompra';
+import {
+  rutaValoracion,
+  type Valoracion,
+} from '@/components/valoracion/valoracion.utils';
 import {
   codigoPedido,
   estadoComprobante,
@@ -20,6 +25,12 @@ import {
   type EstadoPagoDelPedido,
   type RebajaIva,
 } from './pago.utils';
+import { textoCuandoEsteListo } from '@/components/retiro/retiro.utils';
+import {
+  eleccionGuardada,
+  etiquetaDePropina,
+  type TotalesDelPedido,
+} from './propina.utils';
 
 // Usa socket.io (solo en el navegador), igual que en la carta.
 const SeguimientoPedido = dynamic(
@@ -38,9 +49,22 @@ interface PagoAprobadoProps {
   /** JWT del comensal técnico del tenant. */
   readonly accessToken: string;
   readonly lineas: readonly LineaResumen[];
+  /**
+   * El consumo del carrito (sin propina). HU-022 (BL-495): lo abonado, con la
+   * propina, lo informa el backend en GET .../pagos; este valor solo se usa
+   * si el backend no lo informa.
+   */
   readonly total: number;
   readonly numeroMesa?: number;
-  readonly onOtroPedido: () => void;
+  /** HU-033 (BL-203): sin carta (link de pago), no se ofrece otro pedido. */
+  readonly onOtroPedido?: () => void;
+  /** BL-502: nombre del local, para la pantalla de gracias. */
+  readonly nombreLocal?: string;
+  /** BL-502: otros pedidos de la mesa que todavía no llegaron. */
+  readonly pedidosEnCamino?: number;
+  readonly onVerMisPedidos?: () => void;
+  /** BL-602: sin la barra fija de la carta arriba (link de pago). */
+  readonly sinBarraDeLaCarta?: boolean;
 }
 
 const CLASE_TARJETA =
@@ -56,6 +80,10 @@ const CLASE_TARJETA =
  * /pedidos/:id/pagos cada pocos segundos hasta que aparece, con tope.
  * «CFE disponible» = emitido y firmado por el proveedor (BL-212), no
  * aceptado por DGI.
+ *
+ * HU-022 (BL-495): la misma consulta trae lo abonado. Con propina se muestra
+ * el consumo, la propina y el total; el comprobante y la rebaja de IVA son
+ * solo sobre el consumo.
  */
 export function PagoAprobado({
   origen,
@@ -66,13 +94,30 @@ export function PagoAprobado({
   total,
   numeroMesa,
   onOtroPedido,
+  nombreLocal,
+  pedidosEnCamino,
+  onVerMisPedidos,
+  sinBarraDeLaCarta = false,
 }: PagoAprobadoProps) {
   const [comprobante, setComprobante] = useState<EstadoComprobante>({ tipo: 'emitiendo' });
   const [agotado, setAgotado] = useState(false);
   const [consulta, setConsulta] = useState(0);
+  // HU-022 (BL-495): consumo, propina y total que informa el backend. `consultado`
+  // es true desde la primera respuesta (con o sin esos datos, según la versión
+  // del backend): hasta entonces no se muestra un total que podría ser parcial.
+  const [totales, setTotales] = useState<TotalesDelPedido | null>(null);
+  const [consultado, setConsultado] = useState(false);
   // HU-009 (BL-454): descarga del PDF del comprobante.
   const [descarga, setDescarga] = useState<EstadoDescarga>('lista');
+  // HU-040 (BL-210): código de retiro (R-042). Lo asigna el backend al
+  // aprobarse el pago y viene en GET /pedidos/:id/pagos.
+  const [codigoRetiro, setCodigoRetiro] = useState<string | null>(null);
+  // BL-603: pedido del bot de WhatsApp (lo avisa el bot). null hasta la
+  // primera respuesta, para no ofrecer la notificación del navegador antes.
+  const [avisoPorWhatsapp, setAvisoPorWhatsapp] = useState<boolean | null>(null);
   const tituloRef = useRef<HTMLHeadingElement>(null);
+  // BL-502: cuando el mozo lo entrega, «Gracias por tu compra» (con la hora).
+  const [entregado, setEntregado] = useState<{ en: string | null } | null>(null);
 
   useEffect(() => {
     tituloRef.current?.focus();
@@ -89,6 +134,10 @@ export function PagoAprobado({
       try {
         const estado = await apiFetch<EstadoPagoDelPedido>(rutaPagos(pedidoId), accessToken, { headers });
         if (cancelado) return;
+        if (estado.totales) setTotales(estado.totales);
+        setConsultado(true);
+        if (estado.codigoRetiro) setCodigoRetiro(estado.codigoRetiro);
+        setAvisoPorWhatsapp(estado.avisoPorWhatsapp === true);
         const resultado = estadoComprobante(estado);
         if (resultado.tipo === 'emitido') {
           setComprobante(resultado);
@@ -115,7 +164,16 @@ export function PagoAprobado({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pedidoId, accessToken, consulta]);
 
-  const esMesa = origen.tipo === 'mesa';
+  // HU-033 (BL-203): por el link de pago, un pedido de mesa se trata como tal.
+  const esMesa =
+    origen.tipo === 'mesa' || (origen.tipo === 'link' && Boolean(numeroMesa));
+
+  // Lo abonado: el total del backend (con propina). Si no lo informa (backend
+  // anterior), el consumo del carrito; mientras no hay respuesta, nada.
+  let abonado: number | null = null;
+  if (totales) abonado = Number(totales.total);
+  else if (consultado || agotado) abonado = total;
+  const conPropina = totales !== null && Number(totales.propina) > 0;
 
   async function descargarPdf() {
     setDescarga('descargando');
@@ -130,16 +188,53 @@ export function PagoAprobado({
     }
   }
 
+  // HU-050 (BL-558): la valoración, con el mismo acceso que el pago (el QR
+  // de la mesa, el token del pedido para retirar o el link de pago).
+  async function valorar(valoracion: Valoracion) {
+    await apiFetch(rutaValoracion(pedidoId), accessToken, {
+      method: 'POST',
+      headers: headersAccesoPedido(origen, tokenAcceso),
+      body: JSON.stringify(valoracion),
+    });
+  }
+
+  if (entregado) {
+    return (
+      <GraciasPorTuCompra
+        pedidoId={pedidoId}
+        nombreLocal={nombreLocal}
+        esMesa={esMesa}
+        numeroMesa={numeroMesa}
+        codigoRetiro={codigoRetiro}
+        entregadoEn={entregado.en}
+        lineas={lineas}
+        totales={totales}
+        abonado={abonado}
+        comprobanteDisponible={comprobante.tipo === 'emitido'}
+        descargando={descarga === 'descargando'}
+        errorDescarga={descarga === 'error'}
+        onDescargarPdf={() => void descargarPdf()}
+        onOtroPedido={onOtroPedido}
+        pedidosEnCamino={pedidosEnCamino}
+        onVerMisPedidos={onVerMisPedidos}
+        onValorar={valorar}
+        sinBarraDeLaCarta={sinBarraDeLaCarta}
+      />
+    );
+  }
+
   return (
-    <div className="pt-20 pb-12 px-4 md:px-8 max-w-[640px] mx-auto flex flex-col gap-6">
+    <div
+      className={`${sinBarraDeLaCarta ? 'pt-6' : 'pt-20'} pb-12 px-4 md:px-8 max-w-[640px] mx-auto flex flex-col gap-6`}
+    >
       <section className={`${CLASE_TARJETA} text-center flex flex-col items-center gap-2`}>
-        <span className="grid place-items-center w-20 h-20 rounded-full bg-culinary-primary-container text-[#6e54ad] mb-2">
+        <span className="grid place-items-center w-20 h-20 rounded-full bg-marca/10 text-marca mb-2">
           <svg aria-hidden="true" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="12" cy="12" r="9" />
             <path d="m8 12 3 3 5-6" />
           </svg>
         </span>
-        <p className="text-xs font-semibold uppercase tracking-wider text-[#6e54ad]">Pago aprobado</p>
+        <p className="text-xs font-semibold uppercase tracking-wider text-marca">Pago aprobado</p>
         <h1
           ref={tituloRef}
           tabIndex={-1}
@@ -148,18 +243,18 @@ export function PagoAprobado({
           ¡Tu pedido ya está en cocina!
         </h1>
         <p className="text-sm text-[#5a575e]">
-          {esMesa ? 'Te lo llevamos a la mesa apenas esté listo.' : 'Te avisamos acá cuando esté listo para retirar.'}
+          {textoCuandoEsteListo(esMesa, avisoPorWhatsapp)}
         </p>
 
-        <div className="mt-4 w-full rounded-[0.75rem] bg-culinary-primary-container px-4 py-5">
+        <div className="mt-4 w-full rounded-[0.75rem] bg-marca/10 px-4 py-5">
           <p className="text-xs font-semibold uppercase tracking-wider text-[#5a575e]">
-            {esMesa ? etiquetaMesa(numeroMesa) : 'Código de tu pedido'}
+            {esMesa ? etiquetaMesa(numeroMesa) : 'Código de retiro'}
           </p>
-          <p className="mt-1 text-4xl md:text-5xl font-bold tracking-tight text-[#6e54ad]">
-            {codigoPedido(pedidoId)}
+          <p className="mt-1 text-4xl md:text-5xl font-bold tracking-tight text-marca">
+            {codigoRetiro ?? codigoPedido(pedidoId)}
           </p>
           <p className="mt-1 text-sm text-[#5a575e]">
-            {esMesa ? 'Si necesitás algo, mostrá este código al personal.' : 'Mostralo en el mostrador al retirar.'}
+            {esMesa ? 'Si necesitás algo, mostrá este código al personal.' : 'Decilo en el mostrador al retirar.'}
           </p>
         </div>
       </section>
@@ -168,7 +263,17 @@ export function PagoAprobado({
         <h2 id="estado-pedido" className="text-lg font-bold text-foreground">
           Estado de tu pedido
         </h2>
-        <SeguimientoPedido pedidoId={pedidoId} token={accessToken} estadoInicial="RECIBIDO" />
+        <SeguimientoPedido
+          pedidoId={pedidoId}
+          token={accessToken}
+          estadoInicial="RECIBIDO"
+          paraRetirar={!esMesa}
+          codigoRetiro={codigoRetiro}
+          avisoPorWhatsapp={avisoPorWhatsapp}
+          onCambioDeEstado={(estado, en) => {
+            if (estado === 'ENTREGADO') setEntregado({ en });
+          }}
+        />
       </section>
 
       <Comprobante
@@ -193,23 +298,50 @@ export function PagoAprobado({
             </li>
           ))}
         </ul>
-        <div className="pt-4 border-t border-culinary-neutral/15 flex items-center justify-between">
-          <span className="font-bold text-foreground">Total abonado</span>
-          <span className="text-2xl font-bold text-foreground">{formatearPrecio(total)}</span>
+        <div className="pt-4 border-t border-culinary-neutral/15">
+          {/* HU-022 (BL-495): con propina se separa el consumo de la propina. */}
+          {totales && conPropina && (
+            <dl className="mb-3 flex flex-col gap-1 text-sm">
+              <div className="flex items-center justify-between gap-3">
+                <dt className="text-[#5a575e]">Consumo (IVA incluido)</dt>
+                <dd className="font-semibold text-foreground">{formatearPrecio(totales.consumo)}</dd>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <dt className="text-[#5a575e]">{etiquetaDePropina(eleccionGuardada(totales))}</dt>
+                <dd className="font-semibold text-foreground">{formatearPrecio(totales.propina)}</dd>
+              </div>
+            </dl>
+          )}
+          <div className="flex items-center justify-between">
+            <span className="font-bold text-foreground">Total abonado</span>
+            <span
+              aria-busy={abonado === null}
+              className="text-2xl font-bold text-foreground"
+            >
+              {abonado === null ? '…' : formatearPrecio(abonado)}
+            </span>
+          </div>
+          {conPropina && (
+            <p className="mt-2 text-xs text-[#5a575e]">
+              El comprobante fiscal es por el consumo: la propina no forma parte de él.
+            </p>
+          )}
         </div>
       </section>
 
-      <button
-        type="button"
-        onClick={onOtroPedido}
-        className="self-center inline-flex items-center gap-2 px-5 py-2.5 text-[#6e54ad] font-semibold rounded-[0.5rem] hover:bg-[#6e54ad]/10 transition-colors"
-      >
-        Hacer otro pedido
-        <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M5 12h14" />
-          <path d="m12 5 7 7-7 7" />
-        </svg>
-      </button>
+      {onOtroPedido && (
+        <button
+          type="button"
+          onClick={onOtroPedido}
+          className="self-center inline-flex items-center gap-2 px-5 py-2.5 text-marca font-semibold rounded-[0.5rem] hover:bg-marca/10 transition-colors"
+        >
+          Hacer otro pedido
+          <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M5 12h14" />
+            <path d="m12 5 7 7-7 7" />
+          </svg>
+        </button>
+      )}
     </div>
   );
 }
@@ -230,7 +362,7 @@ function Comprobante({
   return (
     <section aria-labelledby="comprobante" aria-live="polite" className={CLASE_TARJETA}>
       <div className="flex items-start gap-4">
-        <span className="shrink-0 grid place-items-center w-12 h-12 rounded-full bg-culinary-primary-container text-[#6e54ad]">
+        <span className="shrink-0 grid place-items-center w-12 h-12 rounded-full bg-marca/10 text-marca">
           <svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M6 2h12v20l-3-2-3 2-3-2-3 2z" />
             <path d="M9 7h6" />
@@ -277,7 +409,7 @@ function DetalleRebaja({ rebaja }: { readonly rebaja: RebajaIva }) {
           </div>
         ))}
       </dl>
-      <p className="mt-2 text-xs font-semibold text-[#6e54ad]">{rebaja.leyenda}</p>
+      <p className="mt-2 text-xs font-semibold text-marca">{rebaja.leyenda}</p>
       <p className="mt-1 text-xs text-[#5a575e]">
         La reducción la descuenta la administradora de tu medio de pago.
       </p>
@@ -348,7 +480,7 @@ function AccionesDelComprobante({
             onClick={onDescargarPdf}
             disabled={descarga === 'descargando'}
             aria-busy={descarga === 'descargando'}
-            className="inline-flex items-center gap-2 px-4 py-2.5 border border-[#6e54ad] text-[#6e54ad] font-semibold rounded-[0.5rem] hover:bg-[#6e54ad]/10 focus:outline-none focus:ring-4 focus:ring-[#6e54ad]/30 transition-colors disabled:opacity-60"
+            className="inline-flex items-center gap-2 px-4 py-2.5 border border-marca text-marca font-semibold rounded-[0.5rem] hover:bg-marca/10 focus:outline-none focus:ring-4 focus:ring-marca/30 transition-colors disabled:opacity-60"
           >
             <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 3v12" />
@@ -362,7 +494,7 @@ function AccionesDelComprobante({
             href={comprobante.urlConsulta}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#6e54ad] text-white font-semibold rounded-[0.5rem] hover:bg-[#5b468f] focus:outline-none focus:ring-4 focus:ring-[#6e54ad]/30 transition-colors"
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-marca text-white font-semibold rounded-[0.5rem] hover:bg-marca-hover focus:outline-none focus:ring-4 focus:ring-marca/30 transition-colors"
           >
             Ver comprobante en DGI
             <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -388,7 +520,7 @@ function AccionesDelComprobante({
       <button
         type="button"
         onClick={onReintentar}
-        className="px-4 py-2 bg-[#6e54ad]/10 text-[#6e54ad] font-semibold rounded-[0.5rem] hover:bg-[#6e54ad] hover:text-white transition-colors"
+        className="px-4 py-2 bg-marca/10 text-marca font-semibold rounded-[0.5rem] hover:bg-marca hover:text-white transition-colors"
       >
         Volver a consultar
       </button>

@@ -4,6 +4,7 @@ import { useState } from "react";
 import {
   formatearMonto,
   largoBarra,
+  MENSAJE_PLATOS_POS,
   platosSegun,
   type MetricaPlatos,
   type ReporteVentas,
@@ -48,7 +49,9 @@ export default function PlatosMasPedidos({
 
       {platos.length === 0 ? (
         <p className={`mt-6 ${CLASE_AYUDA}`}>
-          Todavía no hay ventas en este período.
+          {reporte.canal === "POS"
+            ? MENSAJE_PLATOS_POS
+            : "Todavía no hay ventas en este período."}
         </p>
       ) : (
         <>

@@ -29,9 +29,7 @@ export interface KeycloakUserPayload {
   /**
    * Si la contraseña es temporal (Keycloak obliga a cambiarla en el primer
    * login). Por defecto true, como en el alta de HU-013. BL-163 la crea
-   * permanente para el usuario técnico del comensal (el backend se loguea
-   * con ella por password grant) y para las contraseñas fijas de los
-   * establecimientos de prueba.
+   * permanente para las contraseñas fijas de los establecimientos de prueba.
    */
   temporary?: boolean;
 }
@@ -75,6 +73,12 @@ export interface PerfilKeycloak {
 const DIAS_DE_EVENTOS = 90;
 const EVENTOS_POR_PAGINA = 500;
 const PAGINAS_DE_EVENTOS = 10;
+
+/** BL-371: estado del bloqueo por intentos fallidos (sin la IP). */
+export interface EstadoDeBloqueo {
+  bloqueada: boolean;
+  fallos: number;
+}
 
 @Injectable()
 export class KeycloakAdminService {
@@ -489,8 +493,8 @@ export class KeycloakAdminService {
   /**
    * BL-362: usuarios de Keycloak de un tenant (atributo tenant_id), con la
    * representación completa (atributos, enabled, createdTimestamp). Un
-   * tenant tiene pocos: el personal, la cuenta de cocina y el comensal
-   * técnico. El tope de 200 es solo una red de seguridad.
+   * tenant tiene pocos: el personal y la cuenta de cocina. El tope de 200 es
+   * solo una red de seguridad.
    *
    * Quien llama igual compara el tenant_id de cada usuario: la búsqueda por
    * atributo es del lado de Keycloak y la verificación queda en nuestro código.
@@ -595,6 +599,63 @@ export class KeycloakAdminService {
       );
     }
     return ((await res.json()) as { name: string }[]).map((r) => r.name);
+  }
+
+  /**
+   * BL-371: si la protección contra fuerza bruta del realm bloqueó la cuenta
+   * por intentos fallidos (GET /attack-detection/brute-force/users/{id},
+   * requiere view-users). Con la protección apagada, Keycloak responde
+   * `disabled: false` y nunca hay bloqueo.
+   *
+   * [S] La respuesta trae la IP del último intento fallido: no se devuelve
+   * ni se loguea (dato personal, Ley 18.331). Solo el estado y los fallos.
+   */
+  async estadoDeBloqueo(keycloakId: string): Promise<EstadoDeBloqueo> {
+    const res = await this.adminFetch(
+      `/attack-detection/brute-force/users/${encodeURIComponent(keycloakId)}`,
+    );
+    if (!res.ok) {
+      const body = await res.text();
+      this.logAndBuildError(
+        `No se pudo leer el bloqueo por intentos fallidos del usuario ${keycloakId} en Keycloak`,
+        res.status,
+        body,
+      );
+      throw new InternalServerErrorException(
+        `No se pudo leer el bloqueo del usuario en Keycloak: ${res.status}`,
+      );
+    }
+    const estado = (await res.json()) as {
+      disabled?: boolean;
+      numFailures?: number;
+    };
+    return {
+      bloqueada: estado.disabled === true,
+      fallos: estado.numFailures ?? 0,
+    };
+  }
+
+  /**
+   * BL-371: levanta el bloqueo por intentos fallidos y pone en cero los
+   * fallos (DELETE /attack-detection/brute-force/users/{id}, requiere
+   * manage-users). No cambia la contraseña ni las sesiones.
+   */
+  async desbloquear(keycloakId: string): Promise<void> {
+    const res = await this.adminFetch(
+      `/attack-detection/brute-force/users/${encodeURIComponent(keycloakId)}`,
+      { method: 'DELETE' },
+    );
+    if (!res.ok) {
+      const body = await res.text();
+      this.logAndBuildError(
+        `No se pudo desbloquear al usuario ${keycloakId} en Keycloak`,
+        res.status,
+        body,
+      );
+      throw new InternalServerErrorException(
+        `No se pudo desbloquear al usuario en Keycloak: ${res.status}`,
+      );
+    }
   }
 
   /**

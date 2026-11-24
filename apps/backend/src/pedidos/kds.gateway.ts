@@ -16,6 +16,9 @@ import { PedidosTransicionService } from './pedidos-transicion.service';
 import { origenesPermitidos } from '../seguridad-http';
 import { AlertasPendientes } from './alertas-pendientes';
 import type { EstadoCola } from './cola-kds';
+import type { UmbralesEspera } from './umbrales-espera';
+import { QrMesaAccesoService } from '../qr-mesa/qr-mesa-acceso.service';
+import { canalPuedeSeguirPedido } from '../auth-comensal/canal-invitado';
 
 /** Qué hizo el mozo con la alerta: la atendió o la descartó. */
 export type AccionLlamado = 'aceptado' | 'desestimado';
@@ -25,6 +28,17 @@ const ACCIONES_LLAMADO: ReadonlySet<string> = new Set([
 ]);
 
 /** HU-031b (BL-442): datos del llamado de una mesa que quiere pagar en efectivo. */
+/** BL-518: aviso al comensal de que la sesión de su mesa terminó. */
+export interface SesionMesaCerrada {
+  sesionMesa: string;
+}
+
+/** BL-518: respuesta (ack) de `mesa:seguir`. */
+export interface SeguimientoMesa {
+  siguiendo: boolean;
+}
+const NO_SIGUE: SeguimientoMesa = { siguiendo: false };
+
 export interface LlamadoPagoEfectivo {
   pedidoId: string;
   /** Total del pedido, con 2 decimales. */
@@ -62,6 +76,13 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       (client.handshake.auth?.token as string | undefined) ??
       client.handshake.headers.authorization?.replace('Bearer ', '')
     );
+  }
+
+  private resolverQrMesaAcceso(): Promise<QrMesaAccesoService> {
+    const contextId = ContextIdFactory.create();
+    return this.moduleRef.resolve(QrMesaAccesoService, contextId, {
+      strict: false,
+    });
   }
 
   private async resolverPedidosTransicion(): Promise<PedidosTransicionService> {
@@ -223,6 +244,8 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const pedidosTransicion = await this.resolverPedidosTransicion();
     const pendientes = await pedidosTransicion.listarPendientes(tenantId);
     client.emit('pedidos:snapshot', pendientes);
+    // HU-038 (BL-506): umbrales de espera del local, también para Cocina.
+    await this.enviarUmbralesEspera(client, tenantId, pedidosTransicion);
     // HU-042 (BL-464): estado de la cola, también para Cocina (secciones del
     // tablero). Sin cola activa no se manda: el KDS sigue como antes.
     await this.enviarEstadoCola(client, tenantId, pedidosTransicion);
@@ -252,6 +275,22 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
 
     const pedidosTransicion = await this.resolverPedidosTransicion();
+
+    // HU-052 (BL-580): con el token de invitado, solo los pedidos de su
+    // canal. Mismo error que un pedido inexistente: no se le dice al cliente
+    // si existe.
+    if (user.canal) {
+      const acceso = await pedidosTransicion
+        .accesoDelPedido(user.tenantId, body.pedidoId)
+        .catch(() => null);
+      if (
+        !acceso ||
+        !canalPuedeSeguirPedido(user.canal, body.pedidoId, acceso)
+      ) {
+        client.emit('error', { message: 'Pedido no encontrado' });
+        return;
+      }
+    }
 
     let resumen;
     try {
@@ -289,6 +328,94 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         );
       }
     }
+  }
+
+  /**
+   * BL-518: el comensal sigue la sesión de su mesa para enterarse, sin
+   * recargar, de que el mozo la cerró (`mesa:sesion_cerrada`).
+   *
+   * Se valida como cualquier acción de la mesa: el QR tiene que resolver a
+   * una mesa del mismo local que el token y la sesión tiene que ser la
+   * abierta. Si la mesa ya está cerrada, la sesión es vieja o el QR ya no
+   * sirve, se le avisa enseguida (para el comensal es lo mismo: no puede
+   * seguir pidiendo). La sala es por sesión: el grupo siguiente de la mesa
+   * no recibe el aviso del anterior.
+   */
+  @SubscribeMessage('mesa:seguir')
+  async onSeguirMesa(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: { qrToken?: unknown; sesionMesa?: unknown },
+  ): Promise<SeguimientoMesa> {
+    let user;
+    try {
+      user = await this.wsAuth.verify(this.obtenerToken(client));
+    } catch {
+      client.emit('error', {
+        message: 'Sesion invalida o expirada - reconecta.',
+      });
+      client.disconnect(true);
+      return NO_SIGUE;
+    }
+    if (!user.roles.includes('COMENSAL')) {
+      client.emit('error', { message: 'Solo para comensales.' });
+      return NO_SIGUE;
+    }
+
+    const qrToken = body?.qrToken;
+    const sesionMesa = body?.sesionMesa;
+    if (typeof qrToken !== 'string' || typeof sesionMesa !== 'string') {
+      client.emit('error', { message: 'Faltan el QR o la sesión de la mesa.' });
+      return NO_SIGUE;
+    }
+    const cerrada: SesionMesaCerrada = { sesionMesa };
+
+    const acceso = await this.resolverQrMesaAcceso();
+    let mesa;
+    try {
+      mesa = await acceso.resolver(qrToken);
+    } catch {
+      // QR inválido o reemplazado: ya no puede pedir con él.
+      client.emit('mesa:sesion_cerrada', cerrada);
+      return NO_SIGUE;
+    }
+
+    if (mesa.tenantId !== user.tenantId) {
+      client.emit('error', { message: 'Mesa no encontrada' });
+      return NO_SIGUE;
+    }
+    if (!mesa.sesionId || mesa.sesionId !== sesionMesa) {
+      client.emit('mesa:sesion_cerrada', cerrada);
+      return NO_SIGUE;
+    }
+    // HU-052 (BL-580): con el token de invitado, solo su mesa y su sesión.
+    // El del retiro o del link no sigue ninguna mesa.
+    const canal = user.canal;
+    if (canal && (canal.tipo !== 'mesa' || canal.mesaId !== mesa.mesaId)) {
+      client.emit('error', { message: 'Mesa no encontrada' });
+      return NO_SIGUE;
+    }
+    if (canal && canal.sesionId !== mesa.sesionId) {
+      client.emit('mesa:sesion_cerrada', cerrada);
+      return NO_SIGUE;
+    }
+
+    const sala = this.salaSesionMesa(mesa.sesionId);
+    await client.join(sala);
+
+    // BL-589: si el mozo cerró la mesa entre la lectura de arriba y la
+    // unión a la sala, el aviso ya salió y este comensal no lo recibió. Se
+    // vuelve a leer la sesión ya dentro de la sala: si cambió, se le avisa
+    // a él. Un cierre posterior le llega por la sala, como a todos.
+    const sigueAbierta = await acceso
+      .resolver(qrToken)
+      .then((actual) => actual.sesionId === sesionMesa)
+      .catch(() => false);
+    if (!sigueAbierta) {
+      await client.leave(sala);
+      client.emit('mesa:sesion_cerrada', cerrada);
+      return NO_SIGUE;
+    }
+    return { siguiendo: true };
   }
 
   @SubscribeMessage('llamado:resolver')
@@ -426,6 +553,35 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
+  /**
+   * HU-038 (BL-506): el administrador cambió los umbrales de espera. A todo
+   * el staff del tenant (también Cocina), para que el KDS abierto repinte las
+   * comandas sin recargar.
+   */
+  emitirUmbralesEspera(tenantId: string, umbrales: UmbralesEspera) {
+    this.server
+      .to(this.salaTenant(tenantId))
+      .emit('kds:umbrales-espera', umbrales);
+  }
+
+  private async enviarUmbralesEspera(
+    client: Socket,
+    tenantId: string,
+    pedidosTransicion: PedidosTransicionService,
+  ) {
+    try {
+      const umbrales = await pedidosTransicion.umbralesEspera(tenantId);
+      client.emit('kds:umbrales-espera', umbrales);
+    } catch (err) {
+      // El snapshot de pedidos ya salió: el KDS sigue con los umbrales de
+      // por defecto (o los últimos que recibió) y no se corta la conexión.
+      Logger.warn(
+        `No se pudieron enviar los umbrales de espera: ${(err as Error).message}`,
+        KdsGateway.name,
+      );
+    }
+  }
+
   private async enviarEstadoCola(
     client: Socket,
     tenantId: string,
@@ -531,6 +687,21 @@ export class KdsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   private salaTenant(tenantId: string): string {
     return `tenant:${tenantId}`;
+  }
+
+  /**
+   * BL-518: el mozo cerró la mesa. Avisa a los comensales que seguían esa
+   * sesión (`mesa:seguir`) para que su pantalla lo muestre sin recargar.
+   */
+  emitirSesionCerrada(sesionId: string) {
+    const aviso: SesionMesaCerrada = { sesionMesa: sesionId };
+    this.server
+      .to(this.salaSesionMesa(sesionId))
+      .emit('mesa:sesion_cerrada', aviso);
+  }
+
+  private salaSesionMesa(sesionId: string): string {
+    return `sesion-mesa:${sesionId}`;
   }
 
   private salaPedido(pedidoId: string): string {

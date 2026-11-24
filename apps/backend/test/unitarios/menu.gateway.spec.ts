@@ -1,18 +1,24 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { MenuGateway } from '../../src/menu/menu.gateway';
+import {
+  datosItemParaPantalla,
+  MenuGateway,
+} from '../../src/menu/menu.gateway';
+import { WsAuthError, WsAuthService } from '../../src/pedidos/ws-auth.service';
 
 describe('MenuGateway', () => {
   let gateway: MenuGateway;
   let mockServer: any;
+  const wsAuth = { verify: jest.fn() };
 
   beforeEach(async () => {
+    wsAuth.verify.mockReset();
     mockServer = {
       to: jest.fn().mockReturnThis(),
       emit: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [MenuGateway],
+      providers: [MenuGateway, { provide: WsAuthService, useValue: wsAuth }],
     }).compile();
 
     gateway = module.get<MenuGateway>(MenuGateway);
@@ -66,26 +72,44 @@ describe('MenuGateway', () => {
       );
     });
 
-    it('debe emitir evento con datos completos del ítem', () => {
-      const tenantId = 'tenant-abc';
-      const payload = {
+    it('[TC-U-561] BL-515: solo manda los campos de la pantalla, sin tenant, stock ni clave de imagen', () => {
+      gateway.emitItemDataUpdated('tenant-abc', {
         itemId: 'item-456',
         data: {
           id: 'item-456',
+          tenantId: 'tenant-abc',
+          categoriaId: 'cat-1',
           nombre: 'Hamburguesa',
           precio: '15.00',
           disponible: true,
-          tenantId: 'tenant-abc',
+          destacado: false,
+          controlaStock: true,
+          stockActual: 7,
+          umbralAlerta: 5,
+          imagenKey: 'tenant-abc/menu/x.webp',
+          archivadoEn: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
         },
-      };
+      });
 
-      gateway.emitItemDataUpdated(tenantId, payload);
+      expect(mockServer.emit).toHaveBeenCalledWith('menu:item:data:updated', {
+        itemId: 'item-456',
+        data: {
+          id: 'item-456',
+          categoriaId: 'cat-1',
+          nombre: 'Hamburguesa',
+          precio: '15.00',
+          disponible: true,
+          destacado: false,
+        },
+      });
+    });
 
-      expect(mockServer.to).toHaveBeenCalledWith(`tenant_${tenantId}`);
-      expect(mockServer.emit).toHaveBeenCalledWith(
-        'menu:item:data:updated',
-        payload,
-      );
+    it('datosItemParaPantalla no agrega campos que no vinieron', () => {
+      expect(
+        datosItemParaPantalla({ destacado: true, stockActual: 3 }),
+      ).toEqual({ destacado: true });
     });
   });
 
@@ -128,33 +152,98 @@ describe('MenuGateway', () => {
     });
   });
 
-  describe('handleConnection', () => {
-    it('debe unir al cliente a la room del tenant si tenantId está presente', () => {
-      const mockClient = {
-        id: 'client-123',
-        handshake: {
-          query: { tenantId: 'test-tenant' },
-        },
+  describe('autenticación de la conexión (BL-515)', () => {
+    const ADMIN = {
+      sub: 'u-1',
+      tenantId: 'tenant-del-token',
+      roles: ['ADMIN'],
+    };
+
+    function socketCon(auth: Record<string, unknown>, query = {}) {
+      return {
+        id: 'client-1',
+        handshake: { auth, query },
+        data: {} as Record<string, unknown>,
         join: jest.fn(),
+        disconnect: jest.fn(),
       };
+    }
 
-      gateway.handleConnection(mockClient as any);
+    it('[TC-U-557] sin token: rechaza la conexión y no guarda usuario', async () => {
+      wsAuth.verify.mockRejectedValue(
+        new WsAuthError('Token no provisto en el handshake'),
+      );
+      const socket = socketCon({});
 
-      expect(mockClient.join).toHaveBeenCalledWith('tenant_test-tenant');
+      await expect(gateway.autenticar(socket as any)).rejects.toThrow(
+        'Token no provisto en el handshake',
+      );
+      expect(wsAuth.verify).toHaveBeenCalledWith(undefined);
+      expect(socket.data.user).toBeUndefined();
     });
 
-    it('no debe unir al cliente si tenantId no está presente', () => {
-      const mockClient = {
-        id: 'client-456',
-        handshake: {
-          query: {},
-        },
-        join: jest.fn(),
-      };
+    it('[TC-U-558] token inválido o error inesperado: rechaza la conexión', async () => {
+      wsAuth.verify.mockRejectedValueOnce(
+        new WsAuthError('Token inválido o expirado'),
+      );
+      await expect(
+        gateway.autenticar(socketCon({ token: 'malo' }) as any),
+      ).rejects.toThrow('Token inválido o expirado');
 
-      gateway.handleConnection(mockClient as any);
+      wsAuth.verify.mockRejectedValueOnce(new Error('falla interna'));
+      await expect(
+        gateway.autenticar(socketCon({ token: 'x' }) as any),
+      ).rejects.toThrow('No autorizado');
+    });
 
-      expect(mockClient.join).not.toHaveBeenCalled();
+    it('[TC-U-559] un rol que no es ADMIN se rechaza', async () => {
+      wsAuth.verify.mockResolvedValue({ ...ADMIN, roles: ['MOZO'] });
+      const socket = socketCon({ token: 'tok' });
+
+      await expect(gateway.autenticar(socket as any)).rejects.toThrow(
+        'Rol no autorizado para este canal.',
+      );
+      expect(socket.data.user).toBeUndefined();
+    });
+
+    it('[TC-U-560] un ADMIN entra a la sala del tenant del token aunque mande otro tenantId en el query', async () => {
+      wsAuth.verify.mockResolvedValue(ADMIN);
+      const socket = socketCon({ token: 'tok' }, { tenantId: 'tenant-ajeno' });
+
+      await gateway.autenticar(socket as any);
+      await gateway.handleConnection(socket as any);
+
+      expect(socket.join).toHaveBeenCalledWith('tenant_tenant-del-token');
+      expect(socket.join).not.toHaveBeenCalledWith('tenant_tenant-ajeno');
+    });
+
+    it('una conexión que llega sin usuario autenticado se corta', async () => {
+      const socket = socketCon({});
+      await gateway.handleConnection(socket as any);
+      expect(socket.join).not.toHaveBeenCalled();
+      expect(socket.disconnect).toHaveBeenCalledWith(true);
+    });
+
+    it('afterInit registra el middleware: acepta o rechaza con next', async () => {
+      let middleware: (s: unknown, next: (e?: Error) => void) => void = () =>
+        undefined;
+      gateway.afterInit({
+        use: (fn: typeof middleware) => (middleware = fn),
+      } as any);
+
+      wsAuth.verify.mockResolvedValueOnce(ADMIN);
+      const ok = await new Promise<Error | undefined>((resolve) =>
+        middleware(socketCon({ token: 'tok' }), resolve),
+      );
+      expect(ok).toBeUndefined();
+
+      wsAuth.verify.mockRejectedValueOnce(
+        new WsAuthError('Token inválido o expirado'),
+      );
+      const error = await new Promise<Error | undefined>((resolve) =>
+        middleware(socketCon({ token: 'malo' }), resolve),
+      );
+      expect(error?.message).toBe('Token inválido o expirado');
     });
   });
 

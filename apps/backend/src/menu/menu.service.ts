@@ -1,7 +1,24 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
 import { StorageService } from './storage.service';
 import { mapItemToDto } from './menu.mapper';
+import { platosMasPedidos, type ConsultaCruda } from './mas-pedidos';
+import type { PlantillaMarca } from '../configuracion/plantillas-marca';
+
+/**
+ * HU-043 (BL-532): marca del local en la carta del comensal. El logo sale
+ * por la CDN en staging y producción, y firmado en local (urlImagenPublica).
+ */
+export interface MarcaPublica {
+  /** null si el local no tiene logo: la carta muestra el nombre. */
+  logoUrl: string | null;
+  /** HU-043 (BL-562): null = la portada por defecto del banner. */
+  portadaUrl: string | null;
+  plantilla: PlantillaMarca;
+}
+import { retiroPublico } from '../pedidos/retiro';
+import { botConectadoParaTenant } from '../whatsapp/configuracion-whatsapp';
+import { numeroParaWaMe } from '../whatsapp/numero-whatsapp';
 
 /**
  * BL-397 (decisión 2 de la propuesta de la carta): el comensal ve lo mismo
@@ -22,6 +39,8 @@ export const ITEMS_DEL_COMENSAL = {
 
 @Injectable()
 export class MenuService {
+  private readonly logger = new Logger(MenuService.name);
+
   constructor(
     private readonly tenantPrisma: TenantPrismaService,
     private readonly storage: StorageService,
@@ -49,11 +68,14 @@ export class MenuService {
         include: { items: ITEMS_DEL_COMENSAL },
       });
 
-      const categoriasConUrls =
-        await this.categoriasConUrlsFirmadas(categorias);
+      const categoriasConUrls = await this.categoriasConUrlsFirmadas(
+        categorias,
+        await this.masPedidosDe(tx, tenantId, categorias),
+      );
 
       return {
         restaurante: { nombre: mesa.restaurante.nombre },
+        marca: await this.marcaDe(mesa.restaurante),
         categorias: categoriasConUrls,
       };
     });
@@ -118,8 +140,10 @@ export class MenuService {
         include: { items: ITEMS_DEL_COMENSAL },
       });
 
-      const categoriasConUrls =
-        await this.categoriasConUrlsFirmadas(categorias);
+      const categoriasConUrls = await this.categoriasConUrlsFirmadas(
+        categorias,
+        await this.masPedidosDe(tx, tenantId, categorias),
+      );
 
       return {
         restaurante: {
@@ -127,12 +151,68 @@ export class MenuService {
           nombre: restaurante.nombre,
           direccion: restaurante.direccion,
         },
+        marca: await this.marcaDe(restaurante),
+        // HU-040 (BL-210): este enlace es el de los pedidos para retirar.
+        // Si el local no los toma ahora, la carta se muestra igual pero sin
+        // poder pedir (y POST /pedidos responde 409).
+        retiro: retiroPublico(restaurante, new Date(), restaurante.timezone),
+        // HU-010 (BL-613): número para «¿Preferís pedir por WhatsApp?», solo
+        // si el bot atiende a este local. Solo en este menú (el de retirar):
+        // el de la mesa no lo ofrece, porque el bot no toma pedidos de mesa.
+        whatsapp:
+          restaurante.whatsappPedidos &&
+          botConectadoParaTenant(process.env, tenantId)
+            ? numeroParaWaMe(restaurante.whatsappPedidos)
+            : null,
         categorias: categoriasConUrls,
       };
     });
   }
 
-  private async categoriasConUrlsFirmadas(categorias: any[]) {
+  /** HU-043 (BL-532 y BL-562): el logo, la portada y la plantilla del local. */
+  private async marcaDe(restaurante: {
+    logoKey: string | null;
+    portadaKey: string | null;
+    plantilla: string;
+  }): Promise<MarcaPublica> {
+    return {
+      logoUrl: restaurante.logoKey
+        ? await this.storage.urlImagenPublica(restaurante.logoKey)
+        : null,
+      portadaUrl: restaurante.portadaKey
+        ? await this.storage.urlImagenPublica(restaurante.portadaKey)
+        : null,
+      // La columna es texto (con CHECK): acá se acota al tipo.
+      plantilla: restaurante.plantilla as PlantillaMarca,
+    };
+  }
+
+  /**
+   * HU-045 (BL-547): los «más pedidos» entre los platos de esta carta, en la
+   * misma transacción (RLS). Si la consulta falla, la carta se muestra igual,
+   * sin la insignia: es un dato de ayuda, no algo para pedir.
+   */
+  private async masPedidosDe(
+    tx: ConsultaCruda,
+    tenantId: string,
+    categorias: { items: { id: string }[] }[],
+  ): Promise<ReadonlySet<string>> {
+    const ids = categorias.flatMap((c) => c.items.map((i) => i.id));
+    try {
+      return new Set(await platosMasPedidos(tx, tenantId, ids));
+    } catch (error) {
+      // Solo lectura: la carta sigue (y la transacción no escribió nada).
+      this.logger.warn(
+        `No se pudieron calcular los platos más pedidos: ${(error as Error).message}`,
+      );
+      return new Set();
+    }
+  }
+
+  private async categoriasConUrlsFirmadas(
+    categorias: any[],
+    masPedidos: ReadonlySet<string> = new Set(),
+  ) {
     return Promise.all(
       categorias.map(async (categoria) => ({
         id: categoria.id,
@@ -143,7 +223,7 @@ export class MenuService {
             const imagenUrl = item.imagenKey
               ? await this.storage.urlImagenPublica(item.imagenKey)
               : null;
-            return mapItemToDto(item, imagenUrl);
+            return mapItemToDto(item, imagenUrl, masPedidos.has(item.id));
           }),
         ),
       })),

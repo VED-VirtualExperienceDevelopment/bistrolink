@@ -9,6 +9,9 @@ import {
   type PosicionEnCola,
 } from './kds/cola-kds.utils';
 import type { EstadoPedido } from '@/types/pedido';
+import { IndicadorConexion } from './conexion/IndicadorConexion';
+import { useEstadoConexion } from './conexion/useEstadoConexion';
+import { AvisoRetiro } from './retiro/AvisoRetiro';
 
 
 const WS_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
@@ -30,19 +33,36 @@ interface SeguimientoPedidoProps {
   readonly pedidoId: string;
   readonly token: string;
   readonly estadoInicial: EstadoPedido;
+  /** HU-040 (BL-210): pedido para retirar; avisa cuando está listo. */
+  readonly paraRetirar?: boolean;
+  /** HU-040 (BL-210): código que muestra en el mostrador (R-042). */
+  readonly codigoRetiro?: string | null;
+  /** BL-603: pedido del bot de WhatsApp (avisa el bot, no el navegador). */
+  readonly avisoPorWhatsapp?: boolean | null;
+  /** BL-502: avisa cada cambio de estado (por ejemplo, para la pantalla de gracias). */
+  readonly onCambioDeEstado?: (estado: EstadoPedido, actualizadoEn: string | null) => void;
 }
 
 export function SeguimientoPedido({
   pedidoId,
   token,
   estadoInicial,
+  paraRetirar = false,
+  codigoRetiro = null,
+  avisoPorWhatsapp = false,
+  onCambioDeEstado,
 }: SeguimientoPedidoProps) {
   const [estado, setEstado] = useState<EstadoPedido>(estadoInicial);
   const [actualizadoEn, setActualizadoEn] = useState<string | null>(null);
-  const [conectado, setConectado] = useState(false);
+  // HU-038 (BL-504): el socket en estado, para el indicador de conexión.
+  const [socketActual, setSocketActual] = useState<Socket | null>(null);
+  const estadoConexion = useEstadoConexion(socketActual);
   // HU-042 (BL-466): lugar en la cola y tiempo estimado, mientras espera.
   const [lugar, setLugar] = useState<PosicionEnCola | null>(null);
   const socketRef = useRef<Socket | null>(null);
+  // BL-502: la última función recibida, sin reconectar el socket si cambia.
+  const avisarCambio = useRef(onCambioDeEstado);
+  avisarCambio.current = onCambioDeEstado;
 
   useEffect(() => {
     const socket = io(WS_URL, {
@@ -52,18 +72,19 @@ export function SeguimientoPedido({
       reconnectionDelayMax: 5000,
     });
     socketRef.current = socket;
+    setSocketActual(socket);
 
+    // Al conectar y al reconectar: el servidor devuelve el estado actual y,
+    // si espera, su lugar en la cola.
     socket.on('connect', () => {
-      setConectado(true);
       socket.emit('pedido:seguir', { pedidoId });
     });
-
-    socket.on('disconnect', () => setConectado(false));
 
     socket.on('pedido:actualizado', (payload: PedidoActualizadoPayload) => {
       if (payload.id !== pedidoId) return;
       setEstado(payload.estado);
       setActualizadoEn(payload.actualizadoEn);
+      avisarCambio.current?.(payload.estado, payload.actualizadoEn ?? null);
     });
 
     // HU-042 (BL-466): el servidor manda solo el lugar de este pedido (sala
@@ -76,6 +97,7 @@ export function SeguimientoPedido({
     return () => {
       socket.disconnect();
       socketRef.current = null;
+      setSocketActual(null);
     };
   }, [pedidoId, token]);
 
@@ -85,11 +107,9 @@ export function SeguimientoPedido({
   return (
     <div className="mt-4">
       <div className="flex items-center justify-between mb-3">
-        <span className="text-xs text-culinary-neutral">
-          {conectado ? '🟢 En vivo' : '⏳ Reconectando...'}
-        </span>
+        <IndicadorConexion estado={estadoConexion} textoConectado="En vivo" compacto />
         {actualizadoEn && (
-          <span className="text-xs text-culinary-neutral">
+          <span className="text-xs text-[#5a575e]">
             Actualizado {new Date(actualizadoEn).toLocaleTimeString('es-UY')}
           </span>
         )}
@@ -107,8 +127,8 @@ export function SeguimientoPedido({
               <div
                 className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
                   alcanzado
-                    ? 'bg-culinary-primary text-white'
-                    : 'bg-culinary-primary-container text-culinary-neutral'
+                    ? 'bg-marca text-white'
+                    : 'bg-marca/10 text-[#5a575e]'
                 }`}
               >
                 {alcanzado ? '✓' : i + 1}
@@ -117,7 +137,7 @@ export function SeguimientoPedido({
                 className={`mt-1 text-xs ${
                   esActual
                     ? 'font-semibold text-culinary-on-surface'
-                    : 'text-culinary-neutral'
+                    : 'text-[#5a575e]'
                 }`}
               >
                 {ESTADO_LABEL[paso]}
@@ -125,7 +145,7 @@ export function SeguimientoPedido({
               {i < PROGRESION.length - 1 && (
                 <div
                   className={`hidden sm:block h-0.5 w-full mt-3 ${
-                    i < indiceActual ? 'bg-culinary-primary' : 'bg-culinary-primary-container'
+                    i < indiceActual ? 'bg-marca' : 'bg-marca/10'
                   }`}
                   style={{ marginLeft: '50%', marginTop: '-1.15rem' }}
                 />
@@ -135,9 +155,18 @@ export function SeguimientoPedido({
         })}
       </ol>
 
-    <p role="status" className="text-center text-sm font-semibold text-culinary-primary mt-4">
+      {/* <output>: rol «status» implícito, el lector de pantalla anuncia
+          cada cambio de estado (Sonar: mejor que role="status"). */}
+      <output className="mt-4 block text-center text-sm font-semibold text-marca">
         {lugarActual ? textoEnCola(lugarActual) : ESTADO_LABEL[estado]}
-      </p>
+      </output>
+      {paraRetirar && (
+        <AvisoRetiro
+          listo={estado === 'LISTO_PARA_ENTREGAR'}
+          codigo={codigoRetiro}
+          porWhatsapp={avisoPorWhatsapp}
+        />
+      )}
     </div>
   );
 }

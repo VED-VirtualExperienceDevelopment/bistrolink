@@ -11,10 +11,11 @@ import { AuditLogService } from '../audit-log/audit-log.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { QrMesaModule } from '../qr-mesa/qr-mesa.module';
 import { TenantEstadoModule } from '../tenant-estado/tenant-estado.module';
+import { WsAuthService } from '../pedidos/ws-auth.service';
 
 @Module({
   // BL-413: TenantEstadoModule, para el menú público de un establecimiento
-  // suspendido.
+  // suspendido y para WsAuthService.
   imports: [PrismaModule, QrMesaModule, TenantEstadoModule],
   controllers: [MenuController, MenuAdminController],
   providers: [
@@ -25,6 +26,10 @@ import { TenantEstadoModule } from '../tenant-estado/tenant-estado.module';
     ProcesadorImagenService,
     ImagenesMenuService,
     AuditLogService,
+    // BL-515: verificación del token en el canal /menu. Se provee acá y no
+    // importando PedidosModule, que ya importa MenuModule (ciclo). Solo
+    // depende de TenantEstadoService.
+    WsAuthService,
   ],
   exports: [MenuService, MenuAdminService, StorageService, MenuGateway],
 })

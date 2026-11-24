@@ -66,6 +66,7 @@ describe('estadoPagoDesdeOrden', () => {
 
 describe('PagosWebhookService.procesarOrden (BL-78)', () => {
   let tx: {
+    $queryRaw: jest.Mock;
     pago: { findMany: jest.Mock; update: jest.Mock; count: jest.Mock };
     pedido: { findUnique: jest.Mock };
     mesa: { updateMany: jest.Mock };
@@ -85,6 +86,8 @@ describe('PagosWebhookService.procesarOrden (BL-78)', () => {
     jest.spyOn(Logger, 'warn').mockImplementation();
     jest.spyOn(Logger, 'error').mockImplementation();
     tx = {
+      // HU-017 (BL-60): bloqueo de la fila de la mesa en liberarMesaDelCobro.
+      $queryRaw: jest.fn().mockResolvedValue([]),
       pago: {
         findMany: jest.fn().mockResolvedValue([pagoGuardado()]),
         update: jest.fn(),
@@ -138,6 +141,36 @@ describe('PagosWebhookService.procesarOrden (BL-78)', () => {
       await service.procesarOrden(ORDER_ID);
 
       expect(pedidos.notificarEstadoMesa).not.toHaveBeenCalled();
+    });
+
+    it('otro comensal de la mesa sigue pagando: la mesa sigue EN_PROCESO_DE_PAGO y no avisa', async () => {
+      // Primer count: otro pago APROBADO del mismo pedido (ninguno => no hay
+      // reembolso). Segundo count: cobros en curso en la mesa (uno).
+      tx.pago.count.mockResolvedValueOnce(0).mockResolvedValueOnce(1);
+
+      expect(await service.procesarOrden(ORDER_ID)).toBe('actualizado');
+
+      expect(tx.mesa.updateMany).not.toHaveBeenCalled();
+      expect(pedidos.notificarEstadoMesa).not.toHaveBeenCalled();
+    });
+
+    it('requiere reembolso pero el pago estaba PENDIENTE: el cobro terminó, la mesa vuelve a OCUPADA', async () => {
+      // Primer count: otro pago APROBADO del mismo pedido (=> reembolso).
+      // Segundo count: cobros en curso en la mesa (ninguno).
+      tx.pago.count.mockResolvedValueOnce(1).mockResolvedValueOnce(0);
+
+      expect(await service.procesarOrden(ORDER_ID)).toBe('requiere_reembolso');
+
+      expect(tx.mesa.updateMany).toHaveBeenCalledWith({
+        where: { id: MESA_ID, estado: 'EN_PROCESO_DE_PAGO' },
+        data: { estado: 'OCUPADA' },
+      });
+      expect(pedidos.notificarEstadoMesa).toHaveBeenCalledWith(
+        TENANT_ID,
+        MESA_ID,
+        'OCUPADA',
+      );
+      expect(pedidos.confirmarPagoEnTx).not.toHaveBeenCalled();
     });
   });
 

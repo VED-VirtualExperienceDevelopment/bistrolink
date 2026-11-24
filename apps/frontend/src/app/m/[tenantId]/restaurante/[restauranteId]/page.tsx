@@ -64,13 +64,16 @@ const obtenerMenuPublico = cache(
 
 // BL-224: la pestaña muestra el nombre del restaurante
 // («Restaurante Testing A · BistroLink»); si no se puede cargar, «Menú».
+// BL-304: si el local no existe, «Local no encontrado» (la 404 de
+// not-found.tsx toma el título de acá, no de un metadata propio).
 export async function generateMetadata({
   params,
 }: PageProps): Promise<Metadata> {
   const { tenantId, restauranteId } = await params;
   try {
     const data = await obtenerMenuPublico(tenantId, restauranteId);
-    if (!data || data === NO_DISPONIBLE) return { title: 'Menú' };
+    if (data === null) return { title: 'Local no encontrado' };
+    if (data === NO_DISPONIBLE) return { title: 'Menú' };
     return { title: data.restaurante.nombre };
   } catch {
     return { title: 'Menú' };
@@ -120,6 +123,9 @@ export default async function MenuPublicoPage({ params }: PageProps) {
       categorias={data.categorias}
       tenantId={tenantId}
       restauranteId={restauranteId}
+      marca={data.marca}
+      retiro={data.retiro}
+      whatsapp={data.whatsapp}
     />
   );
 }

@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { TenantPrismaService } from '../prisma/tenant-prisma.service';
+import { LinkPagoService } from '../link-pago/link-pago.service';
 import {
   exigirSesionAbierta,
   QrMesaAccesoService,
@@ -12,6 +13,10 @@ import {
   MENSAJE_SUSPENDIDO_COMENSAL,
   TenantEstadoService,
 } from '../tenant-estado/tenant-estado.service';
+import {
+  DatosTokenInvitado,
+  tokenInvitadoDesdeEntorno,
+} from './token-invitado';
 
 export interface TokenComensal {
   accessToken: string;
@@ -20,39 +25,20 @@ export interface TokenComensal {
 
 @Injectable()
 export class AuthComensalService {
+  /**
+   * HU-052: la API firma el token de invitado del comensal (ADR 0014).
+   * Desde BL-581 es el único emisor: ya no hay usuario técnico en Keycloak.
+   * Null solo si falta COMENSAL_TOKEN_CLAVE, que el control de arranque
+   * exige (startup-env-check.ts).
+   */
+  private readonly tokensInvitado = tokenInvitadoDesdeEntorno();
+
   constructor(
     private readonly tenantPrisma: TenantPrismaService,
     private readonly qrMesaAcceso: QrMesaAccesoService,
     private readonly tenantEstado: TenantEstadoService,
+    private readonly linkPago: LinkPagoService,
   ) {}
-
-  private get keycloakUrl(): string {
-    return process.env.KEYCLOAK_URL ?? 'http://localhost:8080';
-  }
-
-  private get realm(): string {
-    return process.env.KEYCLOAK_REALM ?? 'bistrolink';
-  }
-
-  private get clientId(): string {
-    return process.env.KEYCLOAK_CLIENT_ID ?? 'bistrolink-backend';
-  }
-
-  private get clientSecret(): string {
-    const secret = process.env.KEYCLOAK_CLIENT_SECRET;
-    if (!secret) {
-      throw new Error('Falta KEYCLOAK_CLIENT_SECRET en el .env');
-    }
-    return secret;
-  }
-
-  private get comensalPassword(): string {
-    const password = process.env.KEYCLOAK_COMENSAL_PASSWORD;
-    if (!password) {
-      throw new Error('Falta KEYCLOAK_COMENSAL_PASSWORD en el .env');
-    }
-    return password;
-  }
 
   /**
    * Token del comensal para el pedido para retirar (link web del local).
@@ -78,7 +64,11 @@ export class AuthComensalService {
       tenantId,
       MENSAJE_SUSPENDIDO_COMENSAL,
     );
-    return this.pedirTokenKeycloak(tenantId);
+    return this.emitirTokenInvitado({
+      tenantId,
+      restauranteId,
+      canal: { tipo: 'retiro', restauranteId },
+    });
   }
 
   /**
@@ -99,42 +89,51 @@ export class AuthComensalService {
     // HU-017 (BL-60): solo con la sesión de la mesa abierta, y la de esta
     // página (410 MESA_CERRADA / SESION_VENCIDA).
     exigirSesionAbierta(mesa, sesionMesa);
-    return this.pedirTokenKeycloak(mesa.tenantId);
+    return this.emitirTokenInvitado({
+      tenantId: mesa.tenantId,
+      restauranteId: mesa.restauranteId,
+      // exigirSesionAbierta ya garantizó que la sesión existe.
+      canal: {
+        tipo: 'mesa',
+        mesaId: mesa.mesaId,
+        sesionId: mesa.sesionId as string,
+      },
+    });
   }
 
   /**
-   * Pide el JWT del comensal técnico del tenant (comensal-<tenantId>) a
-   * Keycloak. Es el mismo usuario para cualquier mesa del tenant: la mesa se valida
-   * aparte (BL-204, MesaQrGuard en pedidos y llamados).
+   * HU-033 (BL-203): token del comensal que abre un link de pago. El tenant
+   * sale del link (vigente o con el pedido ya pagado), nunca del cliente:
+   * 404 si no es un link válido y 410 si venció, lo reemplazó otro o el
+   * pedido se canceló. BL-413: 403 si el establecimiento está suspendido.
    */
-  private async pedirTokenKeycloak(tenantId: string): Promise<TokenComensal> {
-    const username = `comensal-${tenantId}`;
-
-    const res = await fetch(
-      `${this.keycloakUrl}/realms/${this.realm}/protocol/openid-connect/token`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-          grant_type: 'password',
-          client_id: this.clientId,
-          client_secret: this.clientSecret,
-          username,
-          password: this.comensalPassword,
-        }),
-      },
+  async emitirTokenPorLink(linkToken: string): Promise<TokenComensal> {
+    const link = await this.linkPago.resolver(linkToken);
+    await this.tenantEstado.asegurarActivo(
+      link.tenantId,
+      MENSAJE_SUSPENDIDO_COMENSAL,
     );
+    return this.emitirTokenInvitado({
+      tenantId: link.tenantId,
+      restauranteId: link.restauranteId,
+      canal: { tipo: 'link', pedidoId: link.pedidoId },
+    });
+  }
 
-    if (!res.ok) {
+  /**
+   * HU-052: la API firma el token de invitado con el canal por el que entró
+   * el comensal, sin ir a Keycloak. La respuesta ({ accessToken, expiresIn })
+   * es la misma que tenía el token de Keycloak.
+   */
+  private emitirTokenInvitado(datos: DatosTokenInvitado): TokenComensal {
+    if (!this.tokensInvitado) {
       console.error(
-        `No se pudo emitir token de comensal para tenant ${tenantId}: ${res.status} ${await res.text()}`,
+        'Falta COMENSAL_TOKEN_CLAVE: no se puede emitir el token del comensal',
       );
       throw new InternalServerErrorException(
         'No se pudo emitir el token de acceso',
       );
     }
-
-    const data = await res.json();
-    return { accessToken: data.access_token, expiresIn: data.expires_in };
+    return this.tokensInvitado.emitir(datos);
   }
 }

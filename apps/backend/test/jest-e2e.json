@@ -7,5 +7,9 @@
   "transform": {
     "^.+\\.(t|j)s$": "ts-jest"
   },
-  "transformIgnorePatterns": ["/node_modules/(?!jose)/"]
+  "transformIgnorePatterns": ["/node_modules/(?!jose)/"],
+  "setupFiles": [
+    "dotenv/config",
+    "<rootDir>/integration/support/clave-comensal.ts"
+  ]
 }

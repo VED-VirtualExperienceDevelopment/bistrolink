@@ -3,7 +3,11 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { HealthController } from './health.controller';
 import { LoggerModule } from 'nestjs-pino';
-import { CAMPOS_PERSONALES_EN_LOGS } from './logs-datos-personales';
+import {
+  CABECERAS_CON_IP_EN_LOGS,
+  CABECERAS_CON_TOKENS_EN_LOGS,
+  CAMPOS_PERSONALES_EN_LOGS,
+} from './logs-datos-personales';
 import { AuthModule } from './auth/auth.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { TestController } from './test/test.controller';
@@ -14,6 +18,7 @@ import { AuthComensalModule } from './auth-comensal/auth-comensal.module';
 import { PedidosModule } from './pedidos/pedidos.module';
 import { MesasModule } from './mesas/mesas.module';
 import { PagosModule } from './pagos/pagos.module';
+import { LinkPagoModule } from './link-pago/link-pago.module';
 import { PlataformaApiModule } from './plataforma/plataforma-api.module';
 import { construirConfiguracionLog } from './logger/destinos-log';
 import { AuditoriaModule } from './audit-log/auditoria.module';
@@ -21,6 +26,10 @@ import { ConfiguracionModule } from './configuracion/configuracion.module';
 import { ComprobantesModule } from './comprobantes/comprobantes.module';
 import { ReportesModule } from './reportes/reportes.module';
 import { StockModule } from './stock/stock.module';
+import { PosModule } from './pos/pos.module';
+import { ComplementosModule } from './complementos/complementos.module';
+import { ValoracionesModule } from './valoraciones/valoraciones.module';
+import { WhatsappModule } from './whatsapp/whatsapp.module';
 import { modulosDeTesting } from './testing/testing.module';
 import { ContextoAuditoriaMiddleware } from './audit-log/contexto-auditoria';
 
@@ -63,6 +72,9 @@ const configuracionLog = construirConfiguracionLog(process.env);
             'req.headers.cookie',
             'res.headers["set-cookie"]',
             ...CAMPOS_PERSONALES_EN_LOGS,
+            ...CABECERAS_CON_IP_EN_LOGS,
+            // BL-572: tokens del pedido, de la mesa y del link de pago.
+            ...CABECERAS_CON_TOKENS_EN_LOGS,
           ],
           censor: '[REDACTED]',
         },
@@ -78,6 +90,7 @@ const configuracionLog = construirConfiguracionLog(process.env);
     PedidosModule,
     MesasModule,
     PagosModule,
+    LinkPagoModule,
     // BL-163 (HU-027): /plataforma/establecimientos, solo rol PLATAFORMA.
     PlataformaApiModule,
     // HU-035 (BL-205): GET /auditoria, solo ADMIN.
@@ -89,6 +102,14 @@ const configuracionLog = construirConfiguracionLog(process.env);
     ReportesModule,
     // HU-015 (BL-120): stock de la jornada y alertas, solo ADMIN.
     StockModule,
+    // HU-011 (BL-488): sincronización con el POS del local.
+    PosModule,
+    // HU-046 (BL-552): complementos antes de pagar y su job nocturno.
+    ComplementosModule,
+    // HU-050 (BL-558): valoración privada del pedido.
+    ValoracionesModule,
+    // HU-010 (BL-112): bot de pedidos por WhatsApp (Evolution API).
+    WhatsappModule,
     // BL-475 (BL-285): POST /testing/limpieza, solo con
     // E2E_CLEANUP_ENABLED=true (staging y local; nunca en producción).
     ...modulosDeTesting(),

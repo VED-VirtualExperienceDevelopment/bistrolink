@@ -59,7 +59,8 @@ const PEDIDO_CONFIRMADO = {
 
 describe('PlexoWebhookService.procesarPago (BL-78)', () => {
   let tx: {
-    pago: { findMany: jest.Mock; update: jest.Mock };
+    $queryRaw: jest.Mock;
+    pago: { findMany: jest.Mock; update: jest.Mock; count: jest.Mock };
     pedido: { findUnique: jest.Mock };
     mesa: { updateMany: jest.Mock };
     pagoEstadoHistorial: { create: jest.Mock };
@@ -78,9 +79,13 @@ describe('PlexoWebhookService.procesarPago (BL-78)', () => {
     jest.spyOn(Logger, 'warn').mockImplementation();
     jest.spyOn(Logger, 'error').mockImplementation();
     tx = {
+      // HU-017 (BL-60): bloqueo de la fila de la mesa en liberarMesaDelCobro.
+      $queryRaw: jest.fn().mockResolvedValue([]),
       pago: {
         findMany: jest.fn().mockResolvedValue([pagoGuardado()]),
         update: jest.fn(),
+        // HU-017 (BL-60): otros cobros en curso en la mesa (default: ninguno).
+        count: jest.fn().mockResolvedValue(0),
       },
       pedido: { findUnique: jest.fn().mockResolvedValue({ mesaId: MESA_ID }) },
       mesa: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
@@ -173,6 +178,18 @@ describe('PlexoWebhookService.procesarPago (BL-78)', () => {
           origen: 'WEBHOOK',
         }),
       });
+    });
+
+    it('HU-017 (BL-60): otro comensal de la mesa sigue pagando => la mesa sigue EN_PROCESO_DE_PAGO y no avisa', async () => {
+      tx.pago.count.mockResolvedValue(1);
+
+      expect(await service.procesarPago(PAYMENT_ID)).toBe('actualizado');
+
+      expect(tx.pago.count).toHaveBeenCalledWith({
+        where: { estado: 'PENDIENTE', pedido: { mesaId: MESA_ID } },
+      });
+      expect(tx.mesa.updateMany).not.toHaveBeenCalled();
+      expect(pedidos.notificarEstadoMesa).not.toHaveBeenCalled();
     });
 
     it('denied => Pago RECHAZADO y mesa OCUPADA', async () => {

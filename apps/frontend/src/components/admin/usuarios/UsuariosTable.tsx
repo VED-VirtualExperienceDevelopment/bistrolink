@@ -3,6 +3,7 @@
 import type { Usuario } from '@/types/usuario';
 import {
   esCuentaCocina,
+  estaBloqueada,
   esUsuarioPropio,
   nombreCompleto,
   nombreParaMostrar,
@@ -18,6 +19,8 @@ interface Props {
   onRestablecerContrasena: (usuario: Usuario) => void;
   onCerrarSesiones: (usuario: Usuario) => void;
   onEliminar: (usuario: Usuario) => void;
+  /** BL-371: levantar el bloqueo por intentos fallidos. */
+  onDesbloquear: (usuario: Usuario) => void;
   /** BL-369: keycloakId de quien está usando la pantalla (sub del token). */
   keycloakIdPropio?: string;
 }
@@ -51,6 +54,9 @@ const CLASE_ACCION =
 // salvo la de la persona: con "auto", una fila con menos acciones (la cocina
 // no tiene «Editar») corría el rol y el estado. BL-382: 17rem = 5 botones
 // de 48 px + 4 espacios de 8 px (con «Eliminar», en usuarios sin historial).
+// BL-371: con «Desbloquear» (solo en una cuenta bloqueada) son 6 botones y
+// el sexto pasa a una segunda fila: ensanchar la columna dejaba sin lugar a
+// la persona en una tablet de 820 px.
 const COLUMNAS =
   'md:grid md:grid-cols-[minmax(0,1fr)_10rem_9rem_17rem] md:items-center md:gap-4';
 
@@ -67,6 +73,7 @@ export function UsuariosTable({
   onRestablecerContrasena,
   onCerrarSesiones,
   onEliminar,
+  onDesbloquear,
   keycloakIdPropio,
 }: Readonly<Props>) {
   if (usuarios.length === 0) {
@@ -103,6 +110,7 @@ export function UsuariosTable({
           const cocina = esCuentaCocina(usuario);
           const ingreso = textoUltimoIngreso(usuario.ultimoIngreso);
           const propio = esUsuarioPropio(usuario, keycloakIdPropio);
+          const bloqueada = estaBloqueada(usuario);
           return (
             <li
               key={usuario.id}
@@ -158,21 +166,49 @@ export function UsuariosTable({
                   </span>
                 </span>
 
-                {/* Estado con texto e ícono: no depende solo del color. */}
-                <span
-                  className={`inline-flex items-center gap-1.5 text-body-md ${
-                    usuario.activo ? 'text-on-surface' : 'text-error'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[18px]" aria-hidden="true">
-                    {usuario.activo ? 'check_circle' : 'block'}
+                {/* Estado con texto e ícono: no depende solo del color.
+                    BL-371: debajo, el bloqueo por intentos fallidos (en la
+                    misma columna). */}
+                <span className="flex flex-col gap-1">
+                  <span
+                    className={`inline-flex items-center gap-1.5 text-body-md ${
+                      usuario.activo ? 'text-on-surface' : 'text-error'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[18px]" aria-hidden="true">
+                      {usuario.activo ? 'check_circle' : 'block'}
+                    </span>
+                    {usuario.activo ? 'Activo' : 'Desactivado'}
                   </span>
-                  {usuario.activo ? 'Activo' : 'Desactivado'}
+                  {bloqueada && (
+                    <span className="inline-flex items-center gap-1.5 text-body-md text-error">
+                      <span className="material-symbols-outlined text-[18px]" aria-hidden="true">
+                        lock
+                      </span>
+                      {/* En su propio span: el espacio lo da gap-1.5 (Sonar S6772). */}
+                      <span>Ingreso bloqueado</span>
+                    </span>
+                  )}
                 </span>
               </div>
 
               {/* Acciones: botones de 48 px con el nombre de la persona. */}
               <div className="flex flex-wrap items-center gap-2 md:justify-end">
+                {/* BL-371: primero, porque es lo que la persona necesita para
+                    volver a trabajar. */}
+                {bloqueada && (
+                  <button
+                    type="button"
+                    onClick={() => onDesbloquear(usuario)}
+                    aria-label={`Desbloquear a ${nombre}`}
+                    title="Desbloquear"
+                    className={`${CLASE_ACCION} hover:bg-surface-container-high hover:text-primary`}
+                  >
+                    <span className="material-symbols-outlined text-[22px]" aria-hidden="true">
+                      lock_open
+                    </span>
+                  </button>
+                )}
                 {/* BL-362 y BL-366: la cuenta de cocina no se edita (ni el rol
                     ni los datos). */}
                 {!cocina && (

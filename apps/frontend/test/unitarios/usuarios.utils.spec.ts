@@ -14,6 +14,7 @@ import {
   normalizarParaBuscar,
   primerCampoConError,
   puedeEliminarse,
+  estaBloqueada,
   rutaUsuario,
   textoCantidadUsuarios,
   textoUltimoIngreso,
@@ -466,5 +467,13 @@ describe("errorUsername", () => {
 describe("normalizarUsername", () => {
   it("saca los espacios y pasa a minúsculas", () => {
     expect(normalizarUsername("  Ana.Perez ")).toBe("ana.perez");
+  });
+});
+
+describe("estaBloqueada (BL-371)", () => {
+  it("[TC-U-650] ofrece «Desbloquear» solo si el backend dice que está bloqueada; sin el dato, no", () => {
+    expect(estaBloqueada({ bloqueada: true })).toBe(true);
+    expect(estaBloqueada({ bloqueada: false })).toBe(false);
+    expect(estaBloqueada({})).toBe(false);
   });
 });

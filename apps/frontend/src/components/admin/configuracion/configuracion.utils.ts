@@ -4,6 +4,13 @@
  * test/unitarios/configuracion.utils.spec.ts).
  */
 
+import type { PlantillaMarca } from "@/types/menu";
+import {
+  errorNumeroWhatsapp,
+  normalizarNumeroWhatsapp,
+} from "@/components/retiro/whatsapp.utils";
+import { PLANTILLA_POR_DEFECTO } from "@/lib/plantillas-marca";
+
 export type CfeProveedor = "SURTEC" | "BILLER";
 export type MedioPago = "EFECTIVO" | "MERCADOPAGO" | "POS" | "PLEXO" | "HANDY";
 
@@ -12,6 +19,12 @@ export interface ConfiguracionEstablecimiento {
   razonSocial: string;
   /** Solo lectura: lo cambia el equipo de BistroLink (BL-412). */
   rut: string;
+  /**
+   * HU-043 (BL-561): nombre y dirección del local que ve el comensal.
+   * Opcionales en el tipo: un backend anterior no los trae.
+   */
+  nombre?: string;
+  direccion?: string;
   efectivoHabilitado: boolean;
   mercadoPagoHabilitado: boolean;
   /**
@@ -22,6 +35,11 @@ export interface ConfiguracionEstablecimiento {
   plexoHabilitado: boolean;
   handyHabilitado: boolean;
   propinasSugeridas: number[];
+  /**
+   * HU-022 (BL-495): marcar el 10 % en la pantalla de pago del comensal.
+   * Opcional en el tipo: un backend anterior no lo trae (vale false).
+   */
+  propinaPreseleccionada?: boolean;
   cfeProveedor: CfeProveedor;
   /** Los que se pueden habilitar hoy (Plexo y Handy, fuera del MVP). */
   mediosPagoDisponibles: MedioPago[];
@@ -39,7 +57,51 @@ export interface ConfiguracionEstablecimiento {
   limitePedidosEnPreparacion?: number | null;
   umbralAlertaCola?: number;
   minutosPreparacionEstimados?: number;
+  /**
+   * HU-038 (BL-506): umbrales de espera de las comandas del KDS, en minutos.
+   * Opcionales en el tipo: un backend anterior no los trae.
+   */
+  minutosEsperaAtencion?: number;
+  minutosEsperaDemorado?: number;
+  minutosEsperaDemoraAlta?: number;
+  /**
+   * HU-043 (BL-531 y BL-532): marca del local. Opcionales en el tipo: un
+   * backend anterior no los trae (y la sección «Marca del local» no se
+   * muestra). logoUrl es una URL firmada para la vista previa; la key del
+   * logo no viaja.
+   */
+  plantilla?: PlantillaMarca;
+  plantillasDisponibles?: PlantillaMarca[];
+  logoUrl?: string | null;
+  /*
+   * HU-040 (BL-210): pedidos para retirar por el enlace web, y la franja del
+   * día en que se toman (null = todo el día). Opcionales: un backend
+   * anterior no los trae.
+   */
+  retiroHabilitado?: boolean;
+  retiroHoraDesde?: string | null;
+  retiroHoraHasta?: string | null;
+  /**
+   * HU-010 (BL-613): número del bot de WhatsApp («+59899123456») y si el
+   * bot atiende al local. Opcionales: un backend anterior no los trae (y el
+   * campo no se muestra).
+   */
+  whatsappPedidos?: string | null;
+  whatsappBotConectado?: boolean;
+  /** HU-043 (BL-562): URL firmada de la portada del banner (vista previa). */
+  portadaUrl?: string | null;
 }
+
+/**
+ * HU-043 (BL-533 y BL-562): el logo o la portada en el formulario.
+ * - `guardado`: la que está guardada (o ninguna), sin tocar.
+ * - `nuevo`: una recién subida y confirmada por la API, sin guardar todavía.
+ * - `quitado`: se quita al guardar.
+ */
+export type EstadoLogo =
+  | { tipo: "guardado" }
+  | { tipo: "nuevo"; key: string; url: string }
+  | { tipo: "quitado" };
 
 export type CampoMedioPago =
   | "efectivoHabilitado"
@@ -51,13 +113,21 @@ export type CampoMedioPago =
 /** Lo que el administrador edita en la pantalla. */
 export interface FormularioConfiguracion {
   razonSocial: string;
+  /**
+   * HU-043 (BL-561): nombre y dirección del local. null = el backend no los
+   * trae (los campos no se muestran ni se validan).
+   */
+  nombreLocal: string | null;
+  direccionLocal: string | null;
   efectivoHabilitado: boolean;
   mercadoPagoHabilitado: boolean;
   posHabilitado: boolean;
   plexoHabilitado: boolean;
   handyHabilitado: boolean;
-  /** Texto del campo, por ejemplo «10, 15, 20». */
+  /** Texto del campo, por ejemplo «5, 10, 15». */
   propinas: string;
+  /** HU-022 (BL-495): preseleccionar el 10 % para el comensal. */
+  propinaPreseleccionada: boolean;
   cfeProveedor: CfeProveedor;
   /** HU-036 (BL-206): vacío = sin correo. */
   emailPrivacidad: string;
@@ -67,6 +137,27 @@ export interface FormularioConfiguracion {
   limitePreparacion: string;
   umbralAlertaCola: string;
   minutosPreparacion: string;
+  /** HU-038 (BL-506): texto de los umbrales de espera (se validan al guardar). */
+  esperaAtencion: string;
+  esperaDemorado: string;
+  esperaDemoraAlta: string;
+  /** HU-043 (BL-533): plantilla de colores de la carta. */
+  plantilla: PlantillaMarca;
+  /** HU-043 (BL-533): logo del local. */
+  logo: EstadoLogo;
+  /** HU-040 (BL-210): se toman pedidos para retirar. */
+  retiroHabilitado: boolean;
+  /** HU-040 (BL-210): «HH:MM» o vacío; las dos vacías = todo el día. */
+  retiroHoraDesde: string;
+  retiroHoraHasta: string;
+  /**
+   * HU-010 (BL-613): número del bot de WhatsApp, como lo escribe el
+   * administrador; vacío = sin número. null = el backend no lo trae (el
+   * campo no se muestra ni se valida).
+   */
+  whatsappPedidos: string | null;
+  /** HU-043 (BL-562): foto de portada del banner. */
+  portada: EstadoLogo;
 }
 
 /** Body de PATCH /admin/configuracion: solo lo que cambió. */
@@ -79,6 +170,16 @@ export type CambiosConfiguracion = Partial<
     | "limitePreparacion"
     | "umbralAlertaCola"
     | "minutosPreparacion"
+    | "esperaAtencion"
+    | "esperaDemorado"
+    | "esperaDemoraAlta"
+    | "logo"
+    | "portada"
+    | "nombreLocal"
+    | "direccionLocal"
+    | "retiroHoraDesde"
+    | "retiroHoraHasta"
+    | "whatsappPedidos"
   >
 > & {
   propinasSugeridas?: number[];
@@ -86,6 +187,20 @@ export type CambiosConfiguracion = Partial<
   limitePedidosEnPreparacion?: number | null;
   umbralAlertaCola?: number;
   minutosPreparacionEstimados?: number;
+  minutosEsperaAtencion?: number;
+  minutosEsperaDemorado?: number;
+  minutosEsperaDemoraAlta?: number;
+  /** HU-043 (BL-533): key del logo nuevo, o null para quitarlo. */
+  logoKey?: string | null;
+  /** HU-043 (BL-562): key de la portada nueva, o null para quitarla. */
+  portadaKey?: string | null;
+  /** HU-043 (BL-561): nombre y dirección del local. */
+  nombre?: string;
+  direccion?: string;
+  retiroHoraDesde?: string | null;
+  retiroHoraHasta?: string | null;
+  /** HU-010 (BL-613): en formato internacional, o null para quitarlo. */
+  whatsappPedidos?: string | null;
 };
 
 /** Mismos límites que el backend (ActualizarConfiguracionDto). */
@@ -94,6 +209,12 @@ export const PROPINA_MINIMA = 1;
 export const PROPINA_MAXIMA = 100;
 export const LARGO_MAXIMO_RAZON_SOCIAL = 200;
 export const LARGO_MAXIMO_EMAIL = 254;
+/** HU-043 (BL-561): los mismos que Plataforma (BL-412). */
+export const LARGO_MAXIMO_NOMBRE_LOCAL = 120;
+export const LARGO_MAXIMO_DIRECCION_LOCAL = 200;
+
+/** HU-022 (BL-495): el porcentaje que se marca si el local activa la opción. */
+export const PORCENTAJE_PRESELECCIONADO = 10;
 
 /** HU-042 (BL-465): rangos de la cola, los mismos que el backend. */
 export const LIMITE_PREPARACION = { minimo: 1, maximo: 50 } as const;
@@ -103,6 +224,13 @@ export const MINUTOS_PREPARACION = { minimo: 1, maximo: 180 } as const;
 export const LIMITE_PREPARACION_SUGERIDO = 5;
 const UMBRAL_ALERTA_COLA_POR_DEFECTO = 10;
 const MINUTOS_PREPARACION_POR_DEFECTO = 15;
+
+/**
+ * HU-038 (BL-506): rango de los umbrales de espera, el mismo que el backend.
+ * Los valores por defecto son los del tablero (espera-kds.utils.ts).
+ */
+export const MINUTOS_ESPERA = { minimo: 1, maximo: 600 } as const;
+const ESPERA_POR_DEFECTO = { atencion: 30, demorado: 60, demoraAlta: 120 };
 
 export const MEDIOS_PAGO: ReadonlyArray<{
   codigo: MedioPago;
@@ -156,6 +284,8 @@ export function formularioDesde(
 ): FormularioConfiguracion {
   return {
     razonSocial: configuracion.razonSocial,
+    nombreLocal: configuracion.nombre ?? null,
+    direccionLocal: configuracion.direccion ?? null,
     efectivoHabilitado: configuracion.efectivoHabilitado,
     mercadoPagoHabilitado: configuracion.mercadoPagoHabilitado,
     // Un backend anterior no lo trae: queda como el default de la columna.
@@ -163,6 +293,8 @@ export function formularioDesde(
     plexoHabilitado: configuracion.plexoHabilitado,
     handyHabilitado: configuracion.handyHabilitado,
     propinas: textoDePropinas(configuracion.propinasSugeridas),
+    // HU-022 (BL-495): un backend anterior no lo trae: apagada, como el default.
+    propinaPreseleccionada: configuracion.propinaPreseleccionada ?? false,
     cfeProveedor: configuracion.cfeProveedor,
     emailPrivacidad: configuracion.emailPrivacidad ?? "",
     colaActiva: configuracion.limitePedidosEnPreparacion != null,
@@ -176,7 +308,95 @@ export function formularioDesde(
       configuracion.minutosPreparacionEstimados ??
         MINUTOS_PREPARACION_POR_DEFECTO,
     ),
+    esperaAtencion: String(
+      configuracion.minutosEsperaAtencion ?? ESPERA_POR_DEFECTO.atencion,
+    ),
+    esperaDemorado: String(
+      configuracion.minutosEsperaDemorado ?? ESPERA_POR_DEFECTO.demorado,
+    ),
+    esperaDemoraAlta: String(
+      configuracion.minutosEsperaDemoraAlta ?? ESPERA_POR_DEFECTO.demoraAlta,
+    ),
+    // HU-043 (BL-533): un backend anterior no la trae: la Clásica.
+    plantilla: configuracion.plantilla ?? PLANTILLA_POR_DEFECTO,
+    logo: { tipo: "guardado" },
+    // Un backend anterior no lo trae: queda como el default de la columna.
+    retiroHabilitado: configuracion.retiroHabilitado ?? true,
+    retiroHoraDesde: configuracion.retiroHoraDesde ?? "",
+    retiroHoraHasta: configuracion.retiroHoraHasta ?? "",
+    // HU-010 (BL-613): un backend anterior no lo trae: el campo no se muestra.
+    whatsappPedidos:
+      configuracion.whatsappPedidos === undefined
+        ? null
+        : (configuracion.whatsappPedidos ?? ""),
+    portada: { tipo: "guardado" },
   };
+}
+
+/**
+ * HU-043 (BL-533): URL del logo a mostrar en la pantalla: el recién subido,
+ * ninguno si se quitó, o el guardado. null = sin logo.
+ */
+export function urlDelLogo(
+  guardada: ConfiguracionEstablecimiento,
+  logo: EstadoLogo,
+): string | null {
+  return urlDeImagen(guardada.logoUrl, logo);
+}
+
+/**
+ * HU-043 (BL-562): URL de la portada a mostrar: la recién subida, ninguna
+ * si se quitó (null = la portada por defecto), o la guardada.
+ */
+export function urlDeLaPortada(
+  guardada: ConfiguracionEstablecimiento,
+  portada: EstadoLogo,
+): string | null {
+  return urlDeImagen(guardada.portadaUrl, portada);
+}
+
+function urlDeImagen(
+  guardada: string | null | undefined,
+  estado: EstadoLogo,
+): string | null {
+  if (estado.tipo === "nuevo") return estado.url;
+  if (estado.tipo === "quitado") return null;
+  return guardada ?? null;
+}
+
+/**
+ * HU-043 (BL-533): cambios de la marca para el PATCH. Quitar un logo que no
+ * estaba guardado no manda nada.
+ */
+function cambiosDeLaMarca(
+  guardada: ConfiguracionEstablecimiento,
+  formulario: FormularioConfiguracion,
+): Partial<CambiosConfiguracion> {
+  const cambios: Partial<CambiosConfiguracion> = {};
+  // HU-043 (BL-561): solo si el backend los trae (si no, quedan en null).
+  if (formulario.nombreLocal !== null) {
+    const nombre = textoLimpio(formulario.nombreLocal);
+    if (nombre !== guardada.nombre) cambios.nombre = nombre;
+  }
+  if (formulario.direccionLocal !== null) {
+    const direccion = textoLimpio(formulario.direccionLocal);
+    if (direccion !== guardada.direccion) cambios.direccion = direccion;
+  }
+  if (formulario.plantilla !== (guardada.plantilla ?? PLANTILLA_POR_DEFECTO)) {
+    cambios.plantilla = formulario.plantilla;
+  }
+  if (formulario.logo.tipo === "nuevo") {
+    cambios.logoKey = formulario.logo.key;
+  } else if (formulario.logo.tipo === "quitado" && guardada.logoUrl) {
+    cambios.logoKey = null;
+  }
+  // HU-043 (BL-562): la portada, con la misma regla que el logo.
+  if (formulario.portada.tipo === "nuevo") {
+    cambios.portadaKey = formulario.portada.key;
+  } else if (formulario.portada.tipo === "quitado" && guardada.portadaUrl) {
+    cambios.portadaKey = null;
+  }
+  return cambios;
 }
 
 /**
@@ -198,16 +418,45 @@ function leerEntero(
   return { valor };
 }
 
-/** HU-042 (BL-465): errores de los campos de la cola (solo con la cola activa). */
+/**
+ * Errores de la sección «Cocina»: los de la cola (HU-042, BL-465: solo con la
+ * cola activa) y los de los umbrales de espera (HU-038, BL-506: siempre).
+ */
 export interface ErroresCola {
   limitePreparacion?: string;
   umbralAlertaCola?: string;
   minutosPreparacion?: string;
+  esperaAtencion?: string;
+  esperaDemorado?: string;
+  esperaDemoraAlta?: string;
+}
+
+/**
+ * HU-038 (BL-506): cada umbral, entero dentro del rango; y, si los tres están
+ * bien, de menor a mayor. El error de orden va en el campo que lo rompe.
+ */
+function erroresEspera(formulario: FormularioConfiguracion): ErroresCola {
+  const errores: ErroresCola = {};
+  const atencion = leerEntero(formulario.esperaAtencion, MINUTOS_ESPERA);
+  if ("error" in atencion) errores.esperaAtencion = atencion.error;
+  const demorado = leerEntero(formulario.esperaDemorado, MINUTOS_ESPERA);
+  if ("error" in demorado) errores.esperaDemorado = demorado.error;
+  const demoraAlta = leerEntero(formulario.esperaDemoraAlta, MINUTOS_ESPERA);
+  if ("error" in demoraAlta) errores.esperaDemoraAlta = demoraAlta.error;
+  if ("error" in atencion || "error" in demorado || "error" in demoraAlta) {
+    return errores;
+  }
+  if (demorado.valor <= atencion.valor) {
+    errores.esperaDemorado = "Tiene que ser mayor que «Atención desde».";
+  } else if (demoraAlta.valor <= demorado.valor) {
+    errores.esperaDemoraAlta = "Tiene que ser mayor que «Demorado desde».";
+  }
+  return errores;
 }
 
 export function erroresCola(formulario: FormularioConfiguracion): ErroresCola {
-  if (!formulario.colaActiva) return {};
-  const errores: ErroresCola = {};
+  if (!formulario.colaActiva) return erroresEspera(formulario);
+  const errores: ErroresCola = erroresEspera(formulario);
   const limite = leerEntero(formulario.limitePreparacion, LIMITE_PREPARACION);
   if ("error" in limite) errores.limitePreparacion = limite.error;
   const umbral = leerEntero(formulario.umbralAlertaCola, UMBRAL_ALERTA_COLA);
@@ -224,12 +473,48 @@ export function hayErroresCola(errores: ErroresCola): boolean {
   return Object.keys(errores).length > 0;
 }
 
+/** HU-040 (BL-210): «HH:MM» de 00:00 a 23:59. */
+const HORA_HH_MM = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/**
+ * HU-040 (BL-210): error del horario de los pedidos para retirar, o null.
+ * Las dos horas vacías = todo el día; si no, las dos, válidas y distintas
+ * (si «hasta» es menor que «desde», la franja cruza la medianoche).
+ */
+export function errorHorarioRetiro(
+  formulario: Pick<
+    FormularioConfiguracion,
+    "retiroHoraDesde" | "retiroHoraHasta"
+  >,
+): string | null {
+  const desde = formulario.retiroHoraDesde.trim();
+  const hasta = formulario.retiroHoraHasta.trim();
+  if (!desde && !hasta) return null;
+  if (!desde || !hasta) {
+    return "Completá las dos horas, o dejá las dos vacías para tomar pedidos todo el día.";
+  }
+  if (!HORA_HH_MM.test(desde) || !HORA_HH_MM.test(hasta)) {
+    return "Escribí las horas como 11:00 o 23:30.";
+  }
+  if (desde === hasta) {
+    return "La hora de inicio y la de cierre tienen que ser distintas.";
+  }
+  return null;
+}
+
 /** Errores de cada campo del formulario (null = sin error). */
 export interface ErroresFormulario {
   razonSocial: string | null;
+  /** HU-043 (BL-561). */
+  nombreLocal: string | null;
+  direccionLocal: string | null;
   propinas: string | null;
   email: string | null;
   cola: ErroresCola;
+  /** HU-040 (BL-210). */
+  retiro: string | null;
+  /** HU-010 (BL-613). */
+  whatsapp: string | null;
 }
 
 /**
@@ -240,14 +525,30 @@ export function erroresDelFormulario(
   formulario: FormularioConfiguracion | null,
 ): ErroresFormulario {
   if (!formulario) {
-    return { razonSocial: null, propinas: null, email: null, cola: {} };
+    return {
+      razonSocial: null,
+      nombreLocal: null,
+      direccionLocal: null,
+      propinas: null,
+      email: null,
+      cola: {},
+      retiro: null,
+      whatsapp: null,
+    };
   }
   const propinas = leerPropinas(formulario.propinas);
   return {
     razonSocial: errorRazonSocial(formulario.razonSocial),
+    nombreLocal: errorNombreLocal(formulario.nombreLocal),
+    direccionLocal: errorDireccionLocal(formulario.direccionLocal),
     propinas: "error" in propinas ? propinas.error : null,
     email: errorEmailPrivacidad(formulario.emailPrivacidad),
     cola: erroresCola(formulario),
+    retiro: errorHorarioRetiro(formulario),
+    whatsapp:
+      formulario.whatsappPedidos === null
+        ? null
+        : errorNumeroWhatsapp(formulario.whatsappPedidos),
   };
 }
 
@@ -259,9 +560,17 @@ export function primerCampoConError(errores: ErroresFormulario): string | null {
   const enOrden: [string, unknown][] = [
     ["razon-social", errores.razonSocial],
     ["propinas", errores.propinas],
+    // HU-043 (BL-561): «Marca del local» va después de «Propinas».
+    ["nombre-local", errores.nombreLocal],
+    ["direccion-local", errores.direccionLocal],
     ["cola-limite", errores.cola.limitePreparacion],
     ["cola-umbral", errores.cola.umbralAlertaCola],
     ["cola-minutos", errores.cola.minutosPreparacion],
+    ["espera-atencion", errores.cola.esperaAtencion],
+    ["espera-demorado", errores.cola.esperaDemorado],
+    ["espera-demora-alta", errores.cola.esperaDemoraAlta],
+    ["retiro-desde", errores.retiro],
+    ["retiro-whatsapp", errores.whatsapp],
     ["email-privacidad", errores.email],
   ];
   return enOrden.find(([, error]) => Boolean(error))?.[0] ?? null;
@@ -299,6 +608,68 @@ function cambiosDeLaCola(
   return cambios;
 }
 
+/**
+ * HU-038 (BL-506): cambios de los umbrales de espera para el PATCH, solo los
+ * que cambiaron. No dependen de la cola. Supone que pasó erroresCola.
+ */
+function cambiosDeLaEspera(
+  guardada: ConfiguracionEstablecimiento,
+  formulario: FormularioConfiguracion,
+): Partial<CambiosConfiguracion> {
+  const cambios: Partial<CambiosConfiguracion> = {};
+  const atencion = Number(formulario.esperaAtencion.trim());
+  if (
+    atencion !== (guardada.minutosEsperaAtencion ?? ESPERA_POR_DEFECTO.atencion)
+  ) {
+    cambios.minutosEsperaAtencion = atencion;
+  }
+  const demorado = Number(formulario.esperaDemorado.trim());
+  if (
+    demorado !== (guardada.minutosEsperaDemorado ?? ESPERA_POR_DEFECTO.demorado)
+  ) {
+    cambios.minutosEsperaDemorado = demorado;
+  }
+  const demoraAlta = Number(formulario.esperaDemoraAlta.trim());
+  if (
+    demoraAlta !==
+    (guardada.minutosEsperaDemoraAlta ?? ESPERA_POR_DEFECTO.demoraAlta)
+  ) {
+    cambios.minutosEsperaDemoraAlta = demoraAlta;
+  }
+  return cambios;
+}
+
+/**
+ * HU-040 (BL-210): cambios del retiro para el PATCH. Las horas van juntas
+ * (el backend pide las dos o ninguna). Supone que pasó errorHorarioRetiro.
+ */
+function cambiosDelRetiro(
+  guardada: ConfiguracionEstablecimiento,
+  formulario: FormularioConfiguracion,
+): Partial<CambiosConfiguracion> {
+  const cambios: Partial<CambiosConfiguracion> = {};
+  if (formulario.retiroHabilitado !== (guardada.retiroHabilitado ?? true)) {
+    cambios.retiroHabilitado = formulario.retiroHabilitado;
+  }
+  const desde = formulario.retiroHoraDesde.trim() || null;
+  const hasta = formulario.retiroHoraHasta.trim() || null;
+  if (
+    desde !== (guardada.retiroHoraDesde ?? null) ||
+    hasta !== (guardada.retiroHoraHasta ?? null)
+  ) {
+    cambios.retiroHoraDesde = desde;
+    cambios.retiroHoraHasta = hasta;
+  }
+  // HU-010 (BL-613): el número, en el formato en que lo guarda el backend.
+  if (formulario.whatsappPedidos !== null) {
+    const numero = normalizarNumeroWhatsapp(formulario.whatsappPedidos);
+    if (numero !== (guardada.whatsappPedidos ?? null)) {
+      cambios.whatsappPedidos = numero;
+    }
+  }
+  return cambios;
+}
+
 export function textoDePropinas(propinas: number[]): string {
   return propinas.join(", ");
 }
@@ -317,8 +688,7 @@ export function leerPropinas(
   if (partes.length === 0) return { propinas: [] };
   if (partes.some((p) => !/^\d+$/.test(p))) {
     return {
-      error:
-        "Escribí porcentajes enteros separados por comas, como 10, 15, 20.",
+      error: "Escribí porcentajes enteros separados por comas, como 5, 10, 15.",
     };
   }
   const propinas = partes.map(Number);
@@ -336,12 +706,55 @@ export function leerPropinas(
   return { propinas: [...propinas].sort((a, b) => a - b) };
 }
 
+/**
+ * HU-022 (BL-495): aviso cuando la preselección está activa pero el 10 % no
+ * está entre los porcentajes sugeridos (entonces no se marca nada). No
+ * bloquea el guardado. Si el campo de porcentajes tiene un error, no avisa:
+ * ese error ya se muestra en su campo.
+ */
+export function avisoPreseleccion(
+  formulario: FormularioConfiguracion,
+): string | null {
+  if (!formulario.propinaPreseleccionada) return null;
+  const lectura = leerPropinas(formulario.propinas);
+  if ("error" in lectura) return null;
+  if (lectura.propinas.includes(PORCENTAJE_PRESELECCIONADO)) return null;
+  return `El ${PORCENTAJE_PRESELECCIONADO} % no está en tus porcentajes sugeridos: mientras no lo agregues, no se va a marcar ninguna propina.`;
+}
+
 /** Error de la razón social, o null si está bien. */
 export function errorRazonSocial(razonSocial: string): string | null {
   const limpia = razonSocial.trim();
   if (limpia === "") return "La razón social es obligatoria.";
   if (limpia.length > LARGO_MAXIMO_RAZON_SOCIAL) {
     return `La razón social puede tener hasta ${LARGO_MAXIMO_RAZON_SOCIAL} caracteres.`;
+  }
+  return null;
+}
+
+/** Sin espacios en los extremos y con uno solo entre palabras. */
+function textoLimpio(texto: string): string {
+  return texto.trim().replace(/\s+/g, " ");
+}
+
+/** HU-043 (BL-561): error del nombre del local, o null si está bien. */
+export function errorNombreLocal(nombre: string | null): string | null {
+  if (nombre === null) return null;
+  const limpio = textoLimpio(nombre);
+  if (limpio === "") return "El nombre del local es obligatorio.";
+  if (limpio.length > LARGO_MAXIMO_NOMBRE_LOCAL) {
+    return `El nombre puede tener hasta ${LARGO_MAXIMO_NOMBRE_LOCAL} caracteres.`;
+  }
+  return null;
+}
+
+/** HU-043 (BL-561): error de la dirección del local, o null si está bien. */
+export function errorDireccionLocal(direccion: string | null): string | null {
+  if (direccion === null) return null;
+  const limpia = textoLimpio(direccion);
+  if (limpia === "") return "La dirección del local es obligatoria.";
+  if (limpia.length > LARGO_MAXIMO_DIRECCION_LOCAL) {
+    return `La dirección puede tener hasta ${LARGO_MAXIMO_DIRECCION_LOCAL} caracteres.`;
   }
   return null;
 }
@@ -407,6 +820,13 @@ export function cambiosParaGuardar(
   ) {
     cambios.propinasSugeridas = lectura.propinas;
   }
+  // HU-022 (BL-495): un backend anterior no lo trae: vale el default (false).
+  if (
+    formulario.propinaPreseleccionada !==
+    (guardada.propinaPreseleccionada ?? false)
+  ) {
+    cambios.propinaPreseleccionada = formulario.propinaPreseleccionada;
+  }
   if (formulario.cfeProveedor !== guardada.cfeProveedor) {
     cambios.cfeProveedor = formulario.cfeProveedor;
   }
@@ -414,7 +834,13 @@ export function cambiosParaGuardar(
   if (email !== (guardada.emailPrivacidad ?? null)) {
     cambios.emailPrivacidad = email;
   }
-  return { ...cambios, ...cambiosDeLaCola(guardada, formulario) };
+  return {
+    ...cambios,
+    ...cambiosDeLaCola(guardada, formulario),
+    ...cambiosDeLaEspera(guardada, formulario),
+    ...cambiosDeLaMarca(guardada, formulario),
+    ...cambiosDelRetiro(guardada, formulario),
+  };
 }
 
 export function hayCambios(cambios: CambiosConfiguracion): boolean {
@@ -438,13 +864,34 @@ export interface ResultadoAnonimizacion {
 }
 
 /** Mensaje para el administrador después de anonimizar. */
-export function mensajeAnonimizacion({
-  pedidos,
-}: ResultadoAnonimizacion): string {
+export function mensajeAnonimizacion(
+  resultado: ResultadoAnonimizacion,
+): string {
+  return mensajeDeAnonimizados(resultado, "ese RUT");
+}
+
+/** «Listo: se anonimizaron N pedidos» o que no había pedidos con ese dato. */
+function mensajeDeAnonimizados(
+  { pedidos }: ResultadoAnonimizacion,
+  dato: string,
+): string {
   if (pedidos === 0) {
-    return "No hay pedidos con ese RUT: no había datos para anonimizar.";
+    return `No hay pedidos con ${dato}: no había datos para anonimizar.`;
   }
   return pedidos === 1
     ? "Listo: se anonimizó 1 pedido."
     : `Listo: se anonimizaron ${pedidos} pedidos.`;
+}
+
+// ── HU-040 (BL-210): anonimizar el contacto de un pedido para retirar ──
+
+/** POST: borra el nombre y el contacto en los pedidos con ese contacto. */
+export const RUTA_ANONIMIZAR_RETIRO =
+  "/admin/configuracion/privacidad/anonimizar-retiro";
+
+/** Mensaje para el administrador después de anonimizar el contacto. */
+export function mensajeAnonimizacionRetiro(
+  resultado: ResultadoAnonimizacion,
+): string {
+  return mensajeDeAnonimizados(resultado, "ese contacto");
 }

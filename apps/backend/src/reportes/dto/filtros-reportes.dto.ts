@@ -12,9 +12,16 @@ export type PeriodoReporte = (typeof PERIODOS_REPORTE)[number];
 
 /**
  * HU-012 (BL-108): canales de venta del dashboard. Se derivan del canal del
- * pedido (CANALES_DEL_FILTRO): no son un enum de la base.
+ * pedido (CANALES_DEL_FILTRO): no son un enum de la base. HU-011 (BL-489):
+ * POS, las ventas hechas directamente en el POS del local.
  */
-export const CANALES_REPORTE = ['TODOS', 'LOCAL', 'WEB', 'WHATSAPP'] as const;
+export const CANALES_REPORTE = [
+  'TODOS',
+  'LOCAL',
+  'WEB',
+  'WHATSAPP',
+  'POS',
+] as const;
 export type CanalReporte = (typeof CANALES_REPORTE)[number];
 
 const FECHA = /^\d{4}-\d{2}-\d{2}$/;

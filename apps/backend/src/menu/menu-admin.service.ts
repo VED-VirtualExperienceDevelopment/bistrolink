@@ -24,9 +24,27 @@ import { Prisma, PrismaClient } from '@prisma/client';
 /** Precio tal como llega: decimal de Prisma, texto del DTO o vacío. */
 type PrecioCarta = Prisma.Decimal | string | null;
 
+type CamposAuditados = {
+  precio?: PrecioCarta;
+  disponible?: boolean;
+  // HU-044 (BL-537): «Sugerencia del local».
+  destacado?: boolean;
+  // HU-046 (BL-551): complemento sugerible y con alcohol.
+  sugerible?: boolean;
+  contieneAlcohol?: boolean;
+};
+
+/** Los campos de sí o no que quedan en la auditoría, en este orden. */
+const BOOLEANOS_AUDITADOS = [
+  'disponible',
+  'destacado',
+  'sugerible',
+  'contieneAlcohol',
+] as const;
+
 export function camposCambiados(
-  antes: { precio?: PrecioCarta; disponible?: boolean },
-  despues: { precio?: PrecioCarta; disponible?: boolean },
+  antes: CamposAuditados,
+  despues: CamposAuditados,
 ): { antes: Record<string, unknown>; despues: Record<string, unknown> } {
   const a: Record<string, unknown> = {};
   const d: Record<string, unknown> = {};
@@ -38,15 +56,64 @@ export function camposCambiados(
     a.precio = new Prisma.Decimal(antes.precio).toFixed(2);
     d.precio = new Prisma.Decimal(despues.precio).toFixed(2);
   }
-  if (
-    antes.disponible !== undefined &&
-    despues.disponible !== undefined &&
-    antes.disponible !== despues.disponible
-  ) {
-    a.disponible = antes.disponible;
-    d.disponible = despues.disponible;
+  for (const campo of BOOLEANOS_AUDITADOS) {
+    const valorAntes = antes[campo];
+    const valorDespues = despues[campo];
+    if (
+      valorAntes !== undefined &&
+      valorDespues !== undefined &&
+      valorAntes !== valorDespues
+    ) {
+      a[campo] = valorAntes;
+      d[campo] = valorDespues;
+    }
   }
   return { antes: a, despues: d };
+}
+
+export const MENSAJE_ALCOHOL_NO_SUGERIBLE =
+  'Un plato con alcohol no se puede sugerir como complemento.';
+
+/** HU-046 (BL-551): cómo queda un plato como complemento. */
+export interface ComplementoDelPlato {
+  sugerible: boolean;
+  contieneAlcohol: boolean;
+}
+
+/** Un plato nuevo: ni sugerible ni con alcohol (los valores de la base). */
+const SIN_COMPLEMENTO: ComplementoDelPlato = {
+  sugerible: false,
+  contieneAlcohol: false,
+};
+
+/**
+ * HU-046 (BL-551): aplica lo que manda el formulario sobre lo que el plato
+ * ya tiene. Pedir que se sugiera un plato con alcohol (el de ahora o el que
+ * queda) es un error (400); marcarlo con alcohol, sin decir nada de la
+ * sugerencia, lo saca de las sugerencias. Así nunca se guarda un plato con
+ * alcohol sugerible (además, la base tiene un CHECK). Si no llega ninguno
+ * de los dos campos, no cambia nada.
+ */
+export function complementoDelPlato(
+  actual: ComplementoDelPlato,
+  cambios: { sugerible?: boolean; contieneAlcohol?: boolean },
+): Partial<ComplementoDelPlato> {
+  if (
+    cambios.sugerible === undefined &&
+    cambios.contieneAlcohol === undefined
+  ) {
+    return {};
+  }
+  const contieneAlcohol = cambios.contieneAlcohol ?? actual.contieneAlcohol;
+  if (cambios.sugerible === true && contieneAlcohol) {
+    throw new BadRequestException(MENSAJE_ALCOHOL_NO_SUGERIBLE);
+  }
+  return {
+    contieneAlcohol,
+    sugerible: contieneAlcohol
+      ? false
+      : (cambios.sugerible ?? actual.sugerible),
+  };
 }
 
 /**
@@ -218,13 +285,8 @@ export class MenuAdminService {
     tx: PrismaClient,
     tenantId: string,
     actorKeycloakId: string | undefined,
-    antes: {
-      id: string;
-      nombre: string;
-      precio?: PrecioCarta;
-      disponible?: boolean;
-    },
-    despues: { precio?: PrecioCarta; disponible?: boolean },
+    antes: { id: string; nombre: string } & CamposAuditados,
+    despues: CamposAuditados,
     accion: AuditAction = AuditAction.CARTA_ITEM_MODIFICADO,
   ): Promise<void> {
     const cambios = camposCambiados(antes, despues);
@@ -705,6 +767,7 @@ export class MenuAdminService {
         tx.itemCarta.create({
           data: {
             ...data,
+            ...complementoDelPlato(SIN_COMPLEMENTO, data),
             tenantId,
             disponible: data.disponible ?? true,
             orden: await this.siguienteOrden(tx, data.categoriaId),
@@ -804,7 +867,11 @@ export class MenuAdminService {
       const updated = await guardarCarta(
         tx.itemCarta.update({
           where: { id: itemId, ...condicionVersion },
-          data: { ...cambios, ...ordenEnNuevaCategoria },
+          data: {
+            ...cambios,
+            ...complementoDelPlato(existing, cambios),
+            ...ordenEnNuevaCategoria,
+          },
         }),
         MENSAJE_ITEM_REPETIDO,
       );
