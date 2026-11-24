@@ -10,6 +10,7 @@ import {
   ensayoDeRollback,
   fechaUY,
   celdasDoraCorreo,
+  cliente,
   esHotfix,
   esPrDeCambio,
   frecuenciaPorSprint,
@@ -354,5 +355,68 @@ describe("correo de estado", () => {
     assert.deepEqual(celdas.map((c) => c.estado), ["🔴", "🟢", "🟢", "⚪"]);
     assert.equal(celdas[1].valor, "3 d");
     assert.equal(celdas[3].etiqueta, "recuperación (sin fallas)");
+  });
+});
+
+describe("cliente de GitHub", () => {
+  // Respuesta falsa de fetch: solo lo que usa el cliente.
+  const respuesta = (status, cuerpo = {}) => ({
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => cuerpo,
+    headers: { get: () => null },
+  });
+  // fetch falso que devuelve las respuestas en orden y cuenta los pedidos.
+  function fetchFalso(...secuencia) {
+    const f = async () => {
+      f.pedidos += 1;
+      const r = secuencia.shift();
+      if (r instanceof Error) throw r;
+      return r;
+    };
+    f.pedidos = 0;
+    return f;
+  }
+  const sinEspera = async () => {};
+
+  test("reintenta un 502 y sigue cuando GitHub responde", async () => {
+    const f = fetchFalso(respuesta(502), respuesta(504), respuesta(200, { ok: 1 }));
+    const gh = cliente("t", "o/r", { fetchImpl: f, esperar: sinEspera });
+    assert.deepEqual(await gh.uno("/x"), { ok: 1 });
+    assert.equal(f.pedidos, 3);
+  });
+
+  test("reintenta un error de red", async () => {
+    const f = fetchFalso(new Error("socket hang up"), respuesta(200, [1, 2]));
+    const gh = cliente("t", "o/r", { fetchImpl: f, esperar: sinEspera });
+    assert.deepEqual(await gh.todos("/x"), [1, 2]);
+    assert.equal(f.pedidos, 2);
+  });
+
+  test("abandona después del último intento, con el último error", async () => {
+    const f = fetchFalso(respuesta(502), respuesta(502), respuesta(502));
+    const gh = cliente("t", "o/r", { fetchImpl: f, esperar: sinEspera, intentos: 3 });
+    await assert.rejects(gh.uno("/runs/1/jobs"), /GitHub respondió 502 en \/runs\/1\/jobs/);
+    assert.equal(f.pedidos, 3);
+  });
+
+  test("no reintenta un 404 ni un 403", async () => {
+    for (const status of [404, 403]) {
+      const f = fetchFalso(respuesta(status), respuesta(200));
+      const gh = cliente("t", "o/r", { fetchImpl: f, esperar: sinEspera });
+      await assert.rejects(gh.uno("/x"), new RegExp(`respondió ${status}`));
+      assert.equal(f.pedidos, 1);
+    }
+  });
+
+  test("espera más en cada reintento (2 s, 4 s)", async () => {
+    const esperas = [];
+    const f = fetchFalso(respuesta(503), respuesta(503), respuesta(200));
+    const gh = cliente("t", "o/r", {
+      fetchImpl: f,
+      esperar: async (ms) => esperas.push(ms),
+    });
+    await gh.uno("/x");
+    assert.deepEqual(esperas, [2000, 4000]);
   });
 });
