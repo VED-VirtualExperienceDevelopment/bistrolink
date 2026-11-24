@@ -8,6 +8,7 @@ Cómo se pasa una versión de `develop` a producción, cómo se corrige un error
 | 1.1 | 21/11/2026 | «Después» del release: actualizar el tag de la contingencia en Render (BL-217). |
 | 1.2 | 22/11/2026 | Después de un release o un rollback de producción: publicar los dashboards para actualizar las métricas DORA (BL-221). |
 | 1.3 | 24/11/2026 | Pasos automáticos del pipeline (BL-617): rollback automático de producción si falla el deploy, PR de `render.yaml` y «Publicar dashboards» después del release, y Test Runs de Kiwi con el nombre del tag. Aviso por mail e issue de incidente cuando hay rollback automático (BL-623). |
+| 1.4 | 24/11/2026 | Un ensayo de rollback se registra para que no cuente como falla en las métricas DORA (BL-221). |
 
 ---
 
@@ -134,6 +135,7 @@ Igual que 3.1, con **Use workflow from:** `develop`, **rollback_environment:** `
 - Abrir un issue con el error que lo motivó.
 - **Publicar dashboards** se lanza solo después de un rollback de producción, manual o automático: el rollback cuenta como falla del release en las métricas DORA. Comprobar que corrió; si no, **Run workflow** a mano.
 - La corrección sale como hotfix (sección 2) o en la próxima versión.
+- **Si fue un ensayo** (un rollback a propósito para probar el procedimiento): registrarlo en `scripts/dashboards/dora-ensayos-rollback.json`, con la fecha en hora de Uruguay, la ref (`main`) y el motivo, en un PR. Así no cuenta como falla en las métricas DORA y el dashboard lo muestra aparte.
 - Una migración que haya que deshacer se corrige con una migración nueva hacia adelante, nunca a mano en la base.
 
 ---

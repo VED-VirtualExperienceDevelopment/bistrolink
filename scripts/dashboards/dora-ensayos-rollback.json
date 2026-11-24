@@ -1,0 +1,10 @@
+{
+  "_comentario": "Rollbacks de producción hechos a propósito para ensayar el procedimiento (docs/RELEASE.md, 3.3). No cuentan como falla en las métricas DORA. fecha: día del rollback en hora de Uruguay (AAAA-MM-DD); ref: la del deployment (el rollback manual se lanza desde main).",
+  "ensayos": [
+    {
+      "fecha": "2026-11-08",
+      "ref": "main",
+      "motivo": "ensayo del rollback manual de producción en el primer release (v0.5.0)"
+    }
+  ]
+}

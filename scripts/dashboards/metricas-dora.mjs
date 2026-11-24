@@ -27,6 +27,10 @@
 //     hotfix (el release siguiente es un parche, vX.Y.Z con Z > 0).
 //   - Tiempo de recuperación: desde el deploy del release fallido hasta el
 //     rollback o el hotfix exitoso.
+//   - Ensayos de rollback: un rollback hecho a propósito para probar el
+//     procedimiento no es una falla. Se registran en
+//     dora-ensayos-rollback.json (fecha en hora de Uruguay y ref) y se
+//     muestran aparte, sin contar para DORA.
 //
 // Uso local (solo lectura):
 //   $env:GITHUB_TOKEN="..."; $env:GITHUB_REPOSITORY="VED-VirtualExperienceDevelopment/bistrolink"
@@ -41,6 +45,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..", "..");
 const DASHBOARD = path.join(ROOT, "docs", "dashboard-calidad-proceso.md");
 const SPRINTS = path.join(__dirname, "sprint-config.json");
+const ENSAYOS_ROLLBACK = path.join(__dirname, "dora-ensayos-rollback.json");
 
 const HORA = 60 * 60 * 1000;
 const DIA = 24 * HORA;
@@ -79,6 +84,21 @@ export function tipoDeploy(ref) {
   return "rollback";
 }
 
+/** Fecha (AAAA-MM-DD) en hora de Uruguay. */
+export function fechaUY(fecha) {
+  return new Date(fecha.getTime() + UY).toISOString().slice(0, 10);
+}
+
+/**
+ * Si un rollback exitoso fue un ensayo registrado en
+ * dora-ensayos-rollback.json, devuelve ese registro; si no, null.
+ */
+export function ensayoDeRollback(deploy, ensayos = []) {
+  if (!deploy.fin) return null;
+  const dia = fechaUY(deploy.fin);
+  return ensayos.find((e) => e.ref === deploy.ref && e.fecha === dia) ?? null;
+}
+
 /** true si el tag es un parche (vX.Y.Z con Z > 0): un hotfix. */
 export function esHotfix(tag) {
   const m = TAG_RELEASE.exec(tag);
@@ -107,8 +127,9 @@ export function resultadoDeploy(estados) {
 /**
  * Releases, fallas y recuperación a partir de los deployments de production
  * ya resueltos: [{ ref, sha, creado: Date, estado, fin: Date|null }].
+ * Los rollbacks que coinciden con `ensayosRollback` no cuentan como falla.
  */
-export function analizarProduccion(deploys) {
+export function analizarProduccion(deploys, { ensayosRollback = [] } = {}) {
   const ordenados = [...deploys].sort((a, b) => a.creado - b.creado);
   const exitosos = ordenados.filter((d) => d.estado === "exitoso");
 
@@ -120,7 +141,13 @@ export function analizarProduccion(deploys) {
     vistos.add(d.ref);
     releases.push({ tag: d.ref, sha: d.sha, desplegado: d.fin });
   }
-  const rollbacks = exitosos.filter((d) => tipoDeploy(d.ref) === "rollback");
+  const todosLosRollbacks = exitosos.filter((d) => tipoDeploy(d.ref) === "rollback");
+  const rollbacks = todosLosRollbacks.filter(
+    (d) => !ensayoDeRollback(d, ensayosRollback),
+  );
+  const ensayosDeRollback = todosLosRollbacks
+    .map((d) => ({ ...d, ensayo: ensayoDeRollback(d, ensayosRollback) }))
+    .filter((d) => d.ensayo);
 
   for (const [i, r] of releases.entries()) {
     const siguiente = releases[i + 1];
@@ -147,6 +174,7 @@ export function analizarProduccion(deploys) {
     releases,
     ensayos: exitosos.filter((d) => tipoDeploy(d.ref) === "ensayo"),
     rollbacks,
+    ensayosDeRollback,
     deploysFallidos: ordenados.filter((d) => d.estado === "fallido"),
   };
 }
@@ -409,6 +437,10 @@ export function renderReleases(analisis, leadTimes) {
       (d) =>
         `| \`${d.ref}\` (ensayo) | ${fechaCorta(d.fin)} | \`${d.sha.slice(0, 7)}\` | — | No cuenta para DORA |`,
     ),
+    ...(analisis.ensayosDeRollback ?? []).map(
+      (d) =>
+        `| Rollback (ensayo) | ${fechaCorta(d.fin)} | \`${d.sha.slice(0, 7)}\` | — | No cuenta para DORA: ${d.ensayo.motivo} |`,
+    ),
     ...analisis.deploysFallidos.map(
       (d) =>
         `| \`${d.ref}\` (deploy fallido) | ${fechaCorta(d.creado)} | \`${d.sha.slice(0, 7)}\` | — | Producción siguió con la versión anterior |`,
@@ -483,7 +515,7 @@ export function renderContexto(c) {
   return `| Métrica de contexto | Valor | Meta |
 | --- | --- | --- |
 | Duración del pipeline hasta staging (mediana) | ${c.pipelineMedianaMin === null ? "—" : `${num(c.pipelineMedianaMin)} min (corridas medidas: ${c.pipelineCorridas})`} | < ${METAS.pipelineMinutos} min |
-| Rollbacks de producción | ${c.rollbacksProduccion} | — |
+| Rollbacks de producción | ${c.rollbacksProduccion}${c.ensayosRollback ? ` (y ${c.ensayosRollback} ${c.ensayosRollback === 1 ? "ensayo, que no cuenta" : "ensayos, que no cuentan"})` : ""} | — |
 | Incidentes registrados (etiqueta \`incidente\`) | ${c.incidentesAbiertos} abiertos · ${c.incidentesCerrados} cerrados | — |
 | Regresiones (bugs con la etiqueta \`regresion\`) | ${c.regresionesAbiertas ?? 0} abiertas · ${c.regresionesCerradas ?? 0} cerradas | — |`;
 }
@@ -669,7 +701,9 @@ async function porEtiqueta(gh, repo, etiqueta) {
 export async function doraProduccion({ token, repo, hoy = new Date() }) {
   const gh = cliente(token, repo);
   const { sprints } = JSON.parse(await fs.readFile(SPRINTS, "utf-8"));
-  const produccion = analizarProduccion(await deploysDe(gh, "production"));
+  const produccion = analizarProduccion(await deploysDe(gh, "production"), {
+    ensayosRollback: await leerEnsayosRollback(),
+  });
   const leadTimes = [];
   for (const [i, r] of produccion.releases.entries()) {
     if (i === 0) {
@@ -682,6 +716,17 @@ export async function doraProduccion({ token, repo, hoy = new Date() }) {
   const frecuencia = frecuenciaPorSprint(produccion.releases, sprints, hoy);
   const resumen = resumenDora({ releases: produccion.releases, frecuencia, leadTimes });
   return { gh, produccion, leadTimes, frecuencia, resumen };
+}
+
+/** Ensayos de rollback registrados. Si el archivo no está, ninguno. */
+export async function leerEnsayosRollback(ruta = ENSAYOS_ROLLBACK) {
+  try {
+    const { ensayos = [] } = JSON.parse(await fs.readFile(ruta, "utf-8"));
+    return ensayos;
+  } catch (err) {
+    if (err.code === "ENOENT") return [];
+    throw err;
+  }
 }
 
 async function main() {
@@ -740,6 +785,7 @@ async function main() {
         : null,
       pipelineCorridas: exitososStaging.length,
       rollbacksProduccion: produccion.rollbacks.length,
+      ensayosRollback: produccion.ensayosDeRollback.length,
       incidentesAbiertos: inc.abiertos,
       incidentesCerrados: inc.cerrados,
       regresionesAbiertas: reg.abiertos,
