@@ -46,7 +46,7 @@ projects:
             name: bistrolink-api-contingencia
             runtime: image
             image:
-              url: ghcr.io/ved-virtualexperiencedevelopment/bistrolink-api:v0.5.0
+              url: ghcr.io/ved-virtualexperiencedevelopment/bistrolink-api:v0.6.0
               creds:
                 fromRegistryCreds:
                   name: ghcr-bistrolink
@@ -106,7 +106,7 @@ projects:
             name: bistrolink-auth-contingencia
             runtime: image
             image:
-              url: ghcr.io/ved-virtualexperiencedevelopment/bistrolink-auth:v0.5.0
+              url: ghcr.io/ved-virtualexperiencedevelopment/bistrolink-auth:v0.6.0
               creds:
                 fromRegistryCreds:
                   name: ghcr-bistrolink
@@ -169,6 +169,6 @@ projects:
               - key: NEXT_PUBLIC_KEYCLOAK_CLIENT_ID
                 value: bistrolink-frontend
               - key: NEXT_PUBLIC_APP_VERSION
-                value: v0.5.0
+                value: v0.6.0
               - key: NEXT_PUBLIC_APP_ENV
                 value: contingencia
