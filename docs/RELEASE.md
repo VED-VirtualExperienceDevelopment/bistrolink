@@ -7,6 +7,7 @@ Cómo se pasa una versión de `develop` a producción, cómo se corrige un error
 | 1.0 | 07/11/2026 | Primera versión: release por tag, aprobación, smoke test, rollback y hotfix (BL-220). |
 | 1.1 | 21/11/2026 | «Después» del release: actualizar el tag de la contingencia en Render (BL-217). |
 | 1.2 | 22/11/2026 | Después de un release o un rollback de producción: publicar los dashboards para actualizar las métricas DORA (BL-221). |
+| 1.3 | 24/11/2026 | Pasos automáticos del pipeline (BL-617): rollback automático de producción si falla el deploy, PR de `render.yaml` y «Publicar dashboards» después del release, y Test Runs de Kiwi con el nombre del tag. Aviso por mail e issue de incidente cuando hay rollback automático (BL-623). |
 
 ---
 
@@ -67,14 +68,18 @@ Cómo se pasa una versión de `develop` a producción, cómo se corrige un error
    3. Despliega la Web y Keycloak.
    4. Smoke test de solo lectura: health de la API y de la Web, configuración y emisor de Keycloak, y la ruta de limpieza de datos de prueba respondiendo 404.
    5. Publica el GitHub Release con notas generadas a partir de los PRs.
+   6. Solo en una versión final (`vX.Y.Z`, no en los `-rc.N`): abre un PR a `develop` que pasa `render.yaml` al tag nuevo (contingencia en Render). Lo abre una GitHub App del equipo, para que corran los checks; el merge lo hace una persona.
+   7. Después del job, otro job lanza **Publicar dashboards** (rama `develop`) para las métricas DORA.
+5. **Si algo falla después de desplegar la API** (Web, Keycloak o el smoke test), el mismo job vuelve solo los tres servicios al último release y termina en rojo. Ver sección 3.0.
+6. Los resultados de contrato e integración de la corrida del tag quedan en Kiwi con el build `vX.Y.Z-contract` y `vX.Y.Z-integration`, en la misma versión de producto que los planes (`develop`).
 
 ### 1.5 Después
 
 - [ ] Probar a mano el login, el menú del tenant de demo y el panel de administración.
 - [ ] Revisar los logs de la API en Railway (sin errores al arrancar).
 - [ ] Si hubo cambios solo en `main`, hacer el *back-merge* de `main` a `develop`.
-- [ ] Contingencia en Render: PR que cambia en `render.yaml` el tag de las imágenes de API y Auth y `NEXT_PUBLIC_APP_VERSION` al tag nuevo, para que la contingencia no levante una versión vieja (`runbooks/contingencia-render.md`, sección 7).
-- [ ] Actions → **Publicar dashboards** → **Run workflow** (rama `develop`), para que el release entre en las métricas DORA del dashboard «Calidad del proceso». El workflow no se dispara solo con un deploy a producción.
+- [ ] Contingencia en Render: revisar y mergear el PR que abrió el pipeline (`chore(BL-217): contingencia en render con las imagenes de vX.Y.Z`). Cambia solo 3 líneas de `render.yaml`. Después del merge, comprobar en Render que API y Auth quedaron con el tag nuevo (`runbooks/contingencia-render.md`, sección 7). Si el *Summary* de la corrida dice que no se pudo abrir, abrirlo a mano.
+- [ ] Comprobar en Actions que corrió **Publicar dashboards** en `develop`, lanzado por el pipeline. Si no aparece: **Run workflow** a mano (rama `develop`).
 - [ ] Registrar el release en el ticket de Linear del release.
 
 ---
@@ -95,6 +100,22 @@ Para corregir un error en producción sin llevar lo que todavía está en `devel
 
 Vuelve los tres servicios (API, Web y Keycloak) a una imagen ya publicada en GHCR, sin reconstruir nada. **No revierte la base de datos** (ver *expand/contract* en Conceptos).
 
+### 3.0 Rollback automático (solo producción)
+
+El job de deploy a producción revierte solo cuando:
+
+- la API nueva ya se mandó a desplegar, **y**
+- después falla algo antes de que pase el smoke test (Web, Keycloak o el propio smoke test), **y**
+- la API quedó con la versión nueva o no responde.
+
+Vuelve los tres servicios al **último GitHub Release que no es pre-release**, con los mismos controles que el rollback manual, sin pedir otra aprobación. El job termina en rojo igual y el *Summary* indica a qué versión volvió.
+
+**No** revierte si falló el respaldo (no se tocó nada), si fallaron las migraciones (Railway dejó la versión anterior) ni si el smoke test pasó y falló algo posterior. Staging no tiene rollback automático.
+
+Si el *Summary* dice que **el rollback automático también falló**, revertir a mano ya (3.1).
+
+Cuando se intenta el rollback automático, el pipeline **abre un issue de incidente** (plantilla «Incidente», etiqueta `incidente`, se sincroniza a Linear) y **manda un mail al equipo** con el resumen y el link al issue. Severidad alta si el rollback salió bien; crítica si también falló (asunto «ACCIÓN INMEDIATA»). El issue es la bitácora: seguir `runbooks/respuesta-a-incidentes.md`.
+
 ### 3.1 Producción
 
 1. Actions → workflow **CI/CD BistroLink** → **Run workflow**.
@@ -111,7 +132,7 @@ Igual que 3.1, con **Use workflow from:** `develop`, **rollback_environment:** `
 ### 3.3 Después de un rollback
 
 - Abrir un issue con el error que lo motivó.
-- Actions → **Publicar dashboards** → **Run workflow**: el rollback de producción cuenta como falla del release en las métricas DORA.
+- **Publicar dashboards** se lanza solo después de un rollback de producción, manual o automático: el rollback cuenta como falla del release en las métricas DORA. Comprobar que corrió; si no, **Run workflow** a mano.
 - La corrección sale como hotfix (sección 2) o en la próxima versión.
 - Una migración que haya que deshacer se corrige con una migración nueva hacia adelante, nunca a mano en la base.
 
@@ -127,3 +148,6 @@ Igual que 3.1, con **Use workflow from:** `develop`, **rollback_environment:** `
 | Smoke test: issuer de Keycloak distinto | `KC_HOSTNAME` mal configurado | Revisar las variables de Keycloak de producción |
 | Smoke test: `/testing/limpieza` no da 404 | La API de producción tiene habilitada la limpieza de datos de prueba | Quitar esa variable de la API de producción y redesplegar |
 | El deploy no arranca y queda «Waiting» | Falta la aprobación | Otro integrante aprueba en Actions (no puede ser quien creó el tag) |
+| *Summary*: «production volvió a vX.Y.Z» | Falló el deploy después de desplegar la API y el rollback automático salió bien | Abrir un issue con el error (3.3). La corrección sale como hotfix o en la próxima versión |
+| *Summary*: «el rollback a vX.Y.Z también falló» | El rollback automático no pudo dejar la versión anterior | Revertir a mano ya (3.1) y revisar los logs de Railway |
+| *Summary*: «No se pudo abrir el PR automático» | Falló el token de la GitHub App o el cambio en `render.yaml` no era el esperado | Abrir el PR de `render.yaml` a mano (`runbooks/contingencia-render.md`, sección 7) |

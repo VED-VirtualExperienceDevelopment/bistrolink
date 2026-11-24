@@ -8,6 +8,7 @@
 | ------- | ---------- | ------ |
 | 1.0     | 21/11/2026 | Primera versión: preparación, activación con restauración desde S3 o R2, validación, vuelta a Railway, simulacro con RTO y RPO, y mantenimiento con cada release. |
 | 1.1     | 22/11/2026 | Correcciones de la primera prueba completa (3.6): carpeta de trabajo fuera de la carpeta del usuario; credenciales de solo lectura para bajar el respaldo; sufijo que Render agrega al nombre de la base; regla de IP solo en la base; SQL por la entrada estándar en PowerShell; verificación de la restauración sin pasar por el RLS; primer deploy de Keycloak; `-UseBasicParsing`; validación con un usuario temporal si producción no tiene usuarios; copia de `tiempos.txt` al Escritorio real; ajustes de la preparación (3.4 y 3.5) y problemas nuevos en la sección 8. Se quitan del documento la ubicación de las credenciales dentro del gestor de secretos, el tipo de cuenta y el gestor de contraseñas del equipo: el repositorio es público. |
+| 1.2     | 24/11/2026 | Sección 7: el PR de `render.yaml` con el tag nuevo lo abre el pipeline después de cada release final (BL-619); qué revisar antes del merge y cómo abrirlo a mano si no aparece. Se quitan los nombres del token de GHCR, de la clave de Render y de la conexión de Infisical, la mención del gestor de contraseñas y la ruta local del clon: el repositorio es público (BL-610). |
 
 ## 1. Para qué sirve
 
@@ -37,7 +38,7 @@ Proyecto de Render **`bistrolink-contingencia`**, entorno `production`, región 
 
 ### 3.1 Requisitos
 
-- Cuenta de Render del proyecto (acceso en el gestor de contraseñas del equipo), con una **tarjeta** cargada: las instancias gratuitas no sirven (Keycloak no arranca en 512 MB y los servicios gratuitos se duermen y cortan el WebSocket del KDS).
+- Cuenta de Render del proyecto, con una **tarjeta** cargada: las instancias gratuitas no sirven (Keycloak no arranca en 512 MB y los servicios gratuitos se duermen y cortan el WebSocket del KDS).
 - En la PC de quien ejecuta: **Docker Desktop** (se usan las imágenes `postgres:18` y `amazon/aws-cli`, sin instalar nada más) y **PowerShell**.
 - Acceso a las credenciales de producción en Infisical y a la consola de Railway `production` (solo para leer nombres y configuración no secreta).
 
@@ -45,7 +46,7 @@ Proyecto de Render **`bistrolink-contingencia`**, entorno `production`, región 
 
 Las imágenes de GHCR son privadas.
 
-1. En GitHub, con la cuenta del equipo: *Settings → Developer settings → Personal access tokens → Tokens (classic) → Generate new token*. Nombre **`render-ghcr-pull`**, solo **`read:packages`**, con vencimiento. Es un token aparte del de Railway, para poder revocar uno sin tocar el otro.
+1. En GitHub, con la cuenta del equipo: *Settings → Developer settings → Personal access tokens → Tokens (classic) → Generate new token*. Con un nombre que indique su uso, solo **`read:packages`**, con vencimiento. Es un token aparte del de Railway, para poder revocar uno sin tocar el otro.
 2. Guardar el valor en Infisical, junto a las credenciales de producción, sin sincronización.
 3. En Render: *Workspace Settings → Registry Credentials → Add Credential*.
    - **Registry:** GitHub.
@@ -64,8 +65,8 @@ Las imágenes de GHCR son privadas.
 
 ### 3.4 Credenciales desde Infisical
 
-1. En Render: *Account Settings → API Keys → Create API Key*, nombre `infisical-contingencia`, **limitada al workspace del proyecto** y con los permisos mínimos: *Services* en lectura y *Environment variables* en lectura y escritura. No se guarda en ningún otro lugar que no sea la conexión del paso 2.
-2. Infisical → *Organization → App Connections → Add Connection → Render*: nombre **`render-contingencia`**, con la clave del paso 1.
+1. En Render: *Account Settings → API Keys → Create API Key*, con un nombre que indique su uso, **limitada al workspace del proyecto** y con los permisos mínimos: *Services* en lectura y *Environment variables* en lectura y escritura. No se guarda en ningún otro lugar que no sea la conexión del paso 2.
+2. Infisical → *Organization → App Connections → Add Connection → Render*, con la clave del paso 1.
 3. Infisical → proyecto `bistrolink` → *Integrations → Secret Syncs → Add Sync → Render*. Crear dos:
 
    | Sync | Origen | Destino | Opciones |
@@ -111,7 +112,7 @@ New-Item -ItemType Directory -Force $dir | Out-Null
 Set-Location $dir
 
 # Ruta de los scripts SQL en el clon del repositorio (ajustar si hace falta).
-$sql = "C:\Proyectos\Utec\anteproyecto-utec\bistrolink\infra\contingencia-render"
+$sql = "C:\\ruta\\del\\clon\\bistrolink\\infra\\contingencia-render"   # cambiar por la carpeta del clon
 
 function Marca([string]$Paso) {
   "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')`t$Paso" | Tee-Object -FilePath "$dir\tiempos.txt" -Append
@@ -465,9 +466,12 @@ Lo decide el equipo cuando Railway vuelve y está estable. Se hace en un horario
 
 Para que la contingencia no levante una versión vieja:
 
-1. Después del release, un PR que cambia en `render.yaml` el tag de las imágenes de API y Auth y `NEXT_PUBLIC_APP_VERSION` al tag nuevo (`docs/RELEASE.md`, «Después»).
-2. Al mergearlo, Render sincroniza el Blueprint y actualiza los servicios, aunque estén suspendidos. Comprobar en *Settings → Image* de API y Auth que quedó el tag nuevo.
-3. La Web no hace falta: se compila desde `main` al activar (4.8).
+1. **El PR lo abre el pipeline.** Al terminar el deploy de una versión final (`vX.Y.Z`; no los ensayos `-rc.N`), el job de producción abre un PR a `develop` que cambia en `render.yaml` el tag de las imágenes de API y Auth y `NEXT_PUBLIC_APP_VERSION` al tag nuevo. Lo abre una GitHub App del equipo para que corran los checks obligatorios; el *Summary* de la corrida del tag tiene el link.
+2. **Revisar el PR** (`chore(BL-217): contingencia en render con las imagenes de vX.Y.Z`): el diff tiene que mostrar solo esas 3 líneas, con el tag anterior y el nuevo. Aprobar y mergear como cualquier PR.
+3. Al mergearlo, Render sincroniza el Blueprint y actualiza los servicios, aunque estén suspendidos. Comprobar en *Settings → Image* de API y Auth que quedó el tag nuevo y, en la Web, *Environment* → `NEXT_PUBLIC_APP_VERSION`. **No** activar ni desplegar los servicios.
+4. La Web no hace falta: se compila desde `main` al activar (4.8).
+
+**Si el PR no aparece** (el *Summary* dice que no se pudo abrir, o hubo un rollback automático y después se corrigió a mano), abrirlo a mano: en `render.yaml`, reemplazar el tag anterior por el nuevo en las 3 líneas (`git diff` tiene que mostrar solo esas 3), commit con `npm run commit` (`chore`, `BL-217`) y PR a `develop`. Si el pipeline no lo abrió porque el archivo no tenía exactamente 3 apariciones del tag anterior, revisar qué cambió en `render.yaml` antes de editarlo.
 
 ## 8. Problemas frecuentes
 
@@ -479,13 +483,13 @@ Para que la contingencia no levante una versión vieja:
 | `unrecognized configuration parameter "app.tenant_id"` al verificar | Una consulta sobre una tabla con RLS forzado, como dueño que no es superusuario | Es esperable: el RLS se aplica también al dueño. Usar `03-verificar-restauracion.sql`, que no lee las filas |
 | Keycloak suspendido sin ningún deploy | Nunca se desplegó (el primer deploy del Blueprint falló o no corrió) | *Manual Deploy → Deploy latest reference* (4.6) |
 | `Invoke-WebRequest` pregunta por *Script Execution Risk* | Windows PowerShell analiza el HTML de la respuesta | Responder `N` y agregar `-UseBasicParsing` |
-| *Image Pull Failed* en API o Auth | Token de GHCR vencido o revocado, o el tag no existe | Renovar `render-ghcr-pull` (3.2) o corregir el tag (sección 7) |
+| *Image Pull Failed* en API o Auth | Token de GHCR vencido o revocado, o el tag no existe | Renovar el token de GHCR (3.2) o corregir el tag (sección 7) |
 | El Blueprint da error de `plan` | Render cambió los nombres de las instancias | Usar los nombres nuevos (por ejemplo `0.5c-512mb` por `starter` y `1c-2g` por `standard`) en un PR |
 | `pg_restore` se corta con *must be owner of …* | Un objeto del respaldo que solo un superusuario puede crear o comentar | Borrar la base, crearla de nuevo (4.3) y restaurar sin `--exit-on-error`. Revisar que los únicos errores sean de dueño o de comentarios, y anotarlo en el registro |
 | `04-verificar-rls.sql` da más de 0 pedidos | `bistrolink_app` tiene bypass de RLS, o se conectó con otro usuario | No seguir. Revisar `current_user` y `rolbypassrls`; si el rol está mal, borrar la base y empezar de nuevo |
 | El *pre-deploy* de la API falla | `DATABASE_URL` mal cargada o una migración que no aplica | *Logs* del deploy. Corregir la variable; si es una migración, ver `migraciones-y-seed.md` |
 | `/health/ready` da `postgres: unavailable` | `RUNTIME_DATABASE_URL` mal cargada, o base y API en regiones distintas | Revisar el host interno y la contraseña (4.5). Base y servicios en Ohio |
-| `set-client-secret.sh` falla al iniciar sesión | La contraseña del administrador en la base restaurada no coincide con `KC_BOOTSTRAP_ADMIN_PASSWORD` de Infisical | Usar la credencial de administrador vigente de producción (gestor de contraseñas del equipo) para cargarla en Render, y corregir Infisical si quedó desactualizado |
+| `set-client-secret.sh` falla al iniciar sesión | La contraseña del administrador en la base restaurada no coincide con `KC_BOOTSTRAP_ADMIN_PASSWORD` de Infisical | Usar la credencial de administrador vigente de producción para cargarla en Render, y corregir Infisical si quedó desactualizado |
 | Login: «Invalid redirect uri» | Falta la URL de Render en el cliente del frontend | Repetir el paso 4 de 4.6 |
 | Login: «Invalid token issuer» en la API | `KEYCLOAK_URL` de la API distinta de `KC_HOSTNAME` | Las dos tienen que ser la URL pública de Keycloak en Render |
 | Error de CORS en el navegador | `FRONTEND_URL` de la API distinta de la URL de la Web | Corregirla y redesplegar la API |
