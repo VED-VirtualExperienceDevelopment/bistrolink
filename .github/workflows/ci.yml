@@ -2779,24 +2779,68 @@ jobs:
           MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
         run: |
           set -euo pipefail
+          # Mismo formato y colores que el aviso de E2E (aviso-e2e.mjs, BL-599).
+          # Encabezado violeta si el rollback salió bien; rojo si falló.
           if [ "$RESULTADO" = "success" ]; then
             ASUNTO="[BistroLink] Rollback automático en producción: ${VERSION} → ${ANTERIOR}"
-            TEXTO="El deploy de <b>${VERSION}</b> falló después de desplegar la API y producción <b>volvió a ${ANTERIOR}</b>. El rollback terminó bien."
-            ACCION="Revisar la corrida, completar el issue de incidente y planificar la corrección (hotfix o próxima versión)."
+            TITULO="⚠️ BistroLink — Rollback automático en producción"
+            COLOR="#381e72"
+            INTRO="El deploy de <strong>${VERSION}</strong> falló después de desplegar la API. El pipeline volvió producción a <strong>${ANTERIOR}</strong> y el rollback terminó bien."
+            ESTADO="✅ Producción en ${ANTERIOR}"
+            CAJA_FONDO="#ffdf93"; CAJA_TEXTO="#594400"
+            ACCION="Revisar la corrida, completar el issue de incidente (alcance, quién coordina) y planificar la corrección: hotfix o próxima versión."
           else
             ASUNTO="[BistroLink] ACCIÓN INMEDIATA: falló el rollback automático de ${VERSION}"
-            TEXTO="El deploy de <b>${VERSION}</b> falló y <b>el rollback automático a ${ANTERIOR} también falló</b>. Producción puede estar caída."
+            TITULO="🚨 BistroLink — Falló el rollback automático"
+            COLOR="#93000a"
+            INTRO="El deploy de <strong>${VERSION}</strong> falló y <strong>el rollback automático a ${ANTERIOR} también falló</strong>. Producción puede estar caída o con versiones mezcladas."
+            ESTADO="❌ Rollback fallido"
+            CAJA_FONDO="#ffdad6"; CAJA_TEXTO="#93000a"
             ACCION="Revertir a mano ya: Actions → CI/CD BistroLink → Run workflow → production → ${ANTERIOR} (docs/RELEASE.md, 3.1)."
           fi
-          ISSUE="${ISSUE_URL:-no se pudo abrir: crearlo a mano con la plantilla «Incidente»}"
+          CELDA="padding:6px 10px; border:1px solid #cbc4d2;"
+          if [ -n "${ISSUE_URL:-}" ]; then
+            ISSUE="<a href=\"${ISSUE_URL}\" style=\"color:#4f378a; text-decoration:underline;\">Issue de incidente (bitácora) →</a>"
+          else
+            ISSUE="No se pudo abrir el issue de incidente: crearlo a mano con la plantilla «Incidente»."
+          fi
           cat > "$RUNNER_TEMP/aviso-rollback.html" <<HTML
-          <p>${TEXTO}</p>
-          <p><b>Qué hacer:</b> ${ACCION}</p>
-          <ul>
-            <li>Corrida: <a href="${CORRIDA}">${CORRIDA}</a></li>
-            <li>Issue de incidente: ${ISSUE}</li>
-          </ul>
-          <p>Mail automático del pipeline de release (BL-623).</p>
+          <!DOCTYPE html>
+          <html lang="es">
+          <body style="margin:0; padding:0; background-color:#fdf8ff; font-family: 'Plus Jakarta Sans', -apple-system, Segoe UI, Roboto, Arial, sans-serif;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#fdf8ff; padding:24px 0;">
+              <tr><td align="center">
+                <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="background-color:#ffffff; border-radius:8px; overflow:hidden; border:1px solid #cbc4d2;">
+                  <tr><td style="background-color:${COLOR}; padding:20px 24px;">
+                    <span style="color:#ffffff; font-size:18px; font-weight:bold;">${TITULO}</span>
+                  </td></tr>
+                  <tr><td style="padding:24px;">
+                    <p style="margin:0 0 16px; color:#1c1b20; font-size:14px;">Hola, equipo: ${INTRO}</p>
+                    <p style="margin:0 0 20px; padding:10px 12px; background-color:${CAJA_FONDO}; border-left:3px solid ${CAJA_TEXTO}; font-size:13px; color:${CAJA_TEXTO};">
+                      <strong>Qué hacer:</strong> ${ACCION}
+                    </p>
+                    <h3 style="margin:0 0 10px; font-size:14px; color:#381e72;">📋 Resumen</h3>
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse; font-size:13px; color:#1c1b20; margin-bottom:20px;">
+                      <tr><td style="${CELDA} background-color:#e0d4fd; color:#381e72; width:45%;"><strong>Versión que falló</strong></td><td style="${CELDA}">${VERSION}</td></tr>
+                      <tr><td style="${CELDA} background-color:#e0d4fd; color:#381e72;"><strong>Versión anterior (destino del rollback)</strong></td><td style="${CELDA}">${ANTERIOR}</td></tr>
+                      <tr><td style="${CELDA} background-color:#e0d4fd; color:#381e72;"><strong>Estado</strong></td><td style="${CELDA}">${ESTADO}</td></tr>
+                      <tr><td style="${CELDA} background-color:#e0d4fd; color:#381e72;"><strong>Entorno</strong></td><td style="${CELDA}">production</td></tr>
+                    </table>
+                    <h3 style="margin:0 0 10px; font-size:14px; color:#381e72;">🔎 Dónde ver el detalle</h3>
+                    <ul style="margin:0; padding-left:20px; font-size:13px; line-height:1.6;">
+                      <li><a href="${CORRIDA}" style="color:#4f378a; text-decoration:underline;">Corrida en GitHub Actions →</a></li>
+                      <li>${ISSUE}</li>
+                      <li style="color:#494551;">Procedimiento: <code>docs/runbooks/respuesta-a-incidentes.md</code> (desde el paso 4: el issue ya está abierto).</li>
+                    </ul>
+                  </td></tr>
+                  <tr><td style="padding:12px 24px; background-color:#f7f2fa; border-top:1px solid #cbc4d2;">
+                    <span style="font-size:11px; color:#7a7582;">Aviso automático del pipeline de release de BistroLink (BL-623) — no responder a este correo. No incluye logs ni datos: el detalle está en la corrida.</span>
+                  </td></tr>
+                </table>
+              </td></tr>
+            </table>
+          </body>
+          </html>
           HTML
           {
             echo "to=${EQUIPO_CORREOS}"
