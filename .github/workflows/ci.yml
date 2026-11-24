@@ -2501,3 +2501,40 @@ jobs:
           fi
           gh release create "$VERSION" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes --title "$VERSION" $EXTRA
           echo "Release $VERSION publicado."
+
+  # ── JOB 12: DASHBOARDS DESPUÉS DE PRODUCCIÓN (BL-620) ─────────────────────
+  # Cada deploy a production (tag v*, también los -rc.N) y cada rollback de
+  # production cuentan para las métricas DORA del dashboard «Calidad del
+  # proceso». Antes había que lanzar «Publicar dashboards» a mano después
+  # (docs/RELEASE.md, 1.5 y 3.3). Ahora lo lanza este job.
+  # - workflow_dispatch con GITHUB_TOKEN sí crea una corrida nueva (es una
+  #   de las excepciones de GitHub), así que no hace falta otro token.
+  # - Corre con la rama develop, como el botón manual.
+  # - Si falla, no cambia el resultado del deploy: solo avisa.
+  dashboards-produccion:
+    name: 📊 Publicar dashboards (producción)
+    needs: [deploy-prod, rollback]
+    if: |
+      !cancelled() && (
+        needs.deploy-prod.result == 'success' ||
+        (needs.rollback.result == 'success' && inputs.rollback_environment == 'production')
+      )
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Lanzar «Publicar dashboards» en develop
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MOTIVO: ${{ needs.deploy-prod.result == 'success' && format('deploy de {0}', github.ref_name) || format('rollback a {0}', inputs.rollback_version) }}
+        run: |
+          set -euo pipefail
+          gh workflow run publicar-dashboards.yml --repo "$GITHUB_REPOSITORY" --ref develop
+          echo "«Publicar dashboards» lanzado después del $MOTIVO en production."
+          {
+            echo "## 📊 Dashboards"
+            echo
+            echo "Se lanzó **Publicar dashboards** (rama \`develop\`) después del $MOTIVO en production, para actualizar las métricas DORA."
+          } >> "$GITHUB_STEP_SUMMARY"
