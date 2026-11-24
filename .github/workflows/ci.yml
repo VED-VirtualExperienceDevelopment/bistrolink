@@ -1240,7 +1240,6 @@ jobs:
     environment: ${{ inputs.rollback_environment }}
     runs-on: ubuntu-latest
     env:
-      RAILWAY_GRAPHQL: https://backboard.railway.com/graphql/v2
       # BL-220: IDs de Railway según el entorno elegido.
       ENVIRONMENT_ID: ${{ inputs.rollback_environment == 'production' && 'b0b1fd5a-e3e7-409e-8847-f2700286a4a0' || 'bfeb236f-2012-4a5e-a681-5c4728e6830a' }}
       API_SERVICE_ID: ${{ inputs.rollback_environment == 'production' && '24f425e7-e8d5-4c1e-a957-bf5bccccbcec' || '45dc82be-fd53-4b80-ba9c-384bbbdba034' }}
@@ -1265,143 +1264,26 @@ jobs:
             exit 1
           fi
 
-      - name: Verificar que las 3 imágenes existan en GHCR
-        run: |
-          set -euo pipefail
-          echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-          for IMAGE in "${{ env.IMAGE_API }}" "${{ env.IMAGE_WEB }}" "${{ env.IMAGE_AUTH }}"; do
-            docker manifest inspect "${IMAGE}:${ROLLBACK_TAG}" > /dev/null \
-              || { echo "No existe ${IMAGE}:${ROLLBACK_TAG} en GHCR — no se puede revertir a un tag que nunca se publicó."; exit 1; }
-          done
+      # BL-622: la lógica del rollback está en una acción compartida con el
+      # rollback automático de production (deploy-prod).
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/actions
 
-      - name: Verificar que la API tenga el pre-deploy (BL-231)
-        # Railway corre /app/migrate/predeploy-migrate.sh en cada deploy de
-        # bistrolink-api, también en un rollback. Una imagen anterior a
-        # BL-231 no lo tiene: el pre-deploy fallaría y Railway no la pondría
-        # en línea. Se corta acá, antes de tocar ningún servicio.
-        run: |
-          set -euo pipefail
-          IMAGE="${{ env.IMAGE_API }}:${ROLLBACK_TAG}"
-          docker pull -q "$IMAGE" > /dev/null
-          docker run --rm --entrypoint /bin/sh "$IMAGE" -c 'test -x /app/migrate/predeploy-migrate.sh' \
-            || { echo "::error::$IMAGE es anterior a BL-231 (no tiene /app/migrate/predeploy-migrate.sh): con el pre-deploy configurado, Railway no puede ponerla en línea. Elegir un SHA posterior."; exit 1; }
-          echo "OK: $IMAGE tiene el script del pre-deploy"
-
-      - name: Revertir API al tag indicado
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        run: |
-          set -euo pipefail
-          IMAGE="${{ env.IMAGE_API }}:${ROLLBACK_TAG}"
-
-          RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
-            -H "Authorization: Bearer $RAILWAY_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "$(jq -n --arg s "$API_SERVICE_ID" --arg e "$ENVIRONMENT_ID" --arg img "$IMAGE" '{
-              query: "mutation($serviceId: String!, $environmentId: String!, $input: ServiceInstanceUpdateInput!) { serviceInstanceUpdate(serviceId: $serviceId, environmentId: $environmentId, input: $input) }",
-              variables: { serviceId: $s, environmentId: $e, input: { source: { image: $img } } }
-            }')")
-          echo "$RESPONSE"
-          echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
-
-          RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
-            -H "Authorization: Bearer $RAILWAY_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "$(jq -n --arg s "$API_SERVICE_ID" --arg e "$ENVIRONMENT_ID" '{
-              query: "mutation($serviceId: String!, $environmentId: String!) { serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId) }",
-              variables: { serviceId: $s, environmentId: $e }
-            }')")
-          echo "$RESPONSE"
-          echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
-
-      - name: Revertir Web al tag indicado
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        run: |
-          set -euo pipefail
-          IMAGE="${{ env.IMAGE_WEB }}:${ROLLBACK_TAG}"
-
-          RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
-            -H "Authorization: Bearer $RAILWAY_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "$(jq -n --arg s "$WEB_SERVICE_ID" --arg e "$ENVIRONMENT_ID" --arg img "$IMAGE" '{
-              query: "mutation($serviceId: String!, $environmentId: String!, $input: ServiceInstanceUpdateInput!) { serviceInstanceUpdate(serviceId: $serviceId, environmentId: $environmentId, input: $input) }",
-              variables: { serviceId: $s, environmentId: $e, input: { source: { image: $img } } }
-            }')")
-          echo "$RESPONSE"
-          echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
-
-          RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
-            -H "Authorization: Bearer $RAILWAY_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "$(jq -n --arg s "$WEB_SERVICE_ID" --arg e "$ENVIRONMENT_ID" '{
-              query: "mutation($serviceId: String!, $environmentId: String!) { serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId) }",
-              variables: { serviceId: $s, environmentId: $e }
-            }')")
-          echo "$RESPONSE"
-          echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
-
-      - name: Revertir Keycloak al tag indicado
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        run: |
-          set -euo pipefail
-          IMAGE="${{ env.IMAGE_AUTH }}:${ROLLBACK_TAG}"
-
-          RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
-            -H "Authorization: Bearer $RAILWAY_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "$(jq -n --arg s "$AUTH_SERVICE_ID" --arg e "$ENVIRONMENT_ID" --arg img "$IMAGE" '{
-              query: "mutation($serviceId: String!, $environmentId: String!, $input: ServiceInstanceUpdateInput!) { serviceInstanceUpdate(serviceId: $serviceId, environmentId: $environmentId, input: $input) }",
-              variables: { serviceId: $s, environmentId: $e, input: { source: { image: $img } } }
-            }')")
-          echo "$RESPONSE"
-          echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
-
-          RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
-            -H "Authorization: Bearer $RAILWAY_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "$(jq -n --arg s "$AUTH_SERVICE_ID" --arg e "$ENVIRONMENT_ID" '{
-              query: "mutation($serviceId: String!, $environmentId: String!) { serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId) }",
-              variables: { serviceId: $s, environmentId: $e }
-            }')")
-          echo "$RESPONSE"
-          echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
-
-      - name: Health check post-rollback
-        run: |
-          check() {
-            if curl -fsS -o /dev/null --retry 30 --retry-delay 10 --retry-all-errors --max-time 15 "$1"; then
-              echo "OK    $1"
-            else
-              echo "FALLÓ $1 — última respuesta:"
-              curl -sS --max-time 15 -w "\nHTTP %{http_code}\n" "$1" || true
-              return 1
-            fi
-          }
-          check https://bistrolink-api-${ENTORNO}.up.railway.app/health
-          check https://bistrolink-api-${ENTORNO}.up.railway.app/health/ready
-          check https://bistrolink-web-${ENTORNO}.up.railway.app
-          check https://bistrolink-auth-${ENTORNO}.up.railway.app/realms/bistrolink/.well-known/openid-configuration
-
-      - name: Confirmar la versión de la API después del rollback
-        # /health responde aunque Railway haya dejado la versión anterior
-        # (por ejemplo, si falló el pre-deploy). upToDate puede dar false:
-        # la imagen vieja no conoce las migraciones más nuevas de la base.
-        run: |
-          URL=https://bistrolink-api-${ENTORNO}.up.railway.app/health/version
-          for i in $(seq 1 30); do
-            API=$(curl -fsS --max-time 15 "$URL" 2>/dev/null | jq -r '.api // empty' 2>/dev/null || true)
-            if [ "$API" = "$ROLLBACK_TAG" ]; then
-              echo "OK: la API quedó en $API"
-              curl -fsS --max-time 15 "$URL" | jq . || true
-              exit 0
-            fi
-            echo "Intento $i/30: la API responde '${API:-sin respuesta}'. Reintento en 10 s..."
-            sleep 10
-          done
-          echo "::error::La API no quedó en $ROLLBACK_TAG. Revisar la API de ${ENTORNO} en Railway → Deployments → logs del pre-deploy."
-          exit 1
+      - name: Revertir API, Web y Keycloak
+        uses: ./.github/actions/revertir-railway
+        with:
+          version: ${{ env.ROLLBACK_TAG }}
+          entorno: ${{ env.ENTORNO }}
+          environment-id: ${{ env.ENVIRONMENT_ID }}
+          api-service-id: ${{ env.API_SERVICE_ID }}
+          web-service-id: ${{ env.WEB_SERVICE_ID }}
+          auth-service-id: ${{ env.AUTH_SERVICE_ID }}
+          railway-token: ${{ secrets.RAILWAY_TOKEN }}
+          ghcr-token: ${{ secrets.GITHUB_TOKEN }}
+          image-api: ${{ env.IMAGE_API }}
+          image-web: ${{ env.IMAGE_WEB }}
+          image-auth: ${{ env.IMAGE_AUTH }}
 
   # ── JOB 9B: LIGHTHOUSE (Performance mobile) — staging ────────────────────────
   # BL-437: mismo comportamiento que los E2E (JOB 10): corre contra staging
@@ -2289,9 +2171,15 @@ jobs:
       name: production
       url: https://bistrolink-web-production.up.railway.app
     runs-on: ubuntu-latest
-    # Para crear el GitHub Release del tag.
+    # contents: write para crear el GitHub Release del tag; packages: read
+    # para que el rollback automático (BL-622) verifique las imágenes en GHCR.
     permissions:
       contents: write
+      packages: read
+    # BL-622: el job de dashboards lee si hubo rollback automático.
+    outputs:
+      rollback-automatico: ${{ steps.rollback_auto.outcome == 'success' }}
+      rollback-version: ${{ steps.decidir_rollback.outputs.version }}
     env:
       RAILWAY_GRAPHQL: https://backboard.railway.com/graphql/v2
       ENVIRONMENT_ID: b0b1fd5a-e3e7-409e-8847-f2700286a4a0
@@ -2303,6 +2191,11 @@ jobs:
       WEB_URL: https://bistrolink-web-production.up.railway.app
       AUTH_URL: https://bistrolink-auth-production.up.railway.app
     steps:
+      # Solo la acción compartida del rollback automático (BL-622).
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/actions
+
       - name: Verificar el respaldo de producción (antes de migrar)
         # Usa las credenciales de bistrolink-backup-ci (solo lectura y listado
         # sobre los buckets de respaldo). Si falla, no se tocó nada: ejecutar
@@ -2333,6 +2226,7 @@ jobs:
           done
 
       - name: Actualizar y deployar API (tag semántico)
+        id: deploy_api
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: |
@@ -2443,6 +2337,7 @@ jobs:
           echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
 
       - name: Smoke test producción (solo lectura)
+        id: smoke
         # Sin E2E contra production: solo lecturas que no crean datos.
         run: |
           set -uo pipefail
@@ -2502,9 +2397,88 @@ jobs:
           gh release create "$VERSION" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes --title "$VERSION" $EXTRA
           echo "Release $VERSION publicado."
 
+      # ── BL-622: rollback automático de production ────────────────────────
+      # Si algo falla DESPUÉS de mandar a desplegar la API y ANTES de que pase
+      # el smoke test, production puede haber quedado con la versión nueva
+      # rota o con versiones mezcladas. Se vuelve sola a la versión anterior,
+      # sin otra aprobación (el deploy ya estaba aprobado y se vuelve a una
+      # versión que ya estuvo en production). El job termina en rojo igual.
+      # No se revierte si:
+      # - falló antes de desplegar la API (respaldo): no se tocó nada;
+      # - la API sigue en la versión anterior (falló el pre-deploy con las
+      #   migraciones: Railway no puso la nueva en línea);
+      # - el smoke test pasó y falló algo posterior (el GitHub Release).
+      - name: Decidir el rollback automático
+        id: decidir_rollback
+        if: failure() && steps.deploy_api.outcome == 'success' && steps.smoke.outcome != 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          # Versión anterior: el último GitHub Release que no es pre-release
+          # ni la versión de esta corrida. deploy-prod publica el Release
+          # recién cuando el deploy y el smoke test pasan, así que es la
+          # última versión que estuvo bien en production.
+          ANTERIOR=$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --exclude-pre-releases \
+            --limit 20 --json tagName --jq '.[].tagName' | grep -vx "$VERSION" | head -n 1 || true)
+          if [ -z "$ANTERIOR" ]; then
+            echo "::error::No hay un release anterior al que volver: revertir a mano (docs/RELEASE.md, 3.1)."
+            echo "revertir=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "version=$ANTERIOR" >> "$GITHUB_OUTPUT"
+
+          ACTUAL=$(curl -fsS --max-time 15 "${API_URL}/health/version" 2>/dev/null | jq -r '.api // empty' 2>/dev/null || true)
+          if [ -n "$ACTUAL" ] && [ "$ACTUAL" != "$VERSION" ]; then
+            echo "La API sigue en $ACTUAL (Railway no puso $VERSION en línea): no hace falta revertir."
+            echo "revertir=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "::warning::Production quedó con $VERSION (API: '${ACTUAL:-sin respuesta}') y el deploy falló: se vuelve a $ANTERIOR."
+          echo "revertir=true" >> "$GITHUB_OUTPUT"
+
+      - name: Rollback automático de production
+        id: rollback_auto
+        if: failure() && steps.decidir_rollback.outputs.revertir == 'true'
+        uses: ./.github/actions/revertir-railway
+        with:
+          version: ${{ steps.decidir_rollback.outputs.version }}
+          entorno: production
+          environment-id: ${{ env.ENVIRONMENT_ID }}
+          api-service-id: ${{ env.API_SERVICE_ID }}
+          web-service-id: ${{ env.WEB_SERVICE_ID }}
+          auth-service-id: ${{ env.AUTH_SERVICE_ID }}
+          railway-token: ${{ secrets.RAILWAY_TOKEN }}
+          ghcr-token: ${{ secrets.GITHUB_TOKEN }}
+          image-api: ${{ env.IMAGE_API }}
+          image-web: ${{ env.IMAGE_WEB }}
+          image-auth: ${{ env.IMAGE_AUTH }}
+
+      - name: Resumen del rollback automático
+        if: failure() && steps.decidir_rollback.outcome == 'success'
+        env:
+          REVERTIR: ${{ steps.decidir_rollback.outputs.revertir }}
+          ANTERIOR: ${{ steps.decidir_rollback.outputs.version }}
+          RESULTADO: ${{ steps.rollback_auto.outcome }}
+        run: |
+          {
+            echo "## ⏪ Rollback automático de production"
+            echo
+            if [ "$REVERTIR" != "true" ]; then
+              echo "No se revirtió: production no quedó con \`$VERSION\` (ver el paso «Decidir el rollback automático»)."
+            elif [ "$RESULTADO" = "success" ]; then
+              echo "El deploy de \`$VERSION\` falló y production **volvió a \`$ANTERIOR\`**. Abrir un issue con el error (docs/RELEASE.md, 3.3)."
+            else
+              echo "El deploy de \`$VERSION\` falló y **el rollback a \`$ANTERIOR\` también falló**. Revertir a mano ya (docs/RELEASE.md, 3.1)."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$REVERTIR" = "true" ] && [ "$RESULTADO" != "success" ]; then
+            echo "::error::El rollback automático a $ANTERIOR falló: revertir a mano (Actions → CI/CD BistroLink → Run workflow)."
+          fi
+
   # ── JOB 12: DASHBOARDS DESPUÉS DE PRODUCCIÓN (BL-620) ─────────────────────
   # Cada deploy a production (tag v*, también los -rc.N) y cada rollback de
-  # production cuentan para las métricas DORA del dashboard «Calidad del
+  # production, manual o automático (BL-622), cuentan para las métricas DORA del dashboard «Calidad del
   # proceso». Antes había que lanzar «Publicar dashboards» a mano después
   # (docs/RELEASE.md, 1.5 y 3.3). Ahora lo lanza este job.
   # - workflow_dispatch con GITHUB_TOKEN sí crea una corrida nueva (es una
@@ -2517,6 +2491,7 @@ jobs:
     if: |
       !cancelled() && (
         needs.deploy-prod.result == 'success' ||
+        needs.deploy-prod.outputs.rollback-automatico == 'true' ||
         (needs.rollback.result == 'success' && inputs.rollback_environment == 'production')
       )
     runs-on: ubuntu-latest
@@ -2528,7 +2503,7 @@ jobs:
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
-          MOTIVO: ${{ needs.deploy-prod.result == 'success' && format('deploy de {0}', github.ref_name) || format('rollback a {0}', inputs.rollback_version) }}
+          MOTIVO: ${{ needs.deploy-prod.result == 'success' && format('deploy de {0}', github.ref_name) || needs.deploy-prod.outputs.rollback-automatico == 'true' && format('rollback automático de {0} a {1}', github.ref_name, needs.deploy-prod.outputs.rollback-version) || format('rollback a {0}', inputs.rollback_version) }}
         run: |
           set -euo pipefail
           gh workflow run publicar-dashboards.yml --repo "$GITHUB_REPOSITORY" --ref develop

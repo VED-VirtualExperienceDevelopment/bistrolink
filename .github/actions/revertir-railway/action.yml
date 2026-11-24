@@ -1,0 +1,162 @@
+name: Revertir en Railway
+description: >
+  Vuelve la API, la Web y Keycloak de un entorno a una versión ya publicada en
+  GHCR, sin reconstruir nada (docs/RELEASE.md, sección 3). La usan el rollback
+  manual y el rollback automático de production (BL-622). No revierte la base:
+  con expand/contract, una imagen anterior funciona con las migraciones nuevas.
+  Pasos: verifica que existan las 3 imágenes y que la API tenga el pre-deploy,
+  despliega API, Web y Keycloak, hace el health check y confirma que
+  /health/version quedó en la versión pedida. Si algo falla, corta ahí.
+
+inputs:
+  version:
+    description: Tag de las imágenes a las que se vuelve (vX.Y.Z en production, SHA completo en staging).
+    required: true
+  entorno:
+    description: production o staging (sufijo de los dominios públicos).
+    required: true
+  environment-id:
+    description: ID del entorno de Railway.
+    required: true
+  api-service-id:
+    description: ID del servicio de la API en Railway.
+    required: true
+  web-service-id:
+    description: ID del servicio de la Web en Railway.
+    required: true
+  auth-service-id:
+    description: ID del servicio de Keycloak en Railway.
+    required: true
+  railway-token:
+    description: Token de la API de Railway.
+    required: true
+  ghcr-token:
+    description: Token para leer las imágenes de GHCR (el GITHUB_TOKEN alcanza).
+    required: true
+  image-api:
+    description: Imagen de la API, sin tag.
+    required: true
+  image-web:
+    description: Imagen de la Web, sin tag.
+    required: true
+  image-auth:
+    description: Imagen de Keycloak, sin tag.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Verificar que las 3 imágenes existan en GHCR
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        GHCR_TOKEN: ${{ inputs.ghcr-token }}
+        IMAGES: ${{ inputs.image-api }} ${{ inputs.image-web }} ${{ inputs.image-auth }}
+      run: |
+        set -euo pipefail
+        echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+        for IMAGE in $IMAGES; do
+          docker manifest inspect "${IMAGE}:${VERSION}" > /dev/null \
+            || { echo "::error::No existe ${IMAGE}:${VERSION} en GHCR: no se puede revertir a un tag que nunca se publicó."; exit 1; }
+        done
+        echo "OK: las 3 imágenes de $VERSION existen en GHCR"
+
+    - name: Verificar que la API tenga el pre-deploy (BL-231)
+      # Railway corre /app/migrate/predeploy-migrate.sh en cada deploy de la
+      # API, también en un rollback. Una imagen anterior a BL-231 no lo tiene:
+      # el pre-deploy fallaría y Railway no la pondría en línea.
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image-api }}:${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        docker pull -q "$IMAGE" > /dev/null
+        docker run --rm --entrypoint /bin/sh "$IMAGE" -c 'test -x /app/migrate/predeploy-migrate.sh' \
+          || { echo "::error::$IMAGE es anterior a BL-231 (no tiene /app/migrate/predeploy-migrate.sh): Railway no puede ponerla en línea."; exit 1; }
+        echo "OK: $IMAGE tiene el script del pre-deploy"
+
+    - name: Revertir API, Web y Keycloak
+      shell: bash
+      env:
+        RAILWAY_GRAPHQL: https://backboard.railway.com/graphql/v2
+        RAILWAY_TOKEN: ${{ inputs.railway-token }}
+        ENVIRONMENT_ID: ${{ inputs.environment-id }}
+        VERSION: ${{ inputs.version }}
+        API: ${{ inputs.api-service-id }} ${{ inputs.image-api }}
+        WEB: ${{ inputs.web-service-id }} ${{ inputs.image-web }}
+        AUTH: ${{ inputs.auth-service-id }} ${{ inputs.image-auth }}
+      run: |
+        set -euo pipefail
+        railway() {
+          local respuesta
+          respuesta=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$1")
+          echo "$respuesta"
+          echo "$respuesta" | jq -e '.errors == null' > /dev/null
+        }
+        revertir() {
+          local nombre="$1" servicio="$2" imagen="$3:$VERSION"
+          echo "── $nombre → $imagen"
+          railway "$(jq -n --arg s "$servicio" --arg e "$ENVIRONMENT_ID" --arg img "$imagen" '{
+            query: "mutation($serviceId: String!, $environmentId: String!, $input: ServiceInstanceUpdateInput!) { serviceInstanceUpdate(serviceId: $serviceId, environmentId: $environmentId, input: $input) }",
+            variables: { serviceId: $s, environmentId: $e, input: { source: { image: $img } } }
+          }')"
+          railway "$(jq -n --arg s "$servicio" --arg e "$ENVIRONMENT_ID" '{
+            query: "mutation($serviceId: String!, $environmentId: String!) { serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId) }",
+            variables: { serviceId: $s, environmentId: $e }
+          }')"
+        }
+        # shellcheck disable=SC2086 # «ID imagen»: se separan a propósito
+        revertir API $API
+        # shellcheck disable=SC2086
+        revertir Web $WEB
+        # shellcheck disable=SC2086
+        revertir Keycloak $AUTH
+
+    - name: Health check después del rollback
+      shell: bash
+      env:
+        ENTORNO: ${{ inputs.entorno }}
+      run: |
+        set -uo pipefail
+        check() {
+          if curl -fsS -o /dev/null --retry 30 --retry-delay 10 --retry-all-errors --max-time 15 "$1"; then
+            echo "OK    $1"
+          else
+            echo "FALLÓ $1 — última respuesta:"
+            curl -sS --max-time 15 -w "\nHTTP %{http_code}\n" "$1" || true
+            return 1
+          fi
+        }
+        fallos=0
+        check "https://bistrolink-api-${ENTORNO}.up.railway.app/health" || fallos=1
+        check "https://bistrolink-api-${ENTORNO}.up.railway.app/health/ready" || fallos=1
+        check "https://bistrolink-web-${ENTORNO}.up.railway.app" || fallos=1
+        check "https://bistrolink-auth-${ENTORNO}.up.railway.app/realms/bistrolink/.well-known/openid-configuration" || fallos=1
+        exit $fallos
+
+    - name: Confirmar la versión de la API
+      # /health responde aunque Railway haya dejado otra versión (por ejemplo,
+      # si falló el pre-deploy). upToDate puede dar false: la imagen anterior
+      # no conoce las migraciones más nuevas de la base, y está bien.
+      shell: bash
+      env:
+        ENTORNO: ${{ inputs.entorno }}
+        VERSION: ${{ inputs.version }}
+      run: |
+        set -uo pipefail
+        URL="https://bistrolink-api-${ENTORNO}.up.railway.app/health/version"
+        for i in $(seq 1 30); do
+          API=$(curl -fsS --max-time 15 "$URL" 2>/dev/null | jq -r '.api // empty' 2>/dev/null || true)
+          if [ "$API" = "$VERSION" ]; then
+            echo "OK: la API quedó en $API"
+            curl -fsS --max-time 15 "$URL" | jq . || true
+            exit 0
+          fi
+          echo "Intento $i/30: la API responde '${API:-sin respuesta}'. Reintento en 10 s..."
+          sleep 10
+        done
+        echo "::error::La API no quedó en $VERSION. Revisar la API de ${ENTORNO} en Railway → Deployments → logs del pre-deploy."
+        exit 1
