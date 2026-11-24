@@ -369,8 +369,7 @@ jobs:
         continue-on-error: true
         timeout-minutes: 5
         env:
-          TCMS_PRODUCT_VERSION: ${{ github.ref_name }}
-          TCMS_BUILD: ${{ needs.version.outputs.label }}-contract
+          TCMS_BUILD: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || needs.version.outputs.label }}-contract
         run: |
           pip install kiwitcms-junit.xml-plugin --break-system-packages
           cat <<EOF > ~/.tcms.conf
@@ -389,10 +388,12 @@ jobs:
               raise SystemExit(f"::error::Se esperaba un Test Plan «Contract-PactJS» y hay {len(planes)}")
           print(f"export TCMS_PLAN_ID={planes[0]['id']}")
           print(f"export TCMS_PRODUCT='{planes[0]['product__name']}'")
+          # BL-616: la versión del run es la del plan, no la rama ni el tag.
+          print(f"export TCMS_PRODUCT_VERSION='{planes[0]['product_version__value']}'")
           PY
           )"
           eval "$variables"
-          echo "Plan Contract-PactJS: id $TCMS_PLAN_ID, producto $TCMS_PRODUCT"
+          echo "Plan Contract-PactJS: id $TCMS_PLAN_ID, producto $TCMS_PRODUCT, versión $TCMS_PRODUCT_VERSION, build $TCMS_BUILD"
           tcms-junit.xml-plugin --verbose --summary-template '${name}' apps/backend/reports/contract-junit.xml
 
   # ── JOB 3b: TESTS DE INTEGRACIÓN (Jest + Postgres + Keycloak) ─────────────
@@ -579,9 +580,7 @@ jobs:
         continue-on-error: true
         timeout-minutes: 5
         env:
-          TCMS_PRODUCT: "Bistrolink"
-          TCMS_PRODUCT_VERSION: ${{ github.ref_name }}
-          TCMS_BUILD: ${{ needs.version.outputs.label }}-integration
+          TCMS_BUILD: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || needs.version.outputs.label }}-integration
           TCMS_PLAN_ID: "1"
         run: |
           pip install kiwitcms-junit.xml-plugin --break-system-packages
@@ -591,6 +590,21 @@ jobs:
           username = ${{ secrets.KIWI_TCMS_USERNAME }}
           password = ${{ secrets.KIWI_TCMS_PASSWORD }}
           EOF
+          # BL-616: producto y versión del plan «Integration tests» (id fijo).
+          # La versión del run tiene que ser la del plan: con la del tag
+          # (v0.6.0) Kiwi rechaza el build («Select a valid choice»).
+          variables="$(python3 - <<'PY'
+          import os
+          from tcms_api import TCMS
+          planes = TCMS().exec.TestPlan.filter({"pk": int(os.environ["TCMS_PLAN_ID"])})
+          if len(planes) != 1:
+              raise SystemExit(f"::error::No se encontró el Test Plan {os.environ['TCMS_PLAN_ID']}")
+          print(f"export TCMS_PRODUCT='{planes[0]['product__name']}'")
+          print(f"export TCMS_PRODUCT_VERSION='{planes[0]['product_version__value']}'")
+          PY
+          )"
+          eval "$variables"
+          echo "Plan Integration tests: id $TCMS_PLAN_ID, producto $TCMS_PRODUCT, versión $TCMS_PRODUCT_VERSION, build $TCMS_BUILD"
           tcms-junit.xml-plugin --verbose --summary-template '${name}' apps/backend/reports/integration-junit.xml
 
   # ── JOB 4: GITLEAKS ───────────────────────────────────────────────────────
@@ -1456,8 +1470,7 @@ jobs:
         continue-on-error: true
         timeout-minutes: 5
         env:
-          TCMS_PRODUCT_VERSION: ${{ github.ref_name }}
-          TCMS_BUILD: ${{ needs.version.outputs.label }}-lighthouse
+          TCMS_BUILD: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || needs.version.outputs.label }}-lighthouse
         run: |
           pip install kiwitcms-junit.xml-plugin --break-system-packages
           cat <<EOF > ~/.tcms.conf
@@ -1476,10 +1489,12 @@ jobs:
               raise SystemExit(f"::error::Se esperaba un Test Plan «Performance-k6-Lighthouse» y hay {len(planes)}")
           print(f"export TCMS_PLAN_ID={planes[0]['id']}")
           print(f"export TCMS_PRODUCT='{planes[0]['product__name']}'")
+          # BL-616: la versión del run es la del plan, no la rama ni el tag.
+          print(f"export TCMS_PRODUCT_VERSION='{planes[0]['product_version__value']}'")
           PY
           )"
           eval "$variables"
-          echo "Plan Performance-k6-Lighthouse: id $TCMS_PLAN_ID, producto $TCMS_PRODUCT"
+          echo "Plan Performance-k6-Lighthouse: id $TCMS_PLAN_ID, producto $TCMS_PRODUCT, versión $TCMS_PRODUCT_VERSION, build $TCMS_BUILD"
           tcms-junit.xml-plugin --verbose --summary-template '${name}' lighthouse-junit.xml
 
   # ── JOB 10: TESTS E2E (Playwright) — matrix por browser ───────────────────
@@ -2002,8 +2017,7 @@ jobs:
         continue-on-error: true
         timeout-minutes: 5
         env:
-          TCMS_PRODUCT_VERSION: ${{ github.event_name == 'pull_request' && github.base_ref || github.ref_name }}
-          TCMS_BUILD: ${{ needs.version.outputs.label }}-e2e
+          TCMS_BUILD: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || needs.version.outputs.label }}-e2e
         run: |
           pip install kiwitcms-junit.xml-plugin --break-system-packages
           cat <<EOF > ~/.tcms.conf
@@ -2022,10 +2036,12 @@ jobs:
               raise SystemExit(f"::error::Se esperaba un Test Plan «E2E-Playwright» y hay {len(planes)}")
           print(f"export TCMS_PLAN_ID={planes[0]['id']}")
           print(f"export TCMS_PRODUCT='{planes[0]['product__name']}'")
+          # BL-616: la versión del run es la del plan, no la rama ni el tag.
+          print(f"export TCMS_PRODUCT_VERSION='{planes[0]['product_version__value']}'")
           PY
           )"
           eval "$variables"
-          echo "Plan E2E-Playwright: id $TCMS_PLAN_ID, producto $TCMS_PRODUCT"
+          echo "Plan E2E-Playwright: id $TCMS_PLAN_ID, producto $TCMS_PRODUCT, versión $TCMS_PRODUCT_VERSION, build $TCMS_BUILD"
           tcms-junit.xml-plugin --verbose --summary-template '${name}' playwright-report/kiwi-junit.xml
 
       # ── BL-487: reporte Allure de los E2E ──────────────────────────────────
