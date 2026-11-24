@@ -2180,6 +2180,9 @@ jobs:
     outputs:
       rollback-automatico: ${{ steps.rollback_auto.outcome == 'success' }}
       rollback-version: ${{ steps.decidir_rollback.outputs.version }}
+      # BL-623: el job de aviso corre si se intentó el rollback.
+      rollback-intentado: ${{ steps.decidir_rollback.outputs.revertir == 'true' }}
+      rollback-resultado: ${{ steps.rollback_auto.outcome }}
     env:
       RAILWAY_GRAPHQL: https://backboard.railway.com/graphql/v2
       ENVIRONMENT_ID: b0b1fd5a-e3e7-409e-8847-f2700286a4a0
@@ -2653,3 +2656,162 @@ jobs:
             echo
             echo "Se lanzó **Publicar dashboards** (rama \`develop\`) después del $MOTIVO en production, para actualizar las métricas DORA."
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # ── JOB 13: AVISO DE ROLLBACK AUTOMÁTICO (BL-623) ─────────────────────────
+  # Si deploy-prod intentó el rollback automático (BL-622), abre un issue de
+  # incidente (plantilla de BL-261, sincroniza a Linear) y manda un mail al
+  # equipo con el resumen y el link al issue. Severidad alta si el rollback
+  # salió bien; crítica si también falló (producción puede estar caída).
+  # - El repositorio es público: el issue y el mail no llevan logs ni datos,
+  #   solo el resumen y el link a la corrida.
+  # - Environment «notificaciones»: tiene la cuenta de correo. Sus reglas de
+  #   ramas tienen que permitir los tags v* (además de develop).
+  # - Si falla el aviso, no cambia nada del deploy (continue-on-error).
+  aviso-rollback:
+    name: 🚨 Aviso de rollback automático
+    needs: [deploy-prod]
+    if: ${{ !cancelled() && needs.deploy-prod.outputs.rollback-intentado == 'true' }}
+    runs-on: ubuntu-latest
+    environment: notificaciones
+    continue-on-error: true
+    permissions:
+      contents: read
+      issues: write
+    env:
+      VERSION: ${{ github.ref_name }}
+      ANTERIOR: ${{ needs.deploy-prod.outputs.rollback-version }}
+      RESULTADO: ${{ needs.deploy-prod.outputs.rollback-resultado }}
+      CORRIDA: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          check-latest: true
+          cache: npm
+
+      # nodemailer (para enviar-email.mjs) sale del lockfile.
+      - name: Instalar dependencias
+        run: npm ci --ignore-scripts
+
+      - name: Abrir el issue de incidente
+        id: issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          HORA=$(TZ=America/Montevideo date '+%d/%m/%Y %H:%M')
+          if [ "$RESULTADO" = "success" ]; then
+            SEVERIDAD="alta"
+            TITULO="[Incidente] Rollback automático en producción: ${VERSION} → ${ANTERIOR}"
+            SINTOMA="El deploy de \`${VERSION}\` falló después de desplegar la API (Web, Keycloak o smoke test). El pipeline volvió producción a \`${ANTERIOR}\` y el rollback terminó bien."
+            CONTENCION="${HORA}: rollback automático a \`${ANTERIOR}\` (BL-622), con health check y versión confirmada."
+          else
+            SEVERIDAD="crítica"
+            TITULO="[Incidente] Falló el rollback automático de ${VERSION} en producción"
+            SINTOMA="El deploy de \`${VERSION}\` falló después de desplegar la API y **el rollback automático a \`${ANTERIOR}\` también falló**. Producción puede estar caída o con versiones mezcladas."
+            CONTENCION="Pendiente: revertir a mano ya (docs/RELEASE.md, 3.1)."
+          fi
+          cat > "$RUNNER_TEMP/incidente.md" <<TEXTO
+          <!-- Abierto por el pipeline (BL-623). No pegar valores de secretos, tokens ni datos personales: el repositorio es público. -->
+
+          ## Declaración
+
+          | Campo | Valor |
+          | --- | --- |
+          | Hora de detección | ${HORA} |
+          | Detectado por | Pipeline de release |
+          | Cómo se detectó | Rollback automático de producción (CI/CD BistroLink) |
+          | Entorno | production |
+          | Severidad inicial | ${SEVERIDAD} |
+          | Coordina | |
+          | Ejecuta | |
+
+          ## Síntoma
+
+          ${SINTOMA}
+
+          - Versión que falló: \`${VERSION}\`
+          - Versión anterior (destino del rollback): \`${ANTERIOR}\`
+          - Corrida: ${CORRIDA}
+
+          ## Alcance
+
+          - **Establecimientos afectados:**
+          - **Datos afectados:**
+          - **Desde cuándo:** ${HORA}
+
+          ## Contención
+
+          ${CONTENCION}
+
+          ## Evidencia conservada
+
+          - Logs del job «Deploy producción» en la corrida.
+
+          ## Comunicación
+
+          - ${HORA}: mail automático al equipo.
+
+          ## Cierre
+
+          - [ ] Causa contenida y servicio normal
+          - [ ] Corrección de fondo en un PR o ticket:
+          - [ ] Severidad final:
+          - [ ] Análisis de causa raíz agendado para la retrospectiva
+          - [ ] Registrado en el ticket de Linear del incidente
+          TEXTO
+          sed -i 's/^          //' "$RUNNER_TEMP/incidente.md"
+          URL=$(gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITULO" --label incidente --body-file "$RUNNER_TEMP/incidente.md")
+          echo "Issue de incidente: $URL"
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "### 🚨 Issue de incidente: $URL" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Armar el correo
+        id: correo
+        if: ${{ !cancelled() }}
+        env:
+          ISSUE_URL: ${{ steps.issue.outputs.url }}
+          EQUIPO_CORREOS: ${{ secrets.DASHBOARD_EMAIL_RECIPIENTS }}
+          MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
+        run: |
+          set -euo pipefail
+          if [ "$RESULTADO" = "success" ]; then
+            ASUNTO="[BistroLink] Rollback automático en producción: ${VERSION} → ${ANTERIOR}"
+            TEXTO="El deploy de <b>${VERSION}</b> falló después de desplegar la API y producción <b>volvió a ${ANTERIOR}</b>. El rollback terminó bien."
+            ACCION="Revisar la corrida, completar el issue de incidente y planificar la corrección (hotfix o próxima versión)."
+          else
+            ASUNTO="[BistroLink] ACCIÓN INMEDIATA: falló el rollback automático de ${VERSION}"
+            TEXTO="El deploy de <b>${VERSION}</b> falló y <b>el rollback automático a ${ANTERIOR} también falló</b>. Producción puede estar caída."
+            ACCION="Revertir a mano ya: Actions → CI/CD BistroLink → Run workflow → production → ${ANTERIOR} (docs/RELEASE.md, 3.1)."
+          fi
+          ISSUE="${ISSUE_URL:-no se pudo abrir: crearlo a mano con la plantilla «Incidente»}"
+          cat > "$RUNNER_TEMP/aviso-rollback.html" <<HTML
+          <p>${TEXTO}</p>
+          <p><b>Qué hacer:</b> ${ACCION}</p>
+          <ul>
+            <li>Corrida: <a href="${CORRIDA}">${CORRIDA}</a></li>
+            <li>Issue de incidente: ${ISSUE}</li>
+          </ul>
+          <p>Mail automático del pipeline de release (BL-623).</p>
+          HTML
+          {
+            echo "to=${EQUIPO_CORREOS}"
+            echo "from=BistroLink CI <${MAIL_USERNAME}>"
+            echo "subject=${ASUNTO}"
+            echo "body_path=$RUNNER_TEMP/aviso-rollback.html"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Enviar el correo
+        if: ${{ !cancelled() && steps.correo.outcome == 'success' }}
+        env:
+          MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
+          MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
+          EMAIL_TO: ${{ steps.correo.outputs.to }}
+          EMAIL_FROM: ${{ steps.correo.outputs.from }}
+          EMAIL_SUBJECT: ${{ steps.correo.outputs.subject }}
+          EMAIL_BODY_PATH: ${{ steps.correo.outputs.body_path }}
+        run: node scripts/dashboards/enviar-email.mjs

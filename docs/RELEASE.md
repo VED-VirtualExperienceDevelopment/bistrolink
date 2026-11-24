@@ -7,7 +7,7 @@ Cómo se pasa una versión de `develop` a producción, cómo se corrige un error
 | 1.0 | 07/11/2026 | Primera versión: release por tag, aprobación, smoke test, rollback y hotfix (BL-220). |
 | 1.1 | 21/11/2026 | «Después» del release: actualizar el tag de la contingencia en Render (BL-217). |
 | 1.2 | 22/11/2026 | Después de un release o un rollback de producción: publicar los dashboards para actualizar las métricas DORA (BL-221). |
-| 1.3 | 24/11/2026 | Pasos automáticos del pipeline (BL-617): rollback automático de producción si falla el deploy, PR de `render.yaml` y «Publicar dashboards» después del release, y Test Runs de Kiwi con el nombre del tag. |
+| 1.3 | 24/11/2026 | Pasos automáticos del pipeline (BL-617): rollback automático de producción si falla el deploy, PR de `render.yaml` y «Publicar dashboards» después del release, y Test Runs de Kiwi con el nombre del tag. Aviso por mail e issue de incidente cuando hay rollback automático (BL-623). |
 
 ---
 
@@ -113,6 +113,8 @@ Vuelve los tres servicios al **último GitHub Release que no es pre-release**, c
 **No** revierte si falló el respaldo (no se tocó nada), si fallaron las migraciones (Railway dejó la versión anterior) ni si el smoke test pasó y falló algo posterior. Staging no tiene rollback automático.
 
 Si el *Summary* dice que **el rollback automático también falló**, revertir a mano ya (3.1).
+
+Cuando se intenta el rollback automático, el pipeline **abre un issue de incidente** (plantilla «Incidente», etiqueta `incidente`, se sincroniza a Linear) y **manda un mail al equipo** con el resumen y el link al issue. Severidad alta si el rollback salió bien; crítica si también falló (asunto «ACCIÓN INMEDIATA»). El issue es la bitácora: seguir `runbooks/respuesta-a-incidentes.md`.
 
 ### 3.1 Producción
 
