@@ -2397,6 +2397,146 @@ jobs:
           gh release create "$VERSION" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes --title "$VERSION" $EXTRA
           echo "Release $VERSION publicado."
 
+      # ── BL-619: PR de la contingencia en Render con el tag nuevo ─────────
+      # Después de un release final (vX.Y.Z, nunca un -rc.N) que pasó el smoke
+      # test, abre un PR a develop que cambia en render.yaml las imágenes de
+      # API y Keycloak y NEXT_PUBLIC_APP_VERSION al tag nuevo
+      # (docs/runbooks/contingencia-render.md, sección 7). El merge lo hace
+      # una persona después de revisarlo.
+      # - Usa la GitHub App «BistroLink Release Bot» (BL-618): un PR abierto
+      #   con GITHUB_TOKEN no dispara el CI y los checks obligatorios de
+      #   develop quedarían esperando. Sus secrets son del environment
+      #   production: solo este job los puede leer.
+      # - El token se pide con permisos mínimos (contenido y PRs) y dura 1 h.
+      # - Si algo falla, el deploy no cambia: queda el aviso en el Summary
+      #   para abrir el PR a mano.
+      - name: Token de la GitHub App (PR de Render)
+        id: token_bot
+        if: ${{ !contains(github.ref_name, '-') }}
+        continue-on-error: true
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.RELEASE_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Bajar develop (PR de Render)
+        if: ${{ !contains(github.ref_name, '-') && steps.token_bot.outcome == 'success' }}
+        continue-on-error: true
+        uses: actions/checkout@v7
+        with:
+          ref: develop
+          path: render-pr
+          token: ${{ steps.token_bot.outputs.token }}
+
+      - name: Abrir el PR de render.yaml
+        id: pr_render
+        if: ${{ !contains(github.ref_name, '-') && steps.token_bot.outcome == 'success' }}
+        continue-on-error: true
+        working-directory: render-pr
+        env:
+          GH_TOKEN: ${{ steps.token_bot.outputs.token }}
+          APP_SLUG: ${{ steps.token_bot.outputs.app-slug }}
+        run: |
+          set -euo pipefail
+          # Versión que tiene hoy render.yaml (la de la imagen de la API).
+          ANTERIOR=$(grep -oE 'bistrolink-api:v[0-9]+\.[0-9]+\.[0-9]+' render.yaml | head -n 1 | cut -d: -f2 || true)
+          if [ -z "$ANTERIOR" ]; then
+            echo "::error::No se encontró la versión de la imagen de la API en render.yaml."
+            exit 1
+          fi
+          if [ "$ANTERIOR" = "$VERSION" ]; then
+            echo "render.yaml ya tiene $VERSION: no hace falta PR."
+            echo "resultado=sin-cambios" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Tienen que ser exactamente 3: imagen de la API, imagen de Keycloak
+          # y NEXT_PUBLIC_APP_VERSION. Si hay otra cantidad, el archivo cambió
+          # y no se toca a ciegas.
+          CANTIDAD=$(grep -oF "$ANTERIOR" render.yaml | wc -l)
+          if [ "$CANTIDAD" -ne 3 ]; then
+            echo "::error::render.yaml tiene $CANTIDAD apariciones de $ANTERIOR (se esperaban 3). Abrir el PR a mano."
+            exit 1
+          fi
+
+          RAMA="chore/BL-217-render-${VERSION}"
+          if git ls-remote --exit-code --heads origin "$RAMA" > /dev/null 2>&1; then
+            echo "::warning::La rama $RAMA ya existe: no se abre otro PR."
+            echo "resultado=ya-existe" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          sed -i "s/${ANTERIOR//./\\.}/${VERSION}/g" render.yaml
+          CAMBIADAS=$(git diff --numstat render.yaml | awk '{print $1}')
+          if [ "$CAMBIADAS" != "3" ]; then
+            echo "::error::El cambio en render.yaml no son 3 líneas ($CAMBIADAS). No se abre el PR."
+            exit 1
+          fi
+
+          # Commits a nombre del bot (usuario «<slug>[bot]» de GitHub).
+          BOT_ID=$(gh api "/users/${APP_SLUG}%5Bbot%5D" --jq .id)
+          git config user.name "${APP_SLUG}[bot]"
+          git config user.email "${BOT_ID}+${APP_SLUG}[bot]@users.noreply.github.com"
+          git switch -c "$RAMA"
+          git add render.yaml
+          git commit -m "chore(BL-217): contingencia en render con las imagenes de ${VERSION}"
+          git push origin "$RAMA"
+
+          CUERPO=$(cat <<TEXTO
+          ## Qué cambia
+
+          Después del release \`${VERSION}\`, la contingencia en Render pasa a usar las imágenes de esa versión (docs/RELEASE.md, «Después», y docs/runbooks/contingencia-render.md, sección 7).
+
+          | Archivo | Cambio |
+          | ------- | ------ |
+          | \`render.yaml\` | Imagen de la API \`${ANTERIOR}\` → \`${VERSION}\` |
+          | \`render.yaml\` | Imagen de Keycloak \`${ANTERIOR}\` → \`${VERSION}\` |
+          | \`render.yaml\` | \`NEXT_PUBLIC_APP_VERSION\` de la Web \`${ANTERIOR}\` → \`${VERSION}\` |
+
+          ## Cómo revisar
+
+          - El diff muestra solo esas 3 líneas.
+          - Las imágenes \`${VERSION}\` las publicó la corrida del tag: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+          - Después del merge, Render sincroniza el Blueprint solo. Comprobar en Render *Settings → Image* de API y Auth que quedó \`${VERSION}\`.
+
+          PR abierto por el pipeline de release (BL-619). Los servicios de Render siguen suspendidos: el cambio no despliega nada.
+          TEXTO
+          )
+          URL=$(gh pr create --base develop --head "$RAMA" \
+            --title "chore(BL-217): contingencia en render con las imagenes de ${VERSION}" \
+            --body "$(echo "$CUERPO" | sed 's/^          //')")
+          echo "PR abierto: $URL"
+          echo "resultado=abierto" >> "$GITHUB_OUTPUT"
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+
+      - name: Resumen del PR de Render
+        if: ${{ !contains(github.ref_name, '-') }}
+        env:
+          TOKEN: ${{ steps.token_bot.outcome }}
+          PASO: ${{ steps.pr_render.outcome }}
+          RESULTADO: ${{ steps.pr_render.outputs.resultado }}
+          URL: ${{ steps.pr_render.outputs.url }}
+        run: |
+          {
+            echo "## 🔁 Contingencia en Render"
+            echo
+            if [ "$RESULTADO" = "abierto" ]; then
+              echo "Se abrió el PR que pasa \`render.yaml\` a \`$VERSION\`: $URL. Falta revisarlo y mergearlo."
+            elif [ "$RESULTADO" = "sin-cambios" ]; then
+              echo "\`render.yaml\` ya tenía \`$VERSION\`: no hizo falta PR."
+            elif [ "$RESULTADO" = "ya-existe" ]; then
+              echo "Ya existía la rama del PR de \`$VERSION\`: revisar el PR abierto."
+            else
+              echo "⚠️ No se pudo abrir el PR automático (token: $TOKEN, PR: $PASO). Abrirlo a mano: docs/runbooks/contingencia-render.md, sección 7."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$RESULTADO" != "abierto" ] && [ "$RESULTADO" != "sin-cambios" ] && [ "$RESULTADO" != "ya-existe" ]; then
+            echo "::warning::No se pudo abrir el PR de render.yaml: abrirlo a mano (contingencia-render.md, sección 7)."
+          fi
+
       # ── BL-622: rollback automático de production ────────────────────────
       # Si algo falla DESPUÉS de mandar a desplegar la API y ANTES de que pase
       # el smoke test, production puede haber quedado con la versión nueva
