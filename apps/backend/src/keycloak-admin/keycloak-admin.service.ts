@@ -693,7 +693,7 @@ export class KeycloakAdminService {
       }
     } catch (error) {
       this.logger.error(
-        `No se pudieron devolver los roles ${nombres} al usuario ${keycloakId}: ${error instanceof Error ? error.message : String(error)}`,
+        `No se pudieron devolver los roles ${nombres} al usuario ${keycloakId}: ${error instanceof Error ? error.message : 'error sin detalle'}`,
       );
     }
   }
