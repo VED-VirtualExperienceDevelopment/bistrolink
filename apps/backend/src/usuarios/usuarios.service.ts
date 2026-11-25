@@ -608,7 +608,7 @@ export class UsuariosService {
     usuarioId: string,
     dto: UpdateUsuarioDto,
   ) {
-    const { actualizado, rolAnterior, cambiaRol, camposPerfil } =
+    const { actualizado, keycloakId, rolAnterior, cambiaRol, camposPerfil } =
       await this.tenantPrisma.runInTenantContext(
         tenantId,
         async (tx) => {
@@ -650,7 +650,8 @@ export class UsuariosService {
             );
           }
           if (cambiaRol) {
-            await this.keycloakAdmin.assignRealmRole(
+            // BL-615: reemplaza el rol, no lo suma (POST solo agregaba).
+            await this.keycloakAdmin.reemplazarRolDelLocal(
               usuario.keycloakId,
               dto.rol as string,
             );
@@ -670,6 +671,7 @@ export class UsuariosService {
 
           return {
             actualizado,
+            keycloakId: usuario.keycloakId,
             rolAnterior: usuario.rol,
             cambiaRol,
             camposPerfil,
@@ -682,12 +684,16 @@ export class UsuariosService {
     // fuera de la transacción, para no loguear un cambio que terminó en
     // rollback si algo posterior a esta línea fallara.
     if (cambiaRol) {
+      // BL-615: el refresh token viejo trae el rol anterior; se cierran las
+      // sesiones para que el próximo ingreso tome el rol nuevo. No lanza: si
+      // falla, el access token vigente vence solo (15 min, BL-266).
+      const sesionesCerradas = await this.keycloakAdmin.logoutUser(keycloakId);
       this.auditLog.registrar({
         action: AuditAction.USUARIO_ROL_MODIFICADO,
         tenantId,
         actorKeycloakId,
         targetUsuarioId: usuarioId,
-        detalle: { rolAnterior, rolNuevo: actualizado.rol },
+        detalle: { rolAnterior, rolNuevo: actualizado.rol, sesionesCerradas },
       });
     }
     // BL-366: qué campos cambiaron, sin los valores (son datos personales).
