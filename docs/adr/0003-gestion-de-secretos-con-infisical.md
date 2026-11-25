@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 | --- | --- |
-| Estado | Aceptada; implementación en curso |
+| Estado | Aceptada |
 | Fecha | 30/09/2026 |
 | Referencias | Anexo 4 §1.2.5 (RNF.02); Anexo 9 §2.4 y §2.5; BL-227, BL-235 a BL-239 |
 | Autores | E. Arenas, V. Couto, D. Silvera |
@@ -21,7 +21,7 @@ Las credenciales de staging (bases, Keycloak, AWS, proveedores de pago y factura
 - solo las **credenciales** van a Infisical. La configuración no sensible (nombres de buckets, regiones, URLs públicas) y las referencias entre servicios de Railway se quedan en Railway;
 - el acceso es por rol: al rotar el rol de Security Engineer se cambian los permisos en Infisical.
 
-El procedimiento está en el runbook `docs/runbooks/gestion-de-secretos.md`, con el inventario de secretos y su rotación por proveedor.
+El procedimiento, con el inventario de secretos y su rotación por proveedor, es un documento interno del equipo: no se publica en este repositorio.
 
 ## Alternativas consideradas
 
@@ -36,4 +36,11 @@ El procedimiento está en el runbook `docs/runbooks/gestion-de-secretos.md`, con
 - Un solo lugar para cargar, rotar y auditar credenciales, con registro de quién leyó o cambió cada una.
 - Cumple una práctica de OWASP ASVS nivel 2 (gestor de secretos), por encima del nivel 1 comprometido.
 - Agrega un proveedor externo. Si Infisical no está disponible, los servicios siguen con los últimos valores sincronizados; una rotación urgente sigue el procedimiento manual del runbook.
-- Mientras la sincronización no esté activa (BL-237), las variables nuevas se siguen cargando en Railway, y hay que pasarlas a Infisical al activarla.
+- La sincronización está activa (BL-237). El plan gratuito permite hasta 10 sincronizaciones: cuando no alcanzan, los valores se copian a mano desde Infisical al destino y la excepción se registra en el ticket (BL-618).
+
+## Control de versiones
+
+| Versión | Fecha | Modificación |
+| --- | --- | --- |
+| 1.0 | 31/10/2026 | Versión inicial (BL-446). |
+| 1.1 | 24/11/2026 | Aceptada con la implementación terminada: la sincronización está activa y se documenta la excepción por el límite del plan. El procedimiento de secretos queda como documento interno. |
