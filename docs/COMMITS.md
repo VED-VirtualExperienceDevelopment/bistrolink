@@ -1,5 +1,14 @@
 # BistroLink — Guía de commits
 
+## Control de versiones
+
+| Versión | Fecha | Modificación |
+| --- | --- | --- |
+| 1.0 | 24/06/2026 | Versión inicial: `npm run commit`, `npm run sync` y deploy selectivo a staging (BL-22). |
+| 1.1 | 24/11/2026 | Pipeline actualizado: tests de integración, Trivy en lugar de Snyk (ADR 0005), Lighthouse, E2E y deploy a producción con rollback automático. `keycloak/**` y los `package*.json` también despliegan. |
+
+---
+
 ## Requisitos
 
 - Git Bash (recomendado en Windows) o WSL
@@ -135,18 +144,26 @@ cat ~/.ssh/id_ed25519.pub
 Una vez pusheado el PR, GitHub Actions corre automáticamente:
 
 ```
-PR abierto
+PR o push a develop
     ├── 🔍 Lint (ESLint + Prettier)
     ├── 🧪 Tests unitarios (Jest)
     ├── 🤝 Tests de contrato (PactJS)
+    ├── 🔗 Tests de integración (Postgres + Keycloak)
     ├── 🔐 Secretos (Gitleaks)
     ├── 🛡️  SAST (CodeQL)
     ├── 📊 SAST (SonarCloud)
-    └── 📦 Dependencias (Snyk)
-            └── 🐳 Build + Trivy
-                    └── 🚀 Deploy staging (solo en develop)
-                            └── 🎭 E2E Playwright
+    └── 📦 Dependencias (Trivy)
+            └── 🐳 Build + escaneo de imágenes (Trivy)
+                    └── 🚀 Deploy staging (solo en push a develop)
+                            ├── 🔦 Lighthouse
+                            └── 🎭 E2E Playwright (informativo en develop)
+
+Tag vX.Y.Z sobre main
+    └── 🏁 Deploy producción (aprobación manual)
+            └── Rollback automático si falla el smoke test
 ```
+
+El detalle de cada job está en el [README principal](../README.md#cicd) y el de producción en [RELEASE.md](RELEASE.md).
 
 El merge solo está disponible cuando todos los checks pasan.
 
@@ -162,6 +179,8 @@ El **deploy a staging en Railway** es selectivo:
 |--------|--------------------|--------------------|
 | `apps/**` | ✅ Sí | ✅ Sí |
 | `packages/**` | ✅ Sí | ✅ Sí |
+| `keycloak/**` | ✅ Sí | ✅ Sí |
+| `package.json` y `package-lock.json` | ✅ Sí | ✅ Sí |
 | `docs/**` | ✅ Sí | ❌ No |
 | `scripts/**` | ✅ Sí | ❌ No |
 | `.github/workflows/**` | ✅ Sí | ❌ No |
