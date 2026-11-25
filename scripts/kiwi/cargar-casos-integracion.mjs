@@ -1253,6 +1253,12 @@ const DATOS_INTEGRACION = {
     priority: "P2",
     tags: ["BL-613", "configuracion", "auditoria", "menu-publico"],
   }),
+  // BL-615: cambiar el rol reemplaza el de Keycloak, no lo suma.
+  249: usuarios("BL-615", {
+    category: "Seguridad",
+    priority: "P1",
+    tags: ["seguridad", "roles"],
+  }),
 };
 /**
  * BL-435: datos de los E2E TC-E-017 en adelante, con los criterios de
