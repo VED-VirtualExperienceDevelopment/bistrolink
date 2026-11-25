@@ -1892,3 +1892,94 @@ describe('Gestión de usuarios (HU-013) - desbloquear (BL-371)', () => {
     },
   );
 });
+
+// ── BL-615: cambiar el rol reemplaza el de Keycloak, no lo suma ─────────────
+// Antes, PATCH /usuarios/:id hacía POST role-mappings y solo agregaba el rol
+// nuevo: un Admin bajado a Mozo seguía con ADMIN en el token.
+describe('Gestión de usuarios (HU-013) - cambio de rol en Keycloak (BL-615)', () => {
+  let app: INestApplication;
+  let prisma: PrismaClient;
+  let creado: { id: string; keycloakId: string; tenantId: string } | undefined;
+
+  const itConAdmin = ADMIN_PASS ? it : it.skip;
+
+  async function rolesEnKeycloak(keycloakId: string): Promise<string[]> {
+    const res = await fetch(
+      `${KEYCLOAK_URL}/admin/realms/${REALM}/users/${keycloakId}/role-mappings/realm`,
+      { headers: { Authorization: `Bearer ${await getMasterAdminToken()}` } },
+    );
+    return ((await res.json()) as { name: string }[]).map((r) => r.name);
+  }
+
+  beforeAll(async () => {
+    const moduleRef: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
+    app = moduleRef.createNestApplication();
+    await app.init();
+    prisma = new PrismaClient();
+  });
+
+  afterAll(async () => {
+    if (creado) {
+      const { keycloakId, tenantId } = creado;
+      await borrarUsuarioKeycloak(keycloakId).catch(() => undefined);
+      await prisma
+        .$transaction(async (tx) => {
+          await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`;
+          await tx.usuario.deleteMany({ where: { keycloakId } });
+        })
+        .catch(() => undefined); // best-effort
+    }
+    await prisma.$disconnect();
+    await app.close();
+  });
+
+  itConAdmin(
+    '[TC-I-249] Usuarios: al bajar un Administrador a Mozo, Keycloak le quita ADMIN y le deja solo MOZO (y al revés al volver a subirlo)',
+    async () => {
+      const token = await getToken(ADMIN_USER, ADMIN_PASS as string);
+      const username = `admin-rol-${Date.now()}`;
+
+      const alta = await request(app.getHttpServer())
+        .post('/usuarios')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          username,
+          email: `${username}@bistrolink.dev`,
+          nombre: 'Admin',
+          apellido: 'Prueba',
+          rol: 'ADMIN',
+          restauranteId: RESTAURANTE_TENANT_A,
+        })
+        .expect(201);
+      creado = {
+        id: alta.body.id,
+        keycloakId: alta.body.keycloakId,
+        tenantId: alta.body.tenantId,
+      };
+      expect(await rolesEnKeycloak(creado.keycloakId)).toContain('ADMIN');
+
+      const bajado = await request(app.getHttpServer())
+        .patch(`/usuarios/${creado.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ rol: 'MOZO' })
+        .expect(200);
+      expect(bajado.body.rol).toBe('MOZO');
+      const comoMozo = await rolesEnKeycloak(creado.keycloakId);
+      expect(comoMozo).toContain('MOZO');
+      expect(comoMozo).not.toContain('ADMIN');
+      // Los roles que no son del local siguen (default-roles del realm).
+      expect(comoMozo.some((r) => r.startsWith('default-roles'))).toBe(true);
+
+      await request(app.getHttpServer())
+        .patch(`/usuarios/${creado.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ rol: 'ADMIN' })
+        .expect(200);
+      const comoAdmin = await rolesEnKeycloak(creado.keycloakId);
+      expect(comoAdmin).toContain('ADMIN');
+      expect(comoAdmin).not.toContain('MOZO');
+    },
+  );
+});
