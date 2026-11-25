@@ -267,6 +267,148 @@ describe('KeycloakAdminService', () => {
     });
   });
 
+  // BL-615 (HU-013): cambiar el rol reemplaza el del local, no lo suma.
+  describe('reemplazarRolDelLocal', () => {
+    const ADMIN = { id: 'rol-admin', name: 'ADMIN' };
+    const MOZO = { id: 'rol-mozo', name: 'MOZO' };
+    const POR_DEFECTO = { id: 'rol-default', name: 'default-roles-bistrolink' };
+    const OFFLINE = { id: 'rol-offline', name: 'offline_access' };
+
+    /** Responde por ruta y método; el token, siempre. */
+    function keycloak(
+      respuestas: Record<
+        string,
+        { ok: boolean; status?: number; json?: unknown }
+      >,
+    ) {
+      fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+        if (url.includes('/protocol/openid-connect/token')) {
+          return { ok: true, json: async () => ({ access_token: 'token' }) };
+        }
+        const ruta = url.replace(/^.*\/admin\/realms\/[^/]+/, '');
+        const r = respuestas[`${init?.method ?? 'GET'} ${ruta}`];
+        if (!r)
+          throw new Error(
+            `sin respuesta para ${init?.method ?? 'GET'} ${ruta}`,
+          );
+        return {
+          ok: r.ok,
+          status: r.status ?? (r.ok ? 200 : 500),
+          json: async () => r.json,
+          text: async () => (r.ok ? '' : 'error'),
+        };
+      });
+    }
+
+    const llamadas = () =>
+      fetchMock.mock.calls
+        .filter(([url]) => !String(url).includes('/protocol/'))
+        .map(([url, init]) => ({
+          ruta: `${init?.method ?? 'GET'} ${String(url).replace(/^.*\/admin\/realms\/[^/]+/, '')}`,
+          body: init?.body ? JSON.parse(init.body as string) : undefined,
+        }));
+
+    it('[TC-U-708] BL-615: al bajar un Admin a Mozo quita ADMIN, agrega MOZO y no toca los roles que no son del local', async () => {
+      keycloak({
+        'GET /users/kc-1/role-mappings/realm': {
+          ok: true,
+          json: [POR_DEFECTO, OFFLINE, ADMIN],
+        },
+        'DELETE /users/kc-1/role-mappings/realm': { ok: true },
+        'GET /roles/MOZO': { ok: true, json: MOZO },
+        'POST /users/kc-1/role-mappings/realm': { ok: true },
+      });
+
+      await service.reemplazarRolDelLocal('kc-1', 'MOZO');
+
+      expect(llamadas()).toEqual([
+        { ruta: 'GET /users/kc-1/role-mappings/realm', body: undefined },
+        { ruta: 'DELETE /users/kc-1/role-mappings/realm', body: [ADMIN] },
+        { ruta: 'GET /roles/MOZO', body: undefined },
+        { ruta: 'POST /users/kc-1/role-mappings/realm', body: [MOZO] },
+      ]);
+    });
+
+    it('[TC-U-709] BL-615: limpia un usuario que ya quedó con los dos roles, y si ya tiene el nuevo no lo vuelve a agregar', async () => {
+      keycloak({
+        'GET /users/kc-1/role-mappings/realm': {
+          ok: true,
+          json: [POR_DEFECTO, ADMIN, MOZO],
+        },
+        'DELETE /users/kc-1/role-mappings/realm': { ok: true },
+      });
+
+      await service.reemplazarRolDelLocal('kc-1', 'MOZO');
+
+      expect(llamadas().map((l) => l.ruta)).toEqual([
+        'GET /users/kc-1/role-mappings/realm',
+        'DELETE /users/kc-1/role-mappings/realm',
+      ]);
+      expect(llamadas()[1].body).toEqual([ADMIN]);
+    });
+
+    it('[TC-U-710] [S] BL-615: si no se puede quitar el rol anterior, lanza sin agregar el nuevo', async () => {
+      keycloak({
+        'GET /users/kc-1/role-mappings/realm': { ok: true, json: [ADMIN] },
+        'DELETE /users/kc-1/role-mappings/realm': { ok: false, status: 403 },
+      });
+
+      await expect(
+        service.reemplazarRolDelLocal('kc-1', 'MOZO'),
+      ).rejects.toThrow(InternalServerErrorException);
+      expect(llamadas().map((l) => l.ruta)).not.toContain(
+        'POST /users/kc-1/role-mappings/realm',
+      );
+    });
+
+    it('[TC-U-711] BL-615: si no se puede agregar el nuevo, le devuelve el rol quitado y lanza (Postgres vuelve atrás y queda todo como antes)', async () => {
+      keycloak({
+        'GET /users/kc-1/role-mappings/realm': { ok: true, json: [ADMIN] },
+        'DELETE /users/kc-1/role-mappings/realm': { ok: true },
+        'GET /roles/MOZO': { ok: false, status: 503 },
+        'POST /users/kc-1/role-mappings/realm': { ok: true },
+      });
+
+      await expect(
+        service.reemplazarRolDelLocal('kc-1', 'MOZO'),
+      ).rejects.toThrow(/503/);
+      expect(llamadas().at(-1)).toEqual({
+        ruta: 'POST /users/kc-1/role-mappings/realm',
+        body: [ADMIN],
+      });
+    });
+    it('[TC-U-712] BL-615: si tampoco puede devolver el rol quitado, lanza el error original y deja registro para que un Administrador lo asigne', async () => {
+      keycloak({
+        'GET /users/kc-1/role-mappings/realm': { ok: true, json: [ADMIN] },
+        'DELETE /users/kc-1/role-mappings/realm': { ok: true },
+        'GET /roles/MOZO': { ok: false, status: 503 },
+        'POST /users/kc-1/role-mappings/realm': { ok: false, status: 500 },
+      });
+
+      await expect(
+        service.reemplazarRolDelLocal('kc-1', 'MOZO'),
+      ).rejects.toThrow(/503/);
+      const logs = loggerErrorSpy.mock.calls.flat().join(' ');
+      expect(logs).toContain('queda sin rol del local');
+      expect(logs).toContain('kc-1');
+
+      // Y si Keycloak ni responde a la devolución, tampoco tapa el error.
+      loggerErrorSpy.mockClear();
+      fetchMock.mockReset();
+      keycloak({
+        'GET /users/kc-2/role-mappings/realm': { ok: true, json: [ADMIN] },
+        'DELETE /users/kc-2/role-mappings/realm': { ok: true },
+        'GET /roles/MOZO': { ok: false, status: 503 },
+      });
+      await expect(
+        service.reemplazarRolDelLocal('kc-2', 'MOZO'),
+      ).rejects.toThrow(/503/);
+      expect(loggerErrorSpy.mock.calls.flat().join(' ')).toContain(
+        'No se pudieron devolver los roles ADMIN al usuario kc-2',
+      );
+    });
+  });
+
   describe('createUser - caso sin header Location', () => {
     it('[TC-U-014] lanza InternalServerErrorException y loguea el error si Keycloak responde 201 sin header Location', async () => {
       mockTokenRequest();

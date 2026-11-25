@@ -70,6 +70,18 @@ export interface PerfilKeycloak {
  * 404 (recurso inexistente) son indistinguibles en producción.
  */
 // BL-368: eventos LOGIN. Keycloak los guarda 90 días (eventsExpiration).
+/**
+ * BL-615: roles del local. Se excluyen entre sí: un usuario del local tiene
+ * uno solo. Los demás roles de realm (default-roles-bistrolink,
+ * offline_access, PLATAFORMA) no son del local y no se tocan al cambiarlo.
+ */
+export const ROLES_DEL_LOCAL = ['ADMIN', 'MOZO', 'COCINA'] as const;
+
+interface MapeoDeRol {
+  id: string;
+  name: string;
+}
+
 const DIAS_DE_EVENTOS = 90;
 const EVENTOS_POR_PAGINA = 500;
 const PAGINAS_DE_EVENTOS = 10;
@@ -584,6 +596,11 @@ export class KeycloakAdminService {
    * cocina, que tiene COCINA asignado en el alta (BL-163).
    */
   async rolesDeRealm(keycloakId: string): Promise<string[]> {
+    return (await this.mapeosDeRealm(keycloakId)).map((r) => r.name);
+  }
+
+  /** Roles de realm asignados directamente, con el id que pide el DELETE. */
+  private async mapeosDeRealm(keycloakId: string): Promise<MapeoDeRol[]> {
     const res = await this.adminFetch(
       `/users/${encodeURIComponent(keycloakId)}/role-mappings/realm`,
     );
@@ -598,7 +615,87 @@ export class KeycloakAdminService {
         `No se pudieron leer los roles del usuario en Keycloak: ${res.status} ${body}`,
       );
     }
-    return ((await res.json()) as { name: string }[]).map((r) => r.name);
+    return ((await res.json()) as MapeoDeRol[]).map(({ id, name }) => ({
+      id,
+      name,
+    }));
+  }
+
+  /**
+   * BL-615 (HU-013): deja al usuario con un solo rol del local, `rolNuevo`.
+   *
+   * assignRealmRole solo agrega (POST role-mappings): al bajar un Admin a
+   * Mozo quedaban los dos roles en Keycloak, y el token seguía trayendo
+   * ADMIN aunque Postgres dijera MOZO.
+   *
+   * Orden «cerrado ante fallas»: primero se quitan los otros roles del local
+   * (DELETE role-mappings) y después se agrega el nuevo. Si agregarlo falla,
+   * se intenta devolverle los roles quitados (la transacción de Postgres
+   * vuelve atrás y la fila sigue con el rol anterior) y se lanza. En ningún
+   * caso el usuario queda con dos roles del local.
+   */
+  async reemplazarRolDelLocal(
+    keycloakId: string,
+    rolNuevo: string,
+  ): Promise<void> {
+    const actuales = await this.mapeosDeRealm(keycloakId);
+    const delLocal = new Set<string>(ROLES_DEL_LOCAL);
+    const aQuitar = actuales.filter(
+      (r) => delLocal.has(r.name) && r.name !== rolNuevo,
+    );
+
+    if (aQuitar.length > 0) {
+      const res = await this.adminFetch(
+        `/users/${encodeURIComponent(keycloakId)}/role-mappings/realm`,
+        { method: 'DELETE', body: JSON.stringify(aQuitar) },
+      );
+      if (!res.ok) {
+        const body = await res.text();
+        this.logAndBuildError(
+          `No se pudieron quitar los roles ${aQuitar.map((r) => r.name).join(', ')} al usuario ${keycloakId}`,
+          res.status,
+          body,
+        );
+        throw new InternalServerErrorException(
+          `No se pudo quitar el rol anterior en Keycloak: ${res.status} ${body}`,
+        );
+      }
+    }
+
+    if (actuales.some((r) => r.name === rolNuevo)) return;
+    try {
+      await this.assignRealmRole(keycloakId, rolNuevo);
+    } catch (error) {
+      if (aQuitar.length > 0) {
+        await this.devolverRoles(keycloakId, aQuitar);
+      }
+      throw error;
+    }
+  }
+
+  /** Compensación de reemplazarRolDelLocal: no lanza, solo deja registro. */
+  private async devolverRoles(
+    keycloakId: string,
+    roles: MapeoDeRol[],
+  ): Promise<void> {
+    const nombres = roles.map((r) => r.name).join(', ');
+    try {
+      const res = await this.adminFetch(
+        `/users/${encodeURIComponent(keycloakId)}/role-mappings/realm`,
+        { method: 'POST', body: JSON.stringify(roles) },
+      );
+      if (!res.ok) {
+        this.logAndBuildError(
+          `No se pudieron devolver los roles ${nombres} al usuario ${keycloakId}: queda sin rol del local hasta que se lo asigne un Administrador`,
+          res.status,
+          await res.text(),
+        );
+      }
+    } catch (error) {
+      this.logger.error(
+        `No se pudieron devolver los roles ${nombres} al usuario ${keycloakId}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 
   /**
