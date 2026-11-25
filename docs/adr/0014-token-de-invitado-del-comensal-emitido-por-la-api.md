@@ -1,11 +1,11 @@
 # ADR 0014 — Token de invitado del comensal emitido por la API
 
-| Campo       | Valor                                                                                                                                    |
-| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| Estado      | Aceptada; implementada en staging (18/11/2026); el comensal técnico se retira con BL-581 (19/11/2026); producción con el próximo release |
-| Fecha       | 18/11/2026                                                                                                                               |
-| Referencias | HU-052 (BL-576: BL-577 a BL-582 y BL-584); BL-266; BL-271; BL-573; BL-574; RFC 9700 §2.4; ADR 0002; ADR 0003                             |
-| Autores     | E. Arenas, V. Couto, D. Silvera                                                                                                          |
+| Campo       | Valor                                                                                                                                      |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Estado      | Aceptada; implementada en staging (18/11/2026), sin el comensal técnico desde BL-581 (19/11/2026), en producción desde v0.6.0 (24/11/2026) |
+| Fecha       | 18/11/2026                                                                                                                                 |
+| Referencias | HU-052 (BL-576: BL-577 a BL-582 y BL-584); BL-266; BL-271; BL-573; BL-574; RFC 9700 §2.4; ADR 0002; ADR 0003                               |
+| Autores     | E. Arenas, V. Couto, D. Silvera                                                                                                            |
 
 ## Contexto
 
@@ -76,3 +76,4 @@ Los E2E confirmaron el problema antes de llegar a producción.
 | ------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1.0     | 18/11/2026 | Versión inicial (BL-584). Decisión implementada en BL-577 a BL-580 (PR #525 y #526).                                                              |
 | 1.1     | 19/11/2026 | Retiro del comensal técnico (BL-581) y cambio de orden: se adelanta al release, antes de validar en producción, con el motivo y lo que se pierde. |
+| 1.2     | 24/11/2026 | En producción desde el release v0.6.0, que incluye BL-577 a BL-581.                                                                               |
