@@ -1,7 +1,16 @@
 # Runbook: respaldo y restauración de bases de datos
 
 > **Historias:** HU-029 (BL-183) y HU-030 (BL-184, réplica en Cloudflare R2, sección 9) · **Relacionado:** BL-217 (contingencia Railway → Render)
-> **Última revisión:** 21/11/2026.
+> **Última revisión:** 24/11/2026.
+
+## Control de versiones
+
+| Versión | Fecha      | Modificación                                                                                                                                                    |
+| ------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1.0     | 29/09/2026 | Versión inicial: respaldo diario de las bases a S3 desde Railway, verificación y restauración (BL-183).                                                         |
+| 1.1     | 21/11/2026 | Réplica de los respaldos y CFE de producción en Cloudflare R2, sección 9 (BL-184).                                                                              |
+| 1.2     | 22/11/2026 | Se quitan referencias internas (BL-528).                                                                                                                        |
+| 1.3     | 24/11/2026 | Repositorio público: las credenciales se describen por su función, sin los nombres de los usuarios de IAM, de los tokens de R2 ni de las carpetas de Infisical. |
 
 ## 1. Qué se respalda y por qué
 
@@ -24,7 +33,7 @@ flowchart LR
     BK -- "pg_dump (red privada)" --> DB1
     BK -- "pg_dump (red privada)" --> DB2
   end
-  BK -- "PutObject<br/>usuario IAM bistrolink-backup-ci" --> S3[("S3: bistrolink-backups-staging<br/>daily/ 35 días · monthly/ 365 días")]
+  BK -- "PutObject<br/>usuario de IAM del respaldo" --> S3[("S3: bistrolink-backups-staging<br/>daily/ 35 días · monthly/ 365 días")]
   subgraph GH["GitHub Actions"]
     F["db-backup-check.yml<br/>diario 11:30 UTC"]
     R["db-backup-restore-test.yml<br/>mensual y manual"]
@@ -36,11 +45,11 @@ flowchart LR
 
 **Decisión: el respaldo corre dentro de Railway y no en GitHub Actions.** `keycloak-db` no tiene acceso público. Respaldarla desde GitHub habría obligado a exponerla a internet, y es la base más sensible (credenciales de todos los establecimientos). El servicio `db-backup` usa la red privada del proyecto, así que **ninguna base se expone para respaldarse**. GitHub conserva la parte de control, que no necesita tocar las bases: el chequeo de frescura y la verificación de restauración leen solo S3.
 
-| Componente                    | Dónde                  | Frecuencia                                 | Credenciales                                                |
-| ----------------------------- | ---------------------- | ------------------------------------------ | ----------------------------------------------------------- |
-| `db-backup` (`infra/backup/`) | Railway, servicio cron | Diario, 06:00 UTC (03:00 Uruguay)          | Variables del servicio (usuario IAM `bistrolink-backup-ci`) |
-| `db-backup-check.yml`         | GitHub Actions         | Diario, 11:30 UTC (08:30 Uruguay) y manual | Secrets `AWS_BACKUP_*`                                      |
-| `db-backup-restore-test.yml`  | GitHub Actions         | Día 2 de cada mes, 12:00 UTC, y manual     | Secrets `AWS_BACKUP_*`                                      |
+| Componente                    | Dónde                  | Frecuencia                                 | Credenciales                                         |
+| ----------------------------- | ---------------------- | ------------------------------------------ | ---------------------------------------------------- |
+| `db-backup` (`infra/backup/`) | Railway, servicio cron | Diario, 06:00 UTC (03:00 Uruguay)          | Variables del servicio (usuario de IAM del respaldo) |
+| `db-backup-check.yml`         | GitHub Actions         | Diario, 11:30 UTC (08:30 Uruguay) y manual | Secrets `AWS_BACKUP_*`                               |
+| `db-backup-restore-test.yml`  | GitHub Actions         | Día 2 de cada mes, 12:00 UTC, y manual     | Secrets `AWS_BACKUP_*`                               |
 
 ## 3. Estructura en S3
 
@@ -77,15 +86,15 @@ Se hace una vez por entorno. Estos son los pasos para staging; para producción 
 
 ### 4.2 Variables del servicio
 
-| Variable                  | Valor                                | Notas                                                 |
-| ------------------------- | ------------------------------------ | ----------------------------------------------------- |
-| `BACKUP_ENVIRONMENT`      | `staging`                            | Solo para etiquetar y loguear                         |
-| `S3_BUCKET`               | `bistrolink-backups-staging`         |                                                       |
-| `AWS_REGION`              | `us-east-2`                          |                                                       |
-| `AWS_ACCESS_KEY_ID`       | Access key de `bistrolink-backup-ci` | Marcar como **sealed** (oculta después de guardarla)  |
-| `AWS_SECRET_ACCESS_KEY`   | Secret key de `bistrolink-backup-ci` | Marcar como **sealed**                                |
-| `BISTROLINK_DATABASE_URL` | `${{bistrolink-db.DATABASE_URL}}`    | Variable de referencia: URL **interna** (red privada) |
-| `KEYCLOAK_DATABASE_URL`   | `${{keycloak-db.DATABASE_URL}}`      | Variable de referencia: URL **interna** (red privada) |
+| Variable                  | Valor                                      | Notas                                                 |
+| ------------------------- | ------------------------------------------ | ----------------------------------------------------- |
+| `BACKUP_ENVIRONMENT`      | `staging`                                  | Solo para etiquetar y loguear                         |
+| `S3_BUCKET`               | `bistrolink-backups-staging`               |                                                       |
+| `AWS_REGION`              | `us-east-2`                                |                                                       |
+| `AWS_ACCESS_KEY_ID`       | Access key del usuario de IAM del respaldo | Marcar como **sealed** (oculta después de guardarla)  |
+| `AWS_SECRET_ACCESS_KEY`   | Secret key del usuario de IAM del respaldo | Marcar como **sealed**                                |
+| `BISTROLINK_DATABASE_URL` | `${{bistrolink-db.DATABASE_URL}}`          | Variable de referencia: URL **interna** (red privada) |
+| `KEYCLOAK_DATABASE_URL`   | `${{keycloak-db.DATABASE_URL}}`            | Variable de referencia: URL **interna** (red privada) |
 
 - **No usar `DATABASE_PUBLIC_URL`:** el objetivo es no exponer las bases.
 - El nombre entre `${{ }}` tiene que coincidir exactamente con el nombre del servicio de base de datos en Railway.
@@ -144,13 +153,13 @@ Después de cada verificación, registrar el resultado en el ticket de Linear.
 | Log con `falta la variable de entorno …`     | Logs de `db-backup`              | Revisar las variables de la sección 4.2                                                                                                     |
 | Log con `no respondió después de 6 intentos` | Logs de `db-backup`              | Confirmar que las bases estén activas y que las variables de referencia apunten al nombre correcto del servicio                             |
 | `pg_dump: error: … server version mismatch`  | Logs de `db-backup`              | Railway actualizó PostgreSQL a una versión mayor: subir `PG_MAJOR` en `infra/backup/Dockerfile` y en `db-backup-restore-test.yml`           |
-| `AccessDenied` al subir a S3                 | Logs de `db-backup`              | Credenciales rotadas o política IAM modificada: revisar los permisos del usuario de respaldo                                                       |
+| `AccessDenied` al subir a S3                 | Logs de `db-backup`              | Credenciales rotadas o política IAM modificada: revisar los permisos del usuario de respaldo                                                |
 | Falla **verificación de restauración**       | Pestaña Actions                  | **Incidente de severidad alta:** existe un respaldo que no se puede usar. Revisar el informe, corregir y volver a verificar antes de cerrar |
 
 ## 8. Seguridad
 
 - **Las bases no se exponen:** el respaldo usa la red privada de Railway.
-- **Mínimo privilegio:** el usuario IAM `bistrolink-backup-ci` puede subir, leer y listar solo en los buckets de respaldo, y **no puede borrar**. Si su clave se filtra, no se pueden destruir los respaldos existentes; además el versionado conserva las versiones anteriores.
+- **Mínimo privilegio:** el usuario de IAM del respaldo puede subir, leer y listar solo en los buckets de respaldo, y **no puede borrar**. Si su clave se filtra, no se pueden destruir los respaldos existentes; además el versionado conserva las versiones anteriores.
 - **Secretos:** las credenciales viven en variables _sealed_ de Railway y en secrets de GitHub. El script nunca imprime las URLs de conexión.
 - **Cifrado:** en tránsito (HTTPS a S3) y en reposo (SSE-S3). Los buckets bloquean el acceso público.
 - **Mejora futura:** reemplazar las access keys permanentes por credenciales temporales (OIDC de GitHub a un rol de IAM).
@@ -183,11 +192,11 @@ flowchart LR
 
 ### 9.2 Credenciales (mínimo privilegio)
 
-| Quién                           | Credencial                             | Permisos                                                        | Dónde vive                                                                        |
-| ------------------------------- | -------------------------------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| `replica-r2-prod`, lectura S3   | Usuario de IAM `bistrolink-replica-r2` | `ListBucket` y `GetObject` en los dos buckets de origen         | Infisical `prod/replica-r2`, sincronizado al servicio de Railway                  |
-| `replica-r2-prod`, escritura R2 | Token de R2 `bistrolink-replica-prod`  | Object Read & Write, solo en los dos buckets de réplica         | Infisical `prod/replica-r2`, sincronizado al servicio de Railway                  |
-| Control diario (GitHub)         | Token de R2 `bistrolink-replica-check` | **Object Read only**, solo en `bistrolink-backups-prod-replica` | Infisical `staging/github` → secrets `R2_CHECK_*` y `R2_ENDPOINT` del repositorio |
+| Quién                           | Credencial                             | Permisos                                                        | Dónde vive                                                                         |
+| ------------------------------- | -------------------------------------- | --------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `replica-r2-prod`, lectura S3   | Usuario de IAM de la réplica           | `ListBucket` y `GetObject` en los dos buckets de origen         | Infisical (producción), sincronizado al servicio de Railway                        |
+| `replica-r2-prod`, escritura R2 | Token de R2 de escritura de la réplica | Object Read & Write, solo en los dos buckets de réplica         | Infisical (producción), sincronizado al servicio de Railway                        |
+| Control diario (GitHub)         | Token de R2 de solo lectura            | **Object Read only**, solo en `bistrolink-backups-prod-replica` | Infisical, sincronizado a los secrets `R2_CHECK_*` y `R2_ENDPOINT` del repositorio |
 
 El usuario de IAM de la réplica **no puede modificar ni borrar** los originales de S3. Los tokens de R2 no pueden crear ni borrar buckets.
 
@@ -206,7 +215,7 @@ Se hace una vez, en el entorno **production**.
    - **Cron Schedule:** `17 * * * *`, a los 17 minutos de cada hora (UTC). No coincide con el respaldo de las 06:00 UTC: el dump del día se replica a las 06:17 o, si el respaldo tarda, a las 07:17.
    - **Restart Policy:** **Never**. Una réplica fallida no se reintenta en bucle; la próxima hora vuelve a intentar y el control diario avisa si se atrasa.
 6. **Settings → Networking:** **sin** dominio público ni TCP Proxy.
-7. **Variables:** en Infisical, crear la **sync** de `prod/replica-r2` al servicio `replica-r2-prod` de Railway (entorno production). No cargar valores a mano en Railway. Son las 10 variables que lista `infra/replica-r2/replica.sh`.
+7. **Variables:** en Infisical, crear la **sync** de la carpeta de la réplica (producción) al servicio `replica-r2-prod` de Railway (entorno production). No cargar valores a mano en Railway. Son las 10 variables que lista `infra/replica-r2/replica.sh`.
 
 **Primera ejecución:** igual que en la sección 4.3, cambiar el horario a unos minutos después de la hora actual (UTC), revisar los logs (tienen que terminar con `réplica completa: 2 de 2 buckets`), verificar en R2 que estén los objetos y `_replica/estado.json`, y volver a dejar `17 * * * *`. Después, correr **Respaldo — verificar respaldo del día** eligiendo `prod`: el job **Réplica en R2** tiene que dar ✅.
 
@@ -260,7 +269,7 @@ sha256sum 2026-11-21.dump   # comparar con el contenido del .sha256
 | Síntoma                                                   | Dónde se ve                      | Acción                                                                                                                                                             |
 | --------------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Falla el job **Réplica en R2** («Sin marca» o «Atrasada») | Mail de GitHub y pestaña Actions | Revisar los logs de `replica-r2-prod` en Railway. Si el servicio todavía no se creó, configurarlo (sección 9.3)                                                    |
-| Log con `falta la variable de entorno …`                  | Logs de `replica-r2-prod`        | Revisar la sync de Infisical `prod/replica-r2` al servicio                                                                                                         |
+| Log con `falta la variable de entorno …`                  | Logs de `replica-r2-prod`        | Revisar la sync de Infisical al servicio                                                                                                                           |
 | Log con `immutable file modified`                         | Logs de `replica-r2-prod`        | **Un CFE cambió en S3 después de replicarse.** No debería pasar: revisar el objeto en S3 y su `pdf_sha256`. La copia de R2 queda intacta. Registrar como incidente |
 | `AccessDenied` o `403`                                    | Logs o job de GitHub             | Token de R2 vencido o rotado, o política de IAM modificada: revisar la sección 9.2                                                                                 |
 | Falta un dump en R2 (job de GitHub)                       | Pestaña Actions                  | Ejecutar `replica-r2-prod` a mano (horario temporal, sección 9.3) y volver a correr el control                                                                     |
