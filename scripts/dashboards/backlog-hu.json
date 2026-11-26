@@ -5,12 +5,13 @@
     "El ESTADO sale de Linear en cada corrida: una HU está terminada cuando todos sus issues de 'linear' están Done.",
     "Todo issue que no figure acá cuenta como trabajo técnico (pipeline, seguridad, testing, defectos, documentación).",
     "Los sub-issues de una HU cuentan como trabajo de la HU, aunque no figuren en la lista.",
-    "Al aprobar una solicitud de cambio: agregar la HU con 'origen' y actualizar 'alcance'."
+    "Al aprobar una solicitud de cambio: agregar la HU con 'origen' y actualizar 'alcance'.",
+    "BL-550 (aprobada el 24/11/2026): HU-008 sale del MVP (206 a 198 SP). Los ítems de la capa Valor Agregado y HU-010 se entregan fuera del MVP y figuran en 'fueraDelMvp'."
   ],
   "alcance": {
-    "backlog": "Anexo 5 v2.3 (30/10/2026)",
-    "historias": 37,
-    "storyPoints": 206,
+    "backlog": "Anexo 5 v2.3 (30/10/2026), con la solicitud de cambio BL-550 (24/11/2026)",
+    "historias": 36,
+    "storyPoints": 198,
     "solicitudesDeCambio": [
       { "hu": "HU-042", "fecha": "2026-11-05", "storyPoints": 5, "detalle": "KDS: cola de pedidos y límite de elaboración (BL-461)" }
     ]
@@ -50,7 +51,6 @@
     { "hu": "HU-029", "linear": ["BL-183"], "sp": 3, "prioridad": "Must", "grupo": "linea-base", "nivel": 1 },
     { "hu": "HU-030", "linear": ["BL-184"], "sp": 3, "prioridad": "Should", "grupo": "linea-base", "nivel": 2 },
 
-    { "hu": "HU-008", "linear": ["BL-88"], "sp": 8, "prioridad": "Should", "grupo": "post-lb", "nivel": 2 },
     { "hu": "HU-031", "linear": ["BL-201"], "sp": 5, "prioridad": "Must", "grupo": "post-lb", "nivel": 1 },
     { "hu": "HU-031b", "linear": ["BL-442"], "sp": 3, "prioridad": "Should", "grupo": "post-lb", "nivel": 1 },
     { "hu": "HU-032", "linear": ["BL-202"], "sp": 3, "prioridad": "Must", "grupo": "post-lb", "nivel": 1 },
@@ -67,7 +67,15 @@
     { "hu": "HU-042", "linear": ["BL-461"], "sp": 5, "prioridad": "Should", "grupo": "cambio", "nivel": 1, "origen": "Solicitud de cambio del 05/11/2026" }
   ],
   "fueraDelMvp": [
-    { "hu": "HU-010", "linear": ["BL-112"], "sp": 13, "prioridad": "Could", "nivel": 4, "motivo": "Trabajo futuro" },
+    { "hu": "HU-008", "linear": ["BL-88"], "sp": 8, "prioridad": "Could", "nivel": 4, "motivo": "Sale del MVP por la solicitud de cambio BL-550 (Sprint 10)" },
+    { "hu": "HU-010", "linear": ["BL-112"], "sp": 13, "prioridad": "Could", "nivel": null, "motivo": "Entregada por la solicitud de cambio BL-550 (24/11/2026), solo pedidos para retirar" },
+    { "hu": "HU-043", "linear": ["BL-530"], "sp": 8, "prioridad": "Could", "nivel": null, "motivo": "Entregada por la solicitud de cambio BL-550 (24/11/2026)" },
+    { "hu": "HU-044", "linear": ["BL-537"], "sp": 2, "prioridad": "Could", "nivel": null, "motivo": "Entregada por la solicitud de cambio BL-550 (24/11/2026)" },
+    { "hu": "HU-045", "linear": ["BL-543"], "sp": 3, "prioridad": "Could", "nivel": null, "motivo": "Entregada por la solicitud de cambio BL-550 (24/11/2026)" },
+    { "hu": "HU-046", "linear": ["BL-544"], "sp": 8, "prioridad": "Could", "nivel": null, "motivo": "Entregada por la solicitud de cambio BL-550 (24/11/2026)" },
+    { "hu": "HU-050", "linear": ["BL-558"], "sp": 5, "prioridad": "Could", "nivel": null, "motivo": "Entregada por la solicitud de cambio BL-550 (24/11/2026)" },
+    { "hu": "HU-051", "linear": ["BL-563"], "sp": 2, "prioridad": "Could", "nivel": null, "motivo": "Entregada por la solicitud de cambio BL-550 (24/11/2026)" },
+    { "hu": null, "linear": ["BL-378"], "sp": 1, "prioridad": "Could", "nivel": null, "motivo": "Entregada por la solicitud de cambio BL-550 (24/11/2026)" },
     { "hu": "HU-014", "linear": ["BL-116"], "sp": 13, "prioridad": "Could", "nivel": 4, "motivo": "Trabajo futuro" },
     { "hu": "HU-015", "linear": ["BL-120"], "sp": 5, "prioridad": "Could", "nivel": 3, "motivo": "Condicional a holgura en H7" },
     { "hu": "HU-026", "linear": ["BL-124"], "sp": 13, "prioridad": "Could", "nivel": 4, "motivo": "Trabajo futuro" },
