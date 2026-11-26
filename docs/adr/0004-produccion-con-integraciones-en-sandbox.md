@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 | --- | --- |
-| Estado | Aceptada; se aplica con el release v0.5.0 |
+| Estado | Aceptada; aplicada desde el release v0.5.0 (08/11/2026) |
 | Fecha | 30/09/2026 |
 | Referencias | Solicitud de cambio BL-240; BL-220 (release); Anexo 4 §1.2.3; Anexo 9 §10.2 |
 | Autores | E. Arenas, V. Couto, D. Silvera |
@@ -15,7 +15,7 @@ La documentación decía que el entorno de producción estaba «definido pero no
 
 El entorno `production` se activa desde el release v0.5.0 como **entorno productivo con integraciones en sandbox y sin operaciones reales**:
 
-- el mismo proceso que una producción real: PR de release de `develop` a `main`, tag semántico, aprobación manual en el GitHub Environment `production` por un integrante distinto del que creó el tag, health check, smoke test de solo lectura y rollback a la imagen anterior;
+- el mismo proceso que una producción real: PR de release de `develop` a `main`, tag semántico, aprobación manual en el GitHub Environment `production` por un integrante distinto del que creó el tag, health check, smoke test de solo lectura y rollback a la imagen anterior (automático si el smoke test falla);
 - las imágenes de la API y de Keycloak validadas en staging se promueven sin reconstruir; el frontend se compila por entorno, porque sus variables públicas quedan fijas al compilar;
 - integraciones de pago y facturación en sus sandboxes, con aplicaciones de prueba propias de producción y webhooks separados de staging;
 - sin dominio propio (subdominios del proveedor con TLS gestionado) y sin datos personales reales;
@@ -30,7 +30,14 @@ El entorno `production` se activa desde el release v0.5.0 como **entorno product
 
 ## Consecuencias
 
-- El proceso de release, el rollback y las métricas DORA se ejercitan de verdad antes de la entrega.
+- El proceso de release, el rollback y las métricas DORA se ejercitan de verdad antes de la entrega: v0.5.0 (08/11/2026) y v0.6.0 (24/11/2026) se desplegaron así, y el rollback manual se ensayó en el primer release.
 - El paso a operación real queda como una lista acotada: credenciales reales, dominio propio, alta disponibilidad, plan de continuidad del negocio y política de privacidad con datos reales (Anexo 4 §1.2.3).
 - Cada recurso de infraestructura existe dos veces (staging y producción), con su configuración propia (por ejemplo, la distribución de CloudFront de las imágenes y el rol restringido de la base).
 - La validación funcional sigue haciéndose en staging; en producción solo corre el smoke test de solo lectura.
+
+## Control de versiones
+
+| Versión | Fecha | Modificación |
+| --- | --- | --- |
+| 1.0 | 31/10/2026 | Versión inicial (BL-446). |
+| 1.1 | 24/11/2026 | Aplicada desde v0.5.0. Se agregan el rollback automático y los releases desplegados con este proceso. |

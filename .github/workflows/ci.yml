@@ -369,8 +369,7 @@ jobs:
         continue-on-error: true
         timeout-minutes: 5
         env:
-          TCMS_PRODUCT_VERSION: ${{ github.ref_name }}
-          TCMS_BUILD: ${{ needs.version.outputs.label }}-contract
+          TCMS_BUILD: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || needs.version.outputs.label }}-contract
         run: |
           pip install kiwitcms-junit.xml-plugin --break-system-packages
           cat <<EOF > ~/.tcms.conf
@@ -389,10 +388,12 @@ jobs:
               raise SystemExit(f"::error::Se esperaba un Test Plan «Contract-PactJS» y hay {len(planes)}")
           print(f"export TCMS_PLAN_ID={planes[0]['id']}")
           print(f"export TCMS_PRODUCT='{planes[0]['product__name']}'")
+          # BL-616: la versión del run es la del plan, no la rama ni el tag.
+          print(f"export TCMS_PRODUCT_VERSION='{planes[0]['product_version__value']}'")
           PY
           )"
           eval "$variables"
-          echo "Plan Contract-PactJS: id $TCMS_PLAN_ID, producto $TCMS_PRODUCT"
+          echo "Plan Contract-PactJS: id $TCMS_PLAN_ID, producto $TCMS_PRODUCT, versión $TCMS_PRODUCT_VERSION, build $TCMS_BUILD"
           tcms-junit.xml-plugin --verbose --summary-template '${name}' apps/backend/reports/contract-junit.xml
 
   # ── JOB 3b: TESTS DE INTEGRACIÓN (Jest + Postgres + Keycloak) ─────────────
@@ -579,9 +580,7 @@ jobs:
         continue-on-error: true
         timeout-minutes: 5
         env:
-          TCMS_PRODUCT: "Bistrolink"
-          TCMS_PRODUCT_VERSION: ${{ github.ref_name }}
-          TCMS_BUILD: ${{ needs.version.outputs.label }}-integration
+          TCMS_BUILD: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || needs.version.outputs.label }}-integration
           TCMS_PLAN_ID: "1"
         run: |
           pip install kiwitcms-junit.xml-plugin --break-system-packages
@@ -591,6 +590,21 @@ jobs:
           username = ${{ secrets.KIWI_TCMS_USERNAME }}
           password = ${{ secrets.KIWI_TCMS_PASSWORD }}
           EOF
+          # BL-616: producto y versión del plan «Integration tests» (id fijo).
+          # La versión del run tiene que ser la del plan: con la del tag
+          # (v0.6.0) Kiwi rechaza el build («Select a valid choice»).
+          variables="$(python3 - <<'PY'
+          import os
+          from tcms_api import TCMS
+          planes = TCMS().exec.TestPlan.filter({"pk": int(os.environ["TCMS_PLAN_ID"])})
+          if len(planes) != 1:
+              raise SystemExit(f"::error::No se encontró el Test Plan {os.environ['TCMS_PLAN_ID']}")
+          print(f"export TCMS_PRODUCT='{planes[0]['product__name']}'")
+          print(f"export TCMS_PRODUCT_VERSION='{planes[0]['product_version__value']}'")
+          PY
+          )"
+          eval "$variables"
+          echo "Plan Integration tests: id $TCMS_PLAN_ID, producto $TCMS_PRODUCT, versión $TCMS_PRODUCT_VERSION, build $TCMS_BUILD"
           tcms-junit.xml-plugin --verbose --summary-template '${name}' apps/backend/reports/integration-junit.xml
 
   # ── JOB 4: GITLEAKS ───────────────────────────────────────────────────────
@@ -1017,8 +1031,11 @@ jobs:
   deploy-staging:
     name: 🚀 Deploy staging (Railway)
     needs: [gitleaks, codeql, sonarcloud, dependencias, build, changes]
+    # Un "Run workflow" de rollback no despliega develop: si no, este job
+    # pisaba el rollback de staging al terminar el build.
     if: |
       github.ref == 'refs/heads/develop' &&
+      inputs.rollback_environment == '' &&
       (
         github.event_name == 'workflow_dispatch' ||
         needs.changes.outputs.apps == 'true'
@@ -1226,7 +1243,6 @@ jobs:
     environment: ${{ inputs.rollback_environment }}
     runs-on: ubuntu-latest
     env:
-      RAILWAY_GRAPHQL: https://backboard.railway.com/graphql/v2
       # BL-220: IDs de Railway según el entorno elegido.
       ENVIRONMENT_ID: ${{ inputs.rollback_environment == 'production' && 'b0b1fd5a-e3e7-409e-8847-f2700286a4a0' || 'bfeb236f-2012-4a5e-a681-5c4728e6830a' }}
       API_SERVICE_ID: ${{ inputs.rollback_environment == 'production' && '24f425e7-e8d5-4c1e-a957-bf5bccccbcec' || '45dc82be-fd53-4b80-ba9c-384bbbdba034' }}
@@ -1251,143 +1267,26 @@ jobs:
             exit 1
           fi
 
-      - name: Verificar que las 3 imágenes existan en GHCR
-        run: |
-          set -euo pipefail
-          echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-          for IMAGE in "${{ env.IMAGE_API }}" "${{ env.IMAGE_WEB }}" "${{ env.IMAGE_AUTH }}"; do
-            docker manifest inspect "${IMAGE}:${ROLLBACK_TAG}" > /dev/null \
-              || { echo "No existe ${IMAGE}:${ROLLBACK_TAG} en GHCR — no se puede revertir a un tag que nunca se publicó."; exit 1; }
-          done
+      # BL-622: la lógica del rollback está en una acción compartida con el
+      # rollback automático de production (deploy-prod).
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/actions
 
-      - name: Verificar que la API tenga el pre-deploy (BL-231)
-        # Railway corre /app/migrate/predeploy-migrate.sh en cada deploy de
-        # bistrolink-api, también en un rollback. Una imagen anterior a
-        # BL-231 no lo tiene: el pre-deploy fallaría y Railway no la pondría
-        # en línea. Se corta acá, antes de tocar ningún servicio.
-        run: |
-          set -euo pipefail
-          IMAGE="${{ env.IMAGE_API }}:${ROLLBACK_TAG}"
-          docker pull -q "$IMAGE" > /dev/null
-          docker run --rm --entrypoint /bin/sh "$IMAGE" -c 'test -x /app/migrate/predeploy-migrate.sh' \
-            || { echo "::error::$IMAGE es anterior a BL-231 (no tiene /app/migrate/predeploy-migrate.sh): con el pre-deploy configurado, Railway no puede ponerla en línea. Elegir un SHA posterior."; exit 1; }
-          echo "OK: $IMAGE tiene el script del pre-deploy"
-
-      - name: Revertir API al tag indicado
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        run: |
-          set -euo pipefail
-          IMAGE="${{ env.IMAGE_API }}:${ROLLBACK_TAG}"
-
-          RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
-            -H "Authorization: Bearer $RAILWAY_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "$(jq -n --arg s "$API_SERVICE_ID" --arg e "$ENVIRONMENT_ID" --arg img "$IMAGE" '{
-              query: "mutation($serviceId: String!, $environmentId: String!, $input: ServiceInstanceUpdateInput!) { serviceInstanceUpdate(serviceId: $serviceId, environmentId: $environmentId, input: $input) }",
-              variables: { serviceId: $s, environmentId: $e, input: { source: { image: $img } } }
-            }')")
-          echo "$RESPONSE"
-          echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
-
-          RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
-            -H "Authorization: Bearer $RAILWAY_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "$(jq -n --arg s "$API_SERVICE_ID" --arg e "$ENVIRONMENT_ID" '{
-              query: "mutation($serviceId: String!, $environmentId: String!) { serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId) }",
-              variables: { serviceId: $s, environmentId: $e }
-            }')")
-          echo "$RESPONSE"
-          echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
-
-      - name: Revertir Web al tag indicado
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        run: |
-          set -euo pipefail
-          IMAGE="${{ env.IMAGE_WEB }}:${ROLLBACK_TAG}"
-
-          RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
-            -H "Authorization: Bearer $RAILWAY_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "$(jq -n --arg s "$WEB_SERVICE_ID" --arg e "$ENVIRONMENT_ID" --arg img "$IMAGE" '{
-              query: "mutation($serviceId: String!, $environmentId: String!, $input: ServiceInstanceUpdateInput!) { serviceInstanceUpdate(serviceId: $serviceId, environmentId: $environmentId, input: $input) }",
-              variables: { serviceId: $s, environmentId: $e, input: { source: { image: $img } } }
-            }')")
-          echo "$RESPONSE"
-          echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
-
-          RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
-            -H "Authorization: Bearer $RAILWAY_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "$(jq -n --arg s "$WEB_SERVICE_ID" --arg e "$ENVIRONMENT_ID" '{
-              query: "mutation($serviceId: String!, $environmentId: String!) { serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId) }",
-              variables: { serviceId: $s, environmentId: $e }
-            }')")
-          echo "$RESPONSE"
-          echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
-
-      - name: Revertir Keycloak al tag indicado
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        run: |
-          set -euo pipefail
-          IMAGE="${{ env.IMAGE_AUTH }}:${ROLLBACK_TAG}"
-
-          RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
-            -H "Authorization: Bearer $RAILWAY_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "$(jq -n --arg s "$AUTH_SERVICE_ID" --arg e "$ENVIRONMENT_ID" --arg img "$IMAGE" '{
-              query: "mutation($serviceId: String!, $environmentId: String!, $input: ServiceInstanceUpdateInput!) { serviceInstanceUpdate(serviceId: $serviceId, environmentId: $environmentId, input: $input) }",
-              variables: { serviceId: $s, environmentId: $e, input: { source: { image: $img } } }
-            }')")
-          echo "$RESPONSE"
-          echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
-
-          RESPONSE=$(curl -sSf -X POST "$RAILWAY_GRAPHQL" \
-            -H "Authorization: Bearer $RAILWAY_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "$(jq -n --arg s "$AUTH_SERVICE_ID" --arg e "$ENVIRONMENT_ID" '{
-              query: "mutation($serviceId: String!, $environmentId: String!) { serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId) }",
-              variables: { serviceId: $s, environmentId: $e }
-            }')")
-          echo "$RESPONSE"
-          echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
-
-      - name: Health check post-rollback
-        run: |
-          check() {
-            if curl -fsS -o /dev/null --retry 30 --retry-delay 10 --retry-all-errors --max-time 15 "$1"; then
-              echo "OK    $1"
-            else
-              echo "FALLÓ $1 — última respuesta:"
-              curl -sS --max-time 15 -w "\nHTTP %{http_code}\n" "$1" || true
-              return 1
-            fi
-          }
-          check https://bistrolink-api-${ENTORNO}.up.railway.app/health
-          check https://bistrolink-api-${ENTORNO}.up.railway.app/health/ready
-          check https://bistrolink-web-${ENTORNO}.up.railway.app
-          check https://bistrolink-auth-${ENTORNO}.up.railway.app/realms/bistrolink/.well-known/openid-configuration
-
-      - name: Confirmar la versión de la API después del rollback
-        # /health responde aunque Railway haya dejado la versión anterior
-        # (por ejemplo, si falló el pre-deploy). upToDate puede dar false:
-        # la imagen vieja no conoce las migraciones más nuevas de la base.
-        run: |
-          URL=https://bistrolink-api-${ENTORNO}.up.railway.app/health/version
-          for i in $(seq 1 30); do
-            API=$(curl -fsS --max-time 15 "$URL" 2>/dev/null | jq -r '.api // empty' 2>/dev/null || true)
-            if [ "$API" = "$ROLLBACK_TAG" ]; then
-              echo "OK: la API quedó en $API"
-              curl -fsS --max-time 15 "$URL" | jq . || true
-              exit 0
-            fi
-            echo "Intento $i/30: la API responde '${API:-sin respuesta}'. Reintento en 10 s..."
-            sleep 10
-          done
-          echo "::error::La API no quedó en $ROLLBACK_TAG. Revisar la API de ${ENTORNO} en Railway → Deployments → logs del pre-deploy."
-          exit 1
+      - name: Revertir API, Web y Keycloak
+        uses: ./.github/actions/revertir-railway
+        with:
+          version: ${{ env.ROLLBACK_TAG }}
+          entorno: ${{ env.ENTORNO }}
+          environment-id: ${{ env.ENVIRONMENT_ID }}
+          api-service-id: ${{ env.API_SERVICE_ID }}
+          web-service-id: ${{ env.WEB_SERVICE_ID }}
+          auth-service-id: ${{ env.AUTH_SERVICE_ID }}
+          railway-token: ${{ secrets.RAILWAY_TOKEN }}
+          ghcr-token: ${{ secrets.GITHUB_TOKEN }}
+          image-api: ${{ env.IMAGE_API }}
+          image-web: ${{ env.IMAGE_WEB }}
+          image-auth: ${{ env.IMAGE_AUTH }}
 
   # ── JOB 9B: LIGHTHOUSE (Performance mobile) — staging ────────────────────────
   # BL-437: mismo comportamiento que los E2E (JOB 10): corre contra staging
@@ -1456,8 +1355,7 @@ jobs:
         continue-on-error: true
         timeout-minutes: 5
         env:
-          TCMS_PRODUCT_VERSION: ${{ github.ref_name }}
-          TCMS_BUILD: ${{ needs.version.outputs.label }}-lighthouse
+          TCMS_BUILD: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || needs.version.outputs.label }}-lighthouse
         run: |
           pip install kiwitcms-junit.xml-plugin --break-system-packages
           cat <<EOF > ~/.tcms.conf
@@ -1476,10 +1374,12 @@ jobs:
               raise SystemExit(f"::error::Se esperaba un Test Plan «Performance-k6-Lighthouse» y hay {len(planes)}")
           print(f"export TCMS_PLAN_ID={planes[0]['id']}")
           print(f"export TCMS_PRODUCT='{planes[0]['product__name']}'")
+          # BL-616: la versión del run es la del plan, no la rama ni el tag.
+          print(f"export TCMS_PRODUCT_VERSION='{planes[0]['product_version__value']}'")
           PY
           )"
           eval "$variables"
-          echo "Plan Performance-k6-Lighthouse: id $TCMS_PLAN_ID, producto $TCMS_PRODUCT"
+          echo "Plan Performance-k6-Lighthouse: id $TCMS_PLAN_ID, producto $TCMS_PRODUCT, versión $TCMS_PRODUCT_VERSION, build $TCMS_BUILD"
           tcms-junit.xml-plugin --verbose --summary-template '${name}' lighthouse-junit.xml
 
   # ── JOB 10: TESTS E2E (Playwright) — matrix por browser ───────────────────
@@ -2002,8 +1902,7 @@ jobs:
         continue-on-error: true
         timeout-minutes: 5
         env:
-          TCMS_PRODUCT_VERSION: ${{ github.event_name == 'pull_request' && github.base_ref || github.ref_name }}
-          TCMS_BUILD: ${{ needs.version.outputs.label }}-e2e
+          TCMS_BUILD: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || needs.version.outputs.label }}-e2e
         run: |
           pip install kiwitcms-junit.xml-plugin --break-system-packages
           cat <<EOF > ~/.tcms.conf
@@ -2022,10 +1921,12 @@ jobs:
               raise SystemExit(f"::error::Se esperaba un Test Plan «E2E-Playwright» y hay {len(planes)}")
           print(f"export TCMS_PLAN_ID={planes[0]['id']}")
           print(f"export TCMS_PRODUCT='{planes[0]['product__name']}'")
+          # BL-616: la versión del run es la del plan, no la rama ni el tag.
+          print(f"export TCMS_PRODUCT_VERSION='{planes[0]['product_version__value']}'")
           PY
           )"
           eval "$variables"
-          echo "Plan E2E-Playwright: id $TCMS_PLAN_ID, producto $TCMS_PRODUCT"
+          echo "Plan E2E-Playwright: id $TCMS_PLAN_ID, producto $TCMS_PRODUCT, versión $TCMS_PRODUCT_VERSION, build $TCMS_BUILD"
           tcms-junit.xml-plugin --verbose --summary-template '${name}' playwright-report/kiwi-junit.xml
 
       # ── BL-487: reporte Allure de los E2E ──────────────────────────────────
@@ -2273,9 +2174,18 @@ jobs:
       name: production
       url: https://bistrolink-web-production.up.railway.app
     runs-on: ubuntu-latest
-    # Para crear el GitHub Release del tag.
+    # contents: write para crear el GitHub Release del tag; packages: read
+    # para que el rollback automático (BL-622) verifique las imágenes en GHCR.
     permissions:
       contents: write
+      packages: read
+    # BL-622: el job de dashboards lee si hubo rollback automático.
+    outputs:
+      rollback-automatico: ${{ steps.rollback_auto.outcome == 'success' }}
+      rollback-version: ${{ steps.decidir_rollback.outputs.version }}
+      # BL-623: el job de aviso corre si se intentó el rollback.
+      rollback-intentado: ${{ steps.decidir_rollback.outputs.revertir == 'true' }}
+      rollback-resultado: ${{ steps.rollback_auto.outcome }}
     env:
       RAILWAY_GRAPHQL: https://backboard.railway.com/graphql/v2
       ENVIRONMENT_ID: b0b1fd5a-e3e7-409e-8847-f2700286a4a0
@@ -2287,6 +2197,11 @@ jobs:
       WEB_URL: https://bistrolink-web-production.up.railway.app
       AUTH_URL: https://bistrolink-auth-production.up.railway.app
     steps:
+      # Solo la acción compartida del rollback automático (BL-622).
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/actions
+
       - name: Verificar el respaldo de producción (antes de migrar)
         # Usa las credenciales de bistrolink-backup-ci (solo lectura y listado
         # sobre los buckets de respaldo). Si falla, no se tocó nada: ejecutar
@@ -2317,6 +2232,7 @@ jobs:
           done
 
       - name: Actualizar y deployar API (tag semántico)
+        id: deploy_api
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: |
@@ -2427,6 +2343,7 @@ jobs:
           echo "$RESPONSE" | jq -e '.errors == null' > /dev/null
 
       - name: Smoke test producción (solo lectura)
+        id: smoke
         # Sin E2E contra production: solo lecturas que no crean datos.
         run: |
           set -uo pipefail
@@ -2485,3 +2402,463 @@ jobs:
           fi
           gh release create "$VERSION" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes --title "$VERSION" $EXTRA
           echo "Release $VERSION publicado."
+
+      # ── BL-619: PR de la contingencia en Render con el tag nuevo ─────────
+      # Después de un release final (vX.Y.Z, nunca un -rc.N) que pasó el smoke
+      # test, abre un PR a develop que cambia en render.yaml las imágenes de
+      # API y Keycloak y NEXT_PUBLIC_APP_VERSION al tag nuevo
+      # (docs/runbooks/contingencia-render.md, sección 7). El merge lo hace
+      # una persona después de revisarlo.
+      # - Usa la GitHub App «BistroLink Release Bot» (BL-618): un PR abierto
+      #   con GITHUB_TOKEN no dispara el CI y los checks obligatorios de
+      #   develop quedarían esperando. Sus secrets son del environment
+      #   production: solo este job los puede leer.
+      # - El token se pide con permisos mínimos (contenido y PRs) y dura 1 h.
+      # - Si algo falla, el deploy no cambia: queda el aviso en el Summary
+      #   para abrir el PR a mano.
+      - name: Token de la GitHub App (PR de Render)
+        id: token_bot
+        if: ${{ !contains(github.ref_name, '-') }}
+        continue-on-error: true
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.RELEASE_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Bajar develop (PR de Render)
+        if: ${{ !contains(github.ref_name, '-') && steps.token_bot.outcome == 'success' }}
+        continue-on-error: true
+        uses: actions/checkout@v7
+        with:
+          ref: develop
+          path: render-pr
+          token: ${{ steps.token_bot.outputs.token }}
+
+      - name: Abrir el PR de render.yaml
+        id: pr_render
+        if: ${{ !contains(github.ref_name, '-') && steps.token_bot.outcome == 'success' }}
+        continue-on-error: true
+        working-directory: render-pr
+        env:
+          GH_TOKEN: ${{ steps.token_bot.outputs.token }}
+          APP_SLUG: ${{ steps.token_bot.outputs.app-slug }}
+        run: |
+          set -euo pipefail
+          # Versión que tiene hoy render.yaml (la de la imagen de la API).
+          ANTERIOR=$(grep -oE 'bistrolink-api:v[0-9]+\.[0-9]+\.[0-9]+' render.yaml | head -n 1 | cut -d: -f2 || true)
+          if [ -z "$ANTERIOR" ]; then
+            echo "::error::No se encontró la versión de la imagen de la API en render.yaml."
+            exit 1
+          fi
+          if [ "$ANTERIOR" = "$VERSION" ]; then
+            echo "render.yaml ya tiene $VERSION: no hace falta PR."
+            echo "resultado=sin-cambios" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Tienen que ser exactamente 3: imagen de la API, imagen de Keycloak
+          # y NEXT_PUBLIC_APP_VERSION. Si hay otra cantidad, el archivo cambió
+          # y no se toca a ciegas.
+          CANTIDAD=$(grep -oF "$ANTERIOR" render.yaml | wc -l)
+          if [ "$CANTIDAD" -ne 3 ]; then
+            echo "::error::render.yaml tiene $CANTIDAD apariciones de $ANTERIOR (se esperaban 3). Abrir el PR a mano."
+            exit 1
+          fi
+
+          RAMA="chore/BL-217-render-${VERSION}"
+          if git ls-remote --exit-code --heads origin "$RAMA" > /dev/null 2>&1; then
+            echo "::warning::La rama $RAMA ya existe: no se abre otro PR."
+            echo "resultado=ya-existe" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          sed -i "s/${ANTERIOR//./\\.}/${VERSION}/g" render.yaml
+          CAMBIADAS=$(git diff --numstat render.yaml | awk '{print $1}')
+          if [ "$CAMBIADAS" != "3" ]; then
+            echo "::error::El cambio en render.yaml no son 3 líneas ($CAMBIADAS). No se abre el PR."
+            exit 1
+          fi
+
+          # Commits a nombre del bot (usuario «<slug>[bot]» de GitHub).
+          BOT_ID=$(gh api "/users/${APP_SLUG}%5Bbot%5D" --jq .id)
+          git config user.name "${APP_SLUG}[bot]"
+          git config user.email "${BOT_ID}+${APP_SLUG}[bot]@users.noreply.github.com"
+          git switch -c "$RAMA"
+          git add render.yaml
+          git commit -m "chore(BL-217): contingencia en render con las imagenes de ${VERSION}"
+          git push origin "$RAMA"
+
+          CUERPO=$(cat <<TEXTO
+          ## Qué cambia
+
+          Después del release \`${VERSION}\`, la contingencia en Render pasa a usar las imágenes de esa versión (docs/RELEASE.md, «Después», y docs/runbooks/contingencia-render.md, sección 7).
+
+          | Archivo | Cambio |
+          | ------- | ------ |
+          | \`render.yaml\` | Imagen de la API \`${ANTERIOR}\` → \`${VERSION}\` |
+          | \`render.yaml\` | Imagen de Keycloak \`${ANTERIOR}\` → \`${VERSION}\` |
+          | \`render.yaml\` | \`NEXT_PUBLIC_APP_VERSION\` de la Web \`${ANTERIOR}\` → \`${VERSION}\` |
+
+          ## Cómo revisar
+
+          - El diff muestra solo esas 3 líneas.
+          - Las imágenes \`${VERSION}\` las publicó la corrida del tag: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+          - Después del merge, Render sincroniza el Blueprint solo. Comprobar en Render *Settings → Image* de API y Auth que quedó \`${VERSION}\`.
+
+          PR abierto por el pipeline de release (BL-619). Los servicios de Render siguen suspendidos: el cambio no despliega nada.
+          TEXTO
+          )
+          URL=$(gh pr create --base develop --head "$RAMA" \
+            --title "chore(BL-217): contingencia en render con las imagenes de ${VERSION}" \
+            --body "$(echo "$CUERPO" | sed 's/^          //')")
+          echo "PR abierto: $URL"
+          echo "resultado=abierto" >> "$GITHUB_OUTPUT"
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+
+      - name: Resumen del PR de Render
+        if: ${{ !contains(github.ref_name, '-') }}
+        env:
+          TOKEN: ${{ steps.token_bot.outcome }}
+          PASO: ${{ steps.pr_render.outcome }}
+          RESULTADO: ${{ steps.pr_render.outputs.resultado }}
+          URL: ${{ steps.pr_render.outputs.url }}
+        run: |
+          {
+            echo "## 🔁 Contingencia en Render"
+            echo
+            if [ "$RESULTADO" = "abierto" ]; then
+              echo "Se abrió el PR que pasa \`render.yaml\` a \`$VERSION\`: $URL. Falta revisarlo y mergearlo."
+            elif [ "$RESULTADO" = "sin-cambios" ]; then
+              echo "\`render.yaml\` ya tenía \`$VERSION\`: no hizo falta PR."
+            elif [ "$RESULTADO" = "ya-existe" ]; then
+              echo "Ya existía la rama del PR de \`$VERSION\`: revisar el PR abierto."
+            else
+              echo "⚠️ No se pudo abrir el PR automático (token: $TOKEN, PR: $PASO). Abrirlo a mano: docs/runbooks/contingencia-render.md, sección 7."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$RESULTADO" != "abierto" ] && [ "$RESULTADO" != "sin-cambios" ] && [ "$RESULTADO" != "ya-existe" ]; then
+            echo "::warning::No se pudo abrir el PR de render.yaml: abrirlo a mano (contingencia-render.md, sección 7)."
+          fi
+
+      # ── BL-622: rollback automático de production ────────────────────────
+      # Si algo falla DESPUÉS de mandar a desplegar la API y ANTES de que pase
+      # el smoke test, production puede haber quedado con la versión nueva
+      # rota o con versiones mezcladas. Se vuelve sola a la versión anterior,
+      # sin otra aprobación (el deploy ya estaba aprobado y se vuelve a una
+      # versión que ya estuvo en production). El job termina en rojo igual.
+      # No se revierte si:
+      # - falló antes de desplegar la API (respaldo): no se tocó nada;
+      # - la API sigue en la versión anterior (falló el pre-deploy con las
+      #   migraciones: Railway no puso la nueva en línea);
+      # - el smoke test pasó y falló algo posterior (el GitHub Release).
+      - name: Decidir el rollback automático
+        id: decidir_rollback
+        if: failure() && steps.deploy_api.outcome == 'success' && steps.smoke.outcome != 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          # Versión anterior: el último GitHub Release que no es pre-release
+          # ni la versión de esta corrida. deploy-prod publica el Release
+          # recién cuando el deploy y el smoke test pasan, así que es la
+          # última versión que estuvo bien en production.
+          ANTERIOR=$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --exclude-pre-releases \
+            --limit 20 --json tagName --jq '.[].tagName' | grep -vx "$VERSION" | head -n 1 || true)
+          if [ -z "$ANTERIOR" ]; then
+            echo "::error::No hay un release anterior al que volver: revertir a mano (docs/RELEASE.md, 3.1)."
+            echo "revertir=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "version=$ANTERIOR" >> "$GITHUB_OUTPUT"
+
+          ACTUAL=$(curl -fsS --max-time 15 "${API_URL}/health/version" 2>/dev/null | jq -r '.api // empty' 2>/dev/null || true)
+          if [ -n "$ACTUAL" ] && [ "$ACTUAL" != "$VERSION" ]; then
+            echo "La API sigue en $ACTUAL (Railway no puso $VERSION en línea): no hace falta revertir."
+            echo "revertir=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "::warning::Production quedó con $VERSION (API: '${ACTUAL:-sin respuesta}') y el deploy falló: se vuelve a $ANTERIOR."
+          echo "revertir=true" >> "$GITHUB_OUTPUT"
+
+      - name: Rollback automático de production
+        id: rollback_auto
+        if: failure() && steps.decidir_rollback.outputs.revertir == 'true'
+        uses: ./.github/actions/revertir-railway
+        with:
+          version: ${{ steps.decidir_rollback.outputs.version }}
+          entorno: production
+          environment-id: ${{ env.ENVIRONMENT_ID }}
+          api-service-id: ${{ env.API_SERVICE_ID }}
+          web-service-id: ${{ env.WEB_SERVICE_ID }}
+          auth-service-id: ${{ env.AUTH_SERVICE_ID }}
+          railway-token: ${{ secrets.RAILWAY_TOKEN }}
+          ghcr-token: ${{ secrets.GITHUB_TOKEN }}
+          image-api: ${{ env.IMAGE_API }}
+          image-web: ${{ env.IMAGE_WEB }}
+          image-auth: ${{ env.IMAGE_AUTH }}
+
+      - name: Resumen del rollback automático
+        if: failure() && steps.decidir_rollback.outcome == 'success'
+        env:
+          REVERTIR: ${{ steps.decidir_rollback.outputs.revertir }}
+          ANTERIOR: ${{ steps.decidir_rollback.outputs.version }}
+          RESULTADO: ${{ steps.rollback_auto.outcome }}
+        run: |
+          {
+            echo "## ⏪ Rollback automático de production"
+            echo
+            if [ "$REVERTIR" != "true" ]; then
+              echo "No se revirtió: production no quedó con \`$VERSION\` (ver el paso «Decidir el rollback automático»)."
+            elif [ "$RESULTADO" = "success" ]; then
+              echo "El deploy de \`$VERSION\` falló y production **volvió a \`$ANTERIOR\`**. Abrir un issue con el error (docs/RELEASE.md, 3.3)."
+            else
+              echo "El deploy de \`$VERSION\` falló y **el rollback a \`$ANTERIOR\` también falló**. Revertir a mano ya (docs/RELEASE.md, 3.1)."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$REVERTIR" = "true" ] && [ "$RESULTADO" != "success" ]; then
+            echo "::error::El rollback automático a $ANTERIOR falló: revertir a mano (Actions → CI/CD BistroLink → Run workflow)."
+          fi
+
+  # ── JOB 12: DASHBOARDS DESPUÉS DE PRODUCCIÓN (BL-620) ─────────────────────
+  # Cada deploy a production (tag v*, también los -rc.N) y cada rollback de
+  # production, manual o automático (BL-622), cuentan para las métricas DORA del dashboard «Calidad del
+  # proceso». Antes había que lanzar «Publicar dashboards» a mano después
+  # (docs/RELEASE.md, 1.5 y 3.3). Ahora lo lanza este job.
+  # - workflow_dispatch con GITHUB_TOKEN sí crea una corrida nueva (es una
+  #   de las excepciones de GitHub), así que no hace falta otro token.
+  # - Corre con la rama develop, como el botón manual.
+  # - Si falla, no cambia el resultado del deploy: solo avisa.
+  dashboards-produccion:
+    name: 📊 Publicar dashboards (producción)
+    needs: [deploy-prod, rollback]
+    if: |
+      !cancelled() && (
+        needs.deploy-prod.result == 'success' ||
+        needs.deploy-prod.outputs.rollback-automatico == 'true' ||
+        (needs.rollback.result == 'success' && inputs.rollback_environment == 'production')
+      )
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Lanzar «Publicar dashboards» en develop
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MOTIVO: ${{ needs.deploy-prod.result == 'success' && format('deploy de {0}', github.ref_name) || needs.deploy-prod.outputs.rollback-automatico == 'true' && format('rollback automático de {0} a {1}', github.ref_name, needs.deploy-prod.outputs.rollback-version) || format('rollback a {0}', inputs.rollback_version) }}
+        run: |
+          set -euo pipefail
+          gh workflow run publicar-dashboards.yml --repo "$GITHUB_REPOSITORY" --ref develop
+          echo "«Publicar dashboards» lanzado después del $MOTIVO en production."
+          {
+            echo "## 📊 Dashboards"
+            echo
+            echo "Se lanzó **Publicar dashboards** (rama \`develop\`) después del $MOTIVO en production, para actualizar las métricas DORA."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ── JOB 13: AVISO DE ROLLBACK AUTOMÁTICO (BL-623) ─────────────────────────
+  # Si deploy-prod intentó el rollback automático (BL-622), abre un issue de
+  # incidente (plantilla de BL-261, sincroniza a Linear) y manda un mail al
+  # equipo con el resumen y el link al issue. Severidad alta si el rollback
+  # salió bien; crítica si también falló (producción puede estar caída).
+  # - El repositorio es público: el issue y el mail no llevan logs ni datos,
+  #   solo el resumen y el link a la corrida.
+  # - Environment «notificaciones»: tiene la cuenta de correo. Sus reglas de
+  #   ramas tienen que permitir los tags v* (además de develop).
+  # - Si falla el aviso, no cambia nada del deploy (continue-on-error).
+  aviso-rollback:
+    name: 🚨 Aviso de rollback automático
+    needs: [deploy-prod]
+    if: ${{ !cancelled() && needs.deploy-prod.outputs.rollback-intentado == 'true' }}
+    runs-on: ubuntu-latest
+    environment: notificaciones
+    continue-on-error: true
+    permissions:
+      contents: read
+      issues: write
+    env:
+      VERSION: ${{ github.ref_name }}
+      ANTERIOR: ${{ needs.deploy-prod.outputs.rollback-version }}
+      RESULTADO: ${{ needs.deploy-prod.outputs.rollback-resultado }}
+      CORRIDA: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          check-latest: true
+          cache: npm
+
+      # nodemailer (para enviar-email.mjs) sale del lockfile.
+      - name: Instalar dependencias
+        run: npm ci --ignore-scripts
+
+      - name: Abrir el issue de incidente
+        id: issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          HORA=$(TZ=America/Montevideo date '+%d/%m/%Y %H:%M')
+          if [ "$RESULTADO" = "success" ]; then
+            SEVERIDAD="alta"
+            TITULO="[Incidente] Rollback automático en producción: ${VERSION} → ${ANTERIOR}"
+            SINTOMA="El deploy de \`${VERSION}\` falló después de desplegar la API (Web, Keycloak o smoke test). El pipeline volvió producción a \`${ANTERIOR}\` y el rollback terminó bien."
+            CONTENCION="${HORA}: rollback automático a \`${ANTERIOR}\` (BL-622), con health check y versión confirmada."
+          else
+            SEVERIDAD="crítica"
+            TITULO="[Incidente] Falló el rollback automático de ${VERSION} en producción"
+            SINTOMA="El deploy de \`${VERSION}\` falló después de desplegar la API y **el rollback automático a \`${ANTERIOR}\` también falló**. Producción puede estar caída o con versiones mezcladas."
+            CONTENCION="Pendiente: revertir a mano ya (docs/RELEASE.md, 3.1)."
+          fi
+          cat > "$RUNNER_TEMP/incidente.md" <<TEXTO
+          <!-- Abierto por el pipeline (BL-623). No pegar valores de secretos, tokens ni datos personales: el repositorio es público. -->
+
+          ## Declaración
+
+          | Campo | Valor |
+          | --- | --- |
+          | Hora de detección | ${HORA} |
+          | Detectado por | Pipeline de release |
+          | Cómo se detectó | Rollback automático de producción (CI/CD BistroLink) |
+          | Entorno | production |
+          | Severidad inicial | ${SEVERIDAD} |
+          | Coordina | |
+          | Ejecuta | |
+
+          ## Síntoma
+
+          ${SINTOMA}
+
+          - Versión que falló: \`${VERSION}\`
+          - Versión anterior (destino del rollback): \`${ANTERIOR}\`
+          - Corrida: ${CORRIDA}
+
+          ## Alcance
+
+          - **Establecimientos afectados:**
+          - **Datos afectados:**
+          - **Desde cuándo:** ${HORA}
+
+          ## Contención
+
+          ${CONTENCION}
+
+          ## Evidencia conservada
+
+          - Logs del job «Deploy producción» en la corrida.
+
+          ## Comunicación
+
+          - ${HORA}: mail automático al equipo.
+
+          ## Cierre
+
+          - [ ] Causa contenida y servicio normal
+          - [ ] Corrección de fondo en un PR o ticket:
+          - [ ] Severidad final:
+          - [ ] Análisis de causa raíz agendado para la retrospectiva
+          - [ ] Registrado en el ticket de Linear del incidente
+          TEXTO
+          sed -i 's/^          //' "$RUNNER_TEMP/incidente.md"
+          URL=$(gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITULO" --label incidente --body-file "$RUNNER_TEMP/incidente.md")
+          echo "Issue de incidente: $URL"
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "### 🚨 Issue de incidente: $URL" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Armar el correo
+        id: correo
+        if: ${{ !cancelled() }}
+        env:
+          ISSUE_URL: ${{ steps.issue.outputs.url }}
+          EQUIPO_CORREOS: ${{ secrets.DASHBOARD_EMAIL_RECIPIENTS }}
+          MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
+        run: |
+          set -euo pipefail
+          # Mismo formato y colores que el aviso de E2E (aviso-e2e.mjs, BL-599).
+          # Encabezado violeta si el rollback salió bien; rojo si falló.
+          if [ "$RESULTADO" = "success" ]; then
+            ASUNTO="[BistroLink] Rollback automático en producción: ${VERSION} → ${ANTERIOR}"
+            TITULO="⚠️ BistroLink — Rollback automático en producción"
+            COLOR="#381e72"
+            INTRO="El deploy de <strong>${VERSION}</strong> falló después de desplegar la API. El pipeline volvió producción a <strong>${ANTERIOR}</strong> y el rollback terminó bien."
+            ESTADO="✅ Producción en ${ANTERIOR}"
+            CAJA_FONDO="#ffdf93"; CAJA_TEXTO="#594400"
+            ACCION="Revisar la corrida, completar el issue de incidente (alcance, quién coordina) y planificar la corrección: hotfix o próxima versión."
+          else
+            ASUNTO="[BistroLink] ACCIÓN INMEDIATA: falló el rollback automático de ${VERSION}"
+            TITULO="🚨 BistroLink — Falló el rollback automático"
+            COLOR="#93000a"
+            INTRO="El deploy de <strong>${VERSION}</strong> falló y <strong>el rollback automático a ${ANTERIOR} también falló</strong>. Producción puede estar caída o con versiones mezcladas."
+            ESTADO="❌ Rollback fallido"
+            CAJA_FONDO="#ffdad6"; CAJA_TEXTO="#93000a"
+            ACCION="Revertir a mano ya: Actions → CI/CD BistroLink → Run workflow → production → ${ANTERIOR} (docs/RELEASE.md, 3.1)."
+          fi
+          CELDA="padding:6px 10px; border:1px solid #cbc4d2;"
+          if [ -n "${ISSUE_URL:-}" ]; then
+            ISSUE="<a href=\"${ISSUE_URL}\" style=\"color:#4f378a; text-decoration:underline;\">Issue de incidente (bitácora) →</a>"
+          else
+            ISSUE="No se pudo abrir el issue de incidente: crearlo a mano con la plantilla «Incidente»."
+          fi
+          cat > "$RUNNER_TEMP/aviso-rollback.html" <<HTML
+          <!DOCTYPE html>
+          <html lang="es">
+          <body style="margin:0; padding:0; background-color:#fdf8ff; font-family: 'Plus Jakarta Sans', -apple-system, Segoe UI, Roboto, Arial, sans-serif;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#fdf8ff; padding:24px 0;">
+              <tr><td align="center">
+                <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="background-color:#ffffff; border-radius:8px; overflow:hidden; border:1px solid #cbc4d2;">
+                  <tr><td style="background-color:${COLOR}; padding:20px 24px;">
+                    <span style="color:#ffffff; font-size:18px; font-weight:bold;">${TITULO}</span>
+                  </td></tr>
+                  <tr><td style="padding:24px;">
+                    <p style="margin:0 0 16px; color:#1c1b20; font-size:14px;">Hola, equipo: ${INTRO}</p>
+                    <p style="margin:0 0 20px; padding:10px 12px; background-color:${CAJA_FONDO}; border-left:3px solid ${CAJA_TEXTO}; font-size:13px; color:${CAJA_TEXTO};">
+                      <strong>Qué hacer:</strong> ${ACCION}
+                    </p>
+                    <h3 style="margin:0 0 10px; font-size:14px; color:#381e72;">📋 Resumen</h3>
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse; font-size:13px; color:#1c1b20; margin-bottom:20px;">
+                      <tr><td style="${CELDA} background-color:#e0d4fd; color:#381e72; width:45%;"><strong>Versión que falló</strong></td><td style="${CELDA}">${VERSION}</td></tr>
+                      <tr><td style="${CELDA} background-color:#e0d4fd; color:#381e72;"><strong>Versión anterior (destino del rollback)</strong></td><td style="${CELDA}">${ANTERIOR}</td></tr>
+                      <tr><td style="${CELDA} background-color:#e0d4fd; color:#381e72;"><strong>Estado</strong></td><td style="${CELDA}">${ESTADO}</td></tr>
+                      <tr><td style="${CELDA} background-color:#e0d4fd; color:#381e72;"><strong>Entorno</strong></td><td style="${CELDA}">production</td></tr>
+                    </table>
+                    <h3 style="margin:0 0 10px; font-size:14px; color:#381e72;">🔎 Dónde ver el detalle</h3>
+                    <ul style="margin:0; padding-left:20px; font-size:13px; line-height:1.6;">
+                      <li><a href="${CORRIDA}" style="color:#4f378a; text-decoration:underline;">Corrida en GitHub Actions →</a></li>
+                      <li>${ISSUE}</li>
+                      <li style="color:#494551;">Procedimiento: <code>docs/runbooks/respuesta-a-incidentes.md</code> (desde el paso 4: el issue ya está abierto).</li>
+                    </ul>
+                  </td></tr>
+                  <tr><td style="padding:12px 24px; background-color:#f7f2fa; border-top:1px solid #cbc4d2;">
+                    <span style="font-size:11px; color:#7a7582;">Aviso automático del pipeline de release de BistroLink (BL-623) — no responder a este correo. No incluye logs ni datos: el detalle está en la corrida.</span>
+                  </td></tr>
+                </table>
+              </td></tr>
+            </table>
+          </body>
+          </html>
+          HTML
+          {
+            echo "to=${EQUIPO_CORREOS}"
+            echo "from=BistroLink CI <${MAIL_USERNAME}>"
+            echo "subject=${ASUNTO}"
+            echo "body_path=$RUNNER_TEMP/aviso-rollback.html"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Enviar el correo
+        if: ${{ !cancelled() && steps.correo.outcome == 'success' }}
+        env:
+          MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
+          MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
+          EMAIL_TO: ${{ steps.correo.outputs.to }}
+          EMAIL_FROM: ${{ steps.correo.outputs.from }}
+          EMAIL_SUBJECT: ${{ steps.correo.outputs.subject }}
+          EMAIL_BODY_PATH: ${{ steps.correo.outputs.body_path }}
+        run: node scripts/dashboards/enviar-email.mjs

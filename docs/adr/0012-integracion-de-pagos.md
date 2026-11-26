@@ -2,18 +2,11 @@
 
 | Campo | Valor |
 | --- | --- |
-| Estado | Propuesta |
+| Estado | Aceptada |
 | Fecha | 08/11/2026 |
 | Referencias | BL-491; HU-007 (BL-77, BL-78, BL-90, BL-311); HU-007b (BL-80, BL-485); HU-020 (BL-72, BL-452); HU-024 (BL-104); HU-031 (BL-201); HU-031b (BL-442); HU-032 (BL-202); BL-215; RD.03; RD.05; ADR 0001; ADR 0002; ADR 0004; ADR 0006 |
 | Autores | E. Arenas, V. Couto, D. Silvera |
 
-| Campo | Valor |
-| --- | --- |
-| Estado | Aceptada |
-| Fecha | 08/11/2026 |
-| Referencias | BL-491; HU-007 (BL-77, BL-78, BL-90, BL-311); HU-007b (BL-80, BL-485); HU-020 (BL-72, BL-452); HU-024 (BL-104); HU-031 (BL-201); HU-031b (BL-442); HU-032 (BL-202); BL-215; RD.03; RD.05; ADR 0001; ADR 0002; ADR 0004; ADR 0006 |
-| 1.1 | 08/11/2026 | Aceptada por el equipo. |
-| Autores | E. Arenas, V. Couto, D. Silvera |
 ## Contexto
 
 BistroLink cobra los pedidos antes de mandarlos a cocina (prepago, RD.03 y ADR 0006). El comensal paga desde el celular con tarjeta, y también se puede cobrar en efectivo o con el POS del local. Las decisiones sobre cómo se integra la pasarela se tomaron historia por historia y quedaron repartidas en comentarios del código. Este ADR las junta en un solo lugar.
@@ -103,7 +96,7 @@ Lo que BistroLink manda y lee de la API Orders y del webhook está fijado en con
 | Buscar la order en todos los tenants para saber de quién es | Rompe el aislamiento por RLS (ADR 0002). La referencia externa lleva el tenant. |
 | Cobrar dentro de la transacción de la base | Una pasarela lenta mantendría abierta la transacción y ocuparía conexiones del pool. Con las tres fases y la idempotencia se cubre lo mismo. |
 | Reintentar el cobro automáticamente si hay timeout | Si la pasarela llegó a cobrar, el reintento puede cobrar dos veces. Se deja `PENDIENTE` y se concilia consultando el estado. |
-| Split payment de la pasarela para dividir la cuenta | El split payment reparte la plata de un pagador entre varios vendedores (marketplace), que es lo contrario de lo que necesita BistroLink. La división de cuenta (HU-008) se modela en BistroLink: cada parte es un cobro independiente. |
+| Split payment de la pasarela para dividir la cuenta | El split payment reparte la plata de un pagador entre varios vendedores (marketplace), que es lo contrario de lo que necesita BistroLink. Si se implementa la división de cuenta (HU-008, no implementada en el MVP), se modela en BistroLink: cada parte es un cobro independiente. |
 | Una cuenta de Mercado Pago por restaurante (OAuth de Mercado Pago) | Sería lo correcto en una operación real, pero requiere el alta de cada restaurante en Mercado Pago y no hay operaciones reales (ADR 0004). Queda para el paso a operación. |
 
 ## Consecuencias
@@ -123,3 +116,5 @@ Lo que BistroLink manda y lee de la API Orders y del webhook está fijado en con
 | Versión | Fecha | Modificación |
 | --- | --- | --- |
 | 1.0 | 08/11/2026 | Versión inicial (BL-491). |
+| 1.1 | 08/11/2026 | Aceptada por el equipo. |
+| 1.2 | 24/11/2026 | Se corrige el encabezado, que tenía la tabla de datos duplicada. La división de cuenta (HU-008) queda como diseño previsto: no está implementada. |

@@ -7,6 +7,7 @@
 | Versión | Fecha      | Cambio |
 | ------- | ---------- | ------ |
 | 1.0     | 08/11/2026 | Primera versión: roles, severidad, bitácora, procedimiento de 30 minutos, tres incidentes tipo y revocación de credenciales. |
+| 1.1     | 24/11/2026 | El rollback automático de producción abre solo el issue de incidente y avisa por correo (BL-623). |
 
 ## 1. Para qué sirve
 
@@ -31,6 +32,7 @@ Es un incidente cualquier evento que:
 | Alertas de Frontend Observability | Error nuevo de JavaScript, o aumento de un error conocido | Correo · Grafana → Frontend → *bistrolink-web* → Errors |
 | Control de respaldos | Respaldo atrasado, demasiado chico o que no se puede restaurar | Correo de GitHub Actions |
 | Pipeline (CI/CD) | Gitleaks, Trivy o CodeQL encuentran un problema; un smoke test falla después de un deploy | Pestaña Actions del repositorio |
+| Rollback automático de producción | Un deploy falló después de desplegar la API y el pipeline volvió a la versión anterior (o no pudo) | Correo al equipo · issue de incidente abierto solo |
 | Personas | Reclamo de un establecimiento o de un comensal; algo visto en la consola de un proveedor | Cualquier canal del equipo |
 
 Las alertas llegan por correo a todo el equipo. Que llegue una alerta no es todavía un incidente: quien la ve decide si lo es (sección 4, paso 1).
@@ -62,7 +64,7 @@ La severidad usa el mismo criterio que la clasificación de defectos del Plan de
 
 ### Minutos 0 a 5: declarar
 
-1. Abrir un issue en GitHub con la plantilla **Incidente** (etiqueta `incidente`). Ese issue es la **bitácora**: todo lo que se hace se anota ahí, con la hora y quién lo hizo.
+1. Abrir un issue en GitHub con la plantilla **Incidente** (etiqueta `incidente`). Ese issue es la **bitácora**: todo lo que se hace se anota ahí, con la hora y quién lo hizo. Si lo disparó un **rollback automático**, el issue ya está abierto y completo en lo básico (hora, entorno, severidad, versiones y link a la corrida): seguir desde el paso 4.
 2. Completar: hora de detección, quién lo detectó, síntoma, entorno y severidad inicial.
 3. Avisar al resto del equipo por el canal habitual, con el link al issue.
 4. Asignar coordinación y ejecución (sección 3.1).

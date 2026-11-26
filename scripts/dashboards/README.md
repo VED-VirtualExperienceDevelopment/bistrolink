@@ -1,21 +1,27 @@
+<p align="center">
+  <a href="../../README.md">← BistroLink</a> ·
+  <a href="https://ved-virtualexperiencedevelopment.github.io/bistrolink/"><img src="https://img.shields.io/badge/dashboards-GitHub%20Pages-c9a74d" alt="Dashboards en GitHub Pages"></a>
+</p>
+
 # Dashboards de avance, bugs y calidad del proceso (GitHub Pages)
 
 BL-298, BL-493, BL-221, BL-601. Los scripts de esta carpeta generan los tres dashboards publicados en https://ved-virtualexperiencedevelopment.github.io/bistrolink/ y el email de estado del cierre de cada Sprint. Los corre el workflow [`publicar-dashboards.yml`](../../.github/workflows/publicar-dashboards.yml); no se commitea nada.
 
-| Archivo                            | Qué hace                                                                                                                                      |
-| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Archivo                            | Qué hace                                                                                                                                     |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | `backlog-hu.json`                  | Historias del MVP (Anexo 5 v2.3 + solicitudes de cambio) con su issue de Linear, SP, prioridad, nivel y grupo; las que quedan fuera del MVP. |
-| `sprint-config.json`               | Calendario y plan de la Línea de Base (Tabla 17, Gantt v2.0): Sprints, hitos y SP planificados.                                               |
-| `avance-mvp.mjs`                   | Cálculo del avance desde Linear, compartido por el dashboard y el email.                                                                      |
-| `update-dashboard-from-linear.mjs` | Llena los bloques `AUTO` de `docs/dashboard-avance-edt.md`.                                                                                   |
-| `update-github-bugs-dashboard.mjs` | Llena los bloques `AUTO` de `docs/dashboard-bugs-github.md` desde GitHub Issues (configuración en `github-bugs-config.json`).                 |
-| `metricas-dora.mjs`                | Llena los bloques `AUTO` de `docs/dashboard-calidad-proceso.md` con las métricas DORA de producción (deployments, PR y corridas del CI).        |
-| `datos-kiwi.py`                    | Lee de Kiwi TCMS (solo lectura) los casos y los últimos Test Runs de cada Test Plan activo de la versión `develop`, y los guarda en un JSON.                       |
-| `metricas-pruebas.mjs`             | Llena la sección del plan de pruebas de `docs/dashboard-calidad-proceso.md` con los datos de Kiwi y la cobertura de Codecov.                |
-| `resumen-pruebas.mjs`              | Escribe en el Summary de cada corrida del CI una tabla con los resultados de un junit.xml (aprobados, fallidos, salteados y duración).     |
-| `publicar-dashboards.mjs`          | Convierte los tres `.md` a HTML con los colores de la app y arma el sitio.                                                                     |
-| `send-status-email.mjs`            | Arma el email de estado (avance, bugs y métricas DORA de producción); el asunto sale de `email-config.json`.                                                               |
-| `*.test.mjs`                       | Tests sin dependencias: `npm run test:dashboards`.                                                                                            |
+| `sprint-config.json`               | Calendario y plan de la Línea de Base (Tabla 17, Gantt v2.0): Sprints, hitos y SP planificados.                                              |
+| `dora-ensayos-rollback.json`       | Rollbacks de producción hechos a propósito para probar el procedimiento (fecha en hora de Uruguay, rama y motivo). No cuentan como falla.    |
+| `avance-mvp.mjs`                   | Cálculo del avance desde Linear, compartido por el dashboard y el email.                                                                     |
+| `update-dashboard-from-linear.mjs` | Llena los bloques `AUTO` de `docs/dashboard-avance-edt.md`.                                                                                  |
+| `update-github-bugs-dashboard.mjs` | Llena los bloques `AUTO` de `docs/dashboard-bugs-github.md` desde GitHub Issues (configuración en `github-bugs-config.json`).                |
+| `metricas-dora.mjs`                | Llena los bloques `AUTO` de `docs/dashboard-calidad-proceso.md` con las métricas DORA de producción (deployments, PR y corridas del CI).     |
+| `datos-kiwi.py`                    | Lee de Kiwi TCMS (solo lectura) los casos y los últimos Test Runs de cada Test Plan activo de la versión `develop`, y los guarda en un JSON. |
+| `metricas-pruebas.mjs`             | Llena la sección del plan de pruebas de `docs/dashboard-calidad-proceso.md` con los datos de Kiwi y la cobertura de Codecov.                 |
+| `resumen-pruebas.mjs`              | Escribe en el Summary de cada corrida del CI una tabla con los resultados de un junit.xml (aprobados, fallidos, salteados y duración).       |
+| `publicar-dashboards.mjs`          | Convierte los tres `.md` a HTML con los colores de la app y arma el sitio.                                                                   |
+| `send-status-email.mjs`            | Arma el email de estado (avance, bugs y métricas DORA de producción); el asunto sale de `email-config.json`.                                 |
+| `*.test.mjs`                       | Tests sin dependencias: `npm run test:dashboards`.                                                                                           |
 
 ## Cómo se mide el avance
 
@@ -28,10 +34,12 @@ BL-298, BL-493, BL-221, BL-601. Los scripts de esta carpeta generan los tres das
 Se muestran dos vistas de las mismas cuatro métricas: **producción**, la medición oficial (Anexo 9 §10.2, ADR 0004), y **staging**, la integración continua, con las metas de la Línea de Base (Tabla 24). No se suman. Las definiciones están al final de `docs/dashboard-calidad-proceso.md`:
 
 - **Release:** deploy exitoso del job «Deploy producción» con un tag `vX.Y.Z`. Los ensayos (`-rc.N`) no cuentan.
-- **Falla:** el release necesitó un rollback de producción (job «Rollback manual») o un hotfix (el release siguiente es un parche).
+- **Falla:** el release necesitó un rollback de producción (automático, porque falló el smoke test, o manual) o un hotfix (el release siguiente es un parche).
+- **Ensayo de rollback:** un rollback hecho a propósito para probar el procedimiento no es una falla. Se registra en `dora-ensayos-rollback.json` (`docs/RELEASE.md`, 3.3) y se muestra aparte, como «Rollback (ensayo)».
 - **Lead time:** por PR mergeado a `develop` que entró en el release, desde su primer commit hasta el deploy. El primer release (v0.5.0) es la línea base y no se mide.
 - **Staging:** los jobs «Deploy staging» de las últimas 4 semanas. El lead time va desde que se abre el PR hasta que su merge queda desplegado; la recuperación, desde un deploy fallido hasta el siguiente exitoso.
-- El workflow no se dispara con un deploy a producción: después de un release o un rollback, correr **Publicar dashboards** a mano (`docs/RELEASE.md`).
+- Después de cada deploy o rollback de producción, el job «Publicar dashboards (producción)» del CI lanza **Publicar dashboards** solo. Si no se lanzó, correrlo a mano desde Actions.
+- Si GitHub responde con un error momentáneo (500, 502, 503, 504 o sin respuesta), el script reintenta hasta 3 veces. Si staging sigue fallando, se publica igual la medición de producción y solo staging queda «Sin datos» hasta la próxima corrida.
 
 ## Plan de pruebas y resumen por corrida
 

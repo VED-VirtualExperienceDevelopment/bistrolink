@@ -27,6 +27,10 @@
 //     hotfix (el release siguiente es un parche, vX.Y.Z con Z > 0).
 //   - Tiempo de recuperación: desde el deploy del release fallido hasta el
 //     rollback o el hotfix exitoso.
+//   - Ensayos de rollback: un rollback hecho a propósito para probar el
+//     procedimiento no es una falla. Se registran en
+//     dora-ensayos-rollback.json (fecha en hora de Uruguay y ref) y se
+//     muestran aparte, sin contar para DORA.
 //
 // Uso local (solo lectura):
 //   $env:GITHUB_TOKEN="..."; $env:GITHUB_REPOSITORY="VED-VirtualExperienceDevelopment/bistrolink"
@@ -41,6 +45,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..", "..");
 const DASHBOARD = path.join(ROOT, "docs", "dashboard-calidad-proceso.md");
 const SPRINTS = path.join(__dirname, "sprint-config.json");
+const ENSAYOS_ROLLBACK = path.join(__dirname, "dora-ensayos-rollback.json");
+
+const SIN_DATOS_STAGING =
+  "_Sin datos de staging en esta publicación (GitHub no respondió): se completa en la próxima corrida del workflow «Publicar dashboards». La medición de producción de arriba sí está al día._";
 
 const HORA = 60 * 60 * 1000;
 const DIA = 24 * HORA;
@@ -79,6 +87,21 @@ export function tipoDeploy(ref) {
   return "rollback";
 }
 
+/** Fecha (AAAA-MM-DD) en hora de Uruguay. */
+export function fechaUY(fecha) {
+  return new Date(fecha.getTime() + UY).toISOString().slice(0, 10);
+}
+
+/**
+ * Si un rollback exitoso fue un ensayo registrado en
+ * dora-ensayos-rollback.json, devuelve ese registro; si no, null.
+ */
+export function ensayoDeRollback(deploy, ensayos = []) {
+  if (!deploy.fin) return null;
+  const dia = fechaUY(deploy.fin);
+  return ensayos.find((e) => e.ref === deploy.ref && e.fecha === dia) ?? null;
+}
+
 /** true si el tag es un parche (vX.Y.Z con Z > 0): un hotfix. */
 export function esHotfix(tag) {
   const m = TAG_RELEASE.exec(tag);
@@ -107,8 +130,9 @@ export function resultadoDeploy(estados) {
 /**
  * Releases, fallas y recuperación a partir de los deployments de production
  * ya resueltos: [{ ref, sha, creado: Date, estado, fin: Date|null }].
+ * Los rollbacks que coinciden con `ensayosRollback` no cuentan como falla.
  */
-export function analizarProduccion(deploys) {
+export function analizarProduccion(deploys, { ensayosRollback = [] } = {}) {
   const ordenados = [...deploys].sort((a, b) => a.creado - b.creado);
   const exitosos = ordenados.filter((d) => d.estado === "exitoso");
 
@@ -120,7 +144,13 @@ export function analizarProduccion(deploys) {
     vistos.add(d.ref);
     releases.push({ tag: d.ref, sha: d.sha, desplegado: d.fin });
   }
-  const rollbacks = exitosos.filter((d) => tipoDeploy(d.ref) === "rollback");
+  const todosLosRollbacks = exitosos.filter((d) => tipoDeploy(d.ref) === "rollback");
+  const rollbacks = todosLosRollbacks.filter(
+    (d) => !ensayoDeRollback(d, ensayosRollback),
+  );
+  const ensayosDeRollback = todosLosRollbacks
+    .map((d) => ({ ...d, ensayo: ensayoDeRollback(d, ensayosRollback) }))
+    .filter((d) => d.ensayo);
 
   for (const [i, r] of releases.entries()) {
     const siguiente = releases[i + 1];
@@ -147,6 +177,7 @@ export function analizarProduccion(deploys) {
     releases,
     ensayos: exitosos.filter((d) => tipoDeploy(d.ref) === "ensayo"),
     rollbacks,
+    ensayosDeRollback,
     deploysFallidos: ordenados.filter((d) => d.estado === "fallido"),
   };
 }
@@ -409,6 +440,10 @@ export function renderReleases(analisis, leadTimes) {
       (d) =>
         `| \`${d.ref}\` (ensayo) | ${fechaCorta(d.fin)} | \`${d.sha.slice(0, 7)}\` | — | No cuenta para DORA |`,
     ),
+    ...(analisis.ensayosDeRollback ?? []).map(
+      (d) =>
+        `| Rollback (ensayo) | ${fechaCorta(d.fin)} | \`${d.sha.slice(0, 7)}\` | — | No cuenta para DORA: ${d.ensayo.motivo} |`,
+    ),
     ...analisis.deploysFallidos.map(
       (d) =>
         `| \`${d.ref}\` (deploy fallido) | ${fechaCorta(d.creado)} | \`${d.sha.slice(0, 7)}\` | — | Producción siguió con la versión anterior |`,
@@ -483,7 +518,7 @@ export function renderContexto(c) {
   return `| Métrica de contexto | Valor | Meta |
 | --- | --- | --- |
 | Duración del pipeline hasta staging (mediana) | ${c.pipelineMedianaMin === null ? "—" : `${num(c.pipelineMedianaMin)} min (corridas medidas: ${c.pipelineCorridas})`} | < ${METAS.pipelineMinutos} min |
-| Rollbacks de producción | ${c.rollbacksProduccion} | — |
+| Rollbacks de producción | ${c.rollbacksProduccion}${c.ensayosRollback ? ` (y ${c.ensayosRollback} ${c.ensayosRollback === 1 ? "ensayo, que no cuenta" : "ensayos, que no cuentan"})` : ""} | — |
 | Incidentes registrados (etiqueta \`incidente\`) | ${c.incidentesAbiertos} abiertos · ${c.incidentesCerrados} cerrados | — |
 | Regresiones (bugs con la etiqueta \`regresion\`) | ${c.regresionesAbiertas ?? 0} abiertas · ${c.regresionesCerradas ?? 0} cerradas | — |`;
 }
@@ -535,20 +570,52 @@ export function reemplazarBloque(contenido, marcador, interior) {
 // GitHub
 // ---------------------------------------------------------------------------
 
-function cliente(token, repo) {
+// Errores momentáneos de GitHub: se reintenta antes de abandonar. Un 502 o
+// un 504 aparecen cuando una respuesta tarda demasiado (por ejemplo, la
+// lista de jobs de una corrida grande del CI).
+const REINTENTABLES = new Set([500, 502, 503, 504]);
+
+const dormir = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Cliente de solo lectura de la API REST de GitHub. Reintenta hasta
+ * `intentos` veces los errores de red y los 500, 502, 503 y 504, con
+ * espera creciente (2 s, 4 s, 8 s…).
+ */
+export function cliente(
+  token,
+  repo,
+  { fetchImpl = fetch, esperar = dormir, intentos = 4, esperaBaseMs = 2000 } = {},
+) {
   const base = `https://api.github.com/repos/${repo}`;
   async function pedir(url) {
-    const res = await fetch(url.startsWith("http") ? url : `${base}${url}`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-      },
-    });
-    if (!res.ok) {
-      throw new Error(`GitHub respondió ${res.status} en ${url}`);
+    const destino = url.startsWith("http") ? url : `${base}${url}`;
+    let ultimo;
+    for (let intento = 1; intento <= intentos; intento += 1) {
+      let res = null;
+      try {
+        res = await fetchImpl(destino, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+          },
+        });
+      } catch (err) {
+        ultimo = new Error(`Sin respuesta de GitHub en ${url}: ${err.message}`);
+      }
+      if (res) {
+        if (res.ok) return res;
+        ultimo = new Error(`GitHub respondió ${res.status} en ${url}`);
+        // 401, 403, 404…: reintentar no cambia nada.
+        if (!REINTENTABLES.has(res.status)) throw ultimo;
+      }
+      if (intento < intentos) {
+        console.warn(`⚠️ ${ultimo.message}. Reintento ${intento} de ${intentos - 1}.`);
+        await esperar(esperaBaseMs * 2 ** (intento - 1));
+      }
     }
-    return res;
+    throw ultimo;
   }
   return {
     async uno(url) {
@@ -620,9 +687,13 @@ async function deploysStaging(gh, desde, maximo) {
   );
   const deploys = [];
   for (const run of runs) {
-    const jobs = await gh.todos(`/actions/runs/${run.id}/jobs?per_page=100`, {
-      clave: "jobs",
-    });
+    // Páginas de 30 y solo el último intento de cada job: la lista completa
+    // de una corrida del CI (con los pasos de cada job) es pesada y GitHub
+    // a veces corta con un 502.
+    const jobs = await gh.todos(
+      `/actions/runs/${run.id}/jobs?filter=latest&per_page=30`,
+      { clave: "jobs" },
+    );
     const job = jobs.find((j) => /Deploy staging/.test(j.name));
     if (!job || !["success", "failure"].includes(job.conclusion)) continue;
     const fin = new Date(job.completed_at);
@@ -669,7 +740,9 @@ async function porEtiqueta(gh, repo, etiqueta) {
 export async function doraProduccion({ token, repo, hoy = new Date() }) {
   const gh = cliente(token, repo);
   const { sprints } = JSON.parse(await fs.readFile(SPRINTS, "utf-8"));
-  const produccion = analizarProduccion(await deploysDe(gh, "production"));
+  const produccion = analizarProduccion(await deploysDe(gh, "production"), {
+    ensayosRollback: await leerEnsayosRollback(),
+  });
   const leadTimes = [];
   for (const [i, r] of produccion.releases.entries()) {
     if (i === 0) {
@@ -682,6 +755,17 @@ export async function doraProduccion({ token, repo, hoy = new Date() }) {
   const frecuencia = frecuenciaPorSprint(produccion.releases, sprints, hoy);
   const resumen = resumenDora({ releases: produccion.releases, frecuencia, leadTimes });
   return { gh, produccion, leadTimes, frecuencia, resumen };
+}
+
+/** Ensayos de rollback registrados. Si el archivo no está, ninguno. */
+export async function leerEnsayosRollback(ruta = ENSAYOS_ROLLBACK) {
+  try {
+    const { ensayos = [] } = JSON.parse(await fs.readFile(ruta, "utf-8"));
+    return ensayos;
+  } catch (err) {
+    if (err.code === "ENOENT") return [];
+    throw err;
+  }
 }
 
 async function main() {
@@ -697,17 +781,27 @@ async function main() {
     hoy,
   });
 
-  // Contexto de staging: 4 semanas y hasta 60 corridas, para no pasar el
+  // Contexto de staging: 4 semanas y hasta 80 corridas, para no pasar el
   // límite de pedidos del GITHUB_TOKEN (el workflow también corre con cada
-  // evento de issue).
+  // evento de issue). Es lo más pesado (un pedido por corrida del CI): si
+  // GitHub no responde ni con los reintentos, la medición oficial de
+  // producción se publica igual y solo esta parte queda para la próxima.
   const semanas = 4;
   const desdeStaging = new Date(hoy.getTime() - semanas * 7 * DIA);
-  const staging = await deploysStaging(gh, desdeStaging, 80);
-  const exitososStaging = staging.filter((s) => s.exitoso);
-  // Un PR mergeado antes del período puede desplegarse adentro: se buscan
-  // los PR desde una semana antes.
-  const prs = await prsMergeados(gh, repo, new Date(desdeStaging.getTime() - 7 * DIA));
-  const metricasStaging = analizarStaging(staging, prs, semanas);
+  let staging = null;
+  try {
+    const deploys = await deploysStaging(gh, desdeStaging, 80);
+    // Un PR mergeado antes del período puede desplegarse adentro: se buscan
+    // los PR desde una semana antes.
+    const prs = await prsMergeados(gh, repo, new Date(desdeStaging.getTime() - 7 * DIA));
+    const exitosos = deploys.filter((d) => d.exitoso);
+    staging = {
+      exitosos,
+      metricas: analizarStaging(deploys, prs, semanas),
+    };
+  } catch (err) {
+    console.log(`::warning::Sin datos de staging en esta publicación: ${err.message}`);
+  }
   const inc = await porEtiqueta(gh, repo, "incidente");
   // BL-601: bugs que llegaron a staging o producción en algo que ya andaba.
   const reg = await porEtiqueta(gh, repo, "regresion");
@@ -726,20 +820,23 @@ async function main() {
   md = reemplazarBloque(
     md,
     "dora-staging",
-    renderStaging(
-      metricasStaging,
-      porSemana(exitososStaging.map((s) => s.fin), hoy, semanas),
-    ),
+    staging
+      ? renderStaging(
+          staging.metricas,
+          porSemana(staging.exitosos.map((d) => d.fin), hoy, semanas),
+        )
+      : SIN_DATOS_STAGING,
   );
   md = reemplazarBloque(
     md,
     "dora-contexto",
     renderContexto({
-      pipelineMedianaMin: exitososStaging.length
-        ? percentil(exitososStaging.map((s) => s.minutos), 0.5)
+      pipelineMedianaMin: staging?.exitosos.length
+        ? percentil(staging.exitosos.map((d) => d.minutos), 0.5)
         : null,
-      pipelineCorridas: exitososStaging.length,
+      pipelineCorridas: staging?.exitosos.length ?? 0,
       rollbacksProduccion: produccion.rollbacks.length,
+      ensayosRollback: produccion.ensayosDeRollback.length,
       incidentesAbiertos: inc.abiertos,
       incidentesCerrados: inc.cerrados,
       regresionesAbiertas: reg.abiertos,
@@ -748,7 +845,7 @@ async function main() {
   );
   await fs.writeFile(DASHBOARD, md, "utf-8");
   console.log(
-    `✅ Calidad del proceso: ${resumen.releases} releases, ${resumen.prsMedidos} PR con lead time.`,
+    `✅ Calidad del proceso: ${resumen.releases} releases, ${resumen.prsMedidos} PR con lead time${staging ? "" : " (sin staging en esta corrida)"}.`,
   );
 }
 

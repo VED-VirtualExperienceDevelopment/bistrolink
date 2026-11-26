@@ -7,7 +7,10 @@ import { describe, test } from "node:test";
 import {
   analizarProduccion,
   analizarStaging,
+  ensayoDeRollback,
+  fechaUY,
   celdasDoraCorreo,
+  cliente,
   esHotfix,
   esPrDeCambio,
   frecuenciaPorSprint,
@@ -19,6 +22,7 @@ import {
   reemplazarBloque,
   renderFrecuencia,
   renderLeadTime,
+  renderContexto,
   renderReleases,
   renderResumen,
   renderStaging,
@@ -115,6 +119,51 @@ describe("analizarProduccion", () => {
     assert.equal(a.releases[0].recuperacionHoras, 18);
     assert.equal(a.releases[0].motivo, "hotfix v0.6.1");
     assert.equal(a.releases[1].falla, false);
+  });
+});
+
+describe("ensayos de rollback", () => {
+  const ENSAYOS = [{ fecha: "2026-11-08", ref: "main", motivo: "Ensayo del rollback manual" }];
+
+  test("la fecha se toma en hora de Uruguay", () => {
+    assert.equal(fechaUY(d("2026-11-09T02:30:00Z")), "2026-11-08");
+    assert.equal(fechaUY(d("2026-11-09T03:30:00Z")), "2026-11-09");
+  });
+
+  test("un rollback registrado como ensayo no marca falla", () => {
+    const a = analizarProduccion(
+      [deploy("v0.5.0", "2026-11-08T19:40:00Z"), deploy("main", "2026-11-08T19:52:00Z")],
+      { ensayosRollback: ENSAYOS },
+    );
+    assert.equal(a.releases[0].falla, false);
+    assert.equal(a.rollbacks.length, 0);
+    assert.equal(a.ensayosDeRollback.length, 1);
+    assert.match(renderReleases(a, []), /Rollback \(ensayo\).*No cuenta para DORA: Ensayo del rollback manual/);
+  });
+
+  test("un rollback de otro día sigue contando como falla", () => {
+    const a = analizarProduccion(
+      [deploy("v0.6.0", "2026-11-24T17:00:00Z"), deploy("main", "2026-11-24T20:00:00Z")],
+      { ensayosRollback: ENSAYOS },
+    );
+    assert.equal(a.releases[0].falla, true);
+    assert.equal(a.ensayosDeRollback.length, 0);
+  });
+
+  test("solo coincide con la misma ref", () => {
+    assert.equal(ensayoDeRollback(deploy("develop", "2026-11-08T19:52:00Z"), ENSAYOS), null);
+  });
+
+  test("el contexto muestra los ensayos aparte", () => {
+    const md = renderContexto({
+      pipelineMedianaMin: null,
+      pipelineCorridas: 0,
+      rollbacksProduccion: 0,
+      ensayosRollback: 1,
+      incidentesAbiertos: 0,
+      incidentesCerrados: 0,
+    });
+    assert.match(md, /\| Rollbacks de producción \| 0 \(y 1 ensayo, que no cuenta\)/);
   });
 });
 
@@ -306,5 +355,68 @@ describe("correo de estado", () => {
     assert.deepEqual(celdas.map((c) => c.estado), ["🔴", "🟢", "🟢", "⚪"]);
     assert.equal(celdas[1].valor, "3 d");
     assert.equal(celdas[3].etiqueta, "recuperación (sin fallas)");
+  });
+});
+
+describe("cliente de GitHub", () => {
+  // Respuesta falsa de fetch: solo lo que usa el cliente.
+  const respuesta = (status, cuerpo = {}) => ({
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => cuerpo,
+    headers: { get: () => null },
+  });
+  // fetch falso que devuelve las respuestas en orden y cuenta los pedidos.
+  function fetchFalso(...secuencia) {
+    const f = async () => {
+      f.pedidos += 1;
+      const r = secuencia.shift();
+      if (r instanceof Error) throw r;
+      return r;
+    };
+    f.pedidos = 0;
+    return f;
+  }
+  const sinEspera = async () => {};
+
+  test("reintenta un 502 y sigue cuando GitHub responde", async () => {
+    const f = fetchFalso(respuesta(502), respuesta(504), respuesta(200, { ok: 1 }));
+    const gh = cliente("t", "o/r", { fetchImpl: f, esperar: sinEspera });
+    assert.deepEqual(await gh.uno("/x"), { ok: 1 });
+    assert.equal(f.pedidos, 3);
+  });
+
+  test("reintenta un error de red", async () => {
+    const f = fetchFalso(new Error("socket hang up"), respuesta(200, [1, 2]));
+    const gh = cliente("t", "o/r", { fetchImpl: f, esperar: sinEspera });
+    assert.deepEqual(await gh.todos("/x"), [1, 2]);
+    assert.equal(f.pedidos, 2);
+  });
+
+  test("abandona después del último intento, con el último error", async () => {
+    const f = fetchFalso(respuesta(502), respuesta(502), respuesta(502));
+    const gh = cliente("t", "o/r", { fetchImpl: f, esperar: sinEspera, intentos: 3 });
+    await assert.rejects(gh.uno("/runs/1/jobs"), /GitHub respondió 502 en \/runs\/1\/jobs/);
+    assert.equal(f.pedidos, 3);
+  });
+
+  test("no reintenta un 404 ni un 403", async () => {
+    for (const status of [404, 403]) {
+      const f = fetchFalso(respuesta(status), respuesta(200));
+      const gh = cliente("t", "o/r", { fetchImpl: f, esperar: sinEspera });
+      await assert.rejects(gh.uno("/x"), new RegExp(`respondió ${status}`));
+      assert.equal(f.pedidos, 1);
+    }
+  });
+
+  test("espera más en cada reintento (2 s, 4 s)", async () => {
+    const esperas = [];
+    const f = fetchFalso(respuesta(503), respuesta(503), respuesta(200));
+    const gh = cliente("t", "o/r", {
+      fetchImpl: f,
+      esperar: async (ms) => esperas.push(ms),
+    });
+    await gh.uno("/x");
+    assert.deepEqual(esperas, [2000, 4000]);
   });
 });

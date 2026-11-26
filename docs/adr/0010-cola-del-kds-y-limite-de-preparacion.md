@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 | --- | --- |
-| Estado | Propuesta |
+| Estado | Aceptada |
 | Fecha | 05/11/2026 |
 | Referencias | RF.03; RD.03; RD.06; RNF.05; RNF.06; HU-004 (BL-44); HU-020 (BL-72); HU-027 (BL-163); HU-038 (BL-208); HU-042 (BL-461); ADR 0001; ADR 0006 |
 | Autores | E. Arenas, V. Couto, D. Silvera |
@@ -52,7 +52,7 @@ La plataforma corre en una sola instancia con Socket.IO embebido (ADR 0001), sin
 - Las transiciones del KDS siguen siendo de Mozo y Administrador (RD.06): el rol Cocina sigue en solo lectura.
 - Para escalar a varias instancias solo falta el adaptador de Redis de Socket.IO (ya documentado en ADR 0001); el lock y la cola no cambian.
 - Con la cola desactivada el comensal no ve tiempo estimado, porque hoy sale de la cola. Mostrarlo siempre implica separar el cálculo del tiempo estimado de la cola (historia aparte).
-- Cuando exista la cancelación de un pedido en preparación (HU-024), tiene que llamar a `completarCapacidad` para liberar el lugar.
+- La cancelación de un pedido (HU-024) llama a `completarCapacidad` en la misma transacción: con la cola activa, si el pedido estaba en preparación, el lugar que deja lo toma el siguiente pedido de la cola.
 
 ## Control de versiones
 
@@ -60,3 +60,4 @@ La plataforma corre en una sola instancia con Socket.IO embebido (ADR 0001), sin
 | --- | --- | --- |
 | 1.0 | 05/11/2026 | Versión inicial. |
 | 1.1 | 06/11/2026 | La cola queda opcional y visible (sugerencia en el alta y guía en el manual), con la alternativa «cola obligatoria» descartada. Se alinea con lo implementado: tiempo estimado con `minutos_preparacion_estimados`, promoción al cambiar el límite, evento `pedido:cola` y cancelación pendiente de HU-024. |
+| 1.2 | 24/11/2026 | Aceptada por el equipo. La cancelación de pedidos (HU-024) ya libera el lugar en la cola. |

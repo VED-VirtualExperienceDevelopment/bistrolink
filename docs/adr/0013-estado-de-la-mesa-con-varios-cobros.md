@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 | --- | --- |
-| Estado | Propuesta |
+| Estado | Aceptada |
 | Fecha | 10/11/2026 |
 | Referencias | Bug BL-509 (issue #474); HU-016 (BL-59); HU-017 (BL-60); HU-032 (BL-202); RD.03; ADR 0006; ADR 0010; ADR 0012 |
 | Autores | E. Arenas, V. Couto, D. Silvera |
@@ -59,3 +59,4 @@ Esto precisa ADR 0006: después del pago aprobado, la mesa queda `OCUPADA` **si 
 | Versión | Fecha | Modificación |
 | --- | --- | --- |
 | 1.0 | 10/11/2026 | Versión inicial (BL-509). |
+| 1.1 | 24/11/2026 | Aceptada por el equipo. Verificada contra el código de `develop` y los casos TC-I-195 a 198. |

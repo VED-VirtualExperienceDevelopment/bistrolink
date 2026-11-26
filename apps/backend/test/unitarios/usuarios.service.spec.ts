@@ -3,6 +3,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  InternalServerErrorException,
   Logger,
   NotFoundException,
   ServiceUnavailableException,
@@ -50,6 +51,7 @@ describe('UsuariosService', () => {
     const keycloakAdminMock = {
       createUser: jest.fn(),
       assignRealmRole: jest.fn(),
+      reemplazarRolDelLocal: jest.fn(),
       setEnabled: jest.fn(),
       deleteUser: jest.fn(),
       logoutUser: jest.fn().mockResolvedValue(true),
@@ -1118,7 +1120,7 @@ describe('UsuariosService', () => {
           rol: 'MOZO',
         }),
       ).rejects.toThrow(ConflictException);
-      expect(keycloakAdmin.assignRealmRole).not.toHaveBeenCalled();
+      expect(keycloakAdmin.reemplazarRolDelLocal).not.toHaveBeenCalled();
       expect(tx().usuario.count).toHaveBeenCalledWith({
         where: { rol: 'ADMIN', activo: true, id: { not: ADMIN_A_ID } },
       });
@@ -1144,10 +1146,12 @@ describe('UsuariosService', () => {
         { rol: 'MOZO' },
       );
 
-      expect(keycloakAdmin.assignRealmRole).toHaveBeenCalledWith(
+      // BL-615: reemplaza el rol en Keycloak (no lo suma).
+      expect(keycloakAdmin.reemplazarRolDelLocal).toHaveBeenCalledWith(
         'kc-admin-a',
         'MOZO',
       );
+      expect(keycloakAdmin.assignRealmRole).not.toHaveBeenCalled();
       expect(resultado.rol).toBe('MOZO');
 
       // [HU-013 DoD] cambio de rol auditado con rol anterior y nuevo.
@@ -1157,9 +1161,61 @@ describe('UsuariosService', () => {
           tenantId: TENANT_ID,
           actorKeycloakId: ACTOR_KEYCLOAK_ID,
           targetUsuarioId: ADMIN_A_ID,
-          detalle: { rolAnterior: 'ADMIN', rolNuevo: 'MOZO' },
+          detalle: {
+            rolAnterior: 'ADMIN',
+            rolNuevo: 'MOZO',
+            sesionesCerradas: true,
+          },
         }),
       );
+    });
+
+    it('[TC-U-706] BL-615: al cambiar el rol se cierran las sesiones del usuario después de guardar, para que el token viejo no siga con el rol anterior', async () => {
+      tx().usuario.findUnique.mockResolvedValue({
+        id: ADMIN_A_ID,
+        rol: 'ADMIN',
+        keycloakId: 'kc-admin-a',
+      });
+      tx().usuario.count.mockResolvedValue(1);
+      tx().usuario.update.mockResolvedValue({ id: ADMIN_A_ID, rol: 'MOZO' });
+      keycloakAdmin.logoutUser.mockResolvedValue(false);
+
+      await service.actualizar(TENANT_ID, ACTOR_KEYCLOAK_ID, ADMIN_A_ID, {
+        rol: 'MOZO',
+      });
+
+      expect(keycloakAdmin.logoutUser).toHaveBeenCalledWith('kc-admin-a');
+      expect(tx().usuario.update.mock.invocationCallOrder[0]).toBeLessThan(
+        keycloakAdmin.logoutUser.mock.invocationCallOrder[0],
+      );
+      // Si no se pudieron cerrar, queda registrado (el token vence solo).
+      expect(auditLog.registrar).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: AuditAction.USUARIO_ROL_MODIFICADO,
+          detalle: expect.objectContaining({ sesionesCerradas: false }),
+        }),
+      );
+    });
+
+    it('[TC-U-707] BL-615: si Keycloak no puede reemplazar el rol, no se toca la fila, no se cierran sesiones ni se audita', async () => {
+      tx().usuario.findUnique.mockResolvedValue({
+        id: ADMIN_A_ID,
+        rol: 'ADMIN',
+        keycloakId: 'kc-admin-a',
+      });
+      tx().usuario.count.mockResolvedValue(1);
+      keycloakAdmin.reemplazarRolDelLocal.mockRejectedValue(
+        new InternalServerErrorException('Keycloak no responde'),
+      );
+
+      await expect(
+        service.actualizar(TENANT_ID, ACTOR_KEYCLOAK_ID, ADMIN_A_ID, {
+          rol: 'MOZO',
+        }),
+      ).rejects.toThrow(InternalServerErrorException);
+      expect(tx().usuario.update).not.toHaveBeenCalled();
+      expect(keycloakAdmin.logoutUser).not.toHaveBeenCalled();
+      expect(auditLog.registrar).not.toHaveBeenCalled();
     });
   });
 
@@ -1194,7 +1250,8 @@ describe('UsuariosService', () => {
         firstName: 'Juan Carlos',
         email: 'jc@ejemplo.com',
       });
-      expect(keycloakAdmin.assignRealmRole).not.toHaveBeenCalled();
+      expect(keycloakAdmin.reemplazarRolDelLocal).not.toHaveBeenCalled();
+      expect(keycloakAdmin.logoutUser).not.toHaveBeenCalled();
       expect(tx().usuario.update).toHaveBeenCalledWith({
         where: { id: 'usuario-mozo' },
         data: { nombre: 'Juan Carlos', email: 'jc@ejemplo.com' },
@@ -1262,7 +1319,9 @@ describe('UsuariosService', () => {
       // Primero el perfil (lo que más puede fallar) y después el rol.
       expect(
         keycloakAdmin.actualizarPerfil.mock.invocationCallOrder[0],
-      ).toBeLessThan(keycloakAdmin.assignRealmRole.mock.invocationCallOrder[0]);
+      ).toBeLessThan(
+        keycloakAdmin.reemplazarRolDelLocal.mock.invocationCallOrder[0],
+      );
       expect(tx().usuario.update).toHaveBeenCalledWith({
         where: { id: 'usuario-mozo' },
         data: { rol: 'ADMIN', apellido: 'Pérez Núñez' },
@@ -1484,7 +1543,7 @@ describe('UsuariosService', () => {
         }),
       ).rejects.toThrow('No podés cambiar tu propio rol');
 
-      expect(keycloakAdmin.assignRealmRole).not.toHaveBeenCalled();
+      expect(keycloakAdmin.reemplazarRolDelLocal).not.toHaveBeenCalled();
       expect(tx().usuario.update).not.toHaveBeenCalled();
     });
 

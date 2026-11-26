@@ -1,11 +1,11 @@
 # ADR 0015 — Bot de pedidos por WhatsApp con Evolution API
 
-| Campo       | Valor                                                                                     |
-| ----------- | ----------------------------------------------------------------------------------------- |
-| Estado      | Propuesta; implementada en BL-112 para staging. El cambio de alcance de HU-010 va por CR. |
-| Fecha       | 21/11/2026                                                                                |
-| Referencias | HU-010 (BL-112); HU-033; HU-036; HU-040; ADR 0002; ADR 0003                               |
-| Autores     | E. Arenas, V. Couto, D. Silvera                                                           |
+| Campo       | Valor                                                                                                                                                                |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Estado      | Aceptada; implementada en staging (BL-112). El código está en producción desde v0.6.0; el bot se activa con sus variables. El cambio de alcance de HU-010 va por CR. |
+| Fecha       | 21/11/2026                                                                                                                                                           |
+| Referencias | HU-010 (BL-112); HU-033; HU-036; HU-040; ADR 0002; ADR 0003                                                                                                          |
+| Autores     | E. Arenas, V. Couto, D. Silvera                                                                                                                                      |
 
 ## Contexto
 
@@ -40,6 +40,7 @@ Las plantillas HSM solo existen en la **WhatsApp Business Platform (Cloud API)**
 
 ## Control de versiones
 
-| Versión | Fecha      | Modificación              |
-| ------- | ---------- | ------------------------- |
-| 1.0     | 21/11/2026 | Versión inicial (BL-112). |
+| Versión | Fecha      | Modificación                                                                                                 |
+| ------- | ---------- | ------------------------------------------------------------------------------------------------------------ |
+| 1.0     | 21/11/2026 | Versión inicial (BL-112).                                                                                    |
+| 1.1     | 24/11/2026 | Aceptada por el equipo. El código está en producción desde v0.6.0 (incluye BL-112, BL-604, BL-605 y BL-613). |
