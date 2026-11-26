@@ -1031,8 +1031,11 @@ jobs:
   deploy-staging:
     name: 🚀 Deploy staging (Railway)
     needs: [gitleaks, codeql, sonarcloud, dependencias, build, changes]
+    # Un "Run workflow" de rollback no despliega develop: si no, este job
+    # pisaba el rollback de staging al terminar el build.
     if: |
       github.ref == 'refs/heads/develop' &&
+      inputs.rollback_environment == '' &&
       (
         github.event_name == 'workflow_dispatch' ||
         needs.changes.outputs.apps == 'true'
