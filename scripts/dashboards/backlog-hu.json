@@ -6,10 +6,11 @@
     "Todo issue que no figure acá cuenta como trabajo técnico (pipeline, seguridad, testing, defectos, documentación).",
     "Los sub-issues de una HU cuentan como trabajo de la HU, aunque no figuren en la lista.",
     "Al aprobar una solicitud de cambio: agregar la HU con 'origen' y actualizar 'alcance'.",
-    "BL-550 (aprobada el 24/11/2026): HU-008 sale del MVP (206 a 198 SP). Los ítems de la capa Valor Agregado y HU-010 se entregan fuera del MVP y figuran en 'fueraDelMvp'."
+    "BL-550 (aprobada el 24/11/2026): HU-008 sale del MVP (206 a 198 SP). Los ítems de la capa Valor Agregado, HU-010 y HU-015 se entregan fuera del MVP y figuran en 'fueraDelMvp'.",
+    "Prioridades de BL-550 según Linear (Anexo 5 v2.5, 26/11/2026): HU-043 a HU-046 Should; HU-050, HU-051 y BL-378 Could."
   ],
   "alcance": {
-    "backlog": "Anexo 5 v2.3 (30/10/2026), con la solicitud de cambio BL-550 (24/11/2026)",
+    "backlog": "Anexo 5 v2.5 (26/11/2026), con la solicitud de cambio BL-550 (24/11/2026)",
     "historias": 36,
     "storyPoints": 198,
     "solicitudesDeCambio": [
@@ -69,15 +70,15 @@
   "fueraDelMvp": [
     { "hu": "HU-008", "linear": ["BL-88"], "sp": 8, "prioridad": "Could", "nivel": 4, "motivo": "Sale del MVP por la solicitud de cambio BL-550 (Sprint 10)" },
     { "hu": "HU-010", "linear": ["BL-112"], "sp": 13, "prioridad": "Could", "nivel": null, "motivo": "Entregada por la solicitud de cambio BL-550 (24/11/2026), solo pedidos para retirar" },
-    { "hu": "HU-043", "linear": ["BL-530"], "sp": 8, "prioridad": "Could", "nivel": null, "motivo": "Entregada por la solicitud de cambio BL-550 (24/11/2026)" },
-    { "hu": "HU-044", "linear": ["BL-537"], "sp": 2, "prioridad": "Could", "nivel": null, "motivo": "Entregada por la solicitud de cambio BL-550 (24/11/2026)" },
-    { "hu": "HU-045", "linear": ["BL-543"], "sp": 3, "prioridad": "Could", "nivel": null, "motivo": "Entregada por la solicitud de cambio BL-550 (24/11/2026)" },
-    { "hu": "HU-046", "linear": ["BL-544"], "sp": 8, "prioridad": "Could", "nivel": null, "motivo": "Entregada por la solicitud de cambio BL-550 (24/11/2026)" },
+    { "hu": "HU-043", "linear": ["BL-530"], "sp": 8, "prioridad": "Should", "nivel": null, "motivo": "Entregada por la solicitud de cambio BL-550 (24/11/2026)" },
+    { "hu": "HU-044", "linear": ["BL-537"], "sp": 2, "prioridad": "Should", "nivel": null, "motivo": "Entregada por la solicitud de cambio BL-550 (24/11/2026)" },
+    { "hu": "HU-045", "linear": ["BL-543"], "sp": 3, "prioridad": "Should", "nivel": null, "motivo": "Entregada por la solicitud de cambio BL-550 (24/11/2026)" },
+    { "hu": "HU-046", "linear": ["BL-544"], "sp": 8, "prioridad": "Should", "nivel": null, "motivo": "Entregada por la solicitud de cambio BL-550 (24/11/2026)" },
     { "hu": "HU-050", "linear": ["BL-558"], "sp": 5, "prioridad": "Could", "nivel": null, "motivo": "Entregada por la solicitud de cambio BL-550 (24/11/2026)" },
     { "hu": "HU-051", "linear": ["BL-563"], "sp": 2, "prioridad": "Could", "nivel": null, "motivo": "Entregada por la solicitud de cambio BL-550 (24/11/2026)" },
     { "hu": null, "linear": ["BL-378"], "sp": 1, "prioridad": "Could", "nivel": null, "motivo": "Entregada por la solicitud de cambio BL-550 (24/11/2026)" },
     { "hu": "HU-014", "linear": ["BL-116"], "sp": 13, "prioridad": "Could", "nivel": 4, "motivo": "Trabajo futuro" },
-    { "hu": "HU-015", "linear": ["BL-120"], "sp": 5, "prioridad": "Could", "nivel": 3, "motivo": "Condicional a holgura en H7" },
+    { "hu": "HU-015", "linear": ["BL-120"], "sp": 5, "prioridad": "Could", "nivel": null, "motivo": "Entregada por la solicitud de cambio BL-550 (24/11/2026), terminada con la holgura de H7" },
     { "hu": "HU-026", "linear": ["BL-124"], "sp": 13, "prioridad": "Could", "nivel": 4, "motivo": "Trabajo futuro" },
     { "hu": "HU-028", "linear": ["BL-173"], "sp": 8, "prioridad": "Could", "nivel": null, "motivo": "Terminada fuera del MVP" },
     { "hu": null, "linear": ["BL-293"], "sp": 5, "prioridad": "Should", "nivel": 4, "motivo": "Trabajo futuro (09/11/2026)" },
