@@ -5,6 +5,7 @@
 | Versión | Fecha | Autores | Cambio | Aprobación |
 | ------- | ----- | ------- | ------ | ---------- |
 | 1.0 | 26/11/2026 | V. Couto, E. Arenas, D. Silvera | Informe de la regresión de cierre: pruebas manuales y automatizadas, ensayo del rollback, release `v0.6.1` y métricas del proceso al cierre. | Pendiente (Product Owner) |
+| 1.1 | 26/11/2026 | V. Couto, E. Arenas, D. Silvera | Sección 3.3: RTO y RPO de la activación de la contingencia en Render del 22/11/2026 (BL-217). | Pendiente (Product Owner) |
 
 ## 1. Datos de la regresión
 
@@ -91,6 +92,8 @@ Antes del release `v0.6.1` se ensayó el rollback manual en staging, que usa la 
 | [45825265950](https://github.com/VED-VirtualExperienceDevelopment/bistrolink/actions/runs/45825265950) | Vuelta a `abfe63f` | Versión confirmada |
 
 Producción no se tocó durante el ensayo: siguió en `v0.6.0` y el deploy de producción quedó salteado en las tres corridas. La decisión automática del rollback y el aviso por mail solo se ejercitan en producción.
+
+**Contingencia en Render (BL-217).** La activación completa de producción en Render se midió el 22/11/2026, con el respaldo de S3 de ese día (SHA-256 verificado en las dos bases): **RTO de 55 min** (objetivo ≤ 4 h) y **RPO de 13 h 43 min** (objetivo ≤ 24 h). Se restauraron las dos bases con RLS forzado y el rol de la API sin bypass; Keycloak, la API y la Web levantaron, y el login de punta a punta funcionó en Render sin depender de Railway. Es una cota superior: incluye resolver los problemas de la primera activación. El detalle por paso está en BL-217.
 
 ### 3.4 Release `v0.6.1`
 
